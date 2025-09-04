@@ -48,6 +48,6 @@ def TABLE(a, table):
             raise TosaValueError(f"Table dtype {table.dtype} is not int32", op="TABLE")
         return_dtype = torch.int32
     else:
-        raise TosaValueError(f"Unsupported dtype for {tosa_spec}", op="TABLE")
+        raise TosaValueError(f"Unsupported dtype {a.dtype} for {tosa_spec}", op="TABLE")
 
     return torch.empty_like(a, dtype=return_dtype)

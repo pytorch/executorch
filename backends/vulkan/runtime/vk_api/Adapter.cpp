@@ -109,6 +109,9 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_float16_int8
       VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,
 #endif /* VK_KHR_shader_float16_int8 */
+#ifdef VK_KHR_shader_integer_dot_product
+      VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
+#endif /* VK_KHR_shader_integer_dot_product */
 #if defined(VK_KHR_pipeline_executable_properties) && defined(VULKAN_DEBUG)
       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
 #endif /* VK_KHR_pipeline_executable_properties */
@@ -159,6 +162,14 @@ VkDevice create_logical_device(
   shader_float16_int8_types.pNext = extension_list_top;
   extension_list_top = &shader_float16_int8_types;
 #endif /* VK_KHR_shader_float16_int8 */
+
+#ifdef VK_KHR_shader_integer_dot_product
+  VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR
+      shader_int_dot_product_features{
+          physical_device.shader_int_dot_product_features};
+  shader_int_dot_product_features.pNext = extension_list_top;
+  extension_list_top = &shader_int_dot_product_features;
+#endif /* VK_KHR_shader_integer_dot_product */
 
   device_create_info.pNext = extension_list_top;
 
@@ -400,6 +411,107 @@ std::string Adapter::stringize() const {
   PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
 #endif /* VK_KHR_shader_float16_int8 */
   ss << "    }" << std::endl;
+
+#ifdef VK_KHR_shader_integer_dot_product
+  ss << "    Shader Integer Dot Product Features {" << std::endl;
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_features,
+      shaderIntegerDotProduct);
+  ss << "    }" << std::endl;
+
+  ss << "    Shader Integer Dot Product Properties {" << std::endl;
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct8BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct8BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct8BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct4x8BitPackedUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct4x8BitPackedSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct4x8BitPackedMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct16BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct16BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct16BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct32BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct32BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct32BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct64BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct64BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProduct64BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating8BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating8BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating8BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating4x8BitPackedMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating16BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating16BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating16BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating32BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating32BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating32BitMixedSignednessAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating64BitUnsignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating64BitSignedAccelerated);
+  PRINT_PROP(
+      physical_device_.shader_int_dot_product_properties,
+      integerDotProductAccumulatingSaturating64BitMixedSignednessAccelerated);
+  ss << "    }" << std::endl;
+#endif /* VK_KHR_shader_integer_dot_product */
 
   const VkPhysicalDeviceMemoryProperties& mem_props =
       physical_device_.memory_properties;

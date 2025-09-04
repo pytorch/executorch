@@ -123,7 +123,9 @@ class AbsVisitor_FP(AbsVisitor_INT):
             )
 
             # MI lowering
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().ABS,
                 [inputs[0].name],
                 [output.name],
