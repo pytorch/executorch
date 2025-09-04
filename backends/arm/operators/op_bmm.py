@@ -78,7 +78,9 @@ class BMMVisitor(NodeVisitor):
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=f"{node.name}_B_ZP")
 
         # Add the MATMUL to the TOSA graph.
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MATMUL,
             [
                 inputs[0].name,

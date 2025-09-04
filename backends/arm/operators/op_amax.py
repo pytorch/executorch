@@ -61,6 +61,11 @@ class MaxVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.ReduceMaxAttribute(axis=input.dim_order.index(dim), nan_mode=1)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().REDUCE_MAX, [input.name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().REDUCE_MAX,
+            [input.name],
+            [output.name],
+            attr,
         )

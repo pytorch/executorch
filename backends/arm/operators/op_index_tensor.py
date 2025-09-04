@@ -167,7 +167,9 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             data = np.full(index_shape, int(values_strides[i] / C))
             mul_const = tosa_graph.addConst(index_shape, index_dtype, data)
             tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_{i}_shift")
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().MUL,
                 [index_name, mul_const.name, f"{node.name}_{i}_shift"],
                 [stride_shifted_indices.name],
@@ -194,7 +196,9 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
                     reshaped_idxs.shape,
                     reshaped_idxs.dtype,
                 )
-                tosa_graph.addOperator(
+                self._serialize_operator(
+                    node,
+                    tosa_graph,
                     ts.TosaOp.Op().ADD,
                     [gather_index_name, reshaped_idxs.name],
                     [add_idxs.name],
@@ -217,7 +221,9 @@ class IndexTensorVisitor(CommonIndexTensorVisitor):
             gather_out_shape,
             output.dtype,
         )
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().GATHER,
             [reshaped_input.name, gather_index_name],
             [gather_out.name],
