@@ -100,7 +100,9 @@ class AvgPool2dVisitor(NodeVisitor):
             shape=[1], dtype=output.dtype, vals=[output_zp]
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().AVG_POOL2D,
             [input_tensor.name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],

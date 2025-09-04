@@ -66,6 +66,11 @@ class ViewVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.ReshapeAttribute()
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().RESHAPE, [inputs[0].name, shape.name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().RESHAPE,
+            [inputs[0].name, shape.name],
+            [output.name],
+            attr,
         )
