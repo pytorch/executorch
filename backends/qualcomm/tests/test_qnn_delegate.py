@@ -555,6 +555,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = ExpM1()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_flip(self):
+        sample_input = (torch.randn(3, 4, 5, 6),)
+        module = Flip()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -777,6 +782,14 @@ class TestQNNFloatingPointOperator(TestQNN):
                     test[QCOM_SAMPLE_INPUTS],
                     skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
                 )
+
+    def test_qnn_backend_index_select(self):
+        module = IndexSelect(dim=1)  # noqa: F405
+        sample_input = (
+            torch.randn(2, 3, 4, 5),
+            torch.tensor([0, 2]),
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -1333,9 +1346,19 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(1, 16, 224, 224),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_flip(self):
+        module = Conv2dFlip()  # noqa: F405
+        sample_input = (torch.randn(1, 16, 224, 224),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_slice_copy(self):
+        module = Conv2dSliceCopy()  # noqa: F405
+        sample_input = (torch.randn([2, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
@@ -2030,6 +2053,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_flip(self):
+        sample_input = (torch.randn(3, 4, 5, 6),)
+        module = Flip()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -2272,6 +2301,15 @@ class TestQNNQuantizedOperator(TestQNN):
                     test[QCOM_SAMPLE_INPUTS],
                     skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
                 )
+
+    def test_qnn_backend_index_select(self):
+        module = IndexSelect(dim=1)  # noqa: F405
+        sample_input = (
+            torch.randn(2, 3, 4, 5),
+            torch.tensor([0, 2]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -2927,9 +2965,21 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_flip(self):
+        module = Conv2dFlip()  # noqa: F405
+        sample_input = (torch.randn(1, 16, 224, 224),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_slice_copy(self):
+        module = Conv2dSliceCopy()  # noqa: F405
+        sample_input = (torch.randn([2, 1, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

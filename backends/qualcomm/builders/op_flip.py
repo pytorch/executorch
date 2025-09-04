@@ -3,11 +3,13 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import cast, Dict
+from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import numpy as np
 import torch
+
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 
 from .node_visitor import NodeVisitor
@@ -16,8 +18,8 @@ from .qnn_constants import OpStridedSlice, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class StrideSlice(NodeVisitor):
-    target = ["aten.slice_copy.Tensor"]
+class Flip(NodeVisitor):
+    target = ["aten.flip.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -47,34 +49,19 @@ class StrideSlice(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        dim = cast(int, node.args[1])
-        if QCOM_AXIS_ORDER in node.meta:
-            dim = node.meta[QCOM_AXIS_ORDER].index(dim)
-        if dim < 0:
-            dim = dim % len(input_tensor.shape)
-
-        start = 0 if node.args[2] is None else cast(int, node.args[2])
-        if start < 0:
-            start = start % input_tensor.shape[dim]
-
-        if len(node.args) > 3 and node.args[3] is not None:
-            end = min(cast(int, node.args[3]), input_tensor.shape[dim])
-            if end < 0:
-                end = end % input_tensor.shape[dim]
-        else:
-            end = input_tensor.shape[dim]
-        input_tensor_rank = len(input_tensor.shape)
         ranges = []
-        for i in range(input_tensor_rank):
-            if i == dim:
-                # find step
-                step = node.args[4] if len(node.args) > 4 else 1
-                ranges.extend([start, end, step])
+
+        dims = node.args[1]
+        if QCOM_AXIS_ORDER in node.meta:
+            dims = [node.meta[QCOM_AXIS_ORDER].index(dim) for dim in dims]
+
+        for dim, size in enumerate(output_tensor.shape):
+            if dim in dims:
+                ranges.extend([size - 1, -1, -1])
             else:
-                ranges.extend([0, input_tensor.shape[i], 1])
+                ranges.extend([0, size, 1])
 
-        range_shape = [input_tensor_rank, 3]
-
+        range_shape = [input_tensor.dim(), 3]
         stride_slice_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
@@ -82,7 +69,6 @@ class StrideSlice(NodeVisitor):
         )
         stride_slice_op.AddInputTensors([input_tensor_wrapper])
         stride_slice_op.AddOutputTensors([output_tensor_wrapper])
-
         stride_slice_op.AddTensorParam(
             OpStridedSlice.param_ranges,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
