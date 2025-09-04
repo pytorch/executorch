@@ -518,19 +518,32 @@ class PybindingsTest(unittest.TestCase):
         )
 
     def test_program_method_meta(self) -> None:
-        exported_program, inputs = create_program(ModuleAdd())
+        eager_module = ModuleAddWithAttributes()
+        inputs = eager_module.get_inputs()
 
-        executorch_program = self.load_prog_fn(exported_program.buffer)
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_prog = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True,
+            )
+        )
+
+        exec_prog.dump_executorch_program(verbose=True)
+
+        executorch_program = self.load_prog_fn(exec_prog.buffer)
+
         meta = executorch_program.method_meta("forward")
 
         del executorch_program
         self.assertEqual(meta.name(), "forward")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
+        self.assertEqual(meta.num_attributes(), 1)
 
         tensor_info = (
             "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
         )
+
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -541,9 +554,13 @@ class PybindingsTest(unittest.TestCase):
 
         input_tensors = [meta.input_tensor_meta(i) for i in range(2)]
         output_tensor = meta.output_tensor_meta(0)
+        attribute_tensor = meta.attribute_tensor_meta(0)
 
         with self.assertRaises(IndexError):
             meta.input_tensor_meta(2)
+
+        with self.assertRaises(IndexError):
+            meta.attribute_tensor_meta(1)
 
         del meta
         self.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
@@ -557,6 +574,12 @@ class PybindingsTest(unittest.TestCase):
         self.assertEqual(output_tensor.is_memory_planned(), True)
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
+
+        self.assertEqual(attribute_tensor.sizes(), (2, 2))
+        self.assertEqual(attribute_tensor.dtype(), float_dtype)
+        self.assertEqual(attribute_tensor.is_memory_planned(), True)
+        self.assertEqual(attribute_tensor.nbytes(), 16)
+        self.assertEqual(str(attribute_tensor), tensor_info)
 
     def test_method_method_meta(self) -> None:
         exported_program, inputs = create_program(ModuleAdd())
