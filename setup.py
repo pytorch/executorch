@@ -465,23 +465,15 @@ class InstallerBuildExt(build_ext):
             return
 
         try:
+            # Following code is for building the Qualcomm backend.
             from backends.qualcomm.scripts.download_qnn_sdk import (
                 _download_qnn_sdk,
-                LLVM_VERSION,
                 SDK_DIR,
             )
 
             os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
 
             # qnn sdk setup
-            print(
-                "SDK_DIR: ",
-                SDK_DIR,
-                "type: ",
-                type(SDK_DIR),
-                "exists: ",
-                os.path.exists(SDK_DIR),
-            )
             _download_qnn_sdk()
 
             sdk_path = Path(SDK_DIR).resolve()  # full absolute path
@@ -492,6 +484,7 @@ class InstallerBuildExt(build_ext):
             # Determine paths
             prj_root = Path(__file__).parent.resolve()
             print("prj_root: ", prj_root)
+            # TODO: stop using script but add cmake configuration properly
             build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
             build_root = prj_root / "build-x86"
 
@@ -550,6 +543,7 @@ class InstallerBuildExt(build_ext):
                 self.copy_file(str(so_src), str(so_dst))
                 print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
         except ImportError:
+            print("Fail to build Qualcomm backend")
             print("Import error: ", sys.exc_info()[0])
 
         if self.editable_mode:
@@ -672,17 +666,6 @@ class CustomBuildPy(build_py):
                 "share/cmake/executorch-config.cmake",
             ),
         ]
-        # # Pick up all .so files automatically
-        # ext_suffixes = importlib.machinery.EXTENSION_SUFFIXES
-        # for suffix in ext_suffixes:
-        #     for so_file in Path("backends/qualcomm/python").glob(f"*{suffix}"):
-        #         rel_dst = os.path.join(
-        #             "executorch/backends/qualcomm/python", so_file.name
-        #         )
-        #         src_to_dst.append((str(so_file), rel_dst))
-        # Copy all the necessary headers into include/executorch/ so that they can
-        # be found in the pip package. This is the subset of headers that are
-        # essential for building custom ops extensions.
         # TODO: Use cmake to gather the headers instead of hard-coding them here.
         # For example:
         # https://discourse.cmake.org/t/installing-headers-the-modern-way-regurgitated-and-revisited/3238/3
@@ -872,11 +855,6 @@ setup(
         "build_ext": InstallerBuildExt,
         "build_py": CustomBuildPy,
     },
-    # packages=find_packages(),
-    # include_package_data=True,
-    # package_data={
-    #     "executorch.backends.qualcomm": ["*.so"],
-    # },
     # Note that setuptools uses the presence of ext_modules as the main signal
     # that a wheel is platform-specific. If we install any platform-specific
     # files, this list must be non-empty. Therefore, we should always install
