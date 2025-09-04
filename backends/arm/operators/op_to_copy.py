@@ -44,4 +44,6 @@ class ToCopyVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 1)
 
-        tosa_graph.addOperator(ts.TosaOp.Op().CAST, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().CAST, [inputs[0].name], [output.name]
+        )

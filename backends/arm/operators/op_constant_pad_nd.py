@@ -100,7 +100,9 @@ class ConstantPadNDVisitor(NodeVisitor):
             shape=[1], dtype=pad_const_dtype, vals=[pad_const_val]
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().PAD,
             [inputs[0].name, padding.name, pad_const.name],
             [output.name],
