@@ -239,7 +239,7 @@ class TestTorchOps(unittest.TestCase):
 
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
-    
+
     def test_dequantize_codebook_embedding_per_grouped_row(self):
         model, example_inputs = self._get_test_model()
         quantize_(
@@ -267,7 +267,7 @@ class TestTorchOps(unittest.TestCase):
 
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
-        
+
     def test__clone_dim_order_contiguous(self):
         class Model(torch.nn.Module):
             def forward(self, x):
