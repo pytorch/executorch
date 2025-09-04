@@ -145,6 +145,7 @@ def define_common_targets():
                 "//pytorch/tokenizers:hf_tokenizer",
                 "//pytorch/tokenizers:llama2c_tokenizer",
                 "//pytorch/tokenizers:sentencepiece",
+                "//pytorch/tokenizers:tekken",
                 "//pytorch/tokenizers:tiktoken",
             ],
         )

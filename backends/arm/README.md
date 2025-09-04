@@ -209,6 +209,38 @@ List of model specific and optional passes:
 - InsertCastForOpsWithInt64InputPass
     - Functionality:
         - For LLMs such as LLama, some opeartors like aten.embedding have int64 input. In order to lower these operators to TOSA, this pass will insert a casting node that converts the input from int64 to int32.
-        - Example usage: backends/arm/test/models/test_llama.py
     - Supported Ops:
         - aten.embedding.default, aten.slice_copy.Tensor
+    - Example usage:
+        - backends/arm/test/models/test_llama.py
+
+- ConvertInt64ConstOpsToInt32Pass
+    - Functionalities:
+      - Rewrites constant-producing ops that output int64 to instead output int32, when values are within int32 bounds.
+    - Supported Ops:
+      - `torch.full`, `torch.arange`, `torch.eye`, `torch.linspace`, `torch.tensor`
+    - Example usage:
+        - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+        - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+
+- ConvertInt64OutputOpsToInt32Pass
+    - Overview:
+      - Rewrites or removes operations that produce int64 outputs, converting them to int32 where possible.
+      - Overflow checks are applied selectively; for ops without such checks, users need to ensure values fit within the int32 range.
+    - Functionalities:
+        1. Handling casting to int64:
+            - (1) int32 -> int64:
+                - Removes the cast and redirect uses of int64 to int32
+            - (2) other types -> int64:
+                - Rewrites the cast to other types -> int32
+            - Supported Ops:
+              - torch.ops.aten.to.\[dtype|dtype_layout\]
+              - exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+        2. Post-process argmax outputs:
+            - Inserts an int64->int32 cast after the argmax operations that produce int64 outputs:
+            - Supported Ops:
+              - torch.ops.aten.argmax.default
+              - exir_ops.edge.aten.argmax.default
+    - Example usage:
+      - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
+      - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
