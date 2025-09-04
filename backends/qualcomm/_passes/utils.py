@@ -64,8 +64,8 @@ def get_passes_dependency_for_capture_program():
         AnnotateQuantAttrs,
         AnnotateStack,
         AnnotateUnbind,
+        CanonicalizeConv,
         ConvertBmmToMatmul,
-        ConvertConv1dToConv2d,
         DecomposeAny,
         DecomposeColIm,
         DecomposeLinalgVectorNorm,
@@ -99,7 +99,7 @@ def get_passes_dependency_for_capture_program():
         I64toI32: [RemoveRedundancy],
         LayoutTransform: [
             AnnotateQuantAttrs,
-            ConvertConv1dToConv2d,
+            CanonicalizeConv,
             ExpandBroadcastTensorShape,
             FixedLinearKeepDim,
         ],
