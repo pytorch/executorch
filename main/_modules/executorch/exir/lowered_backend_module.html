@@ -576,6 +576,7 @@
     <span class="n">_named_data_store_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
         <span class="n">NamedDataStoreOutput</span>
     <span class="p">]</span>  <span class="c1"># Named Data serialized by the backend</span>
+    <span class="n">meta</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span>  <span class="c1"># Metadata for the lowered module</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -591,6 +592,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_processed_bytes</span> <span class="o">=</span> <span class="n">processed_bytes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span> <span class="o">=</span> <span class="n">compile_specs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store_output</span> <span class="o">=</span> <span class="n">named_data_store_output</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="c1"># pyre-ignore</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="s2">&quot;LoweredBackendModule&quot;</span><span class="p">:</span>
@@ -619,7 +621,6 @@
             <span class="n">compile_specs</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span><span class="p">,</span> <span class="n">memo</span><span class="p">),</span>
             <span class="n">named_data_store_output</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_named_data_store_output</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="c1"># pyre-fixme[16]: `LoweredBackendModule` has no attribute `meta`.</span>
         <span class="n">res</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;meta&quot;</span><span class="p">,</span> <span class="p">{}))</span>
         <span class="k">return</span> <span class="n">res</span>
 
