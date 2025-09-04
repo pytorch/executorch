@@ -873,7 +873,7 @@ jobs:
       id-token: write
       contents: read
     with:
-      runner: linux.2xlarge
+      runner: linux.arm64.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-gcc11-aarch64
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
