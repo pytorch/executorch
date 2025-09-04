@@ -23,9 +23,7 @@ def test_quantizer_conv2d():
 
     example_input = (torch.ones(1, 4, 32, 32),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -64,9 +62,7 @@ def test_quantizer_linear():
 
     example_input = (torch.ones(10, 32),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -105,9 +101,7 @@ def test_quantizer_maxpool2d():
 
     example_input = (torch.ones(1, 8, 32, 32),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -143,9 +137,7 @@ def test_quantizer_softmax():
 
     example_input = (torch.ones(1, 10),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -182,9 +174,7 @@ def test_quantizer_single_maxpool2d():
 
     example_input = (torch.ones(1, 4, 32, 32),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -206,9 +196,7 @@ def test_quantizer_conv2d_relu():
 
     example_input = (torch.ones(1, 4, 32, 32),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -231,9 +219,7 @@ def test_quantizer_conv2d_avg_pool2d():
 
     example_input = (torch.ones(1, 4, 16, 16),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -256,9 +242,7 @@ def test_quantizer_conv2d_permute():
 
     example_input = (torch.ones(1, 4, 16, 16),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -285,9 +269,7 @@ def test_multiple_shared_spec_ops_in_row():
 
     example_input = (torch.ones(1, 3, 64, 64),)
     quantizer = NeutronQuantizer()
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     # noinspection PyTypeChecker
     m = prepare_pt2e(graph_module, quantizer)
@@ -321,9 +303,7 @@ def test_quantizers_order_invariance():
     example_input = (torch.ones(1, 4, 64, 64),)
     quantizer = NeutronQuantizer()
 
-    graph_module = torch.export.export_for_training(
-        model, example_input, strict=True
-    ).module()
+    graph_module = torch.export.export(model, example_input, strict=True).module()
 
     m = prepare_pt2e(deepcopy(graph_module), quantizer)
     m(*example_input)
