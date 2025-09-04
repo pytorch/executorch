@@ -242,7 +242,7 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "llama31": {
         "model_class": Llama31,
-        "input_shapes": [(1, 128)],  # batch_size=1, sequence_length=128
+        "input_shapes": [(1, 32)],  # batch_size=1, sequence_length=128
         "device": "cuda",
         "description": "Llama 3.1 model with KV cache disabled",
     },
@@ -269,7 +269,14 @@ def get_model_and_inputs(
     model = model_class().to(device).eval()
 
     # Create example inputs (support multiple inputs)
-    example_inputs = tuple(torch.randn(*shape, device=device) for shape in input_shapes)
+    example_inputs = tuple(
+        (
+            torch.randint(0, 10000, size=shape, device=device)
+            if model_name == "llama31"
+            else torch.randn(*shape, device=device)
+        )
+        for shape in input_shapes
+    )
 
     return model, example_inputs
 
@@ -304,7 +311,9 @@ def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.p
 
     # 1. torch.export: Defines the program with the ATen operator set.
     print("Step 1: Converting to ATen dialect...")
-    aten_dialect = export(model, example_inputs)
+    with torch.no_grad():
+        # from torch.export._trace import _export
+        aten_dialect = export(model, example_inputs, strict=False)
 
     # print(aten_dialect)
     # exit(0)

@@ -1,0 +1,38 @@
+[2025-09-03 15:17:23,719][root][INFO] - Applying quantizers: []
+[2025-09-03 15:17:25,710][root][INFO] - Checkpoint dtype: torch.bfloat16
+[2025-09-03 15:17:25,711][root][INFO] - Model after source transforms: Transformer(
+  (tok_embeddings): Embedding(128256, 4096)
+  (layers): ModuleList(
+    (0-31): 32 x TransformerBlock(
+      (attention): AttentionMHA(
+        (wq): Linear(in_features=4096, out_features=4096, bias=False)
+        (wk): Linear(in_features=4096, out_features=1024, bias=False)
+        (wv): Linear(in_features=4096, out_features=1024, bias=False)
+        (wo): Linear(in_features=4096, out_features=4096, bias=False)
+        (rope): Rope(
+          (apply_rotary_emb): RotaryEmbedding()
+        )
+      )
+      (feed_forward): FeedForward(
+        (w1): Linear(in_features=4096, out_features=14336, bias=False)
+        (w2): Linear(in_features=14336, out_features=4096, bias=False)
+        (w3): Linear(in_features=4096, out_features=14336, bias=False)
+      )
+      (attention_norm): RMSNorm()
+      (ffn_norm): RMSNorm()
+    )
+  )
+  (rope): Rope(
+    (apply_rotary_emb): RotaryEmbedding()
+  )
+  (norm): RMSNorm()
+  (output): Linear(in_features=4096, out_features=128256, bias=False)
+)
+[2025-09-03 15:17:25,712][root][INFO] - Exporting with:
+[2025-09-03 15:17:25,712][root][INFO] - inputs: (tensor([[1, 2, 3]]),)
+[2025-09-03 15:17:25,712][root][INFO] - kwargs: None
+[2025-09-03 15:17:25,713][root][INFO] - dynamic shapes: ({1: Dim('token_dim', min=0, max=127)},)
+[2025-09-03 15:17:39,308][root][INFO] - Running canonical pass: RemoveRedundantTransposes
+[2025-09-03 15:17:39,376][root][INFO] - Using pt2e [] to quantizing the model...
+[2025-09-03 15:17:39,377][root][INFO] - No quantizer provided, passing...
+[2025-09-03 15:18:45,017][root][INFO] - Lowering model using following partitioner(s): 
