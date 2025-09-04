@@ -1,0 +1,74 @@
+base:
+  model_class: llama3_1
+  params: /home/gasoonjia/Llama-3.1-8B/original/params.json
+  checkpoint: /home/gasoonjia/Llama-3.1-8B/original/consolidated.00.pth
+  checkpoint_dir: null
+  adapter_checkpoint: null
+  adapter_config: null
+  tokenizer_path: null
+  metadata: null
+  use_lora: 0
+  fairseq2: false
+  preq_mode: null
+  preq_group_size: 32
+  preq_embedding_quantize: 8,0
+model:
+  dtype_override: fp32
+  enable_dynamic_shape: true
+  use_shared_embedding: false
+  use_sdpa_with_kv_cache: false
+  expand_rope_table: false
+  use_attention_sink: null
+  output_prune_map: null
+  input_prune_map: null
+  use_kv_cache: false
+  quantize_kv_cache: false
+  local_global_attention: null
+export:
+  max_seq_length: 128
+  max_context_length: 128
+  output_dir: .
+  output_name: null
+  so_library: null
+  export_only: false
+  foundation_weights_file: null
+debug:
+  profile_memory: false
+  profile_path: null
+  generate_etrecord: false
+  generate_full_logits: false
+  verbose: false
+quantization:
+  qmode: null
+  embedding_quantize: null
+  pt2e_quantize: null
+  group_size: null
+  use_spin_quant: null
+  use_qat: false
+  calibration_tasks: null
+  calibration_limit: null
+  calibration_seq_length: null
+  calibration_data: Once upon a time
+backend:
+  xnnpack:
+    enabled: false
+    extended_ops: false
+  coreml:
+    enabled: false
+    enable_state: false
+    preserve_sdpa: false
+    quantize: null
+    ios: 15
+    compute_units: cpu_only
+  vulkan:
+    enabled: false
+  qnn:
+    enabled: false
+    use_sha: false
+    soc_model: SM8650
+    use_qnn_sha: false
+    optimized_rotation_path: null
+    num_sharding: 0
+  mps:
+    enabled: false
+save_exported_program: true
