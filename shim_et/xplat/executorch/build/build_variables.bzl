@@ -465,6 +465,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNHeader.cpp",
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
+    "runtime/XNNWorkspaceManager.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 
