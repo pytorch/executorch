@@ -266,6 +266,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
+                    dataFilePath:(NSString *)dataFilePath {
+  return [self initWithFilePath:filePath
+                   dataFilePath:dataFilePath
+                       loadMode:ExecuTorchModuleLoadModeFile];
+}
+
+- (instancetype)initWithFilePath:(NSString *)filePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode {
   return [self initWithFilePath:filePath
                    dataFilePath:@""
