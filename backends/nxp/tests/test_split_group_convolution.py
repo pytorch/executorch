@@ -49,7 +49,7 @@ def _quantize_and_lower_module(
         edge_compile_config=edge_compile_config,
     )
 
-    compile_spec = generate_neutron_compile_spec(target, "SDK_25_03")
+    compile_spec = generate_neutron_compile_spec(target, "SDK_25_06")
     partitioner = NeutronPartitioner(compile_spec)
     return edge_program_manager.to_backend(partitioner)
 
