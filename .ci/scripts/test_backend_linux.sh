@@ -33,7 +33,7 @@ if [[ "$FLOW" == *qnn* ]]; then
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
     PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
     QNN_X86_LIB_DIR=`realpath build-x86/lib/`
-    QNN_SDK_ROOT="/tmp/qnn/2.28.0.241029"
+    QNN_SDK_ROOT="/tmp/qnn/2.37.0.250724"
     export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
     # TODO Get SDK root from install scripts
