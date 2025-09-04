@@ -16,9 +16,7 @@ import sympy  # type: ignore
 import torch
 
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
-
 from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch._subclasses.fake_tensor import FakeTensor
 from torch.fx import Node
@@ -153,19 +151,6 @@ def build_reshape_tosa_1_0(
         [output_name],
         attr,
     )
-
-
-def is_consumer_node_depthwise_conv2d(node: Node):
-    consumer_node = list(node.users)[0]
-    if consumer_node.target == exir_ops.edge.aten.convolution.default:
-        consumer_node_inputs = consumer_node.all_input_nodes
-        groups = consumer_node.args[-1]
-        in_channels = consumer_node_inputs[0].meta["val"].shape[1]
-        out_channels = consumer_node_inputs[1].meta["val"].shape[0]
-        if (in_channels == groups) and (out_channels % in_channels) == 0:
-            return True
-
-    return False
 
 
 def tosa_shape(shape, dim_order):

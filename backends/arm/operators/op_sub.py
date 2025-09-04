@@ -56,7 +56,7 @@ class SubVisitor_INT(NodeVisitor):
 
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
-            rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
+            rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32_maxscale(
                 tosa_graph, inputs, node, self.tosa_spec
             )
         else:
@@ -72,7 +72,9 @@ class SubVisitor_INT(NodeVisitor):
             sub_output = output
 
         # Do the INT32 Sub
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().SUB,
             [
                 rescaled_inputs[0].name,
@@ -86,7 +88,12 @@ class SubVisitor_INT(NodeVisitor):
             # Scale output back to 8 bit
             # pyre-ignore
             tqutils.insert_rescale_op_to_int8(
-                tosa_graph, sub_output, scale_back, node, self.tosa_spec
+                tosa_graph,
+                sub_output,
+                scale_back,
+                node,
+                compute_rescale=False,
+                tosa_spec=self.tosa_spec,
             )  # type: ignore[possibly-undefined]
 
 
@@ -122,7 +129,9 @@ class SubVisitor_FP(SubVisitor_INT):
             )
 
             # MI lowering
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().SUB,
                 [inputs[0].name, inputs[1].name],
                 [output.name],

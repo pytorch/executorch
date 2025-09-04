@@ -101,7 +101,7 @@ void int_accumulate_with_int8_weight(
  * - per output channel scales
  */
 void accumulate_out_tile_with_int_accum(
-    out FPOutTile out_tile,
+    inout FPOutTile out_tile,
     const Int32Accum accum,
     const FPPerOutChannelParams sums,
     const FPPerOutChannelParams scales) {
@@ -144,5 +144,24 @@ void accumulate_out_tile_with_int_accum(
 
 #endif
 }
+
+#ifdef DEBUG_MODE
+
+void printInt32Accum(const Int32Accum tile) {
+  debugPrintfEXT("int accum: \\n");
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      debugPrintfEXT(
+          "  %d, %d, %d, %d,",
+          tile.data[m][n4].x,
+          tile.data[m][n4].y,
+          tile.data[m][n4].z,
+          tile.data[m][n4].w);
+    }
+    debugPrintfEXT("\\n");
+  }
+}
+
+#endif
 
 #endif // LINEAR_FP_OUTPUT_TILE_INT8_INT8_COMPUTE_GLSLH

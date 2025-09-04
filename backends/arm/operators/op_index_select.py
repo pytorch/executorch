@@ -86,7 +86,9 @@ class IndexSelectVisitor(NodeVisitor):
             tosa_graph, indices.name, indices_new_shape, indices_reshaped.name
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().GATHER,
             [weights_reshaped.name, indices_reshaped.name],
             [output_name],

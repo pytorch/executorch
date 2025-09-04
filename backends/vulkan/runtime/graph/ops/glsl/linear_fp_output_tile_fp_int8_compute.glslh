@@ -42,7 +42,7 @@ void fp_accumulate_with_int8_weight(
   // Weight tile is indexed as w_tile.data[k4][n4][n4i]
   //   -> gives packed integer containing the 4x 8-bit quantized values at index
   //      (n, k), (n, k + 1), (n, k + 2), (n, k + 3)
-#if TILE_M4 == 1 && TILE_K4 == 1 && TILE_N4 == 1
+#if TILE_K4 == 1 && TILE_N4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     VEC4_T unpacked_weight_k_row;
     // n = 0
