@@ -53,7 +53,9 @@ class RshiftVisitor(NodeVisitor):
             round = True
         attr.ArithmeticRightShiftAttribute(round=round)
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().ARITHMETIC_RIGHT_SHIFT,
             [inputs[0].name, inputs[1].name],
             [output.name],

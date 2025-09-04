@@ -214,7 +214,7 @@ def annotate_add(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.amax.default])
 def annotate_amax(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_binary(node, quantization_config)
+    annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.argmax.default])
@@ -224,7 +224,7 @@ def annotate_argmax(node: Node, quantization_config: QuantizationConfig) -> None
 
 @register_annotator([torch.ops.aten.amin.default])
 def annotate_amin(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_binary(node, quantization_config)
+    annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.argmin.default])
@@ -430,6 +430,17 @@ def annotate_ceil(node: Node, quantization_config: QuantizationConfig) -> None:
     ]
 )
 def annotate_clamp(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.index_select.default])
+def annotate_index_select(node: Node, quantization_config: QuantizationConfig) -> None:
+    # args[2] = indices, which should be int
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.flip.default])
+def annotate_flip(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
