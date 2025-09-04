@@ -8,7 +8,7 @@ from typing import Callable, Iterable, List, ParamSpec, TypeVar
 
 from executorch.backends.arm.tosa.dialect.lib import register_tosa_dialect_op
 
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
