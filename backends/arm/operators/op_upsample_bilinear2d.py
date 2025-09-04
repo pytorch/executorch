@@ -98,7 +98,9 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             [len(border)], ts.DType.SHAPE, border, node.name + "_border"
         )
         if input_dtype == output.dtype == ts.DType.FP32:
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESIZE,
                 [
                     inputs[0].name,
@@ -114,7 +116,9 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             intermediate = tosa_graph.addIntermediate(
                 tosa_shape(output.shape, output.dim_order), ts.DType.INT32
             )
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESIZE,
                 [
                     inputs[0].name,
