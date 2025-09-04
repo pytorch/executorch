@@ -13,9 +13,7 @@
 from enum import Enum
 from typing import List, Optional
 
-from executorch.backends.arm.tosa_specification import (  # type: ignore[import-not-found]
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa import TosaSpecification
 
 from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
     CompileSpec,
