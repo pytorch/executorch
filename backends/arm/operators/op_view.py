@@ -17,8 +17,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.utils import tosa_shape
 
 
 @register_node_visitor
@@ -44,7 +44,13 @@ class ViewVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32, ts.DType.BOOL],
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BOOL,
+            ],
             output.tosa_spec,
         )
 

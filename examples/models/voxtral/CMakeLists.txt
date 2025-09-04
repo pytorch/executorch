@@ -32,8 +32,7 @@ list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 executorch_target_link_options_shared_lib(executorch)
 
-set(LINK_LIBS executorch gflags)
-set(link_libraries ${LINK_LIBS})
+set(link_libraries executorch gflags)
 set(_srcs multimodal.cpp)
 
 list(
@@ -72,7 +71,7 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
-# Add the required ExecutorTorch extensions for multimodal LLM runner
+# Add the required ExecuTorch extensions for multimodal LLM runner
 list(
   APPEND
   link_libraries
