@@ -1,4 +1,4 @@
-REM This is based on the torchvision Windows build logic.
+REM This is lightly modified from the torchvision Windows build logic.
 REM See https://github.com/pytorch/vision/blob/main/packaging/windows/internal/vc_env_helper.bat
 
 @echo on
