@@ -80,7 +80,7 @@ class MulVisitor_INT(NodeVisitor):
                 tosa_spec=self.tosa_spec,
             )
         else:
-            # input[0].dtype == ts.DType.INT32
+            # input[0].dtype == ts.DType.INT16 or ts.DType.INT32
             # Non quantized input, natively support by TOSA.MUL
             input_A_rescaled, input_B_rescaled = inputs[0], inputs[1]
 
@@ -88,12 +88,14 @@ class MulVisitor_INT(NodeVisitor):
             output_shape = tutils.tosa_shape(output.shape, output.dim_order)
             mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
         else:
-            # output.dtype == ts.DType.INT32
+            # output.dtype == ts.DType.INT16 or ts.DType.INT32
             mul_output = output
 
         # Do the INT32 Mul
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MUL,
             [input_A_rescaled.name, input_B_rescaled.name, f"{node.name}_shift"],
             [mul_output.name],
@@ -135,7 +137,9 @@ class MulVisitor_FP(MulVisitor_INT):
         input1, input2 = inputs
 
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MUL,
             [input1.name, input2.name, f"{node.name}_shift"],
             [output.name],

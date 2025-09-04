@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -16,7 +17,7 @@ def get_default_model_resource_dir(model_file_path: str) -> Path:
     """
     Get the default path to resouce files (which contain files such as the
     checkpoint and param files), either:
-    1. Uses the path from pkg_resources, only works with buck2
+    1. Uses the path from importlib.resources, only works with buck2
     2. Uses default path located in examples/models/llama/params
 
     Expected to be called from with a `model.py` file located in a
@@ -33,22 +34,22 @@ def get_default_model_resource_dir(model_file_path: str) -> Path:
     """
 
     try:
-        import pkg_resources
+        import importlib.resources as _resources
 
-        # 1st way: If we can import this path, we are running with buck2 and all resources can be accessed with pkg_resources.
+        # 1st way: If we can import this path, we are running with buck2 and all resources can be accessed with importlib.resources.
         # pyre-ignore
         from executorch.examples.models.llama import params  # noqa
 
         # Get the model name from the cwd, assuming that this module is called from a path such as
         # examples/models/<model_name>/model.py.
         model_name = Path(model_file_path).parent.name
-        resource_dir = Path(
-            pkg_resources.resource_filename(
-                f"executorch.examples.models.{model_name}", "params"
-            )
-        )
-    except:
-        # 2nd way.
+        model_dir = _resources.files(f"executorch.examples.models.{model_name}")
+        with _resources.as_file(model_dir) as model_path:
+            resource_dir = model_path / "params"
+        assert resource_dir.exists()
+
+    except Exception:
+        # 2nd way:
         resource_dir = Path(model_file_path).absolute().parent / "params"
 
     return resource_dir
