@@ -21,6 +21,8 @@
 
 #extension GL_EXT_control_flow_attributes : require
 
+#extension GL_EXT_debug_printf : require
+
 #include "common.glslh"
 #include "conv2d_common.glslh"
 #include "conv2d_fp_im2col_block.glslh"
@@ -107,7 +109,7 @@ void load_im2col_block_slow(
       im2col_idx.col_idx_in_group += k_off;
 
       // bounds checking
-      if (im2col_idx.col >= conv2d_params.logical_K_per_group ||
+      if (im2col_idx.col_idx_in_group >= conv2d_params.logical_K_per_group ||
           im2col_idx.row >= M) {
         block.data[m_off][k_off] = T(0);
         continue;

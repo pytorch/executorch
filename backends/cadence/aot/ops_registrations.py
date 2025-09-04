@@ -304,7 +304,13 @@ lib.define(
 # Post memory planning, we check that outputs/inputs for the load/store are in
 # DTCM and replace idma_load/idma_store with idma_copy.
 lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_load.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
 lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_store.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # Non-blocking iDMA copy.
 lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")
@@ -447,6 +453,12 @@ lib.define(
 lib.define(
     "roi_align_box_processor(Tensor rois, int output_size_h, int output_size_w, "
     "int sampling_ratio, bool aligned) -> (Tensor out)"
+)
+lib.define(
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+)
+lib.define(
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
@@ -2075,3 +2087,13 @@ def roi_align_box_processor_meta(
     aligned: bool,
 ) -> torch.Tensor:
     return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)
+
+
+@register_fake("cadence::_softmax_f32_f32")
+def softmax_f32_f32_meta(
+    self: torch.Tensor,
+    dim: int,
+    dtype: torch.dtype,
+    half_to_float: Optional[bool] = None,
+) -> torch.Tensor:
+    return self.new_empty(self.size(), dtype=self.dtype)

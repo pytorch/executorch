@@ -27,15 +27,30 @@ struct Int8WeightTile {
 #ifdef DEBUG_MODE
 
 void printInt8WeightTile(const Int8WeightTile tile) {
-  debugPrintfEXT("int8_weight_tile: \\n");
-  [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
-    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      debugPrintfEXT(
-          "%i %i %i %i \\n",
-          tile.data[k4][n4][0],
-          tile.data[k4][n4][1],
-          tile.data[k4][n4][2],
-          tile.data[k4][n4][3]);
+  debugPrintfEXT(
+      "Int8WeightTile [TILE_K4=%d][TILE_N4=%d]:\\n", TILE_K4, TILE_N4);
+
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      debugPrintfEXT("  tile[%d][%d] (ivec4): ", m4, k4);
+
+      // Each ivec4 contains 4 packed integers, each integer contains 4 8-bit
+      // values
+      [[unroll]] for (int vec_idx = 0; vec_idx < 4; ++vec_idx) {
+        int packed_int = tile.data[m4][k4][vec_idx];
+        debugPrintfEXT("packed_int[%d]=%d -> [", vec_idx, packed_int);
+
+        // Extract 4 8-bit values from this packed integer
+        [[unroll]] for (int byte_idx = 0; byte_idx < 4; ++byte_idx) {
+          int val = extract_8bit_from_packed_int_le(packed_int, byte_idx);
+          if (byte_idx < 3) {
+            debugPrintfEXT("%d, ", val);
+          } else {
+            debugPrintfEXT("%d] ", val);
+          }
+        }
+      }
+      debugPrintfEXT("\\n");
     }
   }
 }

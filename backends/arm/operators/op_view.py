@@ -44,7 +44,13 @@ class ViewVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32, ts.DType.BOOL],
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BOOL,
+            ],
             output.tosa_spec,
         )
 
@@ -66,6 +72,11 @@ class ViewVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.ReshapeAttribute()
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().RESHAPE, [inputs[0].name, shape.name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().RESHAPE,
+            [inputs[0].name, shape.name],
+            [output.name],
+            attr,
         )

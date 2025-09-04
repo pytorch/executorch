@@ -82,12 +82,26 @@ class QuantizedLinearMatch(PatternMatch):
         # Identify output node
         self.output_node = self.anchor_node
 
+        # The implementation has a limitation that output channels must be a
+        # multiple of 4. This is to ensure that data loads are aligned well with
+        # texel boundaries. If this is not true, then don't match the pattern.
+        out_channels = self.output_node.meta["val"].shape[-1]
+        if out_channels % 4 != 0:
+            return
+
         # Identify input node
         self.fp_input_node, self.quantize_input_node, dq_node = (
             utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[0])
         )
         assert self.fp_input_node is not None
         self.all_nodes.append(self.fp_input_node)
+
+        # The implementation has a limitation that input channels must be a
+        # multiple of 4. This is to ensure that data loads are aligned well with
+        # texel boundaries. If this is not true, then don't match the pattern.
+        in_channels = self.fp_input_node.meta["val"].shape[-1]
+        if in_channels % 4 != 0:
+            return
 
         # Identify bias node, if applicable
         self.bias_node = None
@@ -284,28 +298,13 @@ def make_linear_q8ta_q8csw_custom_op(
         bias_tensor = get_param_tensor(ep, match.bias_node)
         assert bias_tensor is not None
 
-    # Transpose the weight matrix
-    weight_tensor = weight_tensor.transpose(0, 1)
-    orig_OC = weight_tensor.shape[-1]
-
-    # Ensure that OC dim is a multiple of 4 so that data load/stores are well aligned
-    # with texel boundaries.
-    utils.align_width_and_update_state_dict(
-        ep, match.weight_node, weight_tensor, force_update=True
-    )
-    utils.align_width_and_update_state_dict(
-        ep, match.weight_scales_node, weight_scales_tensor
-    )
-    if bias_tensor is not None:
-        utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
-
     first_graph_node = list(graph_module.graph.nodes)[0]
     with graph_module.graph.inserting_before(first_graph_node):
-        qweight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
+        weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation.
-        sum_per_output_channel = weight_tensor.sum(dim=0).to(torch.float).contiguous()
-        sums_name = qweight_tensor_name + "_sums"
+        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.float).contiguous()
+        sums_name = weight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
 
@@ -328,7 +327,6 @@ def make_linear_q8ta_q8csw_custom_op(
                 match.weight_node,
                 weight_sums_node,
                 match.weight_scales_node,
-                orig_OC,
             ),
         )
 

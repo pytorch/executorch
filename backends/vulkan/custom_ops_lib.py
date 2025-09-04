@@ -335,19 +335,9 @@ def linear_q8ta_q8csw(
     weights: torch.Tensor,
     weight_sums: torch.Tensor,
     weight_scales: torch.Tensor,
-    out_channels: int,
     bias: Optional[torch.Tensor] = None,
 ):
     weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
-
-    # Remove any padding added to output channels dim
-    if out_channels != weights.shape[-1]:
-        weights = weights[:, :out_channels]
-        weight_scales = weight_scales[:out_channels]
-        if bias is not None:
-            bias = bias[:out_channels]
-
-    weights = weights.transpose(0, 1)
     weights = torch.ops.quantized_decomposed.dequantize_per_channel(
         weights,
         weight_scales,
@@ -376,7 +366,6 @@ lib.define(
         Tensor weights,
         Tensor weight_sums,
         Tensor weight_scales,
-        SymInt out_channels,
         Tensor? bias = None) -> Tensor
     """
 )
@@ -401,31 +390,27 @@ def conv2d_q8ta_q8csw(
     padding: list,
     dilation: list,
     groups: int,
-    out_channels: int,
 ):
-    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+    IC = x.shape[1]
+    K_h, K_w = kernel_size[0], kernel_size[1]
 
-    # Remove any padding added to output channels dim
-    if out_channels != weights.shape[-1]:
-        weights = weights[:, :out_channels]
-        weight_scales = weight_scales[:out_channels]
+    canonical_weight_K_dim = K_h * K_w * IC
+    # Remove any padding added to output channels dim to align to a multiple of 4
+    if weights.shape[-1] != canonical_weight_K_dim:
+        weights = weights[:, :canonical_weight_K_dim]
+        weight_scales = weight_scales[:canonical_weight_K_dim]
         if bias is not None:
-            bias = bias[:out_channels]
+            bias = bias[:canonical_weight_K_dim]
 
-    # Restore weight tensor from 2D format (H * W * IC, OC) back to 4D format (OC, IC, H, W)
-    # First transpose to get (OC, H * W * IC)
-    weights = weights.transpose(0, 1)
-
-    # Extract kernel dimensions from the provided kernel_size
-    H, W = kernel_size[0], kernel_size[1]
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
 
     # Calculate dimensions
     OC = weights.shape[0]
-    H_W_IC = weights.shape[1]
-    IC = H_W_IC // (H * W)
+    in_features = weights.shape[1]
+    IC = in_features // (K_h * K_w)
 
     # Reshape to original 4D format (OC, IC, H, W)
-    weights = weights.view(OC, IC, H, W)
+    weights = weights.view(OC, IC, K_h, K_w)
 
     # Dequantize weights
     weights = torch.ops.quantized_decomposed.dequantize_per_channel(
@@ -461,8 +446,7 @@ lib.define(
         SymInt[] stride,
         SymInt[] padding,
         SymInt[] dilation,
-        SymInt groups,
-        SymInt out_channels) -> Tensor
+        SymInt groups) -> Tensor
     """
 )
 lib.impl(name, conv2d_q8ta_q8csw, "CompositeExplicitAutograd")
