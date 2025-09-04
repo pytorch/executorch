@@ -10,4 +10,3 @@ certifi  # Imported by resolve_buck.py.
 lintrunner==0.12.7
 lintrunner-adapters==0.12.6
 patchelf
-transformers

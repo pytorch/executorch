@@ -18,8 +18,8 @@ namespace aoti {
 
 extern "C" {
 
-// Utility function for printing tensor information
-void aoti_torch_print_tensor_handle(AOTITensorHandle self, const char* msg);
+// // Utility function for printing tensor information
+// void aoti_torch_print_tensor_handle(AOTITensorHandle self, const char* msg);
 
 // Cleanup function for tensor output file (called during backend destruction)
 void cleanup_aoti_tensor_output();
