@@ -117,7 +117,9 @@ class SliceVisitor(NodeVisitor):
             (sizes_len,), ts.DType.SHAPE, sizes, node.name + "_sizes_shape"
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().SLICE,
             [input_node.name, start_tensor.name, sizes_tensor.name],
             [output.name],
