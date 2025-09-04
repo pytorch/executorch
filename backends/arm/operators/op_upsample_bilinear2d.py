@@ -17,9 +17,9 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
-from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
+from executorch.backends.arm.tosa.utils import get_resize_parameters, tosa_shape
 
 
 @register_node_visitor
