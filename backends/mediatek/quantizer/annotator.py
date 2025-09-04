@@ -21,6 +21,7 @@ from torchao.quantization.pt2e.quantizer import (
     annotate_output_qspec as _annotate_output_qspec,
     QuantizationAnnotation,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from .qconfig import QuantizationConfig
 
@@ -57,12 +58,12 @@ def _is_annotated(node: Node):
     return True if any of the node
     is annotated, otherwise return False
     """
-    KEY = "quantization_annotation"
+    KEY = Q_ANNOTATION_KEY
     return KEY in node.meta and node.meta[KEY]._annotated
 
 
 def _mark_as_annotated(nodes: List[Node]):
-    KEY = "quantization_annotation"
+    KEY = Q_ANNOTATION_KEY
     for node in nodes:
         if KEY not in node.meta:
             node.meta[KEY] = QuantizationAnnotation()

@@ -6,10 +6,11 @@
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -61,10 +62,10 @@ test_data_suite = {
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_group_norm_tosa_MI(test_data):
+def test_native_group_norm_tosa_FP(test_data):
     aten_op = "torch.ops.aten.group_norm.default"
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         test_data[1],
         test_data[0],
         aten_op=aten_op,
@@ -84,10 +85,10 @@ def test_native_group_norm_tosa_MI(test_data):
     },
     strict=False,
 )
-def test_native_group_norm_tosa_BI(test_data):
+def test_native_group_norm_tosa_INT(test_data):
     aten_op = "torch.ops.aten.sub.Tensor"  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
     exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         test_data[1],
         test_data[0],
         aten_op=aten_op,
@@ -101,6 +102,9 @@ def test_native_group_norm_tosa_BI(test_data):
     "test_data",
     test_data_suite,
     xfails={
+        "rand_4_6_8_groups_2_eps_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
+        "rand_4_6_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
+        "rand_4_6_groups_2": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
         "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
         "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
         "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue for aten.native_group_norm",
@@ -109,8 +113,8 @@ def test_native_group_norm_tosa_BI(test_data):
     strict=False,
 )
 @common.XfailIfNoCorstone300
-def test_native_group_norm_u55_BI(test_data):
-    pipeline = EthosU55PipelineBI[input_t](
+def test_native_group_norm_u55_INT(test_data):
+    pipeline = EthosU55PipelineINT[input_t](
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
@@ -133,8 +137,8 @@ def test_native_group_norm_u55_BI(test_data):
     strict=False,
 )
 @common.XfailIfNoCorstone320
-def test_native_group_norm_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI[input_t](
+def test_native_group_norm_u85_INT(test_data):
+    pipeline = EthosU85PipelineINT[input_t](
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
@@ -142,4 +146,57 @@ def test_native_group_norm_u85_BI(test_data):
         atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
     )
     pipeline.change_args("run_method_and_compare_outputs", atol=1, qtol=1)
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue",
+    },
+    strict=False,
+)
+@common.SkipIfNoModelConverter
+def test_native_group_norm_vgf_FP(test_data):
+    aten_op = "torch.ops.aten.group_norm.default"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
+    model, inp = test_data
+    pipeline = VgfPipeline[input_t](
+        inp,
+        model,
+        aten_op=aten_op,
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_data_suite,
+    xfails={
+        "randn_1_12_8_6_groups_12": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_1": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_4_no_affine": "MLETORCH-925: Fix numerical issue",
+        "rand_6_8_10_12_groups_8": "MLETORCH-925: Fix numerical issue",
+    },
+    strict=False,
+)
+@common.SkipIfNoModelConverter
+def test_native_group_norm_vgf_INT(test_data):
+    aten_op = "torch.ops.aten.sub.Tensor"
+    exir_op = "executorch_exir_dialects_edge__ops_aten_native_group_norm_default"
+    model, inp = test_data
+    pipeline = VgfPipeline[input_t](
+        inp,
+        model,
+        aten_op=aten_op,
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
+        atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
+    )
     pipeline.run()

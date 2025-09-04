@@ -222,6 +222,9 @@ def _patch_kwargs_common(kwargs):
         kwargs["visibility"].remove("@EXECUTORCH_CLIENTS")
         kwargs["visibility"].extend(env.executorch_clients)
 
+    # Meta: temporary, remove after D78422885 lands.
+    # @oss-disable: kwargs["visibility"] = kwargs["visibility"] + ["waios//..."]
+
     return kwargs
 
 def _patch_kwargs_cxx(kwargs):

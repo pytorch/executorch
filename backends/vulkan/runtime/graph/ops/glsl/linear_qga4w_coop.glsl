@@ -10,16 +10,12 @@
 
 #define PRECISION ${PRECISION}
 
-#define T ${buffer_scalar_type(DTYPE)}
-#define VEC4_T ${buffer_gvec_type(DTYPE, 4)}
+#define T ${texel_load_component_type(DTYPE, IO_STORAGE)}
+#define VEC4_T ${texel_load_type(DTYPE, IO_STORAGE)}
 
 #define WGS ${WGS}
 
 ${define_required_extensions(DTYPE)}
-${define_required_extensions("uint8")}
-
-#extension GL_EXT_control_flow_attributes : require
-#extension GL_EXT_debug_printf : require
 
 layout(std430) buffer;
 
@@ -99,7 +95,7 @@ void main() {
     }
     // The input tensor will have a shape of [K, 1, 1, 1]; in each iteration,
     // load 4 elements starting from the tensor index (k, 0, 0, 0).
-    VEC4_T in_texel = load_input_texel(k4);
+    VEC4_T in_texel = load_input_texel_1d(k4);
     // Extract each element of the in_texel into a separate vectorized variable;
     // these are used to "broadcast" the input values in subsequent fma calls.
     VEC4_T in_texel_val[4];
@@ -151,9 +147,9 @@ void main() {
     out_texels[1] = partial_sums[0][1];
 
     uint n4 = DIV_4(n);
-    write_output_texel(out_texels[0], n4);
+    write_output_texel_1d(out_texels[0], n4);
     if (n + 4 < output_sizes.x) {
-      write_output_texel(out_texels[1], n4 + 1);
+      write_output_texel_1d(out_texels[1], n4 + 1);
     }
   }
 }

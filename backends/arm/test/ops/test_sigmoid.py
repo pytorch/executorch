@@ -9,12 +9,13 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm.test import common, conftest
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.sigmoid.default"  # Used for checking that we do not have softmax in the graph after decompose
@@ -69,78 +70,72 @@ class SigmoidAddSigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sigmoid_tosa_MI(test_data: torch.Tensor):
-    TosaPipelineMI[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+def test_sigmoid_tosa_FP(test_data: torch.Tensor):
+    TosaPipelineFP[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sigmoid_tosa_BI(test_data: torch.Tensor):
-    TosaPipelineBI[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
+def test_sigmoid_tosa_INT(test_data: torch.Tensor):
+    TosaPipelineINT[input_t1](Sigmoid(), (test_data(),), aten_op, exir_op).run()
 
 
-def test_sigmoid_tosa_MI_add():
-    TosaPipelineMI[input_t1](
+def test_sigmoid_tosa_FP_add():
+    TosaPipelineFP[input_t1](
         AddSigmoid(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version=conftest.get_option("tosa_version"),
     ).run()
 
 
-def test_sigmoid_tosa_BI_add():
-    TosaPipelineBI[input_t1](
+def test_sigmoid_tosa_INT_add():
+    TosaPipelineINT[input_t1](
         AddSigmoid(),
         (test_data_suite["ramp"](),),
         aten_op,
         exir_op,
-        tosa_version=conftest.get_option("tosa_version"),
     ).run()
 
 
-def test_sigmoid_tosa_MI_add_2():
-    TosaPipelineMI[input_t1](
+def test_sigmoid_tosa_FP_add_2():
+    TosaPipelineFP[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version=conftest.get_option("tosa_version"),
     ).run()
 
 
-def test_sigmoid_tosa_BI_add_2():
-    TosaPipelineBI[input_t1](
+def test_sigmoid_tosa_INT_add_2():
+    TosaPipelineINT[input_t1](
         SigmoidAdd(),
         (test_data_suite["zeros"](),),
         aten_op,
         exir_op,
-        tosa_version=conftest.get_option("tosa_version"),
     ).run()
 
 
-def test_sigmoid_tosa_MI_add_3():
-    TosaPipelineMI[input_t1](
+def test_sigmoid_tosa_FP_add_3():
+    TosaPipelineFP[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
-        tosa_version=conftest.get_option("tosa_version"),
     ).run()
 
 
-def test_sigmoid_tosa_BI_3():
-    TosaPipelineBI[input_t1](
+def test_sigmoid_tosa_INT_3():
+    TosaPipelineINT[input_t1](
         SigmoidAddSigmoid(),
         (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
         aten_op,
         exir_op,
-        tosa_version=conftest.get_option("tosa_version"),
     ).run()
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sigmoid_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_sigmoid_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
@@ -151,12 +146,110 @@ def test_sigmoid_u55_BI(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sigmoid_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_sigmoid_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
         run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add():
+    pipeline = VgfPipeline[input_t1](
+        AddSigmoid(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add():
+    pipeline = VgfPipeline[input_t1](
+        AddSigmoid(),
+        (test_data_suite["ramp"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add_2():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add_2():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAdd(),
+        (test_data_suite["zeros"](),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_FP_add_3():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_sigmoid_vgf_INT_add_3():
+    pipeline = VgfPipeline[input_t1](
+        SigmoidAddSigmoid(),
+        (test_data_suite["randn_neg"](), test_data_suite["randn_pos"]()),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

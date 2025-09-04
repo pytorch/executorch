@@ -1,5 +1,6 @@
+import dataclasses
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -55,7 +56,21 @@ class ModelArgs:
     eos_count: int = 2
 
     quantization_args: Optional[dict] = None
+    # LoRA for QAT.
     lora_args: Optional[dict] = None
+
+    # LoRA arguments to set up a LoRA inference model.
+    # These arguments come directly from a torchtune adapter_config.json file.
+    r: Optional[int] = None  # Rank.
+    lora_alpha: Optional[int] = None  # Alpha.
+    # Eg. q_proj, k_proj, v_proj, output_proj
+    target_modules: Optional[list] = None
+    peft_type: Optional[str] = None  # PEFT type.
+    base_model_name_or_path: Optional[str] = None  # Base model name or path.
+    kv_io_bit_width: Optional[int] = (
+        None  # KV cache bit width. This is for QNN backend only for now.
+    )
+    attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
         if self.n_kv_heads is None:

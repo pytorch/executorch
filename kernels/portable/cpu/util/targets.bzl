@@ -147,6 +147,9 @@ def define_common_targets():
             "copy_ops_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
+        exported_deps = [
+            ":broadcast_util",
+        ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -347,7 +350,6 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
         )
-
 
         runtime.cxx_library(
             name = "arange_util{}".format(suffix),

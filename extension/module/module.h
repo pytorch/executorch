@@ -195,6 +195,17 @@ class Module {
   }
 
   /**
+   * Unload a specific method from the program.
+   *
+   * @param[in] method_name The name of the method to unload.
+   *
+   * @returns True if the method is unloaded, false if no-op.
+   */
+  inline bool unload_method(const std::string& method_name) {
+    return methods_.erase(method_name);
+  }
+
+  /**
    * Get a method by it's name. Not recommended to use this method directly as
    * an end user. It's exposed to allow for composability of module in apis that
    * operate on method.
@@ -226,6 +237,15 @@ class Module {
   ET_DEPRECATED ET_NODISCARD inline runtime::Error load_forward(
       torch::executor::EventTracer* event_tracer) {
     return load_forward(nullptr, event_tracer);
+  }
+
+  /**
+   * Unload the 'forward' method from the program.
+   *
+   * @returns True if the 'forward' method is unloaded, false if no-op.
+   */
+  inline bool unload_forward() {
+    return unload_method("forward");
   }
 
   /**
@@ -479,6 +499,91 @@ class Module {
   }
 
   /**
+   * Sets all output tensors for a specific method.
+   *
+   * Loads the program and method if needed, and for each output uses
+   * the provided tensor's data buffer as the method's output buffer.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_values A vector of EValues to set as the method outputs.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   * @note Will fail for outputs that are memory-planned or constants.
+   */
+  ET_NODISCARD
+  runtime::Error set_outputs(
+      const std::string& method_name,
+      const std::vector<runtime::EValue>& output_values);
+
+  /**
+   * Sets all output tensors for the "forward" method.
+   *
+   * @param[in] output_values A vector of EValues to set as the method outputs.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   * @note Will fail for outputs that are memory-planned or constants.
+   */
+  ET_NODISCARD
+  inline runtime::Error set_outputs(
+      const std::vector<runtime::EValue>& output_values) {
+    return set_outputs("forward", output_values);
+  }
+
+  /**
+   * Retrieve all current output values of a specific method without executing
+   * it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] method_name The name of the method.
+   *
+   * @returns A Result containing the vector of output values, or an error.
+   */
+  ET_NODISCARD
+  runtime::Result<std::vector<runtime::EValue>> get_outputs(
+      const std::string& method_name);
+
+  /**
+   * Retrieve all current output values of the "forward" method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @returns A Result containing the vector of output values, or an error.
+   */
+  ET_NODISCARD
+  inline runtime::Result<std::vector<runtime::EValue>> get_outputs() {
+    return get_outputs("forward");
+  }
+
+  /**
+   * Retrieve a single current output value of a specific method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_index Zero-based index of the output to retrieve.
+   *
+   * @returns A Result containing the requested output value, or an error.
+   */
+  ET_NODISCARD
+  runtime::Result<runtime::EValue> get_output(
+      const std::string& method_name,
+      size_t output_index = 0);
+
+  /**
+   * Retrieve a single current output value of the "forward" method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] output_index Zero-based index of the output to retrieve.
+   *
+   * @returns A Result containing the requested output value, or an error.
+   */
+  ET_NODISCARD
+  inline runtime::Result<runtime::EValue> get_output(size_t output_index = 0) {
+    return get_output("forward", output_index);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.
@@ -502,7 +607,6 @@ class Module {
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
-    std::vector<runtime::EValue> inputs;
   };
 
   std::string file_path_;

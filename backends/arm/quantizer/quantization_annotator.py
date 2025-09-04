@@ -6,13 +6,14 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Sequence
 
 import torch
 import torch.fx
 import torch.nn.functional as F
+from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_utils import get_node_debug_info
+from torch._subclasses import FakeTensor
 
 from torch.fx import Node
 from torchao.quantization.pt2e.quantizer import (
@@ -24,7 +25,6 @@ from torchao.quantization.pt2e.quantizer import (
 
 from .arm_quantizer_utils import (
     is_annotated,
-    is_ok_for_quantization,
     is_output_annotated,
     mark_node_as_annotated,
 )
@@ -78,9 +78,16 @@ def _is_ok_for_quantization(
     """
     # Check output
     if quant_properties.quant_output is not None:
-        if not is_ok_for_quantization(node, gm):  # type: ignore[attr-defined]
+        if _is_non_float_tensor(node):
             logger.debug(
-                f"Could not quantize node due to output: "
+                "Could not quantize non float tensor for the following output node: "
+                f"{get_node_debug_info(node, gm)}"
+            )
+
+            return False
+        elif _is_large_scalar(node, gm):
+            logger.debug(
+                "Could not quantize large scalar node for the following output node: "
                 f"{get_node_debug_info(node, gm)}"
             )
 
@@ -99,15 +106,75 @@ def _is_ok_for_quantization(
                 raise TypeError(
                     f"n_arg must be a Node instance, got {type(n_arg).__name__!r}"
                 )
-            if not is_ok_for_quantization(n_arg, gm):  # type: ignore[attr-defined]
+
+            if _is_non_float_tensor(n_arg):
                 logger.debug(
-                    f'could not quantize node due to input "{node}": '
-                    f"{get_node_debug_info(node, gm)}"
+                    "Could not quantize non float tensor for the following input "
+                    f"node: {get_node_debug_info(node, gm)}"
+                )
+
+                return False
+            elif _is_large_scalar(n_arg, gm):
+                logger.debug(
+                    "Could not quantize large scalar node for the following input "
+                    f"node: {get_node_debug_info(node, gm)}"
                 )
 
                 return False
 
     return True
+
+
+def _get_node_target(module: torch.nn.Module | torch.fx.GraphModule, target_str: str):
+    targets = target_str.split(".")
+    for target in targets[:-1]:
+        module = module.get_submodule(target)
+    return getattr(module, targets[-1])
+
+
+def _is_large_scalar(node: Node, gm: torch.fx.GraphModule):
+    """Check if input is a large scalar value. So that we can skip quantization for the
+    node since histc op (in HistogramObserver) only works for values up to certain upper
+    bound.
+    """
+    if node.op == "get_attr" and isinstance(node.target, str):
+        tensor = _get_node_target(gm, node.target)
+        # torch.histc works until this upper bound
+        HISTC_UPPER_BOUND = 3.4028235e15
+        return tensor.numel() == 1 and abs(tensor.item()) > HISTC_UPPER_BOUND
+    return False
+
+
+def _is_non_float_tensor(node: Node) -> bool:
+    """Check if the output of a node has a data type other than `torch.float32`.
+
+    If the output is not `torch.float32`, quantization cannot be performed, as
+    observers only work with floating-point tensors.
+
+    Args:
+        node (Node): The node to check the output(s) for.
+
+    Returns:
+        bool: `True` if the data type is not float32, otherwise `False`.
+
+    Note:
+        - If `node.meta["val"]` is a `list`, the function returns `True` if **any**
+          element is **not** an instance of `FakeTensor` or does **not** have
+          `torch.float32` as its data type.
+        - If node.meta["val"] is missing or is not an instance of `FakeTensor`, the
+          function returns True.
+    """
+    if "val" in node.meta and isinstance(node.meta["val"], Sequence):
+        return any(
+            not isinstance(fake_tensor, FakeTensor)
+            or fake_tensor.dtype != torch.float32
+            for fake_tensor in node.meta["val"]
+        )
+
+    if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
+        return True
+
+    return node.meta["val"].dtype != torch.float32
 
 
 def _annotate_input(node: Node, quant_property: _QuantProperty):
@@ -198,6 +265,8 @@ _one_to_one = [
     torch.ops.aten.ceil.default,
     torch.ops.aten.erf.default,
     torch.ops.aten.exp.default,
+    torch.ops.aten.expm1.default,
+    torch.ops.aten.elu.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
@@ -219,6 +288,10 @@ _one_to_one = [
     torch.ops.aten.sign.default,
     torch.ops.aten.asin.default,
     torch.ops.aten.atanh.default,
+    torch.ops.aten.asinh.default,
+    torch.ops.aten.cosh.default,
+    torch.ops.aten.acos.default,
+    torch.ops.aten.cumsum.default,
 ]
 
 _one_to_one_shared_input_qspec = [
@@ -267,6 +340,10 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.unflatten.int,
     torch.ops.aten.index_select.default,
     torch.ops.aten.index.Tensor,
+    # Neg operator flips the range, but keps the magnitude the same.
+    # That is why we force it to use the same qparams and avoid
+    # dequant -> neg -> requant chain.
+    torch.ops.aten.neg.default,
 ]
 
 _one_to_one_shared_input_or_input_act_qspec = [
@@ -396,6 +473,10 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.add_.Tensor,
+        torch.ops.aten.sub.Tensor,
+        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.matmul.default,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
@@ -408,10 +489,6 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
@@ -468,9 +545,6 @@ def get_quant_properties(  # noqa: C901
             )
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
-    elif node.target in (torch.ops.aten.neg.default,):
-        quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
-        quant_properties.quant_output = _QuantProperty(0, input_act_qspec)
     elif node.target in _one_to_one:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)

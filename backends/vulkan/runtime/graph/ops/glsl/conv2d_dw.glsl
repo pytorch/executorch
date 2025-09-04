@@ -30,6 +30,8 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "ngroups", "1")}
+
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
  * output at a single output location.

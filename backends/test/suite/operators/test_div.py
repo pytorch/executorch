@@ -7,11 +7,16 @@
 # pyre-unsafe
 
 
-from typing import Callable, Optional
+from typing import Optional
 
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite import dtype_test, operator_test, OperatorTest
+from executorch.backends.test.suite.operators import (
+    dtype_test,
+    operator_test,
+    OperatorTest,
+)
 
 
 class Model(torch.nn.Module):
@@ -31,7 +36,7 @@ class ModelWithRounding(torch.nn.Module):
 @operator_test
 class Divide(OperatorTest):
     @dtype_test
-    def test_divide_dtype(self, dtype, tester_factory: Callable) -> None:
+    def test_divide_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
             Model(),
             (
@@ -40,10 +45,10 @@ class Divide(OperatorTest):
                     dtype
                 ),  # Adding 0.1 to avoid division by zero
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_divide_f32_bcast_first(self, tester_factory: Callable) -> None:
+    def test_divide_f32_bcast_first(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
             (
@@ -51,10 +56,10 @@ class Divide(OperatorTest):
                 torch.randn(1, 5, 1, 5).abs()
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_divide_f32_bcast_second(self, tester_factory: Callable) -> None:
+    def test_divide_f32_bcast_second(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
             (
@@ -62,10 +67,10 @@ class Divide(OperatorTest):
                 torch.randn(2, 7).abs()
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_divide_f32_bcast_unary(self, tester_factory: Callable) -> None:
+    def test_divide_f32_bcast_unary(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
             (
@@ -73,10 +78,10 @@ class Divide(OperatorTest):
                 torch.randn(1, 1, 5).abs()
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_divide_f32_trunc(self, tester_factory: Callable) -> None:
+    def test_divide_f32_trunc(self, flow: TestFlow) -> None:
         self._test_op(
             ModelWithRounding(rounding_mode="trunc"),
             (
@@ -84,10 +89,10 @@ class Divide(OperatorTest):
                 torch.randn(3, 4).abs()
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_divide_f32_floor(self, tester_factory: Callable) -> None:
+    def test_divide_f32_floor(self, flow: TestFlow) -> None:
         self._test_op(
             ModelWithRounding(rounding_mode="floor"),
             (
@@ -95,5 +100,5 @@ class Divide(OperatorTest):
                 torch.randn(3, 4).abs()
                 + 0.1,  # Using abs and adding 0.1 to avoid division by zero
             ),
-            tester_factory,
+            flow,
         )

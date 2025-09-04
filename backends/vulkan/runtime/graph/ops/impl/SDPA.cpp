@@ -19,9 +19,172 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+void resize_sdpa_out(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  (void)args;
+
+  int arg_idx = 0;
+  const ValueRef q_projected = extra_args[arg_idx++];
+  const ValueRef out = extra_args[arg_idx++];
+  graph->virtual_resize(out, graph->sizes_of(q_projected));
+}
+
+void resize_flash_attention_out(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
+  // Find the output tensor in the args - it's the first tensor in the first
+  // ArgGroup
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef q_projected = args.at(1).refs.at(0);
+  graph->virtual_resize(out, graph->sizes_of(q_projected));
+}
+
+utils::uvec3 flash_attention_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+
+  const ValueRef q_projected = resize_args.at(0);
+  const ValueRef block_size_r = resize_args.at(1);
+
+  // Get tensor dimensions - PyTorch format is [B, N, H, D]
+  // But Vulkan uses negative indexing: -4=B, -3=N, -2=H, -1=D
+  const int32_t B = graph->size_at<int32_t>(-4, q_projected); // batch
+  const int32_t N = graph->size_at<int32_t>(-3, q_projected); // sequence length
+  const int32_t H = graph->size_at<int32_t>(-2, q_projected); // num heads
+  const int32_t Br =
+      static_cast<int32_t>(graph->extract_scalar<int64_t>(block_size_r));
+
+  // Calculate number of row blocks
+  const int32_t Tr = (N + Br - 1) / Br;
+
+  return {static_cast<uint32_t>(B * H * Tr), 1, 1};
+}
+
+void flash_attention_impl(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args) {
+  int arg_idx = 0;
+  const ValueRef q_projected = args[arg_idx++];
+  const ValueRef k_cache = args[arg_idx++];
+  const ValueRef v_cache = args[arg_idx++];
+  const ValueRef input_pos_symint = args[arg_idx++];
+  const ValueRef attn_mask = args[arg_idx++];
+  const ValueRef dropout_p = args[arg_idx++];
+  const ValueRef is_causal = args[arg_idx++];
+  const ValueRef scale = args[arg_idx++];
+
+  const ValueRef out = args[arg_idx++];
+
+  // Extract input_pos value for causal masking
+  const int32_t input_pos_val = graph.read_symint(input_pos_symint);
+
+  const ValueRef k_cache_tensor = k_cache;
+  const ValueRef v_cache_tensor = v_cache;
+
+  // Validation checks - re-enable with correct indexing
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, q_projected) == 1); // batch size = 1
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, k_cache_tensor) == 1);
+  VK_CHECK_COND(graph.size_at<int32_t>(-4, v_cache_tensor) == 1);
+  VK_CHECK_COND(
+      graph.sizes_of(k_cache_tensor) == graph.sizes_of(v_cache_tensor));
+  VK_CHECK_COND(
+      graph.size_at<int32_t>(-1, q_projected) ==
+      graph.size_at<int32_t>(-1, k_cache_tensor)); // head_dim must match
+  VK_CHECK_COND(
+      graph.val_is_none(dropout_p) ||
+      graph.extract_scalar<double>(dropout_p) == 0);
+  VK_CHECK_COND(graph.val_is_none(scale));
+  VK_CHECK_COND(
+      graph.val_is_none(is_causal) || graph.extract_scalar<bool>(is_causal));
+  VK_CHECK_COND(graph.val_is_none(attn_mask));
+
+  if (graph.is_buffer_storage(q_projected)) {
+    VK_CHECK_COND(graph.is_buffer_storage(k_cache_tensor));
+    VK_CHECK_COND(graph.is_buffer_storage(v_cache_tensor));
+    VK_CHECK_COND(graph.is_buffer_storage(out));
+  }
+
+  // Calculate scale factor
+  const int32_t head_dim_size = graph.size_at<int32_t>(-1, q_projected);
+  const float scale_val = 1.0f / std::sqrt(static_cast<float>(head_dim_size));
+
+  // Get number of heads for multi-query attention support
+  const int32_t num_heads = graph.size_at<int32_t>(-2, q_projected);
+  const int32_t num_kv_heads = graph.size_at<int32_t>(-2, k_cache_tensor);
+
+  const int32_t block_size_r = 32; // Row block size
+  const int32_t block_size_c = 32; // Column block size
+
+  // l and m have shape [B, H, N]
+  std::vector<int64_t> lm_sizes = {
+      graph.size_at<int64_t>(-4, q_projected), // B (batch)
+      graph.size_at<int64_t>(-2, q_projected), // H (num heads)
+      graph.size_at<int64_t>(-3, q_projected) // N (sequence length)
+  };
+
+  // t_l stores row-wise normalization sums for softmax computation
+  // t_m stores row-wise maximum values for numerical stability in softmax
+  TmpTensor t_l(&graph, lm_sizes, vkapi::kFloat, graph.storage_type_of(out));
+  TmpTensor t_m(&graph, lm_sizes, vkapi::kFloat, graph.storage_type_of(out));
+
+  // Choose kernel name based on storage type
+  std::string kernel_name = "flash_attention";
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  vkapi::ParamsBindList param_ubos = {
+      graph.sizes_ubo(q_projected), // Q_sizes
+      graph.sizes_ubo(k_cache_tensor), // K_sizes
+      graph.sizes_ubo(v_cache_tensor), // V_sizes
+      graph.sizes_ubo(out), // O_sizes
+      graph.sizes_ubo(t_l), // l_sizes
+      graph.sizes_ubo(t_m), // m_sizes
+      graph.create_params_buffer(scale_val), // scale
+      graph.create_params_buffer(block_size_r), // block_size_r
+      graph.create_params_buffer(block_size_c), // block_size_c
+      graph.create_params_buffer(input_pos_val), // input_pos
+      graph.create_params_buffer(num_heads), // num_heads
+      graph.create_params_buffer(num_kv_heads) // num_kv_heads
+  };
+
+  // Create block size references for dispatch calculation
+  const ValueRef block_size_r_ref =
+      graph.add_scalar<int64_t>(static_cast<int64_t>(block_size_r));
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      flash_attention_global_wg_size,
+      default_pick_local_wg_size,
+      // Inputs and Outputs
+      {
+          {{out, t_l, t_m}, vkapi::kReadWrite},
+          {{q_projected, k_cache_tensor, v_cache_tensor}, vkapi::kRead},
+      },
+      // Shader param buffers
+      param_ubos,
+      // Push Constants
+      {},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {q_projected, block_size_r_ref},
+      // Resizing Logic
+      resize_flash_attention_out));
+}
 
 utils::uvec3 kv_cache_update_global_wg_size(
     ComputeGraph* graph,
@@ -170,7 +333,7 @@ void resize_cache_slice_view_node(
   std::vector<int64_t> slice_sizes = get_cache_slice_sizes(
       *graph, extra_args[0], extra_args[1], extra_args[2]);
 
-  graph->get_tensor(extra_args[3])->virtual_resize(slice_sizes);
+  graph->virtual_resize(extra_args[3], slice_sizes);
 }
 
 void add_cache_slice_view_node(
@@ -185,23 +348,11 @@ void add_cache_slice_view_node(
   // Initialize the slice to the maximum possible size to start
   slice_sizes.at(1) = max_seq_len;
 
-  graph.get_tensor(cache_sliced)->virtual_resize(slice_sizes);
+  graph.virtual_resize(cache_sliced, slice_sizes);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       resize_cache_slice_view_node,
       {cache, input_pos_symint, q_projected, cache_sliced}));
-}
-
-void resize_sdpa_out(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  (void)args;
-
-  int arg_idx = 0;
-  const ValueRef q_projected = extra_args[arg_idx++];
-  const ValueRef out = extra_args[arg_idx++];
-  graph->get_tensor(out)->virtual_resize(graph->sizes_of(q_projected));
 }
 
 void update_cache_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -333,7 +484,7 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   std::vector<int64_t> attn_weight_sizes = attn_weight_full_sizes;
   attn_weight_sizes.at(2) = graph.size_at<int64_t>(2, q_transposed);
   attn_weight_sizes.at(3) = graph.size_at<int64_t>(2, k_transposed);
-  graph.get_tensor(attn_weight)->virtual_resize(attn_weight_sizes);
+  graph.virtual_resize(attn_weight, attn_weight_sizes);
 
   // Calculate attention weight, which is a matmul of Q and K
   const ValueRef mat2_is_transposed = graph.add_scalar<bool>(false);
@@ -346,7 +497,7 @@ void sdpa_impl(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
   TmpTensor attn_weight_softmax(
       &graph, attn_weight_full_sizes, graph.dtype_of(q_transposed));
-  graph.get_tensor(attn_weight_softmax)->virtual_resize(attn_weight_sizes);
+  graph.virtual_resize(attn_weight_softmax, attn_weight_sizes);
   add_softmax_node(graph, attn_weight, width, attn_weight_softmax, false);
 
   // Calculate final output
@@ -409,6 +560,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(sdpa_with_kv_cache.default, sdpa_with_kv_cache_impl);
   VK_REGISTER_OP(update_cache.default, update_cache_impl);
   VK_REGISTER_OP(llama.custom_sdpa.default, sdpa_impl);
+  VK_REGISTER_OP(llama.flash_attention.default, flash_attention_impl);
 }
 
 } // namespace vkcompute

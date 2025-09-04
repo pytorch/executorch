@@ -43,7 +43,7 @@ modules = {"div_basic": Div(), "div_tensor": DivTensor()}
 
 
 @common.parametrize("module", modules)
-def test_decompose_div_tosa_MI(module):
+def test_decompose_div_tosa_FP(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),

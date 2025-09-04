@@ -14,7 +14,7 @@ import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.operators.op_permute import transform_permutation_vector
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa.utils import tosa_shape
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -125,6 +125,9 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.bitwise_and.Scalar,
+        exir_ops.edge.aten.bitwise_or.Scalar,
+        exir_ops.edge.aten.bitwise_xor.Scalar,
         exir_ops.edge.aten.bitwise_not,
         exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_or.default,
@@ -146,6 +149,8 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
+        exir_ops.edge.aten.index.Tensor,  # GATHER
+        exir_ops.edge.aten.index_select.default,  # GATHER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,

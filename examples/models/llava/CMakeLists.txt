@@ -21,7 +21,6 @@ project(llava)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-
 include(CMakeDependentOption)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -78,7 +77,7 @@ find_package(gflags REQUIRED)
 # find `executorch` libraries Same as for gflags
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
-target_link_options_shared_lib(executorch)
+executorch_target_link_options_shared_lib(executorch)
 
 # llava_runner library
 add_subdirectory(runner)
@@ -97,14 +96,14 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     cpublas
     eigen_blas
   )
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  target_link_options_shared_lib(portable_ops_lib)
+  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
@@ -135,19 +134,19 @@ if(TARGET xnnpack_backend)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  target_link_options_shared_lib(qnn_executorch_backend)
+  executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -161,7 +160,7 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  target_link_options_shared_lib(mpsdelegate)
+  executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
 if(TARGET coremldelegate)
@@ -175,7 +174,7 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib

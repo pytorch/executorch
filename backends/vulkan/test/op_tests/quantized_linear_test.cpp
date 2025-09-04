@@ -456,7 +456,6 @@ void test_vulkan_linear_qga4w_impl(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model
@@ -551,7 +550,6 @@ void test_vulkan_linear_qcs4w_impl(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model
@@ -685,7 +683,6 @@ void test_vulkan_linear_qta8a_qga4w_impl(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model

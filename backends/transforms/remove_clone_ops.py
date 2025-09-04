@@ -6,56 +6,78 @@
 
 # pyre-strict
 
+from typing import Set
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-
-
-def remove_clone_ops(graph: torch.fx.Graph) -> torch.fx.Graph:
-    """
-    Remove clone op nodes that have the same dim_order as their input, and replace their uses with the input node.
-    """
-    for node in graph.nodes:
-        if node.op != "call_function":
-            continue
-
-        if is_unchanged_clone(node) or is_unchanged_dim_order_clone(node):
-            with graph.inserting_after(node):
-                node.replace_all_uses_with(node.args[0])
-
-    graph.eliminate_dead_code()
-    return graph
-
-
-def is_unchanged_clone(node: torch.fx.Node) -> bool:
-    """Determine if aten.clone has unchanged memory format."""
-    if node.target != exir_ops.edge.aten.clone.default:
-        return False
-
-    memory_format = node.kwargs.get("memory_format")
-    if memory_format in (None, torch.preserve_format):
-        return True
-
-    input_meta = node.args[0].meta
-    return "val" in input_meta and input_meta["val"].is_contiguous(
-        memory_format=memory_format
-    )
-
-
-def is_unchanged_dim_order_clone(node: torch.fx.Node) -> bool:
-    """Determine if _clone_dim_order has unchanged dim order."""
-    if node.target != exir_ops.edge.dim_order_ops._clone_dim_order.default:
-        return False
-
-    input_meta = node.args[0].meta
-    return (
-        "val" in node.meta
-        and "val" in input_meta
-        and node.meta["val"].dim_order() == input_meta["val"].dim_order()
-    )
+from executorch.exir.passes import dead_code_elimination_pass
+from executorch.exir.passes.remove_noop_pass import _DEQUANT_OPS, eliminate_dq_q
 
 
 class RemoveCloneOpsTransform(ExportPass):
+    """
+    Trim the 'identity' operators to reduce the unnecessary copy overhead.
+    """
+
+    clone_ops: Set[torch._ops.OpOverload] = {
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def _remove(self, graph_module: torch.fx.GraphModule) -> None:
+        dequant_nodes = []
+
+        for n in graph_module.graph.nodes:
+            if n.target not in self.clone_ops:
+                continue
+
+            # Skip removal of clone ops that modify layout/dim order.
+            if self.aten_clone_is_non_identity(
+                n
+            ) or self._clone_dim_order_is_non_identity(n):
+                continue
+
+            to_be_removed = n
+            for user_n in list(n.users.keys()):
+                user_n.replace_input_with(n, n.args[0])
+            if n.args[0].target in _DEQUANT_OPS:
+                dequant_nodes += [n.args[0]]
+            graph_module.graph.erase_node(to_be_removed)
+
+        eliminate_dq_q(graph_module, dequant_nodes)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        graph_module.graph = remove_clone_ops(graph_module.graph)
+        self._remove(graph_module)
+        graph_module.recompile()
+        dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
+
+    def aten_clone_is_non_identity(self, node: torch.fx.Node) -> bool:
+        """Return True if aten.clone has modified memory format."""
+        if node.target != exir_ops.edge.aten.clone.default:
+            return False
+
+        memory_format = node.kwargs.get("memory_format")
+        if memory_format in (None, torch.preserve_format):
+            return False
+
+        input_meta = node.args[0].meta
+        return "val" in input_meta and not input_meta["val"].is_contiguous(
+            memory_format=memory_format
+        )
+
+    def _clone_dim_order_is_non_identity(self, node: torch.fx.Node) -> bool:
+        """Return True if _clone_dim_order has modified dim order."""
+        if node.target != exir_ops.edge.dim_order_ops._clone_dim_order.default:
+            return False
+
+        input_meta = node.args[0].meta
+        return (
+            "val" in node.meta
+            and "val" in input_meta
+            and node.meta["val"].dim_order() != input_meta["val"].dim_order()
+        )

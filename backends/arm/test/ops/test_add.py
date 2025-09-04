@@ -7,18 +7,19 @@
 
 from typing import Tuple
 
+import pytest
 import torch
-from executorch.backends.arm.arm_backend import get_tosa_spec
 from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -58,12 +59,16 @@ class Add2(torch.nn.Module):
         "4d_randn_1": lambda: (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
         "4d_randn_2": lambda: (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4)),
         "4d_randn_big": lambda: (
-            10000 * torch.randn(1, 1, 4, 4),
+            (1 << 30) * torch.randn(1, 1, 4, 4),
             torch.randn(1, 1, 4, 1),
         ),
         "4d_randn_1_mutltiple_broadcasts": lambda: (
             torch.randn(1, 4, 4, 1),
             torch.ones(1, 1, 4, 4),
+        ),
+        "4d_big_small": lambda: (
+            (10e10) * torch.randn(1, 10, 20, 30),
+            torch.randn(1, 10, 20, 30),
         ),
     }
 
@@ -80,23 +85,22 @@ class Add3(torch.nn.Module):
 
 
 @common.parametrize("test_data", Add.test_data)
-def test_add_tensor_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](Add(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](Add(), test_data(), aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add.test_data)
-def test_add_tensor_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Add(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](Add(), test_data(), aten_op, exir_op, qtol=0)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add.test_data)
-def test_add_tensor_tosa_BI_i32(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Add(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_INT_i32(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](Add(), test_data(), aten_op, exir_op)
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
-        "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
         "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
     }
     # Create a  quantizer with int8 quantization on the input and output but int32 on everything else.
@@ -113,9 +117,16 @@ def test_add_tensor_tosa_BI_i32(test_data: input_t1):
         quant_max=2**31 - 1,
         quant_min=-(2**31),
     )
+    output_act_qspec = QuantizationSpec(
+        torch.int32,
+        observer,
+        qscheme=torch.per_tensor_symmetric,
+        quant_max=2**31 - 1,
+        quant_min=-(2**31),
+    )
     # This quantization_config will be set as global config.
     quantization_config = arm_quantizer.QuantizationConfig(
-        input_act_qspec, None, None, None
+        input_act_qspec, output_act_qspec, None, None
     )
     quantize_stage = Quantize(quantizer, quantization_config)
     pipeline.change_args("quantize", quantize_stage)
@@ -129,8 +140,8 @@ def test_add_tensor_tosa_BI_i32(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone300
-def test_add_tensor_u55_BI(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_add_tensor_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
         Add(), test_data(), aten_op, exir_op, run_on_fvp=True
     )
     pipeline.run()
@@ -138,41 +149,41 @@ def test_add_tensor_u55_BI(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
-def test_add_tensor_u85_BI(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_add_tensor_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
         Add(), test_data(), aten_op, exir_op, run_on_fvp=True
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
-def test_add_tensor_tosa_MI_2(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](Add2(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_FP_2(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](Add2(), test_data(), aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add3.test_data)
-def test_add_tensor_tosa_MI_3(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](Add3(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_FP_3(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](Add3(), test_data(), aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add3.test_data)
-def test_add_tensor_tosa_BI_3(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](Add3(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_INT_3(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](Add3(), test_data(), aten_op, exir_op, qtol=0)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
-def test_add_tensor_tosa_BI_2(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](Add2(), test_data(), aten_op, exir_op)
+def test_add_tensor_tosa_INT_2(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](Add2(), test_data(), aten_op, exir_op, qtol=0)
     pipeline.run()
 
 
 @common.parametrize("test_data", Add2.test_data)
 @common.XfailIfNoCorstone300
-def test_add_tensor_u55_BI_2(test_data: input_t2):
-    pipeline = EthosU55PipelineBI[input_t2](
+def test_add_tensor_u55_INT_2(test_data: input_t2):
+    pipeline = EthosU55PipelineINT[input_t2](
         Add2(), test_data(), aten_op, exir_op, run_on_fvp=True
     )
     pipeline.run()
@@ -180,23 +191,36 @@ def test_add_tensor_u55_BI_2(test_data: input_t2):
 
 @common.parametrize("test_data", Add2.test_data)
 @common.XfailIfNoCorstone320
-def test_add_tensor_u85_BI_2(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_add_tensor_u85_INT_2(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         Add2(), test_data(), aten_op, exir_op, run_on_fvp=True
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+# TODO/MLETORCH-1282: remove once inputs are not hard coded to ones
+skip_keys = {"5d_float", "1d_ones", "1d_randn"}
+filtered_test_data = {k: v for k, v in Add.test_data.items() if k not in skip_keys}
+
+
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Add(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+        run_on_vulkan_runtime=True,
     )
-    pipeline.run()
+    try:
+        pipeline.run()
+    except FileNotFoundError as e:
+        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
 
 
-@common.parametrize("test_data", Add.test_data)
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -205,5 +229,9 @@ def test_add_tensor_vgf_INT(test_data: input_t1):
         aten_op,
         exir_op,
         tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
     )
-    pipeline.run()
+    try:
+        pipeline.run()
+    except FileNotFoundError as e:
+        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")

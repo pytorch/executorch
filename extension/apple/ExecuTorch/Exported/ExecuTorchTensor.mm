@@ -265,9 +265,15 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   auto const count = _tensor->numel();
   os << "\n  count: " << count << ",";
   os << "\n  scalars: [";
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in description");
+    }
+  } ctx;
   ET_SWITCH_REALHBBF16_TYPES(
     static_cast<ScalarType>(_tensor->scalar_type()),
-    nullptr,
+    ctx,
     "description",
     CTYPE,
     [&] {
@@ -488,9 +494,15 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
                "Number of scalars does not match the shape");
   std::vector<uint8_t> data;
   data.resize(count * ExecuTorchSizeOfDataType(dataType));
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in initWithScalars");
+    }
+  } ctx;
   for (NSUInteger index = 0; index < count; ++index) {
     ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
-      static_cast<ScalarType>(dataType), nil, "initWithScalars", CTYPE, [&] {
+      static_cast<ScalarType>(dataType), ctx, "initWithScalars", CTYPE, [&] {
         reinterpret_cast<CTYPE *>(data.data())[index] = utils::toType<CTYPE>(scalars[index]);
       }
     );
@@ -801,8 +813,14 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
                            dataType:(ExecuTorchDataType)dataType
                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism {
   Scalar fillValue;
+  // Create a minimal context for error handling in ET_SWITCH
+  struct {
+    [[noreturn]] void fail(torch::executor::Error /* error */) {
+      ET_CHECK_MSG(false, "Unsupported dtype in fullTensor");
+    }
+  } ctx;
   ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
-    static_cast<ScalarType>(dataType), nil, "fullTensor", CTYPE, [&] {
+    static_cast<ScalarType>(dataType), ctx, "fullTensor", CTYPE, [&] {
       fillValue = utils::toType<CTYPE>(scalar);
     }
   );

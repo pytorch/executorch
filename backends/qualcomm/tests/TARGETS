@@ -37,3 +37,13 @@ python_library(
         "//executorch/backends/qualcomm/debugger:utils",
     ],
 )
+
+python_library(
+    name = "tester",
+    srcs = [
+        "tester.py",
+    ],
+    deps = [
+        ":test_qnn_delegate"
+    ]
+)

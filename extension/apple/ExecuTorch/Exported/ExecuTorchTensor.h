@@ -91,6 +91,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
  */
  NS_SWIFT_NAME(AnyTensor)
 __attribute__((deprecated("This API is experimental.")))
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchTensor : NSObject<NSCopying>
 
 /**

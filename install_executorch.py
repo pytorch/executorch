@@ -50,6 +50,10 @@ def clean():
     print("Cleaning buck-out/...")
     shutil.rmtree("buck-out/", ignore_errors=True)
 
+    # Removes all buck cached state and metadata
+    print("Cleaning buck cached state and metadata ...")
+    shutil.rmtree(os.path.expanduser("~/.buck/buckd"), ignore_errors=True)
+
     # Clean ccache if available
     try:
         result = subprocess.run(["ccache", "--version"], capture_output=True, text=True)
@@ -189,14 +193,6 @@ def main(args):
     if args.clean:
         clean()
         return
-
-    cmake_args = [os.getenv("CMAKE_ARGS", "")]
-    # Use ClangCL on Windows.
-    # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
-    # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
-    if os.name == "nt":
-        cmake_args.append("-T ClangCL")
-    os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
 
     check_and_update_submodules()
     # This option is used in CI to make sure that PyTorch build from the pinned commit

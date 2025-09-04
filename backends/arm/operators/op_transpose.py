@@ -18,59 +18,20 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-
-
-@register_node_visitor
-class TransposeVisitor_0_80(NodeVisitor):
-    """
-    This node visitor targets the _transpose op defined in the
-    passthrough_to_tosa library. Used when switching between tosa_dim_orders.
-    Inserts a TOSA TRANSPOSE.
-    """
-
-    target = "_transpose.default"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
-        )
-
-        output_rank = len(output.shape)
-        perms = [dim % output_rank for dim in inputs[1].special]
-        attr = ts.TosaSerializerAttribute()
-        attr.TransposeAttribute(perms)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
-        )
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
 class TransposeVisitor(NodeVisitor):
     """
-    This node visitor targets the _transpose op defined in the
-    passthrough_to_tosa library. Used when switching between tosa_dim_orders.
+    This node visitor targets the tosa::TRANSPOSE op defined in the
+    TOSA backend dialect. Used when switching between tosa_dim_orders.
     Inserts a TOSA TRANSPOSE.
     """
 
-    target = "_transpose.default"
+    target = "tosa.TRANSPOSE.default"
 
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,
@@ -86,7 +47,14 @@ class TransposeVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [
+                ts.DType.INT8,
+                ts.DType.INT16,
+                ts.DType.INT32,
+                ts.DType.FP32,
+                ts.DType.BOOL,
+                ts.DType.FP16,
+            ],
             output.tosa_spec,
         )
 
@@ -94,6 +62,11 @@ class TransposeVisitor(NodeVisitor):
         perms = [dim % output_rank for dim in inputs[1].special]
         attr = ts.TosaSerializerAttribute()
         attr.TransposeAttribute(perms)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().TRANSPOSE,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )

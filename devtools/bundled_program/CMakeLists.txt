@@ -20,7 +20,10 @@ foreach(schema_file ${_schema_files})
   )
 endforeach()
 
-file(MAKE_DIRECTORY ${DEVTOOLS_INCLUDE_DIR}/executorch/devtools/bundled_program)
+file(
+  MAKE_DIRECTORY
+  ${DEVTOOLS_INCLUDE_DIR_NO_BUILD_INTERFACE}/executorch/devtools/bundled_program
+)
 add_custom_command(
   OUTPUT ${_schema_outputs}
   COMMAND
@@ -39,12 +42,15 @@ add_library(
 )
 target_link_libraries(bundled_program PUBLIC executorch)
 target_include_directories(
-  bundled_program PUBLIC ${DEVTOOLS_INCLUDE_DIR}
-                         ${PROJECT_SOURCE_DIR}/third-party/flatbuffers/include
+  bundled_program
+  PUBLIC
+    ${DEVTOOLS_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third-party/flatbuffers/include>
 )
 
 install(
   TARGETS bundled_program
+  EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories}

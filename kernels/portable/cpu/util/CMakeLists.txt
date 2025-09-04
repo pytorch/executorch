@@ -32,3 +32,9 @@ target_compile_definitions(
   kernels_util_all_deps PUBLIC C10_USING_CUSTOM_GENERATED_MACROS
 )
 target_compile_options(kernels_util_all_deps PUBLIC ${_common_compile_options})
+
+install(
+  TARGETS kernels_util_all_deps
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)

@@ -7,13 +7,18 @@
 # TODO: reenable pyre after fixing the issues
 # pyre-ignore-all-errors
 
+import math
 from typing import List, Optional, Tuple
 
+import scipy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from executorch.examples.models.llama.model_args import ModelArgs
-from executorch.examples.models.llama.rope import precompute_freqs_cis
+from executorch.examples.models.llama.rope import (
+    hf_precompute_freqs_cis,
+    precompute_freqs_cis,
+)
 
 
 def apply_rotary_emb_single(
@@ -34,9 +39,28 @@ def apply_rotary_emb_single(
     return x_out
 
 
+def apply_partial_rotary_emb_single(
+    x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
+) -> torch.Tensor:
+
+    if x.dim() == 4:
+        freqs_cos = freqs_cos[None, :, None, :]
+        freqs_sin = freqs_sin[None, :, None, :]
+
+    rotary_dim = freqs_cos.shape[-1] * 2
+
+    x_rot, x_pass = x[..., :rotary_dim], x[..., rotary_dim:]
+    x_r, x_i = x_rot[..., : x_rot.shape[-1] // 2], x_rot[..., x_rot.shape[-1] // 2 :]
+    x_out_r = x_r * freqs_cos - x_i * freqs_sin
+    x_out_i = x_r * freqs_sin + x_i * freqs_cos
+    x_rotated = torch.cat([x_out_r, x_out_i], dim=-1)
+    return torch.cat([x_rotated, x_pass], dim=-1)
+
+
 class LlamaAttention(nn.Module):
     def __init__(self, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
+        self.config = config
         self.dim = config.dim
         self.n_heads = config.n_heads
         self.head_dim = config.head_dim
@@ -44,32 +68,85 @@ class LlamaAttention(nn.Module):
         self.num_key_value_groups = config.n_heads // self.n_kv_heads
         self.max_seq_len = config.max_seq_len
         self.output_new_cache_only = output_new_cache_only
+        self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
+        self.use_qk_norm = config.use_qk_norm
+        self.qk_norm_before_rope = config.qk_norm_before_rope
 
-        self.wq = nn.Linear(self.dim, self.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(self.dim, self.n_kv_heads * self.head_dim, bias=False)
+        if self.use_qk_norm:
+            q_norm_dim = self.head_dim
+            k_norm_dim = self.head_dim
+            self.q_norm_fn = torch.nn.RMSNorm(q_norm_dim, eps=config.norm_eps)
+            self.k_norm_fn = torch.nn.RMSNorm(k_norm_dim, eps=config.norm_eps)
+
+        if config.partial_rotary_factor < 1:
+            self.apply_rope_emb = apply_partial_rotary_emb_single
+        else:
+            self.apply_rope_emb = apply_rotary_emb_single
+
+        self.wq = nn.Linear(
+            self.dim,
+            self.n_heads * self.head_dim,
+            bias=getattr(config, "attention_qkv_bias", False),
+        )
+        self.wk = nn.Linear(
+            self.dim,
+            self.n_kv_heads * self.head_dim,
+            bias=getattr(config, "attention_qkv_bias", False),
+        )
+        self.wv = nn.Linear(
+            self.dim,
+            self.n_kv_heads * self.head_dim,
+            bias=getattr(config, "attention_qkv_bias", False),
+        )
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
 
         self.attn_softmax = torch.nn.Softmax(dim=-1)
 
         self.scale = float(self.head_dim) ** 0.5
 
+        if getattr(config, "enable_r3", False):
+            self.register_buffer(
+                "r3_weight",
+                torch.tensor(
+                    scipy.linalg.hadamard(self.head_dim, dtype=float)
+                    / math.sqrt(self.head_dim),
+                    dtype=torch.float32,
+                    device="cpu",
+                ),
+                persistent=False,
+            )
+
     def prepare_sha(self):
         self.wq_sha = nn.ModuleList(
             [
-                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
+                nn.Conv2d(
+                    self.dim,
+                    self.head_dim,
+                    1,
+                    bias=getattr(self.config, "attention_qkv_bias", False),
+                )
                 for _ in range(self.n_heads)
             ]
         )
         self.wk_sha = nn.ModuleList(
             [
-                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
+                nn.Conv2d(
+                    self.dim,
+                    self.head_dim,
+                    1,
+                    bias=getattr(self.config, "attention_qkv_bias", False),
+                )
                 for _ in range(self.n_kv_heads)
             ]
         )
         self.wv_sha = nn.ModuleList(
             [
-                nn.Conv2d(self.dim, self.head_dim, 1, bias=False)
+                nn.Conv2d(
+                    self.dim,
+                    self.head_dim,
+                    1,
+                    bias=getattr(self.config, "attention_qkv_bias", False),
+                )
                 for _ in range(self.n_kv_heads)
             ]
         )
@@ -83,20 +160,32 @@ class LlamaAttention(nn.Module):
                     i * self.head_dim : (i + 1) * self.head_dim, :, None, None
                 ]
             )
+            if self.wq_sha[i].bias is not None:
+                self.wq_sha[i].bias.data.copy_(
+                    self.wq.bias[i * self.head_dim : (i + 1) * self.head_dim]
+                )
         for i in range(self.n_kv_heads):
             self.wk_sha[i].weight.data.copy_(
                 self.wk.weight[
                     i * self.head_dim : (i + 1) * self.head_dim, :, None, None
                 ]
             )
+            if self.wk_sha[i].bias is not None:
+                self.wk_sha[i].bias.data.copy_(
+                    self.wk.bias[i * self.head_dim : (i + 1) * self.head_dim]
+                )
             self.wv_sha[i].weight.data.copy_(
                 self.wv.weight[
                     i * self.head_dim : (i + 1) * self.head_dim, :, None, None
                 ]
             )
+            if self.wv_sha[i].bias is not None:
+                self.wv_sha[i].bias.data.copy_(
+                    self.wv.bias[i * self.head_dim : (i + 1) * self.head_dim]
+                )
         self.wo_sha.weight.data.copy_(self.wo.weight[:, :, None, None])
 
-    def forward_sha(
+    def forward_sha(  # noqa: C901
         self,
         hidden_states: torch.Tensor,
         freqs_cos: torch.Tensor,
@@ -129,10 +218,25 @@ class LlamaAttention(nn.Module):
             .reshape(bsz, seq_len, self.head_dim)
             for wv_sha in self.wv_sha
         ]
+
         for i in range(len(q)):
-            q[i] = apply_rotary_emb_single(q[i], freqs_cos, freqs_sin)
+            if self.use_qk_norm and self.qk_norm_before_rope:
+                q[i] = self.q_norm_fn(q[i])
+            q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
+            if self.use_qk_norm and not self.qk_norm_before_rope:
+                q[i] = self.q_norm_fn(q[i])
+            if getattr(self.config, "enable_r3", False):
+                q[i] = torch.matmul(q[i], self.r3_weight)
+
         for i in range(len(k)):
-            k[i] = apply_rotary_emb_single(k[i], freqs_cos, freqs_sin).transpose(1, 2)
+            if self.use_qk_norm and self.qk_norm_before_rope:
+                k[i] = self.k_norm_fn(k[i])
+            k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
+            if self.use_qk_norm and not self.qk_norm_before_rope:
+                k[i] = self.k_norm_fn(k[i])
+            if getattr(self.config, "enable_r3", False):
+                k[i] = torch.matmul(k[i], self.r3_weight)
+            k[i] = k[i].transpose(1, 2)
 
         output_y = []
         kh, vh = [], []
@@ -149,7 +253,13 @@ class LlamaAttention(nn.Module):
         for i, _ in enumerate(q):
             cache_idx = i // self.num_key_value_groups
             attn = q[i] @ kh[cache_idx]
-            attn = attn / self.scale + atten_mask
+            attn = attn / self.scale
+            if self.enable_masked_softmax:
+                attn_min = torch.amin(attn, dim=-1, keepdim=True)
+                minus_value = -20
+                attn = torch.where(atten_mask == 0, attn, attn_min + minus_value)
+            else:
+                attn = attn + atten_mask
             attn = self.attn_softmax(attn)
             y = attn @ vh[cache_idx]
 
@@ -183,8 +293,16 @@ class LlamaAttention(nn.Module):
         k = k.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
         v = v.view(bsz, seq_len, self.n_kv_heads, self.head_dim)
 
-        q = apply_rotary_emb_single(q, freqs_cos, freqs_sin)
-        k = apply_rotary_emb_single(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+        if self.use_qk_norm and self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
+
+        q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
+        k = self.apply_rope_emb(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+
+        if self.use_qk_norm and not self.qk_norm_before_rope:
+            q = self.q_norm_fn(q)
+            k = self.k_norm_fn(k)
 
         output_kh, output_vh, output_y = [], [], []
         kh, vh = [], []
@@ -275,7 +393,8 @@ class LlamaDecoderLayer(nn.Module):
         super().__init__()
         self.dim = config.dim
         self.attention = LlamaAttention(
-            config=config, output_new_cache_only=output_new_cache_only
+            config=config,
+            output_new_cache_only=output_new_cache_only,
         )
         self.feed_forward = FeedForward(config)
         self.attention_norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
@@ -327,6 +446,7 @@ class LlamaModel(nn.Module):
         self.output_new_cache_only = output_new_cache_only
         self.use_i64_token = use_i64_token
         self.output_cache = output_cache
+        self.kv_io_bit_width = config.kv_io_bit_width
 
         self.layers = nn.ModuleList(
             [
@@ -337,13 +457,23 @@ class LlamaModel(nn.Module):
         self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
         self.tok_embeddings = nn.Embedding(config.vocab_size, config.dim)
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            config.head_dim,
-            config.max_seq_len,
-            config.rope_freq_base,
-            config.use_scaled_rope,
-            config.rope_scale_factor,
-        )
+        if config.use_hf_rope:
+            freqs_cos, freqs_sin = hf_precompute_freqs_cis(
+                config.head_dim,
+                config.max_seq_len,
+                config.rope_freq_base,
+                config.partial_rotary_factor,
+            )
+            freqs_cos = freqs_cos[:, : freqs_cos.shape[-1] // 2]
+            freqs_sin = freqs_sin[:, : freqs_sin.shape[-1] // 2]
+        else:
+            freqs_cos, freqs_sin = precompute_freqs_cis(
+                config.head_dim,
+                config.max_seq_len,
+                config.rope_freq_base,
+                config.use_scaled_rope,
+                config.rope_scale_factor,
+            )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
@@ -480,4 +610,5 @@ class LlamaModel(nn.Module):
             "get_n_layers": self.n_layers,
             "get_vocab_size": self.vocab_size,
             "get_use_kv_cache": self.use_kv_cache,
+            "get_kv_io_bit_width": self.kv_io_bit_width,
         }

@@ -5,8 +5,8 @@
 
 import torch
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from torch.fx import Node
 from torch.nn import Parameter
@@ -20,11 +20,12 @@ def _has_supported_memory_format(node: Node) -> bool:
 
 
 class CloneConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         return _has_supported_memory_format(node)
 

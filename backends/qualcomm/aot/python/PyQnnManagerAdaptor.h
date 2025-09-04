@@ -132,16 +132,6 @@ class PyQnnManager {
     return qnn_manager_->GetSpillFillBufferSize();
   }
 
-  QnnExecuTorchContextBinary MakeQcirCustomBinaryInfo(
-      const QnnExecuTorchContextBinary& ctx_bin,
-      const std::vector<uint8_t>& tensor_data) {
-    custom_qcir_protocol_buffer_ =
-        QnnQcirCustomProtocol(ctx_bin.nbytes, tensor_data.size());
-    custom_qcir_protocol_buffer_.BuildQcirCustomBuffer(ctx_bin, tensor_data);
-    auto [ptr, size] = custom_qcir_protocol_buffer_.GetCustomProtocolBuffer();
-    return {ptr, size};
-  }
-
   py::array_t<char> MakeBinaryInfo(const py::bytes& ctx_bin) {
     py::buffer_info info(py::buffer(ctx_bin).request());
     QnnExecuTorchContextBinary binary(
@@ -171,22 +161,10 @@ class PyQnnManager {
       buf_size = ctx_size;
       buf_ptr = ctx_bin;
     } else {
-      // check if it's a qcir flatbuffers, return fbs if matched
-      auto
-          [status,
-           qcir_fbs_size,
-           qcir_tensor_size,
-           qcir_fbs_ptr,
-           qcir_tensor_ptr] =
-              QnnQcirCustomProtocol().DeserializeQcirCustomBuffer(info.ptr);
-      if (status == Error::Ok) {
-        buf_size = qcir_fbs_size;
-        buf_ptr = qcir_fbs_ptr;
-      } else {
-        // the format should be DLC, return nothing here
-        return py::array_t<char>(0);
-      }
+      // the format should be DLC, return nothing here
+      return py::array_t<char>(0);
     }
+
     auto result = py::array_t<char>(buf_size);
     auto result_buffer = result.request();
     std::memcpy(result_buffer.ptr, buf_ptr, buf_size);
@@ -199,7 +177,6 @@ class PyQnnManager {
   const py::bytes qnn_executorch_option_ptr_;
   QnnExecuTorchContextBinary qnn_executorch_context_binary_;
   std::shared_ptr<QnnManager> qnn_manager_;
-  QnnQcirCustomProtocol custom_qcir_protocol_buffer_;
   QnnContextCustomProtocol custom_context_custom_buffer_;
   flatbuffers::FlatBufferBuilder builder_;
 };

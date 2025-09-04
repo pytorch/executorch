@@ -49,6 +49,15 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   set(VULKAN_SHADERGEN_ENV "")
   set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/vulkan_compute_shaders)
 
+  set(GEN_SPV_ARGS "--optimize")
+  if(DEFINED ENV{ETVK_USING_SWIFTSHADER})
+    if("$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "1"
+       OR "$ENV{ETVK_USING_SWIFTSHADER}" STREQUAL "True"
+    )
+      list(APPEND GEN_SPV_ARGS "--replace-u16vecn")
+    endif()
+  endif()
+
   add_custom_command(
     COMMENT "Generating Vulkan Compute Shaders"
     OUTPUT ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp
@@ -58,7 +67,7 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
       ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
       --glslc-path=${GLSLC_PATH}
       --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}/shader_cache/ --env
-      ${VULKAN_GEN_ARG_ENV} --optimize
+      ${VULKAN_GEN_ARG_ENV} ${GEN_SPV_ARGS}
     DEPENDS ${shaders_path}/*
             ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py
   )
@@ -81,7 +90,7 @@ function(vulkan_shader_lib library_name generated_spv_cpp)
   target_link_libraries(${library_name} vulkan_backend)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
-  target_link_options_shared_lib(${library_name})
+  executorch_target_link_options_shared_lib(${library_name})
 endfunction()
 
 # Convenience macro to generate a SPIR-V shader library target. Given the path
@@ -105,7 +114,7 @@ macro(vulkan_shader_library shaders_path library_name)
   target_link_libraries(${library_name} vulkan_backend)
   target_compile_options(${library_name} PRIVATE ${VULKAN_CXX_FLAGS})
   # Link this library with --whole-archive due to dynamic shader registrations
-  target_link_options_shared_lib(${library_name})
+  executorch_target_link_options_shared_lib(${library_name})
 
   unset(VULKAN_SHADERGEN_ENV)
   unset(VULKAN_SHADERGEN_OUT_PATH)

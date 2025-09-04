@@ -285,7 +285,7 @@ Error inference(
 std::unique_ptr<Tokenizer> load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
   if (FLAGS_tokenizer_type == "bpe") {
-    tokenizer = std::make_unique<BPETokenizer>();
+    tokenizer = std::make_unique<Llama2cTokenizer>();
   } else if (FLAGS_tokenizer_type == "tiktoken") {
     tokenizer = example::get_tiktoken_for_llama();
   }

@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
@@ -19,44 +20,42 @@ void resize_full_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
   std::vector<int64_t> out_sizes;
-  if (graph->val_is_tensor(extra_args[0])) {
-    out_sizes = graph->get_tensor(extra_args[0])->sizes();
+  if (graph->val_is_tensor(extra_args.at(0))) {
+    out_sizes = graph->sizes_of(extra_args.at(0));
   } else {
-    out_sizes = *graph->get_int_list(extra_args[0]);
+    out_sizes = *graph->get_int_list(extra_args.at(0));
   }
 
-  out->virtual_resize(out_sizes);
+  graph->virtual_resize(out, out_sizes);
 }
 
-// size_or_in is IntListPtr when op is full and vTensorPtr if op is full_like
 void add_full_node(
     ComputeGraph& graph,
     const ValueRef size_or_in,
     const ValueRef fill_value,
     const ValueRef out) {
   float fill_value_val = graph.extract_scalar<float>(fill_value);
-  vTensorPtr t_out = graph.get_tensor(out);
 
   std::string kernel_name("full");
   kernel_name.reserve(kShaderNameReserve);
 
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}},
       // Shader params buffers
-      {t_out->sizes_ubo(), graph.create_params_buffer(fill_value_val)},
+      {graph.sizes_ubo(out), graph.create_params_buffer(fill_value_val)},
       // Push Constants
       {},
       // Specialization Constants
-      {SV(t_out->packed_dim())},
+      {graph.packed_dim_of(out)},
       // Resize Args
       {size_or_in},
       // Resizing Logic

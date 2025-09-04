@@ -20,6 +20,7 @@ namespace example {
  * @class TokenGenerator
  * @brief Class for generating the token using decoder and key-value manager.
  */
+template <typename T>
 class TokenGenerator {
  public:
   struct Metadata {
@@ -33,7 +34,7 @@ class TokenGenerator {
   TokenGenerator(
       tokenizers::Tokenizer* tokenizer,
       DecoderRunner* decoder_runner,
-      KVManager* kv_manager,
+      KVManager<T>* kv_manager,
       const std::string& method_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
@@ -51,6 +52,13 @@ class TokenGenerator {
       executorch::runtime::Result<executorch::runtime::MethodMeta> method_meta);
 
   /**
+   * @brief Get the all logits generated
+   *
+   * @return std::vector<uint16_t>& all the logits generated
+   */
+  virtual const std::vector<uint16_t>& get_all_logits();
+
+  /**
      * @brief Generate tokens.
      * @param tokens Vector of input tokens.
      * @param start_pos Starting position for generation.
@@ -62,7 +70,8 @@ class TokenGenerator {
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
-      std::function<void(const std::string&)> token_callback);
+      std::function<void(const std::string&)> token_callback,
+      bool dump_logits);
   inline const size_t total_token_generator_io_size_in_bytes() const {
     return input_toks_.size + input_pos_.size + attention_mask_.size +
         logits_.size;
@@ -71,7 +80,7 @@ class TokenGenerator {
  protected:
   tokenizers::Tokenizer* tokenizer_;
   DecoderRunner* decoder_runner_;
-  KVManager* kv_manager_;
+  KVManager<T>* kv_manager_;
   std::string method_name_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
 
@@ -108,5 +117,8 @@ class TokenGenerator {
 
   // metadata
   Metadata metadata_;
+
+  // Unused by default, only used when dump_logits_path is provided.
+  std::vector<uint16_t> token_all_logits_;
 };
 } // namespace example

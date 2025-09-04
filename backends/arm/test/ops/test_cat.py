@@ -12,10 +12,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -70,8 +71,8 @@ class Cat(torch.nn.Module):
 
 
 @common.parametrize("test_data", Cat.test_parameters)
-def test_cat_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
+def test_cat_tosa_FP(test_data: Tuple):
+    pipeline = TosaPipelineFP[input_t1](
         Cat(),
         test_data(),
         aten_op,
@@ -80,11 +81,11 @@ def test_cat_tosa_MI(test_data: Tuple):
     pipeline.run()
 
 
-def test_cat_tosa_MI_4d():
+def test_cat_tosa_FP_4d():
     square = torch.ones((2, 2, 2, 2))
     for dim in range(-3, 3):
         test_data = ((square, square.clone()), dim)
-        pipeline = TosaPipelineMI[input_t1](
+        pipeline = TosaPipelineFP[input_t1](
             Cat(),
             test_data,
             aten_op,
@@ -94,8 +95,8 @@ def test_cat_tosa_MI_4d():
 
 
 @common.parametrize("test_data", Cat.test_parameters)
-def test_cat_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
+def test_cat_tosa_INT(test_data: Tuple):
+    pipeline = TosaPipelineINT[input_t1](
         Cat(),
         test_data(),
         aten_op,
@@ -104,18 +105,10 @@ def test_cat_tosa_BI(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "cat_rand_two_tensors_dim_0": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-    "cat_rand_two_tensors_dim_0": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-    "cat_rand_two_tensors_dim_3": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-    "cat_rand_large": "MLETORCH-630: AssertionError: Output 0 does not match reference output.",
-}
-
-
-@common.parametrize("test_data", Cat.test_parameters, x_fails)
+@common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone300
-def test_cat_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_cat_u55_INT(test_data: Tuple):
+    pipeline = EthosU55PipelineINT[input_t1](
         Cat(),
         test_data(),
         aten_op,
@@ -125,14 +118,36 @@ def test_cat_u55_BI(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", Cat.test_parameters, x_fails)
+@common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone320
-def test_cat_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_cat_u85_INT(test_data: Tuple):
+    pipeline = EthosU85PipelineINT[input_t1](
         Cat(),
         test_data(),
         aten_op,
         exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Cat.test_parameters)
+@common.SkipIfNoModelConverter
+def test_cat_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Cat(), test_data(), aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Cat.test_parameters)
+@common.SkipIfNoModelConverter
+def test_cat_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Cat(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

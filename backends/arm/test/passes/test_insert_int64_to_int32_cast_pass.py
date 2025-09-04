@@ -25,7 +25,7 @@ class Int64InputModel(torch.nn.Module):
         )
 
 
-def test_int64_model_tosa_MI():
+def test_int64_model_tosa_FP():
     module = Int64InputModel()
     op_checks_before = {
         "executorch_exir_dialects_edge__ops_aten_embedding_default": 1,

@@ -2,14 +2,15 @@
 
 # pyre-strict
 
+from enum import auto, Enum
 from typing import Optional
 
 from executorch.backends.cadence.aot.graph_builder import GraphBuilder
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.pass_base import ProxyValue
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
-
 from torch import Tensor
+from torch._export.verifier import Verifier
 from torch.export import ExportedProgram
 from torch.export.graph_signature import (
     ExportGraphSignature,
@@ -21,14 +22,20 @@ from torch.export.graph_signature import (
 )
 
 
+class IrMode(Enum):
+    EXIR = auto()
+    ATEN = auto()
+
+
 class ProgramBuilder(GraphBuilder):
     """Utility class to build a program from a graph module."""
 
-    def __init__(self) -> None:
+    def __init__(self, mode: Optional[IrMode] = None) -> None:
         self.input_specs: list[InputSpec] = []
         self.output_specs: list[OutputSpec] = []
         self.constants: dict[str, Tensor] = {}
         self.state_dict: dict[str, Tensor] = {}
+        self.mode: IrMode = mode or IrMode.EXIR
         super().__init__()
 
     def insert_input_spec(
@@ -68,6 +75,16 @@ class ProgramBuilder(GraphBuilder):
             )
         return super().output(results)
 
+    def get_verifiers(self) -> Optional[list[Verifier]]:
+        if self.mode == IrMode.ATEN:
+            return None
+        return [
+            EXIREdgeDialectVerifier(
+                edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                class_only=True,
+            )
+        ]
+
     def get_program(self) -> ExportedProgram:
         gm = self.get_graph_module()
         return ExportedProgram(
@@ -81,12 +98,8 @@ class ProgramBuilder(GraphBuilder):
             state_dict=self.state_dict,
             range_constraints={},
             module_call_graph=[],
-            verifiers=[
-                EXIREdgeDialectVerifier(
-                    edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
-                    class_only=True,
-                )
-            ],
+            # pyre-ignore[6]: Incompatible parameter type.
+            verifiers=self.get_verifiers(),
         )
 
     def get_edge_program(self) -> EdgeProgramManager:

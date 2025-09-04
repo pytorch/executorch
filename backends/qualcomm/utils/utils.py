@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
+import os
+import re
 import warnings
 from collections import defaultdict, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -11,7 +13,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 
 import executorch.exir as exir
-
 import torch
 
 from executorch.backends.qualcomm._passes import AnnotateStack, AnnotateUnbind
@@ -332,7 +333,9 @@ def to_edge_transform_and_lower_to_qnn(
     passes_job: Optional[Union[OrderedDict, Dict[str, OrderedDict]]] = None,
     skip_node_id_set: Optional[set] = None,
     skip_node_op_set: Optional[set] = None,
-    skip_mutable_buffer: bool = False,
+    skip_mutable_buffer: Optional[bool] = False,
+    generate_etrecord: Optional[bool] = False,
+    convert_linear_to_conv2d: Optional[bool] = False,
 ) -> EdgeProgramManager:
     """
     Transforms and lowers a given PyTorch module to the QNN backend.
@@ -357,8 +360,10 @@ def to_edge_transform_and_lower_to_qnn(
             Set of node IDs to skip during partitioning.
         skip_node_op_set (Optional[set]):
             Set of node operations to skip during partitioning.
-        skip_mutable_buffer (Optional[set]):
+        skip_mutable_buffer (Optional[bool]):
             Whether to skip delegating the mutable buffer in QNN backend.
+        convert_linear_to_conv2d (Optional[bool]):
+            Whether to convert linear to conv2d in some cases to improve performance in HTP backend.
 
     Returns:
         EdgeProgramManager:
@@ -430,7 +435,9 @@ def to_edge_transform_and_lower_to_qnn(
         # If placed in the to_edge_transform_passes, it will be executed
         # after the lift_constant_tensor_pass, causing the operation builder
         # to fail to correctly retrieve the parameter by the get_parameter.
-        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(ep)
+        aten_programs[graph_name] = QnnPassManager().transform_for_export_pipeline(
+            ep, convert_linear_to_conv2d=convert_linear_to_conv2d
+        )
         transform_passes[graph_name] = QnnPassManager().get_to_edge_transform_passes(
             ep, passes_job=passes_job[graph_name], dep_table=dep_table[graph_name]
         )
@@ -441,6 +448,7 @@ def to_edge_transform_and_lower_to_qnn(
         partitioner=qnn_partitioners,
         constant_methods=constant_methods,
         compile_config=qnn_edge_config(),
+        generate_etrecord=generate_etrecord,
     )
 
 
@@ -1037,7 +1045,7 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.log_level = (
         QnnExecuTorchLogLevel.kLogLevelDebug
         if debug
-        else QnnExecuTorchLogLevel.kLogLevelWarn
+        else QnnExecuTorchLogLevel.kLogLevelError
     )
 
     qnn_executorch_options.dump_intermediate_outputs = dump_intermediate_outputs
@@ -1167,3 +1175,28 @@ def rewrite_prepared_observer(
             continue
         for target_name in module_name_list[old_module]:
             setattr(graph_module, target_name, new_observer)
+
+
+def get_sdk_build_id():
+    htp_library_path = (
+        os.environ.get("QNN_SDK_ROOT", None) + "/lib/x86_64-linux-clang/libQnnHtp.so"
+    )
+    # The GetQnnSdkBuildId API can be used without needing to create a backend first, so it works regardless of which backend is used.
+    sdk_build_id = PyQnnManagerAdaptor.GetQnnSdkBuildId(htp_library_path)
+    return sdk_build_id
+
+
+def is_qnn_sdk_version_less_than(target_version):
+    current_version = get_sdk_build_id()
+
+    match = re.search(r"v(\d+)\.(\d+)", current_version)
+    if match:
+        current_major, current_minor = map(int, match.groups()[:2])
+    else:
+        raise ValueError(
+            f"Failed to get current major and minor version from QNN sdk Build id {current_version}"
+        )
+
+    target_major, target_minor = map(int, target_version.split(".")[:2])
+
+    return current_major == target_major and current_minor < target_minor

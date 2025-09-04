@@ -55,6 +55,14 @@ Result<BufferCleanup> prepare_input_tensors(
       BufferCleanup cleanup({inputs, num_allocated});
       return tag.error();
     }
+    if (tag.get() == Tag::None) {
+      Error err = method.set_input(runtime::EValue(), i);
+      if (err != Error::Ok) {
+        BufferCleanup cleanup({inputs, num_allocated});
+        return err;
+      }
+      continue;
+    }
     if (tag.get() != Tag::Tensor) {
       ET_LOG(Debug, "Skipping non-tensor input %zu", i);
       continue;

@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 # preprocess qnn runner src files for whisper
 set(_qnn_whisper_runner__srcs
     ${CMAKE_CURRENT_LIST_DIR}/qnn_whisper_runner.cpp
@@ -20,10 +19,8 @@ set(_qnn_whisper_runner__srcs
 # build qnn whisper runner
 add_executable(qnn_whisper_runner ${_qnn_whisper_runner__srcs})
 target_include_directories(
-    qnn_whisper_runner PUBLIC ${_common_include_directories}
-    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+  qnn_whisper_runner PUBLIC ${_common_include_directories}
 )
-
 
 target_link_libraries(
   qnn_whisper_runner
@@ -35,12 +32,10 @@ target_link_libraries(
   extension_tensor
   full_portable_ops_lib
   gflags
-  tokenizers
+  tokenizers::tokenizers
 )
 
-target_compile_options(
-    qnn_whisper_runner PUBLIC ${_common_compile_options}
-)
+target_compile_options(qnn_whisper_runner PUBLIC ${_common_compile_options})
 set_target_properties(
-    qnn_whisper_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
+  qnn_whisper_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )

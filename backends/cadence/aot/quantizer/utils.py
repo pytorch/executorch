@@ -21,6 +21,7 @@ from torch.fx.passes.utils.source_matcher_utils import (
     SourcePartition,
 )
 from torchao.quantization.pt2e import ObserverOrFakeQuantize
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 def quantize_tensor_multiplier(
@@ -88,8 +89,7 @@ def is_annotated(nodes: List[fx.Node]) -> bool:
     annotated = False
     for node in nodes:
         annotated = annotated or (
-            "quantization_annotation" in node.meta
-            and node.meta["quantization_annotation"]._annotated
+            Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated
         )
     return annotated
 

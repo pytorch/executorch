@@ -23,6 +23,9 @@
 		03729F0A2BB203B300152F2E /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F072BB203B300152F2E /* runner.cpp */; };
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
 		0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0372C3132C89418E00CD942A /* llava_runner.cpp */; };
+		03CC56372E555A7A001129A6 /* llm_runner_helper.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03CC56362E555A7A001129A6 /* llm_runner_helper.cpp */; };
+		03CC563A2E555AD5001129A6 /* multimodal_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03CC56392E555AD5001129A6 /* multimodal_runner.cpp */; };
+		03CC563B2E555AD5001129A6 /* multimodal_prefiller.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03CC56382E555AD5001129A6 /* multimodal_prefiller.cpp */; };
 		03CF43962CEC5CEC00C7113B /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43952CEC5CEC00C7113B /* backend_coreml */; };
 		03CF43982CEC5CEC00C7113B /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43972CEC5CEC00C7113B /* backend_coreml_debug */; };
 		03CF439A2CEC5CEC00C7113B /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03CF43992CEC5CEC00C7113B /* backend_mps */; };
@@ -124,6 +127,9 @@
 		0372C3132C89418E00CD942A /* llava_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = llava_runner.cpp; path = ../../../examples/models/llava/runner/llava_runner.cpp; sourceTree = "<group>"; };
 		03C5F51C2CE7D35C00D6CE3F /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		03C5F51D2CE7D37100D6CE3F /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		03CC56362E555A7A001129A6 /* llm_runner_helper.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = llm_runner_helper.cpp; sourceTree = "<group>"; };
+		03CC56382E555AD5001129A6 /* multimodal_prefiller.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = multimodal_prefiller.cpp; sourceTree = "<group>"; };
+		03CC56392E555AD5001129A6 /* multimodal_runner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = multimodal_runner.cpp; sourceTree = "<group>"; };
 		03D151B62E0E0908007A38BE /* LLaVARunner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LLaVARunner.h; sourceTree = "<group>"; };
 		03D151B72E0E0908007A38BE /* LLaVARunner.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaVARunner.mm; sourceTree = "<group>"; };
 		03D151C82E0E98C4007A38BE /* regex_lookahead.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = regex_lookahead.cpp; path = src/regex_lookahead.cpp; sourceTree = "<group>"; };
@@ -297,6 +303,9 @@
 			isa = PBXGroup;
 			children = (
 				0372C3132C89418E00CD942A /* llava_runner.cpp */,
+				03CC56362E555A7A001129A6 /* llm_runner_helper.cpp */,
+				03CC56382E555AD5001129A6 /* multimodal_prefiller.cpp */,
+				03CC56392E555AD5001129A6 /* multimodal_runner.cpp */,
 				03729F072BB203B300152F2E /* runner.cpp */,
 				03D151CC2E0E9ACB007A38BE /* text_decoder_runner.cpp */,
 				03D151CD2E0E9ACB007A38BE /* text_llm_runner.cpp */,
@@ -606,7 +615,10 @@
 				03D151D02E0E9ACB007A38BE /* text_llm_runner.cpp in Sources */,
 				03D151D12E0E9ACB007A38BE /* text_decoder_runner.cpp in Sources */,
 				F292B1022D88B20C00BE6839 /* llama_tiktoken.cpp in Sources */,
+				03CC56372E555A7A001129A6 /* llm_runner_helper.cpp in Sources */,
 				F292B0752D88B0C200BE6839 /* tiktoken.cpp in Sources */,
+				03CC563A2E555AD5001129A6 /* multimodal_runner.cpp in Sources */,
+				03CC563B2E555AD5001129A6 /* multimodal_prefiller.cpp in Sources */,
 				F292B0762D88B0C200BE6839 /* llama2c_tokenizer.cpp in Sources */,
 				F292B0772D88B0C200BE6839 /* bpe_tokenizer_base.cpp in Sources */,
 				03729F0A2BB203B300152F2E /* runner.cpp in Sources */,
@@ -948,7 +960,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = "swiftpm-0.8.0.20250714";
+				branch = "swiftpm-0.8.0.20250829";
 				kind = branch;
 			};
 		};

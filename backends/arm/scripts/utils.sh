@@ -56,3 +56,37 @@ function patch_repo() {
     echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
     popd
 }
+
+function check_platform_support() {
+    # No args
+    # Exits with return code 1 if the platform is unsupported
+
+    # Make sure we are on a supported platform
+    if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
+        && [[ "${ARCH}" != "arm64" ]]; then
+        echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
+        exit 1
+    fi
+}
+
+function check_os_support() {
+    # No args
+    # Exits with return code 1 if invalid combination of platform and os
+
+    # Check valid combinations of OS and platform
+
+    # Linux on x86_64
+    if [[ "${ARCH}" == "x86_64" ]] && [[ "${OS}" != "Linux" ]]; then
+        echo "Error: Only Linux is supported on x86_64"
+        exit 1
+    fi
+
+    # Linux on arm64/aarch64
+    # Darwin on arm64/aarch64
+    if [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
+        if [[ "${OS}" != "Darwin" ]] && [[ "${OS}" != "Linux" ]]; then
+            echo "Error: Only Linux and Darwin are supported on arm64"
+            exit 1
+        fi
+    fi
+}

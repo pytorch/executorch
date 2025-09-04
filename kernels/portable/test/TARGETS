@@ -20,6 +20,7 @@ runtime.cxx_library(
     deps = [
         "//executorch/extension/aten_util:aten_bridge",
         "//executorch/kernels/portable/cpu:op_upsample_bilinear2d",
+        "//executorch/kernels/portable/cpu:op_upsample_bilinear2d_aa",
         "//executorch/kernels/portable/cpu:op_upsample_nearest2d",
         "//executorch/runtime/core/exec_aten:lib",
     ],

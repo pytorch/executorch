@@ -158,7 +158,7 @@ Tensor& opt_bmm_out(
       bmm_kernel<CTYPE>(self, mat2, out);
     });
   } else {
-    ET_SWITCH_REALH_TYPES(self_type, ctx, name, CTYPE, [&]() {
+    ET_SWITCH_REALHBF16_TYPES(self_type, ctx, name, CTYPE, [&]() {
       bmm_kernel<CTYPE>(self, mat2, out);
     });
   }

@@ -12,18 +12,27 @@
 
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 #define FVEC4_T ${texel_load_type(IN_DTYPE, "texture3d")}
+#define SCALE_OUT_T ${buffer_scalar_type(SCALE_OUT_DTYPE)}
+#define ZP_OUT_T ${buffer_scalar_type(ZP_OUT_DTYPE)}
 
 #define ${MODE}
 
 ${define_active_storage_type("texture3d")}
 ${define_required_extensions(IN_DTYPE)}
+${define_required_extensions(SCALE_OUT_DTYPE)}
+${define_required_extensions(ZP_OUT_DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_scale", "float", "texture3d")}
-${layout_declare_tensor(B, "w", "t_zero_point", "int", "texture3d")}
+$if MODE != "block_wise":
+  ${layout_declare_tensor(B, "w", "t_scale", SCALE_OUT_DTYPE, "texture3d")}
+  ${layout_declare_tensor(B, "w", "t_zero_point", ZP_OUT_DTYPE, "texture3d")}
+$else:
+  ${layout_declare_tensor(B, "w", "t_scale", SCALE_OUT_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "w", "t_zero_point", ZP_OUT_DTYPE, "buffer")}
+
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
 $if MODE == "per_tensor":
@@ -32,16 +41,33 @@ $if MODE == "per_tensor":
     int quant_max;
     float eps;
   };
-$else:
+$if MODE == "per_token":
   layout(push_constant) uniform restrict Block {
     int num_tokens;
     int quant_min;
     int quant_max;
   };
+$if MODE == "block_wise":
+  layout(push_constant) uniform BlockPC {
+    ivec4 blockSize; // WHCN (>=1)
+    ivec4 numBlocks; // #blocks along W,H,C,N
+    ivec4 blockStride; // {1, #W, #W * #H, #W * #H * #C}
+    int mapping_type; // 0=ASYM, 1=SYM, 2=SYM_NO_CLIP
+    int quant_min;
+    int quant_max;
+    float eps;
+  };
 
 ${layout_declare_ubo(B, "ivec3", "t_in_limits")}
-${layout_declare_ubo(B, "ivec3", "t_scale_limits")}
-${layout_declare_ubo(B, "ivec3", "t_zero_point_limits")}
+$if MODE != "block_wise":
+  ${layout_declare_ubo(B, "ivec3", "t_scale_limits")}
+  ${layout_declare_ubo(B, "ivec3", "t_zero_point_limits")}
+$else:
+  ${layout_declare_ubo(B, "ivec4", "t_scale_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "t_scale_strides")}
+  ${layout_declare_ubo(B, "ivec4", "t_zero_point_sizes")}
+  ${layout_declare_ubo(B, "ivec4", "t_zero_point_strides")}
+
 
 #include "indexing_utils.h"
 #include "choose_qparams.glslh"
@@ -54,73 +80,87 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 shared float shared_min[NWORKERS];
 shared float shared_max[NWORKERS];
 
-/*
- * QUANTIZATION PARAMETER COMPUTATION SHADER (TEXTURE STORAGE)
- *
- * This shader computes quantization parameters (scale and zero_point) for converting
- * floating-point tensors to n-bit integer representations while preserving the
- * original data range as much as possible.
- *
- * ALGORITHM:
- * 1. Find global min/max values across tensor elements using parallel reduction
- * 2. Use tree reduction with shared memory for efficient min/max computation
- * 3. Calculate scale = (max - min) / (quant_max - quant_min)
- * 4. Calculate zero_point to map floating-point zero to integer value
- *
- * WORKGROUP CONFIGURATION:
- * - Per-Tensor Mode:
- *   - Global WG Size: Default (typically {num_elements, 1, 1})
- *   - Local WG Size: Default (typically {64, 1, 1})
- * - Per-Token Mode:
- *   - Global WG Size: Default (typically based on tensor dimensions)
- *   - Local WG Size: Default (typically {64, 1, 1}, or based on global WG size)
- *
- * SUPPORTED CONFIGURATIONS:
- * - Texture Storage: Uses 3D texture indexing with linear texel iteration
- * - Assumes width-packed layout (packed_dim = 0) in current implementation
- * - Handles texel padding for non-multiple-of-4 tensor dimensions
- * - Note: Axis mapping support depends on indexing utilities
- *
- * TREE REDUCTION VISUALIZATION FOR MIN/MAX FINDING:
- * For 8 threads processing elements [10, 1, 8, 1, 0, 2, 3, 5]:
- *
- * Initial shared_min/shared_max arrays populated by each thread:
- * shared_min:  | 10 | 1 | 8 | 1 | 0 | 2 | 3 | 5 |
- * shared_max:  | 10 | 1 | 8 | 1 | 0 | 2 | 3 | 5 |
- * Thread:      |  0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
- *
- * Stride 1 (compare pairs, keep min/max):
- * shared_min:  |  1 |   | 1 |   | 0 |   | 3 |   |  (min(10,1), min(8,1), min(0,2), min(3,5))
- * shared_max:  | 10 |   | 8 |   | 2 |   | 5 |   |  (max(10,1), max(8,1), max(0,2), max(3,5))
- * Active:      |  0 |   | 2 |   | 4 |   | 6 |   |
- *
- * Stride 2 (compare pairs, keep min/max):
- * shared_min:  |  0 |   |   |   | 0 |   |   |   |  (min(1,1), min(0,3))
- * shared_max:  | 10 |   |   |   | 5 |   |   |   |  (max(10,8), max(2,5))
- * Active:      |  0 |   |   |   | 4 |   |   |   |
- *
- * Stride 4 (final comparison):
- * shared_min:  |  0 |   |   |   |   |   |   |   |  (min(0,0) = 0)
- * shared_max:  | 10 |   |   |   |   |   |   |   |  (max(10,5) = 10)
- * Active:      |  0 |   |   |   |   |   |   |   |
- *
- * Final result: global_min = 0, global_max = 10 (stored in shared_min[0], shared_max[0])
- *
- * PER-TENSOR QUANTIZATION:
- * - Single workgroup processes entire tensor
- * - Each thread processes multiple texels with stride
- * - Thread 0: texels [0, 64, 128, ...] -> elements [0-3, 256-259, 512-515, ...]
- * - Thread 1: texels [1, 65, 129, ...] -> elements [4-7, 260-263, 516-519, ...]
- * - Tree reduction combines all thread results into global min/max
- * - Output: Single scale and zero_point values
- *
- * PER-TOKEN QUANTIZATION:
- * - Multiple workgroups, each processing subset of tokens
- * - Token = all elements except last dimension (e.g., for [B,S,H]: B*S tokens of H elements)
- * - Each workgroup processes multiple tokens if num_tokens > num_workgroups
- * - Within each token, threads process texels containing token elements
- * - Output: Array of scale and zero_point values (one per token)
- */
+/*/*
+  Quantization Parameter Computation Shader (Buffer Storage)
+    This shader computes quantization parameters (scale and zero_point) for converting
+    floating-point tensors to n-bit integer representations while preserving the
+    original data range as much as possible. The computed parameters enable efficient
+    quantization by mapping the continuous floating-point range to discrete integer values.
+
+  Important Considerations:
+    (+) The input tensor is assumed to be WIDTH_PACKED (i.e., contiguous in the last dimension)
+
+  Workgroup Configuration:
+  - choose_qparams_per_tensor
+      This mode computes a single set of quantization parameters for the entire tensor.
+      Uses parallel reduction across all threads to find global min/max values.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: default
+
+  - choose_qparams_per_token
+      This mode computes separate quantization parameters for each token in the tensor.
+      Each workgroup processes one token independently to find token-specific min/max.
+
+    (*) global_wg_size: default
+    (*) local_wg_size: {1, 1, 1}
+
+  - choose_qparams_block_wise
+      This mode computes quantization parameters for each block of elements, allowing
+      fine-grained control over quantization granularity within the tensor. Each block
+      is processed independently to find its own min/max values and compute corresponding
+      scale and zero_point parameters.
+
+      NOTE: This mode currently only supports buffer storage for the output.
+
+    (*) global_wg_size: {nBlocks, 1u, 1u} (one workgroup per block)
+    (*) local_wg_size: {1, 1, 1} (single thread per block)
+
+  Tree Reduction Algorithm for Min/Max Finding:
+    The shader uses a parallel tree reduction algorithm to efficiently find minimum and
+    maximum values across multiple threads. This approach reduces the number of memory
+    accesses and synchronization points compared to sequential scanning.
+
+    Example with 8 threads processing values [10, 1, 8, 1, 0, 2, 3, 5]:
+
+    Step 1 - Initial Population:
+    Each thread loads its assigned value into shared memory arrays.
+    shared_min:  | 10 | 1 | 8 | 1 | 0 | 2 | 3 | 5 |
+    shared_max:  | 10 | 1 | 8 | 1 | 0 | 2 | 3 | 5 |
+    Thread ID:   |  0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+
+    Step 2 - Stride 1 (Compare Adjacent Pairs):
+    Threads 0,2,4,6 compare with threads 1,3,5,7 respectively.
+    shared_min:  |  1 |   | 1 |   | 0 |   | 3 |   |  (min(10,1), min(8,1), min(0,2), min(3,5))
+    shared_max:  | 10 |   | 8 |   | 2 |   | 5 |   |  (max(10,1), max(8,1), max(0,2), max(3,5))
+    Active:      |  0 |   | 2 |   | 4 |   | 6 |   |
+
+    Step 3 - Stride 2 (Compare Pairs of Pairs):
+    Threads 0,4 compare with threads 2,6 respectively.
+    shared_min:  |  1 |   |   |   | 0 |   |   |   |  (min(1,1), min(0,3))
+    shared_max:  | 10 |   |   |   | 5 |   |   |   |  (max(10,8), max(2,5))
+    Active:      |  0 |   |   |   | 4 |   |   |   |
+
+    Step 4 - Stride 4 (Final Comparison):
+    Thread 0 compares with thread 4 to get final result.
+    shared_min:  |  0 |   |   |   |   |   |   |   |  (min(1,0) = 0)
+    shared_max:  | 10 |   |   |   |   |   |   |   |  (max(10,5) = 10)
+    Active:      |  0 |   |   |   |   |   |   |   |
+
+    Final Result: global_min = 0, global_max = 10 (stored in shared_min[0], shared_max[0])
+
+    The tree reduction completes in log_2(N) steps where N is the number of threads,
+    providing O(log N) time complexity instead of O(N) for sequential reduction.
+
+  Quantization Parameter Calculation:
+    Once min/max values are determined, the shader computes:
+    - scale = (max - min) / (quant_max - quant_min)
+    - zero_point = quantization offset to map floating-point zero to integer range
+
+  Mode-Specific Behavior:
+  - Per-Tensor: Single workgroup with strided access across entire tensor
+  - Per-Token: Multiple workgroups, each processing one token independently
+*/
 
 #ifdef per_tensor
 
@@ -235,14 +275,14 @@ void choose_qparams_per_tensor() {
 
     float scale_val;
     int zero_point_val;
-    calculate_scale_and_zero_point(global_min, global_max, quant_min, quant_max, eps, scale_val, zero_point_val);
+    calc_scale_zp(global_min, global_max, quant_min, quant_max, 0, eps, scale_val, zero_point_val);
 
-    write_texel(t_scale, ivec3(0, 0, 0), vec4(scale_val, 0.0, 0.0, 0.0));
-    write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(zero_point_val, 0, 0, 0));
+    write_texel(t_scale, ivec3(0, 0, 0), vec4(SCALE_OUT_T(scale_val), 0.0, 0.0, 0.0));
+    write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(ZP_OUT_T(zero_point_val), 0, 0, 0));
   }
 }
 
-#else
+#elif defined(per_token)
 
 void choose_qparams_per_token() {
   // Each token is processed by multiple workgroups for parallel reduction
@@ -373,7 +413,7 @@ void choose_qparams_per_token() {
 
       float scale_val;
       int zero_point_val;
-      calculate_scale_and_zero_point(token_min, token_max, quant_min, quant_max, 1e-5, scale_val, zero_point_val);
+      calc_scale_zp(token_min, token_max, quant_min, quant_max, 0, 1e-5, scale_val, zero_point_val);
 
       // Convert token_id to 3D coordinates for output texture
       // Assuming output tensors have the same layout as input but with different dimensions
@@ -383,12 +423,106 @@ void choose_qparams_per_token() {
       uint out_x = out_remainder % uint(t_scale_limits.x);
       ivec3 out_pos = ivec3(int(out_x), int(out_y), int(out_z));
 
-      write_texel(t_scale, out_pos, vec4(scale_val, 0.0, 0.0, 0.0));
-      write_texel(t_zero_point, out_pos, ivec4(zero_point_val, 0, 0, 0));
+      write_texel(t_scale, out_pos, vec4(SCALE_OUT_T(scale_val), 0.0, 0.0, 0.0));
+      write_texel(t_zero_point, out_pos, ivec4(ZP_OUT_T(zero_point_val), 0, 0, 0));
     }
 
     // Synchronize before processing next token
     barrier();
+  }
+}
+
+#elif defined(block_wise)
+
+ivec4 block_id_to_coord(uint bid) {
+  ivec4 bc;
+  bc.w = int(bid) / blockStride.w;
+
+  int r = int(bid) - bc.w * blockStride.w;
+  bc.z = r / blockStride.z;
+
+  r -= bc.z * blockStride.z;
+  bc.y = r / blockStride.y;
+
+  r -= bc.y * blockStride.y;
+  bc.x = r;
+  return bc;
+}
+
+void choose_qparams_block_wise() {
+  const uint T = uint(numBlocks.x * numBlocks.y * numBlocks.z * numBlocks.w);
+  const uint STRIDE = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
+
+  // tensor full size in WHCN order
+  const ivec4 tensorSz = blockSize * numBlocks;
+
+  // Process blocks with stride for better parallelization
+  for (uint blkIdx = gl_GlobalInvocationID.x; blkIdx < T; blkIdx += STRIDE) {
+    // block index in WHCN
+    const ivec4 b4d = block_id_to_coord(blkIdx);
+    const ivec4 blockStart = b4d * blockSize;
+    const ivec4 blockEnd = blockStart + blockSize;
+
+    // scan all elements inside the block
+    float vmin = 3.402823e38;  // +FLT_MAX
+    float vmax = -3.402823e38; // -FLT_MAX
+    bool found_valid = false;
+
+    // Calculate total elements in block for linear iteration
+    const int blockElements = blockSize.x * blockSize.y * blockSize.z * blockSize.w;
+
+    // Linear iteration over block elements (more cache-friendly)
+    for (int elemIdx = 0; elemIdx < blockElements; ++elemIdx) {
+      // Convert linear index to 4D coordinates within block
+      int remaining = elemIdx;
+      int dn = remaining / (blockSize.x * blockSize.y * blockSize.z);
+      remaining -= dn * (blockSize.x * blockSize.y * blockSize.z);
+      int dc = remaining / (blockSize.x * blockSize.y);
+      remaining -= dc * (blockSize.x * blockSize.y);
+      int dh = remaining / blockSize.x;
+      int dw = remaining - dh * blockSize.x;
+
+      ivec4 tidx = blockStart + ivec4(dw, dh, dc, dn);
+
+      // skip padding when tensor size is not an exact multiple of block
+      if (any(greaterThanEqual(tidx, tensorSz))) { continue; }
+
+      // tensor index -> (x,y,z,component) inside input texture
+      ivec4 posi = to_texture_elem_pos(tidx, tensorSz, 0); // 0 = W_DIM (width packed)
+
+      // fetch texel and pick the element inside it
+      FVEC4_T texl = load_texel(t_in, posi.xyz);
+      float v;
+      if (posi.w == 0) v = texl.x;
+      else if (posi.w == 1) v = texl.y;
+      else if (posi.w == 2) v = texl.z;
+      else v = texl.w;
+
+      if (!isnan(v) && !isinf(v)) {
+        if (!found_valid) {
+          vmin = vmax = v;
+          found_valid = true;
+        } else {
+          vmin = min(vmin, v);
+          vmax = max(vmax, v);
+        }
+      }
+    }
+
+    // Handle case where no valid values were found
+    if (!found_valid) {
+      vmin = 0.0;
+      vmax = 0.0;
+    }
+
+    // compute scale / zero‑point (same maths as buffer kernel)
+    float scale;
+    int zp;
+    calc_scale_zp(vmin, vmax, quant_min, quant_max, mapping_type, eps, scale, zp);
+
+    // Write the scalar values directly to buffer using linear index
+    t_scale[blkIdx] = SCALE_OUT_T(scale);
+    t_zero_point[blkIdx] = ZP_OUT_T(zp);
   }
 }
 

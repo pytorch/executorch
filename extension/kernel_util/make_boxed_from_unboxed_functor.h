@@ -112,8 +112,8 @@ struct evalue_to_arg<executorch::aten::ArrayRef<std::optional<T>>> final {
 
 template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>
 void call_functor_with_args_from_stack(
-    ::executorch::runtime::KernelRuntimeContext& ctx,
-    executorch::runtime::EValue** stack,
+    executorch::runtime::KernelRuntimeContext& ctx,
+    executorch::runtime::Span<executorch::runtime::EValue*> stack,
     std::index_sequence<evalue_arg_indices...>,
     typelist<ArgTypes...>*) {
   (*Functor::func_ptr())(
@@ -151,7 +151,7 @@ struct WrapUnboxedIntoFunctor {
 
   static void call(
       ::executorch::runtime::KernelRuntimeContext& ctx,
-      executorch::runtime::EValue** stack) {
+      executorch::runtime::Span<executorch::runtime::EValue*> stack) {
     constexpr size_t num_inputs =
         kernel_util_internal::size<ContextRemovedArgsType>::value;
     return kernel_util_internal::call_functor_with_args_from_stack<FuncType>(

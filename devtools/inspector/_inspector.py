@@ -62,6 +62,7 @@ from executorch.devtools.inspector._inspector_utils import (
     map_runtime_aot_intermediate_outputs,
     merge_runtime_overlapping_debug_handles,
     ProgramOutput,
+    propagate_back_debug_handle,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TimeScale,
     verify_debug_data_equivalence,
@@ -1166,7 +1167,22 @@ class Inspector:
         """
         if self._etrecord._representative_inputs is None:
             return {}, {}
-        export_program = self._etrecord.edge_dialect_program
+
+        export_program = None
+
+        # Will use the exported program to extract intermediate output if and only if exported_program has been provided, and it is one of the ancestors of the edge_dialect_program
+        if self._etrecord.exported_program and propagate_back_debug_handle(
+            self._etrecord.exported_program,
+            self._etrecord.export_graph_id,
+            self._etrecord.edge_dialect_program,
+        ):
+            export_program = self._etrecord.exported_program
+        else:
+            log.warning(
+                "Either aten dialect exported program is not in ETRecord, or it is not one of the ancestors of current edge dialect program."
+                "Will fall back to use edge dialect program to extract intermediate output",
+            )
+            export_program = self._etrecord.edge_dialect_program
         graph_module = export_program.module()
         aot_debug_handle_to_op_name = get_aot_debug_handle_to_op_name_mapping(
             graph_module
@@ -1380,7 +1396,9 @@ class Inspector:
         """
         Compares logged intermediate outputs from the exported graph (in ETRecord)
         with runtime outputs (in ETDump) using a user-specific numerical comparator.
-        To use this function, you must first generate the ETRecord using the `bundle_program`,
+        If the exported graph is not supported, the function will fall back to use edge dialect graph.
+
+        To use this function, you must first generate the ETRecord with representative inputs,
         and then create the Inspector instance with the ETRecord and ETDump. The Inspector can then
         compare the intermediate outputs from the AOT and the runtime.
 

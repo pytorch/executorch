@@ -589,6 +589,21 @@ class ReciprocalSquareRootConfig(GenericNodePartitionerConfig):
 class ConstantPadConfig(GenericNodePartitionerConfig):
     target_name = "constant_pad_nd.default"
 
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK does not support cropping with negative padding sizes.
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        # Check for negative padding values
+        padding = cast(List[int], node.args[1])
+        if any(p < 0 for p in padding):
+            why(node, reason="XNNPACK does not support negative padding values")
+            return False
+
+        return True
+
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
 

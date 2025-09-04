@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0314AE3A2E2AAEE700DDE821 /* executorch_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 0314AE392E2AAEE700DDE821 /* executorch_llm */; };
 		032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLaMATests.mm */; };
 		0351D9D72CAFC9A200607121 /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Resources */; };
 		03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B0118C2CAC567900054791 /* DynamicTestCase.m */; };
@@ -18,7 +19,6 @@
 		03F181502D7262FC0058BDF9 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1814F2D7262FC0058BDF9 /* backend_mps */; };
 		03F181522D7262FC0058BDF9 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181512D7262FC0058BDF9 /* backend_xnnpack */; };
 		03F181542D7262FC0058BDF9 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181532D7262FC0058BDF9 /* executorch */; };
-		0314AE3A2E2AAEE700DDE821 /* executorch_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 0314AE392E2AAEE700DDE821 /* executorch_llm */; };
 		03F181562D7262FC0058BDF9 /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181552D7262FC0058BDF9 /* kernels_llm */; };
 		03F181582D7262FC0058BDF9 /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F181572D7262FC0058BDF9 /* kernels_optimized */; };
 		03F1815C2D7262FC0058BDF9 /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F1815B2D7262FC0058BDF9 /* kernels_quantized */; };
@@ -41,7 +41,6 @@
 		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
 		03B0118F2CAD114E00054791 /* ResourceTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourceTestCase.h; sourceTree = "<group>"; };
 		03B011902CAD114E00054791 /* ResourceTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ResourceTestCase.m; sourceTree = "<group>"; };
-		03B019502C8A80D30044D558 /* Tests.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
 		03B2D3642C8A515A0046936E /* Benchmark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Benchmark.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		03B2D3672C8A515A0046936E /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		03B2D36D2C8A515B0046936E /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -131,7 +130,6 @@
 				032A73C92CAFBA8600932D36 /* LLaMA */,
 				03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */,
 				03B2D3792C8A515C0046936E /* GenericTests.mm */,
-				03B019502C8A80D30044D558 /* Tests.xcconfig */,
 				037C96A02C8A570B00B3DF38 /* Tests.xctestplan */,
 			);
 			path = Tests;
@@ -438,7 +436,6 @@
 		};
 		03B2D38D2C8A515C0046936E /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03B019502C8A80D30044D558 /* Tests.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -450,6 +447,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_CODE_SIGN_FLAGS = "--deep";
+				OTHER_LDFLAGS = "-all_load";
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.BenchmarkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -465,7 +463,6 @@
 		};
 		03B2D38E2C8A515C0046936E /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 03B019502C8A80D30044D558 /* Tests.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -477,6 +474,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_CODE_SIGN_FLAGS = "--deep";
+				OTHER_LDFLAGS = "-all_load";
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.BenchmarkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
@@ -530,6 +528,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		0314AE392E2AAEE700DDE821 /* executorch_llm */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = executorch_llm;
+		};
 		03F1814D2D7262FC0058BDF9 /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = backend_coreml;
@@ -545,10 +547,6 @@
 		03F181532D7262FC0058BDF9 /* executorch */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = executorch;
-		};
-		0314AE392E2AAEE700DDE821 /* executorch_llm */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = executorch_llm;
 		};
 		03F181552D7262FC0058BDF9 /* kernels_llm */ = {
 			isa = XCSwiftPackageProductDependency;

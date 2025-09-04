@@ -10,10 +10,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 exir_op = "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"
@@ -110,10 +111,10 @@ test_modules = {
 
 
 @common.parametrize("test_module", test_modules)
-def test_adaptive_avg_pool2d_tosa_MI(test_module):
+def test_adaptive_avg_pool2d_tosa_FP(test_module):
     model, input_tensor = test_module()
 
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         model,
         input_tensor,
         aten_op=[],
@@ -123,10 +124,10 @@ def test_adaptive_avg_pool2d_tosa_MI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_adaptive_avg_pool2d_tosa_BI(test_module):
+def test_adaptive_avg_pool2d_tosa_INT(test_module):
     model, input_tensor = test_module()
 
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         input_tensor,
         aten_op=[],
@@ -137,10 +138,10 @@ def test_adaptive_avg_pool2d_tosa_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
-def test_adaptive_avg_pool2d_u55_BI(test_module):
+def test_adaptive_avg_pool2d_u55_INT(test_module):
     model, input_tensor = test_module()
 
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         input_tensor,
         aten_ops=[],
@@ -151,13 +152,41 @@ def test_adaptive_avg_pool2d_u55_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
-def test_adaptive_avg_pool2d_u85_BI(test_module):
+def test_adaptive_avg_pool2d_u85_INT(test_module):
     model, input_tensor = test_module()
 
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         input_tensor,
         aten_ops=[],
         exir_ops=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_FP(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_INT(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        [],
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

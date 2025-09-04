@@ -22,7 +22,8 @@ namespace llm {
 // NOTE: we observed ~2x loading performance increase on iPhone 15
 // and a ~5% improvement on Galaxy S22 by switching to
 // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
+TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
+    : module_(module), io_manager_(io_manager) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
@@ -66,13 +67,17 @@ TextDecoderRunner::TextDecoderRunner(Module* module) : module_(module) {}
       start_pos_tensor = from_blob(
           &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
     }
-    ET_LOG(
-        Info,
-        "Start pos tensor numel: %zu, tokens numel: %zu",
-        start_pos_tensor->numel(),
-        tokens->numel());
-    auto outputs_res = module_->forward({tokens, start_pos_tensor});
+
+    std::vector<runtime::EValue> inputs;
+    auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
+    ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
+    inputs = inputs_res.get();
+    auto outputs_res = module_->forward(inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
+
+    auto update_err = io_manager_->update_decode(outputs_res.get());
+    ET_CHECK_OK_OR_RETURN_ERROR(update_err);
+
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
         "More then one output returned from executing LLM.");

@@ -30,7 +30,7 @@ class Expand(torch.nn.Module):
         return (torch.rand(3, 1),)
 
 
-def test_expand_to_repeat_tosa_BI():
+def test_expand_to_repeat_tosa_INT():
     module = Expand()
     pipeline = PassPipeline[input_t](
         module,

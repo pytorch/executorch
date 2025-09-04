@@ -352,7 +352,6 @@ void test_vulkan_sdpa(
   graph.prepare();
 
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model
@@ -496,4 +495,345 @@ TEST(VulkanSDPATest, test_reference_impl) {
       num_kv_heads,
       batch_size,
       max_seq_len);
+}
+
+void test_vulkan_flash_attention_impl(
+    const int start_input_pos,
+    const int sequence_len,
+    const int embedding_dim,
+    const int num_heads,
+    const int num_kv_heads,
+    const int batch_size,
+    const int max_seq_len,
+    vkcompute::utils::StorageType storage_type,
+    at::ScalarType dtype = at::kFloat) {
+  const int head_dim = embedding_dim / num_heads;
+
+  at::Tensor k_cache = at::zeros(
+      {batch_size, max_seq_len, num_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
+  at::Tensor v_cache = at::zeros_like(k_cache);
+
+  at::Tensor q = at::rand(
+      {batch_size, sequence_len, num_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
+  at::Tensor k = at::rand(
+      {batch_size, sequence_len, num_kv_heads, head_dim},
+      at::device(at::kCPU).dtype(dtype));
+  at::Tensor v = at::rand_like(k);
+
+  // Get reference output using existing SDPA
+  at::Tensor reference_out = sdpa_reference_impl(
+      q,
+      k,
+      v,
+      k_cache,
+      v_cache,
+      start_input_pos,
+      sequence_len,
+      {},
+      0.0,
+      true,
+      {});
+
+  using namespace vkcompute;
+
+  GraphConfig config;
+  config.set_storage_type_override(storage_type);
+  ComputeGraph graph(config);
+
+  // Create input references
+  IOValueRef r_q = graph.add_input_tensor(
+      q.sizes().vec(), from_at_scalartype(q.scalar_type()));
+  IOValueRef r_k = graph.add_input_tensor(
+      k.sizes().vec(), from_at_scalartype(k.scalar_type()));
+  IOValueRef r_v = graph.add_input_tensor(
+      v.sizes().vec(), from_at_scalartype(v.scalar_type()));
+
+  // Create cache tensors (these would be updated by cache update operations in
+  // practice)
+  ValueRef r_k_cache = graph.add_tensorref(
+      k_cache.sizes().vec(),
+      from_at_scalartype(k_cache.scalar_type()),
+      k_cache.const_data_ptr());
+  ValueRef r_v_cache = graph.add_tensorref(
+      v_cache.sizes().vec(),
+      from_at_scalartype(v_cache.scalar_type()),
+      v_cache.const_data_ptr());
+
+  const ValueRef r_input_pos_symint = graph.add_symint(start_input_pos);
+  const ValueRef r_out =
+      graph.add_tensor(q.sizes().vec(), from_at_scalartype(q.scalar_type()));
+
+  // Call Flash Attention implementation
+  VK_GET_OP_FN("llama.flash_attention.default")
+  (graph,
+   {
+       r_q.value,
+       r_k.value, // Use actual K tensor, not cache
+       r_v.value, // Use actual V tensor, not cache
+       r_input_pos_symint,
+       kDummyValueRef, // attn_mask
+       kDummyValueRef, // dropout_p
+       kDummyValueRef, // is_causal
+       kDummyValueRef, // scale
+       r_out,
+   });
+
+  ValueRef staging_out = graph.set_output_tensor(r_out);
+
+  graph.prepare();
+  graph.prepack();
+
+  // Copy inputs and run
+  graph.copy_into_staging(r_q.staging, q.const_data_ptr(), q.numel());
+  graph.copy_into_staging(r_k.staging, k.const_data_ptr(), k.numel());
+  graph.copy_into_staging(r_v.staging, v.const_data_ptr(), v.numel());
+
+  graph.execute();
+
+  // Extract output
+  at::Tensor vk_out = at::zeros_like(q).contiguous();
+  graph.copy_from_staging(
+      staging_out, vk_out.mutable_data_ptr(), vk_out.numel());
+
+  // Compare results
+  const bool output_correct = at::allclose(reference_out, vk_out, 1e-3, 1e-3);
+
+  if (!output_correct) {
+    at::Tensor diffs = at::abs(reference_out - vk_out);
+    std::cout << "Maximum difference: " << at::max(diffs).item() << std::endl;
+    std::cout << "Maximum value observed: "
+              << at::max(at::abs(at::cat({reference_out, vk_out}, -1))).item()
+              << std::endl;
+  }
+  ASSERT_TRUE(output_correct);
+}
+
+void test_vulkan_flash_attention(
+    const int start_input_pos,
+    const int sequence_len,
+    const int embedding_dim,
+    const int num_heads,
+    const int num_kv_heads,
+    const int batch_size,
+    const int max_seq_len,
+    at::ScalarType dtype = at::kFloat) {
+  test_vulkan_flash_attention_impl(
+      start_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len,
+      vkcompute::utils::kBuffer,
+      dtype);
+
+  test_vulkan_flash_attention_impl(
+      start_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len,
+      vkcompute::utils::kTexture3D,
+      dtype);
+}
+
+// Flash Attention Tests (both Buffer and Texture)
+TEST(VulkanSDPATest, test_flash_attention_small_params) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 2;
+  const int embedding_dim = 4;
+  const int num_heads = 2;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 4;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_multi_tile) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 48;
+  const int embedding_dim = 32;
+  const int num_heads = 2;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 64;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_op_small_params) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 3;
+  const int embedding_dim = 18;
+  const int num_heads = 6;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 7;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_op_small_params_dynamic) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 3;
+  const int embedding_dim = 18;
+  const int num_heads = 6;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 12;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_op_llama3_params) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 3;
+  const int embedding_dim = 2048;
+  const int num_heads = 32;
+  const int num_kv_heads = 8;
+  const int batch_size = 1;
+  const int max_seq_len = 128;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_op_llama3_params_dynamic) {
+  const int starting_input_pos = 0;
+  const int embedding_dim = 2048;
+  const int num_heads = 32;
+  const int num_kv_heads = 8;
+  const int batch_size = 1;
+  const int max_seq_len = 128;
+
+  // Test with different sequence lengths
+  std::vector<int> sequence_lengths = {1, 3, 5, 7, 16, 32};
+
+  for (int seq_len : sequence_lengths) {
+    if (seq_len < max_seq_len) {
+      test_vulkan_flash_attention(
+          starting_input_pos,
+          seq_len,
+          embedding_dim,
+          num_heads,
+          num_kv_heads,
+          batch_size,
+          max_seq_len);
+    }
+  }
+}
+
+TEST(VulkanSDPATest, test_flash_attention_reference_impl) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 3;
+  const int embedding_dim = 2048;
+  const int num_heads = 32;
+  const int num_kv_heads = 8;
+  const int batch_size = 1;
+  const int max_seq_len = 128;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_reference_impl_small) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 2;
+  const int embedding_dim = 32;
+  const int num_heads = 4;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 16;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_vec4_alignment) {
+  const int starting_input_pos = 0;
+  const int sequence_len = 8;
+  const int embedding_dim = 64;
+  const int num_heads = 4;
+  const int num_kv_heads = 2;
+  const int batch_size = 1;
+  const int max_seq_len = 16;
+
+  test_vulkan_flash_attention(
+      starting_input_pos,
+      sequence_len,
+      embedding_dim,
+      num_heads,
+      num_kv_heads,
+      batch_size,
+      max_seq_len);
+}
+
+TEST(VulkanSDPATest, test_flash_attention_edge_cases) {
+  // Test with single head (no multi-query complexity)
+  test_vulkan_flash_attention(0, 1, 8, 1, 1, 1, 4);
+
+  // Test with equal heads (no multi-query complexity)
+  test_vulkan_flash_attention(0, 2, 16, 4, 4, 1, 8);
+
+  // Test with large head dimension
+  test_vulkan_flash_attention(0, 2, 128, 2, 1, 1, 8);
+
+  // Test with sequence length that exactly matches block size (32)
+  test_vulkan_flash_attention(0, 32, 64, 2, 1, 1, 64);
+
+  // Test with sequence length slightly larger than block size
+  test_vulkan_flash_attention(
+      0, 33, 68, 2, 1, 1, 64); // 68 = 4*17, good for vec4
 }

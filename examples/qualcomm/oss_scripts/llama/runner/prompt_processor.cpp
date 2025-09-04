@@ -14,9 +14,11 @@ using executorch::runtime::Result;
 using executorch::runtime::TensorInfo;
 
 namespace example {
-PromptProcessor::PromptProcessor(
+
+template <typename T>
+PromptProcessor<T>::PromptProcessor(
     DecoderRunner* decoder_runner,
-    KVManager* kv_manager,
+    KVManager<T>* kv_manager,
     const std::string& method_name,
     Metadata metadata)
     : decoder_runner_(decoder_runner),
@@ -37,7 +39,9 @@ PromptProcessor::PromptProcessor(
       metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
   logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
 };
-void PromptProcessor::init_io(
+
+template <typename T>
+void PromptProcessor<T>::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
   input_tensors_.reserve(method_meta->num_inputs());
@@ -91,14 +95,14 @@ void PromptProcessor::init_io(
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
       std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
           (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-      std::vector<std::vector<KVCache>> cache_ptrs = (cache_group == 0)
+      std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
           ? kv_manager_->get_k_cache_()
           : kv_manager_->get_v_cache_();
       for (int layer = 0; layer < metadata_.num_layers; ++layer) {
         for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
           Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-          uint8_t* cache_ptr = cache_ptrs[layer][head].buffer;
+          T* cache_ptr = cache_ptrs[layer][head].buffer;
 
           cache[layer].emplace_back(std::make_unique<TensorImpl>(
               kv_cache->scalar_type(),
@@ -133,13 +137,13 @@ void PromptProcessor::init_io(
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<std::vector<KVCache>> cache_ptrs = (cache_group == 0)
+    std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
     for (int layer = 0; layer < metadata_.num_layers; ++layer) {
       for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
         Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-        uint8_t* cache_ptr = cache_ptrs[layer][head].output_buffer;
+        T* cache_ptr = cache_ptrs[layer][head].output_buffer;
         cache[layer].emplace_back(std::make_unique<TensorImpl>(
             kv_cache->scalar_type(),
             kv_cache->sizes().size(),
@@ -160,7 +164,13 @@ void PromptProcessor::init_io(
   }
 }
 
-void PromptProcessor::prepare_io(
+template <typename T>
+const std::vector<uint16_t>& PromptProcessor<T>::get_all_logits() {
+  return prompt_all_logits_;
+}
+
+template <typename T>
+void PromptProcessor<T>::prepare_io(
     const std::vector<uint64_t>& prompt_tokens,
     int64_t prompt_pos,
     int64_t start_pos) {
@@ -185,9 +195,11 @@ void PromptProcessor::prepare_io(
   }
 }
 
-Result<uint64_t> PromptProcessor::prefill(
+template <typename T>
+Result<uint64_t> PromptProcessor<T>::prefill(
     std::vector<uint64_t> prompt_tokens,
-    int64_t start_pos) {
+    int64_t start_pos,
+    bool dump_logits) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
 
   // Calculate number of blocks
@@ -251,6 +263,12 @@ Result<uint64_t> PromptProcessor::prefill(
     }
     // Run inference
     decoder_runner_->step(method_name_, inputs_);
+    if (dump_logits) {
+      prompt_all_logits_.insert(
+          prompt_all_logits_.end(),
+          logits_.data,
+          logits_.data + metadata_.ar_len * metadata_.vocab_size);
+    }
     // In the last run, offset to the meaningful logits.
     if (i == num_iters - 1) {
       n_update = 1 + ((num_prompt_tokens - 1) % metadata_.ar_len);
@@ -269,5 +287,9 @@ Result<uint64_t> PromptProcessor::prefill(
       (num_prompt_tokens + metadata_.ar_len - 1) % metadata_.ar_len);
   return cur_token;
 }
+
+// Explicit instantiations
+template class PromptProcessor<uint16_t>;
+template class PromptProcessor<uint8_t>;
 
 } // namespace example

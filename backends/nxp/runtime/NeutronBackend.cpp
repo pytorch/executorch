@@ -25,37 +25,53 @@ namespace neutron {
 #define ALIGN_SIZE(size) \
   ((size + BUFFER_ALIGNMENT - 1) & (~(BUFFER_ALIGNMENT - 1)))
 
+// clang-format off
 /* Header schema:
-        +----------------------------------+-----------------------------------+
-        | Input TensorFormats length (1B)  | Output TensorFormats length (1B)  |
-        +----------------------------------+-----------------------------------+
-        | 1st input tensor format (1B)     | [nth* input tensor format (1B)]   |
-        +----------------------------------+-----------------------------------+
-        | 1st output tensor format (1B)    | [nth* output tensor format (1B)]  |
-        +----------------------------------+-----------------------------------+
+     +----------------------------+-----------------------------+------------------------+
+     | Neutron inputs length (1B) | Neutron outputs length (1B) | Input args length (1B) |
+     +----------------------------+-----------+-----------------+------------------------+
+     | 1st input tensor format (1B)           | [nth* input tensor format (1B)]          |
+     +----------------------------------------+------------------------------------------+
+     | 1st output tensor format (1B)          | [nth* output tensor format (1B)]         |
+     +----------------------------------------+------------------------------------------+
+     | 1st input map (1B)                     | [nth* input map (1B)]                    |
+     +----------------------------------------+------------------------------------------+
+     | 1st output map (1B)                    | [nth* output map (1B)]                   |
+     +----------------------------------------+------------------------------------------+
 */
+// clang-format on
 #define ITEM_SIZE 1 // 1 Byte
 #define INPUT_TENSOR_FORMAT_LEN_POS 0
 #define OUTPUT_TENSOR_FORMAT_LEN_POS 1
-#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 2 * ITEM_SIZE)
+#define INPUT_ARGS_LEN_POS 2
+#define INPUT_TENSOR_FORMAT_ARRAY_ADDR(base) (base + 3 * ITEM_SIZE)
 #define OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(base) \
-  (base + 2 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
-#define PAYLOAD_ADDR(base)                                 \
-  (base +                                                  \
-   ALIGN_SIZE(                                             \
-       2 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS] + \
-       base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
+  (base + 3 * ITEM_SIZE + base[INPUT_TENSOR_FORMAT_LEN_POS])
+#define INPUT_TENSOR_MAP_ARRAY_ADDR(base)                         \
+  (base + 3 * ITEM_SIZE + 1 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define OUTPUT_TENSOR_MAP_ARRAY_ADDR(base)                        \
+  (base + 3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+   1 * base[OUTPUT_TENSOR_FORMAT_LEN_POS])
+#define PAYLOAD_ADDR(base)                                     \
+  (base +                                                      \
+   ALIGN_SIZE(                                                 \
+       3 * ITEM_SIZE + 2 * base[INPUT_TENSOR_FORMAT_LEN_POS] + \
+       2 * base[OUTPUT_TENSOR_FORMAT_LEN_POS]))
 
 // Aggregate neutron model handle and data structures into one.
 typedef struct {
   int numInputs = 0;
   int numOutputs = 0;
+  int numInputArgs = 0;
   uint32_t scratchSize = 0;
   NeutronModelConfig mcfg;
   NeutronDataConfig dcfg;
   NeutronModelHandle nmh = NULL;
   const uint8_t* inputTranspositionFlags;
   const uint8_t* outputTranspositionFlags;
+  const uint8_t* inputMap;
+  const uint8_t* outputMap;
 } NeutronConfig;
 
 // Applied on outputs.
@@ -210,6 +226,15 @@ void transposeOutput(
   }
 }
 
+bool multipleChannelsPresent(const ArrayRef<exec_aten::SizesType>& sizes) {
+  size_t length = sizes.size();
+  if (length < 3) {
+    return true;
+  }
+  size_t C = sizes[length - 3];
+  return C != 1;
+}
+
 class NeutronBackend final : public PyTorchBackendInterface {
  public:
   NeutronBackend() {}
@@ -234,17 +259,19 @@ class NeutronBackend final : public PyTorchBackendInterface {
     //    cfg->mcfg.microcode
     //    cfg->mcfg.weights
     //    cfg->mcfg.kernels
-    const uint8_t* transpositionFlags =
+    const uint8_t* payloadFlags =
         static_cast<const uint8_t*>(processed->data());
-    int numInputs = transpositionFlags[INPUT_TENSOR_FORMAT_LEN_POS];
-    int numOutputs = transpositionFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
-    cfg->inputTranspositionFlags =
-        INPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
+    uint32_t numInputs = payloadFlags[INPUT_TENSOR_FORMAT_LEN_POS];
+    uint32_t numOutputs = payloadFlags[OUTPUT_TENSOR_FORMAT_LEN_POS];
+    cfg->numInputArgs = payloadFlags[INPUT_ARGS_LEN_POS];
+    cfg->inputTranspositionFlags = INPUT_TENSOR_FORMAT_ARRAY_ADDR(payloadFlags);
     cfg->outputTranspositionFlags =
-        OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(transpositionFlags);
+        OUTPUT_TENSOR_FORMAT_ARRAY_ADDR(payloadFlags);
+    cfg->inputMap = INPUT_TENSOR_MAP_ARRAY_ADDR(payloadFlags);
+    cfg->outputMap = OUTPUT_TENSOR_MAP_ARRAY_ADDR(payloadFlags);
 
     const uint32_t* buffer = static_cast<const uint32_t*>(
-        static_cast<const void*> PAYLOAD_ADDR(transpositionFlags));
+        static_cast<const void*> PAYLOAD_ADDR(payloadFlags));
     uint32_t magicWord = buffer[0];
     // Check valid microcode.
     if (magicWord != 0x64434D6E) {
@@ -303,7 +330,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     NeutronConfig* cfg = static_cast<NeutronConfig*>(input_handle);
 
     // Allocate place for input and output pointers.
@@ -314,39 +341,37 @@ class NeutronBackend final : public PyTorchBackendInterface {
     cfg->dcfg.outputs[cfg->numOutputs] =
         static_cast<void*>(context.allocate(cfg->scratchSize, 16));
 
-    // Set inputs and outputs from args.
+    // Set inputs from args.
+    // Transpose inputs if needed.
     for (int i = 0; i < cfg->numInputs; i++) {
-      cfg->dcfg.inputs[i] = args[i]->toTensor().const_data_ptr();
-    }
-    for (int i = 0; i < cfg->numOutputs; i++) {
-      cfg->dcfg.outputs[i] =
-          args[cfg->numInputs + i]->toTensor().mutable_data_ptr();
-    }
-
-    // Transpose inputs.
-    for (int i = 0; i < cfg->numInputs; i++) {
-      if (cfg->inputTranspositionFlags[i]) {
-        if (args[i]->toTensor().sizes().size() < 3) {
+      auto arg = args[cfg->inputMap[i]]->toTensor();
+      if (cfg->inputTranspositionFlags[i] &&
+          multipleChannelsPresent(arg.sizes())) {
+        if (arg.sizes().size() < 3) {
           ET_LOG(Error, "Unable to transpose 1D and 2D input to channel last");
           return Error::InvalidProgram;
         }
         // Allocate buffer, the allocator is reset after each PTE instruction.
-        void* buffer = context.allocate(args[i]->toTensor().nbytes(), 16);
+        void* buffer = context.allocate(arg.nbytes());
         transposeInput(
-            args[i]->toTensor().const_data_ptr(),
-            buffer,
-            args[i]->toTensor().sizes(),
-            args[i]->toTensor().element_size());
+            arg.const_data_ptr(), buffer, arg.sizes(), arg.element_size());
         cfg->dcfg.inputs[i] = buffer;
+      } else {
+        cfg->dcfg.inputs[i] = arg.const_data_ptr();
       }
     }
-    // Redirect outputs.
+
+    // Set outputs from args.
+    // Redirect outputs if needed before transposition.
     for (int i = 0; i < cfg->numOutputs; i++) {
-      if (cfg->outputTranspositionFlags[i]) {
+      auto arg = args[cfg->numInputArgs + cfg->outputMap[i]]->toTensor();
+      if (cfg->outputTranspositionFlags[i] &&
+          multipleChannelsPresent(arg.sizes())) {
         // Allocate buffer, the allocator is reset after each PTE instruction.
-        void* buffer =
-            context.allocate(args[cfg->numInputs + i]->toTensor().nbytes(), 16);
+        void* buffer = context.allocate(arg.nbytes());
         cfg->dcfg.outputs[i] = buffer;
+      } else {
+        cfg->dcfg.outputs[i] = arg.mutable_data_ptr();
       }
     }
 
@@ -368,17 +393,19 @@ class NeutronBackend final : public PyTorchBackendInterface {
 
     // Transpose outputs.
     for (int i = 0; i < cfg->numOutputs; i++) {
-      if (cfg->outputTranspositionFlags[i]) {
-        if (args[cfg->numInputs + i]->toTensor().sizes().size() < 3) {
+      auto arg = args[cfg->numInputArgs + cfg->outputMap[i]]->toTensor();
+      if (cfg->outputTranspositionFlags[i] &&
+          multipleChannelsPresent(arg.sizes())) {
+        if (arg.sizes().size() < 3) {
           ET_LOG(
               Error, "Unable to transpose 1D and 2D output to channel first");
           return Error::InvalidProgram;
         }
         transposeOutput(
             cfg->dcfg.outputs[i],
-            args[cfg->numInputs + i]->toTensor().mutable_data_ptr(),
-            args[cfg->numInputs + i]->toTensor().sizes(),
-            args[cfg->numInputs + i]->toTensor().element_size());
+            arg.mutable_data_ptr(),
+            arg.sizes(),
+            arg.element_size());
       }
     }
 

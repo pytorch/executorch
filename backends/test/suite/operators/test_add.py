@@ -7,11 +7,14 @@
 # pyre-unsafe
 
 
-from typing import Callable
-
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite import dtype_test, operator_test, OperatorTest
+from executorch.backends.test.suite.operators import (
+    dtype_test,
+    operator_test,
+    OperatorTest,
+)
 
 
 class Model(torch.nn.Module):
@@ -31,52 +34,52 @@ class ModelAlpha(torch.nn.Module):
 @operator_test
 class Add(OperatorTest):
     @dtype_test
-    def test_add_dtype(self, dtype, tester_factory: Callable) -> None:
+    def test_add_dtype(self, flow: TestFlow, dtype) -> None:
         self._test_op(
             Model(),
             (
                 (torch.rand(2, 10) * 100).to(dtype),
                 (torch.rand(2, 10) * 100).to(dtype),
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_add_f32_bcast_first(self, tester_factory: Callable) -> None:
+    def test_add_f32_bcast_first(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
             (
                 torch.randn(5),
                 torch.randn(1, 5, 1, 5),
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_add_f32_bcast_second(self, tester_factory: Callable) -> None:
+    def test_add_f32_bcast_second(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
             (
                 torch.randn(4, 4, 2, 7),
                 torch.randn(2, 7),
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_add_f32_bcast_unary(self, tester_factory: Callable) -> None:
+    def test_add_f32_bcast_unary(self, flow: TestFlow) -> None:
         self._test_op(
             Model(),
             (
                 torch.randn(5),
                 torch.randn(1, 1, 5),
             ),
-            tester_factory,
+            flow,
         )
 
-    def test_add_f32_alpha(self, tester_factory: Callable) -> None:
+    def test_add_f32_alpha(self, flow: TestFlow) -> None:
         self._test_op(
             ModelAlpha(alpha=2),
             (
                 torch.randn(1, 25),
                 torch.randn(1, 25),
             ),
-            tester_factory,
+            flow,
         )

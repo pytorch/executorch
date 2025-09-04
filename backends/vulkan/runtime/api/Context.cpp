@@ -38,8 +38,7 @@ Context::Context(vkapi::Adapter* adapter, const ContextConfig& config)
       querypool_(config_.query_pool_config, nullptr),
       // Command buffer submission
       cmd_mutex_{},
-      cmd_(VK_NULL_HANDLE, VK_NULL_HANDLE, 0u),
-      prev_semaphore_(VK_NULL_HANDLE),
+      cmd_(VK_NULL_HANDLE, 0u),
       submit_count_{0u},
       // Memory Management
       buffer_clearlist_mutex_{},
@@ -110,6 +109,12 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
     if (!adapter_p_->supports_8bit_storage_buffers()) {
       throw vkapi::ShaderNotSupportedError(
           shader.kernel_name, vkapi::VulkanExtension::INT8_STORAGE);
+    }
+  }
+  if (shader.requires_integer_dot_product) {
+    if (!adapter_p_->supports_int8_dot_product()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INTEGER_DOT_PRODUCT);
     }
   }
 }
@@ -196,21 +201,14 @@ void Context::register_blit(
 }
 
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
-  // Wait semaphore would be previous command buffer's signal semaphore
-  VkSemaphore wait_semaphore = prev_semaphore_;
-  // Signal semaphore for the the current command buffer
-  VkSemaphore signal_semaphore = cmd_.get_signal_semaphore();
-  // Next command buffer would wait on this command buffer's signal semaphore
-  prev_semaphore_ = signal_semaphore;
-
   if (cmd_) {
     cmd_.end();
     adapter_p_->submit_cmd(
         queue_,
         cmd_.get_submit_handle(final_use),
         fence_handle,
-        wait_semaphore,
-        signal_semaphore);
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE);
 
     submit_count_ = 0u;
   }
@@ -226,8 +224,6 @@ void Context::flush() {
   if (cmd_) {
     cmd_.invalidate();
   }
-  // Reset previous command buffer semaphore
-  prev_semaphore_ = VK_NULL_HANDLE;
 
   std::lock_guard<std::mutex> bufferlist_lock(buffer_clearlist_mutex_);
   std::lock_guard<std::mutex> imagelist_lock(image_clearlist_mutex_);

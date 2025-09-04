@@ -9,10 +9,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -80,9 +81,17 @@ class Not(torch.nn.Module):
         return torch.logical_not(tensor)
 
 
+#################
+## logical_and ##
+#################
+
+
+xfails = {"rand_rank4": "MLBEDSW-11031: Output diff on u85 bool transpose."}
+
+
 @common.parametrize("test_data", And().test_data)
-def test_logical_and_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_logical_and_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         And(),
         test_data(),
         And().aten_op,
@@ -95,8 +104,8 @@ def test_logical_and_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", And().test_data)
-def test_logical_and_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_logical_and_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         And(),
         test_data(),
         And().aten_op,
@@ -111,7 +120,7 @@ def test_logical_and_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", And().test_data)
-def test_logical_and_u55_BI_not_delegated(test_data: input_t2):
+def test_logical_and_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         And(),
@@ -123,10 +132,10 @@ def test_logical_and_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data)
+@common.parametrize("test_data", And().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
-def test_logical_and_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_logical_and_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         And(),
         test_data(),
         And().aten_op,
@@ -141,9 +150,42 @@ def test_logical_and_u85_BI(test_data: input_t2):
     pipeline.run()
 
 
+@common.parametrize("test_data", And().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_and_vgf_FP(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        And(),
+        test_data(),
+        And().aten_op,
+        And().exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", And().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_and_vgf_INT(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        And(),
+        test_data(),
+        And().aten_op,
+        And().exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+#################
+## logical_xor ##
+#################
+
+
 @common.parametrize("test_data", Xor().test_data)
-def test_logical_xor_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_logical_xor_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
@@ -156,8 +198,8 @@ def test_logical_xor_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data)
-def test_logical_xor_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_logical_xor_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
@@ -172,7 +214,7 @@ def test_logical_xor_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Xor().test_data)
-def test_logical_xor_u55_BI_not_delegated(test_data: input_t2):
+def test_logical_xor_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
@@ -184,10 +226,10 @@ def test_logical_xor_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Xor().test_data)
+@common.parametrize("test_data", Xor().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
-def test_logical_xor_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_logical_xor_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         Xor(),
         test_data(),
         Xor().aten_op,
@@ -202,9 +244,42 @@ def test_logical_xor_u85_BI(test_data: input_t2):
     pipeline.run()
 
 
+@common.parametrize("test_data", Xor().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_xor_vgf_FP(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        Xor(),
+        test_data(),
+        Xor().aten_op,
+        Xor().exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Xor().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_xor_vgf_INT(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        Xor(),
+        test_data(),
+        Xor().aten_op,
+        Xor().exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+################
+## logical_or ##
+################
+
+
 @common.parametrize("test_data", Or().test_data)
-def test_logical_or_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_logical_or_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
@@ -217,8 +292,8 @@ def test_logical_or_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data)
-def test_logical_or_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_logical_or_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
@@ -233,7 +308,7 @@ def test_logical_or_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Or().test_data)
-def test_logical_or_u55_BI_not_delegated(test_data: input_t2):
+def test_logical_or_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
@@ -245,10 +320,10 @@ def test_logical_or_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Or().test_data)
+@common.parametrize("test_data", Or().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
-def test_logical_or_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_logical_or_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         Or(),
         test_data(),
         Or().aten_op,
@@ -263,9 +338,42 @@ def test_logical_or_u85_BI(test_data: input_t2):
     pipeline.run()
 
 
+@common.parametrize("test_data", Or().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_or_vgf_FP(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        Or(),
+        test_data(),
+        Or().aten_op,
+        Or().exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Or().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_or_vgf_INT(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        Or(),
+        test_data(),
+        Or().aten_op,
+        Or().exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+#################
+## logical_not ##
+#################
+
+
 @common.parametrize("test_data", Not().test_data)
-def test_logical_not_tosa_MI(test_data: input_t2):
-    pipeline = TosaPipelineMI[input_t2](
+def test_logical_not_tosa_FP(test_data: input_t2):
+    pipeline = TosaPipelineFP[input_t2](
         Not(),
         test_data(),
         Not().aten_op,
@@ -278,8 +386,8 @@ def test_logical_not_tosa_MI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Not().test_data)
-def test_logical_not_tosa_BI(test_data: input_t2):
-    pipeline = TosaPipelineBI[input_t2](
+def test_logical_not_tosa_INT(test_data: input_t2):
+    pipeline = TosaPipelineINT[input_t2](
         Not(),
         test_data(),
         Not().aten_op,
@@ -294,7 +402,7 @@ def test_logical_not_tosa_BI(test_data: input_t2):
 
 
 @common.parametrize("test_data", Not().test_data)
-def test_logical_not_u55_BI_not_delegated(test_data: input_t2):
+def test_logical_not_u55_INT_not_delegated(test_data: input_t2):
     # Tests that we don't delegate these ops since they are not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t2](
         Not(),
@@ -306,10 +414,10 @@ def test_logical_not_u55_BI_not_delegated(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Not().test_data)
+@common.parametrize("test_data", Not().test_data, xfails=xfails)
 @common.XfailIfNoCorstone320
-def test_logical_not_u85_BI(test_data: input_t2):
-    pipeline = EthosU85PipelineBI[input_t2](
+def test_logical_not_u85_INT(test_data: input_t2):
+    pipeline = EthosU85PipelineINT[input_t2](
         Not(),
         test_data(),
         Not().aten_op,
@@ -318,6 +426,34 @@ def test_logical_not_u85_BI(test_data: input_t2):
         atol=0,
         rtol=0,
         qtol=0,
+    )
+    pipeline.pop_stage("quantize")
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", Not().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_not_vgf_FP(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        Not(),
+        test_data(),
+        Not().aten_op,
+        Not().exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Not().test_data)
+@common.SkipIfNoModelConverter
+def test_logical_not_vgf_INT(test_data: input_t2):
+    pipeline = VgfPipeline[input_t2](
+        Not(),
+        test_data(),
+        Not().aten_op,
+        Not().exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")

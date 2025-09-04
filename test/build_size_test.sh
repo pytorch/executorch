@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Build size_test and show the size of it
-set -e
+set -ex
 
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../.ci/scripts/utils.sh"
@@ -23,11 +23,12 @@ cmake_install_executorch_lib() {
   update_tokenizers_git_submodule
   local EXTRA_BUILD_ARGS="${@}"
 
-  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake -DBUCK2="$BUCK2" \
+  CXXFLAGS="$COMMON_CXXFLAGS" retry cmake \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
           -DEXECUTORCH_OPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           ${EXTRA_BUILD_ARGS} \

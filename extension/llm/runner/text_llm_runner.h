@@ -24,6 +24,9 @@
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
+// Helper functions are now in llm_runner_helper.h
+// These are provided for backward compatibility
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
 
 namespace executorch::extension::llm {
 
@@ -43,6 +46,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * part of the model
    * @param text_prefiller Component for handling the prefill phase of text
    * generation
+   * @param io_manager Component for handling I/O operations
    * @param text_token_generator Component for generating tokens during the
    * decode phase
    * @param stats Statistics tracking object for performance monitoring
@@ -55,6 +59,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::unique_ptr<::executorch::extension::Module> module,
       std::unique_ptr<TextDecoderRunner> text_decoder_runner,
       std::unique_ptr<TextPrefiller> text_prefiller,
+      std::unique_ptr<IOManager> io_manager,
       std::unique_ptr<TextTokenGenerator> text_token_generator,
       std::unique_ptr<Stats> stats,
       float temperature = -1.0f);
@@ -155,6 +160,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
                             // sure it outlives text_prefiller_ &
                             // text_token_generator_.
   std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
 
   // Stats
@@ -164,46 +170,5 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
 };
-
-/**
- * @brief Loads a tokenizer from the specified path
- *
- * This function creates and initializes a tokenizer from a file, with options
- * to customize special tokens and regex patterns.
- *
- * @param tokenizer_path Path to the tokenizer file
- * @param special_tokens Optional list of special tokens to add to the tokenizer
- * @param pattern Optional regex pattern for tokenization
- * @param bos_token_index Index of the beginning-of-sequence token
- * @param eos_token_index Index of the end-of-sequence token
- * @return std::unique_ptr<tokenizers::Tokenizer> Initialized tokenizer instance
- */
-ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
-    const std::string& tokenizer_path,
-    std::unique_ptr<std::vector<std::string>> special_tokens = nullptr,
-    std::optional<std::string> pattern = std::nullopt,
-    size_t bos_token_index = 0,
-    size_t eos_token_index = 1);
-
-/**
- * @brief Creates a TextLLMRunner instance with the specified model and
- * tokenizer
- *
- * This factory function creates and initializes a TextLLMRunner with all
- * necessary components for text generation using the specified model and
- * tokenizer.
- *
- * @param model_path Path to the model file
- * @param tokenizer Initialized tokenizer instance
- * @param data_path Optional path to additional data required by the model
- * @param temperature Optional temperature parameter for controlling randomness
- * (deprecated)
- * @return std::unique_ptr<TextLLMRunner> Initialized TextLLMRunner instance
- */
-ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
-    const std::string& model_path,
-    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path = std::nullopt,
-    float temperature = -1.0f);
 
 } // namespace executorch::extension::llm

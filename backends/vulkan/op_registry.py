@@ -8,22 +8,16 @@
 
 import operator
 
-from typing import Callable, Dict, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import executorch.backends.vulkan.custom_ops_lib  # noqa
 
+import executorch.backends.vulkan.utils as utils
+
 import torch
 
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
-    VkMemoryLayout,
-    VkStorageType,
-)
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkMemoryLayout
 
-from executorch.backends.vulkan.utils import (
-    all_memory_layouts,
-    all_packed_dims,
-    PackedDim,
-)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -38,156 +32,60 @@ def allow_node(node: torch.fx.Node) -> bool:
     return True
 
 
-class TextureImplFeatures:
-    __slots__ = [
-        "valid_packed_dims",
-        "uses_axis_map",
-    ]
-
-    def __init__(
-        self,
-        uses_axis_map: bool = False,
-        valid_packed_dims: Optional[Set[PackedDim]] = None,
-    ):
-        self.uses_axis_map: bool = uses_axis_map
-        self.valid_packed_dims = set()
-        if valid_packed_dims is not None:
-            self.valid_packed_dims = valid_packed_dims
-
-    def valid_memory_layouts(self) -> Set[VkMemoryLayout]:
-        """
-        Derive the set of memory layouts supported by the texture implementation based
-        on the valid packed dimensions.
-        """
-        layouts = set()
-
-        if PackedDim.WIDTH in self.valid_packed_dims:
-            layouts.add(VkMemoryLayout.TENSOR_WIDTH_PACKED)
-
-        if PackedDim.HEIGHT in self.valid_packed_dims:
-            layouts.add(VkMemoryLayout.TENSOR_HEIGHT_PACKED)
-
-        if PackedDim.CHANNELS in self.valid_packed_dims:
-            layouts.add(VkMemoryLayout.TENSOR_CHANNELS_PACKED)
-
-        return layouts
-
-
 class OpFeatures:
     __slots__ = [
-        # None or TextureImplFeatures to specify implementation details of the texture
-        # based operator implementation.
-        "texture_impl",
-        # bool indicating if the operator has a buffer based implementation.
-        "buffer_impl",
+        # Sets of possible (storage types, memory layouts) to use for the input tensor(s)
+        "inputs_storage",
+        # Sets of possible (storage types, memory layouts) to use for the output tensor(s)
+        "outputs_storage",
         # bool indicating if the operator has a resize function, which allows it to
-        # support dynamic shape tensors.
-        "resize_fn",
-        # Optimal
-        "optimal_storage",
-        "optimal_layout",
+        # support models with dynamic shape
+        "supports_resize",
         # bool indicating if the operator handles its own prepacking. If this is True,
         # then the insert_prepack_nodes pass will not insert prepack nodes for the args
         # of the op.
-        "handles_own_prepacking",
-        # Optional dictionary to specify a custom function to calculate the required
-        # image extents for a particular argument index.
-        "skip_limits_check",
+        "supports_prepacking",
         # Optional check function used during partitioning to determine if a node's
         # inputs are supported by the operator implementation.
-        "check_node_fn",
+        "are_node_inputs_supported_fn",
     ]
 
     def __init__(
         self,
-        texture_impl: Optional[TextureImplFeatures] = None,
-        buffer_impl: bool = False,
-        resize_fn: bool = False,
-        optimal_storage: Optional[VkStorageType] = None,
-        optimal_layout: Optional[VkMemoryLayout] = None,
-        handles_own_prepacking: bool = False,
-        skip_limits_check: Optional[Set[int]] = None,
-        check_node_fn: Optional[Callable] = None,
+        inputs_storage: Optional[
+            Union[utils.TensorRepSet, List[utils.TensorRepSet]]
+        ] = None,
+        outputs_storage: Optional[
+            Union[utils.TensorRepSet, List[utils.TensorRepSet]]
+        ] = None,
+        supports_resize: bool = False,
+        supports_prepacking: bool = False,
+        are_node_inputs_supported_fn: Optional[Callable] = allow_node,
     ):
-        self.texture_impl: Optional[TextureImplFeatures] = texture_impl
-        self.buffer_impl: bool = buffer_impl
-        self.resize_fn: bool = resize_fn
-        self.optimal_storage: Optional[VkStorageType] = optimal_storage
-        self.optimal_layout: Optional[VkMemoryLayout] = optimal_layout
-        self.handles_own_prepacking: bool = handles_own_prepacking
+        self.inputs_storage: utils.TensorRepSetList = utils.TensorRepSetList(
+            inputs_storage if inputs_storage is not None else []
+        )
+        self.outputs_storage: utils.TensorRepSetList = utils.TensorRepSetList(
+            outputs_storage if outputs_storage is not None else []
+        )
 
-        self.skip_limits_check: Set[int] = set()
-        if skip_limits_check is not None:
-            self.skip_limits_check = skip_limits_check
+        # If output storage is not set, assume that it is derived from the first input
+        if self.outputs_storage.any_is_empty():
+            self.outputs_storage = utils.TensorRepSetList(self.inputs_storage[0])
 
-        self.check_node_fn: Callable = allow_node
-        if check_node_fn is not None:
-            self.check_node_fn = check_node_fn
+        self.supports_resize = supports_resize
+        self.supports_prepacking = supports_prepacking
 
-    def propose_storage_type(self) -> Optional[VkStorageType]:
-        """
-        Propose a storage type that should be used for this operator. A proposal can be
-        made if one of the following is true:
-        1. The operator specifies an optimal storage type
-        2. Only one storage type is supported.
+        self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
 
-        If both storage types are supported and no optimal storage type is specified,
-        then None is returned to indicate that there is no preference in storage type.
-        """
-        if self.optimal_storage is not None:
-            return self.optimal_storage
-
-        if self.texture_impl is not None and not self.buffer_impl:
-            return VkStorageType.TEXTURE_3D
-        elif self.buffer_impl and self.texture_impl is None:
-            return VkStorageType.BUFFER
-
-        return None
-
-    def supported_storage_types(self) -> Set[VkStorageType]:
-        """
-        Return the set of storage types supported by this operator.
-        """
-        storage_types = set()
-        if self.texture_impl is not None:
-            storage_types.add(VkStorageType.TEXTURE_3D)
-        if self.buffer_impl:
-            storage_types.add(VkStorageType.BUFFER)
-
-        return storage_types
-
-    def propose_memory_layout(self, storage: VkStorageType) -> Optional[VkMemoryLayout]:
-        """
-        Given a storage type as a precondition, propose a memory layout that should be
-        used for this operator. A proposal can be made if one of the following is true:
-        1. The operator specifies an optimal memory layout
-        2. Only one memory layout is supported.
-
-        If multiple memory layouts are supported and no optimal memory layout is
-        specified then return None to indicate that the "best" memory layout for the
-        operator is ambiguous.
-        """
-        if self.optimal_layout is not None:
-            return self.optimal_layout
-
-        if storage == VkStorageType.TEXTURE_3D:
-            assert self.texture_impl is not None
-            possible_layouts = self.texture_impl.valid_memory_layouts()
-            if len(possible_layouts) == 1:
-                return next(iter(possible_layouts))
-
-        return None
-
-    def supported_memory_layouts(self, storage: VkStorageType) -> Set[VkMemoryLayout]:
-        """
-        Return the set of memory layouts supported by this operator for a given storage
-        type.
-        """
-        if storage == VkStorageType.TEXTURE_3D:
-            assert self.texture_impl is not None
-            return self.texture_impl.valid_memory_layouts()
-        else:
-            return all_memory_layouts
+    def make_op_repsets(
+        self,
+        op_node: torch.fx.Node,
+        texture_limits: utils.ImageExtents = utils.DEFAULT_TEXTURE_LIMITS,
+    ) -> utils.OpRepSets:
+        return utils.OpRepSets(
+            self.inputs_storage, self.outputs_storage, op_node, texture_limits
+        )
 
 
 #######################
@@ -204,8 +102,7 @@ def update_features(aten_op):
         def update_features_impl(op: OpKey):
             if op in vulkan_supported_ops:
                 raise RuntimeError(f"[Vulkan delegate] duplicate registration of {op}!")
-            vulkan_supported_ops[op] = OpFeatures()
-            vulkan_supported_ops[op] = fn(vulkan_supported_ops[op])
+            vulkan_supported_ops[op] = fn()
 
         if isinstance(aten_op, list):
             for op in aten_op:
@@ -228,102 +125,63 @@ def update_features(aten_op):
         operator.gt,
         operator.ge,
         operator.le,
+        operator.eq,
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
     ]
 )
-def register_ephemeral_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims=all_packed_dims,
+def register_ephemeral_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-    return features
 
 
 @update_features(
     [
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_token.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
-        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
-        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
     ]
 )
-def register_quantization_op(features: OpFeatures):
-    # Quantization requires buffer storage and width packing for scales/zero_points
-    # but we need to provide texture impl features for the partitioner to work properly
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims={
-            PackedDim.WIDTH,
-        },
+def register_quantization_op():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.BUFFER
-    return features
 
 
 @update_features(
     [
         exir_ops.edge.torchao.quantize_affine.default,
         exir_ops.edge.torchao.dequantize_affine.default,
-        exir_ops.edge.torchao.choose_qparams_affine.default,
     ]
 )
-def register_torchao_quantization_op(features: OpFeatures):
-    # TorchAO quantization operators - default to per-tensor behavior
-    # Same features as standard quantization ops
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims={
-            PackedDim.WIDTH,
-        },
+def register_affine_quantization_op():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.BUFFER
 
-    def check_torchao_quantization_node(node: torch.fx.Node) -> bool:
-        # Only per-tensor quantization is supported by the Vulkan backend.
-        if len(node.args) < 2:
-            return False
 
-        block_size = node.args[1]
-
-        if not isinstance(block_size, (list, tuple)):
-            return False
-
-        input_arg = node.args[0]
-        if not isinstance(input_arg, torch.fx.Node):
-            return False
-
-        input_tensor = input_arg.meta.get("val", None)
-        if not isinstance(input_tensor, FakeTensor):
-            return False
-
-        input_shape = list(input_tensor.shape)
-
-        if len(block_size) != len(input_shape):
-            return False
-
-        # Check if block_size matches input_shape exactly (per-tensor quantization)
-        for i in range(len(block_size)):
-            if block_size[i] != input_shape[i]:
-                return False
-
-        return True
-
-    features.check_node_fn = check_torchao_quantization_node
-    return features
+@update_features(
+    [
+        exir_ops.edge.torchao.choose_qparams_affine.default,
+        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
+        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
+    ]
+)
+def register_torchao_quantization_op():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
+    )
 
 
 @update_features(
@@ -342,13 +200,11 @@ def register_torchao_quantization_op(features: OpFeatures):
         exir_ops.edge.aten.ge.Tensor,
     ]
 )
-def register_binary_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims=all_packed_dims,
+def register_binary_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
     )
-    features.resize_fn = True
-    return features
 
 
 @update_features(
@@ -371,24 +227,15 @@ def register_binary_op(features: OpFeatures):
         exir_ops.edge.aten.leaky_relu.default,
     ]
 )
-def register_unary_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims=all_packed_dims,
+def register_unary_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-    return features
 
 
 @update_features(exir_ops.edge.aten._to_copy.default)
-def register_to_copy_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims=all_packed_dims,
-    )
-    features.resize_fn = True
-
+def register_to_copy_op():
     def check_to_copy_node(node: torch.fx.Node) -> bool:
         float_dtypes = [torch.float16, torch.float32]
 
@@ -408,20 +255,15 @@ def register_to_copy_op(features: OpFeatures):
 
         return False
 
-    features.check_node_fn = check_to_copy_node
-
-    return features
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_to_copy_node,
+    )
 
 
 @update_features(exir_ops.edge.dim_order_ops._to_dim_order_copy.default)
-def register_to_copy_dim_order_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims=all_packed_dims,
-    )
-    features.buffer_impl = True
-    features.resize_fn = True
-
+def register_to_copy_dim_order_op():
     # Currently there is no "real" implementation for to_dim_order_copy, but it can be
     # removed as long as the operator is not changing the dtype, i.e. the operator call
     # is modifying the dim order only. Therefore, check that the input and output dtypes
@@ -439,9 +281,11 @@ def register_to_copy_dim_order_op(features: OpFeatures):
 
         return True
 
-    features.check_node_fn = check_dim_order_copy_node
-
-    return features
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_dim_order_copy_node,
+    )
 
 
 @update_features(
@@ -452,20 +296,12 @@ def register_to_copy_dim_order_op(features: OpFeatures):
         exir_ops.edge.aten.linear.default,
     ]
 )
-def register_mm_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=True,
-        valid_packed_dims={
-            PackedDim.WIDTH,
-            PackedDim.CHANNELS,
-        },
+def register_mm_op():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_resize=True,
+        supports_prepacking=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
-    features.handles_own_prepacking = True
-    return features
 
 
 @update_features(
@@ -474,32 +310,46 @@ def register_mm_op(features: OpFeatures):
         exir_ops.edge.et_vk.linear_qcs4w.default,
     ]
 )
-def register_int8_mm_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=False,
-        valid_packed_dims={PackedDim.WIDTH},
+def register_int8_mm_op():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_resize=True,
+        supports_prepacking=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
-    features.handles_own_prepacking = True
-    return features
 
 
-@update_features(exir_ops.edge.et_vk.linear_weight_int4.default)
-def register_int4_mm_op(features: OpFeatures):
-    features.buffer_impl = True
-    features.texture_impl = TextureImplFeatures(
-        uses_axis_map=False,
-        valid_packed_dims={PackedDim.WIDTH},
+@update_features(
+    [
+        exir_ops.edge.et_vk.linear_weight_int4.default,
+    ]
+)
+def register_int4_mm_op():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_resize=True,
+        supports_prepacking=True,
     )
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
-    features.handles_own_prepacking = True
-    features.skip_limits_check = {1}
-    return features
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.linear_qta8a_qga4w.default,
+    ]
+)
+def register_dqlinear_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # input
+            utils.CONTIGUOUS_BUFFER,  # mat1 scales
+            utils.CONTIGUOUS_BUFFER,  # mat1 zeros
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # group size (non tensor)
+            utils.CONTIGUOUS_BUFFER,  # mat2 scales
+            utils.CONTIGUOUS_BUFFER,  # mat2 zeros
+        ],
+        supports_resize=True,
+        supports_prepacking=True,
+    )
 
 
 @update_features(
@@ -508,12 +358,11 @@ def register_int4_mm_op(features: OpFeatures):
         exir_ops.edge.aten._softmax.default,
     ]
 )
-def register_softmax_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
+def register_softmax_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        supports_resize=True,
     )
-    features.resize_fn = True
-    return features
 
 
 @update_features(
@@ -524,25 +373,49 @@ def register_softmax_op(features: OpFeatures):
         exir_ops.edge.aten.amin.default,
     ]
 )
-def register_reduce_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
-    )
-    features.resize_fn = True
-
+def register_reduce_op():
     def check_reduce_node(node: torch.fx.Node) -> bool:
         dim_list = node.args[1]
-        if isinstance(dim_list, list) and len(dim_list) != 1:
+        if isinstance(dim_list, list) and len(dim_list) > 2:
             return False
 
-        keepdim = node.args[2]
+        if isinstance(dim_list, list) and len(dim_list) == 2:
+            # Try to get the memory layout for this node
+            try:
+                memory_layout = utils.get_node_memory_layout(node)
+
+                # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
+                if (
+                    memory_layout is not None
+                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
+                ):
+                    # For now only default layout is supported for 2D reduction.
+                    # Because we can't determine if the input is NCHW or NHWC here,
+                    # assume the reduction dimension is packed so we cannot support it.
+                    return False
+            except (AssertionError, KeyError, AttributeError):
+                # If we can't get memory layout information, we'll assume the dims aren't packed
+                pass
+
+        def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
+            for arg in node.args:
+                if isinstance(arg, bool):
+                    return arg
+
+            # Assume false by default
+            return False
+
+        keepdim = try_find_keepdim_arg(node)
         if isinstance(keepdim, bool) and not keepdim:
             return False
 
         return True
 
-    features.check_node_fn = check_reduce_node
-    return features
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_reduce_node,
+    )
 
 
 @update_features(
@@ -551,12 +424,11 @@ def register_reduce_op(features: OpFeatures):
         exir_ops.edge.aten.max_pool2d_with_indices.default,
     ]
 )
-def register_2d_pool_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.CHANNELS},
+def register_2d_pool_op():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        supports_resize=True,
     )
-    features.resize_fn = True
-    return features
 
 
 @update_features(
@@ -565,28 +437,33 @@ def register_2d_pool_op(features: OpFeatures):
         exir_ops.edge.et_vk.conv_with_clamp.default,
     ]
 )
-def register_convolution_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.CHANNELS},
+def register_convolution_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # output_min (non tensor)
+            utils.NO_STORAGE,  # output_max (non tensor)
+        ],
+        supports_resize=True,
+        supports_prepacking=True,
     )
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_CHANNELS_PACKED
-    features.handles_own_prepacking = True
-    features.skip_limits_check = {1, 2}
-    return features
 
 
 @update_features("llama::sdpa_with_kv_cache")
-def register_sdpa_with_kv_cache_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.WIDTH},
+def register_sdpa_with_kv_cache_op():
+    return OpFeatures(
+        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        supports_resize=True,
+        supports_prepacking=True,
     )
-    features.resize_fn = True
-    features.optimal_storage = VkStorageType.TEXTURE_3D
-    features.optimal_layout = VkMemoryLayout.TENSOR_WIDTH_PACKED
-    features.handles_own_prepacking = True
-    return features
 
 
 @update_features(
@@ -595,62 +472,63 @@ def register_sdpa_with_kv_cache_op(features: OpFeatures):
         "llama::custom_sdpa",
     ]
 )
-def register_sdpa_ops(features: OpFeatures):
-    features.resize_fn = False
-    features.buffer_impl = False
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.WIDTH},
+def register_sdpa_ops():
+    return OpFeatures(
+        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        supports_resize=True,
     )
-    features.resize_fn = True
-    return features
 
 
 @update_features(exir_ops.edge.et_vk.apply_rotary_emb.default)
-def register_rotary_emb_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.WIDTH},
+def register_rotary_emb_op():
+    return OpFeatures(
+        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        supports_resize=True,
     )
-    features.resize_fn = True
-    return features
 
 
 @update_features(
     [
-        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.view_copy.default,
     ]
 )
-def register_view_ops(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
+def register_view_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        supports_resize=True,
     )
-    features.resize_fn = True
-    return features
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+)
+def register_view_ops_with_buffer_meta():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.expand_copy.default)
+def register_expand():
+    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
 
 
 # Fully featured transfer operators (i.e. operators that copy data from the input
 # tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
 # for both texture and buffer storage types.
 @update_features(exir_ops.edge.aten.cat.default)
-def register_cat_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
+def register_cat_op():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-
-    def check_cat_node(node: torch.fx.Node) -> bool:
-        inputs = node.args[0]
-        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
-            return True
-
-        return False
-
-    features.check_node_fn = check_cat_node
-
-    return features
 
 
 # Fully featured transfer operators (i.e. operators that copy data from the input
@@ -662,14 +540,11 @@ def register_cat_op(features: OpFeatures):
         exir_ops.edge.aten.slice_copy.Tensor,
     ]
 )
-def register_transfer_ops(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
+def register_transfer_ops():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
     )
-    features.buffer_impl = True
-    features.resize_fn = True
-
-    return features
 
 
 # Ops ported from PyTorch Vulkan backend. These ops commonly support channels
@@ -696,30 +571,25 @@ def register_transfer_ops(features: OpFeatures):
         exir_ops.edge.et_vk.grid_priors.default,
     ]
 )
-def register_ported_op(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.CHANNELS},
+def register_ported_op():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
     )
-    return features
 
 
-# Ops ported from PyTorch Vulkan backend. These ops are in a separate registry becasue they support all packed dimensions
+# Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Shape Manipulation
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze_copy.default,
         # Tensor combination
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.split.Tensor,
     ]
 )
-def register_ported_op_all_packed_dims(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
+def register_ported_op_all_packed_dims():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
     )
-    return features
 
 
 # Ported ops that support their own prepacking.
@@ -729,12 +599,11 @@ def register_ported_op_all_packed_dims(features: OpFeatures):
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
     ]
 )
-def register_ported_ops_with_prepacking(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.CHANNELS},
+def register_ported_ops_with_prepacking():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        supports_prepacking=True,
     )
-    features.handles_own_prepacking = True
-    return features
 
 
 @update_features(
@@ -742,25 +611,16 @@ def register_ported_ops_with_prepacking(features: OpFeatures):
         exir_ops.edge.aten.native_group_norm.default,
     ]
 )
-def register_native_group_norm(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims={PackedDim.CHANNELS},
+def register_native_group_norm():
+    return OpFeatures(
+        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        outputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+            utils.CONTIGUOUS_BUFFER,
+            utils.CONTIGUOUS_BUFFER,
+        ],
+        supports_prepacking=True,
     )
-    features.handles_own_prepacking = True
-
-    features.optimal_storage = [
-        VkStorageType.TEXTURE_3D,
-        VkStorageType.BUFFER,
-        VkStorageType.BUFFER,
-    ]
-
-    features.optimal_layout = [
-        VkMemoryLayout.TENSOR_CHANNELS_PACKED,
-        VkMemoryLayout.TENSOR_WIDTH_PACKED,
-        VkMemoryLayout.TENSOR_WIDTH_PACKED,
-    ]
-
-    return features
 
 
 # Ported ops that support their own prepacking.
@@ -769,12 +629,11 @@ def register_native_group_norm(features: OpFeatures):
         exir_ops.edge.aten.native_layer_norm.default,
     ]
 )
-def register_ported_ops_with_prepacking_all_dims(features: OpFeatures):
-    features.texture_impl = TextureImplFeatures(
-        valid_packed_dims=all_packed_dims,
+def register_ported_ops_with_prepacking_all_dims():
+    return OpFeatures(
+        inputs_storage=utils.ANY_TEXTURE,
+        supports_prepacking=True,
     )
-    features.handles_own_prepacking = True
-    return features
 
 
 #######################
@@ -782,7 +641,7 @@ def register_ported_ops_with_prepacking_all_dims(features: OpFeatures):
 #######################
 
 
-def has_impl(target: OpKey) -> bool:
+def has_impl(target: Any) -> bool:
     if not isinstance(target, str):
         if target not in vulkan_supported_ops:
             return target.name() in vulkan_supported_ops
@@ -791,7 +650,7 @@ def has_impl(target: OpKey) -> bool:
         return target in vulkan_supported_ops
 
 
-def get_op_features(target: OpKey) -> OpFeatures:
+def get_op_features(target: Any) -> OpFeatures:
     if not isinstance(target, str):
         if target not in vulkan_supported_ops:
             # Try the op's name
@@ -803,4 +662,4 @@ def get_op_features(target: OpKey) -> OpFeatures:
 
 
 def handles_own_prepacking(target: OpKey) -> bool:
-    return get_op_features(target).handles_own_prepacking
+    return get_op_features(target).supports_prepacking

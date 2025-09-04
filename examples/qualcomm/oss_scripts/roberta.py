@@ -6,6 +6,7 @@
 
 import getpass
 import json
+import logging
 import os
 from multiprocessing.connection import Client
 
@@ -38,16 +39,29 @@ def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     os.makedirs(args.artifact, exist_ok=True)
-    data_size = 100
 
     tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-base")
-    inputs, targets, input_list = get_masked_language_model_dataset(
-        args.dataset, tokenizer, data_size
-    )
+    data_size = 100
+    if args.ci:
+        random_ids = torch.randint(low=0, high=100, size=(1, 100), dtype=torch.int32)
+        attention_mask = torch.ones((1, 100), dtype=torch.float32)
+        inputs = [
+            (
+                random_ids,
+                attention_mask,
+            )
+        ]
+        logging.warning(
+            "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
+        )
+    else:
+        inputs, targets = get_masked_language_model_dataset(
+            args.dataset, tokenizer, data_size
+        )
 
     # Get the Roberta model.
     model = get_instance(args)
-    pte_filename = "roberta_qnn"
+    pte_filename = "roberta_qnn_q16"
 
     # lower to QNN
     passes_job = get_capture_program_passes()
@@ -95,7 +109,7 @@ def main(args):
     sample_input["attention_mask"] = sample_input["attention_mask"].to(torch.float32)
     sample_input = tuple(sample_input.values())
     golden = model(*sample_input)[0]
-    adb.push(inputs=[sample_input], input_list="input_0_0.raw input_0_1.raw\n")
+    adb.push(inputs=[sample_input])
     adb.execute()
     adb.pull(output_path=args.artifact)
 
@@ -107,7 +121,7 @@ def main(args):
     print(f"QNN output: {tokenizer.batch_decode(predictions.argmax(axis=2))}")
 
     # accuracy analysis
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
     adb.pull(output_path=args.artifact)
     goldens, predictions = [], []
@@ -137,7 +151,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts and output by this example. Default ./Roberta_qnn",
-        default="./Roberta_qnn",
+        default="./roberta",
         type=str,
     )
     parser.add_argument(
@@ -149,7 +163,7 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/mikeortman/wikipedia-sentences"
         ),
         type=str,
-        required=True,
+        required=False,
     )
 
     args = parser.parse_args()

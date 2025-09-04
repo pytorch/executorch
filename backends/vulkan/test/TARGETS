@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
@@ -34,6 +35,7 @@ python_unittest(
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
         "//executorch/backends/vulkan:vulkan_preprocess",
+        "//pytorch/ao:torchao",  # @manual
     ]
 )
 
@@ -56,4 +58,13 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends/vulkan:vulkan_preprocess",
     ],
+)
+
+runtime.python_library(
+    name = "tester",
+    srcs = ["tester.py"],
+    deps = [
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ]
 )

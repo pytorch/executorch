@@ -6,11 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+
 plugins {
     id "com.android.library" version "8.9.0"
     id "com.vanniktech.maven.publish" version "0.31.0"
     alias(libs.plugins.jetbrains.kotlin.android)
 }
+
+def qnnVersion = System.properties['qnnVersion']
+def execuTorchVersion = System.properties['execuTorchVersion']
 
 android {
     namespace = "org.pytorch.executorch"
@@ -56,15 +60,16 @@ dependencies {
     androidTestImplementation 'commons-io:commons-io:2.4'
     androidTestImplementation 'org.json:json:20250107'
     androidTestImplementation 'org.jetbrains.kotlin:kotlin-test:1.9.23'
+    if (qnnVersion) {
+        implementation "com.qualcomm.qti:qnn-runtime:$qnnVersion"
+    }
 }
 
-import com.vanniktech.maven.publish.SonatypeHost
-
 mavenPublishing {
-  publishToMavenCentral(SonatypeHost.DEFAULT)
+  publishToMavenCentral()
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android", "0.7.0")
+  coordinates("org.pytorch", "executorch-android" + (qnnVersion ? "-qnn" : ""), execuTorchVersion ? execuTorchVersion : "0.7.0-SNAPSHOT")
 
   pom {
     name = "ExecuTorch Android"
@@ -96,6 +101,6 @@ mavenPublishing {
 
 repositories {
     maven {
-        url "https://oss.sonatype.org/content/repositories/snapshots"
+        url "https://central.sonatype.com/repository/maven-snapshots/"
     }
 }

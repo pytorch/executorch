@@ -43,7 +43,7 @@ namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 
 class KernelRuntimeContext; // Forward declaration
-using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
+using OpFunction = void (*)(KernelRuntimeContext&, Span<EValue*>);
 
 /**
  * Dtype and dim order metadata for a Tensor argument to an operator.

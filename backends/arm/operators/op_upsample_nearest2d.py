@@ -17,79 +17,17 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_utils import get_resize_parameters
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.utils import get_resize_parameters
 
-from tosa_tools.v0_80.tosa.ResizeMode import ResizeMode  # type: ignore
-
-
-@register_node_visitor
-class UpsampleNearest2dVisitor_0_80(NodeVisitor):
-    target = "aten.upsample_nearest2d.vec"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
-        validate_valid_dtype(
-            self.target,
-            [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
-            output.tosa_spec,
-        )
-
-        # tosa_shape output is NHWC, take HW
-        input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
-            1:3
-        ]
-        output_size_yx = tuple([output.shape[dim] for dim in output.dim_order])[1:3]
-
-        # Align corners shouldn't make a difference for nearest upsampling. We set to False so
-        # half pixel centers are used for resize parameter logic.
-        scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=False
-        )
-
-        def in_int16_range(x):
-            return torch.all(x >= -(2**15)) and torch.all(x <= 2**15 - 1)
-
-        if not in_int16_range(scale_n_yx):
-            raise ValueError("scale_n_yx is out of the int16 range")
-        if not in_int16_range(scale_d_yx):
-            raise ValueError("scale_d_yx is out of the int16 range")
-        if not in_int16_range(border_yx):
-            raise ValueError("border_yx is out of the int16 range")
-
-        attr = ts.TosaSerializerAttribute()
-        attr.ResizeAttribute(
-            scale=[scale_n_yx[0], scale_d_yx[0], scale_n_yx[1], scale_d_yx[1]],
-            offset=offset_yx.tolist(),
-            border=border_yx.tolist(),
-            mode=ResizeMode.NEAREST,
-        )
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().RESIZE, [inputs[0].name], [output.name], attr
-        )
+from tosa.ResizeMode import ResizeMode  # type: ignore
 
 
 @register_node_visitor
 class UpsampleNearest2dVisitor(NodeVisitor):
     target = "aten.upsample_nearest2d.vec"
 
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -151,7 +89,9 @@ class UpsampleNearest2dVisitor(NodeVisitor):
             mode=ResizeMode.NEAREST,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().RESIZE,
             [
                 inputs[0].name,

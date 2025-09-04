@@ -7,11 +7,14 @@
 # pyre-unsafe
 
 
-from typing import Callable
-
 import torch
+from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite import dtype_test, operator_test, OperatorTest
+from executorch.backends.test.suite.operators import (
+    dtype_test,
+    operator_test,
+    OperatorTest,
+)
 
 
 class Model(torch.nn.Module):
@@ -29,24 +32,22 @@ class Model(torch.nn.Module):
 @operator_test
 class TestLeakyReLU(OperatorTest):
     @dtype_test
-    def test_leaky_relu_dtype(self, dtype, tester_factory: Callable) -> None:
-        self._test_op(Model(), ((torch.rand(2, 10) * 2 - 1).to(dtype),), tester_factory)
+    def test_leaky_relu_dtype(self, flow: TestFlow, dtype) -> None:
+        self._test_op(Model(), ((torch.rand(2, 10) * 2 - 1).to(dtype),), flow)
 
-    def test_leaky_relu_f32_single_dim(self, tester_factory: Callable) -> None:
-        self._test_op(Model(), (torch.randn(20),), tester_factory)
+    def test_leaky_relu_f32_single_dim(self, flow: TestFlow) -> None:
+        self._test_op(Model(), (torch.randn(20),), flow)
 
-    def test_leaky_relu_f32_multi_dim(self, tester_factory: Callable) -> None:
-        self._test_op(Model(), (torch.randn(2, 3, 4, 5),), tester_factory)
+    def test_leaky_relu_f32_multi_dim(self, flow: TestFlow) -> None:
+        self._test_op(Model(), (torch.randn(2, 3, 4, 5),), flow)
 
-    def test_leaky_relu_f32_custom_slope(self, tester_factory: Callable) -> None:
-        self._test_op(
-            Model(negative_slope=0.1), (torch.randn(3, 4, 5),), tester_factory
-        )
+    def test_leaky_relu_f32_custom_slope(self, flow: TestFlow) -> None:
+        self._test_op(Model(negative_slope=0.1), (torch.randn(3, 4, 5),), flow)
 
-    def test_leaky_relu_f32_inplace(self, tester_factory: Callable) -> None:
-        self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), tester_factory)
+    def test_leaky_relu_f32_inplace(self, flow: TestFlow) -> None:
+        self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)
 
-    def test_leaky_relu_f32_boundary_values(self, tester_factory: Callable) -> None:
+    def test_leaky_relu_f32_boundary_values(self, flow: TestFlow) -> None:
         # Test with specific positive and negative values
         x = torch.tensor([-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0])
-        self._test_op(Model(), (x,), tester_factory)
+        self._test_op(Model(), (x,), flow)

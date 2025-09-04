@@ -121,16 +121,26 @@ utils::uvec3 linear_qga4w_global_wg_size(
       shader.kernel_name.find("_coop") != std::string::npos;
 
   if (!use_coop_algorithm) {
+    // Constructing the global workgroup size for the tiled algorithm
     utils::uvec3 global_wg_size = graph->logical_limits_of(out);
+    // Each shader thread computes a 4 high x 8 wide tile of the output matrix,
+    // which is equivalent to 4 x 2 texels. Since the output tensor must be
+    // width packed, div-up the "texel-width" of the output by 2 and the height
+    // of the output tensor by 4 to obtain the number of tiles that need to be
+    // computed.
     global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
-
-    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
+    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(4));
     return global_wg_size;
   }
 
   uint32_t output_channels = graph->size_at<uint32_t>(-1, out);
   uint32_t batch_size = graph->size_at<uint32_t>(-2, out);
 
+  // Constructing the global workgroup size of the co-operative algorithm. The
+  // local work group size is 64, and each local work group co-operates to
+  // compute 8 output channels of the output. Therefore, a total of
+  // (output_channels / 8 x 64) threads should be launched, assuming a batch
+  // size of 1.
   return {64, utils::div_up(output_channels, 8u), batch_size};
 }
 
@@ -148,7 +158,8 @@ utils::uvec3 linear_qga4w_local_wg_size(
   if (use_coop_algorithm) {
     return {64, 1, 1};
   } else {
-    return graph->create_local_wg_size(global_workgroup_size);
+    return pick_hw_square_wg_size(
+        graph, shader, global_workgroup_size, args, resize_args);
   }
 }
 
@@ -162,18 +173,13 @@ void add_linear_qga4w_node(
   check_linear_qga4w_args(
       graph, mat1, mat2_data, group_size, scales_and_zeros_data, out);
 
-  bool is_gemv = should_use_coop_algorithm(&graph, mat1);
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
-  ValueRef mat2 = is_gemv
-      ? prepack_int4_linear_weight_transposed_block_4x8(graph, mat2_data)
-      : prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
+  ValueRef mat2 =
+      prepack_int4_linear_weight_transposed_block_4x8(graph, mat2_data);
 
-  ValueRef scales_and_zeros = is_gemv
-      ? prepack_standard(
-            graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked)
-      : prepack_standard_hw_transposed(
-            graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
+  ValueRef scales_and_zeros = prepack_standard(
+      graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,

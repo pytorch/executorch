@@ -34,6 +34,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 const char kHighAddrKey[] = "HighAddr";
 const char kImportForeverKey[] = "ImportForever";
@@ -86,7 +87,7 @@ Result<DelegateHandle*> NeuronBackend::init(
 Error NeuronBackend::execute(
     ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
-    EValue** args) const {
+    Span<EValue*> args) const {
   NeuronExecuTorchDelegate* delegate =
       reinterpret_cast<NeuronExecuTorchDelegate*>(handle);
   return delegate->execute(context, args);
@@ -106,7 +107,7 @@ bool NeuronBackend::is_available() const {
 
 Error NeuronExecuTorchDelegate::execute(
     BackendExecutionContext& context,
-    EValue** args) const {
+    Span<EValue*> args) const {
   if (HintNeuronBackend(args) != NEURON_NO_ERROR) {
     return Error::InvalidState;
   };
@@ -163,8 +164,8 @@ Error NeuronExecuTorchDelegate::execute(
                                                 : Error::InvalidState;
 };
 
-int NeuronExecuTorchDelegate::HintNeuronBackend(EValue** args) const {
-  auto HintImportForever = [this](EValue** args) -> int {
+int NeuronExecuTorchDelegate::HintNeuronBackend(Span<EValue*> args) const {
+  auto HintImportForever = [this](Span<EValue*> args) -> int {
     auto& allocator = GET_NEURON_ALLOCATOR;
     size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
     for (int i = 0; i < inputCount; i++) {

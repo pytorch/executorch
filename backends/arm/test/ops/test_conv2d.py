@@ -9,11 +9,12 @@ from typing import List, Tuple, Union
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.conv2d.default"
@@ -356,8 +357,8 @@ conv2d_groups_bias = Conv2d(
 )
 
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
-# FAIL: test_convolution_2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
-test_data_MI = {
+# FAIL: test_convolution_2d_tosa_INT_2_3x3_1x3x12x12_st2_pd1
+test_data_FP = {
     "2x2_3x2x40x40_nobias": lambda: conv2d_2x2_3x2x40x40_nobias,
     "3x3_1x3x256x256_st1": lambda: conv2d_3x3_1x3x256x256_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv2d_3x3_1x3x12x12_st2_pd1,
@@ -381,28 +382,19 @@ test_data_MI = {
 }
 
 # Generate a new test set paired with per_channel_quant=True/False.
-test_data_BI = {
+test_data_INT = {
     f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
-    for (k, v) in test_data_MI.items()
-    for q in [True, False]
-}
-
-fvp_xfails = {
-    f"{k},per_channel_quant={q}": reason
-    for k, reason in {
-        "2x2_3x2x40x40_nobias": "MLETORCH-520: Numerical issues on FVP.",
-        "5x5_3x2x128x128_st1": "MLETORCH-520: Numerical issues on FVP.",
-    }.items()
+    for (k, v) in test_data_FP.items()
     for q in [True, False]
 }
 
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_data", test_data_MI)
-def test_convolution_2d_tosa_MI(test_data):
+@common.parametrize("test_data", test_data_FP)
+def test_convolution_2d_tosa_FP(test_data):
     model = test_data()
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         model,
         model.get_inputs(),
         aten_op,
@@ -411,10 +403,10 @@ def test_convolution_2d_tosa_MI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI)
-def test_convolution_2d_tosa_BI(test_data):
+@common.parametrize("test_data", test_data_INT)
+def test_convolution_2d_tosa_INT(test_data):
     model, per_channel_quantization = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         model.get_inputs(),
         aten_op,
@@ -425,11 +417,11 @@ def test_convolution_2d_tosa_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI, fvp_xfails)
+@common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone300
-def test_convolution_2d_u55_BI(test_data):
+def test_convolution_2d_u55_INT(test_data):
     model, per_channel_quantization = test_data()
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         model.get_inputs(),
         aten_op,
@@ -440,16 +432,45 @@ def test_convolution_2d_u55_BI(test_data):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_BI, fvp_xfails)
+@common.parametrize("test_data", test_data_INT)
 @common.XfailIfNoCorstone320
-def test_convolution_u85_BI(test_data):
+def test_convolution_u85_INT(test_data):
     model, per_channel_quantization = test_data()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         model.get_inputs(),
         aten_op,
         exir_op,
         run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_FP(test_data):
+    model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@common.SkipIfNoModelConverter
+def test_convolution_2d_vgf_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -490,7 +511,7 @@ reject_suite = {
 
 
 @common.parametrize("module", reject_suite)
-def test_convolution_2d_u55_BI_not_delegated(module: Conv2d):
+def test_convolution_2d_u55_INT_not_delegated(module: Conv2d):
     OpNotSupportedPipeline(
         module(),
         module().get_inputs(),

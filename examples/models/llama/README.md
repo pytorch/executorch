@@ -65,7 +65,7 @@ Please see the [Llama 3.2 model card](https://github.com/meta-llama/llama-models
 
 ### Performance
 
-Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-4-run-benchmark-on-android-phone) with prompt length of 64. It is measured with KleidiAI library. KleidiAI is not enabled by default yet. Use `-DEXECUTORCH_XNNPACK_ENABLE_KLEIDI=ON` to enable it in the build.
+Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-4-run-benchmark-on-android-phone) with prompt length of 64. It is measured with KleidiAI library. KleidiAI is enabled by default on the XNNPACK Backend for all ARM devices.
 
 |Model  | Decode (tokens/s) | Time-to-first-token (sec) | Prefill (tokens/s) | Model size (PTE file size in MiB) | Memory size (RSS in MiB) |
 |-------|------------------:|--------------------------:| ------------------:|----------------------------------:| ------------------------:|
@@ -168,7 +168,7 @@ LLAMA_CHECKPOINT=path/to/consolidated.00.pth
 LLAMA_PARAMS=path/to/params.json
 
 python -m extension.llm.export.export_llm \
-  --config examples/models/llamaconfig/llama_bf16.yaml
+  --config examples/models/llama/config/llama_bf16.yaml \
   +base.model_class="llama3_2" \
   +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}" \
@@ -186,7 +186,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
 python -m extension.llm.export.export_llm \
-  --config examples/models/llama/config/llama_xnnpack_spinquant.yaml
+  --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \
   +base.model_class="llama3_2" \
   +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}"
@@ -203,7 +203,7 @@ LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
 python -m extension.llm.export.export_llm \
-    --config examples/models/llama/config/llama_xnnpack_qat.yaml
+    --config examples/models/llama/config/llama_xnnpack_qat.yaml \
     +base.model_class="llama3_2" \
     +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
     +base.params="${LLAMA_PARAMS:?}" \
@@ -219,15 +219,16 @@ You can export and run the original Llama 3 8B instruct model.
 2. Export model and generate `.pte` file
 ```
 python -m extension.llm.export.export_llm \
-    --config examples/models/llama/config/llama_q8da4w.yaml
-    +base.model_clas="llama3"
+    --config examples/models/llama/config/llama_q8da4w.yaml \
+    +base.model_class="llama3" \
     +base.checkpoint=<consolidated.00.pth.pth> \
     +base.params=<params.json>
 ```
-    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
+
+Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
 
 
-    If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
+If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
 
 ## Step 3: Run on your computer to validate
 
@@ -339,7 +340,14 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
+```
+EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
+```
+
+(If you'd like lowbit to use KleidiAI when available, you can instead install with `EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_KLEIDIAI=1 python install_executorch.py`.)
+
+Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
 
 First export your model for lowbit quantization (step 2 above):
 
@@ -388,9 +396,12 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
     -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --target install --config Release
+cmake --build cmake-out -j16 --config Release --target install
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
@@ -398,11 +409,6 @@ Next install the llama runner with torchao kernels enabled (similar to step 3.2 
 ```
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_TORCHAO=ON \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
 cmake --build cmake-out/examples/models/llama -j16 --config Release
@@ -445,7 +451,7 @@ python -m examples.models.llama.eval_llama \
 	-d <checkpoint dtype> \
 	--tasks mmlu \
 	--num_fewshot 5 \
-	--max_seq_len <max sequence length>
+	--max_seq_len <max sequence length> \
 	--max_context_len <max context length>
 ```
 

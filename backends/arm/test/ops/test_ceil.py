@@ -8,10 +8,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -43,9 +44,9 @@ test_data = {
 
 
 @common.parametrize("test_data", test_data)
-def test_ceil_tosa_MI(test_data: input_t1):
+def test_ceil_tosa_FP(test_data: input_t1):
     module, data = test_data()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         module,
         (data,),
         module.aten_op,
@@ -55,9 +56,9 @@ def test_ceil_tosa_MI(test_data: input_t1):
 
 
 @common.parametrize("test_data", test_data)
-def test_ceil_tosa_BI(test_data: input_t1):
+def test_ceil_tosa_INT(test_data: input_t1):
     module, data = test_data()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         module,
         (data,),
         module.aten_op,
@@ -70,9 +71,9 @@ def test_ceil_tosa_BI(test_data: input_t1):
 
 @common.parametrize("test_data", test_data)
 @common.XfailIfNoCorstone300
-def test_ceil_u55_BI(test_data: input_t1):
+def test_ceil_u55_INT(test_data: input_t1):
     module, data = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         module,
         (data,),
         module.aten_op,
@@ -84,13 +85,43 @@ def test_ceil_u55_BI(test_data: input_t1):
 
 @common.parametrize("test_data", test_data)
 @common.XfailIfNoCorstone320
-def test_ceil_u85_BI(test_data: input_t1):
+def test_ceil_u85_INT(test_data: input_t1):
     module, data = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         module,
         (data,),
         module.aten_op,
         module.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_ceil_vgf_FP(test_data: input_t1):
+    module, data = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        (data,),
+        module.aten_op,
+        module.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data)
+@common.SkipIfNoModelConverter
+def test_ceil_vgf_INT(test_data: input_t1):
+    module, data = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        (data,),
+        module.aten_op,
+        module.exir_op,
+        atol=0.06,
+        rtol=0.01,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

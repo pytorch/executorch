@@ -32,7 +32,7 @@ void compute_variance(
     for (const auto out_ix : c10::irange(out.numel())) {
       out_data[out_ix] = NAN;
     }
-  } else {
+  } else if (in.numel() > 0) {
     MapReduceOverDimListPlan plan(in, dim_list);
     const bool success = parallel_for_each_reduce_over_dim_list_output_index(
         in, dim_list, out, [&](const auto begin, const auto end) {

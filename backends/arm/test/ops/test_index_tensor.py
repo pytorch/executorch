@@ -10,8 +10,9 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    OpNotSupportedPipeline,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -102,11 +103,11 @@ class IndexTensor_Ellipsis(torch.nn.Module):
         "test_4d_ellipsis_middle": "Ellipsis before index unsupported",
     },
 )
-def test_index_tensor_tosa_MI_ellipsis(test_data: input_params):
+def test_index_tensor_tosa_FP_ellipsis(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineMI[input_params](
+            TosaPipelineFP[input_params](
                 IndexTensor_Ellipsis(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -126,11 +127,11 @@ def test_index_tensor_tosa_MI_ellipsis(test_data: input_params):
         "test_4d_ellipsis_middle": "Ellipsis before index unsupported",
     },
 )
-def test_index_tensor_tosa_BI_ellipsis(test_data: input_params):
+def test_index_tensor_tosa_INT_ellipsis(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineBI[input_params](
+            TosaPipelineINT[input_params](
                 IndexTensor_Ellipsis(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -216,11 +217,11 @@ class IndexTensor_Slice(torch.nn.Module):
         "test_4d_slice_middle": "Slice before index unsupported",
     },
 )
-def test_index_tensor_tosa_MI_slice(test_data: input_params_slice):
+def test_index_tensor_tosa_FP_slice(test_data: input_params_slice):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineMI[input_params_slice](
+            TosaPipelineFP[input_params_slice](
                 IndexTensor_Slice(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -241,11 +242,11 @@ def test_index_tensor_tosa_MI_slice(test_data: input_params_slice):
         "test_4d_slice_middle": "Slice before index unsupported",
     },
 )
-def test_index_tensor_tosa_BI_slice(test_data: input_params_slice):
+def test_index_tensor_tosa_INT_slice(test_data: input_params_slice):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineBI[input_params_slice](
+            TosaPipelineINT[input_params_slice](
                 IndexTensor_Slice(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -383,11 +384,11 @@ class IndexTensor(torch.nn.Module):
 
 
 @common.parametrize("test_data", IndexTensor.test_data)
-def test_index_tensor_tosa_MI(test_data: input_params):
+def test_index_tensor_tosa_FP(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineMI[input_params](
+            TosaPipelineFP[input_params](
                 IndexTensor(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -399,11 +400,11 @@ def test_index_tensor_tosa_MI(test_data: input_params):
 
 
 @common.parametrize("test_data", IndexTensor.test_data)
-def test_index_tensor_tosa_BI(test_data: input_params):
+def test_index_tensor_tosa_INT(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineBI[input_params](
+            TosaPipelineINT[input_params](
                 IndexTensor(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -423,11 +424,11 @@ def test_index_tensor_tosa_BI(test_data: input_params):
         "test_3d_3_idx_with_none_middle": "None (Unsqueeze) unsupported",
     },
 )
-def test_index_tensor_tosa_MI_none(test_data: input_params):
+def test_index_tensor_tosa_FP_none(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineMI[input_params](
+            TosaPipelineFP[input_params](
                 IndexTensor(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
@@ -449,14 +450,29 @@ def test_index_tensor_tosa_MI_none(test_data: input_params):
         "test_3d_3_idx_with_none_middle": "None (Unsqueeze) unsupported",
     },
 )
-def test_index_tensor_tosa_BI_none(test_data: input_params):
+def test_index_tensor_tosa_INT_none(test_data: input_params):
     test_input = test_data
     with torch.no_grad():
         (
-            TosaPipelineBI[input_params](
+            TosaPipelineINT[input_params](
                 IndexTensor(),
                 test_input,
                 IndexTensorTestCommon.aten_op,
                 IndexTensorTestCommon.exir_op,
             ).run()
         )
+
+
+@common.parametrize("test_data", IndexTensor.test_data)
+@common.XfailIfNoCorstone300
+def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
+    """Ethos-U55 backend BI pipeline test for index.Tensor"""
+    test_input = test_data
+    with torch.no_grad():
+        OpNotSupportedPipeline[input_params](
+            IndexTensor(),
+            test_input,
+            {IndexTensorTestCommon.exir_op: 1},
+            quantize=True,
+            u55_subset=True,
+        ).run()

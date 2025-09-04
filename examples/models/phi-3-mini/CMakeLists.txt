@@ -27,13 +27,13 @@ set(_common_include_directories
 list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 
-target_link_options_shared_lib(executorch)
-
 set(BUILD_TESTING OFF)
-add_subdirectory(
-  ${EXECUTORCH_ROOT}/extension/llm/runner
-  ${CMAKE_BINARY_DIR}/../../../extension/llm/runner
-)
+if(NOT TARGET extension_llm_runner)
+  message(
+    FATAL_ERROR
+      "ExecuTorch must be installed with EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER enabled."
+  )
+endif()
 
 if(NOT TARGET gflags)
   add_subdirectory(

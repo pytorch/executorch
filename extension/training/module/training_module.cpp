@@ -154,6 +154,42 @@ TrainingModule::named_gradients(const std::string& method_name) {
   return method_named_gradients_.at(method_name);
 }
 
+runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
+TrainingModule::named_attributes(const std::string& method_name) {
+  // If we haven't seen this method before, populate the dict.
+  if (method_named_attributes_.find(method_name) ==
+      method_named_attributes_.end()) {
+    method_named_attributes_.insert({method_name, {}});
+
+    // get method metadata
+    auto meta_res = method_meta(method_name);
+    if (!meta_res.ok()) {
+      return meta_res.error();
+    }
+    // get method
+    auto e = load_method(method_name);
+    if (e != runtime::Error::Ok) {
+      return e;
+    }
+    auto& method = methods_.at(method_name).method;
+    // get tensor by name
+    for (int idx = 0; idx < meta_res->num_attributes(); idx++) {
+      const auto tensor_res = meta_res->attribute_tensor_meta(idx);
+      if (!tensor_res.ok()) {
+        return tensor_res.error();
+      }
+      const auto tensorName = tensor_res.get().name();
+      const auto attribute_res = method->get_attribute(tensorName);
+      if (!attribute_res.ok()) {
+        return attribute_res.error();
+      }
+      method_named_attributes_.at(method_name)
+          .insert({tensorName, attribute_res.get()});
+    }
+  }
+  return method_named_attributes_.at(method_name);
+}
+
 } // namespace training
 } // namespace extension
 } // namespace executorch

@@ -8,10 +8,11 @@
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -37,8 +38,8 @@ class AdaptiveAveragePool2d(torch.nn.Module):
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
-def test_adaptive_avg_pool2d_tosa_MI(test_data):
-    TosaPipelineMI[input_t](
+def test_adaptive_avg_pool2d_tosa_FP(test_data):
+    TosaPipelineFP[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -47,8 +48,8 @@ def test_adaptive_avg_pool2d_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
-def test_adaptive_avg_pool2d_tosa_BI(test_data):
-    TosaPipelineBI[input_t](
+def test_adaptive_avg_pool2d_tosa_INT(test_data):
+    TosaPipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -59,8 +60,8 @@ def test_adaptive_avg_pool2d_tosa_BI(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.XfailIfNoCorstone300
-def test_adaptive_avg_pool2d_u55_BI(test_data):
-    EthosU55PipelineBI[input_t](
+def test_adaptive_avg_pool2d_u55_INT(test_data):
+    EthosU55PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -72,8 +73,8 @@ def test_adaptive_avg_pool2d_u55_BI(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.XfailIfNoCorstone320
-def test_adaptive_avg_pool2d_u85_BI(test_data):
-    EthosU85PipelineBI[input_t](
+def test_adaptive_avg_pool2d_u85_INT(test_data):
+    EthosU85PipelineINT[input_t](
         AdaptiveAveragePool2d(),
         test_data(),
         AdaptiveAveragePool2d.aten_op,
@@ -81,6 +82,33 @@ def test_adaptive_avg_pool2d_u85_BI(test_data):
         run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
+
+
+@common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_FP(test_data):
+    pipeline = VgfPipeline[input_t](
+        AdaptiveAveragePool2d(),
+        test_data(),
+        AdaptiveAveragePool2d.aten_op,
+        AdaptiveAveragePool2d.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_adaptive_avg_pool2d_vgf_INT(test_data):
+    pipeline = VgfPipeline[input_t](
+        AdaptiveAveragePool2d(),
+        test_data(),
+        AdaptiveAveragePool2d.aten_op,
+        AdaptiveAveragePool2d.exir_op,
+        symmetric_io_quantization=True,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
 
 
 class MeanDim(torch.nn.Module):
@@ -234,9 +262,9 @@ class MeanDim(torch.nn.Module):
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_dim_tosa_MI(test_data):
+def test_mean_dim_tosa_FP(test_data):
     test_data, dim, keep_dim = test_data()
-    TosaPipelineMI[input_t](
+    TosaPipelineFP[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         MeanDim.torch_op,
@@ -245,13 +273,14 @@ def test_mean_dim_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
-def test_mean_dim_tosa_BI(test_data):
+def test_mean_dim_tosa_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
+        custom_path="MEANDIM",
     )
     pipeline.run()
 
@@ -266,9 +295,9 @@ xfails = {
 
 @common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
 @common.XfailIfNoCorstone300
-def test_mean_dim_u55_BI(test_data):
+def test_mean_dim_u55_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
@@ -286,13 +315,41 @@ def test_mean_dim_u55_BI(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite, xfails=xfails, strict=False)
 @common.XfailIfNoCorstone320
-def test_mean_dim_u85_BI(test_data):
+def test_mean_dim_u85_INT(test_data):
     test_data, dim, keep_dim = test_data()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
         run_on_fvp=True,
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_dim_vgf_FP(test_data):
+    test_data_val, dim, keep_dim = test_data()
+    pipeline = VgfPipeline[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data_val,),
+        MeanDim.torch_op,
+        MeanDim.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MeanDim.test_data_suite)
+@common.SkipIfNoModelConverter
+def test_mean_dim_vgf_INT(test_data):
+    test_data_val, dim, keep_dim = test_data()
+    pipeline = VgfPipeline[input_t](
+        MeanDim(dim, keep_dim),
+        (test_data_val,),
+        [],  # Might be sum, avgpool, or both
+        symmetric_io_quantization=True,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

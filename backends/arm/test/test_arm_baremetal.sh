@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO: Rename this script
+
 set -e
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
@@ -17,7 +19,6 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 
 TEST_SUITE=$1
-TOSA_VERSION="${2:-TOSA-1.0+INT}"
 
 # Source the tools
 # This should be prepared by the setup.sh
@@ -97,8 +98,11 @@ test_pytest_models() { # Test ops and other things
     # Prepare for pytest
     backends/arm/scripts/build_executorch.sh
 
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
     # Run arm baremetal pytest tests without FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -114,7 +118,6 @@ test_pytest_ops_ethosu_fvp() { # Same as test_pytest but also sometime verify us
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
@@ -130,14 +133,16 @@ test_pytest_models_ethosu_fvp() { # Same as test_pytest but also sometime verify
 
     # Prepare Corstone-3x0 FVP for pytest
     backends/arm/scripts/build_executorch.sh
-    backends/arm/scripts/build_portable_kernels.sh
     # Build semihosting version of the runner used by pytest testing. This builds:
     # arm_test/arm_semihosting_executor_runner_corstone-300
     # arm_test/arm_semihosting_executor_runner_corstone-320
     backends/arm/test/setup_testing.sh
 
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
     # Run arm baremetal pytest tests with FVP
-    pytest  --verbose --color=yes --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
@@ -148,32 +153,111 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+
+test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
+    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+
+    backends/arm/scripts/build_executorch.sh
+    backends/arm/test/setup_testing_vkml.sh
+
+    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_models_vkml() { # Same as test_pytest but also sometime verify VKML runtime
+    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+
+    backends/arm/scripts/build_executorch.sh
+    backends/arm/test/setup_testing_vkml.sh
+
+    # Install model dependencies for pytest
+    source backends/arm/scripts/install_models_for_test.sh
+
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_pytest_vkml() { # Same as test_pytest but also sometime verify VKML runtime
+    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+    test_pytest_ops_vkml
+    test_pytest_models_vkml
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_run_vkml() { # End to End model tests using run.sh
+    echo "${TEST_SUITE_NAME}: Test VKML delegate examples with run.sh"
+
+    echo "${TEST_SUITE_NAME}: Test VKML"
+    out_folder="arm_test/test_run"
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
+
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
 test_run_ethosu_fvp() { # End to End model tests using run.sh
     echo "${TEST_SUITE_NAME}: Test ethos-u delegate examples with run.sh"
 
     # TOSA quantized
-    echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=${TOSA_VERSION} --model_name=add
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=${TOSA_VERSION} --model_name=mul
+    echo "${TEST_SUITE_NAME}: Test target TOSA"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=TOSA-1.0+INT --model_name=mul
 
     # Ethos-U55
-    echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U55"
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U55"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-64 --model_name=add
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-256 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --etdump
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-256 --model_name=add --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul --bundleio --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=mul --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=examples/arm/example_modules/add.py --bundleio
 
     # Ethos-U85
-    echo "${TEST_SUITE_NAME}: Test ethos-u target Ethos-U85"
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=add
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-256 --model_name=add --bundleio
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-512 --model_name=add --bundleio --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-1024 --model_name=add --etdump
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-2048 --model_name=mul --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=mul --bundleio --pte_placement=elf
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-256 --model_name=mul --bundleio --pte_placement=0x38000000
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-1024 --model_name=examples/arm/example_modules/add.py --bundleio
 
     # Cortex-M op tests
+    echo "${TEST_SUITE_NAME}: Test target Cortex-M55 (on a Ethos-U)"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=add --bundleio --no_delegate --select_ops_list="aten::add.out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qadd --bundleio
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio
-    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --portable_kernels="aten::sub.out,aten::add.out,aten::mul.out"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u55-128 --model_name=qops --bundleio --no_delegate --select_ops_list="aten::sub.out,aten::add.out,aten::mul.out"
     examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=qops --bundleio
 
     echo "${TEST_SUITE_NAME}: PASS"
-    }
+}
+
+test_models_vkml() { # End to End model tests using model_test.py
+    echo "${TEST_SUITE_NAME}: Test VKML delegated models with test_model.py"
+
+    # Build common libs once
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
+
+    # VKML
+    echo "${TEST_SUITE_NAME}: Test target VKML"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --no_quantize --model=mv2
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
 
 test_models_tosa() { # End to End model tests using model_test.py
     echo "${TEST_SUITE_NAME}: Test TOSA delegated models with test_model.py"
@@ -183,20 +267,20 @@ test_models_tosa() { # End to End model tests using model_test.py
 
     # TOSA quantized
     echo "${TEST_SUITE_NAME}: Test ethos-u target TOSA"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=mv2
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=mv3
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=lstm
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=edsr
-    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=emformer_transcribe # Takes long time to run
-    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=emformer_join       # Takes long time to run
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=w2l
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=ic3
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=ic4
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=resnet18
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=${TOSA_VERSION} --model=resnet50
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=mv3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=lstm
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=edsr
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=emformer_transcribe # Takes long time to run
+    # python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=emformer_join       # Takes long time to run
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=w2l
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=ic3
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=ic4
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=resnet18
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=TOSA-1.0+INT --model=resnet50
 
     echo "${TEST_SUITE_NAME}: PASS"
-    }
+}
 
 test_models_ethos-u55() { # End to End model tests using model_test.py
     echo "${TEST_SUITE_NAME}: Test Ethos-U55 delegated models with test_model.py"
@@ -215,7 +299,7 @@ test_models_ethos-u55() { # End to End model tests using model_test.py
     #python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u55-128 --model=resnet50 --extra_flags="-DET_ATOL=6.2 -DET_RTOL=6.2"
 
     echo "${TEST_SUITE_NAME}: PASS"
-    }
+}
 
 test_models_ethos-u85() { # End to End model tests using model_test.py
     echo "${TEST_SUITE_NAME}: Test Ethos-U85 delegated models with test_model.py"
@@ -228,13 +312,13 @@ test_models_ethos-u85() { # End to End model tests using model_test.py
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=mv2 --extra_flags="-DET_ATOL=2.00 -DET_RTOL=2.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-512 --model=mv3 --extra_flags="-DET_ATOL=5.00 -DET_RTOL=5.00"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=lstm --extra_flags="-DET_ATOL=0.03 -DET_RTOL=0.03"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"
+    #python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=w2l --extra_flags="-DET_ATOL=0.01 -DET_RTOL=0.01"  # Takes long time to run
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-256 --model=ic4 --extra_flags="-DET_ATOL=0.8 -DET_RTOL=0.8" --timeout=2400
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=resnet18 --extra_flags="-DET_ATOL=0.2 -DET_RTOL=0.2"
     python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=resnet50 --extra_flags="-DET_ATOL=0.2 -DET_RTOL=0.2"
 
     echo "${TEST_SUITE_NAME}: PASS"
-    }
+}
 
 
 test_full_ethosu_fvp() { # All End to End model tests
@@ -245,8 +329,41 @@ test_full_ethosu_fvp() { # All End to End model tests
     test_models_ethos-u55
     test_models_ethos-u85
     echo "${TEST_SUITE_NAME}: PASS"
-    }
+}
 
+test_full_vkml() { # All End to End model tests
+    echo "${TEST_SUITE_NAME}: Test VGF delegate models and examples with VKML"
+
+    test_run_vkml
+    test_models_vkml
+    echo "${TEST_SUITE_NAME}: PASS"
+}
+
+test_smaller_stories_llama() {
+    echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
+
+    backends/arm/scripts/build_executorch.sh
+
+    mkdir -p stories110M
+    pushd stories110M
+    wget -N https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt
+    echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+    popd
+
+    # Get path to source directory
+    pytest \
+    -c /dev/null \
+    --verbose \
+    --color=yes \
+    --numprocesses=auto \
+    --log-level=DEBUG \
+    --junit-xml=stories110M/test-reports/unittest.xml \
+    -s \
+    backends/arm/test/models/test_llama.py \
+    --llama_inputs stories110M/stories110M.pt stories110M/params.json stories110m
+
+    echo "${TEST_SUITE_NAME}: PASS"
+}
 
 
 ${TEST_SUITE}

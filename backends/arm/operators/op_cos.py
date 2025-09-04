@@ -16,8 +16,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -44,4 +44,6 @@ class CosVisitor(NodeVisitor):
             self.target, [*inputs, output], ts.DType.FP32, output.tosa_spec
         )
 
-        tosa_graph.addOperator(ts.TosaOp.Op().COS, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().COS, [inputs[0].name], [output.name]
+        )
