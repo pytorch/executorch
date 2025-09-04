@@ -128,7 +128,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amax(self):
-        modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        modules = [
+            AMax(dim=1, keepdim=False),  # noqa: F405
+            AMax(dim=1, keepdim=True),  # noqa: F405
+            AMax(),  # noqa: F405
+        ]
         sample_input = (torch.randn(4, 4),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -142,7 +146,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amin(self):
-        modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
+        modules = [
+            AMin(dim=1, keepdim=False),  # noqa: F405
+            AMin(dim=1, keepdim=True),  # noqa: F405
+            AMin(),  # noqa: F405
+        ]
         sample_input = (torch.randn(4, 4),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -278,8 +286,9 @@ class TestQNNFloatingPointOperator(TestQNN):
         modules = [
             ConvTranspose1dSingle(),  # noqa: F405
             ConvTranspose1dSingle(bias=False),  # noqa: F405
+            ConvTranspose1dSingle(dilation=2),  # noqa: F405
         ]
-        sample_input = (torch.randn([1, 1, 3]),)
+        sample_input = (torch.randn([1, 1, 33]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
@@ -288,8 +297,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         modules = [
             ConvTranspose2dSingle(),  # noqa: F405
             ConvTranspose2dSingle(bias=False),  # noqa: F405
+            ConvTranspose2dSingle(dilation=2),  # noqa: F405
+            ConvTranspose2dSingle(dilation=(2, 3)),  # noqa: F405
+            ConvTranspose2dSingle(dilation=(2, 1)),  # noqa: F405
         ]
-        sample_input = (torch.randn([1, 1, 3, 3]),)
+        sample_input = (torch.randn([1, 1, 33, 33]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
@@ -543,6 +555,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = ExpM1()  # noqa: F405
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_flip(self):
+        sample_input = (torch.randn(3, 4, 5, 6),)
+        module = Flip()  # noqa: F405
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -765,6 +782,14 @@ class TestQNNFloatingPointOperator(TestQNN):
                     test[QCOM_SAMPLE_INPUTS],
                     skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
                 )
+
+    def test_qnn_backend_index_select(self):
+        module = IndexSelect(dim=1)  # noqa: F405
+        sample_input = (
+            torch.randn(2, 3, 4, 5),
+            torch.tensor([0, 2]),
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -1321,9 +1346,19 @@ class TestQNNFloatingPointModel(TestQNN):
         sample_input = (torch.randn(1, 16, 224, 224),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_flip(self):
+        module = Conv2dFlip()  # noqa: F405
+        sample_input = (torch.randn(1, 16, 224, 224),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_slice_copy(self):
+        module = Conv2dSliceCopy()  # noqa: F405
+        sample_input = (torch.randn([2, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_sum_reduce_dim(self):
@@ -1544,7 +1579,11 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amax(self):
-        modules = [AMax(dim=1, keepdim=False), AMax(dim=1, keepdim=True)]  # noqa: F405
+        modules = [
+            AMax(dim=1, keepdim=False),  # noqa: F405
+            AMax(dim=1, keepdim=True),  # noqa: F405
+            AMax(),  # noqa: F405
+        ]
         sample_input = (torch.randn(4, 4),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -1560,7 +1599,11 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_amin(self):
-        modules = [AMin(dim=1, keepdim=False), AMin(dim=1, keepdim=True)]  # noqa: F405
+        modules = [
+            AMin(dim=1, keepdim=False),  # noqa: F405
+            AMin(dim=1, keepdim=True),  # noqa: F405
+            AMin(),  # noqa: F405
+        ]
         sample_input = (torch.randn(4, 4),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -1741,6 +1784,7 @@ class TestQNNQuantizedOperator(TestQNN):
         modules = [
             ConvTranspose1dSingle(),  # noqa: F405
             ConvTranspose1dSingle(bias=False),  # noqa: F405
+            ConvTranspose1dSingle(dilation=2),  # noqa: F405
         ]
         sample_input = (torch.randn([1, 1, 3]),)
         for i, module in enumerate(modules):
@@ -1752,7 +1796,9 @@ class TestQNNQuantizedOperator(TestQNN):
         modules = [
             ConvTranspose2dSingle(),  # noqa: F405
             ConvTranspose2dSingle(bias=False),  # noqa: F405
-        ]  # noqa: F405
+            ConvTranspose2dSingle(dilation=(2, 3)),  # noqa: F405
+            ConvTranspose2dSingle(dilation=(2, 1)),  # noqa: F405
+        ]
         sample_input = (torch.randn([1, 1, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -2007,6 +2053,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_flip(self):
+        sample_input = (torch.randn(3, 4, 5, 6),)
+        module = Flip()  # noqa: F405
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_floor(self):
         sample_input = (torch.randn(3, 4),)
         module = Floor()  # noqa: F405
@@ -2249,6 +2301,15 @@ class TestQNNQuantizedOperator(TestQNN):
                     test[QCOM_SAMPLE_INPUTS],
                     skip_mutable_buffer=test[QCOM_MODULE].skip_mutable_buffer,
                 )
+
+    def test_qnn_backend_index_select(self):
+        module = IndexSelect(dim=1)  # noqa: F405
+        sample_input = (
+            torch.randn(2, 3, 4, 5),
+            torch.tensor([0, 2]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_instance_norm_2d(self):
         modules = [InstanceNorm2d(32), InstanceNorm2d(32, affine=False)]  # noqa: F405
@@ -2904,9 +2965,21 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_flip(self):
+        module = Conv2dFlip()  # noqa: F405
+        sample_input = (torch.randn(1, 16, 224, 224),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_slice_copy(self):
+        module = Conv2dSliceCopy()  # noqa: F405
+        sample_input = (torch.randn([2, 1, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -4582,8 +4655,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a4w",
             "--temperature",
             "0",
             "--decoder_model",
@@ -4594,8 +4665,6 @@ class TestExampleLLMScript(TestQNN):
             "32",
             "--max_seq_len",
             "512",
-            "--num_sharding",
-            "4",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4662,8 +4731,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a4w",
             "--temperature",
             "0",
             "--decoder_model",
@@ -4740,8 +4807,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a4w",
             "--temperature",
             "0",
             "--decoder_model",
@@ -4806,18 +4871,12 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a4w_block",
-            "--group_size",
-            "16",
             "--decoder_model",
             "phi_4_mini",
             "--model_mode",
             "kv",
             "--max_seq_len",
             "1024",
-            "--num_sharding",
-            "8",
             "--eval_perplexity",
             "--tasks",
             "wikitext",
@@ -4877,8 +4936,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a8w",
             "--decoder_model",
             "qwen2_5-0_5b",
             "--model_mode",
@@ -4890,8 +4947,6 @@ class TestExampleLLMScript(TestQNN):
             "wikitext",
             "--limit",
             "1",
-            "--r3",
-            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4940,8 +4995,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a8w",
             "--decoder_model",
             "qwen3-0_6b",
             "--model_mode",
@@ -4953,8 +5006,6 @@ class TestExampleLLMScript(TestQNN):
             "wikitext",
             "--limit",
             "1",
-            "--r3",
-            "--enable_masked_softmax",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -5003,8 +5054,6 @@ class TestExampleLLMScript(TestQNN):
             str(self.port),
             "--prompt",
             f"{prompt}",
-            "--ptq",
-            "16a8w",
             "--decoder_model",
             "smollm2_135m",
             "--model_mode",
@@ -5380,7 +5429,7 @@ class TestExampleOssScript(TestQNN):
             self.skipTest("missing required envs")
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientnet.py"
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/efficientnet.py",
             "--dataset",
             self.image_dataset,
             "--artifact",
