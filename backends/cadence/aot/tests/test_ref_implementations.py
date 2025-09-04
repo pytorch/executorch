@@ -40,11 +40,12 @@ class TestRefImplementations(unittest.TestCase):
     ) -> None:
         input_tensor = torch.tensor([input_value])
         scale = (f_max - f_min) / (q_max - q_min)
-        zero_point = round(-f_min / scale) + q_min
+        inv_scale = 1.0 / scale
+        zero_point = round(-f_min * inv_scale) + q_min
         expected_output = torch.tensor([expected_value], dtype=target_dtype)
 
         output = quantize_per_tensor(
-            input_tensor, scale, zero_point, q_min, q_max, target_dtype
+            input_tensor, inv_scale, zero_point, q_min, q_max, target_dtype
         )
 
         self.assertEqual(
