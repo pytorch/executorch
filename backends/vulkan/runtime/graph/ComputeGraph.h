@@ -308,6 +308,10 @@ class ComputeGraph final {
     return idx == kDummyValueRef ? true : values_.at(idx).isNone();
   }
 
+  inline bool val_is_not_none(const ValueRef idx) {
+    return !val_is_none(idx);
+  }
+
   inline TypeTag get_val_type(const ValueRef idx) {
     return values_.at(idx).type();
   }
