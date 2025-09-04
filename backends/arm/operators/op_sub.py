@@ -72,7 +72,9 @@ class SubVisitor_INT(NodeVisitor):
             sub_output = output
 
         # Do the INT32 Sub
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().SUB,
             [
                 rescaled_inputs[0].name,
@@ -127,7 +129,9 @@ class SubVisitor_FP(SubVisitor_INT):
             )
 
             # MI lowering
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().SUB,
                 [inputs[0].name, inputs[1].name],
                 [output.name],

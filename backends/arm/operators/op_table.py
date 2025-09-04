@@ -60,7 +60,9 @@ class TableVisitor(NodeVisitor):
             name=table_tensor_name,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().TABLE,
             [inputs[0].name, table_tensor_name],
             [output.name],

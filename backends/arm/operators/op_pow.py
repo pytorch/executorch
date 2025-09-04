@@ -50,7 +50,9 @@ class PowVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().POW,
             [
                 inputs[0].name,
