@@ -89,24 +89,25 @@ Follow the steps below to setup your build environment:
    ```bash
    git clone --recurse-submodules https://github.com/pytorch/executorch.git
    ```
-3. **Setup OpenVINO Backend Environment**
-- Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory
+3. **Build ExecuTorch with OpenVINO Backend**
+- Ensure that you are inside `executorch/backends/openvino/scripts` directory. The following command builds and installs ExecuTorch with the OpenVINO backend, and also compiles the C++ runtime binaries into `<executorch_root>/cmake-out` for quick inference testing.
    ```bash
-   pip install -r requirements.txt
+   openvino_build.sh
    ```
-  Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
-4. Navigate to `scripts/` directory.
-
-5. **Build OpenVINO Backend C++ Libraries and Executor Runner**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
-
-   ```bash
-   ./openvino_build.sh
-   ```
+- Optionally, `openvino_build.sh` script can be used to build python package or C++ bineries seperately.
    **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
-
-   ```bash
+     ```bash
    ./openvino_build.sh --enable_python
    ```
+   **Build C++ Runtime Libraries for OpenVINO Backend**: Run the `openvino_build.sh` script with the `--cpp_runtime` argument to build C++ runtime libraries into `<executorch_root>/cmake-out` folder. `<executorch_root>/cmake-out/backends/openvino/openvino_executor_runner` binary file can be used for quick inferencing with vision models.
+     ```bash
+   ./openvino_build.sh --cpp_runtime
+   ```
+   **Build C++ Llama Runner**: This step requires first building the C++ runtime libraries by following the previous instructions. Then, run `openvino_build.sh` script with the `--llama_runner` argument to compile the llama runner to execute inference with models exported using `export_llama`. The compiled binary file is located in `<executorch_root>/cmake-out/examples/models/llama/llama_main`.
+     ```bash
+   ./openvino_build.sh --llama_runner
+   ```
+
 For more information about ExecuTorch environment setup, refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide.
 
 ### Run
