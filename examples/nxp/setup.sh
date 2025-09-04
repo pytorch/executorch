@@ -7,4 +7,4 @@
 set -u
 
 # Install neutron-converter
-pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_03
+pip install --index-url https://eiq.nxp.com/repository neutron_converter_SDK_25_06
