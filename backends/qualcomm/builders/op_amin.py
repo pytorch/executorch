@@ -40,14 +40,19 @@ class AMin(NodeVisitor):
         )
 
         # mean dims and keep dims
-        mean_dims = cast(List[int], node.args[1])
-        mean_dims = [
-            mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
-        ]
-        if QCOM_AXIS_ORDER in node.meta:
+        if len(node.args) > 1:
+            mean_dims = cast(List[int], node.args[1])
             mean_dims = [
-                node.meta[QCOM_AXIS_ORDER].index(mean_dim) for mean_dim in mean_dims
+                mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
             ]
+            if QCOM_AXIS_ORDER in node.meta:
+                mean_dims = [
+                    node.meta[QCOM_AXIS_ORDER].index(mean_dim) for mean_dim in mean_dims
+                ]
+        else:
+            # reduce all dimensions
+            mean_dims = list(range(input_node.meta["val"].dim()))
+
         mean_dims_shape = [len(mean_dims)]
 
         output_tensor = self.get_tensor(node, node)

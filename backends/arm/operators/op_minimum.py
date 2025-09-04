@@ -86,7 +86,9 @@ class MinVisitor(NodeVisitor):
         # Set to PROPOGATE as default
         attr_minimum.MinimumAttribute(nan_mode=NanPropagationMode.PROPAGATE)
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MINIMUM,
             [
                 operand_inputs[0].name,
