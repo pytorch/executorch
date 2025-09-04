@@ -101,6 +101,8 @@ void main() {
   load_sums_tile(sums_tile, n4);
 
   FPOutTile out_tile;
+  initialize(out_tile);
+
   if (apply_bias > 0) {
     FPPerOutChannelParams bias_tile;
     load_bias_tile(bias_tile, n4);

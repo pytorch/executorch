@@ -57,29 +57,6 @@ void printInt8InputTile(const Int8InputTile tile) {
   }
 }
 
-void printInt8InputTileCompact(const Int8InputTile tile) {
-  debugPrintfEXT(
-      "Int8InputTile [%dx%d] (showing extracted 8-bit values):\\n",
-      TILE_M4 * 4,
-      TILE_K4 * 4);
-
-  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
-    // Print 4 rows at a time (since each m4 represents 4 rows)
-    [[unroll]] for (int row_in_m4 = 0; row_in_m4 < 4; ++row_in_m4) {
-      debugPrintfEXT("  row %d: ", m4 * 4 + row_in_m4);
-
-      [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
-        [[unroll]] for (int vec_idx = 0; vec_idx < 4; ++vec_idx) {
-          int packed_int = tile.data[m4][k4][vec_idx];
-          int val = extract_8bit_from_packed_int_le(packed_int, row_in_m4);
-          debugPrintfEXT("%4d ", val);
-        }
-      }
-      debugPrintfEXT("\\n");
-    }
-  }
-}
-
 #endif // DEBUG_MODE
 
 #endif // LINEAR_INT8_INPUT_TILE_GLSLH

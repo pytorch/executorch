@@ -14,6 +14,7 @@ import logging
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
+from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.tosa_specification import get_tosa_spec
 from executorch.backends.arm._passes import (
@@ -62,6 +63,7 @@ class TOSABackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
+        dump_debug_info = None
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -69,6 +71,8 @@ class TOSABackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
+            if spec.key == "dump_debug_info":
+                dump_debug_info = spec.value.decode()
 
         # Check that the output format is set correctly in the compile spec
         if output_format != "tosa":
@@ -95,7 +99,11 @@ class TOSABackend(BackendDetails):
             exported_program=edge_program
         )
 
-        node_visitors = get_node_visitors(edge_program, tosa_spec)
+        debug_hook = None
+        if dump_debug_info is not None:
+            debug_hook = DebugHook()
+
+        node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
         input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
@@ -125,6 +133,11 @@ class TOSABackend(BackendDetails):
                 artifact_path,
                 suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
             )
+
+            if debug_hook:
+                json_output = debug_hook.serialize()
+                with open(f"{artifact_path}/debug.json", "w") as f:
+                    f.write(json_output)
 
         # Serialize and return the TOSA flatbuffer.
         binary = bytes(tosa_graph.serialize())

@@ -28,100 +28,63 @@
 
 #include "linear_common.glslh"
 
-// Represents source data for a 4x4 block of the weight matrix read from the
-// input buffer.
-struct Int8WeightBlockSourceData {
-  int data[4];
-};
-
-// Represents data for a packed 4x4 block of the weight matrix to be written out
-// to output texture/buffer.
-struct Int8WeightBlockPacked {
+// Represents data for a 4x4 block of the weight matrix read from the input
+// buffer.
+struct Int8WeightBlock {
   ivec4 data;
 };
 
-// To be used if K - k_start >= 4
-void load_block_source_data_no_checks(
-    out Int8WeightBlockSourceData src_data,
-    const int n4,
-    const int k_start,
-    const int ntexels_N,
-    const int K) {
-  [[unroll]] for (int k = 0; k < 4; ++k) {
-    src_data.data[k] = t_input[(k_start + k) * ntexels_N + n4];
+void load_block_data_no_checks(
+    out Int8WeightBlock block,
+    const int k4,
+    const int n_start,
+    const int ntexels_K,
+    const int N) {
+  [[unroll]] for (int n = 0; n < 4; ++n) {
+    block.data[n] = t_input[(n_start + n) * ntexels_K + k4];
   }
 }
 
-// To be used if K - k_start < 4
-void load_block_source_data_with_checks(
-    out Int8WeightBlockSourceData src_data,
-    const int n4,
-    const int k_start,
-    const int ntexels_N,
-    const int K) {
-  [[unroll]] for (int k = 0; k < 4; ++k) {
-    if (k_start + k < K) {
-      src_data.data[k] = t_input[(k_start + k) * ntexels_N + n4];
+void load_block_data_with_checks(
+    out Int8WeightBlock block,
+    const int k4,
+    const int n_start,
+    const int ntexels_K,
+    const int N) {
+  [[unroll]] for (int n = 0; n < 4; ++n) {
+    if (n_start + n < N) {
+      block.data[n] = t_input[(n_start + n) * ntexels_K + k4];
     } else {
-      src_data.data[k] = 0;
+      block.data[n] = 0;
     }
-  }
-}
-
-int pack_4x8bit_signed_into_int(
-    const int val0,
-    const int val1,
-    const int val2,
-    const int val3) {
-  return int(
-      ((val3 & 0xFF) << 24) | ((val2 & 0xFF) << 16) | ((val1 & 0xFF) << 8) |
-      ((val0 & 0xFF)));
-}
-
-void create_packed_block(
-    out Int8WeightBlockPacked block,
-    const Int8WeightBlockSourceData src_data) {
-  [[unroll]] for (int col = 0; col < 4; ++col) {
-    block.data[col] = pack_4x8bit_signed_into_int(
-        extract_8bit_from_packed_int_le(src_data.data[0], col),
-        extract_8bit_from_packed_int_le(src_data.data[1], col),
-        extract_8bit_from_packed_int_le(src_data.data[2], col),
-        extract_8bit_from_packed_int_le(src_data.data[3], col));
   }
 }
 
 #ifdef USING_BUFFER
 
-void write_packed_block(
-    const Int8WeightBlockPacked block,
-    const int block_x,
-    const int block_y,
-    const int nblocks_x) {
-  t_qmat2[block_y * nblocks_x + block_x] = block.data;
+void write_weight_block(
+    const Int8WeightBlock block,
+    const int n4,
+    const int k4,
+    const int ntexels_N) {
+  t_qmat2[k4 * ntexels_N + n4] = block.data;
 }
 
 #else // USING_TEXTURE
 
-void write_packed_block(
-    const Int8WeightBlockPacked block,
-    const int block_x,
-    const int block_y,
-    const int nblocks_w) {
-  imageStore(t_qmat2, ivec2(block_x, block_y), block.data);
+void write_weight_block(
+    const Int8WeightBlock block,
+    const int n4,
+    const int k4,
+    const int ntexels_N) {
+  imageStore(t_qmat2, ivec2(n4, k4), block.data);
 }
 
 #endif // USING_BUFFER
 
 #ifdef DEBUG_MODE
 
-void printInt8WeightBlockSourceData(const Int8WeightBlockSourceData src_data) {
-  debugPrintfEXT("int8_weight_block_source_data: \\n");
-  [[unroll]] for (int row = 0; row < 4; ++row) {
-    debugPrintfEXT("row %i: %u \\n", row, src_data.data[row]);
-  }
-}
-
-void printInt8WeightBlockPacked(const Int8WeightBlockPacked block) {
+void printInt8WeightBlock(const Int8WeightBlockPacked block) {
   debugPrintfEXT("int8_weight_block_packed: \\n");
   debugPrintfEXT(
       "%i %i %i %i \\n",

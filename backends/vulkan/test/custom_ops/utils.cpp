@@ -694,7 +694,8 @@ void BenchmarkResult::print_summary(
     int case_number,
     const std::string& size_info,
     float total_gflops) const {
-  static constexpr int KERNEL_NAME_WIDTH = 140;
+  static constexpr int OPERATOR_NAME_WIDTH = 50;
+  static constexpr int KERNEL_NAME_WIDTH = 70;
   static constexpr int SIZE_INFO_WIDTH = 20;
   static constexpr int TIMING_WIDTH = 20;
   static constexpr int GFLOPS_WIDTH = 20;
@@ -713,8 +714,10 @@ void BenchmarkResult::print_summary(
       break;
   }
 
-  std::cout << std::left << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name()
-            << std::right << " " << std::setw(SIZE_INFO_WIDTH) << size_info
+  std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
+            << get_operator_name() << " " << std::left
+            << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name() << std::right
+            << " " << std::setw(SIZE_INFO_WIDTH) << size_info
             << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
             << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
             << std::fixed << std::setprecision(3) << total_gflops << " GFLOP/s "
@@ -999,7 +1002,9 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
   for (size_t i = 0; i < test_case.num_inputs(); ++i) {
     const ValueSpec& input_spec = test_case.inputs()[i];
 
-    if (input_spec.is_float()) {
+    if (input_spec.is_none()) {
+      input_values.push_back(graph.add_none());
+    } else if (input_spec.is_float()) {
       ValueRef input_value =
           graph.add_scalar(static_cast<double>(input_spec.get_float_value()));
       input_values.push_back(input_value);
@@ -1246,9 +1251,11 @@ TestResult execute_test_cases(
     bool shader_not_supported = false;
     try {
       result = execute_test_case(test_case, warmup_runs, benchmark_runs);
+      result.set_operator_name(test_case.operator_name());
     } catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {
       result = BenchmarkResult(
-          test_case.name().empty() ? "unnamed_test_case" : test_case.name());
+          test_case.name().empty() ? "unnamed_test_case" : test_case.name(),
+          test_case.operator_name());
       shader_not_supported = true;
     }
 
@@ -1616,9 +1623,10 @@ void compute_weight_sums(
     float sum = 0.0f;
     for (int64_t elem = 0; elem < elements_per_output_feature; ++elem) {
       // Weight indexing depends on the layout:
-      // For linear: [in_features, out_features] -> elem * out_features + out_f
-      // For conv2d: [C_in * K_h * K_w, C_out] -> elem * out_features + out_f
-      int64_t weight_idx = elem * out_features + out_f;
+      // For linear: [out_features, in_features] -> out_f *
+      // elements_per_output_feature + elem For conv2d: [C_out, C_in * K_h *
+      // K_w] -> out_f * elements_per_output_feature + elem
+      int64_t weight_idx = out_f * elements_per_output_feature + elem;
       sum += static_cast<float>(quantized_weight_data[weight_idx]);
     }
     weight_sums_data[out_f] = sum;
