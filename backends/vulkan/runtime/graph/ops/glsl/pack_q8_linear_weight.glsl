@@ -28,35 +28,33 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #include "linear_int8_weight_block.glslh"
 
 void main() {
-  int block_x = int(gl_GlobalInvocationID.x);
-  int block_y = int(gl_GlobalInvocationID.y);
+  // The size of the source weight tensor is [W=K, H=N]. Each shader invocation
+  // processes a 4x4 block. The thread position corresponds to the block index.
+  int n4 = int(gl_GlobalInvocationID.x);
+  int k4 = int(gl_GlobalInvocationID.y);
 
-  const int N = orig_sizes.y;
   const int K = orig_sizes.x;
+  const int N = orig_sizes.y;
 
-  // Each group of 4 8bit values are packed into each uint in the input tensor.
+  // Determine the total number of blocks and check bounds
   const int N4 = div_up_4(N);
   const int K4 = div_up_4(K);
-
-  // Check bounds
-  if (block_x >= N4 || block_y >= K4) {
+  if (n4 >= N4 || k4 >= K4) {
     return;
   }
 
-  Int8WeightBlockSourceData src_data;
-  const uint k = mul_4(block_y);
-  if (K - k >= 4) {
-    load_block_source_data_no_checks(src_data, block_x, mul_4(block_y), N4, K);
+  // Each block is represented as an ivec4. Each int corresponds to a row i.e.
+  // N dim of the weight tensor and contains data for 4 columns i.e. K dim.
+  Int8WeightBlock block;
+  const int n = mul_4(n4);
+  if (N - n >= 4) {
+    load_block_data_no_checks(block, k4, n, K4, N);
   } else {
-    load_block_source_data_with_checks(src_data, block_x, mul_4(block_y), N4, K);
+    load_block_data_with_checks(block , k4, n, K4, N);
   }
 
-  Int8WeightBlockPacked packed_block;
-  create_packed_block(packed_block, src_data);
-
-  write_packed_block(
-      packed_block,
-      block_x,
-      block_y,
-      N4);
+  // The weight blocks are stored in a tranposed manner, such that weight blocks
+  // are indexed like packed_weight[k4][n4]. This is to optimize memory
+  // coalescing when computing tiled GEMM.
+  write_weight_block(block, n4, k4, N4);
 }

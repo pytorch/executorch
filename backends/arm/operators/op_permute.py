@@ -135,6 +135,11 @@ class PermuteVisitor(NodeVisitor):
 
         attr = ts.TosaSerializerAttribute()
         attr.TransposeAttribute(permutation_vector)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().TRANSPOSE, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().TRANSPOSE,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )
