@@ -395,19 +395,19 @@ std::vector<TestCase> generate_quantized_conv2d_test_cases() {
           std::to_string(config.kernel.w);
 
       config.test_case_name = prefix + suffix;
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      // The default operator tested is activation + weight quantized conv2d;
+      // however, only test this if the int8 dot product extension is supported
+      if (vkcompute::api::context()
+              ->adapter_ptr()
+              ->supports_int8_dot_product()) {
+        test_cases.push_back(
+            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      }
 
       Conv2dConfig wo_quant_config = config;
       wo_quant_config.op_name = "conv2d_q8csw";
       test_cases.push_back(create_test_case_from_config(
           wo_quant_config, storage_type, vkapi::kFloat));
-      // Conv2dConfig config2 = config;
-      // config2.shader_variant_name = "conv2d_q8csw_linear_tiled";
-      // config2.name_suffix = prefix + suffix;
-      // test_cases.push_back(
-      //     create_test_case_from_config(config2, storage_type,
-      //     vkapi::kFloat));
     }
   }
 
@@ -778,7 +778,7 @@ int main(int argc, char* argv[]) {
       quantized_conv2d_flop_calculator,
       "QuantizedConv2d",
       0,
-      1,
+      10,
       ref_fn);
 
   return 0;

@@ -151,9 +151,9 @@ std::vector<TestCase> generate_quantized_linear_easy_cases() {
   std::vector<TestCase> test_cases;
 
   // Single simple configuration for debugging
-  int M = 16;
-  int K = 64;
-  int N = 32;
+  int M = 4;
+  int K = 4;
+  int N = 4;
 
   LinearConfig config = {
       M, // Batch size
@@ -217,9 +217,13 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
     config.test_case_name = generated_test_case_name;
 
     for (const auto& storage_type : storage_types) {
-      // Test both activation+weight quantized and weight only quantized
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      if (vkcompute::api::context()
+              ->adapter_ptr()
+              ->supports_int8_dot_product()) {
+        // Test both activation+weight quantized and weight only quantized
+        test_cases.push_back(
+            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      }
 
       LinearConfig wo_quant_config = config;
       wo_quant_config.op_name = "linear_q8csw";
@@ -462,7 +466,6 @@ int main(int argc, char* argv[]) {
 
   ReferenceComputeFunc ref_fn = reference_impl;
 
-  // Execute easy test cases using the new framework with custom FLOP calculator
   auto results = execute_test_cases(
       generate_quantized_linear_test_cases,
       quantized_linear_flop_calculator,
