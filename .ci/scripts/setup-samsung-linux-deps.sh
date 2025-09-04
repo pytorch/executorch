@@ -26,7 +26,7 @@ download_ai_lite_core() {
   tar -C "${_exynos_lite_core_dir}" --strip-components=1 -xzvf "${_tmp_archive}"
 
   export EXYNOS_AI_LITECORE_ROOT=${_exynos_lite_core_dir}
-  export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux
+  export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}:${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux
 }
 
 install_enn_backend() {
@@ -35,7 +35,7 @@ install_enn_backend() {
 
   # Remove --build and add --ndk parameter if enable on-device test
   bash backends/samsung/build.sh --build x86_64
-  export PYTHONPATH=${PYTHONPATH}:${EXECUTORCH_ROOT}/..
+  export PYTHONPATH=${PYTHONPATH:-}:${EXECUTORCH_ROOT}/..
 }
 
 AI_LITE_CORE_VERSION=0.5.0
