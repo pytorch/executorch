@@ -90,7 +90,18 @@ unset EXECUTORCH_BUILDING_WHEEL
 WHEEL_FILE=$(ls dist/*.whl | head -n 1)
 echo "Found wheel: $WHEEL_FILE"
 
-# (Keep all your existing .so checks here...)
+# ----------------------------
+# Check wheel does NOT contain qualcomm/sdk
+# ----------------------------
+echo "Checking wheel does not contain qualcomm/sdk..."
+SDK_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/sdk" || true)
+if [ -n "$SDK_FILES" ]; then
+    echo "ERROR: Wheel package contains unexpected qualcomm/sdk files:"
+    echo "$SDK_FILES"
+    exit 1
+else
+    echo "OK: No qualcomm/sdk files found in wheel"
+fi
 
 # ----------------------------
 # Conda environment setup & tests
