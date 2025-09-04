@@ -16,6 +16,7 @@ from executorch.backends.cadence.aot.utils import (
     get_im2row_output_size,
 )
 from executorch.exir.scalar_type import ScalarType
+from torch._meta_registrations import _linalg_svd_meta
 from torch.library import Library, register_fake
 
 lib = Library("cadence", "DEF")
@@ -251,6 +252,12 @@ lib.define(
 )
 lib.define("linalg_vector_norm(Tensor X) -> (Tensor Y)")
 lib.define(
+    "linalg_svd(Tensor A, bool full_matrices=False, bool compute_uv=True, str? driver=None) -> (Tensor U, Tensor S, Tensor Vh)"
+)
+lib.define(
+    "linalg_svd.out(Tensor A, bool full_matrices=False, bool compute_uv=True, str? driver=None, *, Tensor(a!) U, Tensor(b!) S, Tensor(c!) Vh) -> (Tensor(a!) U, Tensor(b!) S, Tensor(c!) Vh)"
+)
+lib.define(
     "transposed_im2row(Tensor input, int[2] kernel_size, int[2] dilation, int[2] padding, int[2] stride, "
     "int[2] output_padding, Tensor in_zero_point, bool channel_last=False) -> (Tensor out)"
 )
@@ -440,6 +447,12 @@ lib.define(
 lib.define(
     "roi_align_box_processor(Tensor rois, int output_size_h, int output_size_w, "
     "int sampling_ratio, bool aligned) -> (Tensor out)"
+)
+lib.define(
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+)
+lib.define(
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
@@ -1576,6 +1589,26 @@ def linalg_vector_norm_meta(
     return X.new_empty([], dtype=X.dtype)
 
 
+@register_fake("cadence::linalg_svd")
+def linalg_svd_meta(
+    A: torch.Tensor,
+    full_matrices: bool = False,
+    compute_uv: bool = True,
+    driver: Optional[str] = None,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Based on the _linalg_svd meta implementation, but ensuring contiguous strides
+
+    # Get the shapes from the original meta function
+    U, S, Vh = _linalg_svd_meta(A, full_matrices, compute_uv, driver)
+
+    # Create new tensors with contiguous strides to fix the non-contiguous issue
+    U_contiguous = A.new_empty(U.shape, dtype=A.dtype).contiguous()
+    S_contiguous = A.new_empty(S.shape, dtype=A.dtype).contiguous()
+    Vh_contiguous = A.new_empty(Vh.shape, dtype=A.dtype).contiguous()
+
+    return U_contiguous, S_contiguous, Vh_contiguous
+
+
 @register_fake("cadence::requantize")
 def requantize_meta(
     input: torch.Tensor,
@@ -2048,3 +2081,13 @@ def roi_align_box_processor_meta(
     aligned: bool,
 ) -> torch.Tensor:
     return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)
+
+
+@register_fake("cadence::_softmax_f32_f32")
+def softmax_f32_f32_meta(
+    self: torch.Tensor,
+    dim: int,
+    dtype: torch.dtype,
+    half_to_float: Optional[bool] = None,
+) -> torch.Tensor:
+    return self.new_empty(self.size(), dtype=self.dtype)

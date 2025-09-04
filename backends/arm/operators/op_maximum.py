@@ -87,7 +87,9 @@ class MaxVisitor(NodeVisitor):
         # Set to PROPOGATE as default
         attr_maximum.MaximumAttribute(nan_mode=NanPropagationMode.PROPAGATE)
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MAXIMUM,
             [
                 operand_inputs[0].name,

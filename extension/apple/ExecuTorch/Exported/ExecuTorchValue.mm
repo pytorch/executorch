@@ -43,18 +43,6 @@ static inline NSString *valueTagDescription(ExecuTorchValueTag tag) {
       return @"integer";
     case ExecuTorchValueTagBoolean:
       return @"boolean";
-    case ExecuTorchValueTagBooleanList:
-      return @"boolean_list";
-    case ExecuTorchValueTagDoubleList:
-      return @"double_list";
-    case ExecuTorchValueTagIntegerList:
-      return @"integer_list";
-    case ExecuTorchValueTagTensorList:
-      return @"tensor_list";
-    case ExecuTorchValueTagScalarList:
-      return @"scalar_list";
-    case ExecuTorchValueTagOptionalTensorList:
-      return @"optional_tensor_list";
   }
   return @"undefined";
 }
