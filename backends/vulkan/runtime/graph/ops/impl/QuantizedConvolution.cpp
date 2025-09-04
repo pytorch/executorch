@@ -128,8 +128,9 @@ std::vector<int64_t> calculate_input_im2col_sizes(
 
   // K -> flattened convolution window (adjusted)
   const int64_t K = flattened_kernel_len * groups_val;
-  // M -> number of elements in 2D output plane
-  const int64_t M = out_height * out_width * batches;
+  // M -> number of elements in 2D output plane. This is aligned to the next
+  // multiple of 4 since the im2col shader operates on 4x4 blocks.
+  const int64_t M = utils::align_up_4(out_height * out_width * batches);
 
   return {M, K};
 }
