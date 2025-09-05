@@ -347,15 +347,16 @@ class TestBackends(unittest.TestCase):
 
         buff = exec_prog.buffer
 
+        executorch_module = _load_for_executorch_from_buffer(buff)
         # This line should raise an exception like
         # RuntimeError: failed with error 0x12
-        _load_for_executorch_from_buffer(buff)
+        executorch_module.run_method("forward")
 
     @vary_segments
     def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
-            "loading method forward failed with error 0x12",
+            "Failed to get method forward, error: 0x12",
         ):
             self.run_model_in_unsupported_backend(
                 extract_delegate_segments=extract_delegate_segments

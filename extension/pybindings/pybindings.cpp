@@ -11,7 +11,6 @@
 #include <iostream>
 #include <memory>
 #include <stdexcept>
-#include <unordered_map>
 
 #include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
@@ -24,6 +23,8 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
+#include <executorch/extension/tensor/tensor_ptr.h>
+#include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
@@ -156,239 +157,6 @@ void setup_output_storage(
   }
 }
 
-class Module final {
- public:
-  explicit Module(
-      std::unique_ptr<DataLoader> loader,
-      std::unique_ptr<ETDumpGen> tracer = nullptr,
-      size_t debug_buffer_size = 0,
-      Program::Verification program_verification =
-          Program::Verification::InternalConsistency)
-      : loader_(std::move(loader)),
-        event_tracer_(std::move(tracer)),
-        debug_buffer_size_(debug_buffer_size) {
-    ::executorch::runtime::runtime_init();
-    Result<Program> program =
-        Program::load(loader_.get(), program_verification);
-    THROW_IF_ERROR(
-        program.error(),
-        "loading program failed with error: 0x%" PRIx32,
-        static_cast<uint32_t>(program.error()));
-    program_ = std::make_unique<Program>(std::move(program.get()));
-
-    // Figure out the size of each non_const layer we need to support every
-    // method in the program. Map will be easier to use than a list because we
-    // dont know how many non_const arenas there will be
-    std::map<size_t, int64_t> non_const_buffer_sizes;
-    for (size_t i = 0; i < program_->num_methods(); ++i) {
-      auto name = program_->get_method_name(i).get();
-      auto method_meta = program_->method_meta(name).get();
-      for (size_t j = 0; j < method_meta.num_non_const_buffers(); j++) {
-        int64_t buffer_size = method_meta.non_const_buffer_size(j).get();
-        if (non_const_buffer_sizes.find(j) == non_const_buffer_sizes.end()) {
-          non_const_buffer_sizes.insert({j, buffer_size});
-        } else {
-          non_const_buffer_sizes[j] =
-              std::max(non_const_buffer_sizes[j], buffer_size);
-        }
-      }
-    }
-
-    // Allocate the arenas. Using vector because we need to remember the size as
-    // well, so vector is easier then unique_ptr.
-    std::vector<std::vector<uint8_t>> non_const_buffers_;
-    for (std::map<size_t, int64_t>::iterator i = non_const_buffer_sizes.begin();
-         i != non_const_buffer_sizes.end();
-         i++) {
-      non_const_buffers_.push_back(std::vector<uint8_t>(i->second));
-    }
-
-    memory_ = std::make_unique<Memory>(std::move(non_const_buffers_));
-    if (event_tracer_ && debug_buffer_size > 0) {
-      // If a debug buffer was requested for the ETDump, allocate it and make
-      // sure its lifetime is as long as the event_tracer.
-      debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
-      event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
-      event_tracer_->set_event_tracer_debug_level(
-          EventTracerDebugLogLevel::kIntermediateOutputs);
-    }
-
-    // Load methods
-    for (size_t i = 0; i < program_->num_methods(); ++i) {
-      auto name = program_->get_method_name(i).get();
-      // It's safe to use the same memory manager for all modules because
-      // we can guarantee that only one will be executing at a time.
-      // Everything in this module runs on a single thread.
-      Result<Method> method = program_->load_method(
-          name, memory_->mem_manager(), event_tracer_.get());
-      THROW_IF_ERROR(
-          method.error(),
-          "loading method %s failed with error 0x%" PRIx32,
-          name,
-          static_cast<uint32_t>(method.error()));
-      methods_.insert(
-          {std::string(name),
-           std::make_unique<Method>(std::move(method.get()))});
-    }
-  }
-
-  Module(const Module&) = delete;
-  Module& operator=(const Module&) = delete;
-  Module(Module&&) = default;
-  Module& operator=(Module&&) = default;
-
-  /// Executes the specified method on the provided inputs and returns its
-  /// outputs.
-  std::vector<EValue> run_method(
-      const std::string& method_name,
-      const std::vector<EValue>& args,
-      const std::optional<std::vector<Span<uint8_t>>>& output_storages =
-          std::nullopt) {
-    auto& method = get_method(method_name);
-    executorch::aten::ArrayRef<EValue> input_evalue_list(
-        args.data(), args.size());
-
-    Error set_inputs_status = method.set_inputs(input_evalue_list);
-    THROW_IF_ERROR(
-        set_inputs_status,
-        "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
-        method_name.c_str(),
-        static_cast<uint32_t>(set_inputs_status));
-
-#ifdef USE_ATEN_LIB
-    // [TLS handling] This is to workaround an assertion failure
-    // (https://fburl.com/code/302jyn8d) running `gelu` in ATen mode in fbcode
-    // (such as bento). The problem is ExecuTorch ATen mode doesn't have
-    // Thread Local State, but `torch-cpp` is assuming tls init is done. There
-    // are two more checks: MKLDNN disabled and C10_MOBILE, if any of them is
-    // true we won't be hitting this assertion error. However in `torch-cpp`
-    // lib both checks are false. Production impact: this should not make any
-    // impact in production environment, given that in xplat we are depending
-    // on a library that enables C10_MOBILE (`torch_mobile_core`).
-    c10::impl::ExcludeDispatchKeyGuard no_autograd(
-        c10::autograd_dispatch_keyset);
-#endif
-    if (output_storages) {
-      setup_output_storage(method, *output_storages);
-    }
-    Error execute_status = method.execute();
-    THROW_IF_ERROR(
-        execute_status,
-        "method->execute() failed with error 0x%" PRIx32,
-        static_cast<uint32_t>(execute_status));
-    // process outputs
-    return get_outputs(method_name);
-  }
-
-  std::vector<EValue> get_outputs(const std::string& method_name) {
-    auto& method = methods_[method_name];
-    std::vector<EValue> result(method->outputs_size());
-
-    Error get_outputs_status =
-        method->get_outputs(result.data(), method->outputs_size());
-    THROW_IF_ERROR(
-        get_outputs_status,
-        "method->get_outputs() for method '%s' failed with error 0x%" PRIx32,
-        method_name.c_str(),
-        static_cast<uint32_t>(get_outputs_status));
-
-    return result;
-  }
-
-  Method& get_method(const std::string& method_name) {
-    if (methods_.count(method_name) == 0) {
-      THROW_IF_ERROR(
-          Error::InvalidArgument,
-          "no such method in program: %s",
-          method_name.c_str());
-    }
-    return *methods_[method_name].get();
-  }
-
-  /// Returns the names of all methods in the program.
-  std::vector<std::string> method_names() const {
-    std::vector<std::string> names;
-    for (const auto& method : methods_) {
-      names.push_back(method.first);
-    }
-    return names;
-  }
-
-  bool has_etdump() {
-    return static_cast<bool>(event_tracer_);
-  }
-
-  ETDumpGen& etdump() {
-    return *event_tracer_;
-  }
-
-  bool has_etdump_debug_buffer() const {
-    return static_cast<bool>(debug_buffer_);
-  }
-
-  Span<uint8_t> get_etdump_debug_buffer() {
-    return Span<uint8_t>(debug_buffer_.get(), debug_buffer_size_);
-  }
-
- private:
-  /// A wrapper/util class for executorch memory allocations/manager.
-  class Memory {
-   public:
-    explicit Memory(std::vector<std::vector<uint8_t>>&& non_const_buffers)
-        : runtime_allocator_(),
-          non_const_buffers_(std::move(non_const_buffers)),
-          non_const_spans_(create_non_const_spans()),
-          non_const_allocator_(
-              {non_const_spans_.data(), non_const_spans_.size()}),
-          mem_manager_(
-              &const_allocator_,
-              &non_const_allocator_,
-              &runtime_allocator_,
-              &temp_allocator_) {}
-
-    /// Returns a pointer to the internal memory manager, the Memory instance
-    /// must outlive this pointer.
-    MemoryManager* mem_manager() {
-      return &mem_manager_;
-    }
-
-    Memory(const Memory&) = delete;
-    Memory& operator=(const Memory&) = delete;
-
-   private:
-    MemoryAllocator const_allocator_{MemoryAllocator(0, nullptr)};
-
-    MallocMemoryAllocator runtime_allocator_;
-
-    MallocMemoryAllocator temp_allocator_{};
-
-    std::vector<std::vector<uint8_t>> non_const_buffers_;
-
-    std::vector<Span<uint8_t>> non_const_spans_;
-
-    HierarchicalAllocator non_const_allocator_;
-
-    MemoryManager mem_manager_;
-
-    std::vector<Span<uint8_t>> create_non_const_spans() {
-      std::vector<Span<uint8_t>> result;
-      for (size_t i = 0; i < non_const_buffers_.size(); i++) {
-        result.push_back(
-            {non_const_buffers_[i].data(), non_const_buffers_[i].size()});
-      }
-      return result;
-    }
-  };
-
-  std::unique_ptr<Memory> memory_;
-  std::unique_ptr<DataLoader> loader_; // program_ points to this.
-  std::unique_ptr<const Program> program_; // methods_ entries points to this.
-  std::unordered_map<std::string, std::unique_ptr<Method>> methods_;
-  std::unique_ptr<ETDumpGen> event_tracer_;
-  std::unique_ptr<uint8_t[]> debug_buffer_;
-  size_t debug_buffer_size_;
-};
-
 inline std::unique_ptr<Module> load_module_from_buffer(
     const void* ptr,
     size_t ptr_len,
@@ -399,9 +167,10 @@ inline std::unique_ptr<Module> load_module_from_buffer(
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
   return std::make_unique<Module>(
       std::move(loader),
+      nullptr, // memory_allocator
+      nullptr, // temp_allocator
       enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
-      debug_buffer_size,
-      program_verification);
+      nullptr); // data_map_loader
 }
 
 inline std::unique_ptr<Module> load_module_from_file(
@@ -422,9 +191,10 @@ inline std::unique_ptr<Module> load_module_from_file(
   auto loader = std::make_unique<MmapDataLoader>(std::move(res.get()));
   return std::make_unique<Module>(
       std::move(loader),
+      nullptr, // memory_allocator
+      nullptr, // temp_allocator
       enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
-      debug_buffer_size,
-      program_verification);
+      nullptr); // data_map_loader
 }
 
 inline py::list get_outputs_as_py_list(
@@ -878,19 +648,17 @@ struct PyModule final {
       }
     }
 
-    const auto& method = module_->get_method(method_name);
-    const auto num_outputs = method.outputs_size();
-    output_storages_ = make_output_storages(method);
-    std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
-    for (int i = 0; i < output_storages_.size(); ++i) {
-      output_storage_spans[i] =
-          Span<uint8_t>(output_storages_[i].data(), output_storages_[i].size());
-    }
-    auto outputs =
-        module_->run_method(method_name, cpp_inputs, output_storage_spans);
+    // Set up output storage before execution.
+    allocate_output_tensors(method_name);
+    auto outputs = module_->execute(method_name, cpp_inputs);
+    THROW_IF_ERROR(
+        outputs.error(),
+        "Failed to execute method %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(outputs.error()));
 
     // Retrieve outputs
-    return get_outputs_as_py_list(outputs, clone_outputs);
+    return get_outputs_as_py_list(outputs.get(), clone_outputs);
   }
 
   py::list forward(const py::sequence& inputs, bool clone_outputs = true) {
@@ -906,7 +674,8 @@ struct PyModule final {
   }
 
   bool has_etdump() {
-    return module_->has_etdump();
+    ETDumpGen* etdump = dynamic_cast<ETDumpGen*>(module_->event_tracer());
+    return etdump != nullptr;
   }
 
   void write_etdump_result_to_file(
@@ -915,19 +684,20 @@ struct PyModule final {
     if (!has_etdump()) {
       throw std::runtime_error("No etdump found");
     }
-    auto& etdump = module_->etdump();
-    etdump_result result = etdump.get_etdump_data();
+    ETDumpGen* etdump = dynamic_cast<ETDumpGen*>(module_->event_tracer());
+    etdump_result result = etdump->get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
       write_data_to_file(path, result.buf, result.size);
       free(result.buf);
-      if (module_->has_etdump_debug_buffer() &&
-          py::isinstance<py::str>(debug_buffer_path)) {
+      if (py::isinstance<py::str>(debug_buffer_path)) {
         // Also write out the debug buffer to a separate file if requested.
         std::string debug_buffer_path_str =
             py::cast<std::string>(debug_buffer_path);
-        const auto debug_buffer = module_->get_etdump_debug_buffer();
-        write_data_to_file(
-            debug_buffer_path_str, debug_buffer.data(), debug_buffer.size());
+        const auto debug_buffer = module_->debug_buffer();
+        if (debug_buffer.size() > 0) {
+          write_data_to_file(
+              debug_buffer_path_str, debug_buffer.data(), debug_buffer.size());
+        }
       }
     } else {
       ET_LOG(
@@ -941,72 +711,95 @@ struct PyModule final {
   py::list plan_execute(
       const std::string method_name,
       bool clone_outputs = true) {
-    auto& method = module_->get_method(method_name);
-    // Need to pre-allocate space for outputs just like in run_method.
-    const auto num_outputs = method.outputs_size();
-    output_storages_ = make_output_storages(method);
-    std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
-    for (int i = 0; i < output_storages_.size(); ++i) {
-      output_storage_spans[i] =
-          Span<uint8_t>(output_storages_[i].data(), output_storages_[i].size());
-    }
-    setup_output_storage(method, output_storage_spans);
-    auto status = method.execute();
+    auto status = module_->load_method(method_name);
+
+    THROW_IF_ERROR(
+        status,
+        "executing execution plan for method 'load' failed with error: 0x%" PRIx32,
+        static_cast<uint32_t>(status));
+    auto output = module_->execute(method_name.c_str());
     THROW_IF_ERROR(
         status,
         "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
         static_cast<uint32_t>(status));
-    const auto outputs = module_->get_outputs(method_name);
-    return get_outputs_as_py_list(outputs, clone_outputs);
+    return get_outputs_as_py_list(output.get(), clone_outputs);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
-    auto& method = module_->get_method(method_name);
-    return std::make_unique<PyMethodMeta>(module_, method.method_meta());
+    auto method_data = module_->method_meta(method_name);
+    return std::make_unique<PyMethodMeta>(module_, method_data.get());
   }
 
   std::vector<std::string> method_names() {
-    return module_->method_names();
+    auto result = module_->method_names();
+    THROW_IF_ERROR(
+        result.error(),
+        "Failed to get method names, error: 0x%" PRIx32,
+        static_cast<uint32_t>(result.error()));
+    const auto& method_set = result.get();
+    return std::vector<std::string>(method_set.begin(), method_set.end());
   }
 
  private:
   std::shared_ptr<Module> module_;
-  // Need to keep-alive output storages until they can be compared in case of
+  // Need to keep-alive output tensors until they can be compared in case of
   // bundled programs.
-  std::vector<std::vector<uint8_t>> output_storages_;
+  std::vector<std::optional<TensorPtr>> output_tensors_;
 
-  std::vector<std::vector<uint8_t>> make_output_storages(const Method& method) {
-    const auto num_outputs = method.outputs_size();
+  void allocate_output_tensors(const std::string& method_name) {
+    auto method_meta_result = module_->method_meta(method_name);
+    THROW_IF_ERROR(
+        method_meta_result.error(),
+        "Failed to get method_meta for %s, error: 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(method_meta_result.error()));
+
+    auto method_meta = method_meta_result.get();
+    const auto num_outputs = method_meta.num_outputs();
+
     // Create a buffer for each output tensor. Memory planned outputs and non
     // tensor outputs get an empty buffer in this list which is ignored later.
-    std::vector<std::vector<uint8_t>> output_storages;
-    output_storages_.reserve(num_outputs);
-    auto meta = method.method_meta();
+    output_tensors_.clear();
+    output_tensors_.reserve(num_outputs);
     for (size_t i = 0; i < num_outputs; ++i) {
-      auto output_type = meta.output_tag(i);
+      auto output_type = method_meta.output_tag(i);
       THROW_IF_ERROR(
           output_type.error(), "Failed to get output type for output %zu", i);
       if (output_type.get() != Tag::Tensor) {
         // Skip allocating storage for non-tensor outputs.
-        output_storages.emplace_back();
+        output_tensors_.emplace_back(std::nullopt);
         continue;
       }
-      const auto& output_tensor_meta =
-          method.method_meta().output_tensor_meta(i);
+      const auto& output_tensor_meta = method_meta.output_tensor_meta(i);
       THROW_IF_ERROR(
           output_tensor_meta.error(),
           "Failed to get output tensor meta for output %zu",
           i);
       if (output_tensor_meta.get().is_memory_planned()) {
         // Skip allocating storage for planned memory outputs.
-        output_storages.emplace_back();
+        output_tensors_.emplace_back(std::nullopt);
         continue;
       }
-      // Allocate storage for the output tensor.
-      const size_t output_size = output_tensor_meta.get().nbytes();
-      output_storages.emplace_back(output_size);
+      TensorPtr tensor_ptr = make_tensor_ptr(
+          std::vector<executorch::aten::SizesType>(
+              output_tensor_meta->sizes().begin(),
+              output_tensor_meta->sizes().end()),
+          std::vector<uint8_t>(output_tensor_meta->nbytes()),
+          output_tensor_meta->scalar_type());
+      output_tensors_.emplace_back(std::move(tensor_ptr));
     }
-    return output_storages;
+
+    for (size_t i = 0; i < output_tensors_.size(); ++i) {
+      if (output_tensors_[i].has_value()) {
+        // Set output tensors on module.
+        auto status = module_->set_output(method_name, output_tensors_[i], i);
+        THROW_IF_ERROR(
+            status,
+            "Failed to set output for method %s, error: 0x%" PRIx32,
+            method_name.c_str(),
+            static_cast<uint32_t>(status));
+      }
+    }
   }
 };
 
