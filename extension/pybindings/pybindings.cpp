@@ -23,6 +23,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/bundled_module.h>
+#include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor_ptr.h>
 #include <executorch/extension/tensor/tensor_ptr_maker.h>
 #include <executorch/extension/threadpool/threadpool.h>
@@ -719,14 +720,19 @@ struct PyModule final {
         static_cast<uint32_t>(status));
     auto output = module_->execute(method_name.c_str());
     THROW_IF_ERROR(
-        status,
+        output.error(),
         "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
-        static_cast<uint32_t>(status));
+        static_cast<uint32_t>(output.error()));
     return get_outputs_as_py_list(output.get(), clone_outputs);
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
     auto method_data = module_->method_meta(method_name);
+    THROW_IF_ERROR(
+        method_data.error(),
+        "failed to retrieve method_meta for method %s, error 0x%" PRIx32,
+        method_name.c_str(),
+        static_cast<uint32_t>(method_data.error()));
     return std::make_unique<PyMethodMeta>(module_, method_data.get());
   }
 

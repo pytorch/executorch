@@ -266,7 +266,6 @@ class TestBackends(unittest.TestCase):
 
         executorch_module = _load_for_executorch_from_buffer(buff)
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(model_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = add_mul_module(*model_inputs)
@@ -322,13 +321,14 @@ class TestBackends(unittest.TestCase):
         executorch_module = _load_for_executorch_from_buffer(buff)
         # This line should raise an exception like
         # RuntimeError: failed with error 0x12
-        executorch_module.run_method("forward")
+        inputs_flattened, _ = tree_flatten(model_inputs)
+        executorch_module.run_method("forward", tuple(inputs_flattened))
 
     @vary_segments
     def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
-            "Failed to get method forward, error: 0x12",
+            "Failed to execute method forward, error: 0x12",
         ):
             self.run_model_in_unsupported_backend(
                 extract_delegate_segments=extract_delegate_segments
@@ -876,7 +876,6 @@ class TestBackends(unittest.TestCase):
         self.assertEqual(counter, 2)
 
         executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = m(*inputs)

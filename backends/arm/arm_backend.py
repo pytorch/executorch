@@ -23,6 +23,7 @@ from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import
 class ArmCompileSpecBuilder:
     class DebugMode(Enum):
         JSON = 1
+        TOSA = 2
 
     def __init__(self):
         self.compile_spec: List[CompileSpec] = []

@@ -223,6 +223,27 @@ def test_dump_tosa_debug_json(test_data: input_t1):
 
 
 @common.parametrize("test_data", Linear.inputs)
+def test_dump_tosa_debug_tosa(test_data: input_t1):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pipeline = TosaPipelineINT[input_t1](
+            module=Linear(),
+            test_data=test_data,
+            aten_op=[],
+            exir_op=[],
+            custom_path=tmpdir,
+            tosa_debug_mode=ArmCompileSpecBuilder.DebugMode.TOSA,
+        )
+
+        pipeline.pop_stage("run_method_and_compare_outputs")
+        pipeline.run()
+
+        json_output_path = Path(tmpdir) / "debug.json"
+
+        # A JSON file should not be created when TOSA mode used
+        assert not json_output_path.exists()
+
+
+@common.parametrize("test_data", Linear.inputs)
 def test_dump_tosa_ops(caplog, test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](Linear(), test_data, [], [])
     pipeline.pop_stage("run_method_and_compare_outputs")
