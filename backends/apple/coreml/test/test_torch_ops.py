@@ -268,6 +268,28 @@ class TestTorchOps(unittest.TestCase):
         et_prog = delegated_program.to_executorch()
         self._compare_outputs(et_prog, model, example_inputs)
 
+    def test__clone_dim_order_contiguous(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.ops.dim_order_ops._clone_dim_order(
+                    x, dim_order=[0, 1, 2, 3]
+                )
+
+        model, example_inputs = Model(), (torch.randn(1, 3, 8, 8),)
+        ep = torch.export.export(model, example_inputs)
+        delegated_program = executorch.exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[self._coreml_partitioner()],
+        )
+        for node in delegated_program.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+        et_prog = delegated_program.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs)
+
 
 if __name__ == "__main__":
     test_runner = TestTorchOps()
@@ -280,3 +302,4 @@ if __name__ == "__main__":
     test_runner.test_dequantize_codebook_linear_per_grouped_row()
     test_runner.test_dequantize_codebook_embedding_per_grouped_col()
     test_runner.test_dequantize_codebook_embedding_per_grouped_row()
+    test_runner.test__clone_dim_order_contiguous()

@@ -148,6 +148,9 @@ def get_symmetric_a16w8_slice_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", test_data_suite)
+@pytest.mark.xfail(
+    reason="missing int16 slice ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13976"
+)
 def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test slice operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
