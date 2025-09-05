@@ -114,7 +114,7 @@ class OpenvinoPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(OpenvinoBackend.__name__, compile_spec)
         self._op_types_to_skip = op_types_to_skip
         self._op_names_to_skip = op_names_to_skip
-        self._enabled_ops_by_name = set()
+        self._enabled_ops_by_name: set = set()
 
     def ops_to_not_decompose(
         self,
