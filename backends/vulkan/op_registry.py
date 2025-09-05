@@ -172,7 +172,6 @@ def register_affine_quantization_op():
 
 @update_features(
     [
-        exir_ops.edge.torchao.choose_qparams_affine.default,
         exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
         exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
     ]
@@ -180,6 +179,20 @@ def register_affine_quantization_op():
 def register_torchao_quantization_op():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
+    )
+
+
+@update_features(
+    exir_ops.edge.torchao.choose_qparams_affine.default,
+)
+def register_torchao_choose_qparams_affine():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        outputs_storage=[
+            utils.CONTIGUOUS_BUFFER,  # scales
+            utils.CONTIGUOUS_BUFFER,  # zero_points
+        ],
         supports_resize=True,
     )
 
