@@ -176,6 +176,9 @@ def get_symmetric_a16w8_view_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
+@pytest.mark.xfail(
+    reason="missing int16 view ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13977"
+)
 def test_view_16a8w_tosa_INT(test_data: Tuple):
     """Test view operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
