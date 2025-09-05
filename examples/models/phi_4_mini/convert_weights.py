@@ -66,6 +66,29 @@ def phi_4_hf_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Ten
     return converted_state_dict
 
 
+def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    """
+    Convert a state dict from torchtune's format to Meta's format. This function
+    doesn't handle any sharding or splitting of state dicts. It follows the
+    state_dict IN -> state_dict OUT pattern.
+    Args:
+        state_dict (Dict[str, torch.Tensor]): State dict in torchtune's format.
+    Returns:
+        Dict[str, torch.Tensor]: State dict in Meta's format.
+    """
+    converted_state_dict = {}
+    inverted_mapping_dict = {v: k for k, v in _PHI_4_FROM_META.items()}
+
+    for key, value in state_dict.items():
+        new_key = get_mapped_key(key, inverted_mapping_dict)
+        converted_state_dict[new_key] = value
+
+    # Input and output embeddings are tied.
+    converted_state_dict["output.weight"] = converted_state_dict[
+        "tok_embeddings.weight"
+    ]
+
+
 # Standard _FROM_META weight mapping of Meta weights to TorchTune.
 _PHI_4_FROM_META = {
     "tok_embeddings.weight": "tok_embeddings.weight",
