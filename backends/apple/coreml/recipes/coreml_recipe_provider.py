@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 
+import logging
 from typing import Any, Optional, Sequence
 
 import coremltools as ct
@@ -111,8 +112,9 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
 
         unexpected = set(kwargs.keys()) - expected_keys
         if unexpected:
-            raise ValueError(
-                f"Recipe '{recipe_type.value}' received unexpected parameters: {list(unexpected)}"
+            logging.warning(
+                f"CoreML recipe '{recipe_type.value}' ignoring unexpected parameters: {list(unexpected)}. "
+                f"Expected parameters: {list(expected_keys)}"
             )
 
         self._validate_base_parameters(kwargs)
@@ -121,7 +123,13 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
 
     def _get_expected_keys(self, recipe_type: RecipeType) -> set:
         """Get expected parameter keys for a recipe type"""
-        common_keys = {"minimum_deployment_target", "compute_unit"}
+        common_keys = {
+            "minimum_deployment_target",
+            "compute_unit",
+            "skip_ops_for_coreml_delegation",
+            "lower_full_graph",
+            "take_over_constant_data",
+        }
 
         if recipe_type in [
             CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
@@ -377,9 +385,19 @@ class CoreMLRecipeProvider(BackendRecipeProvider):
         if minimum_deployment_target and minimum_deployment_target < ct.target.iOS18:
             take_over_mutable_buffer = False
 
+        # Extract additional partitioner parameters
+        skip_ops_for_coreml_delegation = kwargs.get(
+            "skip_ops_for_coreml_delegation", None
+        )
+        lower_full_graph = kwargs.get("lower_full_graph", False)
+        take_over_constant_data = kwargs.get("take_over_constant_data", True)
+
         partitioner = CoreMLPartitioner(
             compile_specs=compile_specs,
             take_over_mutable_buffer=take_over_mutable_buffer,
+            skip_ops_for_coreml_delegation=skip_ops_for_coreml_delegation,
+            lower_full_graph=lower_full_graph,
+            take_over_constant_data=take_over_constant_data,
         )
 
         edge_compile_config = EdgeCompileConfig(

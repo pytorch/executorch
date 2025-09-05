@@ -59,9 +59,6 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/backend:interface" + aten_suffix,
             ],
-            exported_headers = [
-                "runtime/XNNPACKBackend.h",
-            ],
             deps = [
                 third_party_dep("XNNPACK"),
                 "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",

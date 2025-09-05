@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import logging
 from typing import Any, Optional, Sequence
 
 import torch
@@ -180,9 +181,9 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
             expected_keys = {"group_size"}
             unexpected = set(kwargs.keys()) - expected_keys
             if unexpected:
-                raise ValueError(
-                    f"Recipe '{recipe_type.value}' only accepts 'group_size' parameter. "
-                    f"Unexpected parameters: {list(unexpected)}"
+                logging.warning(
+                    f"XNNPACK recipe '{recipe_type.value}' ignoring unexpected parameters: {list(unexpected)}. "
+                    f"Only 'group_size' is supported for this recipe."
                 )
             if "group_size" in kwargs:
                 group_size = kwargs["group_size"]
@@ -193,7 +194,7 @@ class XNNPACKRecipeProvider(BackendRecipeProvider):
         elif kwargs:
             # All other recipes don't expect any kwargs
             unexpected = list(kwargs.keys())
-            raise ValueError(
-                f"Recipe '{recipe_type.value}' does not accept any parameters. "
-                f"Unexpected parameters: {unexpected}"
+            logging.warning(
+                f"XNNPACK recipe '{recipe_type.value}' ignoring unexpected parameters: {unexpected}. "
+                f"This recipe does not accept any parameters."
             )

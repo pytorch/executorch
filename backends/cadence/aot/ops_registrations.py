@@ -304,7 +304,13 @@ lib.define(
 # Post memory planning, we check that outputs/inputs for the load/store are in
 # DTCM and replace idma_load/idma_store with idma_copy.
 lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_load.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
 lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_store.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # Non-blocking iDMA copy.
 lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")

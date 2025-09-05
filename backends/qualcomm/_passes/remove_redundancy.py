@@ -19,7 +19,7 @@ class RemoveRedundancy(ExportPass):
         self.redundant_ops_general = {
             torch.clone: self._default_condition,
             torch.ops.aten.clone.default: self._default_condition,
-            exir_ops.edge.aten.clone.default: self._default_condition,
+            exir_ops.edge.dim_order_ops._clone_dim_order.default: self._default_condition,
             torch.ops.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias.default: self._default_condition,
             exir_ops.edge.aten.alias_copy.default: self._default_condition,

@@ -105,7 +105,7 @@ runtime.python_test(
         "HTTPS_PROXY": "http://fwdproxy:8080",
     },
     deps = [
-        "//executorch/backends/xnnpack:xnnpack_delegate",
+       "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
         "//executorch/export:lib",
         "//pytorch/vision:torchvision",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",

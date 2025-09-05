@@ -433,6 +433,17 @@ def annotate_clamp(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.index_select.default])
+def annotate_index_select(node: Node, quantization_config: QuantizationConfig) -> None:
+    # args[2] = indices, which should be int
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.flip.default])
+def annotate_flip(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.floor.default])
 def annotate_floor(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)

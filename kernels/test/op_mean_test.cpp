@@ -551,3 +551,30 @@ TEST_F(OpMeanOutTest, DTypeOutFloatNAN) {
   Tensor ret = op_mean_dtype_out(x, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
+
+TEST_F(OpMeanOutTest, EmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.make({2, 0, 3}, {});
+  optional<ScalarType> dtype = ScalarType::Float;
+  optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
+  Tensor out = tf.zeros({1, 1, 1});
+  op_mean_out(x, dim_list, /*keepdim=*/true, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {NAN}));
+
+  out = tf.zeros({});
+  op_mean_out(x, dim_list, /*keepdim=*/false, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {NAN}));
+
+  int64_t dims1[1] = {1};
+  dim_list = ArrayRef<int64_t>{dims1, 1};
+  out = tf.zeros({2, 3});
+  op_mean_out(x, dim_list, /*keepdim=*/false, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 3}, {NAN, NAN, NAN, NAN, NAN, NAN}));
+
+  int64_t dims2[1] = {2};
+  dim_list = ArrayRef<int64_t>{dims2, 1};
+  out = tf.make({2, 0, 1}, {});
+  op_mean_out(x, dim_list, /*keepdim=*/true, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 0, 1}, {}));
+}

@@ -6,19 +6,29 @@
 
 # pyre-unsafe
 
+import logging
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+
+logger = logging.getLogger(__name__)
 
 
 class RemoveClonePass(ExportPass):
     """Remove all clones from graph_module"""
 
     def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.aten.clone.default:
+        if op != exir_ops.edge.dim_order_ops._clone_dim_order.default:
             return super().call_operator(op, args, kwargs, meta)
 
         if len(args) != 1:
             raise ValueError(
                 f"clone operator expects exactly one argument, got {len(args)}"
             )
+
+        if "memory_format" in kwargs:
+            logger.warning(
+                f"Removing clone with memory_format '{kwargs['memory_format']}'."
+            )
+
         return args[0]

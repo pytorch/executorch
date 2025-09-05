@@ -26,7 +26,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -228,7 +228,6 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.var.dim,
             exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.squeeze_copy.dims,
             exir_ops.edge.aten.pow.Tensor_Scalar,

@@ -98,6 +98,8 @@ def define_common_targets():
         runtime.cxx_library(
             name = "multimodal_runner_lib" + aten_suffix,
             exported_headers = [
+                "audio.h",
+                "image.h",
                 "multimodal_input.h",
                 "multimodal_runner.h",
                 "multimodal_prefiller.h",
@@ -143,6 +145,7 @@ def define_common_targets():
                 "//pytorch/tokenizers:hf_tokenizer",
                 "//pytorch/tokenizers:llama2c_tokenizer",
                 "//pytorch/tokenizers:sentencepiece",
+                "//pytorch/tokenizers:tekken",
                 "//pytorch/tokenizers:tiktoken",
             ],
         )

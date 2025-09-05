@@ -16,7 +16,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -117,7 +117,9 @@ class SliceVisitor(NodeVisitor):
             (sizes_len,), ts.DType.SHAPE, sizes, node.name + "_sizes_shape"
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().SLICE,
             [input_node.name, start_tensor.name, sizes_tensor.name],
             [output.name],

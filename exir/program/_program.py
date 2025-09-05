@@ -645,6 +645,14 @@ class ExecutorchProgram:
         return self._get_emitter_output().method_to_delegate_debug_id_map
 
     @property
+    def instruction_id_to_num_outs_map(
+        self,
+    ) -> Dict[str, Dict[int, Union[int, List[int]]]]:
+        if self._emitter_output:
+            return self._emitter_output.instruction_id_to_num_outs_map
+        return self._get_emitter_output().instruction_id_to_num_outs_map
+
+    @property
     def graph_module(self) -> torch.fx.GraphModule:
         return self.exported_program.graph_module
 
@@ -1859,6 +1867,12 @@ class ExecutorchProgramManager:
         self,
     ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
         return self._emitter_output.method_to_delegate_debug_id_map
+
+    @property
+    def instruction_id_to_num_outs_map(
+        self,
+    ) -> Dict[str, Dict[int, Union[int, List[int]]]]:
+        return self._emitter_output.instruction_id_to_num_outs_map
 
     @property
     def executorch_program(self) -> Program:

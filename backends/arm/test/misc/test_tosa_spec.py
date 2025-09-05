@@ -5,7 +5,7 @@
 
 import unittest
 
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_tosa_spec,
     Tosa_1_00,
     TosaSpecification,

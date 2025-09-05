@@ -22,9 +22,9 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
@@ -78,7 +78,9 @@ class BMMVisitor(NodeVisitor):
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=f"{node.name}_B_ZP")
 
         # Add the MATMUL to the TOSA graph.
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MATMUL,
             [
                 inputs[0].name,

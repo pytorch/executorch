@@ -7,7 +7,7 @@ import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )

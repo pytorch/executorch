@@ -20,7 +20,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
     get_output_qparams,
 )
 
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 from tosa.RoundingMode import RoundingMode  # type: ignore
 

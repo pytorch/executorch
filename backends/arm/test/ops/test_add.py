@@ -18,7 +18,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
