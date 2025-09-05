@@ -18,16 +18,16 @@ def escape_for_markdown(text: str) -> str:
     """
     if not text:
         return text
-    
+
     # Replace newlines with <br /> tags
-    escaped = text.replace('\n', '<br />')
+    escaped = text.replace("\n", "<br />")
 
     # Escape backslashes.
-    escaped = escaped.replace('\\', '\\\\')
-    
+    escaped = escaped.replace("\\", "\\\\")
+
     # Escape pipe characters that would break table structure
-    escaped = escaped.replace('|', '\\|')
-    
+    escaped = escaped.replace("|", "\\|")
+
     return escaped
 
 
