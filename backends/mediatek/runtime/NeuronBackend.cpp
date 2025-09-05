@@ -169,7 +169,7 @@ Error NeuronExecuTorchDelegate::execute(
 
   PrepareInputsOuputs(args);
 
-  auto allocator = dynamic_cast<torch::executor::neuron::BufferAllocator*>(
+  auto allocator = dynamic_cast<neuron::BufferAllocator*>(
       context.get_temp_allocator());
 
   size_t inputCount = mInputSizes.size() + neuron_shared_weights_.size();

@@ -31,6 +31,7 @@ namespace neuron {
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 class NeuronSharedWeights {
  public:
@@ -212,7 +213,7 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  int CheckDimOrder(EValue** args) const {
+  int CheckDimOrder(Span<EValue*> args) const {
     size_t data_input_count = mInputSizes.size();
     for (int i = 0; i < data_input_count; i++) {
       auto tensor_in = args[i]->toTensor();
@@ -226,7 +227,7 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  int PrepareInputsOuputs(EValue** args) const {
+  int PrepareInputsOuputs(Span<EValue*> args) const {
     bool has_shared_weights_input = neuron_shared_weights_.size() > 0;
 
     size_t data_input_count = mInputSizes.size();
@@ -265,7 +266,7 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  int HintNeuronBackend(::executorch::runtime::EValue** args) const;
+  int HintNeuronBackend(Span<EValue*> args) const;
 
  private:
   std::vector<size_t> mInputSizes;
