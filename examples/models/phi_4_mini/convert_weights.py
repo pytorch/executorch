@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from typing import Dict
 
@@ -82,37 +83,46 @@ _PHI_4_FROM_META = {
 }
 
 
-def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-    """
-    Convert a state dict from torchtune's format to Meta's format. This function
-    doesn't handle any sharding or splitting of state dicts. It follows the
-    state_dict IN -> state_dict OUT pattern.
+def load_checkpoint_from_pytorch_model(input_dir: str) -> Dict:
+    index_path = os.path.join(input_dir, "pytorch_model.bin.index.json")
+    if os.path.exists(index_path):
+        # Sharded checkpoint.
+        with open(index_path, "r") as f:
+            index = json.load(f)
+        weight_map = index["weight_map"]
+        checkpoint_shards = sorted(set(weight_map.values()))
 
-    Args:
-        state_dict (Dict[str, torch.Tensor]): State dict in torchtune's format.
+        # Load all the shards into memory
+        shard_to_weights = {}
+        for shard in checkpoint_shards:
+            shard_to_weights[shard] = torch.load(
+                os.path.join(input_dir, shard),
+                weights_only=True,
+                map_location=torch.device("cpu"),
+            )
 
-    Returns:
-        Dict[str, torch.Tensor]: State dict in Meta's format.
-    """
-    converted_state_dict = {}
-    inverted_mapping_dict = {v: k for k, v in _PHI_4_FROM_META.items()}
+        # Merge tensors into consolidated state dict.
+        merged_state_dict = {}
+        for weight_name, shard in weight_map.items():
+            tensor = shard_to_weights[shard][weight_name]
+            merged_state_dict[weight_name] = tensor
+        return merged_state_dict
 
-    for key, value in state_dict.items():
-        new_key = get_mapped_key(key, inverted_mapping_dict)
-        converted_state_dict[new_key] = value
+    # Single checkpoint
+    model_path = os.path.join(input_dir, "pytorch_model.bin")
+    if os.path.exists(model_path):
+        state_dict = torch.load(
+            model_path, weights_only=True, map_location=torch.device("cpu")
+        )
+        return state_dict
 
-    # Input and output embeddings are tied.
-    converted_state_dict["output.weight"] = converted_state_dict[
-        "tok_embeddings.weight"
-    ]
-
-    return converted_state_dict
+    raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")
 
 
 def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
-    # If input_dir_or_checkpoint is a directory downloaded from HF, FullModelHFCheckpointer is used to extract the state dict
-    # If input_dir_or_checkpoint is a checkpoint (from eager model model), it is loaded directly
-    if os.path.isdir(input_dir_or_checkpoint):
+    try:
+        sd = load_checkpoint_from_pytorch_model(input_dir_or_checkpoint)
+    except FileNotFoundError:
         checkpointer = FullModelHFCheckpointer(
             checkpoint_dir=input_dir_or_checkpoint,
             checkpoint_files=[
@@ -125,13 +135,9 @@ def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
         print("Loading checkpoint from directory...")
         sd = checkpointer.load_checkpoint()
         sd = sd["model"]
-        print("Converting checkpoint...")
-        sd = phi_4_tune_to_meta(sd)
-    else:
-        print("Loading checkpoint from file...")
-        sd = torch.load(input_dir_or_checkpoint, map_location="cpu", weights_only=True)
-        print("Converting checkpoint...")
-        sd = phi_4_hf_to_meta(sd)
+
+    print("Converting checkpoint...")
+    sd = phi_4_hf_to_meta(sd)
 
     print("Saving checkpoint...")
     torch.save(sd, output_file)

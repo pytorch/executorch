@@ -80,19 +80,70 @@ def load_checkpoint_from_safetensors(input_dir: str) -> Dict:
             tensor = shard_to_weights[shard][weight_name]
             merged_state_dict[weight_name] = tensor
         return merged_state_dict
-    else:
-        # Single checkpoint.
-        state_dict = load_file(os.path.join(input_dir, "model.safetensors"))
+
+    # Single checkpoint.
+    model_path = os.path.join(input_dir, "model.safetensors")
+    if os.path.exists(model_path):
+        return load_file(os.path.join(input_dir, "model.safetensors"))
+
+    raise FileNotFoundError(f"Could not find safetensors checkpoint in {input_dir}")
+
+
+def load_checkpoint_from_pytorch_model(input_dir: str) -> Dict:
+    index_path = os.path.join(input_dir, "pytorch_model.bin.index.json")
+    if os.path.exists(index_path):
+        # Sharded checkpoint.
+        with open(index_path, "r") as f:
+            index = json.load(f)
+        weight_map = index["weight_map"]
+        checkpoint_shards = sorted(set(weight_map.values()))
+
+        # Load all the shards into memory
+        shard_to_weights = {}
+        for shard in checkpoint_shards:
+            shard_to_weights[shard] = torch.load(
+                os.path.join(input_dir, shard),
+                weights_only=True,
+                map_location=torch.device("cpu"),
+            )
+
+        # Merge tensors into consolidated state dict.
+        merged_state_dict = {}
+        for weight_name, shard in weight_map.items():
+            tensor = shard_to_weights[shard][weight_name]
+            merged_state_dict[weight_name] = tensor
+        return merged_state_dict
+
+    # Single checkpoint
+    model_path = os.path.join(input_dir, "pytorch_model.bin")
+    if os.path.exists(model_path):
+        state_dict = torch.load(
+            model_path, weights_only=True, map_location=torch.device("cpu")
+        )
         return state_dict
+
+    raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")
 
 
 def load_checkpoint(input_dir: str) -> Dict:
-    pytorch_path = os.path.join(input_dir, "pytorch_model.bin")
-    if os.path.exists(pytorch_path):
-        print("Loading checkpoint from PyTorch .bin file")
-        return torch.load(pytorch_path, map_location="cpu", weights_only=True)
-    print("Loading checkpoint from safetensors directory")
-    return load_checkpoint_from_safetensors(input_dir)
+    try:
+        print("Loading checkpoint from pytorch_model directory")
+        state_dict = load_checkpoint_from_pytorch_model(input_dir)
+        return state_dict
+    except FileNotFoundError:
+        print(
+            "Could not find pytorch_model checkpoints in directory, trying safetensors"
+        )
+        pass
+
+    try:
+        print("Loading checkpoint from safetensors directory")
+        state_dict = load_checkpoint_from_safetensors(input_dir)
+        return state_dict
+    except FileNotFoundError:
+        pass
+
+    raise FileNotFoundError(f"Could not find checkpoint in {input_dir}")
 
 
 def convert_weights(input_dir: str, output_file: str) -> None:
