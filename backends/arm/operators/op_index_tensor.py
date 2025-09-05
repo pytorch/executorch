@@ -8,7 +8,7 @@
 import math
 from typing import Any, List
 
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.utils as tutils
 
 import numpy as np
 
@@ -19,8 +19,8 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
 )
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta, TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.mapping import extract_tensor_meta, TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
