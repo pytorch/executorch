@@ -4,131 +4,191 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from functools import lru_cache
-from typing import Callable, List, Optional
+from typing import Optional
 
 import executorch.backends.vulkan.utils as utils
 
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.transforms.utils import get_param_tensor, is_param_node
+from executorch.backends.transforms.utils import (
+    create_constant_placeholder,
+    get_param_tensor,
+)
 
 from executorch.backends.vulkan.patterns.pattern_registry import (
-    register_pattern_graph,
+    PatternMatch,
+    register_pattern_detector,
     register_pattern_replacement,
 )
 
-from executorch.exir import EdgeCompileConfig, ExportedProgram, to_edge
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from torch.export import export
-from torch.fx.passes.utils.matcher_utils import InternalMatch
-
-from torchao.quantization.granularity import PerGroup
-from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
-from torchao.utils import unwrap_tensor_subclass
+from torch.export.graph_signature import InputKind
 
 
-class TorchAOWeightOnlyQuantizedLinearPattern(torch.nn.Module):
-    """
-    Quantized linear pattern produced when quantizing linear layers using
-    `torchao.quantization.quant_api.quantize_()` with IntxWeightOnlyConfig.
-    """
+class QuantizedLinearMatch(PatternMatch):
+    def __init__(self, mm_node: torch.fx.Node) -> None:
+        self.anchor_node = mm_node
+        self.match_found = False
+        self.all_nodes = [self.anchor_node]
 
-    def __init__(
-        self,
-        in_features: int = 512,
-        out_features: int = 256,
-        bias: bool = False,
-        group_size: int = 64,
-        weight_bits: int = 4,
-        granularity_class: Optional[Callable] = None,
-    ) -> None:
-        super().__init__()
-        self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
-        self.group_size = group_size
-        self.weight_bits = weight_bits
-
-        if self.weight_bits == 4:
-            # pyre-ignore[16]
-            self.weight_dtype = torch.int4
-        else:
-            self.weight_dtype = torch.int8
-
-        if granularity_class is not None:
-            self.quant_granularity = granularity_class(self.group_size)
-        else:
-            self.quant_granularity = PerGroup(self.group_size)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear(x)
-
-    def apply_quantization(self):
-        q_config = IntxWeightOnlyConfig(
-            weight_dtype=self.weight_dtype,
-            granularity=self.quant_granularity,
+        const_node, arg_chain = utils.trace_args_until_placeholder(
+            self.anchor_node.args[1]
         )
-        quantize_(self, q_config)
-        unwrap_tensor_subclass(self)
-        return self
+
+        # mat2 is not a constant tensor - no match
+        if const_node is None:
+            return
+
+        dequantize_weight_node = None
+        # Search for a dequantize node in the arg chain of weight
+        for node in arg_chain:
+            if isinstance(node, torch.fx.Node) and utils.is_dequant_node(node):
+                dequantize_weight_node = node
+        # weight is not quantized - no match
+        if dequantize_weight_node is None:
+            return
+
+        self.weight_node = const_node
+        self.dequantize_weight_node = dequantize_weight_node
+        self.all_nodes.extend(arg_chain)
+
+        # By default, assume dequant node is from quantized_decomposed namespace
+        scales_arg_idx = 1
+        zeros_arg_idx = 2
+        # torchao dequantize has a different function schema than quantized_decomposed
+        if (
+            self.dequantize_weight_node.target
+            == exir_ops.edge.torchao.dequantize_affine.default
+        ):
+            scales_arg_idx = 2
+            zeros_arg_idx = 3
+
+        # Identify weight quantization parameter nodes
+        self.weight_scales_node, arg_chain = utils.trace_args_until_placeholder(
+            self.dequantize_weight_node.args[scales_arg_idx]
+        )
+        assert self.weight_scales_node is not None
+        self.all_nodes.extend(arg_chain)
+
+        self.weight_zeros_node, arg_chain = utils.trace_args_until_placeholder(
+            self.dequantize_weight_node.args[zeros_arg_idx]
+        )
+        assert self.weight_zeros_node is not None
+        self.all_nodes.extend(arg_chain)
+
+        # Identify output node
+        self.output_node = self.anchor_node
+
+        # The implementation has a limitation that output channels must be a
+        # multiple of 4. This is to ensure that data loads are aligned well with
+        # texel boundaries. If this is not true, then don't match the pattern.
+        out_channels = self.output_node.meta["val"].shape[-1]
+        if out_channels % 4 != 0:
+            return
+
+        # Identify input node
+        self.fp_input_node, self.quantize_input_node, dq_node = (
+            utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[0])
+        )
+        assert self.fp_input_node is not None
+        self.all_nodes.append(self.fp_input_node)
+
+        # The implementation has a limitation that input channels must be a
+        # multiple of 4. This is to ensure that data loads are aligned well with
+        # texel boundaries. If this is not true, then don't match the pattern.
+        in_channels = self.fp_input_node.meta["val"].shape[-1]
+        if in_channels % 4 != 0:
+            return
+
+        # Identify bias node, if applicable
+        self.bias_node = None
+        if self.anchor_node.target == exir_ops.edge.aten.addmm.default:
+            self.bias_node, arg_chain = utils.trace_args_until_placeholder(
+                self.anchor_node.args[2]
+            )
+            assert self.bias_node is not None
+            self.all_nodes.extend(arg_chain)
+
+        # If input is not quantized, then we are done
+        if self.quantize_input_node is None:
+            self.match_found = True
+            return
+
+        self.input_scales_node = self.quantize_input_node.args[1]
+        self.input_zeros_node = self.quantize_input_node.args[2]
+
+        assert dq_node is not None
+        self.all_nodes.extend(
+            [
+                self.quantize_input_node,
+                dq_node,
+            ]
+        )
+
+        self.match_found = True
+
+    def is_weight_only_quantized(self) -> bool:
+        return self.quantize_input_node is None
+
+    def is_weight_pergroup_quantized(self) -> bool:
+        weight_shape = self.weight_node.meta["val"].shape
+        scales_shape = self.weight_scales_node.meta["val"].shape
+        if len(scales_shape) != 2:
+            return False
+
+        # Check that:
+        # height dim of scales is same as height dim of weight (N / output channels dim)
+        # width dim of weight (K / in channels dim) is divisible by width dim of scales
+        # (number of quantization groups)
+        return scales_shape[-2] == weight_shape[-2] and (
+            weight_shape[-1] % scales_shape[-1] == 0
+        )
+
+    def is_weight_perchannel_quantized(self) -> bool:
+        weight_shape = self.weight_node.meta["val"].shape
+        scales_shape = self.weight_scales_node.meta["val"].shape
+        if len(scales_shape) != 1:
+            return False
+
+        # scales should have same size as weight's output channels dim
+        return scales_shape[0] == weight_shape[-2]
+
+    def is_input_static_per_tensor_quantized(self) -> bool:
+        if self.quantize_input_node is None:
+            return False
+
+        # For static quantization per tensor quantization, the scales and zeros
+        # are scalars.
+        return isinstance(self.input_scales_node, float)
 
 
-@lru_cache(maxsize=None)
-@register_pattern_graph("torchao_wo_quantized_linear")
-def get_torchao_wo_quantized_linear_graphs() -> List[torch.fx.GraphModule]:
-    graphs = []
+linear_anchor_nodes = {
+    exir_ops.edge.aten.linear.default,
+    exir_ops.edge.aten.mm.default,
+    exir_ops.edge.aten.addmm.default,
+}
 
-    # Different configurations to test
-    configs = [
-        # gemv pattern
-        (1, 1, 128, 128, False, 64, 4, PerGroup),
-        # gemm pattern
-        (1, 8, 128, 128, False, 64, 4, PerGroup),
-    ]
 
-    for (
-        batch_size,
-        seq_len,
-        in_features,
-        out_features,
-        bias,
-        group_size,
-        weight_bits,
-        granularity_class,
-    ) in configs:
-        for dtype in [torch.float32]:
-            xs = []
-            xs.append(torch.randn(batch_size, seq_len, in_features, dtype=dtype))
-            if batch_size == 1:
-                xs.append(torch.randn(seq_len, in_features, dtype=dtype))
+@register_pattern_detector("quantized_linear")
+def find_quantized_linear_patterns(
+    node: torch.fx.Node,
+) -> Optional[QuantizedLinearMatch]:
+    if node.target not in linear_anchor_nodes:
+        return None
 
-            for x in xs:
-                # Create and quantize the pattern
-                pattern = TorchAOWeightOnlyQuantizedLinearPattern(
-                    in_features=in_features,
-                    out_features=out_features,
-                    bias=bias,
-                    group_size=group_size,
-                    weight_bits=weight_bits,
-                    granularity_class=granularity_class,
-                )
+    matched_pattern = QuantizedLinearMatch(node)
+    if matched_pattern.match_found:
+        return matched_pattern
 
-                # Apply quantization
-                pattern = pattern.apply_quantization()
+    return None
 
-                # Export the quantized pattern
-                edge = to_edge(
-                    export(
-                        pattern,
-                        (x,),
-                    ),
-                    compile_config=EdgeCompileConfig(_check_ir_validity=False),
-                )
-                gm = edge.exported_program().graph_module
-                graphs.append(gm)
 
-    return graphs
+##
+## Constant tensor manipulation
+##
 
 
 def pack_4bit_weight_tensor(inp: torch.Tensor) -> torch.Tensor:
@@ -192,117 +252,139 @@ def make_combined_scales_and_zeros_tensor(
     return torch.cat((scales_reshaped, zeros_scaled), dim=2)
 
 
-def identify_wo_quantized_linear_io_nodes(  # noqa: C901
+##
+## Pattern Replacement
+##
+
+
+def make_linear_q4ga_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
-    match: InternalMatch,
-) -> Optional[List[torch.fx.Node]]:
-    dequant_node = None
-    # First, find the dequant node
-    for node in match.nodes_map.values():
-        if utils.is_dequant_node(node):
-            dequant_node = node
-            break
-
-    if dequant_node is None:
-        return None
-
-    quantized_weight = dequant_node.args[0]
-    quant_scales = dequant_node.args[2]
-    quant_zeros = dequant_node.args[3]
-
-    if not isinstance(quantized_weight, torch.fx.Node) or not is_param_node(
-        ep, quantized_weight
-    ):
-        return None
-    if not isinstance(quant_scales, torch.fx.Node) or not is_param_node(
-        ep, quant_scales
-    ):
-        return None
-    if not isinstance(quant_zeros, torch.fx.Node) or not is_param_node(ep, quant_zeros):
-        return None
-
-    input_nodes = match.placeholder_nodes
-    if len(input_nodes) != 4:
-        return None
-
-    in_tensor_node = None
-    for node in input_nodes:
-        if node not in dequant_node.args:
-            in_tensor_node = node
-            break
-
-    if in_tensor_node is None:
-        return None
-
-    output_nodes = match.returning_nodes
-
-    if len(output_nodes) != 1:
-        return None
-
-    out_tensor_node = output_nodes[0]
-    if not isinstance(out_tensor_node, torch.fx.Node):
-        return None
-
-    return [
-        in_tensor_node,
-        quantized_weight,
-        quant_scales,
-        quant_zeros,
-        out_tensor_node,
-    ]
-
-
-# wo = "weight only"
-@register_pattern_replacement("torchao_wo_quantized_linear")
-def create_wo_quantized_linear_custom_op(
-    ep: ExportedProgram,
-    graph_module: torch.fx.GraphModule,
-    match: InternalMatch,
+    match: QuantizedLinearMatch,
+    weight_tensor: torch.Tensor,
+    weight_scales_tensor: torch.Tensor,
+    weight_zeros_tensor: torch.Tensor,
 ):
-    io_nodes = identify_wo_quantized_linear_io_nodes(ep, graph_module, match)
-    if io_nodes is None:
-        return
-
-    assert len(io_nodes) == 5
-    in_tensor, quantized_weight, quant_scales, quant_zeros, out_tensor = io_nodes
-
-    quantized_weight_tensor = get_param_tensor(ep, quantized_weight)
-    if not isinstance(quantized_weight_tensor, torch.Tensor):
-        return
-    packed_quantized_weight_tensor = pack_4bit_weight_tensor(quantized_weight_tensor)
+    packed_quantized_weight_tensor = pack_4bit_weight_tensor(weight_tensor)
     utils.update_program_state_dict(
-        ep, quantized_weight.name, packed_quantized_weight_tensor
+        ep, match.weight_node.name, packed_quantized_weight_tensor
     )
-    quantized_weight.meta["val"] = quantized_weight.meta["val"][:, ::2].to(torch.uint8)
+    # Need to make sure corresponding FakeTensor has same size
+    match.weight_node.meta["val"] = match.weight_node.meta["val"][:, ::2].to(
+        torch.uint8
+    )
 
-    quant_scales_tensor = get_param_tensor(ep, quant_scales)
-    quant_zeros_tensor = get_param_tensor(ep, quant_zeros)
-
-    assert quantized_weight_tensor is not None
-    assert quant_scales_tensor is not None
-    assert quant_zeros_tensor is not None
-
-    group_size = quantized_weight_tensor.shape[1] // quant_scales_tensor.shape[1]
+    group_size = weight_tensor.shape[1] // weight_scales_tensor.shape[1]
 
     combined_scales_zeros_tensor = make_combined_scales_and_zeros_tensor(
-        quant_scales_tensor, quant_zeros_tensor
+        weight_scales_tensor, weight_zeros_tensor
     )
 
-    combined_scales_zeros_name = f"{quantized_weight.name}_scales_zeros"
+    combined_scales_zeros_name = f"{match.weight_node.name}_scales_zeros"
     graph_module.register_parameter(
         combined_scales_zeros_name, torch.nn.Parameter(combined_scales_zeros_tensor)
     )
 
-    with graph_module.graph.inserting_before(out_tensor):
+    with graph_module.graph.inserting_before(match.output_node):
         combined_scales_zeros = graph_module.graph.get_attr(combined_scales_zeros_name)
-        wo_qlinear = graph_module.graph.create_node(
+        linear_q4ga_node = graph_module.graph.create_node(
             "call_function",
             exir_ops.edge.et_vk.linear_weight_int4.default,
-            args=(in_tensor, quantized_weight, group_size, combined_scales_zeros, 1),
+            args=(
+                match.fp_input_node,
+                match.weight_node,
+                group_size,
+                combined_scales_zeros,
+                1,
+            ),
         )
 
-    if hasattr(out_tensor, "meta") and "val" in out_tensor.meta:
-        wo_qlinear.meta["val"] = out_tensor.meta["val"]
+    linear_q4ga_node.meta["val"] = match.output_node.meta["val"]
+    match.output_node.replace_all_uses_with(linear_q4ga_node)
 
-    out_tensor.replace_all_uses_with(wo_qlinear)
+
+def make_linear_q8ta_q8csw_custom_op(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: QuantizedLinearMatch,
+    weight_tensor: torch.Tensor,
+):
+    first_graph_node = list(graph_module.graph.nodes)[0]
+    with graph_module.graph.inserting_before(first_graph_node):
+        weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
+        # Pre-compute the weight sums which are needed to apply activation zero point
+        # when using integer accumulation.
+        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
+        sums_name = weight_tensor_name + "_sums"
+        # Sanitize the name
+        sums_name = sums_name.replace(".", "_")
+
+        weight_sums_node = create_constant_placeholder(
+            exp_program=ep,
+            graph=graph_module.graph,
+            kind=InputKind.CONSTANT_TENSOR,
+            name=sums_name,
+            data=sum_per_output_channel,
+        )
+
+    with graph_module.graph.inserting_before(match.output_node):
+        qlinear_node = graph_module.graph.create_node(
+            "call_function",
+            exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
+            args=(
+                match.fp_input_node,
+                match.input_scales_node,
+                match.input_zeros_node,
+                match.weight_node,
+                weight_sums_node,
+                match.weight_scales_node,
+            ),
+        )
+
+    qlinear_node.meta["val"] = match.output_node.meta["val"]
+    match.output_node.replace_all_uses_with(qlinear_node)
+
+
+@register_pattern_replacement("quantized_linear")
+def replace_quantized_linear_patterns(
+    ep: ExportedProgram,
+    graph_module: torch.fx.GraphModule,
+    match: QuantizedLinearMatch,
+):
+    # Extract relevant tensors
+    weight_tensor = get_param_tensor(ep, match.weight_node)
+    assert weight_tensor is not None
+
+    assert match.weight_scales_node is not None
+    weight_scales_tensor = get_param_tensor(ep, match.weight_scales_node)
+    assert weight_scales_tensor is not None
+
+    assert match.weight_zeros_node is not None
+    weight_zeros_tensor = get_param_tensor(ep, match.weight_zeros_node)
+    assert weight_zeros_tensor is not None
+
+    # Biases not supported at the moment
+    if match.bias_node is not None:
+        return
+
+    # Route to appropriate custom op
+    if (
+        match.is_weight_only_quantized()
+        and match.is_weight_pergroup_quantized()
+        and utils.is_in_4bit_range(weight_tensor)
+    ):
+        make_linear_q4ga_op(
+            ep,
+            graph_module,
+            match,
+            weight_tensor,
+            weight_scales_tensor,
+            weight_zeros_tensor,
+        )
+    elif (
+        match.is_input_static_per_tensor_quantized()
+        and match.is_weight_perchannel_quantized()
+    ):
+        make_linear_q8ta_q8csw_custom_op(ep, graph_module, match, weight_tensor)
+
+    # No-op for unsupported quant patterns

@@ -19,6 +19,7 @@ from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
 )
 from executorch.backends.vulkan._passes import (
+    FoldQDQPass,
     FuseQuantizedOpsTransform,
     insert_prepack_nodes,
     RemoveLocalScalarDenseOpsTransform,
@@ -157,6 +158,7 @@ class VulkanBackend(BackendDetails):
                 RemoveRedundantOpsTransform(),
                 AddmmToLinearTransform(),
                 FuseQuantizedOpsTransform(program),
+                FoldQDQPass(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
