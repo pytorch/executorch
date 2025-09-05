@@ -208,7 +208,7 @@ class OpenVINOQuantizer(Quantizer):
                 edge_or_node, annotation = self._get_edge_or_node_and_annotation(
                     graph, nncf_graph, qp, node_vs_torch_annotation
                 )
-                qspec: QuantizationSpecBase = self._get_torch_ao_qspec_from_nncf_config(
+                qspec: QuantizationSpecBase = self._get_torch_ao_qspec_from_nncf_config(  # type: ignore[no-redef]
                     qp
                 )
                 self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
@@ -412,9 +412,9 @@ class OpenVINOQuantizer(Quantizer):
                 else MappingType.ASYMMETRIC
             )
             if qconfig.num_bits == 4:
-                extra_args["mapping_type"] = mapping_type
-                extra_args["target_dtype"] = torch.int8
-                extra_args["granularity"] = PerGroup(group_size=group_size)
+                extra_args["mapping_type"] = mapping_type  # type: ignore[assignment]
+                extra_args["target_dtype"] = torch.int8  # type: ignore[assignment]
+                extra_args["granularity"] = PerGroup(group_size=group_size)  # type: ignore[assignment]
                 observer = PTPerBlockParamObserver
                 quant_min = -8
                 quant_max = 7
