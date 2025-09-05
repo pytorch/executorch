@@ -51,6 +51,15 @@ DEFINE_string(
     "model.pte",
     "Model serialized in flatbuffer format.");
 DEFINE_string(inputs, "", "Comma-separated list of input files");
+DEFINE_string(
+    output_file,
+    "",
+    "Base name of output file. If not empty output will be written to the file(s).");
+
+DEFINE_bool(
+    print_all_output,
+    false,
+    "Prints all output. By default only first and last 100 elements are printed.");
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
@@ -328,10 +337,67 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "%zu outputs: ", outputs.size());
   Error status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
-  // Print the first and last 100 elements of long lists of scalars.
-  std::cout << executorch::extension::evalue_edge_items(100);
-  for (int i = 0; i < outputs.size(); ++i) {
-    std::cout << "Output " << i << ": " << outputs[i] << std::endl;
+
+  if (FLAGS_output_file.size() > 0) {
+    for (int i = 0; i < outputs.size(); ++i) {
+      if (outputs[i].isTensor()) {
+        Tensor tensor = outputs[i].toTensor();
+
+        char out_filename[255];
+        snprintf(out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
+        ET_LOG(Info, "Writing output to file: %s", out_filename);
+        FILE* out_file = fopen(out_filename, "wb");
+        auto written_size =
+            fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+        fclose(out_file);
+      }
+    }
+  }
+
+  if (FLAGS_print_all_output) {
+    for (int i = 0; i < outputs.size(); ++i) {
+      if (outputs[i].isTensor()) {
+        Tensor tensor = outputs[i].toTensor();
+
+        for (int j = 0; j < tensor.numel(); ++j) {
+          if (tensor.scalar_type() == ScalarType::Int) {
+            printf(
+                "Output[%d][%d]: (int) %d\n",
+                i,
+                j,
+                tensor.const_data_ptr<int>()[j]);
+          } else if (tensor.scalar_type() == ScalarType::Float) {
+            printf(
+                "Output[%d][%d]: (float) %f\n",
+                i,
+                j,
+                tensor.const_data_ptr<float>()[j]);
+          } else if (tensor.scalar_type() == ScalarType::Char) {
+            printf(
+                "Output[%d][%d]: (char) %d\n",
+                i,
+                j,
+                tensor.const_data_ptr<int8_t>()[j]);
+          } else if (tensor.scalar_type() == ScalarType::Bool) {
+            printf(
+                "Output[%d][%d]: (bool) %s (0x%x)\n",
+                i,
+                j,
+                tensor.const_data_ptr<int8_t>()[j] ? "true " : "false",
+                tensor.const_data_ptr<int8_t>()[j]);
+          }
+        }
+      } else {
+        printf("Output[%d]: Not Tensor\n", i);
+      }
+    }
+  } else {
+    // Print the first and last 100 elements of long lists of scalars.
+    std::cout << executorch::extension::evalue_edge_items(100);
+
+    for (int i = 0; i < outputs.size(); ++i) {
+      std::cout << "OutputX " << i << ": " << outputs[i] << std::endl;
+    }
   }
 
   if (tracer.get_event_tracer()) {

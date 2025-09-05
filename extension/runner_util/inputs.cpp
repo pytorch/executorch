@@ -31,15 +31,15 @@ Result<BufferCleanup> prepare_input_tensors(
   size_t num_inputs = method_meta.num_inputs();
   bool hard_code_inputs_to_ones = true;
 
-  ET_CHECK_OR_RETURN_ERROR(
-      input_buffers.size() > 0 && num_inputs == input_buffers.size(),
-      InvalidArgument,
-      "Wrong number of inputs allocated compared to method  %zu ? %zu",
-      num_inputs,
-      input_buffers.size());
-
   if (input_buffers.size() > 0) {
     hard_code_inputs_to_ones = false;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        num_inputs == input_buffers.size(),
+        InvalidArgument,
+        "Wrong number of inputs allocated compared to method  %zu ? %zu",
+        num_inputs,
+        input_buffers.size());
   }
 
   // A large number of small allocations could exhaust the heap even if the
