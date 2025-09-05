@@ -176,7 +176,7 @@ jobs:
           - model: phi_4_mini
             backend: portable
             runner: linux.arm64.m7g.4xlarge
-          - model: qwen2_5
+          - model: qwen2_5_1_5b
             backend: portable
             runner: linux.arm64.2xlarge
           - model: llama3_2_vision_encoder

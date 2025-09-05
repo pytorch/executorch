@@ -61,6 +61,20 @@ void compute_aa_weights_for_pixel(
 
   *num_contributors = std::min(xmax - xmin, static_cast<int64_t>(4));
 
+  // Ensure we have at least one contributor
+  if (*num_contributors <= 0) {
+    *num_contributors = 1;
+    indices[0] = std::max(
+        static_cast<int64_t>(0),
+        std::min(static_cast<int64_t>(center), input_size - 1));
+    weights[0] = static_cast<T>(1.0);
+    // Clear unused weight slots
+    for (int64_t j = 1; j < 4; ++j) {
+      weights[j] = static_cast<T>(0.0);
+    }
+    return;
+  }
+
   // PyTorch's weight computation
   T total_weight = static_cast<T>(0.0);
   const T invscale = (scale >= static_cast<T>(1.0))
@@ -83,6 +97,12 @@ void compute_aa_weights_for_pixel(
   if (total_weight > static_cast<T>(0.0)) {
     for (int64_t j = 0; j < *num_contributors; ++j) {
       weights[j] /= total_weight;
+    }
+  } else {
+    // Fallback: if total weight is 0, set equal weights
+    T equal_weight = static_cast<T>(1.0) / static_cast<T>(*num_contributors);
+    for (int64_t j = 0; j < *num_contributors; ++j) {
+      weights[j] = equal_weight;
     }
   }
 

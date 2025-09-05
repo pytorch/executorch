@@ -8,10 +8,12 @@ from __future__ import annotations
 import json
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Optional
 
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
+
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 
 from torch.fx.traceback import NodeSource
 
@@ -97,37 +99,52 @@ class TorchDebugSchema:
 class DebugSchema:
     event_id: int
     aten_info: ATenDebugSchema
-    tosa_info: TosaDebugSchema
+    tosa_info: Optional[TosaDebugSchema]
     torch_info: TorchDebugSchema
+
+    def to_dict(self) -> dict[str, Any]:
+        output = asdict(self)
+
+        if self.tosa_info is None:
+            output.pop("tosa_info")
+
+        return output
 
 
 class DebugHook:
-    def __init__(self) -> None:
+    def __init__(self, debug_mode: ArmCompileSpecBuilder.DebugMode) -> None:
         self._debug_events: list[DebugSchema] = []
         self.__op_id_to_name = {}
+        self.mode = debug_mode
 
         # Build up a mapping from TOSA 1.0 operator IDs to their names
         for name, val in vars(ts.Op).items():
             self.__op_id_to_name[val] = name
 
-    def add(self, node: torch.fx.Node, tosa_op: Any, tosa_op_id: int) -> None:
-        tosa_debug_info = TosaDebugSchema(
-            node_name=str(tosa_op),
-            operator_name=self.__op_id_to_name[tosa_op_id],
-            operator_id=tosa_op_id,
-        )
+    def add(self, node: torch.fx.Node, tosa_op: Any, tosa_op_id: int) -> DebugSchema:
+        tosa_debug_info = None
+
+        # If the debug data is being embedded into the TOSA flatbuffer
+        # do not collect TOSADebugSchema data, it's redundent
+        if self.mode != ArmCompileSpecBuilder.DebugMode.TOSA:
+            tosa_debug_info = TosaDebugSchema(
+                node_name=str(tosa_op),
+                operator_name=self.__op_id_to_name[tosa_op_id],
+                operator_id=tosa_op_id,
+            )
 
         aten_debug_info = ATenDebugSchema.from_node(node)
         torch_debug_info = TorchDebugSchema.from_node(node)
 
-        self._debug_events.append(
-            DebugSchema(
-                event_id=len(self._debug_events),
-                aten_info=aten_debug_info,
-                tosa_info=tosa_debug_info,
-                torch_info=torch_debug_info,
-            )
+        debug_info = DebugSchema(
+            event_id=len(self._debug_events),
+            aten_info=aten_debug_info,
+            tosa_info=tosa_debug_info,
+            torch_info=torch_debug_info,
         )
+        self._debug_events.append(debug_info)
+
+        return debug_info
 
     def serialize(self) -> str:
-        return json.dumps([asdict(event) for event in self._debug_events], indent=4)
+        return json.dumps([event.to_dict() for event in self._debug_events], indent=4)

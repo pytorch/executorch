@@ -228,63 +228,6 @@ function setup_vulkan_sdk() {
     fi
 }
 
-function select_toolchain() {
-    if [[ "${ARCH}" == "x86_64" ]]; then
-        if [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-	        # TODO can include support for zephyr toolchain for other host platforms later
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
-                toolchain_dir="arm-zephyr-eabi"
-                toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
-            else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
-                toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
-	    fi
-        else
-            echo "[main] Error: only Linux is currently supported for x86-64 architecture now!"; exit 1;
-	fi
-   elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-        if [[ "${OS}" == "Darwin" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                echo "[main] Error: only Linux OS is currently supported for aarch64 architecture targeting Zephyr now!"; exit 1;
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
-                toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
-	    fi
-        elif [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
-                toolchain_dir="arm-zephyr-eabi"
-		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
-                toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
-	    fi
-        fi
-    else
-        echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-    fi
-    echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
-}
-
-function setup_toolchain() {
-    # Download and install the arm toolchain (default is arm-none-eabi)
-    # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi
-    cd "${root_dir}"
-    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading ${toolchain_dir} toolchain ..."
-        curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
-    fi
-
-    echo "[${FUNCNAME[0]}] Installing ${toolchain_dir} toolchain ..."
-    rm -rf "${toolchain_dir}"
-    tar xf "${toolchain_dir}.tar.xz"
-}
-
 function setup_ethos_u_tools() {
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
@@ -361,6 +304,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Import utils
     source $et_dir/backends/arm/scripts/utils.sh
     source $et_dir/backends/arm/scripts/fvp_utils.sh
+    source $et_dir/backends/arm/scripts/toolchain_utils.sh
 
     echo "[main]: Checking platform and os"
     check_platform_support
@@ -382,11 +326,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
     echo "enable-vela=${enable_vela}"
     echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
 
-    # Select appropriate toolchain
-    select_toolchain
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
+        # Select appropriate toolchain
+        select_toolchain
         setup_toolchain
     fi
 

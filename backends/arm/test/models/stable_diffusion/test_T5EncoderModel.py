@@ -33,8 +33,9 @@ class TestT5EncoderModel(unittest.TestCase):
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
         "executorch_exir_dialects_edge__ops_aten__to_copy_default": 2,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-        "torch.ops.higher_order.executorch_call_delegate": 2,
+        "torch.ops.higher_order.executorch_call_delegate": 3,
     }
 
     def _prepare_inputs(

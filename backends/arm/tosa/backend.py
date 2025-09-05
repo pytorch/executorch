@@ -14,6 +14,7 @@ import logging
 from typing import cast, final, List
 
 import serializer.tosa_serializer as ts  # type: ignore
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.process_node import (
@@ -100,7 +101,7 @@ class TOSABackend(BackendDetails):
 
         debug_hook = None
         if dump_debug_info is not None:
-            debug_hook = DebugHook()
+            debug_hook = DebugHook(ArmCompileSpecBuilder.DebugMode[dump_debug_info])
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
@@ -136,10 +137,11 @@ class TOSABackend(BackendDetails):
                 suffix="{}".format(f"_{tag}" if tag else "") + (f"_{tosa_spec}"),
             )
 
-            if debug_hook:
-                json_output = debug_hook.serialize()
-                with open(f"{artifact_path}/debug.json", "w") as f:
-                    f.write(json_output)
+            if debug_hook is not None:
+                if debug_hook.mode == ArmCompileSpecBuilder.DebugMode.JSON:
+                    json_output = debug_hook.serialize()
+                    with open(f"{artifact_path}/debug.json", "w") as f:
+                        f.write(json_output)
 
         # Serialize and return the TOSA flatbuffer.
         binary = bytes(tosa_graph.serialize())

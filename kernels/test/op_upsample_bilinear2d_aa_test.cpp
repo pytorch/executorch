@@ -625,3 +625,49 @@ TEST_F(OpUpsampleBilinear2dAAOutTest, TestPrecisionConsistency) {
     EXPECT_EQ(out1_data[i], out2_data[i]);
   }
 }
+
+TEST_F(OpUpsampleBilinear2dAAOutTest, TestSpecificInputCase) {
+  TensorFactory<ScalarType::Float> tf;
+
+  // Test case with specific inputs:
+  // Input shape: [8, 2, 7, 1]
+  // Output size: [7, 2]
+  // align_corners: false
+  // scales_h: 0.010000000000000002
+  // scales_w: 10.0
+  Tensor input = tf.zeros({8, 2, 7, 1});
+  auto in_data = input.mutable_data_ptr<float>();
+
+  // Fill with some test data
+  for (int i = 0; i < 8 * 2 * 7 * 1; i++) {
+    in_data[i] = static_cast<float>(i) * 0.1f;
+  }
+
+  // Output shape will be [8, 2, 7, 2]
+  Tensor out = tf.zeros({8, 2, 7, 2});
+
+  int64_t output_size_data[2] = {7, 2};
+  ArrayRef<int64_t> output_size(output_size_data, 2);
+
+  op_upsample_bilinear2d_aa_out(
+      input,
+      output_size,
+      /*align_corners=*/false,
+      0.010000000000000002,
+      10.0,
+      out);
+
+  // Verify output dimensions
+  EXPECT_EQ(out.size(0), 8);
+  EXPECT_EQ(out.size(1), 2);
+  EXPECT_EQ(out.size(2), 7);
+  EXPECT_EQ(out.size(3), 2);
+
+  // Verify that output has reasonable values
+  auto out_data = out.const_data_ptr<float>();
+  for (int i = 0; i < 8 * 2 * 7 * 2; i++) {
+    // Check for NaN or Inf
+    EXPECT_FALSE(std::isnan(out_data[i]));
+    EXPECT_FALSE(std::isinf(out_data[i]));
+  }
+}

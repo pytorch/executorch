@@ -13,6 +13,24 @@ runtime.python_library(
     name = "llama_transformer",
     srcs = [
         "llama_transformer.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":transformer_modules",
+        "//caffe2:torch",
+        "//executorch/examples/models/lfm2:lfm2",
+    ],
+)
+
+runtime.python_library(
+    name = "transformer_modules",
+    srcs = [
+        "feed_forward.py",
         "lora.py",
         "rope.py",
         "attention.py",
@@ -24,9 +42,6 @@ runtime.python_library(
     visibility = [
         "//executorch/...",
         "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        "//caffe2:torch",
     ],
 )
 

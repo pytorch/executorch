@@ -20,6 +20,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 logger = logging.getLogger(__name__)
 
+SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
+
 
 @register_tosa_support_check
 class ToCopySupported(SupportedTOSAOperatorCheck):
@@ -32,8 +34,6 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
-
-    SupportedTypeDict = dict[torch.dtype, list[torch.dtype]]
 
     @staticmethod
     def _merge_supported_types(
@@ -53,11 +53,22 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         torch.int8: [torch.bool, torch.int16, torch.int32],
         torch.int16: [torch.bool, torch.int8, torch.int32],
         torch.int32: [torch.bool, torch.int8, torch.int16],
+        torch.int64: [torch.bool, torch.int8, torch.int16, torch.int32],
     }
     SUPPORTED_FLOAT_TYPES: SupportedTypeDict = {
         torch.int8: [torch.float16, torch.bfloat16, torch.float32],
         torch.int16: [torch.float16, torch.bfloat16, torch.float32],
         torch.int32: [torch.float16, torch.bfloat16, torch.float32],
+        # INT64 inputs to casts *should* be ok, since they should be rejected by
+        # CheckInt64InputsAndOutputs if the cast can't be done AOT.
+        torch.int64: [
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.float16,
+            torch.bfloat16,
+            torch.float32,
+        ],
         torch.bfloat16: [torch.int8, torch.int16, torch.int32, torch.float32],
         torch.float16: [torch.int8, torch.int16, torch.int32, torch.float32],
         torch.float32: [
@@ -71,29 +82,42 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
     ALL_SUPPORTED_TYPES = _merge_supported_types(
         SUPPORTED_INT_TYPES, SUPPORTED_FLOAT_TYPES
     )
-    POSSIBLE_TYPE_CONVERSIONS = {torch.int64: torch.int32}
 
     def is_node_tosa_supported(
         self, node: fx.Node, tosa_spec: TosaSpecification
     ) -> bool:
-        assert node.target in self.targets
 
-        supported_dtypes = (
-            self.ALL_SUPPORTED_TYPES
-            if tosa_spec.support_float()
-            else self.SUPPORTED_INT_TYPES
-        )
-        # Take into account possible type conversions
-        supported_dtypes.update(
-            (k, supported_dtypes[v])
-            for k, v in self.POSSIBLE_TYPE_CONVERSIONS.items()
-            if v in supported_dtypes
-        )
+        supported_dtypes: SupportedTypeDict = {}
+        if tosa_spec.support_integer():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_INT_TYPES, supported_dtypes
+            )
+        if tosa_spec.support_float():
+            supported_dtypes = self._merge_supported_types(
+                self.SUPPORTED_FLOAT_TYPES, supported_dtypes
+            )
+
+        if len(node.all_input_nodes) != 1:
+            self.reporter.report_reject(
+                node,
+                (
+                    "Expected exactly one input node, "
+                    f"got {len(node.all_input_nodes)} for {node.target}."
+                ),
+            )
+            return False
+        input_val = node.all_input_nodes[0].meta["val"]
+        if not isinstance(input_val, torch._subclasses.FakeTensor):
+            self.reporter.report_reject(
+                node,
+                (
+                    "Invalid or missing meta: expected FakeTensor input, got "
+                    f"{type(input_val).__name__} for {node.target}."
+                ),
+            )
+            return False
 
         # Check input type
-        assert len(node.all_input_nodes) == 1
-        input_val = node.all_input_nodes[0].meta["val"]
-        assert isinstance(input_val, torch._subclasses.FakeTensor)
         input_dtype = input_val.dtype
         if input_dtype not in supported_dtypes:
             self.reporter.report_reject(
@@ -104,14 +128,24 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
 
         # Check output type
         output_val = node.meta["val"]
-        assert isinstance(output_val, torch._subclasses.FakeTensor)
+        if not isinstance(output_val, torch._subclasses.FakeTensor):
+            self.reporter.report_reject(
+                node,
+                (
+                    "Invalid or missing meta: expected FakeTensor output, got "
+                    f"{type(output_val).__name__} for {node.target}."
+                ),
+            )
+            return False
         if output_val.dtype not in supported_dtypes[input_dtype]:
             self.reporter.report_reject(
                 node,
-                f"Output dtype {output_val.dtype} is not supported in "
-                f"{node.target} for input dtype {input_dtype}. "
-                f"Supported output types: "
-                f"{''.join(str(t) for t in supported_dtypes[input_dtype])}",
+                (
+                    f"Output dtype {output_val.dtype} is not supported in "
+                    f"{node.target} for input dtype {input_dtype}. "
+                    f"Supported output types: "
+                    f"{', '.join(str(t) for t in supported_dtypes[input_dtype])}"
+                ),
             )
             return False
 
@@ -120,8 +154,10 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             if node.kwargs["memory_format"] in (torch.preserve_format,):
                 self.reporter.report_reject(
                     node,
-                    f"Argument 'memory_format' is not supported for "
-                    f"{node.target} right now.",
+                    (
+                        "Argument 'memory_format' is not supported for "
+                        f"{node.target} right now."
+                    ),
                 )
                 return False
 
@@ -129,11 +165,13 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
         if "dim_order" in node.kwargs:
             dim_order = node.kwargs["dim_order"]
             # pyre-ignore[6]
-            if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
+            if dim_order is not None and dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
                 self.reporter.report_reject(
                     node,
-                    f"Argument {dim_order=} is not supported for "
-                    f"{node.target} right now.",
+                    (
+                        f"Argument {dim_order=} is not supported for "
+                        f"{node.target} right now."
+                    ),
                 )
                 return False
 
