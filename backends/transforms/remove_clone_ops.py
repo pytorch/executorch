@@ -35,10 +35,7 @@ class RemoveCloneOpsTransform(ExportPass):
             if n.target not in self.clone_ops:
                 continue
 
-            # Skip removal of clone ops that modify layout/dim order.
-            if self.aten_clone_is_non_identity(
-                n
-            ) or self._clone_dim_order_is_non_identity(n):
+            if self._is_non_identity_clone(n):
                 continue
 
             to_be_removed = n
@@ -56,28 +53,26 @@ class RemoveCloneOpsTransform(ExportPass):
         dead_code_elimination_pass(graph_module)
         return PassResult(graph_module, True)
 
-    def aten_clone_is_non_identity(self, node: torch.fx.Node) -> bool:
-        """Return True if aten.clone has modified memory format."""
-        if node.target != exir_ops.edge.aten.clone.default:
-            return False
+    def _is_non_identity_clone(self, node: torch.fx.Node) -> bool:
+        """Return True if clone has modified memory layout or dim order."""
 
-        memory_format = node.kwargs.get("memory_format")
-        if memory_format in (None, torch.preserve_format):
-            return False
+        # aten.clone: check for memory_format changes
+        if node.target == exir_ops.edge.aten.clone.default:
+            memory_format = node.kwargs.get("memory_format")
+            if memory_format in (None, torch.preserve_format):
+                return False
+            input_meta = node.args[0].meta
+            return "val" in input_meta and not input_meta["val"].is_contiguous(
+                memory_format=memory_format
+            )
 
-        input_meta = node.args[0].meta
-        return "val" in input_meta and not input_meta["val"].is_contiguous(
-            memory_format=memory_format
-        )
+        # _clone_dim_order: check for dim_order changes
+        if node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default:
+            input_meta = node.args[0].meta
+            return (
+                "val" in node.meta
+                and "val" in input_meta
+                and node.meta["val"].dim_order() != input_meta["val"].dim_order()
+            )
 
-    def _clone_dim_order_is_non_identity(self, node: torch.fx.Node) -> bool:
-        """Return True if _clone_dim_order has modified dim order."""
-        if node.target != exir_ops.edge.dim_order_ops._clone_dim_order.default:
-            return False
-
-        input_meta = node.args[0].meta
-        return (
-            "val" in node.meta
-            and "val" in input_meta
-            and node.meta["val"].dim_order() != input_meta["val"].dim_order()
-        )
+        return False
