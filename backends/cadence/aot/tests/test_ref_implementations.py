@@ -5,15 +5,18 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-
+import typing
 import unittest
 
+import numpy as np
 import torch
 
 from executorch.backends.cadence.aot.ref_implementations import (
     dequantize_per_tensor,
     quantize_per_tensor,
     quantized_add,
+    quantized_layer_norm_per_tensor,
+    quantized_linear,
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 
@@ -38,11 +41,12 @@ class TestRefImplementations(unittest.TestCase):
     ) -> None:
         input_tensor = torch.tensor([input_value])
         scale = (f_max - f_min) / (q_max - q_min)
-        zero_point = round(-f_min / scale) + q_min
+        inv_scale = 1.0 / scale
+        zero_point = round(-f_min * inv_scale) + q_min
         expected_output = torch.tensor([expected_value], dtype=target_dtype)
 
         output = quantize_per_tensor(
-            input_tensor, scale, zero_point, q_min, q_max, target_dtype
+            input_tensor, inv_scale, zero_point, q_min, q_max, target_dtype
         )
 
         self.assertEqual(
@@ -137,4 +141,197 @@ class TestRefImplementations(unittest.TestCase):
         self.assertTrue(
             torch.equal(output, expected_output),
             f"Values don't match in {name}: got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Test case 1: 1x2 input, 1x2 weight (1 output feature)
+            (
+                torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                torch.Size([1, 2]),  # weight_shape: 1 output feature, 2 input features
+                0,  # in_zero_point
+                torch.tensor([0, 0], dtype=torch.int8),  # weight_zero_point
+                torch.tensor(
+                    [1073741824], dtype=torch.int32
+                ),  # out_multiplier (0.5 * 2^31)
+                torch.tensor([0], dtype=torch.int8),  # out_shift
+                0,  # out_zero_point
+                torch.tensor([[-2]], dtype=torch.int8),  # expected_output
+            ),
+            # Test case 2: 1x3 input, 2x3 weight (2 output features)
+            (
+                torch.Size([1, 3]),  # src_shape: 1 sample, 3 input features
+                torch.Size([2, 3]),  # weight_shape: 2 output features, 3 input features
+                0,  # in_zero_point
+                torch.tensor([0, 0, 0], dtype=torch.int8),  # weight_zero_point
+                torch.tensor(
+                    [1073741824], dtype=torch.int32
+                ),  # out_multiplier (0.5 * 2^31)
+                torch.tensor([0], dtype=torch.int8),  # out_shift
+                0,  # out_zero_point
+                torch.tensor([[-10, -30]], dtype=torch.int8),  # expected_output
+            ),
+            # Test case 3: Batch case with different dimensions
+            (
+                torch.Size([1, 2, 2]),  # src_shape: batch=1, seq=2, features=2
+                torch.Size([3, 2]),  # weight_shape: 3 output features, 2 input features
+                0,  # in_zero_point
+                torch.tensor([0, 0], dtype=torch.int8),  # weight_zero_point
+                torch.tensor(
+                    [1073741824], dtype=torch.int32
+                ),  # out_multiplier (0.5 * 2^31)
+                torch.tensor([0], dtype=torch.int8),  # out_shift
+                0,  # out_zero_point
+                torch.tensor(
+                    [[[-2, -8, -14], [-6, -28, -50]]], dtype=torch.int8
+                ),  # expected_output
+            ),
+            # Test case 4: Non-zero zero points
+            (
+                torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                torch.Size([2, 2]),  # weight_shape: 2 output feature, 1 input feature
+                2,  # in_zero_point
+                torch.tensor([1, 1], dtype=torch.int8),  # weight_zero_point
+                torch.tensor(
+                    [268435456], dtype=torch.int32
+                ),  # out_multiplier (1.0 * 2^31)
+                torch.tensor([0]),  # out_shift
+                1,  # out_zero_point
+                torch.tensor([[-15, 25]], dtype=torch.int8),  # expected_output
+            ),
+        ]
+    )
+    def test_quantized_linear(
+        self,
+        src_shape: torch.Size,
+        weight_shape: torch.Size,
+        in_zero_point: int,
+        weight_zero_point: torch.Tensor,
+        out_multiplier: torch.Tensor,
+        out_shift: torch.Tensor,
+        out_zero_point: int,
+        expected_output: torch.Tensor,
+    ) -> None:
+        src = (
+            torch.arange(np.product(src_shape))
+            .reshape(src_shape)
+            .to(expected_output.dtype)
+        )
+        weight = (
+            torch.arange(np.product(weight_shape))
+            .reshape(weight_shape)
+            .to(expected_output.dtype)
+        )
+        bias = torch.arange(weight_shape[0]).to(expected_output.dtype)
+        output = quantized_linear(
+            src,
+            weight,
+            bias,
+            in_zero_point,
+            weight_zero_point,
+            out_multiplier,
+            out_shift,
+            out_zero_point,
+            typing.cast(torch.Tensor, None),
+        )
+
+        self.assertTrue(output.dtype == expected_output.dtype, "Dtype mismatch")
+
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Values don't match: got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Test case 1: Simple case with int8, zero mean input
+            (
+                torch.tensor(
+                    [[-1, 1]], dtype=torch.int8
+                ),  # input: dequantized to [-0.1, 0.1]
+                0.1,  # X_scale
+                0,  # X_zero_point
+                2,  # normalized_shape (last dimension)
+                torch.tensor([1.0, 1.0]),  # weight
+                torch.tensor([0.0, 0.0]),  # bias
+                1e-5,  # eps
+                0.1,  # output_scale
+                0,  # output_zero_point
+                torch.int8,  # dtype
+                torch.tensor([[-10, 10]], dtype=torch.int8),  # expected_output
+            ),
+            # Test case 2: uint8 with zero_point offset
+            (
+                torch.tensor(
+                    [[127, 129]], dtype=torch.uint8
+                ),  # input: dequantized to [-0.05, 0.05]
+                0.05,  # X_scale
+                128,  # X_zero_point
+                2,  # normalized_shape (last dimension)
+                torch.tensor([1.0, 1.0]),  # weight
+                torch.tensor([0.0, 0.0]),  # bias
+                1e-5,  # eps
+                0.05,  # output_scale
+                128,  # output_zero_point
+                torch.uint8,  # dtype
+                torch.tensor([[108, 148]], dtype=torch.uint8),  # expected_output
+            ),
+            # Test case 3: Test with weight and bias scaling
+            (
+                torch.tensor(
+                    [[-2, 2]], dtype=torch.int8
+                ),  # input: dequantized to [-0.2, 0.2]
+                0.1,  # X_scale
+                0,  # X_zero_point
+                2,  # normalized_shape (last dimension)
+                torch.tensor(
+                    [2.0, 0.5]
+                ),  # weight: scale first element by 2, second by 0.5
+                torch.tensor(
+                    [0.1, -0.1]
+                ),  # bias: add 0.1 to first, subtract 0.1 from second
+                1e-5,  # eps
+                0.1,  # output_scale
+                0,  # output_zero_point
+                torch.int8,  # dtype
+                torch.tensor([[-19, 4]], dtype=torch.int8),  # expected_output
+            ),
+        ]
+    )
+    def test_quantized_layer_norm_per_tensor(
+        self,
+        input_tensor: torch.Tensor,
+        X_scale: float,
+        X_zero_point: int,
+        normalized_shape: int,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+        eps: float,
+        output_scale: float,
+        output_zero_point: int,
+        dtype: torch.dtype,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = quantized_layer_norm_per_tensor(
+            input_tensor,
+            X_scale,
+            X_zero_point,
+            normalized_shape,
+            weight,
+            bias,
+            eps,
+            output_scale,
+            output_zero_point,
+        )
+
+        # Verify output properties
+        self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
+        self.assertEqual(
+            output.shape, input_tensor.shape, "Output shape should match input shape"
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Output values don't match expected. Got {output}, expected {expected_output}",
         )

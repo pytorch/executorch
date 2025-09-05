@@ -242,7 +242,8 @@ class StaticAttentionIOManager:
         config: ModelArgs,
         input_len: int,
         cache_lens: Union[int, List[int]],
-        dtype=torch.float32,
+        batch_size: int = 1,
+        dtype: torch.dtype = torch.float32,
         style: str = "shift_pointer",
         mask_val: float = float("-inf"),
     ):
@@ -266,7 +267,10 @@ class StaticAttentionIOManager:
         if split_mha:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
-                    1, cache_lens[layer_id], none_throws(config.head_dim), dtype=dtype
+                    batch_size,
+                    cache_lens[layer_id],
+                    none_throws(config.head_dim),
+                    dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
@@ -274,7 +278,10 @@ class StaticAttentionIOManager:
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
-                    1, cache_lens[layer_id], none_throws(config.head_dim), dtype=dtype
+                    batch_size,
+                    cache_lens[layer_id],
+                    none_throws(config.head_dim),
+                    dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
@@ -283,7 +290,7 @@ class StaticAttentionIOManager:
         else:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
-                    1,
+                    batch_size,
                     none_throws(config.n_kv_heads),
                     cache_lens[layer_id],
                     none_throws(config.head_dim),
@@ -293,7 +300,7 @@ class StaticAttentionIOManager:
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
-                    1,
+                    batch_size,
                     none_throws(config.n_kv_heads),
                     cache_lens[layer_id],
                     none_throws(config.head_dim),
@@ -323,7 +330,7 @@ class StaticAttentionIOManager:
     def prefill(
         self,
         model: Callable[..., Any],
-        tokens: List[int],
+        tokens: Union[List[int], torch.Tensor],
     ) -> torch.Tensor:
         if self.cache_full:
             raise RuntimeError("KV cache is full.")
@@ -336,10 +343,13 @@ class StaticAttentionIOManager:
                 )
             )
 
+        if isinstance(tokens, list):
+            tokens = torch.tensor([tokens], dtype=torch.int32)
+
         logits = None
         all_logits = None
-        for i in range(0, len(tokens), self.input_len):
-            logits = self._run_once(model, tokens[i : i + self.input_len])[0]
+        for i in range(0, tokens.size(1), self.input_len):
+            logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
             if self.config.generate_full_logits:
                 if all_logits is None:
                     all_logits = logits
@@ -347,7 +357,7 @@ class StaticAttentionIOManager:
                     all_logits = torch.cat([all_logits, logits], dim=1)
 
         if self.config.generate_full_logits:
-            return all_logits[:, : len(tokens), :]
+            return all_logits[:, : tokens.size(1), :]
 
         return logits
 
@@ -510,15 +520,16 @@ class StaticAttentionIOManager:
     def _run_once(
         self,
         model: Callable[..., Any],
-        tokens: List[int],
+        tokens: Union[List[int], torch.Tensor],
         non_padded_len: Optional[int] = None,
         freqs_cos_override: Optional[torch.Tensor] = None,
         freqs_sin_override: Optional[torch.Tensor] = None,
     ):
-        n_tokens = len(tokens)
+        if isinstance(tokens, list):
+            tokens = torch.tensor([tokens], dtype=torch.int32)
+        n_tokens = tokens.size(1)
         if n_tokens < self.input_len:
-            tokens += [0] * (self.input_len - n_tokens)
-        tokens = torch.tensor([tokens], dtype=torch.int32)  # pyre-ignore[9]
+            tokens = F.pad(tokens, (0, self.input_len - n_tokens))
         if freqs_cos_override is None:
             freqs_cos_override = self.freqs_cos[self.pos : self.pos + self.input_len]
         if freqs_sin_override is None:

@@ -40,7 +40,7 @@ std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
   auto tekken_tokenizer = std::make_unique<tokenizers::Tekken>();
   // Prevent the case where tekken tokenizer accidentally successfully loads a
   // HuggingFace tokenizer, which is also .json.
-  const std::string tekken_name = "tekken.json";
+  static constexpr std::string_view tekken_name = "tekken.json";
   if (tokenizer_path.size() >= tekken_name.size() &&
       tokenizer_path.rfind(tekken_name) ==
           tokenizer_path.size() - tekken_name.size()) {
