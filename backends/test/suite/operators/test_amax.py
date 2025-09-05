@@ -6,10 +6,10 @@
 
 # pyre-unsafe
 
+import unittest
 from typing import List, Optional, Tuple, Union
 
 import torch
-import unittest
 from executorch.backends.test.suite.flow import TestFlow
 
 from executorch.backends.test.suite.operators import (
