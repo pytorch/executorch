@@ -39,7 +39,7 @@ add_custom_command(
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
     "ModuleAddMul" --backend_id "StubBackend" --outdir
-    "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
+    "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
