@@ -41,4 +41,10 @@ if "%args%" == "" (
     echo e.g. vc_env_helper.bat cl /c test.cpp
 )
 
+REM Setup a symlink to shorten the path length.
+set work_dir=%CD%
+cd %GITHUB_WORKSPACE%
+mklink /d et-build %work_dir%
+cd et-build
+
 %args% || exit /b 1
