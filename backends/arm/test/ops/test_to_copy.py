@@ -70,6 +70,16 @@ def test_copy_tosa_FP(test_data: Tuple):
         aten_op=[],
         exir_op=[],
     )
+    # int to int cast is not supported in TOSA+FP profile
+    if not new_dtype.is_floating_point and not torch.is_floating_point(test_tensor):
+        pipeline.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": 0,
+                "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
+            },
+        )
+        pipeline.pop_stage("run_method_and_compare_outputs")
     pipeline.run()
 
 
@@ -84,6 +94,15 @@ def test_copy_vgf_FP(test_data: Tuple):
         exir_op=[],
         tosa_version="TOSA-1.0+FP",
     )
+    # int to int cast is not supported in TOSA+FP profile
+    if not new_dtype.is_floating_point and not torch.is_floating_point(test_tensor):
+        pipeline.change_args(
+            "check_count.exir",
+            {
+                "torch.ops.higher_order.executorch_call_delegate": 0,
+                "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
+            },
+        )
     pipeline.run()
 
 
