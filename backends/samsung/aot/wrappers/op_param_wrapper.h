@@ -73,9 +73,9 @@ class OpParamWrapper {
 
   template <typename T>
   void SetScalarValue(T value) {
-    auto bytes_ = sizeof(T);
-    storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes_]);
-    memcpy(storage_.get(), &value, bytes_);
+    auto bytes = sizeof(T);
+    storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes]);
+    memcpy(storage_.get(), &value, bytes);
     size_ = 1;
     is_scalar_ = true;
     scalar_type_ = ScalarTypeCast<T>::value;
@@ -83,9 +83,9 @@ class OpParamWrapper {
 
   template <typename T>
   void SetVectorValue(const std::vector<T>& value) {
-    auto bytes_ = sizeof(T) * value.size();
-    storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes_]);
-    memcpy(storage_.get(), value.data(), bytes_);
+    auto bytes = sizeof(std::string::value_type) * value.size();
+    storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes]);
+    memcpy(storage_.get(), value.data(), bytes);
     size_ = value.size();
     is_scalar_ = false;
     scalar_type_ = ScalarTypeCast<T>::value;
@@ -114,7 +114,6 @@ class OpParamWrapper {
   std::string key_name_;
   std::unique_ptr<uint8_t[]> storage_ = nullptr;
   uint32_t size_ = 0;
-  uint32_t bytes_ = 0;
   bool is_scalar_ = false;
   ScalarType scalar_type_ = ScalarType::UNKNOWN;
 };

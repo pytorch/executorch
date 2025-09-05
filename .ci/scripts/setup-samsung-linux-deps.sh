@@ -30,11 +30,11 @@ download_ai_lite_core() {
 }
 
 install_enn_backend() {
-  # Please export ANDROID_NDK_ROOT if enable on-device test
+  # build Exynos backend
+  export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}
+  bash backends/samsung/build.sh --build all
+  # set env variable
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-
-  # Remove --build and add --ndk parameter if enable on-device test
-  bash backends/samsung/build.sh --build x86_64
   export PYTHONPATH=${PYTHONPATH:-}:${EXECUTORCH_ROOT}/..
 }
 
