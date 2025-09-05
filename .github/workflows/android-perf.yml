@@ -432,7 +432,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
 
         mkdir -p aar-out
-        PYTHON_EXECUTABLE=python ANDROID_ABIS="arm64-v8a" BUILD_AAR_DIR=aar-out EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/2.37.0.25072 EXECUTORCH_ANDROID_PROFILING=ON bash scripts/build_android_library.sh
+        # To find the QNN version
+        source backends/qualcomm/scripts/qnn_config.sh
+        PYTHON_EXECUTABLE=python ANDROID_ABIS="arm64-v8a" BUILD_AAR_DIR=aar-out EXECUTORCH_BUILD_QNN=ON QNN_SDK_ROOT=/tmp/qnn/${QNN_VERSION} EXECUTORCH_ANDROID_PROFILING=ON bash scripts/build_android_library.sh
         mkdir -p extension/benchmark/android/benchmark/app/libs
         cp aar-out/executorch.aar extension/benchmark/android/benchmark/app/libs
         pushd extension/benchmark/android/benchmark

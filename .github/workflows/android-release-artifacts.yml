@@ -104,7 +104,9 @@ jobs:
           source backends/qualcomm/scripts/qnn_config.sh
           export QNN_SDK_ROOT="/tmp/qnn/${QNN_VERSION}"
           export ANDROID_ABIS=arm64-v8a
-          GRADLE_ARGS+=" -DqnnVersion=2.37.0"
+          # To find the QNN version
+          source backends/qualcomm/scripts/qnn_config.sh
+          GRADLE_ARGS+=" -DqnnVersion=${QNN_MAJOR_VERSION}"
         fi
 
         # Build AAR Package
