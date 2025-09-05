@@ -187,7 +187,7 @@ def make_conv2d_q8ta_q8csw_custom_op(
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation. For the reshaped 2D weight matrix (IC * H * W, OC),
         # sum over dimension 0 to get sums per output channel
-        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.float).contiguous()
+        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
         sums_name = qweight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")

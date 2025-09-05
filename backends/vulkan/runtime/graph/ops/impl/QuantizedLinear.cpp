@@ -184,7 +184,6 @@ DynamicDispatchNode make_linear_qw_node(
 
   std::string kernel_name = "linear_q8csw_tiled";
   add_storage_type_suffix(kernel_name, graph.storage_type_of(output));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(fp_input));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);

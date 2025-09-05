@@ -1613,21 +1613,21 @@ void compute_weight_sums(
     const ValueSpec& quantized_weight,
     int64_t out_features,
     int64_t elements_per_output_feature) {
-  auto& weight_sums_data = weight_sums.get_float_data();
+  auto& weight_sums_data = weight_sums.get_int32_data();
   auto& quantized_weight_data = quantized_weight.get_int8_data();
 
   weight_sums_data.resize(out_features);
 
   // For each output feature, compute the sum of quantized weights
   for (int64_t out_f = 0; out_f < out_features; ++out_f) {
-    float sum = 0.0f;
+    int32_t sum = 0;
     for (int64_t elem = 0; elem < elements_per_output_feature; ++elem) {
       // Weight indexing depends on the layout:
       // For linear: [out_features, in_features] -> out_f *
       // elements_per_output_feature + elem For conv2d: [C_out, C_in * K_h *
       // K_w] -> out_f * elements_per_output_feature + elem
       int64_t weight_idx = out_f * elements_per_output_feature + elem;
-      sum += static_cast<float>(quantized_weight_data[weight_idx]);
+      sum += static_cast<int32_t>(quantized_weight_data[weight_idx]);
     }
     weight_sums_data[out_f] = sum;
   }
