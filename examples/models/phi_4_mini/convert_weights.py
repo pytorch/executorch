@@ -66,6 +66,22 @@ def phi_4_hf_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Ten
     return converted_state_dict
 
 
+# Standard _FROM_META weight mapping of Meta weights to TorchTune.
+_PHI_4_FROM_META = {
+    "tok_embeddings.weight": "tok_embeddings.weight",
+    "norm.weight": "norm.scale",
+    "layers.{}.attention.wk.weight": "layers.{}.attn.k_proj.weight",
+    "layers.{}.attention.wq.weight": "layers.{}.attn.q_proj.weight",
+    "layers.{}.attention.wv.weight": "layers.{}.attn.v_proj.weight",
+    "layers.{}.attention.wo.weight": "layers.{}.attn.output_proj.weight",
+    "layers.{}.attention_norm.weight": "layers.{}.sa_norm.scale",
+    "layers.{}.ffn_norm.weight": "layers.{}.mlp_norm.scale",
+    "layers.{}.feed_forward.w1.weight": "layers.{}.mlp.w1.weight",
+    "layers.{}.feed_forward.w2.weight": "layers.{}.mlp.w2.weight",
+    "layers.{}.feed_forward.w3.weight": "layers.{}.mlp.w3.weight",
+}
+
+
 def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     """
     Convert a state dict from torchtune's format to Meta's format. This function
@@ -87,22 +103,7 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
     converted_state_dict["output.weight"] = converted_state_dict[
         "tok_embeddings.weight"
     ]
-
-
-# Standard _FROM_META weight mapping of Meta weights to TorchTune.
-_PHI_4_FROM_META = {
-    "tok_embeddings.weight": "tok_embeddings.weight",
-    "norm.weight": "norm.scale",
-    "layers.{}.attention.wk.weight": "layers.{}.attn.k_proj.weight",
-    "layers.{}.attention.wq.weight": "layers.{}.attn.q_proj.weight",
-    "layers.{}.attention.wv.weight": "layers.{}.attn.v_proj.weight",
-    "layers.{}.attention.wo.weight": "layers.{}.attn.output_proj.weight",
-    "layers.{}.attention_norm.weight": "layers.{}.sa_norm.scale",
-    "layers.{}.ffn_norm.weight": "layers.{}.mlp_norm.scale",
-    "layers.{}.feed_forward.w1.weight": "layers.{}.mlp.w1.weight",
-    "layers.{}.feed_forward.w2.weight": "layers.{}.mlp.w2.weight",
-    "layers.{}.feed_forward.w3.weight": "layers.{}.mlp.w3.weight",
-}
+    return converted_state_dict
 
 
 def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
