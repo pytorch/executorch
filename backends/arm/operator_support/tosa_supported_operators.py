@@ -176,6 +176,7 @@ class BaseTOSASupportList(OperatorSupportBase):
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.hardswish.default,
             exir_ops.edge.aten.div.Tensor,
+            exir_ops.edge.aten.div.Tensor_mode,
             exir_ops.edge.aten.eq.Tensor,
             exir_ops.edge.aten.eq.Scalar,
             exir_ops.edge.aten.erf.default,

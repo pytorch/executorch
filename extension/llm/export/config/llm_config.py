@@ -37,12 +37,16 @@ class ModelType(str, Enum):
     llama3_2 = "llama3_2"
     llama3_2_vision = "llama3_2_vision"
     static_llama = "static_llama"
-    qwen2_5 = "qwen2_5"
+    qwen2_5_0_5b = "qwen2_5_0_5b"
+    qwen2_5_1_5b = "qwen2_5_1_5b"
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
+    lfm2_350m = "lfm2_350m"
+    lfm2_700m = "lfm2_700m"
+    lfm2_1_2b = "lfm2_1_2b"
 
 
 class PreqMode(str, Enum):
