@@ -71,6 +71,8 @@ class ModelArgs:
         None  # KV cache bit width. This is for QNN backend only for now.
     )
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    # Hybrid models can have layer types different from attention
+    layer_types: Optional[list] = None
 
     def __post_init__(self):
         if self.n_kv_heads is None:

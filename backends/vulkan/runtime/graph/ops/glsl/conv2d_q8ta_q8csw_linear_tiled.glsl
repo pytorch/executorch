@@ -36,9 +36,9 @@ layout(std430) buffer;
 #include "conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_input", "int", INPUT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_qmat2", "int", WEIGHT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight_sums", "float", "buffer", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", INPUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 
@@ -59,7 +59,7 @@ ${layout_declare_spec_const(C, "int", "apply_bias", "1")}
 #include "linear_int8_weight_tile_load.glslh"
 #include "linear_fp_output_tile_int8_int8_compute.glslh"
 #include "linear_fp_scales_load.glslh"
-#include "linear_fp_weight_sums_load.glslh"
+#include "linear_int_weight_sums_load.glslh"
 #include "linear_fp_bias_load.glslh"
 #include "conv2d_fp_im2col_block_store.glslh"
 
@@ -105,7 +105,7 @@ void main() {
   FPPerOutChannelParams scales_tile;
   load_scales_tile(scales_tile, n4);
 
-  FPPerOutChannelParams sums_tile;
+  IntPerOutChannelParams sums_tile;
   load_sums_tile(sums_tile, n4);
 
   FPOutTile out_tile;

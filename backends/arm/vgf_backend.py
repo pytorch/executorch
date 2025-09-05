@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 from typing import final, List
 
-from executorch.backends.arm.tosa_backend import (
+from executorch.backends.arm.tosa.backend import (
     arm_get_first_delegation_tag,
     TOSABackend,
 )
