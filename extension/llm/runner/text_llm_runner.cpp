@@ -222,7 +222,7 @@ Error TextLLMRunner::generate(
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  reset();
+  pos_ = 0;
   return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
 }
 
