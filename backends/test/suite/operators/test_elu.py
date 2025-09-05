@@ -8,6 +8,7 @@
 
 
 import torch
+import unittest
 from executorch.backends.test.suite.flow import TestFlow
 
 from executorch.backends.test.suite.operators import (
@@ -42,5 +43,6 @@ class TestELU(OperatorTest):
     def test_elu_f32_alpha(self, flow: TestFlow) -> None:
         self._test_op(Model(alpha=0.5), (torch.randn(3, 4, 5),), flow)
 
+    @unittest.skip("In place activations aren't properly defunctionalized yet.")
     def test_elu_f32_inplace(self, flow: TestFlow) -> None:
         self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)

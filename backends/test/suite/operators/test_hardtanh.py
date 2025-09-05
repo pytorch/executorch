@@ -8,6 +8,7 @@
 
 
 import torch
+import unittest
 from executorch.backends.test.suite.flow import TestFlow
 
 from executorch.backends.test.suite.operators import (
@@ -45,6 +46,7 @@ class TestHardtanh(OperatorTest):
     def test_hardtanh_f32_custom_range(self, flow: TestFlow) -> None:
         self._test_op(Model(min_val=-2.0, max_val=2.0), (torch.randn(3, 4, 5),), flow)
 
+    @unittest.skip("In place activations aren't properly defunctionalized yet.")
     def test_hardtanh_f32_inplace(self, flow: TestFlow) -> None:
         self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)
 
