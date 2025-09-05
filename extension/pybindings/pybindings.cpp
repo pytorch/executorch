@@ -488,12 +488,12 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : module_(load_module_from_buffer(
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_buffer(
             buffer.cast<std::string_view>().data(),
             py::len(buffer),
             setup_event_tracer(enable_etdump, debug_buffer_size),
-            program_verification)),
-        debug_buffer_size_(debug_buffer_size) {}
+            program_verification)) {}
 
   explicit PyModule(
       const void* ptr,
@@ -502,12 +502,12 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : module_(load_module_from_buffer(
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_buffer(
             ptr,
             ptr_len,
             setup_event_tracer(enable_etdump, debug_buffer_size),
-            program_verification)),
-        debug_buffer_size_(debug_buffer_size) {}
+            program_verification)) {}
 
   explicit PyModule(
       const std::string& path,
@@ -515,11 +515,11 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : module_(load_module_from_file(
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_file(
             path,
             setup_event_tracer(enable_etdump, debug_buffer_size),
-            program_verification)),
-        debug_buffer_size_(debug_buffer_size) {}
+            program_verification)) {}
 
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
@@ -744,14 +744,14 @@ struct PyModule final {
   }
 
  private:
+  // Hold onto the debug_buffer_ for the event_tracer.
+  std::unique_ptr<uint8_t[]> debug_buffer_;
+  size_t debug_buffer_size_;
+
   std::shared_ptr<Module> module_;
   // Need to keep-alive output tensors until they can be compared in case of
   // bundled programs.
   std::vector<std::optional<TensorPtr>> output_tensors_;
-
-  // Hold onto the debug_buffer_ for the event_tracer.
-  std::unique_ptr<uint8_t[]> debug_buffer_;
-  size_t debug_buffer_size_;
 
   // Set debug buffer for potential event tracer.
   std::unique_ptr<torch::executor::ETDumpGen> setup_event_tracer(
@@ -762,6 +762,7 @@ struct PyModule final {
         : nullptr;
     if (enable_etdump && debug_buffer_size > 0) {
       debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
+      debug_buffer_size_ = debug_buffer_size;
       event_tracer->set_debug_buffer(
           Span<uint8_t>(debug_buffer_.get(), debug_buffer_size));
       event_tracer->set_event_tracer_debug_level(
