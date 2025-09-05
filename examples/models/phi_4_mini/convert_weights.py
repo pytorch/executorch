@@ -95,9 +95,13 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
     converted_state_dict = {}
     inverted_mapping_dict = {v: k for k, v in _PHI_4_FROM_META.items()}
 
-    for key, value in state_dict.items():
-        new_key = get_mapped_key(key, inverted_mapping_dict)
-        converted_state_dict[new_key] = value
+    # Single checkpoint
+    model_path = os.path.join(input_dir, "pytorch_model.bin")
+    if os.path.exists(model_path):
+        state_dict = torch.load(
+            model_path, weights_only=True, map_location=torch.device("cpu")
+        )
+        return state_dict
 
     # Input and output embeddings are tied.
     converted_state_dict["output.weight"] = converted_state_dict[

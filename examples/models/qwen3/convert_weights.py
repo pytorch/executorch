@@ -89,6 +89,8 @@ def load_checkpoint_from_safetensors(input_dir: str) -> Dict:
 
     raise FileNotFoundError(f"Could not find safetensors checkpoint in {input_dir}")
 
+    raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")
+
 
 def load_checkpoint(input_dir: str) -> Dict:
     try:
