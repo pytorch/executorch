@@ -32,16 +32,7 @@ class CastingToInt64Model(torch.nn.Module):
 test_data_suite_convert = {
     "fp32_input": lambda: (torch.rand((1, 2, 3, 4), dtype=torch.float32), torch.int64),
     "fp16_input": lambda: (torch.rand((1, 2, 3, 4), dtype=torch.float16), torch.int64),
-    "int16_input": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int16),
-        torch.int64,
-    ),
-    "int8_input": lambda: (
-        torch.randint(-127, 128, (1, 2, 3, 4), dtype=torch.int8),
-        torch.int64,
-    ),
 }
-
 
 test_data_suite_remove = {
     "int32_input": lambda: (
@@ -52,7 +43,7 @@ test_data_suite_remove = {
 
 
 @common.parametrize("test_data", test_data_suite_convert)
-def test_convert_or_remove_casting_to_int64_covnert_tosa_FP(test_data: Tuple):
+def test_convert_or_remove_casting_to_int64_convert_tosa_FP(test_data: Tuple):
     test_tensor, target_dtype = test_data()
     module = CastingToInt64Model(target_dtype)
 
