@@ -193,7 +193,7 @@ class OpenvinoPartitioner(Partitioner):
                 str(node.op) == "call_function"
                 and str(node.target.__name__) == "aten.stack.default"
             ):
-                enabled_ops = []
+                enabled_ops: list = []
                 pattern_match = self.check_pattern(node, stack_node, enabled_ops)
                 if pattern_match:
                     for pattern_op in enabled_ops:
