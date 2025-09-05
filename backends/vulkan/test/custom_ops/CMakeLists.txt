@@ -92,5 +92,7 @@ if(TARGET vulkan_backend)
   # Define operator prototypes
   add_operator_prototype(add)
   add_operator_prototype(q8csw_linear)
+  add_operator_prototype(quantized_q4gaw_linear)
+  add_operator_prototype(quantized_int4_linear)
   add_operator_prototype(q8csw_conv2d)
 endif()

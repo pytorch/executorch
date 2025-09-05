@@ -123,4 +123,14 @@ void apply_scales_and_biases(
 #endif
 }
 
+void accumulate_out_tile_with_out_tile(
+    inout FPOutTile accum,
+    const FPOutTile other) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      accum.data[m][n4] = accum.data[m][n4] + other.data[m][n4];
+    }
+  }
+}
+
 #endif // LINEAR_FP_OUTPUT_TILE_FP_COMPUTE_GLSLH

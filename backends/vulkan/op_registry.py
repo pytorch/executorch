@@ -334,9 +334,10 @@ def register_int8_mm_op():
 @update_features(
     [
         exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
+        exir_ops.edge.et_vk.linear_q4gsw.default,
     ]
 )
-def register_qa_qw_linear():
+def register_quantized_linear_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         supports_prepacking=True,

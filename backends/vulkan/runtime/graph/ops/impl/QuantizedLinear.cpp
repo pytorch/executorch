@@ -19,6 +19,40 @@ namespace vkcompute {
 // Shader dispatch utilities
 //
 
+bool is_gemv(ComputeGraph* graph, const ValueRef& fp_input) {
+  return graph->size_at<uint32_t>(-2, fp_input) == 1;
+}
+
+void resize_linear_qw_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  (void)extra_args;
+
+  ValueRef output = args.at(0).refs.at(0);
+  ValueRef fp_input = args.at(1).refs.at(0);
+  ValueRef weight_data = extra_args.at(1);
+
+  std::vector<int64_t> mat1_sizes = graph->sizes_of(fp_input);
+  std::vector<int64_t> mat2_sizes = graph->sizes_of(weight_data);
+
+  const int64_t out_cols = utils::val_at(-2, mat1_sizes);
+  const int64_t out_rows = utils::val_at(-2, mat2_sizes);
+
+  std::vector<int64_t> new_out_sizes(3);
+  if (mat1_sizes.size() == 2) {
+    new_out_sizes.resize(2);
+    new_out_sizes.at(0) = out_cols;
+    new_out_sizes.at(1) = out_rows;
+  } else {
+    new_out_sizes.at(0) = mat1_sizes.at(0);
+    new_out_sizes.at(1) = out_cols;
+    new_out_sizes.at(2) = out_rows;
+  }
+
+  graph->virtual_resize(output, new_out_sizes);
+}
+
 utils::uvec3 quantized_linear_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -32,10 +66,23 @@ utils::uvec3 quantized_linear_global_wg_size(
   // width
   const uint32_t N = utils::val_at(-1, out_sizes);
 
-  // 1 output tile is 4x4 elements
   const uint32_t M4 = utils::div_up(M, 4u);
   const uint32_t N4 = utils::div_up(N, 4u);
 
+  // For 4-bit weights, each output tile contains 8 columns and 4 rows
+  if (shader.kernel_name.find("q4") != std::string::npos) {
+    const uint32_t N8 = utils::div_up(N, 8u);
+
+    const bool using_coop_algorithm =
+        shader.kernel_name.find("_coop") != std::string::npos;
+    // TODO: explain
+    if (using_coop_algorithm) {
+      return {64, N8, M};
+    }
+    return {N8, M4, 1};
+  }
+
+  // Otherwise, each output tile contains 4 columns and 4 rows
   return {N4, M4, 1};
 }
 
@@ -45,8 +92,15 @@ utils::uvec3 quantized_linear_local_wg_size(
     const utils::uvec3& global_workgroup_size,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  return pick_hw_square_wg_size(
-      graph, shader, global_workgroup_size, args, resize_args);
+  const bool use_coop_algorithm =
+      shader.kernel_name.find("_coop") != std::string::npos;
+
+  if (use_coop_algorithm) {
+    return {64, 1, 1};
+  } else {
+    return pick_hw_square_wg_size(
+        graph, shader, global_workgroup_size, args, resize_args);
+  }
 }
 
 std::tuple<int64_t, int64_t> get_quantized_input_num_blocks(
@@ -80,6 +134,39 @@ utils::uvec3 quant_pack_input_global_wg_size(
       1u};
 }
 
+vkapi::ShaderInfo pick_linear_qw_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
+  const ValueRef output = args.at(0).refs.at(0);
+  const ValueRef fp_input = args.at(1).refs.at(0);
+  const ValueRef packed_int_weight = args.at(1).refs.at(1);
+
+  const bool weight_is_4bit = resize_args.at(0) != kDummyValueRef;
+  const bool is_gemv_case = is_gemv(graph, fp_input);
+
+  std::string kernel_name = "linear_";
+  if (weight_is_4bit) {
+    kernel_name += "q4gsw";
+  } else {
+    kernel_name += "q8csw";
+  }
+
+  if (weight_is_4bit && is_gemv_case) {
+    kernel_name += "_coop";
+  } else {
+    kernel_name += "_tiled";
+  }
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(output));
+  add_storage_type_suffix(
+      kernel_name, graph->storage_type_of(packed_int_weight));
+  add_dtype_suffix(kernel_name, graph->dtype_of(output));
+
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
 //
 // Prepacking nodes
 //
@@ -88,35 +175,75 @@ ValueRef prepack_quantized_linear_weight(
     ComputeGraph& graph,
     const QuantizationConfig& weight_quant_config,
     const ValueRef qmat2_data) {
-  VK_CHECK_COND(weight_quant_config.nbits == 8);
+  VK_CHECK_COND(
+      weight_quant_config.nbits == 8 || weight_quant_config.nbits == 4);
 
   std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
   const int64_t ndim = graph.dim_of(qmat2_data);
 
-  // Input size is [N, K]. K will be guaranteed to be a multiple of 4.
-  const int64_t K = qmat2_orig_sizes.at(ndim - 1);
-  const int64_t N = qmat2_orig_sizes.at(ndim - 2);
+  int64_t qmat2_width = qmat2_orig_sizes.at(ndim - 1);
+  int64_t qmat2_height = qmat2_orig_sizes.at(ndim - 2);
 
-  // Sanity check that assumption is correct
-  VK_CHECK_COND(K % 4 == 0);
+  int64_t K;
+  int64_t N;
+  if (weight_quant_config.nbits == 4) {
+    // For 4-bit quantization, weight source data has shape [N, K/2]. Each byte
+    // contains 2 * 4-bit values.
+    K = qmat2_width * 2;
+    N = qmat2_height;
+  } else {
+    // For 8-bit quantization, the weight source data has shape [N, K]
+    K = qmat2_width;
+    N = qmat2_height;
+  }
 
-  // The packing format packs the weight tensor into units of 4 wide x 4 high
-  // blocks. To figure out the size of the output tensor, determine the number
-  // of blocks along each dimension.
-  const int64_t num_blocks_K = utils::div_up(K, int64_t(4));
-  const int64_t num_blocks_N = utils::div_up(N, int64_t(4));
+  // Sanity check that assumptions are correct. Data loads along the innermost
+  // dimension must be well aligned along texel boundaries.
+  if (weight_quant_config.nbits == 4) {
+    VK_CHECK_COND(K % 8 == 0);
+  } else {
+    VK_CHECK_COND(K % 4 == 0);
+  }
+
+  // The packing format packs the weight tensor into blocks of 4 columns (K) and
+  // 4 rows (N)
+  int64_t N_per_block = 4;
+  int64_t K_per_block = 4;
+
+  // For 4 bit, quantization, the amount of information contained in one block
+  // can be doubled. Each block will contain data for 8 rows (N) instead of the
+  // usual 4.
+  if (weight_quant_config.nbits == 4) {
+    N_per_block = 8;
+  }
+
+  // To figure out the size of the output tensor, determine the number of blocks
+  // along each dimension.
+  const int64_t num_blocks_K = utils::div_up(K, K_per_block);
+  const int64_t num_blocks_N = utils::div_up(N, N_per_block);
 
   // The blocks are arranged in a transposed manner, such that the transposed
   // weight block is indexed like packed_weights[k4][n4] - this is to allow for
   // optimal memory coalescing when computing GEMM.
-  const int64_t output_height = num_blocks_K;
+  int64_t output_height = num_blocks_K;
   // The base dtype of the packed tensor is int32 (each int32 contains 4x 8bit
   // values) and each block is represented as a ivec4. Therefore the width dim
   // of the packed tensor is multiplied by 4.
-  const int64_t output_width = num_blocks_N * 4;
+  int64_t output_width = num_blocks_N * 4;
 
-  // Store the original sizes of the tensor to pass to the shader
-  utils::ivec2 orig_sizes{
+  // For 4 bit quantization, The blocks are arranged without the transposition,
+  // such that a weight block is accessed like packed_weights[n8][k4]. This is
+  // an optimization targeted for LLMs, which need to compute GEMV as well as
+  // GEMM. This memory layout provides better performance for the co-operative
+  // algorithm used to compute GEMV, at the cost of slightly reducing GEMM
+  // performance.
+  if (weight_quant_config.nbits == 4) {
+    output_height = num_blocks_N;
+    output_width = num_blocks_K * 4;
+  }
+
+  // Store the original sizes of the weight data to pass to the shader
+  utils::ivec2 orig_sizes = {
       utils::safe_downcast<int32_t>(K), utils::safe_downcast<int32_t>(N)};
 
   std::vector<int64_t> qmat2_sizes{output_height, output_width};
@@ -130,13 +257,23 @@ ValueRef prepack_quantized_linear_weight(
   ValueRef qmat2 = graph.add_tensor(
       qmat2_sizes, vkcompute::vkapi::kInt, storage_type, utils::kWidthPacked);
 
-  // Global workgroup size: each thread writes out two adjacent blocks
-  utils::uvec3 global_wg_size{
-      utils::safe_downcast<uint32_t>(num_blocks_N),
-      utils::safe_downcast<uint32_t>(num_blocks_K),
-      1u};
+  utils::uvec3 global_wg_size;
+  if (weight_quant_config.nbits == 4) {
+    // For 4-bit quantization, each thread writes out two adjacent blocks
+    global_wg_size = {
+        utils::safe_downcast<uint32_t>(utils::div_up(num_blocks_K, int64_t(2))),
+        utils::safe_downcast<uint32_t>(num_blocks_N),
+        1u};
+  } else {
+    global_wg_size = {
+        utils::safe_downcast<uint32_t>(num_blocks_N),
+        utils::safe_downcast<uint32_t>(num_blocks_K),
+        1u};
+  }
 
-  std::string kernel_name = "pack_q8_linear_weight";
+  std::string kernel_name = weight_quant_config.nbits == 4
+      ? "pack_q4_linear_weight"
+      : "pack_q8_linear_weight";
   add_storage_type_suffix(kernel_name, storage_type);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -178,15 +315,12 @@ DynamicDispatchNode make_linear_qw_node(
     const ValueRef packed_bias,
     const ValueRef output) {
   // Only certain quantization types supported at the moment
-  VK_CHECK_COND(weight_quant_config.granularity == kPerChannel);
+  VK_CHECK_COND(
+      weight_quant_config.granularity == kPerChannel ||
+      weight_quant_config.granularity == kPerGroup);
   VK_CHECK_COND(weight_quant_config.is_symmetric);
-  VK_CHECK_COND(weight_quant_config.nbits == 8);
-
-  std::string kernel_name = "linear_q8csw_tiled";
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(output));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(packed_weight));
-  add_dtype_suffix(kernel_name, graph.dtype_of(output));
-  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
+  VK_CHECK_COND(
+      weight_quant_config.nbits == 8 || weight_quant_config.nbits == 4);
 
   vkapi::ParamsBindList param_buffers = {
       graph.sizes_ubo(output), graph.sizes_ubo(fp_input)};
@@ -196,9 +330,18 @@ DynamicDispatchNode make_linear_qw_node(
     apply_bias = 0;
   }
 
+  int32_t K4_per_group = 0;
+  if (weight_quant_config.nbits == 4) {
+    int32_t group_size_val = graph.extract_scalar<int32_t>(group_size);
+    K4_per_group = utils::div_up(group_size_val, int32_t(4));
+  }
+
+  const ValueRef is_4bit_flag =
+      weight_quant_config.nbits == 4 ? group_size : kDummyValueRef;
+
   return DynamicDispatchNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name),
+      pick_linear_qw_shader,
       quantized_linear_global_wg_size,
       quantized_linear_local_wg_size,
       // Inputs and Outputs
@@ -210,11 +353,11 @@ DynamicDispatchNode make_linear_qw_node(
       // Push Constants
       {},
       // Specialization Constants
-      {apply_bias},
+      {apply_bias, K4_per_group},
       // Resize args
-      {},
+      {is_4bit_flag, weight_data},
       // Resizing Logic
-      nullptr);
+      resize_linear_qw_node);
 }
 
 DynamicDispatchNode make_quantize_and_pack_linear_input_node(
@@ -546,9 +689,40 @@ void linear_q8csw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       output);
 }
 
+void linear_q4gsw(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  int32_t idx = 0;
+  const ValueRef fp_input = args.at(idx++);
+  const ValueRef weight_data = args.at(idx++);
+  const ValueRef weight_scales_data = args.at(idx++);
+  const ValueRef group_size = args.at(idx++);
+  const ValueRef bias_data = args.at(idx++);
+  const ValueRef output = args.at(idx++);
+
+  const int64_t group_size_val = graph.extract_scalar<int64_t>(group_size);
+
+  QuantizationConfig input_quant_config(32, kNoQuantization, {});
+  QuantizationConfig weight_quant_config(4, kPerGroup, {group_size_val});
+
+  quantized_linear_impl(
+      graph,
+      input_quant_config,
+      weight_quant_config,
+      fp_input,
+      kDummyValueRef, // input scale
+      kDummyValueRef, // input zp
+      weight_data,
+      kDummyValueRef, // weight sums
+      weight_scales_data,
+      kDummyValueRef, // weight zeros
+      group_size, // group size
+      bias_data,
+      output);
+}
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(et_vk.linear_q8ta_q8csw.default, linear_q8ta_q8csw);
   VK_REGISTER_OP(et_vk.linear_q8csw.default, linear_q8csw);
+  VK_REGISTER_OP(et_vk.linear_q4gsw.default, linear_q4gsw);
 }
 
 } // namespace vkcompute
