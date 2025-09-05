@@ -77,6 +77,7 @@ def test_div_tensor_mode_tosa_INT(mode):
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
+
 @common.XfailIfNoCorstone300
 @pytest.mark.parametrize("mode", [None, "floor"])
 def test_div_tensor_mode_u55_INT(mode):
