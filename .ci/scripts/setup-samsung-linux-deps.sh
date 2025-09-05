@@ -30,6 +30,19 @@ download_ai_lite_core() {
 }
 
 install_enn_backend() {
+  NDK_INSTALLATION_DIR=/opt/ndk
+  rm -rf "${NDK_INSTALLATION_DIR}" && mkdir -p "${NDK_INSTALLATION_DIR}"
+  ANDROID_NDK_VERSION=r27b
+
+  pushd .
+  cd /tmp
+  curl -Os --retry 3 "https://ossci-android.s3.amazonaws.com/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+  unzip -qo "android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+
+  # Print the content for manual verification
+  ls -lah "android-ndk-${ANDROID_NDK_VERSION}"
+  mv "android-ndk-${ANDROID_NDK_VERSION}"/* "${NDK_INSTALLATION_DIR}"
+  popd
   # build Exynos backend
   export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}
   bash backends/samsung/build.sh --build all
