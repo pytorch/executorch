@@ -111,7 +111,7 @@ class PTPerBlockParamObserver(AffineQuantizedMinMaxObserver):
                 decompressor_name,
             )(model)
         decomp_node = observer_node.args[0]
-        observer_node.replace_all_uses_with(decomp_node)
+        observer_node.replace_all_uses_with(decomp_node)  # type: ignore[arg-type]
         model.graph.erase_node(observer_node)
 
 
@@ -172,5 +172,5 @@ class NNCFInt8observer(PerChannelMinMaxObserver):
                 decompressor_name,
             )(model)
         decomp_node = observer_node.args[0]
-        observer_node.replace_all_uses_with(decomp_node)
+        observer_node.replace_all_uses_with(decomp_node)  # type: ignore[arg-type]
         model.graph.erase_node(observer_node)

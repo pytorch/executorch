@@ -75,7 +75,7 @@ class OpenVINOQuantizer(Quantizer):
     def __init__(
         self,
         *,
-        mode: Optional[QuantizationMode] = QuantizationMode.INT8_SYM,
+        mode: QuantizationMode = QuantizationMode.INT8_SYM,
         **kwargs,
     ):
         """
