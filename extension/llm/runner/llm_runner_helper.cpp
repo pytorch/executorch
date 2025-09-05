@@ -111,9 +111,9 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
   if (!method_names.count(llm::kMaxSeqLen)) {
     ET_LOG(
         Error,
-        "Required metadata method %s not found in model",
+        "Required metadata method %s not found in model. Bypass",
         llm::kMaxSeqLen);
-    return ::executorch::runtime::Error::InvalidArgument;
+    // return ::executorch::runtime::Error::InvalidArgument;
   }
 
   for (auto& pair : metadata) {

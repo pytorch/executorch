@@ -37,6 +37,8 @@ MultimodalPrefiller::MultimodalPrefiller(
 Result<uint64_t> MultimodalPrefiller::prefill(
     const MultimodalInput& input,
     int64_t& start_pos) {
+      ET_LOG(Error, "Here 000000000000000000000000000000000000000000000000000000000000000000 %d", (int) (start_pos));
+      ET_LOG(Error, "Here 000000000000000000000000000000000000000000000000000000000000000000 %s", input.get_text().c_str());
   // 1. Run encoder model.
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
@@ -73,12 +75,14 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto& text = input.get_text();
     std::vector<uint64_t> tokens =
         ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
+    ET_LOG(Error, "Here 666666666666666666666666666666666666666666666666666666666666666666666666666666");
 
     auto text_tensor = executorch::extension::from_blob(
         tokens.data(),
         {1, static_cast<aten::SizesType>(tokens.size())},
         ::executorch::aten::ScalarType::Long);
 
+    ET_LOG(Error, "Here 555555555555555555555555555555555555555555555555555555555555555555555555555");
     // Run text encoder (token embeddings)
     auto token_embedding_outputs =
         ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, text_tensor));
@@ -89,6 +93,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     // For any other input types, return error
     return ::executorch::runtime::Error::NotSupported;
   }
+    ET_LOG(Error, "Here 000000000000000000000000000000000000000000000000000000000000000000000000000");
 
   // 2. Run decoder model for prefill.
   // `cache_position` goes from start_pos to start_pos + encoder_output.size(1).
@@ -107,6 +112,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
       cache_positions.data(),
       {static_cast<int>(seq_len)},
       executorch::aten::ScalarType::Long);
+    ET_LOG(Error, "Here 111111111111111111111111111111111111111111111111111111111111111111111111111111111111111");
   auto prefill_result = module_->execute(
       kTextModelMethod, {cache_position_tensor, encoder_output});
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
@@ -121,6 +127,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     return ::executorch::runtime::Error::InvalidState;
   }
   auto outputs_res = prefill_outputs[0].toTensor();
+    ET_LOG(Error, "Here 222222222222222222222222222222222222222222222222222222222222222222222222222222");
 
   // Update start_pos, tracking the current cache position.
   start_pos += seq_len;
