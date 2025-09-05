@@ -12,9 +12,9 @@ import serializer.tosa_serializer as ts
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.utils import tosa_shape
 from torch._export.utils import (
     get_buffer,
     get_lifted_tensor_constant,

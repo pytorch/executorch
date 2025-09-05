@@ -314,7 +314,7 @@ def make_linear_q8ta_q8csw_custom_op(
         weight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
         # when using integer accumulation.
-        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.float).contiguous()
+        sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
         sums_name = weight_tensor_name + "_sums"
         # Sanitize the name
         sums_name = sums_name.replace(".", "_")
