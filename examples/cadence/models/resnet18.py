@@ -13,7 +13,7 @@ import torch
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 from torchvision.models import resnet18, ResNet18_Weights
 
 
@@ -27,4 +27,4 @@ if __name__ == "__main__":
     model.eval()
     example_inputs = (torch.randn(1, 3, 64, 64),)
 
-    export_model(model, example_inputs)
+    export_and_run_model(model, example_inputs)
