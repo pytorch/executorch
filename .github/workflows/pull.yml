@@ -897,6 +897,9 @@ jobs:
           python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
         done
 
+        # Test ops
+        python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
+
 
   test-vulkan-models-linux:
     name: test-vulkan-models-linux
