@@ -391,7 +391,7 @@ class OpenVINOQuantizer(Quantizer):
         extra_args = {"eps": 1e-16}
         is_weight = qp.is_weight_quantization_point()
         qconfig = qp.qconfig
-        dtype = None
+        dtype = torch.int8
         quant_min = None
         quant_max = None
         channel_axis = None
