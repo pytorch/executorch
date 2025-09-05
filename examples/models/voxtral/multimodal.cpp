@@ -73,35 +73,6 @@ bool ends_with(const std::string& str, const std::string& suffix) {
 }
 
 /**
- * @brief Loads float data from a binary file
- *
- * @param audio_path Path to the binary audio file (.bin)
- * @return Vector of float data loaded from the file
- * @throws std::runtime_error if file loading fails
- */
-std::vector<float> loadBinaryFloatData(const std::string& audio_path) {
-  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
-  if (!f.is_open()) {
-    ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
-    throw std::runtime_error("Failed to open audio file");
-  }
-
-  std::size_t n_floats =
-      f.tellg() / sizeof(float); // Number of floats in the audio file
-  f.seekg(0, std::ios::beg);
-
-  std::vector<float> audio_data(n_floats);
-  f.read(
-      reinterpret_cast<char*>(audio_data.data()),
-      audio_data.size() * sizeof(float));
-  f.close();
-
-  ET_LOG(
-      Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
-  return audio_data;
-}
-
-/**
  * @brief Loads preprocessed audio data from a binary file
  *
  * Reads mel spectrogram features that have been pre-computed and saved as a
@@ -114,26 +85,32 @@ std::vector<float> loadBinaryFloatData(const std::string& audio_path) {
  * @return MultimodalInput containing the loaded audio data
  */
 MultimodalInput loadPreprocessedAudio(const std::string& audio_path) {
-  std::vector<float> audio_data = loadBinaryFloatData(audio_path);
+  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
+  if (!f.is_open()) {
+    ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
+    throw std::runtime_error("Failed to open audio file");
+  }
+
+  std::size_t n_floats = f.tellg() / sizeof(float);
+  f.seekg(0, std::ios::beg);
 
   int32_t n_bins = 128;
   int32_t n_frames = 3000;
 
-  std::size_t n_floats = audio_data.size();
   int32_t batch_size = ceil(
       n_floats /
       (n_bins * n_frames)); // Batch in increments of n_frames, rounding up.
 
-  ET_LOG(Info, "audio_data len = %d", audio_data.size());
+  ET_LOG(Info, "audio_data len = %zu", n_floats);
 
   // Create Audio multimodal input
   auto audio = std::make_unique<::executorch::extension::llm::Audio>();
   audio->batch_size = batch_size;
   audio->n_bins = n_bins;
   audio->n_frames = n_frames;
-  audio->data.resize(audio_data.size() * sizeof(float));
-  std::memcpy(
-      audio->data.data(), audio_data.data(), audio_data.size() * sizeof(float));
+  audio->data.resize(n_floats * sizeof(float));
+  f.read(reinterpret_cast<char*>(audio->data.data()), n_floats * sizeof(float));
+  f.close();
   return ::executorch::extension::llm::make_audio_input(std::move(*audio));
 }
 
@@ -179,7 +156,23 @@ MultimodalInput processRawAudioFile(
   }
 
   // Load the audio data from file.
-  std::vector<float> audio_data = loadBinaryFloatData(audio_path);
+  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
+  if (!f.is_open()) {
+    ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
+    throw std::runtime_error("Failed to open audio file");
+  }
+
+  std::size_t n_floats = f.tellg() / sizeof(float);
+  f.seekg(0, std::ios::beg);
+
+  std::vector<float> audio_data(n_floats);
+  f.read(
+      reinterpret_cast<char*>(audio_data.data()),
+      audio_data.size() * sizeof(float));
+  f.close();
+
+  ET_LOG(
+      Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
 
   // Execute the processor
   std::vector<executorch::aten::SizesType> tensor_shape = {
@@ -328,16 +321,11 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   // Prepare inputs
-  std::vector<MultimodalInput> inputs;
-
-  // 1. Add start bos-related text inputs and modality start token.
-  inputs.emplace_back(make_text_input("<s>[INST][BEGIN_AUDIO]"));
-
-  // 2. Add audio input
-  inputs.emplace_back(processAudioFile(audio_path, processor_path));
-
-  // 3. Add text input (the actual user-submitted prompt)
-  inputs.emplace_back(make_text_input(std::string(prompt) + "[/INST]"));
+  std::vector<MultimodalInput> inputs = {
+      make_text_input("<s>[INST][BEGIN_AUDIO]"),
+      processAudioFile(audio_path, processor_path),
+      make_text_input(std::string(prompt) + "[/INST]"),
+  };
 
   ::executorch::extension::llm::GenerationConfig config;
   config.max_new_tokens = 100;
