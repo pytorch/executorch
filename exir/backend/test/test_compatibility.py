@@ -66,7 +66,7 @@ class TestCompatibility(unittest.TestCase):
         # Throw runtime error with error code 0x30, meaning delegate is incompatible.
         with self.assertRaisesRegex(
             RuntimeError,
-            "Failed to get method forward, error: 0x30",
+            "Failed to execute method forward, error: 0x30",
         ):
             executorch_module.run_method("forward")
 
@@ -113,6 +113,6 @@ class TestCompatibility(unittest.TestCase):
         # Throw runtime error with error code 0x30, meaning delegate is incompatible.
         with self.assertRaisesRegex(
             RuntimeError,
-            "Failed to get method forward, error: 0x30",
+            "Failed to execute method forward, error: 0x30",
         ):
             executorch_module.run_method("forward")
