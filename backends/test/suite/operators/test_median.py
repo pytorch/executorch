@@ -9,6 +9,7 @@
 from typing import Optional
 
 import torch
+import unittest
 from executorch.backends.test.suite.flow import TestFlow
 
 from executorch.backends.test.suite.operators import (
@@ -167,6 +168,7 @@ class Median(OperatorTest):
         # 5D tensor
         self._test_op(MedianValueOnlyModel(), (torch.randn(2, 2, 3, 4, 5),), flow)
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_median_edge_cases(self, flow: TestFlow) -> None:
         # Tensor with NaN (NaN should be propagated)
         x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])

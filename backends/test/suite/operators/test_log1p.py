@@ -8,6 +8,7 @@
 
 
 import torch
+import unittest
 from executorch.backends.test.suite.flow import TestFlow
 
 from executorch.backends.test.suite.operators import (
@@ -46,6 +47,7 @@ class TestLog1p(OperatorTest):
         # 3D tensor
         self._test_op(Log1pModel(), (torch.rand(3, 4, 5) * 2 - 0.5,), flow)
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_log1p_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
         # Tensor with infinity

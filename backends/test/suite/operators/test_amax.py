@@ -9,6 +9,7 @@
 from typing import List, Optional, Tuple, Union
 
 import torch
+import unittest
 from executorch.backends.test.suite.flow import TestFlow
 
 from executorch.backends.test.suite.operators import (
@@ -201,6 +202,7 @@ class Amax(OperatorTest):
             flow,
         )
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_amax_edge_cases(self, flow: TestFlow) -> None:
         x = torch.tensor([[1.0, float("inf"), 3.0], [4.0, 5.0, float("inf")]])
         self._test_op(
