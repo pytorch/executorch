@@ -23,7 +23,7 @@ from torch.testing._internal.common_utils import TestCase
 class TestRemoveCloneOpsTransform(TestCase):
     # Clone ops can appear as either aten.clone or _clone_dim_order depending on the _skip_dim_order flag.
     # _skip_dim_order=True tests aten.clone
-    # _skip_dim_order=False tests _clone_dim_order.
+    # _skip_dim_order=False tests _clone_dim_order
     CLONE_OP_CASES = [
         (True, "executorch_exir_dialects_edge__ops_aten_clone_default"),
         (
