@@ -52,7 +52,7 @@ To get started you can:
 
 - Visit the [Step by Step Tutorial](https://pytorch.org/executorch/stable/getting-started.html) to get things running locally and deploy a model to a device
 - Use this [Colab Notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) to start playing around right away
-- Jump straight into LLM use cases by following specific instructions for popular open-source models such as [Llama](examples/models/llama/README.md), [Qwen 3](examples/models/qwen3/README.md), [Phi-4-mini](examples/models/phi_4_mini/README.md), [Voxtral](examples/models/voxtral/README.md), and [LFM2](examples/models/lfm2/README.md).
+- Jump straight into LLM use cases by following specific instructions for popular open-source models such as [Llama](examples/models/llama/README.md), [Qwen 3](examples/models/qwen3/README.md), [Phi-4-mini](examples/models/phi_4_mini/README.md), [Llava](examples/models/llava/README.md), [Voxtral](examples/models/voxtral/README.md), and [LFM2](examples/models/lfm2/README.md).
 
 ## Feedback and Engagement
 
