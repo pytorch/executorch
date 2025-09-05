@@ -1,0 +1,76 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT4_WEIGHT_TILE_LOAD_GLSLH
+#define LINEAR_INT4_WEIGHT_TILE_LOAD_GLSLH
+
+/*
+ * Defines functions to load a Int4WeightTile from input buffer/texture.
+ *
+ * Requires:
+ * - t_packed_int4_weight to be declared in the shader layout (input
+ * buffer/texture)
+ *
+ * Settings:
+ * - WEIGHT_BUFFER to indicate t_packed_int4_weight is a buffer, otherwise
+ * texture storage is assumed.
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_int4_weight_tile.glslh"
+
+#ifdef WEIGHT_BUFFER
+
+ivec4 load_weight_block(
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+  return t_packed_int4_weight[(block_y * nblocks_x) + block_x];
+}
+
+#else // WEIGHT_TEXTURE
+
+ivec4 load_weight_block(
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+  return texelFetch(t_packed_int4_weight, ivec2(block_x, block_y), 0);
+}
+
+#endif // WEIGHT_BUFFER
+
+void load_weight_tile(
+    out Int4WeightTile weight_tile,
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+#if TILE_K4 == 1 && TILE_N8 == 1
+  weight_tile.data[0][0] = load_weight_block(block_x, block_y, nblocks_x);
+
+#elif TILE_K4 == 1 && TILE_N8 > 1
+  [[unroll]] for (int x = 0; x < TILE_N8; ++x) {
+    weight_tile.data[0][x] = load_weight_block(block_x + x, block_y, nblocks_x);
+  }
+
+#elif TILE_K4 > 1 && TILE_N8 == 1
+  [[unroll]] for (int y = 0; y < TILE_K4; ++y) {
+    weight_tile.data[y][0] = load_weight_block(block_x, block_y + y, nblocks_x);
+  }
+
+#else
+  [[unroll]] for (int y = 0; y < TILE_K4; ++y) {
+    [[unroll]] for (int x = 0; x < TILE_N8; ++x) {
+      weight_tile.data[y][x] =
+          load_weight_block(block_x + x, block_y + y, nblocks_x);
+    }
+  }
+#endif
+}
+
+#endif // LINEAR_INT4_WEIGHT_TILE_LOAD_GLSLH

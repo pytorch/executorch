@@ -54,6 +54,7 @@ enum class DataGenType {
   RANDINT8,
   RANDINT4,
   ONES,
+  ONES_INT4,
   ZEROS
 };
 
@@ -67,6 +68,7 @@ struct ValueSpec {
   DataGenType data_gen_type;
   bool is_constant_tensor;
   bool is_none_flag;
+  bool is_int4_tensor;
 
   std::vector<float> float_data;
   std::vector<int32_t> int32_data;
@@ -92,7 +94,8 @@ struct ValueSpec {
         spec_type(SpecType::Tensor),
         data_gen_type(DataGenType::ZEROS),
         is_constant_tensor(false),
-        is_none_flag(false) {
+        is_none_flag(false),
+        is_int4_tensor(false) {
     generate_tensor_data();
   }
 
@@ -110,7 +113,8 @@ struct ValueSpec {
         spec_type(SpecType::Tensor),
         data_gen_type(data_gen_type),
         is_constant_tensor(false),
-        is_none_flag(false) {
+        is_none_flag(false),
+        is_int4_tensor(false) {
     generate_tensor_data();
   }
 
@@ -123,7 +127,8 @@ struct ValueSpec {
         spec_type(SpecType::Int),
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
-        is_none_flag(false) {
+        is_none_flag(false),
+        is_int4_tensor(false) {
     int32_data.push_back(value);
   }
 
@@ -136,7 +141,8 @@ struct ValueSpec {
         spec_type(SpecType::Float),
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
-        is_none_flag(false) {
+        is_none_flag(false),
+        is_int4_tensor(false) {
     float_data.push_back(value);
   }
 
@@ -149,7 +155,8 @@ struct ValueSpec {
         spec_type(SpecType::Bool),
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
-        is_none_flag(false) {
+        is_none_flag(false),
+        is_int4_tensor(false) {
     int32_data.push_back(value ? 1 : 0);
   }
 
@@ -163,6 +170,7 @@ struct ValueSpec {
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
         is_none_flag(false),
+        is_int4_tensor(false),
         int32_data(values) {}
 
   // Default constructor
@@ -173,7 +181,8 @@ struct ValueSpec {
         spec_type(SpecType::Tensor),
         data_gen_type(DataGenType::ZEROS),
         is_constant_tensor(false),
-        is_none_flag(false) {}
+        is_none_flag(false),
+        is_int4_tensor(false) {}
 
   int64_t numel() const;
   size_t nbytes() const;
@@ -291,8 +300,17 @@ struct ValueSpec {
   bool is_none() const {
     return is_none_flag;
   }
+
   void set_none(bool is_none) {
     is_none_flag = is_none;
+  }
+
+  // Set/get int4 flag
+  bool is_int4() const {
+    return is_int4_tensor;
+  }
+  void set_int4(bool is_int4) {
+    is_int4_tensor = is_int4;
   }
 
   const void* get_data_ptr() const;
