@@ -660,7 +660,7 @@ class TestQNN(unittest.TestCase):
                         users = list(node.users.keys())
                         inserted_node = graph_module.graph.create_node(
                             "call_function",
-                            exir_ops.edge.aten.clone.default,
+                            exir_ops.edge.dim_order_ops._clone_dim_order.default,
                             (node,),
                         )
                         inserted_node.meta["val"] = node.meta["val"]
