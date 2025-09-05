@@ -8,6 +8,7 @@ import getpass
 import json
 import logging
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -147,6 +148,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

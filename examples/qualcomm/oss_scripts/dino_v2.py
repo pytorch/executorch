@@ -6,6 +6,7 @@
 
 import json
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -41,12 +42,6 @@ def main(args):
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
-
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
 
     img_size, data_num = 224, 100
     inputs, targets = get_imagenet_dataset(
@@ -137,6 +132,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

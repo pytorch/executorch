@@ -43,12 +43,6 @@ def main(args):
 
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     module_id = "EuroBERT/EuroBERT-210m"
     tokenizer = AutoTokenizer.from_pretrained(module_id)
     model = AutoModelForMaskedLM.from_pretrained(
@@ -177,6 +171,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

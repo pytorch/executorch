@@ -13,7 +13,6 @@ from multiprocessing.connection import Client
 import evaluate
 import numpy as np
 import torch
-
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -139,6 +138,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

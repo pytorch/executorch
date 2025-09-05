@@ -334,11 +334,6 @@ def compile_whisper(args, inputs):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-tiny")
     module = (
         AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-tiny")
@@ -482,6 +477,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
 
     if args.compile_only and args.pre_gen_pte:
         exit("Cannot set both compile_only and pre_gen_pte as true")

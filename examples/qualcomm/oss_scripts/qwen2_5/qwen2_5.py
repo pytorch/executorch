@@ -42,12 +42,6 @@ def compile(args):  # noqa: C901
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     manager = get_qnn_llm_edge_manager(
         args.decoder_model, args.max_seq_len, args.enable_spinquant_r3
     )
@@ -262,6 +256,7 @@ if __name__ == "__main__":
 
     try:
         args = parser.parse_args()
+        args.validate(args)
         if args.artifact is None:
             args.artifact = args.decoder_model
         main(args)

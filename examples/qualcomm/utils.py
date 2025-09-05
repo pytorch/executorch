@@ -868,11 +868,30 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "--seed",
+        help="Set the seed for generating random numbers in both torch and random.",
+        type=int,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+
+    def validate(args):
+        if not args.compile_only and args.device is None:
+            raise RuntimeError(
+                "device serial is required if not compile only. "
+                "Please specify a device serial by -s/--device argument."
+            )
+        if args.seed:
+            torch.manual_seed(args.seed)
+            np.random.seed(args.seed)
+            random.seed(args.seed)
+
+    parser.set_defaults(validate=validate)
 
     return parser
 
