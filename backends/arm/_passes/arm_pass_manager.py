@@ -91,7 +91,8 @@ from executorch.backends.arm._passes import (
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
-from executorch.backends.arm.tosa_specification import (
+
+from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
