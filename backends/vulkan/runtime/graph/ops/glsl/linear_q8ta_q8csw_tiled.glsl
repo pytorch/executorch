@@ -34,9 +34,9 @@ ${define_required_extensions(DTYPE)}
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_input", "int", INPUT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_qmat2", "int", WEIGHT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight_sums", "float", "buffer", is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", INPUT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 
@@ -57,7 +57,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 #include "linear_fp_output_tile_int8_int8_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
 #include "linear_fp_scales_load.glslh"
-#include "linear_fp_weight_sums_load.glslh"
+#include "linear_int_weight_sums_load.glslh"
 #include "linear_fp_bias_load.glslh"
 
 void main() {
@@ -97,7 +97,7 @@ void main() {
   FPPerOutChannelParams scales_tile;
   load_scales_tile(scales_tile, n4);
 
-  FPPerOutChannelParams sums_tile;
+  IntPerOutChannelParams sums_tile;
   load_sums_tile(sums_tile, n4);
 
   FPOutTile out_tile;

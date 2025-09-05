@@ -9,12 +9,11 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
-#define VEC4_T ${texel_load_type(DTYPE, OUTPUT_STORAGE)}
-#define T ${texel_load_component_type(DTYPE, OUTPUT_STORAGE)}
+#define VEC4_T ${texel_load_type(DTYPE, IO_STORAGE)}
+#define T ${texel_load_component_type(DTYPE, IO_STORAGE)}
 
-$if OUTPUT_STORAGE == "buffer":
+$if IO_STORAGE == "buffer":
   #define OUTPUT_BUFFER
-$if INPUT_STORAGE == "buffer":
   #define INPUT_BUFFER
 $if WEIGHT_STORAGE == "buffer":
   #define WEIGHT_BUFFER
@@ -31,9 +30,9 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_input", DTYPE, INPUT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_qmat2", "int", WEIGHT_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_packed_int8_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 

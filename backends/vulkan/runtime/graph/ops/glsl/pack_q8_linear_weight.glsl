@@ -14,8 +14,8 @@ ${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_qmat2", "int", STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_input", "int", "buffer")}
+${layout_declare_tensor(B, "w", "t_packed_int8_weight", "int", STORAGE, is_scalar_array=False)}
+${layout_declare_tensor(B, "r", "t_int8_weight", "int", "buffer")}
 
 layout(push_constant) uniform restrict Block {
   ivec4 qmat2_sizes;
