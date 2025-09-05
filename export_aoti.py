@@ -167,15 +167,15 @@ class SingleResNetBlock(nn.Module):
 
 
 class Llama31(torch.nn.Module):
-    def __init__(self, model_id="meta-llama/Meta-Llama-3.1-8B"):
+    def __init__(self, model_id="meta-llama/Meta-Llama-3.1-8B", use_cache=False):
         super(Llama31, self).__init__()
         # Load Llama 3.1 model from HF
+        self.use_cache = use_cache
         self.model = AutoModelForCausalLM.from_pretrained(
             model_id,
             torch_dtype=torch.float32,
             device_map="cuda",
-            # trust_remote_code=True,
-            use_cache=False,  # Turn off KV cache
+            use_cache=self.use_cache,  # Turn off KV cache
         )
         self.model.eval()
 
@@ -185,7 +185,7 @@ class Llama31(torch.nn.Module):
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                use_cache=False,  # Explicitly turn off KV cache
+                use_cache=self.use_cache,  # Explicitly turn off KV cache
             )
         return outputs.logits
 

@@ -33,12 +33,12 @@ missing_fallback_kernels: Set[str] = set()
 # context manager for non-fallback guarantee
 # it will raise exception when generating fallback kernels during aoti compile
 @contextlib.contextmanager
-def raise_on_generate_fall_back_call():
+def collect_unsupported_fallback_kernels():
     original_generate_c_shim_extern_kernel_call = (
         CppWrapperCpu.generate_c_shim_extern_kernel_call
     )
 
-    def generate_supported_c_shim_extern_kernel_call(
+    def generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels(
         self,
         kernel: str,
         args: list[str],
@@ -46,15 +46,15 @@ def raise_on_generate_fall_back_call():
         *,
         debug_args: Optional[list[str]] = None,
     ):
-        if kernel in supported_fallback_kernels:
-            original_generate_c_shim_extern_kernel_call(
-                self, kernel, args, device, debug_args=debug_args
-            )
-        else:
+        if kernel not in supported_fallback_kernels:
             missing_fallback_kernels.add(kernel)
 
+        original_generate_c_shim_extern_kernel_call(
+            self, kernel, args, device, debug_args=debug_args
+        )
+
     CppWrapperCpu.generate_c_shim_extern_kernel_call = (
-        generate_supported_c_shim_extern_kernel_call
+        generate_c_shim_extern_kernel_call_and_collect_unsupported_kernels
     )
     try:
         yield
@@ -93,7 +93,7 @@ class AotiBackend(BackendDetails):
             "max_autotune_conv_backends": "TRITON",
         }
 
-        with raise_on_generate_fall_back_call():
+        with collect_unsupported_fallback_kernels():
             so_path = torch._inductor.aot_compile(edge_program_module, args, kwargs, options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
