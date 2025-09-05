@@ -1,0 +1,25 @@
+name: Needs User Input Automation
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # runs every Monday at 8:00 UTC
+
+jobs:
+  needs-user-input:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install PyGithub
+
+      - name: Run needs-user-input script
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/pending_user_response.py
