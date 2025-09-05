@@ -27,7 +27,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 class PatternNode:
-    op_types: dict[str, list] = {}
+    op_types: dict[str, Optional[list]] = {}
 
     def __init__(self):
         self.op_types = {}
