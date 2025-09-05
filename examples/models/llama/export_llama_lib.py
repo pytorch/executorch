@@ -93,7 +93,8 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_1",
     "llama3_2",
     "static_llama",
-    "qwen2_5",
+    "qwen2_5_0_5b",
+    "qwen2_5_1_5b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
@@ -102,7 +103,8 @@ EXECUTORCH_DEFINED_MODELS = [
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
-    "qwen2_5": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
+    "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
@@ -595,7 +597,7 @@ def export_llama(
     model_name = llm_config.base.model_class.value
     if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
-        if model_name == "qwen2_5":
+        if model_name.startswith("qwen2_5"):
             from executorch.examples.models.qwen2_5 import convert_weights
         elif model_name.startswith("qwen3"):
             from executorch.examples.models.qwen3 import convert_weights
