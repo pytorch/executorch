@@ -141,10 +141,10 @@ class OpenvinoPartitioner(Partitioner):
         self, node: torch.fx.Node, pattern: PatternNode, enabled_ops: list
     ) -> bool:
         if node.op == "call_function":
-            if ("call_function" + ":" + str(node.target.__name__)) in pattern.op_types:
+            if ("call_function" + ":" + str(node.target.__name__)) in pattern.op_types:  # type: ignore[union-attr]
                 pt_input_nodes = node.all_input_nodes
                 pattern_input_ops = pattern.op_types[
-                    "call_function" + ":" + str(node.target.__name__)
+                    "call_function" + ":" + str(node.target.__name__)  # type: ignore[union-attr]
                 ]
                 if pattern_input_ops is None:
                     enabled_ops.append(node)
