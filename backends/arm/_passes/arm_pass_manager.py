@@ -155,7 +155,6 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
-        self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
         )
