@@ -14,6 +14,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.sin.default"
@@ -60,7 +61,7 @@ def test_sin_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sin_tosa_u55_INT(test_data: Tuple):
+def test_sin_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sin(),
         (test_data,),
@@ -72,12 +73,33 @@ def test_sin_tosa_u55_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_sin_tosa_u85_INT(test_data: Tuple):
+def test_sin_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sin(),
         (test_data,),
         aten_op,
         exir_ops=[],
         run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sin_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sin(), (test_data,), aten_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_sin_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Sin(),
+        (test_data,),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

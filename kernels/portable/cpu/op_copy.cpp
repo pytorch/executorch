@@ -52,7 +52,7 @@ Tensor& copy_out(
       src.numel() > 0) {
     std::memcpy(out.mutable_data_ptr(), src.const_data_ptr(), src.nbytes());
   } else {
-    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy.out", CTYPE, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
       utils::apply_bitensor_elementwise_fn<
           CTYPE,
           op_name,
@@ -94,7 +94,7 @@ Tensor& copy_(
       src.numel() > 0) {
     std::memcpy(in.mutable_data_ptr(), src.const_data_ptr(), in.nbytes());
   } else {
-    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "copy_", CTYPE, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&]() {
       utils::apply_bitensor_elementwise_fn<
           CTYPE,
           op_name,

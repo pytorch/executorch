@@ -17,9 +17,9 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
-from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
+from executorch.backends.arm.tosa.utils import get_resize_parameters, tosa_shape
 
 
 @register_node_visitor
@@ -98,7 +98,9 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             [len(border)], ts.DType.SHAPE, border, node.name + "_border"
         )
         if input_dtype == output.dtype == ts.DType.FP32:
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESIZE,
                 [
                     inputs[0].name,
@@ -114,7 +116,9 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             intermediate = tosa_graph.addIntermediate(
                 tosa_shape(output.shape, output.dim_order), ts.DType.INT32
             )
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESIZE,
                 [
                     inputs[0].name,

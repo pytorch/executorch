@@ -33,13 +33,13 @@ def test_insert_table_tosa_INT(test_data: input_t):
         module,
         test_data,
         quantize=True,
-        ops_before_pass={},
+        ops_before_pass={"executorch_exir_dialects_edge__ops_aten_sigmoid_default": 1},
         ops_after_pass={
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 1,
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 1,
-            "tosa._table": 1,
+            "backend__ops_tosa_TABLE_default": 1,
         },
-        ops_not_after_pass=["aten_sigmoid_default"],
+        ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_sigmoid_default"],
         pass_list=[FoldAndAnnotateQParamsPass],
         passes_with_exported_program=[InsertTableOpsPass],
     )

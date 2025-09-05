@@ -18,6 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 
@@ -212,6 +213,33 @@ def test_where_self_u85_INT(test_module):
         aten_op,
         exir_op,
         run_on_fvp=True,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_FP)
+@common.SkipIfNoModelConverter
+def test_where_self_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_INT)
+@common.SkipIfNoModelConverter
+def test_where_self_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
         symmetric_io_quantization=True,
     )
     pipeline.run()

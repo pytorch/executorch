@@ -7,15 +7,15 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils  # noqa: F401
+import executorch.backends.arm.tosa.quant_utils as tqutils  # noqa: F401
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
-from executorch.backends.arm.tosa_utils import build_reshape_tosa_1_0
+from executorch.backends.arm.tosa.utils import build_reshape_tosa_1_0
 from torch.fx import Node
 
 
@@ -86,7 +86,9 @@ class IndexSelectVisitor(NodeVisitor):
             tosa_graph, indices.name, indices_new_shape, indices_reshaped.name
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().GATHER,
             [weights_reshaped.name, indices_reshaped.name],
             [output_name],

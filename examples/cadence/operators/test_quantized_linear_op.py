@@ -14,7 +14,7 @@ import torch
 
 from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -41,4 +41,4 @@ if __name__ == "__main__":
 
     example_inputs = (torch.ones(shape),)
 
-    export_model(model, example_inputs)
+    export_and_run_model(model, example_inputs)

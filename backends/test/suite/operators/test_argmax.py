@@ -149,19 +149,19 @@ class Argmax(OperatorTest):
             ArgmaxModel(),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             ArgmaxModel(dim=0),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             ArgmaxModel(dim=1),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
 
         x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
@@ -169,19 +169,19 @@ class Argmax(OperatorTest):
             ArgmaxModel(),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             ArgmaxModel(dim=0),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
         self._test_op(
             ArgmaxModel(dim=1),
             (x,),
             flow,
-            use_random_test_inputs=False,
+            generate_random_test_inputs=False,
         )
 
         x = torch.tensor([5.0])

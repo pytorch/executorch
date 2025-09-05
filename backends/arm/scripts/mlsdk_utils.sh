@@ -6,8 +6,7 @@
 
 set -euo pipefail
 
-# TODO
-mlsdk_manifest_url=""
+mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
@@ -55,8 +54,9 @@ function download_ai_mlsdk_manifest() {
 function setup_model_converter() {
     local work_dir="$1"
     local manifest_dir="$2"
-    local enable_vgf_lib="$3"
-    local enable_emulation_layer="$4"
+    local enable_model_converter="$3"
+    local enable_vgf_lib="$4"
+    local enable_emulation_layer="$5"
 
     if [[ -z "$work_dir" ]]; then
         echo "Error: work_dir parameter is required."
@@ -76,29 +76,34 @@ function setup_model_converter() {
     pushd "$manifest_dir"
 
     # model-converter
-    # TODO: Remove macOS patch after mlsdk fully supports macOS
-    if [[ "$(uname)" == "Darwin" ]]; then
+    if [[ "${enable_model_converter}" -eq 1 ]]; then
+        # TODO: Remove this workaround once MLSDK has full Darwin support
+        # Do not indent sed command, the whitespace is significant for the patch to work.
+        if [[ "$(uname)" == "Darwin" ]]; then
     sed -i '' '/^ *print(f"Unsupported host platform/ i\
             if system == "Darwin":\
-                # Use default Apple toolchain (Clang) on macOS\
                 return True\
 \
 ' sw/model-converter/scripts/build.py
+        fi
+        python sw/model-converter/scripts/build.py -j$(nproc)
     fi
-    python sw/model-converter/scripts/build.py -j$(nproc)
 
     # libvgf
     if [[ "${enable_vgf_lib}" -eq 1 ]]; then
-    # TODO: Remove macOS patch after mlsdk fully supports macOS
+        # TODO: Remove this workaround once MLSDK has full Darwin support
+        # Do not indent sed command, the whitespace is significant for the patch to work.
         if [[ "$(uname)" == "Darwin" ]]; then
     sed -i '' '/^ *print(f"ERROR: Unsupported host platform/ i\
             if system == "Darwin":\
-                # Use default Apple toolchain (Clang) on macOS\
                 return True\
 \
 ' sw/vgf-lib/scripts/build.py
         fi
-        python sw/vgf-lib/scripts/build.py -j$(nproc)
+        pushd sw/vgf-lib
+        python scripts/build.py -j$(nproc)
+        cmake --install build --prefix deploy
+        popd
     fi
 
     # emu layer
@@ -110,7 +115,9 @@ function setup_model_converter() {
             -DSPIRV_HEADERS_PATH=../../dependencies/SPIRV-Headers    \
             -DSPIRV_TOOLS_PATH=../../dependencies/SPIRV-Tools        \
             -DVULKAN_HEADERS_PATH=../../dependencies/Vulkan-Headers
+
         cmake --build build
+        cmake --install build --prefix deploy
         popd
     fi
 

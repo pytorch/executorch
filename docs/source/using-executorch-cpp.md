@@ -32,11 +32,11 @@ if (result.ok()) {
 
 For more information on the Module class, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md). For information on high-level tensor APIs, see [Managing Tensor Memory in C++](extension-tensor.md).
 
-For complete examples of building and running a C++ application using the Module API, refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp).
+For complete examples of building and running a C++ application using the Module API, refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/cpp).
 
 ## Low-Level APIs
 
-Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see [Running an ExecuTorch Model in C++ Tutorial](running-a-model-cpp-tutorial.md).
+Running a model using the low-level runtime APIs allows for a high-degree of control over memory allocation, placement, and loading. This allows for advanced use cases, such as placing allocations in specific memory banks or loading a model without a file system. For an end to end example using the low-level runtime APIs, see [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial.md).
 
 ## Building with CMake
 

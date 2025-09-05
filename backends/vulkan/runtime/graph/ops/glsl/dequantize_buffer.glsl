@@ -12,12 +12,16 @@
 
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 #define OUT_T ${buffer_scalar_type(OUT_DTYPE)}
+#define SCALE_T ${buffer_scalar_type(SCALE_DTYPE)}
+#define ZP_T ${buffer_scalar_type(ZP_DTYPE)}
 
 #define ${MODE}
 
 ${define_active_storage_type("buffer")}
 ${define_required_extensions(IN_DTYPE)}
 ${define_required_extensions(OUT_DTYPE)}
+${define_required_extensions(SCALE_DTYPE)}
+${define_required_extensions(ZP_DTYPE)}
 
 layout(std430) buffer;
 
@@ -27,16 +31,16 @@ ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 
 $if MODE == "per_tensor":
-  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
-  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
 
   layout(push_constant) uniform restrict Block {
     int quant_min;
     int quant_max;
   };
 $if MODE == "per_token":
-  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
-  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
 
   layout(push_constant) uniform restrict Block {
     int num_tokens;
@@ -44,8 +48,8 @@ $if MODE == "per_token":
     int quant_max;
   };
 $if MODE == "per_channel":
-  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
-  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
 
   layout(push_constant) uniform restrict Block {
     int axis;
@@ -54,8 +58,8 @@ $if MODE == "per_channel":
     int quant_max;
   };
 $if MODE == "block_wise":
-  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
-  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
 
   layout(push_constant) uniform restrict Block {
     ivec4 blockSize;     // bW, bH, bC, bN
@@ -150,7 +154,7 @@ void dequantize_per_tensor() {
   const int in_bufi = tidx_to_bufi(out_tidx, t_in_strides);
 
   IN_T qvalue = t_in[in_bufi];
-  OUT_T value = dequantize_val(qvalue, t_scale[0], t_zero_point[0]);
+  OUT_T value = dequantize_val(qvalue, float(t_scale[0]), int(t_zero_point[0]));
 
   t_out[out_bufi] = value;
 }
@@ -185,7 +189,7 @@ void dequantize_per_token() {
 
   token_idx = min(token_idx, num_tokens - 1);
 
-  OUT_T value = dequantize_val(qvalue, t_scale[token_idx], t_zero_point[token_idx]);
+  OUT_T value = dequantize_val(qvalue, float(t_scale[token_idx]), int(t_zero_point[token_idx]));
 
   t_out[out_bufi] = value;
 }
@@ -224,7 +228,7 @@ void dequantize_per_channel() {
 
   channel_idx = min(channel_idx, num_channels - 1);
 
-  OUT_T value = dequantize_val(qvalue, t_scale[channel_idx], t_zero_point[channel_idx]);
+  OUT_T value = dequantize_val(qvalue, float(t_scale[channel_idx]), int(t_zero_point[channel_idx]));
 
   t_out[out_bufi] = value;
 }
@@ -247,7 +251,7 @@ void dequantize_block_wise() {
 
   const int block_id = bcoord.x * blockStride.x + bcoord.y * blockStride.y + bcoord.z * blockStride.z + bcoord.w * blockStride.w;
 
-  const OUT_T value = dequantize_val(qvalue, t_scale[block_id], t_zero_point[block_id]);
+  const OUT_T value = dequantize_val(qvalue, float(t_scale[block_id]), int(t_zero_point[block_id]));
 
   t_out[out_bufi] = value;
 }

@@ -12,22 +12,26 @@
 
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
 #define FVEC4_T ${texel_load_type(IN_DTYPE, "texture3d")}
+#define SCALE_OUT_T ${buffer_scalar_type(SCALE_OUT_DTYPE)}
+#define ZP_OUT_T ${buffer_scalar_type(ZP_OUT_DTYPE)}
 
 #define ${MODE}
 
 ${define_active_storage_type("texture3d")}
 ${define_required_extensions(IN_DTYPE)}
+${define_required_extensions(SCALE_OUT_DTYPE)}
+${define_required_extensions(ZP_OUT_DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
 $if MODE != "block_wise":
-  ${layout_declare_tensor(B, "w", "t_scale", "float", "texture3d")}
-  ${layout_declare_tensor(B, "w", "t_zero_point", "int", "texture3d")}
+  ${layout_declare_tensor(B, "w", "t_scale", SCALE_OUT_DTYPE, "texture3d")}
+  ${layout_declare_tensor(B, "w", "t_zero_point", ZP_OUT_DTYPE, "texture3d")}
 $else:
-  ${layout_declare_tensor(B, "w", "t_scale", "float", "buffer")}
-  ${layout_declare_tensor(B, "w", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "w", "t_scale", SCALE_OUT_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "w", "t_zero_point", ZP_OUT_DTYPE, "buffer")}
 
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
@@ -273,8 +277,8 @@ void choose_qparams_per_tensor() {
     int zero_point_val;
     calc_scale_zp(global_min, global_max, quant_min, quant_max, 0, eps, scale_val, zero_point_val);
 
-    write_texel(t_scale, ivec3(0, 0, 0), vec4(scale_val, 0.0, 0.0, 0.0));
-    write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(zero_point_val, 0, 0, 0));
+    write_texel(t_scale, ivec3(0, 0, 0), vec4(SCALE_OUT_T(scale_val), 0.0, 0.0, 0.0));
+    write_texel(t_zero_point, ivec3(0, 0, 0), ivec4(ZP_OUT_T(zero_point_val), 0, 0, 0));
   }
 }
 
@@ -419,8 +423,8 @@ void choose_qparams_per_token() {
       uint out_x = out_remainder % uint(t_scale_limits.x);
       ivec3 out_pos = ivec3(int(out_x), int(out_y), int(out_z));
 
-      write_texel(t_scale, out_pos, vec4(scale_val, 0.0, 0.0, 0.0));
-      write_texel(t_zero_point, out_pos, ivec4(zero_point_val, 0, 0, 0));
+      write_texel(t_scale, out_pos, vec4(SCALE_OUT_T(scale_val), 0.0, 0.0, 0.0));
+      write_texel(t_zero_point, out_pos, ivec4(ZP_OUT_T(zero_point_val), 0, 0, 0));
     }
 
     // Synchronize before processing next token
@@ -517,8 +521,8 @@ void choose_qparams_block_wise() {
     calc_scale_zp(vmin, vmax, quant_min, quant_max, mapping_type, eps, scale, zp);
 
     // Write the scalar values directly to buffer using linear index
-    t_scale[blkIdx] = scale;
-    t_zero_point[blkIdx] = zp;
+    t_scale[blkIdx] = SCALE_OUT_T(scale);
+    t_zero_point[blkIdx] = ZP_OUT_T(zp);
   }
 }
 

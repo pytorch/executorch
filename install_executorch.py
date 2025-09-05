@@ -194,14 +194,6 @@ def main(args):
         clean()
         return
 
-    cmake_args = [os.getenv("CMAKE_ARGS", "")]
-    # Use ClangCL on Windows.
-    # ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
-    # mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
-    if os.name == "nt":
-        cmake_args.append("-T ClangCL")
-    os.environ["CMAKE_ARGS"] = " ".join(cmake_args)
-
     check_and_update_submodules()
     # This option is used in CI to make sure that PyTorch build from the pinned commit
     # is used instead of nightly. CI jobs wouldn't be able to catch regression from the

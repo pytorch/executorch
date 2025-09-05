@@ -7,16 +7,6 @@
 # pyre-strict
 
 
-# This file contains functions to remove operators from the graph. The removed
-# ops should belong to either of the following categories:
-# 1. The op should be redundant for inference (e.g., dropout). Such ops are grouped
-# together in 'RemoveRedundantOps'. Anyone running inference can add this class
-# in their pass list, and it should semantic-preserving transformation.
-# 2. The op should be redundant for Jarvis (e.g., contiguous). Such ops are grouped
-# together in 'CadenceRemoveNops'. The ops removed in this class might not be nop
-# in a context outside of Jarvis', so exercise caution while invoking this in a
-# pass list outside of Jarvis.
-
 import logging
 from dataclasses import dataclass, field
 from typing import cast, List, Optional, Sequence, Set
@@ -152,7 +142,7 @@ class RemoveNopExpandOpPass(ExportPass):
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveToOpsPass(ExportPass):
-    # aten.to.* as of now are all nops for Jarvis
+    # aten.to.* as of now are all nops
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -413,7 +403,7 @@ class RemoveContiguousOpPass(ExportPass):
 class RemoveAliasCopyOpPass(ExportPass):
     """
 
-    alias_copy is a no-op for Jarvis and can be removed.
+    alias_copy is a no-op and can be removed.
     """
 
     def call_operator(
@@ -936,10 +926,6 @@ class RemoveCatFromSliceCopyPass(ExportPass):
         return super().call(graph_module)
 
 
-# The following class consolidates functions to remove ops that are redundant
-# in Jarvis. Currently, each function in this class iterates over each node of
-# the graph module once. In future, we could consolidate them into a monolithic
-# function.
 class CadenceRemoveNops:
     passes = [
         SimplifySliceOpPass,

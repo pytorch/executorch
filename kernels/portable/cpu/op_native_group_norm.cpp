@@ -30,7 +30,7 @@ void group_norm(
     int64_t sC,
     int64_t sHxW,
     int64_t group,
-    CTYPE eps,
+    double eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
@@ -77,37 +77,43 @@ void group_norm(
     const CTYPE* x = input_data + i * inner_size;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, inner_size);
-    CTYPE sq_sum = vec_powerf(x, inner_size);
-    CTYPE mean_value = sum / inner_size;
-    CTYPE variance = sq_sum / inner_size - mean_value * mean_value;
-    CTYPE std = std::sqrt(variance + eps);
-    CTYPE rstd_value = 1.0 / std;
+    CTYPE sum = reduce_add(x, static_cast<CTYPE>(inner_size));
+    CTYPE sq_sum = vec_powerf(x, static_cast<CTYPE>(inner_size));
+    double mean_value =
+        static_cast<double>(sum) / static_cast<double>(inner_size);
+    double variance =
+        static_cast<double>(sq_sum) / static_cast<double>(inner_size) -
+        mean_value * mean_value;
+    double std = std::sqrt(variance + eps);
+    double rstd_value = 1.0 / std;
 
     // Calculate the elements of output
     if (weight_data == nullptr && bias_data == nullptr) {
       CTYPE* y = out_data + i * inner_size;
       for (const auto j : c10::irange(inner_size)) {
-        y[j] = (x[j] - mean_value) * rstd_value;
+        y[j] = static_cast<CTYPE>(
+            (static_cast<double>(x[j]) - mean_value) * rstd_value);
       }
     } else {
       const size_t g = i % G;
       for (const auto j : c10::irange(D)) {
         const size_t ch = g * D + j;
-        const CTYPE scale =
-            rstd_value * (weight_data == nullptr ? 1.0 : weight_data[ch]);
-        const CTYPE beta =
-            -scale * mean_value + (bias_data == nullptr ? 0.0 : bias_data[ch]);
+        const double scale = rstd_value *
+            (weight_data == nullptr ? double(1.0)
+                                    : static_cast<double>(weight_data[ch]));
+        const double beta = -scale * mean_value +
+            (bias_data == nullptr ? double(0.0)
+                                  : static_cast<double>(bias_data[ch]));
         x = input_data + (i * D + j) * HxW;
         CTYPE* y = out_data + (i * D + j) * HxW;
         for (const auto k : c10::irange(HxW)) {
-          y[k] = scale * x[k] + beta;
+          y[k] = static_cast<CTYPE>(scale * static_cast<double>(x[k]) + beta);
         }
       }
     }
 
-    mean_data[i] = mean_value;
-    rstd_data[i] = rstd_value;
+    mean_data[i] = static_cast<CTYPE>(mean_value);
+    rstd_data[i] = static_cast<CTYPE>(rstd_value);
   }
 }
 
@@ -186,7 +192,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
 
   constexpr auto name = "native_group_norm.out";
 
-  ET_SWITCH_FLOAT_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_FLOATHBF16_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {
     group_norm<CTYPE>(
         input, weight, bias, N, C, HxW, group, eps, out, mean_out, rstd_out);
   });

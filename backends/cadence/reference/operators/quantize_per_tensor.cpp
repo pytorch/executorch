@@ -49,10 +49,6 @@ void quantize_per_tensor_out(
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
     impl::reference::kernels::quantize<int16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
-  } else if (out.scalar_type() == ScalarType::Int) {
-    int32_t* out_data = out.mutable_data_ptr<int32_t>();
-    impl::reference::kernels::quantize<int32_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_CHECK_MSG(
         false,

@@ -384,7 +384,8 @@ Tensor& dequantize_per_channel_out(
   if (opt_zero_points.has_value()) {
     auto zero_point = opt_zero_points.value();
     ET_CHECK_MSG(
-        zero_point.scalar_type() == ScalarType::Long,
+        zero_point.scalar_type() == ScalarType::Int ||
+            zero_point.scalar_type() == ScalarType::Long,
         "zero_point.scalar_type() %" PRId8 " is not integer type",
         static_cast<int8_t>(zero_point.scalar_type()));
 

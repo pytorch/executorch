@@ -16,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineINT,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -41,7 +41,7 @@ def get_16bit_sigmoid_quantizer(u55_config=False):
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
         "1.0": TosaSpecification.create_from_string(
-            "TOSA-1.0+INT" + ("+u55" if u55_config else "")
+            "TOSA-1.0+INT+int16" + ("+u55" if u55_config else "")
         ),
     }
 
@@ -94,6 +94,7 @@ def test_sigmoid_tosa_INT(test_data):
         Sigmoid.aten_op,
         Sigmoid.exir_op,
         qtol=1,
+        tosa_extensions=["int16"],
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()
@@ -114,16 +115,10 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
         Sigmoid.aten_op,
         Sigmoid.exir_op,
         qtol=1,
+        tosa_extensions=["int16"],
     )
+    pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()
-
-
-xfails = {
-    "ones": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "rand": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "rand_4d": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-}
 
 
 @common.parametrize(
@@ -154,6 +149,7 @@ def test_sigmoid_u55_INT_add_sigmoid(test_data):
         n_expected_delegates=1,
         quantize=True,
         u55_subset=True,
+        tosa_extensions=["int16"],
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer(True))
     pipeline.run()
@@ -180,7 +176,7 @@ def test_sigmoid_u85_INT(test_data):
         "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787"
     },
 )
-@pytest.mark.flaky(reruns=5)  # MLETORCH-787: Investigate int16-int8 rescaling precision
+@pytest.mark.xfail  # MLETORCH-787: Investigate int16-int8 rescaling precision
 @common.XfailIfNoCorstone320
 def test_sigmoid_u85_INT_add_sigmoid(test_data):
     pipeline = EthosU85PipelineINT(

@@ -31,3 +31,17 @@ runtime.python_test(
         "//executorch/runtime:runtime",
     ]
 )
+
+runtime.python_test(
+    name = "test_target_recipes",
+    srcs = [
+        "test_target_recipes.py",
+    ],
+    deps = [
+        "//executorch/export:lib",
+        "//executorch/export:target_recipes",
+        "//executorch/runtime:runtime",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/backends/apple/coreml:coreml_recipes",
+    ]
+)

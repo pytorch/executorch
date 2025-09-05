@@ -14,7 +14,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -47,7 +47,9 @@ class CatVisitor(NodeVisitor):
         attr = ts.TosaSerializerAttribute()
         attr.ConcatAttribute(dim)
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().CONCAT,
             [tensor.name for tensor in tensors],
             [output.name],

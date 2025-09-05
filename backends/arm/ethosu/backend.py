@@ -16,7 +16,7 @@ from typing import final, List
 
 from executorch.backends.arm.arm_vela import vela_compile
 
-from executorch.backends.arm.tosa_backend import TOSABackend
+from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram

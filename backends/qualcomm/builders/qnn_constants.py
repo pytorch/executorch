@@ -113,8 +113,19 @@ class OpElementWiseAnd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAsin:
+    op_name: str = "ElementWiseAsin"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseAtan:
     op_name: str = "ElementWiseAtan"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseBinary:
+    op_name: str = "ElementWiseBinary"
+    param_operation: str = "operation"
 
 
 @dataclass(init=False, frozen=True)
@@ -241,6 +252,11 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSign:
+    op_name: str = "ElementWiseSign"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSquareRoot:
     op_name = "ElementWiseSquareRoot"
 
@@ -248,6 +264,11 @@ class OpElementWiseSquareRoot:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseXor:
+    op_name: str = "ElementWiseXor"
 
 
 @dataclass(init=False, frozen=True)

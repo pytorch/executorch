@@ -2,6 +2,8 @@ quantize_buffer:
   parameter_names_with_default_values:
     IN_DTYPE: float
     OUT_DTYPE: int32
+    SCALE_DTYPE: float
+    ZP_DTYPE: int32
     MODE: per_tensor
   generate_variant_forall:
     IN_DTYPE:
@@ -12,6 +14,12 @@ quantize_buffer:
       - VALUE: uint8
       - VALUE: int8
       - VALUE: int32
+    SCALE_DTYPE:
+      - VALUE: float
+    ZP_DTYPE:
+      - VALUE: int8
+      - VALUE: int32
+      - VALUE: float
   shader_variants:
     - NAME: quantize_per_tensor_buffer
       MODE: per_tensor

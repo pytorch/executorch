@@ -31,7 +31,8 @@ ShaderInfo::ShaderInfo(
     const utils::uvec3 tile_size,
     const bool requires_shader_int16_ext,
     const bool requires_16bit_storage_ext,
-    const bool requires_8bit_storage_ext)
+    const bool requires_8bit_storage_ext,
+    const bool requires_integer_dot_product_ext)
     : src_code{
           spirv_bin,
           size,
@@ -41,7 +42,8 @@ ShaderInfo::ShaderInfo(
       out_tile_size(tile_size),
       requires_shader_int16(requires_shader_int16_ext),
       requires_16bit_storage(requires_16bit_storage_ext),
-      requires_8bit_storage(requires_8bit_storage_ext) {
+      requires_8bit_storage(requires_8bit_storage_ext),
+      requires_integer_dot_product(requires_integer_dot_product_ext) {
 }
 
 bool operator==(const ShaderInfo& _1, const ShaderInfo& _2) {

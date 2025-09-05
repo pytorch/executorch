@@ -93,7 +93,7 @@ find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoreml_inmemoryfs.a' -exec cp -f "{}" "$
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoremldelegate.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libcoremldelegate.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libportable_ops_lib.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libportable_ops_lib.a"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libportable_kernels.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH/libportable_kernels.a"  \;
-cp -f "$CMAKE_BUILD_DIR_PATH/third-party/flatcc_external_project/lib/libflatccrt.a" "$LIBRARIES_DIR_PATH/libflatccrt.a"
+cp -f "$CMAKE_BUILD_DIR_PATH/third-party/flatcc_ep/lib/libflatccrt.a" "$LIBRARIES_DIR_PATH/libflatccrt.a"
 
 # Build the runner
 echo "ExecuTorch: Building runner"

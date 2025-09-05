@@ -41,7 +41,7 @@ class TestAutoencoderKL(unittest.TestCase):
 
         return auto_encoder_model, auto_encoder_model_inputs
 
-    def test_AutoencoderKL_tosa_MI(self):
+    def test_AutoencoderKL_tosa_FP(self):
         auto_encoder_model, auto_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():
             (

@@ -10,27 +10,18 @@ from typing import Callable, cast, Dict, Iterator, Set
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.transforms.utils import create_constant_placeholder
+
 from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
 from executorch.exir.pass_base import ExportPass, PassResult
+from torch.export.graph_signature import InputKind
 from torch.fx import GraphModule
 from torch.fx.node import Node
-from torch.library import impl, Library
-
-lib = Library("tosa", "DEF")
-lib.define("_table(Tensor self) -> Tensor")
-
-
-@impl(lib, "_table")
-def _table_impl(*args, **kwargs):  # pyre-ignore
-    in_dtype = args[0].dtype
-    if in_dtype == torch.int8:
-        return args[0]
-    return args[0].to(dtype=torch.int32)
 
 
 class TableOps:
@@ -43,6 +34,7 @@ class TableOps:
         exir_ops.edge.aten.ceil.default: torch.ceil,
         exir_ops.edge.aten.erf.default: torch.erf,
         exir_ops.edge.aten.exp.default: torch.exp,
+        exir_ops.edge.aten.expm1.default: torch.expm1,
         exir_ops.edge.aten.floor.default: torch.floor,
         exir_ops.edge.aten.log.default: torch.log,
         exir_ops.edge.aten.reciprocal.default: torch.reciprocal,
@@ -59,12 +51,15 @@ class TableOps:
         exir_ops.edge.aten.acosh.default: torch.acosh,
         exir_ops.edge.aten.asin.default: torch.asin,
         exir_ops.edge.aten.asinh.default: torch.asinh,
+        exir_ops.edge.aten.cosh.default: torch.cosh,
+        exir_ops.edge.aten.acos.default: torch.acos,
     }
 
     # Targets that must be treated explicitly
     special_table_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.pow.Tensor_Scalar,
         exir_ops.edge.aten.gelu.default,
+        exir_ops.edge.aten.elu.default,
     }
 
     def __init__(self, exported_program: ExportedProgram):
@@ -97,6 +92,11 @@ class TableOps:
                     )
                     return lambda x: torch.nn.functional.gelu(
                         x, approximate=approximate
+                    ).flatten()
+                case exir_ops.edge.aten.elu.default:
+                    input_alpha = cast(int, node.kwargs["alpha"])
+                    return lambda x: torch.nn.functional.elu(
+                        x, alpha=input_alpha
                     ).flatten()
                 case _:
                     # Op must be handled if it's inside self.special_ops
@@ -239,13 +239,8 @@ class InsertTableOpsPass(ExportPass):
                 # We only want to replace the node if it's quantized
                 continue
             # Create table node
-            with graph_module.graph.inserting_before(node):
-                table_node = create_node(
-                    graph=graph_module.graph,
-                    op_target=torch.ops.tosa._table.default,
-                    args=(node.args[0],),
-                )
-                output_node = table_node
+            insert_pos = list(node.graph.nodes)[0]
+            with graph_module.graph.inserting_before(insert_pos):
                 # Expect exactly one quantization parameter for input and output
                 if len(input_qparams) != 1:
                     raise ValueError(
@@ -265,27 +260,37 @@ class InsertTableOpsPass(ExportPass):
                     out_quantargs=output_qparams[0],
                 )
                 # Register buffer in self.exported_program.state_dict
-                # When the graph is retraced, the implementation _table is used and the suffix _default disappears from the node name
-                # Remove it here to make it possible to find in the node_visitor
-                self.register_buffer(
-                    buffer_name=table_node.name.replace("_default", ""), buffer=buffer
+                const_table_node = create_constant_placeholder(
+                    exp_program=self.exported_program,
+                    graph=node.graph,
+                    kind=InputKind.BUFFER,
+                    name=node.name + "_table_constant",
+                    data=buffer,
+                    persistent_buffer=True,
                 )
+
+            # Create table node
+            with graph_module.graph.inserting_before(node):
+                table_op_node = create_node(
+                    graph=graph_module.graph,
+                    op_target=exir_ops.backend.tosa.TABLE.default,
+                    args=(node.args[0], const_table_node),
+                )
+                output_node = table_op_node
 
                 if lshift != 0:
                     scale = 2.0**lshift
                     rescale_node = create_node(
                         graph=graph_module.graph,
-                        op_target=torch.ops.tosa._rescale.default,
-                        args=(table_node, output_qparams[0].dtype, scale, 0, 0),
+                        op_target=exir_ops.backend.tosa.RESCALE.default,
+                        args=(table_op_node, output_qparams[0].dtype, scale, 0, 0),
                     )
                     output_node = rescale_node
 
                 node.replace_all_uses_with(output_node)
-
             graph_module.graph.erase_node(node)
-
-            output_node.meta["input_qparams"] = input_qparams
-            output_node.meta["output_qparams"] = output_qparams
+            table_op_node.meta["input_qparams"] = input_qparams
+            table_op_node.meta["output_qparams"] = output_qparams
             modified = True
 
         if modified:

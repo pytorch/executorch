@@ -7,8 +7,8 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.quant_utils as tqutils
+import executorch.backends.arm.tosa.utils as tutils
 import torch
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
@@ -24,8 +24,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -93,7 +93,9 @@ class MulVisitor_INT(NodeVisitor):
 
         # Do the INT32 Mul
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MUL,
             [input_A_rescaled.name, input_B_rescaled.name, f"{node.name}_shift"],
             [mul_output.name],
@@ -135,7 +137,9 @@ class MulVisitor_FP(MulVisitor_INT):
         input1, input2 = inputs
 
         tosa_graph.addConst([1], ts.DType.INT8, 0, name=f"{node.name}_shift")
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MUL,
             [input1.name, input2.name, f"{node.name}_shift"],
             [output.name],

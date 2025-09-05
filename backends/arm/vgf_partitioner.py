@@ -10,7 +10,7 @@ from typing import final, List, Optional, Sequence
 from executorch.backends.arm.arm_backend import (
     is_vgf,
 )  # usort: skip
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf_backend import VgfBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import DelegationSpec

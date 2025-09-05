@@ -396,11 +396,10 @@ Error HtpDevice::AfterCreateDevice() {
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
-
     // Set vector of PowerConfigs and map it to a vector of pointers.
     perf_power_configs_ = SetVotePowerConfig(
         powerconfig_client_id_,
-        htp_options_->performance_mode(),
+        get_option(htp_options_->performance_mode()),
         PerformanceModeVoteType::kUpVote);
     perf_power_configs_ptr_ = ObtainNullTermPtrVector(perf_power_configs_);
 
@@ -416,7 +415,7 @@ Error HtpDevice::AfterCreateDevice() {
 
     // Set Rpc polling mode
     rpc_power_configs_ =
-        SetRpcPollingPowerConfig(htp_options_->performance_mode());
+        SetRpcPollingPowerConfig(get_option(htp_options_->performance_mode()));
     rpc_power_configs_ptr_ = ObtainNullTermPtrVector(rpc_power_configs_);
 
     htp_perf_infra_->setPowerConfig(

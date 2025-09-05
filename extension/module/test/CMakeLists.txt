@@ -23,9 +23,8 @@ add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
-  COMMAND
-    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAdd"
-    --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+  COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
@@ -60,8 +59,4 @@ et_cxx_test(
 add_dependencies(extension_module_test generated_module_test_files)
 set_property(TEST extension_module_test PROPERTY ENVIRONMENT ${test_env})
 
-set_property(
-  TEST extension_module_test
-  PROPERTY ENVIRONMENT
-           "${test_env}"
-)
+set_property(TEST extension_module_test PROPERTY ENVIRONMENT "${test_env}")

@@ -25,7 +25,7 @@ if(CMAKE_TOOLCHAIN_IOS
   # duplicated registration when using shared lib
   add_library(extension_module STATIC ${_extension_module__srcs})
 else()
-  add_library(extension_module SHARED ${_extension_module__srcs})
+  add_library(extension_module ${_extension_module__srcs})
 endif()
 target_link_libraries(
   extension_module PRIVATE executorch_core extension_data_loader

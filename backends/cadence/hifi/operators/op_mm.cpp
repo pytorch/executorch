@@ -79,6 +79,15 @@ Tensor& mm_out(
         (WORD32* __restrict__)kernels::allocate_temp_memory(
             ctx, (n * p) * sizeof(WORD32));
 
+    // Allocate zero-initialized bias for matmul function (it doesn't accept
+    // NULL)
+    FLOAT32* __restrict__ p_bias_zero =
+        (FLOAT32* __restrict__)kernels::allocate_temp_memory(
+            ctx, m * sizeof(FLOAT32));
+
+    // Initialize bias to zero since mm operation has no bias
+    memset(p_bias_zero, 0, m * sizeof(FLOAT32));
+
     WORD32 p_inp_shape[2];
     p_inp_shape[0] = n;
     p_inp_shape[1] = p;
@@ -109,11 +118,13 @@ Tensor& mm_out(
 
     const FLOAT32* __restrict__ p_vec = (const FLOAT32* __restrict__)p_o;
 
+    // mm will always be converted to addmm and to linear, and move transpose to
+    // graph
     WORD32 val = xa_nn_matmul_f32xf32_f32(
         p_out,
         p_mat1,
         p_vec,
-        NULL,
+        p_bias_zero,
         rows,
         cols1,
         row_stride1,
@@ -121,7 +132,6 @@ Tensor& mm_out(
         vec_offset,
         out_offset,
         out_stride);
-
     return out;
   }
 

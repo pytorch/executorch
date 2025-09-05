@@ -17,6 +17,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.unsqueeze.default"
@@ -80,3 +81,26 @@ def test_unsqueeze_u85_INT(test_tensor: torch.Tensor):
         run_on_fvp=True,
     )
     pipeline.run()
+
+
+@common.parametrize("test_tensor", Unsqueeze.test_parameters)
+@common.SkipIfNoModelConverter
+def test_unsqueeze_vgf_FP(test_tensor: torch.Tensor):
+    for i in range(-test_tensor[0].dim() - 1, test_tensor[0].dim() + 1):
+        pipeline = VgfPipeline[input_t1](
+            Unsqueeze(), (*test_tensor, i), aten_op, tosa_version="TOSA-1.0+FP"
+        )
+        pipeline.run()
+
+
+@common.parametrize("test_tensor", Unsqueeze.test_parameters)
+@common.SkipIfNoModelConverter
+def test_unsqueeze_vgf_INT(test_tensor: torch.Tensor):
+    for i in range(-test_tensor[0].dim() - 1, test_tensor[0].dim() + 1):
+        pipeline = VgfPipeline[input_t1](
+            Unsqueeze(),
+            (*test_tensor, i),
+            aten_op,
+            tosa_version="TOSA-1.0+INT",
+        )
+        pipeline.run()

@@ -66,6 +66,7 @@ class LoweredBackendModule(torch.nn.Module):
     _named_data_store_output: Optional[
         NamedDataStoreOutput
     ]  # Named Data serialized by the backend
+    meta: Optional[Dict[str, Any]]  # Metadata for the lowered module
 
     def __init__(
         self,
@@ -81,6 +82,7 @@ class LoweredBackendModule(torch.nn.Module):
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
         self._named_data_store_output = named_data_store_output
+        self.meta = None
 
     # pyre-ignore
     def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
@@ -109,7 +111,6 @@ class LoweredBackendModule(torch.nn.Module):
             compile_specs=copy.deepcopy(self._compile_specs, memo),
             named_data_store_output=self._named_data_store_output,
         )
-        # pyre-fixme[16]: `LoweredBackendModule` has no attribute `meta`.
         res.meta = copy.copy(getattr(self, "meta", {}))
         return res
 

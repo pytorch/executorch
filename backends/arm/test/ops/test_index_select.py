@@ -12,6 +12,7 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
@@ -116,6 +117,20 @@ def test_index_select_tosa_INT_rand(test_data: input_params):
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", inputs=test_input, atol=0.9, rtol=0.2, qtol=1
+    )
+    pipeline.run()
+
+
+@pytest.mark.parametrize("test_data", list(test_data.values())[-1:])
+def test_index_select_u55_INT_not_delegated(test_data: input_params):
+    op, test_input = test_data
+
+    pipeline = OpNotSupportedPipeline[input_params](
+        op,
+        test_input,
+        {op.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 

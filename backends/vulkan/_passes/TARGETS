@@ -119,6 +119,22 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "fuse_patterns",
+    srcs = ["fuse_patterns.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/patterns:vulkan_patterns",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+    typing = True,
+)
+
+runtime.python_library(
     name = "vulkan_passes",
     srcs = [
         "__init__.py",
@@ -128,6 +144,7 @@ runtime.python_library(
         "//executorch/examples/...",
     ],
     deps = [
+        ":fuse_patterns",
         ":fuse_quantized_ops",
         ":insert_prepack_nodes",
         ":int4_weight_only_quantizer",

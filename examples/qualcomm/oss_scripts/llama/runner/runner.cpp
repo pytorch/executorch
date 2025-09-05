@@ -9,6 +9,7 @@
 // A llama 3.2 runner that includes preprocessing and post processing
 // logic. The module takes in a string as input and emits a string as output.
 
+#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/client_mem.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/lhd_token_generator.h>
@@ -21,7 +22,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
-
 #include <algorithm>
 #include <fstream>
 
@@ -59,7 +59,7 @@ void print_performance_report(
     outfile << num_tok;
     outfile.close();
   } else {
-    ET_CHECK_MSG(false, "Error saving the inference speed file");
+    ET_LOG(Error, "Error saving the inference speed file");
   }
 }
 
@@ -84,14 +84,9 @@ void save_logits(
 
 } // namespace
 
-std::unique_ptr<::tokenizers::Tokenizer> load_llama_tokenizer(
-    const std::string& tokenizer_path,
-    Version version) {
-  auto special_tokens = get_special_tokens(version);
-  return llm::load_tokenizer(tokenizer_path, std::move(special_tokens));
-}
-
-Runner::Runner(
+template <typename T>
+Runner<T>::Runner(
+    std::unique_ptr<executorch::extension::Module> module,
     const std::string& decoder_model_version,
     const std::string& model_path,
     const std::string& tokenizer_path,
@@ -104,7 +99,8 @@ Runner::Runner(
     const int window,
     const int gcap,
     std::unique_ptr<tokenizers::Tokenizer> tokenizer)
-    : ngram_(ngram),
+    : module_(std::move(module)),
+      ngram_(ngram),
       window_(window),
       gcap_(gcap),
       tokenizer_path_(tokenizer_path),
@@ -113,8 +109,6 @@ Runner::Runner(
       temperature_(temperature),
       eval_mode_(static_cast<EvalMode>(eval_mode)),
       tokenizer_(std::move(tokenizer)) {
-  module_ = std::make_unique<Module>(
-      model_path, Module::LoadMode::MmapUseMlockIgnoreErrors);
   stats_.reset();
   if (kv_updater == "SmartMask") {
     kv_updater_ = KVManagerMode::SMART_MASK;
@@ -130,6 +124,12 @@ Runner::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama3;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "qwen3") {
+    decoder_model_version_ = DecoderModelVersion::kQwen3;
+  } else if (decoder_model_version == "phi_4_mini") {
+    decoder_model_version_ = DecoderModelVersion::kPhi4;
+  } else if (decoder_model_version == "smollm2_135m") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -140,12 +140,14 @@ Runner::Runner(
   ET_LOG(Info, "kv updater=%s", kv_updater.c_str());
 }
 
-bool Runner::is_loaded() const {
+template <typename T>
+bool Runner<T>::is_loaded() const {
   return module_->is_loaded() && tokenizer_ && decoder_runner_ &&
       prompt_processor_ && token_generator_ && kv_manager_ && buffer_manager_;
 }
 
-Error Runner::load() {
+template <typename T>
+Error Runner<T>::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -169,19 +171,29 @@ Error Runner::load() {
       ET_CHECK_MSG(false, "Unsupported llama evaluation mode");
       break;
   }
-
-  tokenizer_ = load_llama_tokenizer(tokenizer_path_, Version::Default);
-  if (tokenizer_ == nullptr) {
-    ET_LOG(Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
-    return Error::Internal;
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>();
+  if (tokenizer_ != nullptr) {
+    eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+    eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
+    eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
+  } else {
+    tokenizer_ =
+        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
+    if (tokenizer_ == nullptr) {
+      ET_LOG(
+          Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
+      return Error::Internal;
+    }
+    eos_ids->insert(tokenizer_->eos_tok());
   }
-
-  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
-      std::unordered_set<uint64_t>{tokenizer_->eos_tok()});
-
   if (decoder_model_version_ == DecoderModelVersion::kLlama3) {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
+    eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kQwen3) {
+    eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   }
+
   // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
@@ -199,6 +211,7 @@ Error Runner::load() {
   // retrieve any method meta, can be either prefill or kv
   int64_t num_layers =
       ET_UNWRAP(module_->get("get_n_layers")).toScalar().to<int64_t>();
+
   ET_CHECK_MSG(num_layers != -1, "Could not retrieve num layers");
   // k_cache: [1, head_dim, seq_len]
   int64_t head_dim = method_meta->output_tensor_meta(1)->sizes()[1];
@@ -233,9 +246,9 @@ Error Runner::load() {
         std::min(token_generator_ar_len, prompt_processor_ar_len);
   max_ar_len = std::max(token_generator_ar_len, prompt_processor_ar_len);
 
-  kv_manager_ = std::make_unique<KVManager>(
+  kv_manager_ = std::make_unique<KVManager<T>>(
       kv_updater_,
-      KVManager::Metadata{
+      typename KVManager<T>::Metadata{
           context_len_,
           head_dim,
           max_ar_len,
@@ -243,11 +256,11 @@ Error Runner::load() {
           num_heads,
           num_layers});
 
-  prompt_processor_ = std::make_unique<PromptProcessor>(
+  prompt_processor_ = std::make_unique<PromptProcessor<T>>(
       decoder_runner_.get(),
       kv_manager_.get(),
       prompt_processor_method_name,
-      PromptProcessor::Metadata{
+      typename PromptProcessor<T>::Metadata{
           context_len_,
           num_heads,
           num_layers,
@@ -255,13 +268,13 @@ Error Runner::load() {
           vocab_size,
           use_int64_token});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    token_generator_ = std::make_unique<LhdTokenGenerator>(
+    token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        LhdTokenGenerator::Metadata{
+        typename LhdTokenGenerator<T>::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -273,13 +286,13 @@ Error Runner::load() {
             gcap_},
         &stats_);
   } else {
-    token_generator_ = std::make_unique<TokenGenerator>(
+    token_generator_ = std::make_unique<TokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
         kv_manager_.get(),
         token_generator_method_name,
         std::move(eos_ids),
-        TokenGenerator::Metadata{
+        typename TokenGenerator<T>::Metadata{
             context_len_,
             num_heads,
             num_layers,
@@ -308,14 +321,34 @@ Error Runner::load() {
   return Error::Ok;
 }
 
-Error Runner::generate(
+template <typename T>
+Error Runner<T>::generate(
+    const std::string& prompt,
+    const llm::GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
+}
+
+template <typename T>
+Error Runner<T>::generate_from_pos(
+    const std::string& prompt,
+    int64_t start_pos,
+    const llm::GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  // TODO: currently only support start_pos == 0
+  return generate_from_prompt_or_file(
+      prompt, false, config, token_callback, stats_callback);
+}
+
+template <typename T>
+Error Runner<T>::generate_from_prompt_or_file(
     const std::string& prompt,
     bool tokenized_prompt,
-    int32_t seq_len,
+    const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback,
-    bool echo,
-    bool warming) {
+    std::function<void(const Stats&)> stats_callback) {
   ET_CHECK_MSG(!prompt.empty(), "prompt cannot be null");
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
@@ -324,6 +357,7 @@ Error Runner::generate(
   }
   stats_.inference_start_ms = time_in_ms();
 
+  int32_t seq_len = config.seq_len;
   seq_len = (seq_len > 0 && seq_len <= context_len_) ? seq_len : context_len_;
   int32_t n_bos = (cur_pos_ == 0) ? 1 : 0;
 
@@ -362,7 +396,7 @@ Error Runner::generate(
       "sequence length exceeded - please increase the seq_len value");
 
   // Prompt Processor first
-  if (token_callback) {
+  if (token_callback && config.echo) {
     token_callback(prompt);
   }
   bool dump_logits = dump_logits_path_.empty() ? false : true;
@@ -414,7 +448,8 @@ Error Runner::generate(
   return Error::Ok;
 }
 
-Result<DecoderModelVersion> Runner::get_decoder_model_version() {
+template <typename T>
+Result<DecoderModelVersion> Runner<T>::get_decoder_model_version() {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -422,5 +457,9 @@ Result<DecoderModelVersion> Runner::get_decoder_model_version() {
   }
   return decoder_model_version_;
 }
+
+// Explicit instantiations
+template class Runner<uint16_t>;
+template class Runner<uint8_t>;
 
 } // namespace example

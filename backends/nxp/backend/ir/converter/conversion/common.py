@@ -70,29 +70,22 @@ def try_get_input(t_op: tflite_model.Operator, idx: int) -> tflite_model.Tensor 
     return tensor
 
 
-def extend_1d_pads_to_2d(onnx_1d_pads: MutableSequence):
-    """Extend the onnx 'pads' operator attribute that represents padding for a 1D kernel to 2D, by adding '0's."""
-    if onnx_1d_pads is not None:
-        onnx_1d_pads.insert(1, 0)
-        onnx_1d_pads.append(0)
+def extend_1d_padding_to_2d(tflite_1d_padding: MutableSequence):
+    """Extend the PyTorch 'padding' operator attribute that represents padding for a 1D kernel to 2D, by adding '0's."""
+    if tflite_1d_padding is not None:
+        tflite_1d_padding.append(0)
 
 
-def extend_1d_strides_to_2d(onnx_1d_strides: MutableSequence):
-    """Extend the onnx 'strides' operator attribute that represents strides for a 1D kernel to 2D, by adding '1'."""
-    if onnx_1d_strides is not None:
-        onnx_1d_strides.append(1)
+def extend_1d_stride_to_2d(tflite_1d_stride: MutableSequence):
+    """Extend the PyTorch 'stride' operator attribute that represents stride for a 1D kernel to 2D, by adding '1'."""
+    if tflite_1d_stride is not None:
+        tflite_1d_stride.append(1)
 
 
-def extend_1d_dilations_to_2d(onnx_1d_dilations: MutableSequence):
-    """Extend the onnx 'dilations' operator attribute that represents dilations for a 1D kernel to 2D, by adding '1'."""
-    if onnx_1d_dilations is not None:
-        onnx_1d_dilations.append(1)
-
-
-def extend_1d_kernel_shape_to_2d(onnx_1d_kernel_shape: MutableSequence):
-    """Extend the onnx 1D 'kernel_shape' operator attribute to 2D, by adding '1'."""
-    if onnx_1d_kernel_shape is not None:
-        onnx_1d_kernel_shape.append(1)
+def extend_1d_dilation_to_2d(tflite_1d_dilation: MutableSequence):
+    """Extend the PyTorch 'dilation' operator attribute that represents dilation for a 1D kernel to 2D, by adding '1'."""
+    if tflite_1d_dilation is not None:
+        tflite_1d_dilation.append(1)
 
 
 StridedOptions = (

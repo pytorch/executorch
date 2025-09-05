@@ -16,6 +16,8 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkMemoryLayout
+
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -123,6 +125,7 @@ def update_features(aten_op):
         operator.gt,
         operator.ge,
         operator.le,
+        operator.eq,
         # Guard and assert ops
         torch.ops.aten._assert_scalar.default,
         torch.ops.aten.sym_constrain_range_for_size.default,
@@ -373,13 +376,38 @@ def register_softmax_op():
 def register_reduce_op():
     def check_reduce_node(node: torch.fx.Node) -> bool:
         dim_list = node.args[1]
-        if isinstance(dim_list, list) and len(dim_list) != 1:
+        if isinstance(dim_list, list) and len(dim_list) > 2:
             return False
 
-        if len(node.args) > 2:
-            keepdim = node.args[2]
-            if isinstance(keepdim, bool) and not keepdim:
-                return False
+        if isinstance(dim_list, list) and len(dim_list) == 2:
+            # Try to get the memory layout for this node
+            try:
+                memory_layout = utils.get_node_memory_layout(node)
+
+                # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
+                if (
+                    memory_layout is not None
+                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
+                ):
+                    # For now only default layout is supported for 2D reduction.
+                    # Because we can't determine if the input is NCHW or NHWC here,
+                    # assume the reduction dimension is packed so we cannot support it.
+                    return False
+            except (AssertionError, KeyError, AttributeError):
+                # If we can't get memory layout information, we'll assume the dims aren't packed
+                pass
+
+        def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
+            for arg in node.args:
+                if isinstance(arg, bool):
+                    return arg
+
+            # Assume false by default
+            return False
+
+        keepdim = try_find_keepdim_arg(node)
+        if isinstance(keepdim, bool) and not keepdim:
+            return False
 
         return True
 
@@ -411,7 +439,19 @@ def register_2d_pool_op():
 )
 def register_convolution_op():
     return OpFeatures(
-        inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # transposed (non tensor)
+            utils.NO_STORAGE,  # output_padding (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # output_min (non tensor)
+            utils.NO_STORAGE,  # output_max (non tensor)
+        ],
         supports_resize=True,
         supports_prepacking=True,
     )
@@ -449,10 +489,7 @@ def register_rotary_emb_op():
 
 @update_features(
     [
-        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.view_copy.default,
     ]
 )
 def register_view_ops():
@@ -462,22 +499,35 @@ def register_view_ops():
     )
 
 
+@update_features(
+    [
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+)
+def register_view_ops_with_buffer_meta():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.expand_copy.default)
+def register_expand():
+    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
+
+
 # Fully featured transfer operators (i.e. operators that copy data from the input
 # tensor(s) to the output tensor(s)), which have memory layout agnostic implementations
 # for both texture and buffer storage types.
 @update_features(exir_ops.edge.aten.cat.default)
 def register_cat_op():
-    def check_cat_node(node: torch.fx.Node) -> bool:
-        inputs = node.args[0]
-        if isinstance(inputs, (list, tuple)) and len(inputs) <= 3:
-            return True
-
-        return False
-
     return OpFeatures(
         inputs_storage=utils.ANY_STORAGE,
         supports_resize=True,
-        are_node_inputs_supported_fn=check_cat_node,
     )
 
 
@@ -530,9 +580,6 @@ def register_ported_op():
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Shape Manipulation
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze_copy.default,
         # Tensor combination
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,

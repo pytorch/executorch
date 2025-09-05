@@ -90,6 +90,13 @@ class DecomposeLinearPass(ArmPass):
                     kwargs={},
                     from_node=node,
                 )
+                # Quantization parameters are inherited from original linear node, but
+                # output reshape should use the linear node's output qparams for both input
+                # and output.
+                if "input_qparams" in output.meta:
+                    output.meta["input_qparams"] = output.meta.get(
+                        "output_qparams", None
+                    )
 
             node.replace_all_uses_with(output)
             graph_module.graph.erase_node(node)

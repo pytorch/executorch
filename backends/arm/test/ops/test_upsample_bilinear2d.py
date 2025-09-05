@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.upsample_bilinear2d.vec"
@@ -303,5 +304,101 @@ def test_upsample_bilinear2d_vec_U85_INT_UpsamplingBilinear2d(
         use_to_edge_transform_and_lower=True,
     )
     if not compare_outputs:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vgf_FP_UpsamplingBilinear2d(test_data: torch.Tensor):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        UpsamplingBilinear2d(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vgf_FP_Upsample(test_data: torch.Tensor):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        Upsample(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vgf_FP_Interpolate(test_data: torch.Tensor):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        Interpolate(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vgf_INT_UpsamplingBilinear2d(test_data: torch.Tensor):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        UpsamplingBilinear2d(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vgf_INT_Upsample(test_data: torch.Tensor):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        Upsample(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    if not compare:
+        pipeline.pop_stage(-1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite_tosa)
+@common.SkipIfNoModelConverter
+def test_upsample_bilinear2d_vgf_INT_Interpolate(test_data: torch.Tensor):
+    data, size, scale_factor, compare = test_data
+    pipeline = VgfPipeline[input_t1](
+        Interpolate(size, scale_factor),
+        (data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    if not compare:
         pipeline.pop_stage(-1)
     pipeline.run()

@@ -2,6 +2,8 @@ dequantize_texture:
   parameter_names_with_default_values:
     IN_DTYPE: int32
     OUT_DTYPE: float
+    SCALE_DTYPE: float
+    ZP_DTYPE: int32
     MODE: per_tensor
   generate_variant_forall:
     IN_DTYPE:
@@ -12,6 +14,12 @@ dequantize_texture:
       - VALUE: half
       - VALUE: float
       - VALUE: double
+    SCALE_DTYPE:
+      - VALUE: float
+    ZP_DTYPE:
+      - VALUE: int8
+      - VALUE: int32
+      - VALUE: float
   shader_variants:
     - NAME: dequantize_per_tensor_texture3d
       MODE: per_tensor

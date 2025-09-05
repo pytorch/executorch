@@ -10,10 +10,14 @@
 
 #pragma once
 
+#include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/llm/runner/image_prefiller.h>
 #include <executorch/extension/tensor/tensor.h>
 
 namespace example {
+
+using executorch::extension::llm::kImageEncoderMethod;
+using executorch::extension::llm::kTextModelMethod;
 
 class ET_EXPERIMENTAL LlavaImagePrefiller {
  public:
@@ -95,9 +99,6 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
         module_->is_method_loaded(kTextModelMethod);
     return methods_loaded;
   }
-
-  inline static constexpr auto kImageEncoderMethod = "image_encoder";
-  inline static constexpr auto kTextModelMethod = "text_model";
 
  private:
   ::executorch::extension::Module* module_;

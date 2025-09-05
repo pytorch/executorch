@@ -490,3 +490,30 @@ TEST_F(OpSumOutTest, InfinityAndNANTest) {
     }));
   // clang-format on
 }
+
+TEST_F(OpSumOutTest, EmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor x = tf.make({2, 0, 3}, {});
+  optional<ScalarType> dtype = ScalarType::Float;
+  optional<ArrayRef<int64_t>> dim_list = ArrayRef<int64_t>{};
+  Tensor out = tf.ones({1, 1, 1});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/true, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.zeros({1, 1, 1}));
+
+  out = tf.ones({});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/false, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.zeros({}));
+
+  int64_t dims1[1] = {1};
+  dim_list = ArrayRef<int64_t>{dims1, 1};
+  out = tf.ones({2, 3});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/false, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.zeros({2, 3}));
+
+  int64_t dims2[1] = {2};
+  dim_list = ArrayRef<int64_t>{dims2, 1};
+  out = tf.make({2, 0, 1}, {});
+  op_sum_intlist_out(x, dim_list, /*keepdim=*/true, dtype, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 0, 1}, {}));
+}

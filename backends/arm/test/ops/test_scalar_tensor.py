@@ -11,6 +11,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 float_test_data_suite = {
@@ -99,3 +100,30 @@ def test_scalar_tensor_u85_INT(test_data):
         ScalarTensor.aten_op,
         run_on_fvp=True,
     ).run()
+
+
+@common.parametrize("test_data", float_test_data_suite)
+@common.SkipIfNoModelConverter
+def test_scalar_tensor_vgf_FP(test_data):
+    scalar, dtype, data = test_data()
+    pipeline = VgfPipeline(
+        ScalarTensor(scalar, dtype),
+        tuple(data),
+        ScalarTensor.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", int_test_data_suite)
+@common.SkipIfNoModelConverter
+def test_scalar_tensor_vgf_INT(test_data):
+    scalar, dtype, data = test_data()
+    pipeline = VgfPipeline(
+        ScalarTensor(scalar, dtype),
+        tuple(data),
+        ScalarTensor.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()

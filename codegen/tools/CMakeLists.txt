@@ -19,27 +19,16 @@ target_compile_definitions(
 
 # Include directories
 target_include_directories(
-  selective_build PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+  selective_build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../..
 )
 
 # Compile options
 target_compile_options(
-  selective_build PUBLIC
-  -Wno-deprecated-declarations
-  -fPIC
-  -frtti
-  -fexceptions
+  selective_build PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
 )
 
 # Link against required libraries
-target_link_libraries(
-  selective_build PRIVATE
-  executorch_core
-  program_schema
-)
+target_link_libraries(selective_build PRIVATE executorch_core program_schema)
 
 # Install the module
-install(TARGETS selective_build
-        LIBRARY DESTINATION executorch/codegen/tools
-)
+install(TARGETS selective_build LIBRARY DESTINATION executorch/codegen/tools)

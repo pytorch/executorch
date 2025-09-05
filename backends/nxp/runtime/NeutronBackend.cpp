@@ -330,7 +330,7 @@ class NeutronBackend final : public PyTorchBackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
     NeutronConfig* cfg = static_cast<NeutronConfig*>(input_handle);
 
     // Allocate place for input and output pointers.

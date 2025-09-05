@@ -18,7 +18,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def identity_operator_factory(identity_target: str):
@@ -45,8 +45,12 @@ def identity_operator_factory(identity_target: str):
             validate_same_dtype(self.target, [*inputs, output], ts)
 
             # Simply add an identityOp
-            tosa_graph.addOperator(
-                ts.TosaOp.Op().IDENTITY, [inputs[0].name], [output.name]
+            self._serialize_operator(
+                node,
+                tosa_graph,
+                ts.TosaOp.Op().IDENTITY,
+                [inputs[0].name],
+                [output.name],
             )
 
     register_node_visitor(IdentityOperatorVisitor)

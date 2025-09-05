@@ -44,6 +44,7 @@ def export(
     dynamic_shapes: Optional[Union[Any, Dict[str, Any]]] = None,
     constant_methods: Optional[Union[Dict[str, Callable]]] = None,
     artifact_dir: Optional[str] = None,
+    generate_etrecord: bool = False,
 ) -> "ExportSession":
     """
     Create and configure an ExportSession with the given parameters.
@@ -61,6 +62,7 @@ def export(
         dynamic_shapes: Optional dynamic shape specifications
         constant_methods: Optional dictionary of constant methods
         artifact_dir: Optional directory to store artifacts
+        generate_etrecord: Optional flag to generate an etrecord
 
     Returns:
         A configured ExportSession instance with the export process completed if requested
@@ -73,6 +75,7 @@ def export(
         dynamic_shapes=dynamic_shapes,
         constant_methods=constant_methods,
         artifact_dir=artifact_dir,
+        generate_etrecord=generate_etrecord,
     )
     session.export()
 
@@ -104,6 +107,7 @@ class ExportSession:
         dynamic_shapes: Optional[Union[Any, Dict[str, Any]]] = None,
         constant_methods: Optional[Union[Dict[str, Callable]]] = None,
         artifact_dir: Optional[str] = None,
+        generate_etrecord: Optional[bool] = False,
     ) -> None:
         """
         Initialize the ExportSession with model, inputs, and recipe.
@@ -118,6 +122,7 @@ class ExportSession:
             dynamic_shapes: Optional dynamic shape specifications
             constant_methods: Optional dictionary of constant methods
             artifact_dir: Optional directory to store artifacts
+            generate_etrecord: Optional flag to generate an etrecord
         """
         # Standardize model to dictionary format
         self._model = model if isinstance(model, dict) else {"forward": model}
@@ -165,6 +170,7 @@ class ExportSession:
             "export_recipe": self._export_recipe,
             "session_name": name,
             "artifact_dir": artifact_dir,
+            "generate_etrecord": generate_etrecord,
         }
 
         self._stage_to_artifacts: Dict[StageType, PipelineArtifact] = {}
@@ -446,10 +452,37 @@ class ExportSession:
         """
         Print delegation information for the exported program.
         """
-        delegation_info = self._run_context.get("delegation_info", None)
+        lowering_stage = list(
+            set(self._pipeline_stages)
+            & {StageType.TO_EDGE_TRANSFORM_AND_LOWER, StageType.TO_BACKEND}
+        )
+        if not lowering_stage:
+            RuntimeError(
+                "No delegation info available, atleast one of the lowering stages should be present"
+            )
+
+        stage_artifact = self._stage_to_artifacts.get(lowering_stage[0])
+        if stage_artifact is None:
+            RuntimeError("No delegation info available, run the lowering stage first")
+
+        # pyre-ignore
+        delegation_info = stage_artifact.get_context("delegation_info", None)
         if delegation_info:
-            logging.info(delegation_info.get_summary())
+            print(delegation_info.get_summary())
             df = delegation_info.get_operator_delegation_dataframe()
-            logging.info(tabulate(df, headers="keys", tablefmt="fancy_grid"))
+            print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
         else:
-            logging.info("No delegation info available")
+            print("No delegation info available")
+
+    # Use Any instead of ETRecord as return type to avoid static dependency on etrecord
+    def get_etrecord(self) -> Any:
+        """
+        Get the etrecord from the ExecuTorchProgramManager.
+
+        Returns:
+            The etrecord in the ExecuTorchProgramManager
+
+        Raises:
+            RuntimeError: If the ExecuTorchManager is unavailable, or etrecord is not available in the ExecuTorchProgramManager
+        """
+        return self.get_executorch_program_manager().get_etrecord()

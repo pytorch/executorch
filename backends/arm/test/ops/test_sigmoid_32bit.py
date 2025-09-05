@@ -12,7 +12,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineINT,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -57,7 +57,7 @@ def get_32bit_sigmoid_quantizer(u55_config=False):
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
         "1.0": TosaSpecification.create_from_string(
-            "TOSA-1.0+INT" + ("+u55" if u55_config else "")
+            "TOSA-1.0+INT+int16" + ("+u55" if u55_config else "")
         ),
     }
 
@@ -110,6 +110,7 @@ def test_sigmoid_tosa_INT(test_data):
         Sigmoid.aten_op,
         Sigmoid.exir_op,
         qtol=1,
+        tosa_extensions=["int16"],
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
     pipeline.run()
@@ -123,6 +124,7 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
         Sigmoid.aten_op,
         Sigmoid.exir_op,
         qtol=1,
+        tosa_extensions=["int16"],
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
     pipeline.run()
@@ -136,6 +138,7 @@ def test_sigmoid_u55_INT(test_data):
         {Sigmoid.exir_op: 1},
         quantize=True,
         u55_subset=True,
+        tosa_extensions=["int16"],
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer(True))
     pipeline.run()
@@ -150,6 +153,7 @@ def test_sigmoid_u55_INT_add_sigmoid(test_data):
         n_expected_delegates=1,
         quantize=True,
         u55_subset=True,
+        tosa_extensions=["int16"],
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer(True))
     pipeline.run()

@@ -15,6 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchaudio.models import Conformer
@@ -64,7 +65,7 @@ def test_conformer_tosa_INT():
     pipeline = TosaPipelineINT[input_t](
         TestConformer.conformer,
         TestConformer.model_example_inputs,
-        aten_op=TestConformer.aten_ops,
+        aten_op=[],  # RemoveGraphAssertsPass is added in transform_for_annotation_pipeline to remove the assert ops
         exir_op=[],
         use_to_edge_transform_and_lower=True,
     )
@@ -122,5 +123,42 @@ def test_conformer_u85_INT():
         ),
         rtol=1.0,
         atol=5.0,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_conformer_vgf_INT():
+    pipeline = VgfPipeline[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_op=[],  # RemoveGraphAssertsPass is added in transform_for_annotation_pipeline to remove the assert ops
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check_count.exir")
+
+    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs",
+    #     get_test_inputs(
+    #         TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
+    #     ),
+    #     rtol=1.0,
+    #     atol=3.0,
+    # )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_conformer_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_op=TestConformer.aten_ops,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

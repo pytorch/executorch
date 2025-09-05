@@ -22,7 +22,6 @@ from executorch.backends.test.suite.runner import run_test
 DTYPES: list[torch.dtype] = [
     torch.float16,
     torch.float32,
-    torch.float64,
 ]
 
 
@@ -42,18 +41,18 @@ def _create_test(
     dtype: torch.dtype,
     use_dynamic_shapes: bool,
 ):
+    dtype_name = str(dtype)[6:]  # strip "torch."
+    test_name = f"{test_func.__name__}_{flow.name}_{dtype_name}"
+    if use_dynamic_shapes:
+        test_name += "_dynamic_shape"
+
     def wrapped_test(self):
         params = {
             "dtype": dtype,
             "use_dynamic_shapes": use_dynamic_shapes,
         }
-        with TestContext(test_name, flow.name, params):
+        with TestContext(test_name, test_func.__name__, flow.name, params):
             test_func(self, flow, dtype, use_dynamic_shapes)
-
-    dtype_name = str(dtype)[6:]  # strip "torch."
-    test_name = f"{test_func.__name__}_{flow.name}_{dtype_name}"
-    if use_dynamic_shapes:
-        test_name += "_dynamic_shape"
 
     wrapped_test._name = test_func.__name__  # type: ignore
     wrapped_test._flow = flow  # type: ignore
@@ -118,6 +117,8 @@ def run_model_test(
         inputs,
         flow,
         context.test_name,
+        context.test_base_name,
+        0,  # subtest_index - currently unused for model tests
         context.params,
         dynamic_shapes=dynamic_shapes,
     )

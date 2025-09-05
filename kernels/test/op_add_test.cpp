@@ -591,6 +591,18 @@ TEST_F(OpAddOutKernelTest, BroadcastNDTest) {
   test_broadcast_last_dim<ScalarType::BFloat16>();
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastBToA) {
+  TensorFactory<ScalarType::Float> tf_a;
+  Tensor a = tf_a.make({1, 3}, /*data=*/{1, 2, 3});
+  Tensor b = tf_a.make({1, 1, 3}, /*data=*/{3.2, 1.3, 5.5});
+  // Destination for output of add.
+  Tensor out = tf_a.zeros({1, 1, 3});
+
+  // Check that it matches the expected output.
+  Tensor expected = tf_a.make({1, 1, 3}, /*data=*/{4.2, 3.3, 8.5});
+  EXPECT_TENSOR_CLOSE(op_add_out(a, b, 1.0, out), expected);
+}
+
 //
 // Death Tests
 //

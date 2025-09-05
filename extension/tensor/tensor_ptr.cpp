@@ -148,10 +148,10 @@ TensorPtr make_tensor_ptr(
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
   ET_CHECK_MSG(
-      data.size() >=
+      data.size() ==
           executorch::aten::compute_numel(sizes.data(), sizes.size()) *
               executorch::aten::elementSize(type),
-      "Data size is smaller than required by sizes and scalar type.");
+      "Data size does not match tensor size.");
   auto data_ptr = data.data();
   return make_tensor_ptr(
       std::move(sizes),

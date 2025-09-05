@@ -37,12 +37,16 @@ class ModelType(str, Enum):
     llama3_2 = "llama3_2"
     llama3_2_vision = "llama3_2_vision"
     static_llama = "static_llama"
-    qwen2_5 = "qwen2_5"
+    qwen2_5_0_5b = "qwen2_5_0_5b"
+    qwen2_5_1_5b = "qwen2_5_1_5b"
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
+    lfm2_350m = "lfm2_350m"
+    lfm2_700m = "lfm2_700m"
+    lfm2_1_2b = "lfm2_1_2b"
 
 
 class PreqMode(str, Enum):
@@ -211,6 +215,9 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
+        foundation_weights_file: configure the foundation weights of a model
+            to be placed in a separate file, external to the PTE. Pass the
+            intended file name here.
     """
 
     max_seq_length: int = 128
@@ -219,6 +226,7 @@ class ExportConfig:
     output_name: Optional[str] = None
     so_library: Optional[str] = None
     export_only: bool = False
+    foundation_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -311,7 +319,13 @@ class QuantizationConfig:
     """
 
     # Constants.
-    QMODE_OPTIONS: ClassVar[List[str]] = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    QMODE_OPTIONS: ClassVar[List[str]] = [
+        "int8",
+        "8da4w",
+        "8da4w-gptq",
+        "vulkan_4w",
+        "4w",
+    ]
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
         r"torchao:8da(\d+)w",
         r"torchao:fpa(\d+)w",
@@ -545,6 +559,8 @@ class LlmConfig:
             llm_config.export.so_library = args.so_library
         if hasattr(args, "export_only"):
             llm_config.export.export_only = args.export_only
+        if hasattr(args, "foundation_weights_file"):
+            llm_config.export.foundation_weights_file = args.foundation_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):

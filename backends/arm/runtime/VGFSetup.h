@@ -75,6 +75,7 @@ class VgfRepr {
    * with the EValues coming the backend execute call
    */
   vector<IO> IOs;
+  vector<VkDeviceMemory> intermediates;
 
   bool map_io(IO* io, void** handle) {
     VkResult result =
@@ -112,6 +113,7 @@ class VgfRepr {
   VkDescriptorSetLayout vk_layout;
   VkShaderModule vk_shader;
   // Note: the vector of tensor memory is stored in IOs above
+  vector<VkDescriptorSet> descriptor_sets;
 };
 
 } // namespace vgf

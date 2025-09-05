@@ -73,7 +73,7 @@ class OpSubOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_sub_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -208,7 +208,7 @@ class OpSubOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_sub_enumerate_b_types<ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }

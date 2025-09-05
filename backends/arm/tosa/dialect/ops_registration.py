@@ -8,7 +8,7 @@ from typing import Callable, Iterable, List, ParamSpec, TypeVar
 
 from executorch.backends.arm.tosa.dialect.lib import register_tosa_dialect_op
 
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
@@ -26,7 +26,7 @@ _tosa_registered_ops: dict[TosaSpecification, list[Callable]] = {
 _registered_tosa_ops_by_func: dict[Callable, Callable] = {}
 
 
-def register_tosa_op(
+def register_fake_tosa_op(
     op_schema: str, tosa_specs: Iterable[TosaSpecification]
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """

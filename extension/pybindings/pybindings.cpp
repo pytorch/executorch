@@ -23,6 +23,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/extension/module/bundled_module.h>
 #include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/data_loader.h>
@@ -81,6 +82,7 @@ using ::executorch::ET_RUNTIME_NAMESPACE::Program;
 using ::executorch::extension::BufferDataLoader;
 using ::executorch::extension::MallocMemoryAllocator;
 using ::executorch::extension::MmapDataLoader;
+using ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE::BundledModule;
 using ::executorch::runtime::ArrayRef;
 using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
@@ -358,7 +360,7 @@ class Module final {
 
     MallocMemoryAllocator runtime_allocator_;
 
-    MemoryAllocator temp_allocator_{MemoryAllocator(0, nullptr)};
+    MallocMemoryAllocator temp_allocator_{};
 
     std::vector<std::vector<uint8_t>> non_const_buffers_;
 
@@ -425,13 +427,54 @@ inline std::unique_ptr<Module> load_module_from_file(
       program_verification);
 }
 
+inline py::list get_outputs_as_py_list(
+    const std::vector<EValue>& outputs,
+    bool clone_outputs = true) {
+  const auto outputs_size = outputs.size();
+  py::list list(outputs_size);
+  for (size_t i = 0; i < outputs_size; ++i) {
+    auto& v = outputs[i];
+    if (Tag::None == v.tag) {
+      list[i] = py::none();
+    } else if (Tag::Int == v.tag) {
+      list[i] = py::cast(v.toInt());
+    } else if (Tag::Double == v.tag) {
+      list[i] = py::cast(v.toDouble());
+    } else if (Tag::Bool == v.tag) {
+      list[i] = py::cast(v.toBool());
+    } else if (Tag::String == v.tag) {
+      list[i] = py::cast(std::string(v.toString().data()));
+    } else if (Tag::Tensor == v.tag) {
+#ifdef USE_ATEN_LIB
+      // Clone so the outputs in python do not share a lifetime with the
+      // module object
+      if (clone_outputs) {
+        list[i] = py::cast(v.toTensor().clone());
+      } else {
+        list[i] = py::cast(v.toTensor());
+      }
+#else
+      if (clone_outputs) {
+        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
+      } else {
+        list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
+      }
+#endif
+    } else {
+      ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
+    }
+  }
+  return list;
+}
+
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
 
-struct PyBundledModule final {
+struct PyBundledModule : public BundledModule {
   explicit PyBundledModule(
       const py::bytes& buffer,
       uint32_t bundled_input_pool_size)
-      : bundled_program_ptr_(buffer),
+      : BundledModule(buffer.cast<std::string_view>().data()),
+        bundled_program_ptr_(buffer),
         program_ptr_(static_cast<const void*>(
             bundled_program_flatbuffer::GetBundledProgram(
                 get_bundled_program_ptr())
@@ -458,6 +501,33 @@ struct PyBundledModule final {
 
   size_t get_program_len() {
     return program_len_;
+  }
+
+  py::list verify_result_with_bundled_expected_output(
+      const std::string& method_name,
+      size_t testset_idx,
+      double rtol = 1e-5,
+      double atol = 1e-8) {
+    // Execute the method
+    auto result = BundledModule::execute(method_name, testset_idx);
+    if (!result.ok()) {
+      THROW_IF_ERROR(
+          result.error(),
+          "Method execution failed with status 0x%" PRIx32,
+          static_cast<uint32_t>(result.error()));
+    }
+
+    // Convert outputs to py::list
+    const auto& outputs = result.get();
+    py::list py_outputs = get_outputs_as_py_list(outputs);
+
+    Error status = BundledModule::verify_method_outputs(
+        method_name, testset_idx, rtol, atol);
+    THROW_IF_ERROR(
+        status,
+        "Result verification failed with status %" PRIu32,
+        static_cast<uint32_t>(status));
+    return py_outputs;
   }
 
  private:
@@ -584,6 +654,21 @@ struct PyMethodMeta final {
     const auto result = meta_.output_tensor_meta(index);
     THROW_INDEX_IF_ERROR(
         result.error(), "Cannot get output tensor meta at %zu", index);
+    if (module_) {
+      return std::make_unique<PyTensorInfo>(module_, result.get());
+    } else {
+      return std::make_unique<PyTensorInfo>(state_, result.get());
+    }
+  }
+
+  size_t num_attributes() const {
+    return meta_.num_attributes();
+  }
+
+  std::unique_ptr<PyTensorInfo> attribute_tensor_meta(size_t index) const {
+    const auto result = meta_.attribute_tensor_meta(index);
+    THROW_INDEX_IF_ERROR(
+        result.error(), "Cannot get attribute tensor meta at %zu", index);
     if (module_) {
       return std::make_unique<PyTensorInfo>(module_, result.get());
     } else {
@@ -853,43 +938,6 @@ struct PyModule final {
     }
   }
 
-  void load_bundled_input(
-      PyBundledModule& m,
-      const std::string method_name,
-      size_t testset_idx) {
-    const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
-        module_->get_method(method_name), bundled_program_ptr, testset_idx);
-    THROW_IF_ERROR(
-        status,
-        "load_bundled_input failed with status 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-  }
-
-  py::list verify_result_with_bundled_expected_output(
-      PyBundledModule& m,
-      const std::string method_name,
-      size_t testset_idx,
-      double rtol = 1e-5,
-      double atol = 1e-8) {
-    const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    auto& method = module_->get_method(method_name);
-    Error status = executorch::BUNDLED_PROGRAM_NAMESPACE::load_bundled_input(
-        method, bundled_program_ptr, testset_idx);
-    THROW_IF_ERROR(
-        status,
-        "load_bundled_input failed with status 0x%" PRIx32,
-        static_cast<uint32_t>(status));
-    py::list outputs = plan_execute(method_name);
-    status = executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
-        method, bundled_program_ptr, testset_idx, rtol, atol);
-    THROW_IF_ERROR(
-        status,
-        "Result verification failed with status %" PRIu32,
-        static_cast<uint32_t>(status));
-    return outputs;
-  }
-
   py::list plan_execute(
       const std::string method_name,
       bool clone_outputs = true) {
@@ -910,46 +958,6 @@ struct PyModule final {
         static_cast<uint32_t>(status));
     const auto outputs = module_->get_outputs(method_name);
     return get_outputs_as_py_list(outputs, clone_outputs);
-  }
-
-  py::list get_outputs_as_py_list(
-      const std::vector<EValue>& outputs,
-      bool clone_outputs = true) {
-    const auto outputs_size = outputs.size();
-    py::list list(outputs_size);
-    for (size_t i = 0; i < outputs_size; ++i) {
-      auto& v = outputs[i];
-      if (Tag::None == v.tag) {
-        list[i] = py::none();
-      } else if (Tag::Int == v.tag) {
-        list[i] = py::cast(v.toInt());
-      } else if (Tag::Double == v.tag) {
-        list[i] = py::cast(v.toDouble());
-      } else if (Tag::Bool == v.tag) {
-        list[i] = py::cast(v.toBool());
-      } else if (Tag::String == v.tag) {
-        list[i] = py::cast(std::string(v.toString().data()));
-      } else if (Tag::Tensor == v.tag) {
-#ifdef USE_ATEN_LIB
-        // Clone so the outputs in python do not share a lifetime with the
-        // module object
-        if (clone_outputs) {
-          list[i] = py::cast(v.toTensor().clone());
-        } else {
-          list[i] = py::cast(v.toTensor());
-        }
-#else
-        if (clone_outputs) {
-          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()).clone());
-        } else {
-          list[i] = py::cast(alias_attensor_to_etensor(v.toTensor()));
-        }
-#endif
-      } else {
-        ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
-      }
-    }
-    return list;
   }
 
   std::unique_ptr<PyMethodMeta> method_meta(const std::string method_name) {
@@ -1061,7 +1069,7 @@ class ProgramMemory {
 
   MallocMemoryAllocator runtime_allocator_;
 
-  MemoryAllocator temp_allocator_{MemoryAllocator(0, nullptr)};
+  MallocMemoryAllocator temp_allocator_{};
 
   std::vector<std::vector<uint8_t>> non_const_buffers_;
 
@@ -1583,16 +1591,6 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       call_guard);
 
   py::class_<PyModule>(m, "ExecuTorchModule")
-      .def("load_bundled_input", &PyModule::load_bundled_input, call_guard)
-      .def(
-          "verify_result_with_bundled_expected_output",
-          &PyModule::verify_result_with_bundled_expected_output,
-          py::arg("bundle"),
-          py::arg("method_name"),
-          py::arg("testset_idx"),
-          py::arg("rtol") = 1e-5,
-          py::arg("atol") = 1e-8,
-          call_guard)
       .def(
           "plan_execute",
           &PyModule::plan_execute,
@@ -1638,7 +1636,16 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("clone_outputs") = true,
           call_guard);
 
-  py::class_<PyBundledModule>(m, "BundledModule");
+  py::class_<PyBundledModule>(m, "BundledModule")
+      .def(
+          "verify_result_with_bundled_expected_output",
+          &PyBundledModule::verify_result_with_bundled_expected_output,
+          py::arg("method_name"),
+          py::arg("testset_idx"),
+          py::arg("rtol") = 1e-5,
+          py::arg("atol") = 1e-8,
+          call_guard);
+
   py::class_<PyTensorInfo>(m, "TensorInfo")
       .def("sizes", &PyTensorInfo::sizes, call_guard)
       .def("dtype", &PyTensorInfo::dtype, call_guard)
@@ -1649,6 +1656,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def("name", &PyMethodMeta::name, call_guard)
       .def("num_inputs", &PyMethodMeta::num_inputs, call_guard)
       .def("num_outputs", &PyMethodMeta::num_outputs, call_guard)
+      .def("num_attributes", &PyMethodMeta::num_attributes, call_guard)
       .def(
           "input_tensor_meta",
           &PyMethodMeta::input_tensor_meta,
@@ -1657,6 +1665,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def(
           "output_tensor_meta",
           &PyMethodMeta::output_tensor_meta,
+          py::arg("index"),
+          call_guard)
+      .def(
+          "attribute_tensor_meta",
+          &PyMethodMeta::attribute_tensor_meta,
           py::arg("index"),
           call_guard)
       .def("__repr__", &PyMethodMeta::repr, call_guard);

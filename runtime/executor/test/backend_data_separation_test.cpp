@@ -95,6 +95,21 @@ TEST_F(BackendDataSeparationTest, TestSeparation) {
       /*named_data_map=*/linear_data_map_.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
+  // Set a dummy input.
+  int32_t sizes[1] = {3};
+  uint8_t dim_order[1] = {0};
+  int32_t strides[1] = {1};
+  executorch::aten::TensorImpl impl(
+      executorch::aten::ScalarType::Float,
+      1,
+      sizes,
+      nullptr,
+      dim_order,
+      strides);
+  auto input_err = method->set_input(
+      executorch::runtime::EValue(executorch::aten::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
   // Can execute the method.
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);

@@ -111,6 +111,12 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
           shader.kernel_name, vkapi::VulkanExtension::INT8_STORAGE);
     }
   }
+  if (shader.requires_integer_dot_product) {
+    if (!adapter_p_->supports_int8_dot_product()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INTEGER_DOT_PRODUCT);
+    }
+  }
 }
 
 vkapi::DescriptorSet Context::get_descriptor_set(

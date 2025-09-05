@@ -8,6 +8,7 @@ from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 CUSTOM_EDGE_OPS = [
     "linspace.default",
     "eye.default",
+    "expm1.default",
     "vector_norm.default",
     "hardsigmoid.default",
     "hardswish.default",
@@ -18,10 +19,13 @@ CUSTOM_EDGE_OPS = [
     "bitwise_right_shift.Tensor",
     "bitwise_left_shift.Tensor",
     "native_group_norm.default",
+    "silu.default",
+    "sdpa.default",
     "unbind.int",
     "unflatten.int",
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
+    "alias_copy.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 

@@ -280,6 +280,7 @@ def test_mean_dim_tosa_INT(test_data):
         (test_data,),
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
+        custom_path="MEANDIM",
     )
     pipeline.run()
 

@@ -35,6 +35,9 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             **kwargs,
         )
         self.block_size = block_size
+        # TODO: expand this when QNN starts to support more configurations
+        self.bitwidth_of_scale = 4
+        self.num_steps = 2**self.bitwidth_of_scale
         self.calibrated = False
 
     def forward(self, input: torch.Tensor):

@@ -169,9 +169,35 @@ void add_choose_qparams_tensor_node(
   std::string kernel_name("choose_qparams_tensor");
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale_out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zero_point_out));
 
-  int quant_min_val = static_cast<int>(graph.get_int(quant_min));
-  int quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  // Handle optional quant_min and quant_max parameters independently
+  auto bounds = get_dtype_bounds(graph.dtype_of(zero_point_out));
+
+  int quant_min_val, quant_max_val;
+
+  // Handle quant_min
+  if (graph.val_is_none(quant_min)) {
+    quant_min_val = bounds.first;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_min),
+        "quant_min must be an integer, got type: ",
+        graph.get_val_type(quant_min));
+    quant_min_val = static_cast<int>(graph.get_int(quant_min));
+  }
+
+  // Handle quant_max
+  if (graph.val_is_none(quant_max)) {
+    quant_max_val = bounds.second;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_max),
+        "quant_max must be an integer, got type: ",
+        graph.get_val_type(quant_max));
+    quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  }
   float eps_val = static_cast<float>(graph.get_double(eps));
 
   vkapi::ParamsBindList param_ubos;
@@ -227,6 +253,8 @@ void add_choose_qparams_per_token_asymmetric_node(
   std::string kernel_name("choose_qparams_per_token_asymmetric");
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale_out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zero_point_out));
 
   // Calculate number of tokens (product of all dimensions except the last one)
   int64_t num_tokens = 1;
@@ -317,9 +345,26 @@ void add_choose_qparams_block_wise_node(
       num_blocks_vec[0] * num_blocks_vec[1],
       num_blocks_vec[0] * num_blocks_vec[1] * num_blocks_vec[2]};
 
-  int qmin = static_cast<int>(graph.get_int(quant_min));
-  int qmax = static_cast<int>(graph.get_int(quant_max));
-  float eps_val = static_cast<float>(graph.get_double(eps));
+  // Handle optional quant_min and quant_max parameters
+  int qmin, qmax;
+  if (graph.val_is_none(quant_min) || graph.val_is_none(quant_max)) {
+    // Use default values based on target_dtype (similar to
+    // _get_and_check_qmin_qmax) For now, assume int8 range as default - this
+    // should match the Python implementation
+    qmin = -128;
+    qmax = 127;
+  } else {
+    qmin = static_cast<int>(graph.get_int(quant_min));
+    qmax = static_cast<int>(graph.get_int(quant_max));
+  }
+
+  float eps_val;
+  if (graph.val_is_none(eps)) {
+    // Use default eps value (similar to Python implementation)
+    eps_val = 1.192092896e-07f; // torch.finfo(torch.float32).eps
+  } else {
+    eps_val = static_cast<float>(graph.get_double(eps));
+  }
 
   // Create push constants vector
   std::vector<PushConstantDataInfo> push_constants = {
@@ -334,6 +379,8 @@ void add_choose_qparams_block_wise_node(
   std::string kernel_name("choose_qparams_block_wise");
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale_out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zp_out));
 
   vkapi::ParamsBindList param_ubos;
 
@@ -408,9 +455,18 @@ void choose_qparams_tensor_impl(
   // Verify input is a floating point type
   VK_CHECK_COND(graph.dtype_of(input) == vkapi::kFloat);
 
-  // Verify output types
-  VK_CHECK_COND(graph.dtype_of(scale_out) == vkapi::kFloat);
-  VK_CHECK_COND(graph.dtype_of(zero_point_out) == vkapi::kInt);
+  // Get scale and zero point output dtypes
+  vkapi::ScalarType scale_out_dtype = graph.dtype_of(scale_out);
+  vkapi::ScalarType zero_point_out_dtype = graph.dtype_of(zero_point_out);
+
+  // Verify supported output types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_out_dtype == vkapi::kFloat);
+
+  // Verify supported output types for zero point (int32, int8, fp32)
+  VK_CHECK_COND(
+      zero_point_out_dtype == vkapi::kInt ||
+      zero_point_out_dtype == vkapi::kChar ||
+      zero_point_out_dtype == vkapi::kFloat);
 
   // Check that texture storage is width packed
   if (!graph.is_buffer_storage(input)) {
@@ -449,9 +505,18 @@ void choose_qparams_per_token_asymmetric_impl(
   // Verify input is a floating point type
   VK_CHECK_COND(graph.dtype_of(input) == vkapi::kFloat);
 
-  // Verify output types
-  VK_CHECK_COND(graph.dtype_of(scale_out) == vkapi::kFloat);
-  VK_CHECK_COND(graph.dtype_of(zero_point_out) == vkapi::kInt);
+  // Get scale and zero point output dtypes
+  vkapi::ScalarType scale_out_dtype = graph.dtype_of(scale_out);
+  vkapi::ScalarType zero_point_out_dtype = graph.dtype_of(zero_point_out);
+
+  // Verify supported output types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_out_dtype == vkapi::kFloat);
+
+  // Verify supported output types for zero point (int32, int8, fp32)
+  VK_CHECK_COND(
+      zero_point_out_dtype == vkapi::kInt ||
+      zero_point_out_dtype == vkapi::kChar ||
+      zero_point_out_dtype == vkapi::kFloat);
 
   // Check that texture storage is width packed
   if (!graph.is_buffer_storage(input)) {
@@ -499,9 +564,18 @@ void choose_qparams_affine_impl(
   // Verify input is a floating point type
   VK_CHECK_COND(graph.dtype_of(input) == vkapi::kFloat);
 
-  // Verify output types
-  VK_CHECK_COND(graph.dtype_of(scale_out) == vkapi::kFloat);
-  VK_CHECK_COND(graph.dtype_of(zero_point_out) == vkapi::kInt);
+  // Get scale and zero point dtypes from arguments
+  vkapi::ScalarType scale_out_dtype = graph.dtype_of(scale_out);
+  vkapi::ScalarType zero_point_out_dtype = graph.dtype_of(zero_point_out);
+
+  // Verify supported output types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_out_dtype == vkapi::kFloat);
+
+  // Verify supported output types for zero point (int32, int8, fp32)
+  VK_CHECK_COND(
+      zero_point_out_dtype == vkapi::kInt ||
+      zero_point_out_dtype == vkapi::kChar ||
+      zero_point_out_dtype == vkapi::kFloat);
 
   // Check that texture storage is width packed
   if (!graph.is_buffer_storage(input)) {
@@ -515,12 +589,14 @@ void choose_qparams_affine_impl(
   std::string mapping_type_str = graph.get_string(mapping_type);
   int mapping_type_val = 0; // Default to ASYMMETRIC
 
-  if (mapping_type_str == "ASYMMETRIC") {
-    mapping_type_val = 0;
+  if (mapping_type_str == "ASYMMETRIC" || mapping_type_str.empty()) {
+    mapping_type_val = 0; // ASYMMETRIC
   } else if (mapping_type_str == "SYMMETRIC") {
     mapping_type_val = 1;
   } else if (mapping_type_str == "SYMMETRIC_NO_CLIPPING_ERR") {
     mapping_type_val = 2;
+  } else {
+    VK_THROW("Unsupported mapping_type: ", mapping_type_str);
   }
 
   add_choose_qparams_block_wise_node(

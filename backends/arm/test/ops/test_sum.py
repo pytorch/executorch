@@ -13,6 +13,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.sum.dim_IntList"
@@ -59,6 +60,7 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
         aten_op,
         exir_op=[],
     )
+    pipeline.dump_artifact("export")
     pipeline.run()
 
 
@@ -84,6 +86,27 @@ def test_view_u85_INT_1_0(test_data: Tuple):
         aten_op,
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Sum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_sum_dim_intlist_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Sum(), test_data(), aten_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Sum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_sum_dim_intlist_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Sum(),
+        test_data(),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 

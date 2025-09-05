@@ -18,6 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.view.default"
@@ -81,22 +82,7 @@ def test_view_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-xfails = {
-    "rand_4d_neg": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_4d_small": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_4d": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_2d": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_3d": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_1": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_2": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_2_4_big": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_4_3": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_4_2": "MLETORCH-517: Multiple batches not supported",
-    "rand_4d_2_4_same": "MLETORCH-517: Multiple batches not supported",
-}
-
-
-@common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
+@common.parametrize("test_data", View.needs_transpose_tests)
 @common.XfailIfNoCorstone300
 def test_view_u55_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -109,7 +95,33 @@ def test_view_u55_INT(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.rank_product_too_large, xfails=xfails)
+@common.parametrize("test_data", View.needs_transpose_tests)
+@common.SkipIfNoModelConverter
+def test_view_vgf_FP(test_data: Tuple):
+    test_tensor, new_shape = test_data()
+    pipeline = VgfPipeline[input_t1](
+        View(new_shape),
+        (test_tensor,),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", View.needs_transpose_tests)
+@common.SkipIfNoModelConverter
+def test_view_vgf_INT(test_data: Tuple):
+    test_tensor, new_shape = test_data()
+    pipeline = VgfPipeline[input_t1](
+        View(new_shape),
+        (test_tensor,),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", View.rank_product_too_large)
 @common.XfailIfNoCorstone300
 def test_view_u55_INT_not_delegated(test_data: Tuple):
     test_tensor, new_shape = test_data()
@@ -124,7 +136,7 @@ def test_view_u55_INT_not_delegated(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", View.needs_transpose_tests, xfails=xfails)
+@common.parametrize("test_data", View.needs_transpose_tests)
 @common.XfailIfNoCorstone320
 def test_view_u85_INT(test_data: Tuple):
     test_tensor, new_shape = test_data()

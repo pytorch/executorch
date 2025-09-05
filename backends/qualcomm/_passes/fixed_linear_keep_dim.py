@@ -9,8 +9,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-
 
 class FixedLinearKeepDim(ExportPass):
     """
@@ -24,61 +22,58 @@ class FixedLinearKeepDim(ExportPass):
         super(FixedLinearKeepDim, self).__init__()
 
     def _fixed_keep_dim(self, graph_module: torch.fx.GraphModule):
-        partitions = get_source_partitions(
-            graph_module.graph, [torch.nn.Linear, torch.ops.aten.linear.default]
-        )
-        for _, src_partitions in partitions.items():
-            for src_partition in src_partitions:
-                linear_node = [
-                    n for n in src_partition.nodes if n.target == self.linear
-                ][0]
-                input_node = linear_node.args[0]
-                # Since QNN has no keep dims for linear op, we will need to add squeeze and unsqueeze around linear node
-                # TODO: Find a more general conditional statement.
-                linear_output = linear_node.meta["val"]
-                if linear_output.dim() >= 3:
-                    with graph_module.graph.inserting_after(input_node):
-                        input_users = list(input_node.users.keys())
-                        input_tensor = input_node.meta["val"]
-                        squeeze_dim = (-1, input_tensor.shape[-1])
-                        squeeze_node = graph_module.graph.create_node(
-                            "call_function",
-                            self.view_copy,
-                            (
-                                input_node,
-                                squeeze_dim,
-                            ),
-                        )
-                        # meta needs to be copied elementwisely for fake-tensor
-                        # to be updated correctly and not affect meta of input_node
-                        for k, v in input_node.meta.items():
-                            squeeze_node.meta[k] = v
-                        squeeze_node.meta["val"] = input_tensor.reshape(squeeze_dim)
-                        for user in input_users:
-                            if user == linear_node:
-                                user.replace_input_with(input_node, squeeze_node)
+        for node in graph_module.graph.nodes:
+            if node.target != self.linear:
+                continue
 
-                    with graph_module.graph.inserting_after(linear_node):
-                        output_users = list(linear_node.users.keys())
-                        unsqueeze_dim = linear_output.shape
-                        unsqueeze_node = graph_module.graph.create_node(
-                            "call_function",
-                            self.view_copy,
-                            (
-                                linear_node,
-                                unsqueeze_dim,
-                            ),
-                        )
-                        # meta needs to be copied elementwisely for fake-tensor
-                        # to be updated correctly and not affect meta of unsqueeze_node
-                        for k, v in linear_node.meta.items():
-                            unsqueeze_node.meta[k] = v
-                        # update linear node's shape
-                        linear_node.meta["val"] = linear_output.reshape(
-                            (squeeze_node.meta["val"].shape[0], linear_output.shape[-1])
-                        )
-                        for user in output_users:
-                            user.replace_input_with(linear_node, unsqueeze_node)
+            linear_node = node
+            input_node = linear_node.args[0]
+            # Since QNN has no keep dims for linear op, we will need to add squeeze and unsqueeze around linear node
+            # TODO: Find a more general conditional statement.
+            linear_output = linear_node.meta["val"]
+            if linear_output.dim() >= 3:
+                with graph_module.graph.inserting_after(input_node):
+                    input_users = list(input_node.users.keys())
+                    input_tensor = input_node.meta["val"]
+                    squeeze_dim = (-1, input_tensor.shape[-1])
+                    squeeze_node = graph_module.graph.create_node(
+                        "call_function",
+                        self.view_copy,
+                        (
+                            input_node,
+                            squeeze_dim,
+                        ),
+                    )
+                    # meta needs to be copied elementwisely for fake-tensor
+                    # to be updated correctly and not affect meta of input_node
+                    for k, v in input_node.meta.items():
+                        squeeze_node.meta[k] = v
+                    squeeze_node.meta["val"] = input_tensor.reshape(squeeze_dim)
+                    for user in input_users:
+                        if user == linear_node:
+                            user.replace_input_with(input_node, squeeze_node)
+
+                with graph_module.graph.inserting_after(linear_node):
+                    output_users = list(linear_node.users.keys())
+                    unsqueeze_dim = linear_output.shape
+                    unsqueeze_node = graph_module.graph.create_node(
+                        "call_function",
+                        self.view_copy,
+                        (
+                            linear_node,
+                            unsqueeze_dim,
+                        ),
+                    )
+                    # meta needs to be copied elementwisely for fake-tensor
+                    # to be updated correctly and not affect meta of unsqueeze_node
+                    for k, v in linear_node.meta.items():
+                        unsqueeze_node.meta[k] = v
+                    # update linear node's shape
+                    linear_node.meta["val"] = linear_output.reshape(
+                        (squeeze_node.meta["val"].shape[0], linear_output.shape[-1])
+                    )
+                    for user in output_users:
+                        user.replace_input_with(linear_node, unsqueeze_node)
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._fixed_keep_dim(graph_module)

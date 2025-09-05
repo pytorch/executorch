@@ -99,7 +99,7 @@ class BackendInterface {
   ET_NODISCARD virtual Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const = 0;
+      Span<EValue*> args) const = 0;
 
   /**
    * Responsible update the backend status, if any. The backend options are

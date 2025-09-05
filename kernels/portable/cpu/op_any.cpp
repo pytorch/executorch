@@ -30,10 +30,12 @@ Tensor& any_all_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "any.all_out";
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "any.all_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, op_name, CTYPE_OUT, [&] {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = static_cast<CTYPE_OUT>(false);
@@ -79,15 +81,17 @@ Tensor& any_dims_out(
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "any.dims_out";
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "any.dims_out";
 
   const bool in_not_empty = in.numel() > 0;
   std::optional<MapReduceOverDimListPlan> plan;
   if ((!dim_list.has_value() || !dim_list.value().empty()) && in_not_empty) {
     plan.emplace(in, dim_list);
   }
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, op_name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       if (dim_list.has_value() && dim_list.value().empty()) {
         const CTYPE_IN* in_data = in.const_data_ptr<CTYPE_IN>();
@@ -101,7 +105,7 @@ Tensor& any_dims_out(
                 in, dim_list, out, [&](const auto begin, const auto end) {
                   for (const auto out_ix : c10::irange(begin, end)) {
                     bool any = false;
-                    if (in_not_empty) {
+                    if (plan.has_value()) {
                       any = plan->execute<CTYPE_IN, bool>(
                           [](CTYPE_IN v) { return static_cast<bool>(v); },
                           [](bool outv, bool acc) { return acc || outv; },
@@ -144,10 +148,12 @@ Tensor& any_out(
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "any.out";
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "any.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, op_name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       const bool success = parallel_for_each_reduce_over_dim_output_index(
           in, dim, out, [&](const auto begin, const auto end) {

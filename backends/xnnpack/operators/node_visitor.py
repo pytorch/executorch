@@ -621,8 +621,12 @@ class NodeVisitor:
             ConstantDataOffset(offset=UINT64_MAX, size=size, named_key=named_key)
         )
 
-        external_tag = tensor.meta.get("delegate_constant_tag", None)
+        custom_meta = tensor.meta.get("custom", None)
+        external_tag = (
+            custom_meta.get("delegate_constant_tag", None) if custom_meta else None
+        )
         if external_tag is not None:
+            external_tag = custom_meta.get("delegate_constant_tag", None)
             logging.info(
                 f"Adding constant data with name {tensor.name}, key {named_key} and external_tag {external_tag} to named_data_store"
             )

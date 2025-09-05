@@ -15,10 +15,12 @@ runtime.python_library(
         "//executorch/backends/vulkan:op_registry",
         "//executorch/backends/vulkan:utils_lib",
         "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/vulkan/patterns:vulkan_patterns",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
+    typing = True,
 )

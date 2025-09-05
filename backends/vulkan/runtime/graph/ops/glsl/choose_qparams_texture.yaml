@@ -1,9 +1,17 @@
 choose_qparams_texture:
   parameter_names_with_default_values:
     IN_DTYPE: float
+    SCALE_OUT_DTYPE: float
+    ZP_OUT_DTYPE: int32
     MODE: per_tensor
   generate_variant_forall:
     IN_DTYPE:
+      - VALUE: float
+    SCALE_OUT_DTYPE:
+      - VALUE: float
+    ZP_OUT_DTYPE:
+      - VALUE: int32
+      - VALUE: int8
       - VALUE: float
   shader_variants:
     - NAME: choose_qparams_tensor_texture3d

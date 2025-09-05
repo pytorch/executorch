@@ -7,7 +7,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 
@@ -31,6 +31,11 @@ class PreprocessResult:
     # Named Data store contains all the named data that is stored in the PTE file,
     # but retrieveable by delegates via the NamedDataMap at runtime.
     data_store_output: Optional[NamedDataStoreOutput] = None
+
+    # Optional delegate-specific information that will be added to the
+    # lowered_module.meta field in the graph, but not directly serialized
+    # into the PTE file.
+    _delegate_info_meta: Optional[Any] = None
 
 
 """

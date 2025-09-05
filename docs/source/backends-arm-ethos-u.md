@@ -50,14 +50,14 @@ compile_spec = ArmCompileSpecBuilder().ethosu_compile_spec(
     ).build()
 
 # Post training quantization
-graph_module = torch.export.export_for_training(mobilenet_v2, example_inputs).module()
+graph_module = torch.export.export(mobilenet_v2, example_inputs).module()
 quantizer = EthosUQuantizer(compile_spec)
 operator_config = get_symmetric_quantization_config(is_per_channel=False)
 quantizer.set_global(operator_config)
 graph_module = prepare_pt2e(graph_module, quantizer)
 graph_module(*example_inputs)
 graph_module = convert_pt2e(graph_module)
-exported_program = torch.export.export_for_training(graph_module, example_inputs)
+exported_program = torch.export.export(graph_module, example_inputs)
 
 # Lower the exported program to the Ethos-U backend and save pte file.
 edge_program_manager = to_edge_transform_and_lower(
@@ -95,4 +95,4 @@ Finally, run the elf file on FVP using the script
 `executorch/backends/arm/scripts/run_fvp.sh --elf=executorch/mv2_arm_ethos_u55/cmake-out/arm_executor_runner --target=ethos-u55-128`.
 
 ## See Also
-- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)
+- [Arm Ethos-U Backend Tutorial](tutorial-arm.md)

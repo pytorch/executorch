@@ -19,19 +19,11 @@ constexpr size_t kShaderNameReserve = 64u;
 void add_storage_type_suffix(
     std::string& kernel_name,
     const utils::StorageType storage_type);
-void add_storage_type_suffix(
-    std::string& kernel_name,
-    const api::vTensor& tensor);
 
 void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype);
-void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor);
 
 void add_ndim_suffix(std::string& kernel_name, const size_t ndim);
-void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor);
 
 void add_packed_dim_suffix(std::string& kernel_name, const int32_t packed_dim);
-void add_packed_dim_suffix(
-    std::string& kernel_name,
-    const api::vTensor& tensor);
 
 } // namespace vkcompute
