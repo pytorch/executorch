@@ -7,11 +7,15 @@ from typing import cast
 
 import torch
 import torch.fx as fx
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import Tosa_0_80, TosaSpecification
+from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
+)
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -39,37 +43,56 @@ class AvgPool2dSupported(SupportedTOSAOperatorCheck):
     ]
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
-        if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
+        if not tosa_spec.is_U55_subset:
             return True
 
         # U55 case, Vela 4.2.0 (25.02 release)
-        shape = cast(torch.Tensor, node.all_input_nodes[0].meta["val"]).shape
+        input_arg = node.args[0]
+        if isinstance(input_arg, torch.fx.Node):
+            input_arg = get_first_fake_tensor(input_arg)
+        shape = input_arg.data.shape  # type: ignore[union-attr]
+
+        # Calculate padding used in the final TOSA operator
         kernel = cast(tuple[int, int], node.args[1])
         stride = cast(tuple[int, int], node.args[2])
-        if len(node.args) > 3:
-            padding = cast(tuple[int, int], node.args[3])
-            # Padding case
-            if not all(1 <= k <= 8 for k in kernel) and not all(
-                v == 0 for v in padding
-            ):
-                self.reporter.report_reject(
-                    node, f"Avgpool2d with padding needs kernel dims < 8, got {kernel}"
-                )
-                return False
+        padding = cast(tuple[int, int], node.args[3]) if len(node.args) > 3 else (0, 0)
+        ceil_mode = cast(bool, node.args[4]) if len(node.args) > 4 else False
+        count_include_pad = cast(bool, node.args[5]) if len(node.args) > 5 else True
+        divisor_override = cast(int, node.args[6]) if len(node.args) > 6 else None
+
+        # If count_include_pad is True or divior_override is given, padding is applied
+        # by concating zero-elements rather than setting it in the avg_pool op.
+        if count_include_pad or divisor_override is not None:
+            tosa_padding = (0, 0, 0, 0)
+        # Otherwise, calculate the padding as done in the node visitor
         else:
-            if not kernel_check(kernel):
-                self.reporter.report_reject(
-                    node,
-                    f"Avgpool2d needs kernel_y < 256, kernel_x*kernel_y<=65536, got {kernel}",
-                )
-                return False
+            post_pad_h = adjust_pooling_pad_if_needed(
+                shape[2], kernel[0], stride[0], padding[0], ceil_mode
+            )
+            post_pad_w = adjust_pooling_pad_if_needed(
+                shape[3], kernel[1], stride[1], padding[1], ceil_mode
+            )
+            tosa_padding = (padding[0], post_pad_h, padding[1], post_pad_w)
+
+        if not all(1 <= k <= 8 for k in kernel) and not all(
+            v == 0 for v in tosa_padding
+        ):
+            self.reporter.report_reject(
+                node, f"Avgpool2d with padding needs kernel dims < 8, got {kernel}"
+            )
+            return False
+
+        if not kernel_check(kernel):
+            self.reporter.report_reject(
+                node,
+                f"Avgpool2d needs kernel_y < 256, kernel_x*kernel_y<=65536, got {kernel}",
+            )
+            return False
 
         if not dim_check(shape):
             self.reporter.report_reject(
@@ -97,14 +120,12 @@ class MaxPool2dSupported(SupportedTOSAOperatorCheck):
     ]
 
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
     def is_node_tosa_supported(self, node: fx.Node, tosa_spec: TosaSpecification):
-        if not (isinstance(tosa_spec, Tosa_0_80) and tosa_spec.is_U55_subset):
+        if not tosa_spec.is_U55_subset:
             return True
 
         # U55 case, Vela 4.2.0 (25.02 release)

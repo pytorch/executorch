@@ -9,12 +9,12 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
-
 
 input_t = Tuple[torch.Tensor]
 
@@ -63,33 +63,36 @@ op_eq_scalar_rank3_randn = Equal(torch.randn(10, 5, 2), -0.1)
 op_eq_scalar_rank4_randn = Equal(torch.randn(3, 2, 2, 2), 0.3)
 
 test_data_tensor = {
-    "eq_tensor_rank1_ones": op_eq_tensor_rank1_ones,
-    "eq_tensor_rank2_rand": op_eq_tensor_rank2_rand,
-    "eq_tensor_rank3_randn": op_eq_tensor_rank3_randn,
-    "eq_tensor_rank4_randn": op_eq_tensor_rank4_randn,
+    "eq_tensor_rank1_ones": lambda: op_eq_tensor_rank1_ones,
+    "eq_tensor_rank2_rand": lambda: op_eq_tensor_rank2_rand,
+    "eq_tensor_rank3_randn": lambda: op_eq_tensor_rank3_randn,
+    "eq_tensor_rank4_randn": lambda: op_eq_tensor_rank4_randn,
 }
 
 test_data_scalar = {
-    "eq_scalar_rank1_ones": op_eq_scalar_rank1_ones,
-    "eq_scalar_rank2_rand": op_eq_scalar_rank2_rand,
-    "eq_scalar_rank3_randn": op_eq_scalar_rank3_randn,
-    "eq_scalar_rank4_randn": op_eq_scalar_rank4_randn,
+    "eq_scalar_rank1_ones": lambda: op_eq_scalar_rank1_ones,
+    "eq_scalar_rank2_rand": lambda: op_eq_scalar_rank2_rand,
+    "eq_scalar_rank3_randn": lambda: op_eq_scalar_rank3_randn,
+    "eq_scalar_rank4_randn": lambda: op_eq_scalar_rank4_randn,
 }
 
 
 @common.parametrize("test_module", test_data_tensor)
-def test_eq_tensor_tosa_MI(test_module):
-    pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
+def test_eq_scalar_tosa_FP_tensor(test_module):
+    pipeline = TosaPipelineFP[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
-def test_eq_scalar_tosa_MI(test_module):
-    pipeline = TosaPipelineMI[input_t](
-        test_module,
-        test_module.get_inputs(),
+def test_eq_scalar_tosa_FP(test_module):
+    pipeline = TosaPipelineFP[input_t](
+        test_module(),
+        test_module().get_inputs(),
         Equal.aten_op_Scalar,
         Equal.exir_op,
     )
@@ -97,44 +100,52 @@ def test_eq_scalar_tosa_MI(test_module):
 
 
 @common.parametrize("test_module", test_data_tensor)
-def test_eq_tensor_tosa_BI(test_module):
-    pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
+def test_eq_scalar_tosa_INT_tensor(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
-def test_eq_scalar_tosa_BI(test_module):
-    pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
+def test_eq_scalar_tosa_INT(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_tensor)
 @common.XfailIfNoCorstone300
-def test_eq_tensor_u55_BI(test_module):
+def test_eq_scalar_u55_INT_tensor(test_module):
     # EQUAL is not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        test_module(),
+        test_module().get_inputs(),
         {Equal.exir_op: 1},
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_module", test_data_scalar)
 @common.XfailIfNoCorstone300
-def test_eq_scalar_u55_BI(test_module):
+def test_eq_scalar_u55_INT(test_module):
     # EQUAL is not supported on U55.
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        test_module(),
+        test_module().get_inputs(),
         {Equal.exir_op: 1},
         n_expected_delegates=1,
+        quantize=True,
+        u55_subset=True,
     )
     pipeline.run()
 
@@ -148,10 +159,10 @@ def test_eq_scalar_u55_BI(test_module):
     strict=False,
 )
 @common.XfailIfNoCorstone320
-def test_eq_tensor_u85_BI(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+def test_eq_scalar_u85_INT_tensor(test_module):
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
         run_on_fvp=True,
@@ -168,12 +179,56 @@ def test_eq_tensor_u85_BI(test_module):
     strict=False,
 )
 @common.XfailIfNoCorstone320
-def test_eq_scalar_u85_BI(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module,
-        test_module.get_inputs(),
+def test_eq_scalar_u85_INT(test_module):
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
         Equal.aten_op_Tensor,
         Equal.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_eq_scalar_vgf_FP_tensor(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(), test_module().get_inputs(), Equal.aten_op_Tensor, Equal.exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_eq_scalar_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(), test_module().get_inputs(), Equal.aten_op_Scalar, Equal.exir_op
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_tensor)
+@common.SkipIfNoModelConverter
+def test_eq_scalar_vgf_INT_tensor(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_data_scalar)
+@common.SkipIfNoModelConverter
+def test_eq_scalar_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        Equal.aten_op_Tensor,
+        Equal.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

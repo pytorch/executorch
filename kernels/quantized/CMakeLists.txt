@@ -10,10 +10,6 @@
 # ~~~
 cmake_minimum_required(VERSION 3.19)
 
-option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
-       "Build the optimized ops library for AOT export usage" OFF
-)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -28,10 +24,6 @@ set(_common_compile_options -Wno-deprecated-declarations)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
-
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
 
 # Quantized ops kernel sources TODO(larryliu0820): use buck2 to gather the
 # sources
@@ -95,7 +87,10 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     # pybindings.
     if(TARGET portable_lib)
       add_library(quantized_pybind_kernels_lib ${_quantized_kernels__srcs})
-      target_link_libraries(quantized_pybind_kernels_lib PRIVATE portable_lib)
+      target_link_libraries(
+        quantized_pybind_kernels_lib PRIVATE portable_lib executorch_core
+                                             kernels_util_all_deps
+      )
       target_compile_options(
         quantized_pybind_kernels_lib PUBLIC ${_common_compile_options}
       )
@@ -142,17 +137,21 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
-target_link_libraries(quantized_kernels PRIVATE executorch_core)
+target_link_libraries(
+  quantized_kernels PRIVATE executorch_core kernels_util_all_deps
+)
 target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
 # quantized_ops_lib: Register quantized ops kernels into Executorch runtime
 gen_operators_lib(
-  LIB_NAME "quantized_ops_lib" KERNEL_LIBS quantized_kernels DEPS executorch_core
+  LIB_NAME "quantized_ops_lib" KERNEL_LIBS quantized_kernels DEPS
+  executorch_core
 )
 
 install(
   TARGETS quantized_kernels quantized_ops_lib
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   PUBLIC_HEADER DESTINATION include/executorch/kernels/quantized/
 )

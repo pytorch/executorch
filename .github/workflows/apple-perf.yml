@@ -6,12 +6,14 @@ on:
   pull_request:
     paths:
       - .github/workflows/apple-perf.yml
+      - .ci/scripts/gather_benchmark_configs.py
       - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
   push:
     branches:
       - main
     paths:
       - .github/workflows/apple-perf.yml
+      - .ci/scripts/gather_benchmark_configs.py
       - extension/benchmark/apple/Benchmark/default-ios-device-farm-appium-test-spec.yml.j2
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
@@ -20,12 +22,12 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: llama
+        default: Qwen/Qwen3-0.6B
       devices:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: apple_iphone_15
+        default: apple_iphone_15+public
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -36,12 +38,12 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: llama
+        default: Qwen/Qwen3-0.6B
       devices:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: apple_iphone_15
+        default: apple_iphone_15+public
       benchmark_configs:
         description: The list of configs used the benchmark
         required: false
@@ -70,8 +72,8 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'llama,mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8' || 'llama' }}
-          CRON_DEFAULT_DEVICES: apple_iphone_15
+          CRON_DEFAULT_MODELS: ${{ github.event_name == 'schedule' && 'mv3,mv2,ic4,ic3,resnet50,edsr,mobilebert,w2l,meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8,meta-llama/Llama-3.2-1B-Instruct-QLORA_INT4_EO8,Qwen/Qwen3-0.6B,HuggingFaceTB/SmolLM2-135M,meta-llama/Llama-3.2-1B,allenai/OLMo-1B-hf,google/gemma-3-1b-it' || 'Qwen/Qwen3-0.6B' }}
+          CRON_DEFAULT_DEVICES: apple_iphone_15+public
         run: |
           set -eux
 
@@ -188,11 +190,6 @@ jobs:
             backends/apple/coreml/scripts/install_requirements.sh
         fi
 
-        if [[ ${{ matrix.config }} == *"mps"* ]]; then
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            backends/apple/mps/install_requirements.sh
-        fi
-
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
 
@@ -212,7 +209,10 @@ jobs:
           HF_MODEL_REPO=${{ matrix.model }}
           OUT_ET_MODEL_NAME="$(echo "$HF_MODEL_REPO" | awk -F'/' '{print $2}' | sed 's/_/-/g' | tr '[:upper:]' '[:lower:]')_${{ matrix.config }}"
 
+          # Convert HF checkpoint to ET via etLLM path
           if [[ "$HF_MODEL_REPO" == meta-llama/* ]]; then
+            # The benchmark app replies on the _llm suffix to determine whether the model is a LLM or not
+            OUT_ET_MODEL_NAME=${OUT_ET_MODEL_NAME}_llm
             # Llama models on Hugging Face
             if [[ ${{ matrix.config }} == "llama3_spinquant" ]]; then
               # SpinQuant
@@ -223,23 +223,23 @@ jobs:
                   --files "tokenizer.model" "params.json" "consolidated.00.pth"
               )
               # Export using ExecuTorch's model definition
-              ${CONDA_RUN} python -m examples.models.llama.export_llama \
-                --model "llama3_2" \
-                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
-                --params "${DOWNLOADED_PATH}/params.json" \
-                --use_sdpa_with_kv_cache \
-                -X \
-                --xnnpack-extended-ops \
-                --preq_mode 8da4w_output_8da8w \
-                --preq_group_size 32 \
-                --max_seq_length 2048 \
-                --max_context_length 2048 \
-                --output_name "${OUT_ET_MODEL_NAME}.pte" \
-                -kv \
-                -d fp32 \
-                --preq_embedding_quantize 8,0 \
-                --use_spin_quant native \
-                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+              ${CONDA_RUN} python -m extension.llm.export.export_llm \
+                base.model_class="llama3_2" \
+                base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                base.params="${DOWNLOADED_PATH}/params.json" \
+                model.use_sdpa_with_kv_cache=true \
+                backend.xnnpack.enabled=true \
+                backend.xnnpack.extended_ops=true \
+                base.preq_mode="preq_8da4w_out_8da8w" \
+                base.preq_group_size=32 \
+                export.max_seq_length=2048 \
+                export.max_context_length=2048 \
+                export.output_name="${OUT_ET_MODEL_NAME}.pte" \
+                model.use_kv_cache=true \
+                model.dtype_override=fp32 \
+                base.preq_embedding_quantize=\'8,0\' \
+                quantization.use_spin_quant=native \
+                base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
             elif [[ ${{ matrix.config }} == "llama3_qlora" ]]; then
               # QAT + LoRA
@@ -250,66 +250,131 @@ jobs:
                   --files "tokenizer.model" "params.json" "consolidated.00.pth"
               )
               # Export using ExecuTorch's model definition
-              ${CONDA_RUN} python -m examples.models.llama.export_llama \
-                --model "llama3_2" \
-                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
-                --params "${DOWNLOADED_PATH}/params.json" \
-                -qat \
-                -lora 16 \
-                --preq_mode 8da4w_output_8da8w \
-                --preq_group_size 32 \
-                --preq_embedding_quantize 8,0 \
-                --use_sdpa_with_kv_cache \
-                -kv \
-                -X \
-                --xnnpack-extended-ops \
-                -d fp32 \
-                --max_seq_length 2048 \
-                --max_context_length 2048 \
-                --output_name "${OUT_ET_MODEL_NAME}.pte" \
-                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+              ${CONDA_RUN} python -m extension.llm.export.export_llm \
+                base.model_class="llama3_2" \
+                base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                base.params="${DOWNLOADED_PATH}/params.json" \
+                quantization.use_qat=true \
+                base.use_lora=16 \
+                base.preq_mode="preq_8da4w_out_8da8w" \
+                base.preq_group_size=32 \
+                base.preq_embedding_quantize=\'8,0\' \
+                model.use_sdpa_with_kv_cache=true \
+                model.use_kv_cache=true \
+                backend.xnnpack.enabled=true \
+                backend.xnnpack.extended_ops=true \
+                model.dtype_override=fp32 \
+                export.max_seq_length=2048 \
+                export.max_context_length=2048 \
+                export.output_name="${OUT_ET_MODEL_NAME}.pte" \
+                base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"'
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
             elif [[ ${{ matrix.config }} == "llama3_fb16" ]]; then
               # Original BF16 version, without any quantization
               DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
-              ${CONDA_RUN} python -m examples.models.llama.export_llama \
-                --model "llama3_2" \
-                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
-                --params "${DOWNLOADED_PATH}/params.json" \
-                -kv \
-                --use_sdpa_with_kv_cache \
-                -X \
-                -d bf16 \
-                --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-                --output_name="${OUT_ET_MODEL_NAME}.pte"
+              ${CONDA_RUN} python -m extension.llm.export.export_llm \
+                base.model_class="llama3_2" \
+                base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                base.params="${DOWNLOADED_PATH}/params.json" \
+                model.use_kv_cache=true \
+                model.use_sdpa_with_kv_cache=true \
+                backend.xnnpack.enabled=true \
+                model.dtype_override=bf16 \
+                base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
+                export.output_name="${OUT_ET_MODEL_NAME}.pte"
+              ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            elif [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+              DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
+              ${CONDA_RUN} python -m extension.llm.export.export_llm \
+                base.model_class=llama3_2 \
+                base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                base.params="${DOWNLOADED_PATH}/params.json" \
+                model.use_kv_cache=true \
+                model.use_sdpa_with_kv_cache=true \
+                model.dtype_override=fp32 \
+                backend.xnnpack.enabled=true \
+                backend.xnnpack.extended_ops=true \
+                quantization.qmode=8da4w \
+                quantization.group_size=32 \
+                quantization.embedding_quantize=\'8,0\' \
+                base.metadata='"{\"get_bos_id\":128000,\"get_eos_ids\":[128009,128001]}"' \
+                export.output_name="${OUT_ET_MODEL_NAME}.pte"
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
             elif [[ ${{ matrix.config }} == "llama3_coreml_ane" ]]; then
               # ANE
               DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model" "params.json" "consolidated.00.pth")
-              ${CONDA_RUN} python -m examples.models.llama.export_llama \
-                --checkpoint "${DOWNLOADED_PATH}/consolidated.00.pth" \
-                --params "${DOWNLOADED_PATH}/params.json" \
-                -E "4,32" \
-                -kv \
-                --disable_dynamic_shape \
-                --coreml \
-                --coreml-ios 18 \
-                --coreml-quantize c4w \
-                --coreml-compute-units cpu_and_ne \
-                --output_name="${OUT_ET_MODEL_NAME}.pte"
-              ls -lh "${OUT_ET_MODEL_NAME}.pte"
-            else
-              # By default, test with the Hugging Face model and the xnnpack recipe
-              DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "original" --files "tokenizer.model")
-              ${CONDA_RUN} python -m extension.export_util.export_hf_model -hfm="$HF_MODEL_REPO" -o "$OUT_ET_MODEL_NAME"
+              ${CONDA_RUN} python -m extension.llm.export.export_llm \
+                base.checkpoint="${DOWNLOADED_PATH}/consolidated.00.pth" \
+                base.params="${DOWNLOADED_PATH}/params.json" \
+                quantization.embedding_quantize=\'4,32\' \
+                model.use_kv_cache=true \
+                model.enable_dynamic_shape=false \
+                backend.coreml.enabled=true \
+                backend.coreml.ios=18 \
+                backend.coreml.quantize=c4w \
+                backend.coreml.compute_units=cpu_and_ne \
+                export.output_name="${OUT_ET_MODEL_NAME}.pte"
               ls -lh "${OUT_ET_MODEL_NAME}.pte"
             fi
-          else
-            echo "Unsupported model ${{ matrix.model }}"
-            exit 1
+          elif [[ "$HF_MODEL_REPO" == "Qwen/Qwen3-0.6B" ]]; then
+            OUT_ET_MODEL_NAME=${OUT_ET_MODEL_NAME}_llm
+            if [[ ${{ matrix.config }} == "et_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+                DOWNLOADED_PATH=$(bash .ci/scripts/download_hf_hub.sh --model_id "${HF_MODEL_REPO}" --subdir "." --files "tokenizer.json")
+                ${CONDA_RUN} python -m extension.llm.export.export_llm \
+                  base.model_class=qwen3_0_6b \
+                  base.params=examples/models/qwen3/config/0_6b_config.json \
+                  model.use_kv_cache=true \
+                  model.use_sdpa_with_kv_cache=true \
+                  model.dtype_override=fp32 \
+                  backend.xnnpack.enabled=true \
+                  backend.xnnpack.extended_ops=true \
+                  quantization.qmode=8da4w \
+                  quantization.group_size=32 \
+                  quantization.embedding_quantize=\'8,0\' \
+                  base.metadata='"{\"get_bos_id\":151644,\"get_eos_ids\":[151645]}"' \
+                  export.output_name="${OUT_ET_MODEL_NAME}.pte"
+                ls -lh "${OUT_ET_MODEL_NAME}.pte"
+            fi
           fi
 
-          zip -j model.zip "${OUT_ET_MODEL_NAME}.pte" "${DOWNLOADED_PATH}/tokenizer.model"
+          if [[ ${{ matrix.config }} == "hf_xnnpack_custom_spda_kv_cache_8da4w" ]]; then
+            DOWNLOADED_PATH=$(
+              bash .ci/scripts/download_hf_hub.sh \
+                --model_id "${HF_MODEL_REPO}" \
+                --files "tokenizer.json"
+            )
+            echo "tokenizer.json is downloaded to $DOWNLOADED_PATH"
+
+            # Install optimum-executorch
+            OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+            git clone https://github.com/huggingface/optimum-executorch
+            pushd optimum-executorch
+            # There is no release yet, for CI stability, always test from the same commit on main
+            git checkout $OPTIMUM_ET_COMMIT
+            ${CONDA_RUN} python install_dev.py --skip_override_torch
+            pip list
+
+            ARGS=(
+              "--model" "${HF_MODEL_REPO}"
+              "--task" "text-generation"
+              "--recipe" "xnnpack"
+              "--use_custom_sdpa"
+              "--use_custom_kv_cache"
+              "--qlinear" "8da4w"
+              "--qembedding" "8w"
+              "--output_dir" ".."
+            )
+
+            ${CONDA_RUN} optimum-cli export executorch "${ARGS[@]}"
+            popd
+
+            # The benchmark app replies on the _llm suffix to determine whether the model is a LLM or not
+            OUT_ET_MODEL_NAME=${OUT_ET_MODEL_NAME}_llm
+            mv model.pte ${OUT_ET_MODEL_NAME}.pte
+            ls -lh "${OUT_ET_MODEL_NAME}.pte"
+          fi
+
+          zip -j model.zip ${OUT_ET_MODEL_NAME}.pte ${DOWNLOADED_PATH}/tokenizer.*
           ls -lh model.zip
           mkdir -p "${ARTIFACTS_DIR_NAME}"
           mv model.zip "${ARTIFACTS_DIR_NAME}"
@@ -351,7 +416,7 @@ jobs:
       - set-parameters
     secrets: inherit
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -379,15 +444,10 @@ jobs:
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           backends/apple/coreml/scripts/install_requirements.sh
-
-        # Install MPS Backend Requirements
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
         echo "::endgroup::"
 
         # NB: Although exported models can be copied to this directory and bundled together with the

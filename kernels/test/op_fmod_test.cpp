@@ -45,3 +45,34 @@ TEST_F(OpFmodTest, SmokeTest) {
   op_fmod_tensor_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
+
+TEST_F(OpFmodTest, ScalarSmokeTest) {
+  TensorFactory<ScalarType::Float> tfFloat;
+  std::vector<float> a(18);
+  std::iota(a.begin(), a.end(), -8);
+  Tensor self = tfFloat.make({18}, a);
+  Scalar other = 3;
+  Tensor out = tfFloat.zeros({18});
+  Tensor out_expected = tfFloat.make(
+      {18},
+      {-2.,
+       -1.,
+       -0.,
+       -2.,
+       -1.,
+       -0.,
+       -2.,
+       -1.,
+       0.,
+       1.,
+       2.,
+       0.,
+       1.,
+       2.,
+       0.,
+       1.,
+       2.,
+       0.});
+  op_fmod_scalar_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}

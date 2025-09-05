@@ -1,141 +1,244 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+
+from typing import Tuple
 
 import torch
 
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
 
-test_data_t = tuple[torch.Tensor, int | list[int], int]
+exir_op = "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default"
+input_t1 = Tuple[torch.Tensor]  # Input x
 
 
-class TestSimpleSplit(unittest.TestCase):
-    class Split(torch.nn.Module):
+class Split(torch.nn.Module):
 
-        test_data: list[tuple[test_data_t]] = [
-            ((torch.rand(10), 2, 0),),
-            ((torch.rand(10, 10), 3, 1),),
-            ((torch.rand(10, 10), 4, -1),),
-            ((torch.rand(10, 15, 10), [2, 2, 11], 1),),
-            ((torch.rand(4, 4, 4, 4), 2, 0),),
-            ((torch.rand(4, 4, 4, 4), [1, 1, 1, 1], -2),),
-        ]
+    test_data = {
+        "split_1d_2_size_0_dim": lambda: (torch.rand(10), 2, 0),
+        "split_2d_3_size_1_dim": lambda: (torch.rand(10, 10), 3, 1),
+        "split_2d_2_size_4_dim": lambda: (torch.rand(10, 10), 4, -1),
+        "split_4d_2_size_2_dim": lambda: (torch.rand(4, 4, 4, 4), 2, 0),
+    }
 
-        def forward(
-            self, x: torch.Tensor, split_size_or_sections: int | list[int], dim: int
-        ):
-            return x.split(split_size=split_size_or_sections, dim=dim)
+    test_data_list = {
+        "split_3d_2_sizes_dim": lambda: (torch.rand(10, 15, 10), [2, 2, 11], 1),
+        "split_4d_2_sizes_dim_neg": lambda: (torch.rand(4, 4, 4, 4), [1, 1, 1, 1], -2),
+    }
 
-    class SplitWithSizes(torch.nn.Module):
-        def forward(self, x: torch.Tensor, split_sizes: list[int], dim: int):
-            return x.split_with_sizes(split_sizes=split_sizes, dim=dim)
-
-    class SplitSingleOut(torch.nn.Module):
-        def forward(
-            self, x: torch.Tensor, split_size_or_sections: int | list[int], dim: int
-        ):
-            return x.split(split_size=split_size_or_sections, dim=dim)[1]
-
-    class SplitTwoOut(torch.nn.Module):
-        def forward(
-            self, x: torch.Tensor, split_size_or_sections: int | list[int], dim: int
-        ):
-            return x.split(split_size=split_size_or_sections, dim=dim)[1:3]
-
-    def _test_split_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: test_data_t
+    def forward(
+        self, x: torch.Tensor, split_size_or_sections: int | list[int], dim: int
     ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge()
-            .check(
-                [
-                    "executorch_exir_dialects_edge__ops_aten_split_with_sizes_copy_default"
-                ]
-            )
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+        return x.split(split_size=split_size_or_sections, dim=dim)
 
-    def _test_split_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: test_data_t
+
+class SplitWithSizes(torch.nn.Module):
+    def forward(self, x: torch.Tensor, split_sizes: list[int], dim: int):
+        return x.split_with_sizes(split_sizes=split_sizes, dim=dim)
+
+
+class SplitSingleOut(torch.nn.Module):
+    def forward(
+        self, x: torch.Tensor, split_size_or_sections: int | list[int], dim: int
     ):
+        return x.split(split_size=split_size_or_sections, dim=dim)[1]
 
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
 
-    def _test_split_ethosu_BI_pipeline(
-        self, compile_spec: CompileSpec, module: torch.nn.Module, test_data: test_data_t
+class SplitTwoOut(torch.nn.Module):
+    def forward(
+        self, x: torch.Tensor, split_size_or_sections: int | list[int], dim: int
     ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
+        return x.split(split_size=split_size_or_sections, dim=dim)[1:3]
 
-    @parameterized.expand(Split.test_data)
-    def test_split_tosa_MI(self, test_data: test_data_t):
-        self._test_split_tosa_MI_pipeline(self.Split(), test_data)
 
-    @parameterized.expand([Split.test_data[3], Split.test_data[5]])
-    def test_split_with_sizes_tosa_MI(self, test_data: test_data_t):
-        assert isinstance(test_data[1], list)
-        self._test_split_tosa_MI_pipeline(self.SplitWithSizes(), test_data)
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+def test_split_with_sizes_tosa_FP(test_data: input_t1):
 
-    @parameterized.expand(Split.test_data)
-    def test_split_one_out_tosa_MI(self, test_data: test_data_t):
-        self._test_split_tosa_MI_pipeline(self.SplitSingleOut(), test_data)
+    pipeline = TosaPipelineFP[input_t1](
+        Split(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
 
-    @parameterized.expand(Split.test_data)
-    def test_split_two_out_tosa_MI(self, test_data: test_data_t):
-        self._test_split_tosa_MI_pipeline(self.SplitTwoOut(), test_data)
 
-    @parameterized.expand(Split.test_data)
-    def test_split_tosa_BI(self, test_data: test_data_t):
-        self._test_split_tosa_BI_pipeline(self.Split(), test_data)
+@common.parametrize("test_data", Split.test_data_list)
+def test_split_with_sizes_tosa_FP_2(test_data: input_t1):
 
-    @parameterized.expand(Split.test_data)
-    def test_split_u55_BI(self, test_data: test_data_t):
-        self._test_split_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Split(), test_data
-        )
+    pipeline = TosaPipelineFP[input_t1](
+        SplitWithSizes(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
 
-    @parameterized.expand(Split.test_data)
-    def test_split_u85_BI(self, test_data: test_data_t):
-        self._test_split_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Split(), test_data
-        )
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+def test_split_with_sizes_tosa_FP_one_out(test_data: input_t1):
+
+    pipeline = TosaPipelineFP[input_t1](
+        SplitSingleOut(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+def test_split_with_sizes_tosa_FP_two_out(test_data: input_t1):
+
+    pipeline = TosaPipelineFP[input_t1](
+        SplitTwoOut(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+def test_split_with_sizes_tosa_INT(test_data: input_t1):
+
+    pipeline = TosaPipelineINT[input_t1](
+        Split(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+def test_split_with_sizes_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Split(),
+        test_data(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+def test_split_with_sizes_u85_INT(test_data: input_t1):
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Split(),
+        test_data(),
+        aten_ops=[],
+        exir_ops=exir_op,
+        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+@common.SkipIfNoModelConverter
+def test_split_with_sizes_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Split(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Split.test_data_list)
+@common.SkipIfNoModelConverter
+def test_split_with_sizes_vgf_FP_2(test_data: input_t1):
+
+    pipeline = VgfPipeline[input_t1](
+        SplitWithSizes(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+@common.SkipIfNoModelConverter
+def test_split_with_sizes_vgf_FP_one_out(test_data: input_t1):
+
+    pipeline = VgfPipeline[input_t1](
+        SplitSingleOut(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+@common.SkipIfNoModelConverter
+def test_split_with_sizes_vgf_FP_two_out(test_data: input_t1):
+
+    pipeline = VgfPipeline[input_t1](
+        SplitTwoOut(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    (Split.test_data | Split.test_data_list),
+)
+@common.SkipIfNoModelConverter
+def test_split_with_sizes_vgf_INT(test_data: input_t1):
+
+    pipeline = VgfPipeline[input_t1](
+        Split(),
+        test_data(),
+        aten_op=[],
+        exir_op=exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

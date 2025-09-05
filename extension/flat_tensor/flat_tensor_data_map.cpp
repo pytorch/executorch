@@ -45,171 +45,121 @@ bool is_aligned(const void* data) {
 }
 
 Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
-    const char* key,
+    executorch::aten::string_view key,
     const flatbuffers::Vector<
-        flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>* named_data) {
+        flatbuffers::Offset<flat_tensor_flatbuffer::NamedData>>* named_data,
+    const flatbuffers::Vector<
+        flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>* segments,
+    size_t segment_end_offset) {
   // Linear search by name.
   if (named_data == nullptr) {
     return Error::NotFound;
   }
   for (int i = 0; i < named_data->size(); i++) {
-    if (std::strcmp(named_data->Get(i)->key()->c_str(), key) == 0) {
-      const auto* metadata = named_data->Get(i);
+    if (std::strncmp(
+            named_data->Get(i)->key()->c_str(),
+            key.data(),
+            named_data->Get(i)->key()->size()) == 0) {
+      const auto* found = named_data->Get(i);
+      // Validate the named_data.
+      size_t segment_index = found->segment_index();
       ET_CHECK_OR_RETURN_ERROR(
-          metadata->segment_index() >= 0,
+          segment_index >= 0 && segment_index < segments->size(),
           InvalidExternalData,
-          "Invalid segment_index %d; malformed PTD file.",
-          metadata->segment_index());
-      return metadata;
-    }
-  }
-  return Error::NotFound;
-}
-
-Result<const flat_tensor_flatbuffer::TensorMetadata*> get_flat_tensor_metadata(
-    const char* key,
-    const flatbuffers::Vector<
-        flatbuffers::Offset<flat_tensor_flatbuffer::TensorMetadata>>* tensors) {
-  // Linear search by name.
-  for (int i = 0; i < tensors->size(); i++) {
-    if (std::strcmp(tensors->Get(i)->fully_qualified_name()->c_str(), key) ==
-        0) {
-      const auto* metadata = tensors->Get(i);
+          "Segment index %zu for key %.*s is out of bounds for segment size %d. Malformed PTD file.",
+          segment_index,
+          static_cast<int>(key.size()),
+          key.data(),
+          segments->size());
+      // Validate the segment.
       ET_CHECK_OR_RETURN_ERROR(
-          metadata->segment_index() >= 0 && metadata->offset() >= 0,
+          segments->Get(segment_index)->offset() < segment_end_offset,
           InvalidExternalData,
-          "Invalid segment_index %d or offset %" PRIu64 "; malformed PTD file.",
-          metadata->segment_index(),
-          metadata->offset());
-      return metadata;
+          "Invalid segment offset %" PRIu64
+          " is larger than the segment_base_offset + segment_data_size %" PRIu64
+          "; malformed PTD file.",
+          segments->Get(segment_index)->offset(),
+          static_cast<uint64_t>(segment_end_offset));
+      return found;
     }
   }
   return Error::NotFound;
 }
 
 Result<const TensorLayout> create_tensor_layout(
-    const flat_tensor_flatbuffer::TensorMetadata* tensor_metadata) {
+    const flat_tensor_flatbuffer::TensorLayout* tensor_layout) {
   ScalarType scalar_type =
-      static_cast<ScalarType>(tensor_metadata->scalar_type());
-  const int dim = tensor_metadata->sizes()->size();
-  const auto serialized_sizes = tensor_metadata->sizes()->data();
-  const auto serialized_dim_order = tensor_metadata->dim_order()->data();
+      static_cast<ScalarType>(tensor_layout->scalar_type());
+  const int dim = tensor_layout->sizes()->size();
+  const auto serialized_sizes = tensor_layout->sizes()->data();
+  const auto serialized_dim_order = tensor_layout->dim_order()->data();
   return TensorLayout::create(
       Span<const int32_t>(serialized_sizes, dim),
       Span<const uint8_t>(serialized_dim_order, dim),
       scalar_type);
 }
 
-Result<int> get_and_check_segment_offset(
-    const flatbuffers::Vector<
-        flatbuffers::Offset<flat_tensor_flatbuffer::DataSegment>>* segments,
-    const flat_tensor_flatbuffer::TensorMetadata* metadata) {
-  ET_CHECK_OR_RETURN_ERROR(
-      segments != nullptr,
-      InvalidExternalData,
-      "No segments in external data flatbuffer.");
-
-  ET_CHECK_OR_RETURN_ERROR(
-      metadata->segment_index() < segments->size(),
-      InvalidExternalData,
-      "Invalid segment_index %d; malformed PTD file.",
-      metadata->segment_index());
-  return segments->Get(metadata->segment_index())->offset();
-}
-
 } // namespace
 
-ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_metadata(
-    const char* key) const {
-  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata_res =
-      get_flat_tensor_metadata(key, flat_tensor_->tensors());
-  if (!metadata_res.ok()) {
-    return metadata_res.error();
+ET_NODISCARD Result<const TensorLayout> FlatTensorDataMap::get_tensor_layout(
+    executorch::aten::string_view key) const {
+  Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
+      key,
+      flat_tensor_->named_data(),
+      flat_tensor_->segments(),
+      header_.segment_base_offset + header_.segment_data_size);
+  if (!named_data.ok()) {
+    return named_data.error();
   }
-  return create_tensor_layout(metadata_res.get());
+  return create_tensor_layout(named_data.get()->tensor_layout());
 }
 
 ET_NODISCARD Result<FreeableBuffer> FlatTensorDataMap::get_data(
-    const char* key) const {
-  // TODO(lfq): consolidate named_data and tensors.
-  // Check named data.
-  Result<const flat_tensor_flatbuffer::NamedData*> named_data =
-      get_named_data(key, flat_tensor_->named_data());
-  if (named_data.ok()) {
-    size_t segment_index = named_data.get()->segment_index();
-    ET_CHECK_OR_RETURN_ERROR(
-        segment_index < flat_tensor_->segments()->size(),
-        InvalidExternalData,
-        "Invalid segment_index %zu; malformed PTD file.",
-        segment_index);
-
-    size_t segment_offset =
-        flat_tensor_->segments()->Get(segment_index)->offset();
-    size_t segment_size = flat_tensor_->segments()->Get(segment_index)->size();
-    ET_CHECK_OR_RETURN_ERROR(
-        segment_offset <
-            header_.segment_base_offset + header_.segment_data_size,
-        InvalidExternalData,
-        "Invalid segment offset %zu is larger than the segment_base_offset + segment_data_size %" PRIu64
-        "; malformed PTD file.",
-        segment_offset,
-        header_.segment_base_offset + header_.segment_data_size);
-    return loader_->load(
-        /*offset=*/header_.segment_base_offset + segment_offset,
-        segment_size,
-        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
-  }
-  if (named_data.error() != Error::NotFound) {
+    executorch::aten::string_view key) const {
+  Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
+      key,
+      flat_tensor_->named_data(),
+      flat_tensor_->segments(),
+      header_.segment_base_offset + header_.segment_data_size);
+  if (!named_data.ok()) {
     return named_data.error();
   }
 
-  // Check tensors, if named data is not found.
-  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata =
-      get_flat_tensor_metadata(key, flat_tensor_->tensors());
-  if (!metadata.ok()) {
-    return metadata.error();
-  }
-  Result<const TensorLayout> tensor_layout =
-      create_tensor_layout(metadata.get());
-  if (!tensor_layout.ok()) {
-    return tensor_layout.error();
-  }
-  Result<int> segment_offset =
-      get_and_check_segment_offset(flat_tensor_->segments(), metadata.get());
-  if (!segment_offset.ok()) {
-    return segment_offset.error();
-  }
+  uint32_t segment_index = named_data.get()->segment_index();
+  uint64_t segment_offset =
+      flat_tensor_->segments()->Get(segment_index)->offset();
+  uint64_t segment_size = flat_tensor_->segments()->Get(segment_index)->size();
 
-  // Load constant data.
-  ET_CHECK_OR_RETURN_ERROR(
-      segment_offset.get() <
-          header_.segment_base_offset + header_.segment_data_size,
-      InvalidExternalData,
-      "Invalid segment offset %d is larger than the segment_base_offset + segment_data_size %" PRIu64
-      "; malformed PTD file.",
-      segment_offset.get(),
-      header_.segment_base_offset + header_.segment_data_size);
   return loader_->load(
-      header_.segment_base_offset + segment_offset.get() +
-          metadata.get()->offset(),
-      tensor_layout.get().nbytes(),
+      /*offset=*/header_.segment_base_offset + segment_offset,
+      segment_size,
       DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
 }
 
 ET_NODISCARD Error FlatTensorDataMap::load_data_into(
-    ET_UNUSED const char* key,
+    ET_UNUSED executorch::aten::string_view key,
     ET_UNUSED void* buffer,
     ET_UNUSED size_t size) const {
-  Result<const flat_tensor_flatbuffer::TensorMetadata*> metadata =
-      get_flat_tensor_metadata(key, flat_tensor_->tensors());
-  if (!metadata.ok()) {
-    return metadata.error();
+  Result<const flat_tensor_flatbuffer::NamedData*> named_data = get_named_data(
+      key,
+      flat_tensor_->named_data(),
+      flat_tensor_->segments(),
+      header_.segment_base_offset + header_.segment_data_size);
+  if (!named_data.ok()) {
+    return named_data.error();
   }
+
+  uint32_t segment_index = named_data.get()->segment_index();
+  uint64_t segment_offset =
+      flat_tensor_->segments()->Get(segment_index)->offset();
+
   Result<const TensorLayout> tensor_layout =
-      create_tensor_layout(metadata.get());
+      create_tensor_layout(named_data.get()->tensor_layout());
+
   if (!tensor_layout.ok()) {
     return tensor_layout.error();
   }
+
   ET_CHECK_OR_RETURN_ERROR(
       size <= tensor_layout.get().nbytes(),
       InvalidArgument,
@@ -217,51 +167,30 @@ ET_NODISCARD Error FlatTensorDataMap::load_data_into(
       size,
       tensor_layout.get().nbytes());
 
-  Result<int> segment_offset =
-      get_and_check_segment_offset(flat_tensor_->segments(), metadata.get());
-  if (!segment_offset.ok()) {
-    return segment_offset.error();
-  }
   // Load mutable data.
   DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
       DataLoader::SegmentInfo::Type::Mutable, 0, nullptr);
   return loader_->load_into(
-      header_.segment_base_offset + segment_offset.get() +
-          metadata.get()->offset(),
+      header_.segment_base_offset + segment_offset,
       tensor_layout.get().nbytes(),
       info,
       buffer);
 }
 
-ET_NODISCARD Result<size_t> FlatTensorDataMap::get_num_keys() const {
-  // TODO(lfq): consolidate named_data and tensors.
-  if (flat_tensor_->named_data() == nullptr) {
-    return flat_tensor_->tensors()->size();
-  }
-  return flat_tensor_->named_data()->size() + flat_tensor_->tensors()->size();
+ET_NODISCARD Result<uint32_t> FlatTensorDataMap::get_num_keys() const {
+  return flat_tensor_->named_data()->size();
 }
 
 ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
-    size_t index) const {
-  // TODO(lfq): consolidate named_data and tensors.
-  // For now, iterate over named_data and then flat_tensor.
-  size_t num_keys = get_num_keys().get();
+    uint32_t index) const {
+  uint32_t num_keys = get_num_keys().get();
   ET_CHECK_OR_RETURN_ERROR(
       index >= 0 && index < num_keys,
       InvalidArgument,
-      "Index %zu out of range of size %zu",
+      "Index %u out of range of size %u",
       index,
       num_keys);
-
-  if (flat_tensor_->named_data() != nullptr &&
-      index < flat_tensor_->named_data()->size()) {
-    return flat_tensor_->named_data()->Get(index)->key()->c_str();
-  } else {
-    if (flat_tensor_->named_data() != nullptr) {
-      index = index - flat_tensor_->named_data()->size();
-    }
-    return flat_tensor_->tensors()->Get(index)->fully_qualified_name()->c_str();
-  }
+  return flat_tensor_->named_data()->Get(index)->key()->c_str();
 }
 
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
@@ -320,6 +249,17 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   // Get pointer to root of flatbuffer table.
   const flat_tensor_flatbuffer::FlatTensor* flat_tensor =
       flat_tensor_flatbuffer::GetFlatTensor(flat_tensor_data->data());
+
+  // Validate flat_tensor.
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor->named_data() != nullptr,
+      InvalidExternalData,
+      "FlatTensor named_data is nullptr, malformed PTD file.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor->segments() != nullptr,
+      InvalidExternalData,
+      "FlatTensor segments is nullptr, malformed PTD file.");
 
   return FlatTensorDataMap(
       fh.get(), std::move(flat_tensor_data.get()), flat_tensor, loader);

@@ -216,4 +216,6 @@ def get_qnn_partitioner(
         ),
         skip_node_id_set={},
         skip_node_op_set=skip_node_op_set,
+        # TODO: if deprecated legacy export, skip_mutable_buffer can be set False
+        skip_mutable_buffer=True,
     )

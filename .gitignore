@@ -20,11 +20,15 @@ dist/
 ethos-u-scratch/
 executorch.egg-info
 pip-out/
+build-profiling/
 
 # Any exported models and profiling outputs
 *.bin
 *.model
+*.etdump
+tokenizer.json
 *.pte
+*.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
@@ -40,3 +44,28 @@ xcuserdata/
 .swiftpm/
 *.xcworkspace/
 *.xcframework/
+
+# clangd
+.cache/
+
+# misc
+/.vscode/
+*.so
+*.dylib
+/cmake_wrapper.sh
+/data/
+/devtools/bundled_program/serialize/
+/exir/_serialize/program.fbs
+/exir/_serialize/scalar_type.fbs
+/include/
+/share/
+/version.py
+*.csv
+*_etdump
+
+# Android
+*.aar
+
+# Windows
+*.dll
+*.pyd

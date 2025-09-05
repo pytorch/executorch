@@ -49,6 +49,10 @@ struct GenerationConfig {
   // Temperature for sampling (higher = more random)
   float temperature = 0.8f;
 
+  // Number of eos and bos to add to the prompt
+  int32_t num_bos = 0;
+  int32_t num_eos = 0;
+
   /**
    * Resolve the maximum number of new tokens to generate based on constraints.
    *
@@ -121,6 +125,23 @@ class ET_EXPERIMENTAL IRunner {
       std::function<void(const std::string&)> token_callback,
       std::function<void(const Stats&)> stats_callback) = 0;
 
+  /**
+   * Generate text based on the provided prompt and generation config, from a
+   * given position in KV cache.
+   *
+   * @param prompt The input prompt to generate from
+   * @param start_pos The starting position in KV cache of the input
+   * @param config Generation configuration parameters
+   * @param token_callback Callback function called for each generated token
+   * @param stats_callback Callback function for generation statistics
+   * @return Error::Ok if successful, an error otherwise
+   */
+  virtual runtime::Error generate_from_pos(
+      const std::string& prompt,
+      int64_t start_pos,
+      const GenerationConfig& config,
+      std::function<void(const std::string&)> token_callback,
+      std::function<void(const Stats&)> stats_callback) = 0;
   /**
    * Stop the generation process.
    */

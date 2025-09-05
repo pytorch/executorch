@@ -81,7 +81,7 @@ NSInteger ExecuTorchSizeOfDataType(ExecuTorchDataType dataType)
 FOUNDATION_EXPORT
 __attribute__((deprecated("This API is experimental.")))
 NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
-    NS_SWIFT_NAME(elementCount(ofShape:));
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * A tensor class for ExecuTorch operations.
@@ -89,8 +89,9 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape)
  * This class encapsulates a native TensorPtr instance and provides a variety of
  * initializers and utility methods to work with tensor data.
  */
-NS_SWIFT_NAME(Tensor)
+ NS_SWIFT_NAME(AnyTensor)
 __attribute__((deprecated("This API is experimental.")))
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchTensor : NSObject<NSCopying>
 
 /**
@@ -112,21 +113,21 @@ __attribute__((deprecated("This API is experimental.")))
  *
  * @return An NSArray of NSNumber objects representing the size of each dimension.
  */
-@property(nonatomic, readonly) NSArray<NSNumber *> *shape;
+@property(nonatomic, readonly) NSArray<NSNumber *> *shape NS_REFINED_FOR_SWIFT;
 
 /**
  * The order of dimensions in the tensor.
  *
  * @return An NSArray of NSNumber objects representing the tensor’s dimension order.
  */
-@property(nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder;
+@property(nonatomic, readonly) NSArray<NSNumber *> *dimensionOrder NS_REFINED_FOR_SWIFT;
 
 /**
  * The strides of the tensor.
  *
  * @return An NSArray of NSNumber objects representing the step sizes for each dimension.
  */
-@property(nonatomic, readonly) NSArray<NSNumber *> *strides;
+@property(nonatomic, readonly) NSArray<NSNumber *> *strides NS_REFINED_FOR_SWIFT;
 
 /**
  * The dynamism of the tensor's shape.
@@ -140,7 +141,7 @@ __attribute__((deprecated("This API is experimental.")))
  *
  * @return An NSInteger representing the total element count.
  */
-@property(nonatomic, readonly) NSInteger count;
+@property(nonatomic, readonly) NSInteger count NS_REFINED_FOR_SWIFT;
 
 /**
  * Initializes a tensor with a native TensorPtr instance.
@@ -149,19 +150,22 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchTensor instance.
  */
 - (instancetype)initWithNativeInstance:(void *)nativeInstance
-    NS_DESIGNATED_INITIALIZER NS_SWIFT_UNAVAILABLE("");
+    NS_DESIGNATED_INITIALIZER
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
- * Creates a new tensor by copying an existing tensor.
+ * Creates a new tensor that shares the underlying data storage with the
+ * given tensor. This new tensor is a view and does not own the data.
  *
- * @param otherTensor The tensor instance to copy.
- * @return A new ExecuTorchTensor instance that is a copy of otherTensor.
+ * @param otherTensor The tensor instance to create a view of.
+ * @return A new ExecuTorchTensor instance that shares data with otherTensor.
  */
 - (instancetype)initWithTensor:(ExecuTorchTensor *)otherTensor
     NS_SWIFT_NAME(init(_:));
 
 /**
- * Returns a copy of the tensor.
+ * Creates a deep copy of the tensor.
+ * The new tensor will have its own copy of the data.
  *
  * @return A new ExecuTorchTensor instance that is a duplicate of the current tensor.
  */
@@ -175,7 +179,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - the total number of elements,
  *   - and the data type.
  */
-- (void)bytesWithHandler:(void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
+- (void)bytesWithHandler:(NS_NOESCAPE void (^)(const void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
     NS_SWIFT_NAME(bytes(_:));
 
 /**
@@ -186,7 +190,7 @@ __attribute__((deprecated("This API is experimental.")))
  *   - the total number of elements,
  *   - and the data type.
  */
-- (void)mutableBytesWithHandler:(void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
+- (void)mutableBytesWithHandler:(NS_NOESCAPE void (^)(void *pointer, NSInteger count, ExecuTorchDataType dataType))handler
     NS_SWIFT_NAME(mutableBytes(_:));
 
 /**
@@ -198,15 +202,17 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (BOOL)resizeToShape:(NSArray<NSNumber *> *)shape
                 error:(NSError **)error
-    NS_SWIFT_NAME(resize(to:));
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Determines whether the current tensor is equal to another tensor.
  *
  * @param other Another ExecuTorchTensor instance to compare against.
- * @return YES if the tensors have the same type, shape, strides, and data; otherwise, NO.
+ * @return YES if the tensors have the same data type, shape, dimension order,
+ * strides, and underlying data; otherwise, NO.
  */
-- (BOOL)isEqualToTensor:(nullable ExecuTorchTensor *)other;
+- (BOOL)isEqualToTensor:(nullable ExecuTorchTensor *)other
+    NS_REFINED_FOR_SWIFT;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
@@ -233,7 +239,8 @@ __attribute__((deprecated("This API is experimental.")))
                             strides:(NSArray<NSNumber *> *)strides
                      dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
                            dataType:(ExecuTorchDataType)dataType
-                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Initializes a tensor without copying data using dynamic bound shape (default strides and dimension order).
@@ -249,7 +256,8 @@ __attribute__((deprecated("This API is experimental.")))
                               shape:(NSArray<NSNumber *> *)shape
                             strides:(NSArray<NSNumber *> *)strides
                      dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
-                           dataType:(ExecuTorchDataType)dataType;
+                           dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor without copying data, with an explicit shape dynamism.
@@ -263,7 +271,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithBytesNoCopy:(void *)pointer
                               shape:(NSArray<NSNumber *> *)shape
                            dataType:(ExecuTorchDataType)dataType
-                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+                      shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor without copying data, specifying only the shape and data type.
@@ -275,7 +284,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithBytesNoCopy:(void *)pointer
                               shape:(NSArray<NSNumber *> *)shape
-                           dataType:(ExecuTorchDataType)dataType;
+                           dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_UNAVAILABLE("");
 
 @end
 
@@ -299,7 +309,8 @@ __attribute__((deprecated("This API is experimental.")))
                       strides:(NSArray<NSNumber *> *)strides
                dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
                      dataType:(ExecuTorchDataType)dataType
-                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Initializes a tensor by copying bytes from the provided pointer with dynamic bound shape.
@@ -315,7 +326,8 @@ __attribute__((deprecated("This API is experimental.")))
                         shape:(NSArray<NSNumber *> *)shape
                       strides:(NSArray<NSNumber *> *)strides
                dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
-                     dataType:(ExecuTorchDataType)dataType;
+                     dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor by copying bytes from the provided pointer, specifying shape, data type, and explicit shape dynamism.
@@ -329,7 +341,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithBytes:(const void *)pointer
                         shape:(NSArray<NSNumber *> *)shape
                      dataType:(ExecuTorchDataType)dataType
-                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor by copying bytes from the provided pointer, specifying only the shape and data type.
@@ -341,7 +354,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithBytes:(const void *)pointer
                         shape:(NSArray<NSNumber *> *)shape
-                     dataType:(ExecuTorchDataType)dataType;
+                     dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_UNAVAILABLE("");
 
 @end
 
@@ -350,7 +364,9 @@ __attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensor (Data)
 
 /**
- * Initializes a tensor using an NSData object as the underlying data buffer.
+ * Initializes a tensor using an NSData object. The tensor will hold a
+ * strong reference to the NSData object to manage the lifetime of the
+ * underlying data buffer, which is not copied.
  *
  * @param data An NSData object containing the tensor data.
  * @param shape An NSArray of NSNumber objects representing the tensor's shape.
@@ -365,7 +381,8 @@ __attribute__((deprecated("This API is experimental.")))
                      strides:(NSArray<NSNumber *> *)strides
               dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
                     dataType:(ExecuTorchDataType)dataType
-               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Initializes a tensor using an NSData object as the underlying data buffer with dynamic bound shape.
@@ -381,7 +398,8 @@ __attribute__((deprecated("This API is experimental.")))
                        shape:(NSArray<NSNumber *> *)shape
                      strides:(NSArray<NSNumber *> *)strides
               dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
-                    dataType:(ExecuTorchDataType)dataType;
+                    dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor using an NSData object as the underlying data buffer, specifying shape, data type, and explicit shape dynamism.
@@ -395,7 +413,8 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithData:(NSData *)data
                        shape:(NSArray<NSNumber *> *)shape
                     dataType:(ExecuTorchDataType)dataType
-               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism;
+               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor using an NSData object as the underlying data buffer, specifying only the shape and data type.
@@ -407,7 +426,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithData:(NSData *)data
                        shape:(NSArray<NSNumber *> *)shape
-                    dataType:(ExecuTorchDataType)dataType;
+                    dataType:(ExecuTorchDataType)dataType
+    NS_SWIFT_UNAVAILABLE("");
 
 @end
 
@@ -432,7 +452,7 @@ __attribute__((deprecated("This API is experimental.")))
                  dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
                        dataType:(ExecuTorchDataType)dataType
                   shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(init(_:shape:strides:dimensionOrder:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values, specifying shape, strides, dimension order, and data type,
@@ -450,7 +470,7 @@ __attribute__((deprecated("This API is experimental.")))
                         strides:(NSArray<NSNumber *> *)strides
                  dimensionOrder:(NSArray<NSNumber *> *)dimensionOrder
                        dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(init(_:shape:strides:dimensionOrder:dataType:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values, specifying the desired shape, data type, and explicit shape dynamism.
@@ -465,7 +485,7 @@ __attribute__((deprecated("This API is experimental.")))
                           shape:(NSArray<NSNumber *> *)shape
                        dataType:(ExecuTorchDataType)dataType
                   shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(init(_:shape:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values and a specified shape,
@@ -479,7 +499,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
                           shape:(NSArray<NSNumber *> *)shape
                        dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(init(_:shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values, specifying the tensor data type and explicit shape dynamism.
@@ -493,7 +513,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
                        dataType:(ExecuTorchDataType)dataType
                   shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(init(_:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values, specifying the tensor data type.
@@ -505,7 +525,7 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
                        dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(init(_:dataType:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values, a specified shape and explicit shape dynamism.
@@ -519,7 +539,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
                           shape:(NSArray<NSNumber *> *)shape
                   shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(init(_:shape:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values and a specified shape.
@@ -531,7 +551,7 @@ __attribute__((deprecated("This API is experimental.")))
  */
 - (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
                           shape:(NSArray<NSNumber *> *)shape
-    NS_SWIFT_NAME(init(_:shape:));
+    NS_SWIFT_UNAVAILABLE("");
 
 /**
  * Initializes a tensor with an array of scalar values, automatically deducing the tensor shape and data type.
@@ -540,7 +560,7 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchTensor instance with shape and data type deduced.
  */
 - (instancetype)initWithScalars:(NSArray<NSNumber *> *)scalars
-    NS_SWIFT_NAME(init(_:));
+    NS_SWIFT_UNAVAILABLE("");
 
 @end
 
@@ -554,7 +574,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchTensor instance representing the scalar.
  */
 - (instancetype)initWithScalar:(NSNumber *)scalar
-                      dataType:(ExecuTorchDataType)dataType NS_SWIFT_NAME(init(_:dataType:));
+                      dataType:(ExecuTorchDataType)dataType
+    NS_REFINED_FOR_SWIFT;
 
 /**
  * Initializes a tensor with a single scalar value, automatically deducing its data type.
@@ -562,7 +583,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An NSNumber representing the scalar value.
  * @return An initialized ExecuTorchTensor instance representing the scalar.
  */
-- (instancetype)initWithScalar:(NSNumber *)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithScalar:(NSNumber *)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a byte scalar value.
@@ -570,7 +592,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A uint8_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithByte:(uint8_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithByte:(uint8_t)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a char scalar value.
@@ -578,7 +601,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An int8_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithChar:(int8_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithChar:(int8_t)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a short scalar value.
@@ -586,7 +610,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An int16_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithShort:(int16_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithShort:(int16_t)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with an int scalar value.
@@ -594,7 +619,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An int32_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithInt:(int32_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithInt:(int32_t)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a long scalar value.
@@ -602,7 +628,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An int64_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithLong:(int64_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithLong:(int64_t)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a float scalar value.
@@ -610,7 +637,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A float value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithFloat:(float)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithFloat:(float)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a double scalar value.
@@ -618,7 +646,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A double value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithDouble:(double)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithDouble:(double)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a boolean scalar value.
@@ -626,7 +655,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A BOOL value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithBool:(BOOL)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithBool:(BOOL)scalar
+    NS_SWIFT_UNAVAILABLE("");
 
 /** 
  * Initializes a tensor with a uint16 scalar value.
@@ -634,7 +664,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A uint16_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithUInt16:(uint16_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithUInt16:(uint16_t)scalar
+    NS_SWIFT_NAME(init(_:));
 
 /** 
  * Initializes a tensor with a uint32 scalar value.
@@ -642,7 +673,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A uint32_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithUInt32:(uint32_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithUInt32:(uint32_t)scalar
+    NS_SWIFT_NAME(init(_:));
 
 /** 
  * Initializes a tensor with a uint64 scalar value.
@@ -650,7 +682,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar A uint64_t value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithUInt64:(uint64_t)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithUInt64:(uint64_t)scalar
+    NS_SWIFT_NAME(init(_:));
 
 /** 
  * Initializes a tensor with an NSInteger scalar value.
@@ -658,7 +691,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An NSInteger value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithInteger:(NSInteger)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithInteger:(NSInteger)scalar
+    NS_SWIFT_NAME(init(_:));
 
 /** 
  * Initializes a tensor with an NSUInteger scalar value.
@@ -666,7 +700,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @param scalar An NSUInteger value.
  * @return An initialized ExecuTorchTensor instance.
  */
-- (instancetype)initWithUnsignedInteger:(NSUInteger)scalar NS_SWIFT_NAME(init(_:));
+- (instancetype)initWithUnsignedInteger:(NSUInteger)scalar
+    NS_SWIFT_NAME(init(_:));
 
 @end
 
@@ -687,7 +722,8 @@ __attribute__((deprecated("This API is experimental.")))
                              strides:(NSArray<NSNumber *> *)strides
                             dataType:(ExecuTorchDataType)dataType
                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(empty(shape:strides:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an empty tensor with the specified shape, data type, and shape dynamism.
@@ -700,7 +736,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
                             dataType:(ExecuTorchDataType)dataType
                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(empty(shape:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an empty tensor with the specified shape and data type, using dynamic bound shape.
@@ -711,7 +748,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)emptyTensorWithShape:(NSArray<NSNumber *> *)shape
                             dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(empty(shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an empty tensor similar to the given tensor, with the specified data type and shape dynamism.
@@ -724,7 +762,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
                              dataType:(ExecuTorchDataType)dataType
                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(empty(like:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an empty tensor similar to the given tensor, with the specified data type.
@@ -735,7 +774,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
                              dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(empty(like:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates an empty tensor similar to the given tensor.
@@ -744,7 +784,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new, empty ExecuTorchTensor instance with the same properties as the provided tensor.
  */
 + (instancetype)emptyTensorLikeTensor:(ExecuTorchTensor *)tensor
-    NS_SWIFT_NAME(empty(like:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 
@@ -767,7 +808,8 @@ __attribute__((deprecated("This API is experimental.")))
                             strides:(NSArray<NSNumber *> *)strides
                            dataType:(ExecuTorchDataType)dataType
                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(full(shape:scalar:strides:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with the specified scalar value, with the given shape, data type, and shape dynamism.
@@ -782,7 +824,8 @@ __attribute__((deprecated("This API is experimental.")))
                              scalar:(NSNumber *)scalar
                            dataType:(ExecuTorchDataType)dataType
                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(full(shape:scalar:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with the specified scalar value, with the given shape and data type,
@@ -796,7 +839,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)fullTensorWithShape:(NSArray<NSNumber *> *)shape
                              scalar:(NSNumber *)scalar
                            dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(full(shape:scalar:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with the specified scalar value, similar to an existing tensor, with the given data type and shape dynamism.
@@ -811,7 +855,8 @@ __attribute__((deprecated("This API is experimental.")))
                               scalar:(NSNumber *)scalar
                             dataType:(ExecuTorchDataType)dataType
                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(full(like:scalar:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with the specified scalar value, similar to an existing tensor, with the given data type.
@@ -824,7 +869,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
                               scalar:(NSNumber *)scalar
                             dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(full(like:scalar:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with the specified scalar value, similar to an existing tensor.
@@ -835,7 +881,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)fullTensorLikeTensor:(ExecuTorchTensor *)tensr
                               scalar:(NSNumber *)scalar
-    NS_SWIFT_NAME(full(like:scalar:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 
@@ -854,7 +901,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
                            dataType:(ExecuTorchDataType)dataType
                       shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(ones(shape:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with ones, with the specified shape and data type.
@@ -865,7 +913,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)onesTensorWithShape:(NSArray<NSNumber *> *)shape
                            dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(ones(shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with ones similar to an existing tensor, with the specified data type and shape dynamism.
@@ -878,7 +927,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
                             dataType:(ExecuTorchDataType)dataType
                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(ones(like:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with ones similar to an existing tensor, with the specified data type.
@@ -889,7 +939,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
                             dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(ones(like:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with ones similar to an existing tensor.
@@ -898,7 +949,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchTensor instance filled with ones.
  */
 + (instancetype)onesTensorLikeTensor:(ExecuTorchTensor *)tensor
-    NS_SWIFT_NAME(ones(like:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 
@@ -917,7 +969,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)zerosTensorWithShape:(NSArray<NSNumber *> *)shape
                             dataType:(ExecuTorchDataType)dataType
                        shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(zeros(shape:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with zeros, with the specified shape and data type.
@@ -928,7 +981,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)zerosTensorWithShape:(NSArray<NSNumber *> *)shape
                             dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(zeros(shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with zeros similar to an existing tensor, with the specified data type and shape dynamism.
@@ -941,7 +995,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
                              dataType:(ExecuTorchDataType)dataType
                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(zeros(like:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with zeros similar to an existing tensor, with the specified data type.
@@ -952,7 +1007,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
                              dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(zeros(like:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor filled with zeros similar to an existing tensor.
@@ -961,7 +1017,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchTensor instance filled with zeros.
  */
 + (instancetype)zerosTensorLikeTensor:(ExecuTorchTensor *)tensor
-    NS_SWIFT_NAME(zeros(like:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 
@@ -982,7 +1039,8 @@ __attribute__((deprecated("This API is experimental.")))
                               strides:(NSArray<NSNumber *> *)strides
                              dataType:(ExecuTorchDataType)dataType
                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(rand(shape:strides:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values, with the specified shape and data type.
@@ -995,7 +1053,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
                              dataType:(ExecuTorchDataType)dataType
                         shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(rand(shape:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values, with the specified shape (using dynamic bound shape) and data type.
@@ -1006,7 +1065,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)randomTensorWithShape:(NSArray<NSNumber *> *)shape
                              dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(rand(shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values similar to an existing tensor, with the specified data type and shape dynamism.
@@ -1019,7 +1079,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
                               dataType:(ExecuTorchDataType)dataType
                          shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(rand(like:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values similar to an existing tensor, with the specified data type.
@@ -1030,7 +1091,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
                               dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(rand(like:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values similar to an existing tensor.
@@ -1039,7 +1101,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchTensor instance filled with random values.
  */
 + (instancetype)randomTensorLikeTensor:(ExecuTorchTensor *)tensor
-    NS_SWIFT_NAME(rand(like:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 
@@ -1061,7 +1124,8 @@ __attribute__((deprecated("This API is experimental.")))
                                     strides:(NSArray<NSNumber *> *)strides
                                    dataType:(ExecuTorchDataType)dataType
                               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(randn(shape:strides:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values drawn from a normal distribution,
@@ -1075,7 +1139,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
                                    dataType:(ExecuTorchDataType)dataType
                               shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(randn(shape:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random values drawn from a normal distribution,
@@ -1087,7 +1152,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)randomNormalTensorWithShape:(NSArray<NSNumber *> *)shape
                                    dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(randn(shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random normal values similar to an existing tensor,
@@ -1101,7 +1167,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
                                     dataType:(ExecuTorchDataType)dataType
                                shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(randn(like:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random normal values similar to an existing tensor,
@@ -1113,7 +1180,8 @@ __attribute__((deprecated("This API is experimental.")))
  */
 + (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
                                     dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(randn(like:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random normal values similar to an existing tensor.
@@ -1122,7 +1190,8 @@ __attribute__((deprecated("This API is experimental.")))
  * @return A new ExecuTorchTensor instance filled with values from a normal distribution.
  */
 + (instancetype)randomNormalTensorLikeTensor:(ExecuTorchTensor *)tensor
-    NS_SWIFT_NAME(randn(like:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 
@@ -1148,7 +1217,8 @@ __attribute__((deprecated("This API is experimental.")))
                                    strides:(NSArray<NSNumber *> *)strides
                                   dataType:(ExecuTorchDataType)dataType
                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(randint(low:high:shape:strides:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random integer values in the specified range,
@@ -1166,7 +1236,8 @@ __attribute__((deprecated("This API is experimental.")))
                                      shape:(NSArray<NSNumber *> *)shape
                                   dataType:(ExecuTorchDataType)dataType
                              shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(randint(low:high:shape:dataType:shapeDynamism:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random integer values in the specified range,
@@ -1182,7 +1253,8 @@ __attribute__((deprecated("This API is experimental.")))
                                       high:(NSInteger)high
                                      shape:(NSArray<NSNumber *> *)shape
                                   dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(randint(low:high:shape:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random integer values in the specified range, similar to an existing tensor,
@@ -1200,7 +1272,8 @@ __attribute__((deprecated("This API is experimental.")))
                                          high:(NSInteger)high
                                      dataType:(ExecuTorchDataType)dataType
                                 shapeDynamism:(ExecuTorchShapeDynamism)shapeDynamism
-    NS_SWIFT_NAME(randint(like:low:high:dataType:shapeDynamism:));
+    NS_REFINED_FOR_SWIFT
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random integer values in the specified range, similar to an existing tensor,
@@ -1216,7 +1289,8 @@ __attribute__((deprecated("This API is experimental.")))
                                           low:(NSInteger)low
                                          high:(NSInteger)high
                                      dataType:(ExecuTorchDataType)dataType
-    NS_SWIFT_NAME(randint(like:low:high:dataType:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 /**
  * Creates a tensor with random integer values in the specified range, similar to an existing tensor.
@@ -1229,7 +1303,8 @@ __attribute__((deprecated("This API is experimental.")))
 + (instancetype)randomIntegerTensorLikeTensor:(ExecuTorchTensor *)tensor
                                           low:(NSInteger)low
                                          high:(NSInteger)high
-    NS_SWIFT_NAME(randint(like:low:high:));
+    NS_SWIFT_UNAVAILABLE("")
+    NS_RETURNS_RETAINED;
 
 @end
 

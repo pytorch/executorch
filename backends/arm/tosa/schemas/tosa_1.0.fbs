@@ -1,0 +1,540 @@
+// Copyright 2025 Arm Limited and/or its affiliates.
+//
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree.
+
+namespace tosa;
+
+// This corresponds to the version.
+file_identifier "TOSA";
+// File extension of any written files.
+file_extension "tosa";
+
+// NOTE: New values added to the schema should be placed
+// at the end of the list in order to keep schema stable.
+
+enum DType:uint32 {
+  UNKNOWN = 0,
+  BOOL,
+  INT4,
+  INT8,
+  INT16,
+  INT32,
+  INT48,
+  FP32,
+  FP16,
+  BF16,
+  SHAPE,
+  FP8E4M3,
+  FP8E5M2,
+}
+
+enum ResizeMode:uint32 {
+  UNKNOWN = 0,
+  NEAREST,
+  BILINEAR,
+}
+
+enum NanPropagationMode:uint32 {
+  UNKNOWN = 0,
+  PROPAGATE,
+  IGNORE,
+}
+
+enum RoundingMode:uint32 {
+  UNKNOWN = 0,
+  SINGLE_ROUND,
+  INEXACT_ROUND,
+  DOUBLE_ROUND
+}
+
+enum Op:uint32 {
+  UNKNOWN = 0,
+  ARGMAX,
+  AVG_POOL2D,
+  CONV2D,
+  CONV3D,
+  DEPTHWISE_CONV2D,
+  FFT2D,
+  MATMUL,
+  MAX_POOL2D,
+  RFFT2D,
+  TRANSPOSE_CONV2D,
+  CLAMP,
+  ERF,
+  SIGMOID,
+  TANH,
+  ADD,
+  ARITHMETIC_RIGHT_SHIFT,
+  BITWISE_AND,
+  BITWISE_OR,
+  BITWISE_XOR,
+  INTDIV,
+  LOGICAL_AND,
+  LOGICAL_LEFT_SHIFT,
+  LOGICAL_RIGHT_SHIFT,
+  LOGICAL_OR,
+  LOGICAL_XOR,
+  MAXIMUM,
+  MINIMUM,
+  MUL,
+  POW,
+  SUB,
+  TABLE,
+  ABS,
+  BITWISE_NOT,
+  CEIL,
+  CLZ,
+  COS,
+  EXP,
+  FLOOR,
+  LOG,
+  LOGICAL_NOT,
+  NEGATE,
+  RECIPROCAL,
+  RSQRT,
+  SIN,
+  SELECT,
+  EQUAL,
+  GREATER,
+  GREATER_EQUAL,
+  REDUCE_ALL,
+  REDUCE_ANY,
+  REDUCE_MAX,
+  REDUCE_MIN,
+  REDUCE_PRODUCT,
+  REDUCE_SUM,
+  CONCAT,
+  PAD,
+  RESHAPE,
+  REVERSE,
+  SLICE,
+  TILE,
+  TRANSPOSE,
+  GATHER,
+  SCATTER,
+  RESIZE,
+  CAST,
+  RESCALE,
+  CONST,
+  IDENTITY,
+  CUSTOM,
+  COND_IF,
+  WHILE_LOOP,
+  VARIABLE,
+  VARIABLE_WRITE,
+  VARIABLE_READ,
+  CONST_SHAPE,
+}
+
+union Attribute {
+  ArgMaxAttribute,
+  AvgPool2dAttribute,
+  Conv2dAttribute,
+  Conv3dAttribute,
+  DepthwiseConv2dAttribute,
+  FFT2dAttribute,
+  MatMulAttribute,
+  MaxPool2dAttribute,
+  RFFT2dAttribute,
+  TransposeConv2dAttribute,
+  ClampAttribute,
+  ErfAttribute,
+  SigmoidAttribute,
+  TanhAttribute,
+  AddAttribute,
+  ArithmeticRightShiftAttribute,
+  BitwiseAndAttribute,
+  BitwiseOrAttribute,
+  BitwiseXorAttribute,
+  IntDivAttribute,
+  LogicalAndAttribute,
+  LogicalLeftShiftAttribute,
+  LogicalRightShiftAttribute,
+  LogicalOrAttribute,
+  LogicalXorAttribute,
+  MaximumAttribute,
+  MinimumAttribute,
+  MulAttribute,
+  PowAttribute,
+  SubAttribute,
+  TableAttribute,
+  AbsAttribute,
+  BitwiseNotAttribute,
+  CeilAttribute,
+  ClzAttribute,
+  CosAttribute,
+  ExpAttribute,
+  FloorAttribute,
+  LogAttribute,
+  LogicalNotAttribute,
+  NegateAttribute,
+  ReciprocalAttribute,
+  RsqrtAttribute,
+  SinAttribute,
+  SelectAttribute,
+  EqualAttribute,
+  GreaterAttribute,
+  GreaterEqualAttribute,
+  ReduceAllAttribute,
+  ReduceAnyAttribute,
+  ReduceMaxAttribute,
+  ReduceMinAttribute,
+  ReduceProductAttribute,
+  ReduceSumAttribute,
+  ConcatAttribute,
+  PadAttribute,
+  ReshapeAttribute,
+  ReverseAttribute,
+  SliceAttribute,
+  TileAttribute,
+  TransposeAttribute,
+  GatherAttribute,
+  ScatterAttribute,
+  ResizeAttribute,
+  CastAttribute,
+  RescaleAttribute,
+  ConstAttribute,
+  IdentityAttribute,
+  CustomAttribute,
+  CondIfAttribute,
+  WhileLoopAttribute,
+  VariableAttribute,
+  VariableWriteAttribute,
+  VariableReadAttribute,
+  ConstShapeAttribute,
+}
+
+table ArgMaxAttribute {
+  axis: int32;
+  nan_mode: NanPropagationMode;
+}
+
+table AvgPool2dAttribute {
+  kernel: [int32];
+  stride: [int32];
+  pad: [int32];
+  acc_type: DType;
+}
+
+table Conv2dAttribute {
+  pad: [int32];
+  stride: [int32];
+  dilation: [int32];
+  local_bound: bool;
+  acc_type: DType;
+}
+
+table Conv3dAttribute {
+  pad: [int32];
+  stride: [int32];
+  dilation: [int32];
+  local_bound: bool;
+  acc_type: DType;
+}
+
+table DepthwiseConv2dAttribute {
+  pad: [int32];
+  stride: [int32];
+  dilation: [int32];
+  local_bound: bool;
+  acc_type: DType;
+}
+
+table FFT2dAttribute {
+  inverse: bool;
+  local_bound: bool;
+}
+
+table MatMulAttribute {
+}
+
+table MaxPool2dAttribute {
+  kernel: [int32];
+  stride: [int32];
+  pad: [int32];
+  nan_mode: NanPropagationMode;
+}
+
+table RFFT2dAttribute {
+  local_bound: bool;
+}
+
+table TransposeConv2dAttribute {
+  out_pad: [int32];
+  stride: [int32];
+  local_bound: bool;
+  acc_type: DType;
+}
+
+table ClampAttribute {
+  min_val: [ubyte] (force_align: 8);
+  max_val: [ubyte] (force_align: 8);
+  nan_mode: NanPropagationMode;
+}
+
+table ErfAttribute {
+}
+
+table SigmoidAttribute {
+}
+
+table TanhAttribute {
+}
+
+table AddAttribute {
+}
+
+table ArithmeticRightShiftAttribute {
+  round: bool;
+}
+
+table BitwiseAndAttribute {
+}
+
+table BitwiseOrAttribute {
+}
+
+table BitwiseXorAttribute {
+}
+
+table IntDivAttribute {
+}
+
+table LogicalAndAttribute {
+}
+
+table LogicalLeftShiftAttribute {
+}
+
+table LogicalRightShiftAttribute {
+}
+
+table LogicalOrAttribute {
+}
+
+table LogicalXorAttribute {
+}
+
+table MaximumAttribute {
+  nan_mode: NanPropagationMode;
+}
+
+table MinimumAttribute {
+  nan_mode: NanPropagationMode;
+}
+
+table MulAttribute {
+}
+
+table PowAttribute {
+}
+
+table SubAttribute {
+}
+
+table TableAttribute {
+}
+
+table AbsAttribute {
+}
+
+table BitwiseNotAttribute {
+}
+
+table CeilAttribute {
+}
+
+table ClzAttribute {
+}
+
+table CosAttribute {
+}
+
+table ExpAttribute {
+}
+
+table FloorAttribute {
+}
+
+table LogAttribute {
+}
+
+table LogicalNotAttribute {
+}
+
+table NegateAttribute {
+}
+
+table ReciprocalAttribute {
+}
+
+table RsqrtAttribute {
+}
+
+table SinAttribute {
+}
+
+table SelectAttribute {
+}
+
+table EqualAttribute {
+}
+
+table GreaterAttribute {
+}
+
+table GreaterEqualAttribute {
+}
+
+table ReduceAllAttribute {
+  axis: int32;
+}
+
+table ReduceAnyAttribute {
+  axis: int32;
+}
+
+table ReduceMaxAttribute {
+  axis: int32;
+  nan_mode: NanPropagationMode;
+}
+
+table ReduceMinAttribute {
+  axis: int32;
+  nan_mode: NanPropagationMode;
+}
+
+table ReduceProductAttribute {
+  axis: int32;
+}
+
+table ReduceSumAttribute {
+  axis: int32;
+}
+
+table ConcatAttribute {
+  axis: int32;
+}
+
+table PadAttribute {
+}
+
+table ReshapeAttribute {
+}
+
+table ReverseAttribute {
+  axis: int32;
+}
+
+table SliceAttribute {
+}
+
+table TileAttribute {
+}
+
+table TransposeAttribute {
+  perms: [int32];
+}
+
+table GatherAttribute {
+}
+
+table ScatterAttribute {
+}
+
+table ResizeAttribute {
+  mode: ResizeMode;
+}
+
+table CastAttribute {
+}
+
+table RescaleAttribute {
+  scale32: bool;
+  rounding_mode: RoundingMode;
+  per_channel: bool;
+  input_unsigned: bool;
+  output_unsigned: bool;
+}
+
+table ConstAttribute {
+  // value is stored in output TosaTensor
+}
+
+table IdentityAttribute {
+}
+
+table CustomAttribute {
+  operator_name:string;
+  domain_name:string;
+  implementation_attrs:[ubyte];
+}
+
+table CondIfAttribute {
+  then_graph: string;
+  else_graph: string;
+}
+
+table WhileLoopAttribute {
+  cond_graph: string;
+  body_graph: string;
+}
+
+table VariableAttribute {
+}
+
+table VariableWriteAttribute {
+}
+
+table VariableReadAttribute {
+}
+
+table ConstShapeAttribute {
+  // value is stored in output TosaTensor
+}
+
+
+table Version {
+  _major: int32 = -1;
+  _minor: int32 = -1;
+  _patch: int32 = -1;
+  _draft: bool = true;
+}
+
+table TosaTensor {
+  name:string;                      // name of the tensor, used for solving dependency
+  shape:[int32];                    // shape of the tensor
+  type:DType;                       // data type of the tensor
+  data: [ubyte] (force_align: 8);   // raw data array if it's a constant tensor.
+  variable: bool;                   // is this a variable tensor
+  is_unranked: bool;                // whether this is an unranked tensor
+  variable_name:string;             // name for variable attribute
+}
+
+table TosaOperator {
+  op:Op;                    // operator enum
+  attribute:Attribute;      // union structure. operator attribute
+  inputs:[string];          // list of input tensor names
+  outputs:[string];         // list of output tensor names
+}
+
+table TosaBasicBlock {
+  name:string;              // basic block name
+  operators:[TosaOperator]; // operators array
+  tensors:[TosaTensor];     // tensors array
+  inputs:[string];          // name of graph inputs
+  outputs:[string];         // name of graph outputs
+}
+
+table TosaRegion {
+  name:string;             // name of region
+  blocks:[TosaBasicBlock]; // basic blocks array
+}
+
+table TosaGraph {
+  version:Version (required);
+  regions:[TosaRegion];       // regions array
+}
+
+root_type TosaGraph;

@@ -201,12 +201,11 @@ class TestPreset(CMakeTestCase):
         # Setting the value after should not affect the cache.
         self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
 
-    def test_define_overridable_option_cli_override_with_set_override(self):
+    def test_define_overridable_option_override_existing_cache_with_cli(self):
         _cmake_lists_txt = """
             cmake_minimum_required(VERSION 3.24)
             project(test_preset)
             include(${PROJECT_SOURCE_DIR}/preset.cmake)
-            set(EXECUTORCH_TEST_MESSAGE "set value")
             add_subdirectory(example)
         """
         _example_cmake_lists_txt = """
@@ -220,6 +219,285 @@ class TestPreset(CMakeTestCase):
                 },
             }
         )
+        self.run_cmake()
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "default value", "STRING")
+
         self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='cli value'"])
-        # If an option is set through cmake, it should NOT be overridable from the CLI.
-        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "set value", "STRING")
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "cli value", "STRING")
+
+    def test_set_overridable_option_before(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set_overridable_option(EXECUTORCH_TEST_MESSAGE "from set_overridable_option")
+            add_subdirectory(build)
+        """
+        _build_cmake_lists_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "CMakeLists.txt": _build_cmake_lists_txt,
+                },
+            }
+        )
+        self.run_cmake()
+        self.assert_cmake_cache(
+            "EXECUTORCH_TEST_MESSAGE", "from set_overridable_option", "STRING"
+        )
+
+    def test_set_overridable_option_after(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            add_subdirectory(build)
+            set_overridable_option(EXECUTORCH_TEST_MESSAGE "from set_overridable_option")
+        """
+        _build_cmake_lists_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "CMakeLists.txt": _build_cmake_lists_txt,
+                },
+            }
+        )
+        self.run_cmake()
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "move fast", "STRING")
+
+    def test_set_overridable_option_loaded_from_file(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            include(${PROJECT_SOURCE_DIR}/build/my_preset.cmake)
+            include(${PROJECT_SOURCE_DIR}/build/default.cmake)
+        """
+        _my_preset_txt = """
+            set_overridable_option(EXECUTORCH_FOO "hello world")
+        """
+        _default_preset_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+            define_overridable_option(EXECUTORCH_FOO "another test message" STRING "break things")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "my_preset.cmake": _my_preset_txt,
+                    "default.cmake": _default_preset_txt,
+                },
+            }
+        )
+        self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='from the cli'"])
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "from the cli", "STRING")
+        self.assert_cmake_cache("EXECUTORCH_FOO", "hello world", "STRING")
+
+    def test_set_overridable_option_with_cli_override(self):
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            add_subdirectory(build)
+        """
+        _build_cmake_lists_txt = """
+            define_overridable_option(EXECUTORCH_TEST_MESSAGE "test message" STRING "move fast")
+        """
+        self.create_workspace(
+            {
+                "CMakeLists.txt": _cmake_lists_txt,
+                "build": {
+                    "CMakeLists.txt": _build_cmake_lists_txt,
+                },
+            }
+        )
+        self.run_cmake(cmake_args=["-DEXECUTORCH_TEST_MESSAGE='from the cli'"])
+        self.assert_cmake_cache("EXECUTORCH_TEST_MESSAGE", "from the cli", "STRING")
+
+    def test_check_required_options_on_if_on_off(self):
+        """Test that when IF_ON is OFF, no checks are performed."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG OFF)
+            set(REQUIRED_OPTION1 OFF)
+            set(REQUIRED_OPTION2 OFF)
+            
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()  # Should succeed
+
+    def test_check_required_options_on_all_required_on(self):
+        """Test that when IF_ON is ON and all required options are ON, no error occurs."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG ON)
+            set(REQUIRED_OPTION1 ON)
+            set(REQUIRED_OPTION2 ON)
+            
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_required_options_on_one_required_off(self):
+        """Test that when IF_ON is ON but one required option is OFF, a fatal error occurs."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG ON)
+            set(REQUIRED_OPTION1 ON)
+            set(REQUIRED_OPTION2 OFF)
+            
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Use of 'FEATURE_FLAG' requires 'REQUIRED_OPTION2'"
+        )
+
+    def test_check_required_options_on_multiple_required_off(self):
+        """Test that when IF_ON is ON but multiple required options are OFF, a fatal error occurs for the first one."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            
+            set(FEATURE_FLAG ON)
+            set(REQUIRED_OPTION1 OFF)
+            set(REQUIRED_OPTION2 OFF)
+            
+            # This should cause a fatal error
+            check_required_options_on(
+                IF_ON 
+                    FEATURE_FLAG
+                REQUIRES 
+                    REQUIRED_OPTION1 
+                    REQUIRED_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Use of 'FEATURE_FLAG' requires 'REQUIRED_OPTION1'"
+        )
+
+    def test_check_conflicting_options_on_if_on_off(self):
+        """Test that when IF_ON is OFF, no conflict checks are performed."""
+
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG OFF)
+            set(CONFLICTING_OPTION1 ON)
+            set(CONFLICTING_OPTION2 ON)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_conflicting_options_on_no_conflicts(self):
+        """Test that when IF_ON is ON but no conflicting options are ON, no error occurs."""
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION1 OFF)
+            set(CONFLICTING_OPTION2 OFF)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake()
+
+    def test_check_conflicting_options_on_one_conflict(self):
+        """Test that when IF_ON is ON and one conflicting option is also ON, a fatal error occurs."""
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION1 ON)
+            set(CONFLICTING_OPTION2 OFF)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Both 'FEATURE_FLAG' and 'CONFLICTING_OPTION1' can't be ON"
+        )
+
+    def test_check_conflicting_options_on_multiple_conflicts(self):
+        """Test that when IF_ON is ON and multiple conflicting options are ON, a fatal error occurs for the first conflict."""
+        _cmake_lists_txt = """
+            cmake_minimum_required(VERSION 3.24)
+            project(test_preset)
+            include(${PROJECT_SOURCE_DIR}/preset.cmake)
+            set(FEATURE_FLAG ON)
+            set(CONFLICTING_OPTION1 ON)
+            set(CONFLICTING_OPTION2 ON)
+            check_conflicting_options_on(
+                IF_ON
+                    FEATURE_FLAG
+                CONFLICTS_WITH
+                    CONFLICTING_OPTION1
+                    CONFLICTING_OPTION2
+            )
+        """
+        self.create_workspace({"CMakeLists.txt": _cmake_lists_txt})
+        self.run_cmake(
+            error_contains="Both 'FEATURE_FLAG' and 'CONFLICTING_OPTION1' can't be ON"
+        )

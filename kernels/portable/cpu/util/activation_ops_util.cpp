@@ -15,7 +15,10 @@
 namespace torch {
 namespace executor {
 
-bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out) {
+bool check_gelu_args(
+    const Tensor& in,
+    std::string_view approximate,
+    Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() != ScalarType::Bool);
   ET_CHECK_OR_RETURN_FALSE(

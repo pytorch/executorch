@@ -15,15 +15,14 @@ namespace vkcompute {
 //
 
 std::vector<int64_t> calculate_broadcasted_output_size(
-    const api::vTensor& t1,
-    const api::vTensor& t2) {
-  std::vector<int64_t> out_sizes(
-      std::max(t1.sizes().size(), t2.sizes().size()));
+    const std::vector<int64_t>& sizes1,
+    const std::vector<int64_t>& sizes2) {
+  std::vector<int64_t> out_sizes(std::max(sizes1.size(), sizes2.size()));
 
   // Match the sizes in reverse because sizes are in NCHW order
   for (int i = -1; i >= -out_sizes.size(); --i) {
     out_sizes.at(out_sizes.size() + i) =
-        std::max(utils::val_at(i, t1.sizes()), utils::val_at(i, t2.sizes()));
+        std::max(utils::val_at(i, sizes1), utils::val_at(i, sizes2));
   }
 
   return out_sizes;
@@ -33,38 +32,11 @@ std::vector<int64_t> calculate_broadcasted_output_size(
 // Tensor property checking functions
 //
 
-bool check_ndim_is(const api::vTensor& t, size_t ndim) {
-  return t.sizes().size() == ndim;
-}
-
-bool check_same_sizes_at(
-    const api::vTensor& t1,
-    const int64_t d1,
-    const api::vTensor& t2,
-    const int64_t d2) {
-  return utils::val_at(d1, t1.sizes()) == utils::val_at(d2, t2.sizes());
-}
-
-bool check_packed_dim_is(const api::vTensor& t, const int32_t packed_dim) {
-  return t.packed_dim() == packed_dim;
-}
-
-bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2) {
-  return t1.sizes().size() == t2.sizes().size();
-}
-
-bool check_same_packed_dim(const api::vTensor& t1, const api::vTensor& t2) {
-  return t1.packed_dim() == t2.packed_dim();
-}
-
 bool check_same_packed_dim(
-    const api::vTensor& t1,
-    const api::vTensor& t2,
-    const api::vTensor& t3) {
-  if (t1.packed_dim() != t2.packed_dim()) {
-    return false;
-  }
-  return (t1.packed_dim() == t3.packed_dim());
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out) {
+  return graph.packed_dim_of(in) == graph.packed_dim_of(out);
 }
 
 //
@@ -72,27 +44,33 @@ bool check_same_packed_dim(
 //
 
 bool is_packed_dim_broadcasted(
-    const api::vTensor& sndr,
-    const api::vTensor& rcvr) {
+    ComputeGraph& graph,
+    const ValueRef sndr,
+    const ValueRef rcvr) {
   // We assume that the tensors are broadcastable. If values aren't equal at
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
-  switch (sndr.packed_dim()) {
+  const std::vector<int64_t> sndr_sizes = graph.sizes_of(sndr);
+  const std::vector<int64_t> rcvr_sizes = graph.sizes_of(rcvr);
+
+  switch (graph.packed_dim_of(sndr)) {
     case WHCN::kChannelsDim:
-      return utils::val_at(-3, sndr.sizes()) > utils::val_at(-3, rcvr.sizes());
+      return utils::val_at(-3, sndr_sizes) > utils::val_at(-3, rcvr_sizes);
     case WHCN::kHeightDim:
-      return utils::val_at(-2, sndr.sizes()) > utils::val_at(-2, rcvr.sizes());
+      return utils::val_at(-2, sndr_sizes) > utils::val_at(-2, rcvr_sizes);
     case WHCN::kWidthDim:
-      return utils::val_at(-1, sndr.sizes()) > utils::val_at(-1, rcvr.sizes());
+      return utils::val_at(-1, sndr_sizes) > utils::val_at(-1, rcvr_sizes);
     default:
       VK_THROW("Invalid packed dim");
   }
 }
 
 utils::ivec2 create_broadcast_params(
-    const api::vTensor& t1,
-    const api::vTensor& t2) {
+    ComputeGraph& graph,
+    const ValueRef t1,
+    const ValueRef t2) {
   return utils::make_ivec2(
-      {is_packed_dim_broadcasted(t2, t1), is_packed_dim_broadcasted(t1, t2)});
+      {is_packed_dim_broadcasted(graph, t2, t1),
+       is_packed_dim_broadcasted(graph, t1, t2)});
 }
 
 //

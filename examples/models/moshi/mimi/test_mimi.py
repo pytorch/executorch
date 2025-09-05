@@ -19,9 +19,9 @@ from executorch.runtime import Runtime
 
 from huggingface_hub import hf_hub_download
 from moshi.models import loaders
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export, ExportedProgram
 from torch.utils._pytree import tree_flatten
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 proxies = {
     "http": "http://fwdproxy:8080",

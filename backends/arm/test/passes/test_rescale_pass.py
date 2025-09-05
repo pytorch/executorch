@@ -4,15 +4,25 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import unittest
+from typing import Tuple
 
 import pytest
 
 import torch
-import torch.library
 from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from parameterized import parameterized
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineINT,
+)
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
+
+input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
 
 
 def test_rescale_op():
@@ -40,8 +50,19 @@ def test_rescale_op():
             127,
         ),
     ]
-    for sample_input in sample_inputs[1:2]:
-        torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        for sample_input in sample_inputs:
+            exir_ops.backend.tosa.RESCALE.default(
+                *tuple(
+                    [
+                        mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
+                        for i in sample_input
+                    ]
+                )
+            )
 
 
 def test_nonzero_zp_for_int32():
@@ -62,9 +83,22 @@ def test_nonzero_zp_for_int32():
             1,  # Should be 0, expect error
         ),
     ]
-    for sample_input in sample_inputs:
-        with pytest.raises(Exception, match="opcheck"):
-            torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        for sample_input in sample_inputs:
+            with pytest.raises(
+                ValueError, match="TOSA requires (output|input)_zp to be zero"
+            ):
+                exir_ops.backend.tosa.RESCALE.default(
+                    *tuple(
+                        [
+                            mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
+                            for i in sample_input
+                        ]
+                    )
+                )
 
 
 def test_zp_outside_range():
@@ -85,19 +119,31 @@ def test_zp_outside_range():
             -129,  # Should be >-129m expect error
         ),
     ]
-    for sample_input in sample_inputs:
-        with pytest.raises(Exception, match="opcheck"):
-            torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        for sample_input in sample_inputs:
+            with pytest.raises(
+                Exception, match="(in_zp|out_zp)=-?[0-9]* outside valid range"
+            ):
+                exir_ops.backend.tosa.RESCALE.default(
+                    *tuple(
+                        [
+                            mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
+                            for i in sample_input
+                        ]
+                    )
+                )
 
 
 class RescaleNetwork(torch.nn.Module):
-    test_parameters = [
-        (torch.rand(5), torch.rand(5)),
-        (torch.randn(5, 2), torch.randn(5, 1)),
-        (torch.ones(1, 10, 4, 6), torch.ones(1, 10, 4, 6)),
-        (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
-        (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
-    ]
+    test_data = {
+        "rand": (torch.rand(5), torch.rand(5)),
+        "randn": (torch.randn(5, 2), torch.randn(5, 1)),
+        "ones": (torch.ones(1, 10, 4, 6), torch.ones(1, 10, 4, 6)),
+        "randn_ones": (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
+        "randn_large": (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+    }
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         a = y.exp()
@@ -110,62 +156,56 @@ class RescaleNetwork(torch.nn.Module):
         return f
 
 
-def _test_rescale_pipeline(
-    module: torch.nn.Module, test_data: tuple[torch.Tensor, torch.Tensor]
-):
+@common.parametrize("test_data", RescaleNetwork.test_data)
+def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor]):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
     need the InsertRescalesPass, make sure that they play nicely together."""
-    tester = (
-        ArmTester(
-            module,
-            example_inputs=test_data,
-            compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-        )
-        .quantize()
-        .export()
-        .to_edge_transform_and_lower()
-        .to_executorch()
+    module = RescaleNetwork()
+    pipeline = TosaPipelineINT(
+        module=module,
+        test_data=test_data,
+        aten_op=[],
+        exir_op=[],
     )
-    if conftest.is_option_enabled("tosa_ref_model"):
-        tester.run_method_and_compare_outputs(test_data)
+    if not conftest.is_option_enabled("tosa_ref_model"):
+        pipeline.pop_stage("run_method_and_compare_outputs")
+    pipeline.run()
 
 
-def _test_rescale_pipeline_ethosu(
-    module: torch.nn.Module, compile_spec, test_data: tuple[torch.Tensor, torch.Tensor]
-):
-    tester = (
-        ArmTester(
-            module,
-            example_inputs=test_data,
-            compile_spec=compile_spec,
-        )
-        .quantize()
-        .export()
-        .to_edge_transform_and_lower()
-        .to_executorch()
-        .serialize()
+u55_xfails = {
+    "ones": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
+    "randn_ones": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
+    "randn_large": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
+}
+
+
+@common.parametrize("test_data", RescaleNetwork.test_data, xfails=u55_xfails)
+@common.XfailIfNoCorstone300
+def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
+    """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
+    need the InsertRescalesPass, make sure that they play nicely together."""
+    module = RescaleNetwork()
+    pipeline = EthosU55PipelineINT(
+        module=module,
+        test_data=test_data,
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
     )
-    if conftest.is_option_enabled("corstone_fvp"):
-        tester.run_method_and_compare_outputs(inputs=test_data)
+    pipeline.run()
 
 
-class TestRescales(unittest.TestCase):
-
-    @parameterized.expand(RescaleNetwork.test_parameters)
-    @pytest.mark.tosa_ref_model
-    def test_quantized_rescale(self, x, y):
-        _test_rescale_pipeline(RescaleNetwork(), (x, y))
-
-    @parameterized.expand(RescaleNetwork.test_parameters)
-    @pytest.mark.corstone_fvp
-    def test_quantized_rescale_U55(self, x, y):
-        _test_rescale_pipeline_ethosu(
-            RescaleNetwork(), common.get_u55_compile_spec(), (x, y)
-        )
-
-    @parameterized.expand(RescaleNetwork.test_parameters)
-    @pytest.mark.corstone_fvp
-    def test_quantized_rescale_U85(self, x, y):
-        _test_rescale_pipeline_ethosu(
-            RescaleNetwork(), common.get_u85_compile_spec(), (x, y)
-        )
+@common.parametrize("test_data", RescaleNetwork.test_data)
+@common.XfailIfNoCorstone320
+def test_quantized_rescale_u85(test_data: tuple[torch.Tensor, torch.Tensor]):
+    """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and
+    need the InsertRescalesPass, make sure that they play nicely together."""
+    module = RescaleNetwork()
+    pipeline = EthosU85PipelineINT(
+        module=module,
+        test_data=test_data,
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()

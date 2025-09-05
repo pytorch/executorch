@@ -1,10 +1,15 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 
 oncall("executorch")
 
 python_unittest(
     name = "inspector_test",
     srcs = ["inspector_test.py"],
+    labels = ci.labels(
+        ci.buckconfig("executorch.event_tracer_enabled", "true"),
+    ),
     deps = [
         "//executorch/devtools:lib",
         "//executorch/devtools/debug_format:et_schema",
@@ -13,6 +18,7 @@ python_unittest(
         "//executorch/devtools/inspector:inspector",
         "//executorch/devtools/inspector:lib",
         "//executorch/exir:lib",
+        "//executorch/devtools/inspector/tests:inspector_test_utils",
     ],
 )
 
@@ -37,5 +43,51 @@ python_unittest(
         "//executorch/devtools/etdump:schema_flatcc",
         "//executorch/devtools/etrecord/tests:etrecord_test_library",
         "//executorch/devtools/inspector:inspector_utils",
+    ],
+)
+
+python_unittest(
+    name = "intermediate_output_capturer_test",
+    srcs = ["intermediate_output_capturer_test.py"],
+    deps = [
+        "//executorch/devtools/inspector:inspector",
+        "//executorch/devtools/inspector:lib",
+        "//executorch/devtools/inspector:intermediate_output_capturer",
+        "//executorch/exir:lib",
+        "//executorch/devtools/inspector/tests:inspector_test_utils",
+    ],
+)
+
+python_unittest(
+    name = "l1_comparator_test",
+    srcs = ["l1_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+python_unittest(
+    name = "mse_comparator_test",
+    srcs = ["mse_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+python_unittest(
+    name = "snr_comparator_test",
+    srcs = ["snr_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+python_library(
+    name = "inspector_test_utils",
+    srcs = [
+        "inspector_test_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )

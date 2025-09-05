@@ -6,15 +6,16 @@
 # pyre-unsafe
 
 import typing
+from typing import cast
 
 import torch
 import torch.fx as fx
+
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.operators.op_permute import transform_permutation_vector
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa.utils import tosa_shape
 from executorch.exir.backend.utils import WhyNoPartitionReporter
-
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -124,6 +125,9 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.bitwise_or.Tensor,
         exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.bitwise_and.Scalar,
+        exir_ops.edge.aten.bitwise_or.Scalar,
+        exir_ops.edge.aten.bitwise_xor.Scalar,
         exir_ops.edge.aten.bitwise_not,
         exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_or.default,
@@ -138,12 +142,15 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.gt.Scalar,
         exir_ops.edge.aten.le.Tensor,
+        exir_ops.edge.aten.le.Scalar,
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.ne.Tensor,
         exir_ops.edge.aten.ne.Scalar,
         exir_ops.edge.aten.flip.default,  # REVERSE
         exir_ops.edge.aten.grid_sampler_2d,  # GATHER
+        exir_ops.edge.aten.index.Tensor,  # GATHER
+        exir_ops.edge.aten.index_select.default,  # GATHER
         exir_ops.edge.aten.scatter.src,
         exir_ops.edge.aten.scatter.value,
         exir_ops.edge.aten.select_scatter.default,
@@ -172,6 +179,101 @@ class EthosU55NotSupported(OperatorSupportBase):
 
 
 shape_t = list[int]
+
+
+class EthosU55ViewCheck(OperatorSupportBase):
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        super().__init__()
+        self.reporter = reporter
+
+    def axes_product(self, nhwc_shape: shape_t) -> int:
+        product = 1
+        for axes in nhwc_shape:
+            product *= axes
+        return product
+
+    # TODO: Extend this check to comply with u55 restrictions
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """
+        Check whether a given view node is supported on U55.
+
+        Currently only checks dtypes and product of axes.
+
+        It is not the view operator itself that is not supported on U55. In order for the
+        view operator to be compatible with the channels-last format of TosaBackend,
+        transposes may need to be inserted before and after the view op. If that happens
+        and that transpose operator does not adhere to the limitations then it will
+        result in the following error:
+
+            CPU performance estimation for "Transpose" not implemented.
+            ...
+            CPU operations are not supported for GraphAPI input
+
+        Args:
+            node: The FX node representing the view_copy operator.
+
+        Returns:
+            False if the operator is not support and True if it is supported.
+        """
+        # Select decomposes into squeeze, which in turn becomes a view. Therefore,
+        # perform the same check on select operators as view operators.
+        if node.target not in (
+            exir_ops.edge.aten.view_copy.default,
+            exir_ops.edge.aten.select.int,
+            exir_ops.edge.aten.select_copy.int,
+        ):
+            return True
+
+        if node.target in (
+            exir_ops.edge.aten.select.int,
+            exir_ops.edge.aten.select_copy.int,
+        ):
+            input_node, dim, index = cast(tuple[fx.Node, int, int], node.args)
+
+            shape = input_node.meta["val"].shape
+            rank = len(shape)
+            if not -rank <= dim < rank:
+                raise IndexError(
+                    f"Dim {dim} is outside of the range for tensor '{node.target}' of "
+                    f"rank {rank}"
+                )
+            dim = dim % rank
+
+            size = shape[dim]
+            if not -size <= index < size:
+                raise IndexError(
+                    f"Index {index} is outside of the range for dim {dim} with size "
+                    f"{size} for tensor {node.target}"
+                )
+            index = index % size
+
+            # Shape after squeeze. This may get converted into a view which may become
+            # a transpose. This is why we're checking select.
+            squeezed_shape = shape[:dim] + shape[dim + 1 :]
+            shape = squeezed_shape
+        else:
+            shape = list(get_first_fake_tensor(node).shape)
+
+        dtype = _try_determine_dtype(node)
+
+        rank = len(shape)
+        if rank > 4:
+            if dtype == torch.int32:
+                self.reporter.report_reject(node, "No support for rank > 4 in int32.")
+                return False
+
+        if dtype in (torch.int8, torch.int16):
+            if self.axes_product(shape) > 65536:
+                self.reporter.report_reject(
+                    node,
+                    f"No support for {shape=}, {dtype=}. Product of axes must be <65536",
+                )
+                return False
+
+        return True
 
 
 class EthosU55TransposeCheck(OperatorSupportBase):

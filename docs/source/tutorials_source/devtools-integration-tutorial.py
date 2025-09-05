@@ -187,24 +187,22 @@ with open(save_path, "wb") as f:
 
 from executorch.devtools import Inspector
 
+
 # sphinx_gallery_start_ignore
-inspector_patch = patch.object(Inspector, "__init__", return_value=None)
-inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value="")
-inspector_patch.start()
+# inspector_patch = patch.object(Inspector, "__init__", return_value=None)
+inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
 etrecord_path = "etrecord.bin"
 etdump_path = "etdump.etdp"
 inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
-# sphinx_gallery_start_ignore
-inspector.event_blocks = []
-# sphinx_gallery_end_ignore
 inspector.print_data_tabular()
 
-# sphinx_gallery_start_ignore
-inspector_patch.stop()
-inspector_patch_print.stop()
-# sphinx_gallery_end_ignore
+####################################
+#
+# Here is an example output:
+#
+# .. image:: ../_static/img/inspector_tabular_output.png
 
 ######################################################################
 # Analyzing with an Inspector
@@ -234,11 +232,13 @@ for event_block in inspector.event_blocks:
         if event.name == "native_call_addmm.out":
             print(event.name, event.perf_data.raw if event.perf_data else "")
 
+    print()
     # Via Dataframe
     df = event_block.to_dataframe()
     df = df[df.event_name == "native_call_addmm.out"]
-    print(df[["event_name", "raw"]])
-    print()
+    if len(df) > 0:
+        print(df[["event_name", "raw"]])
+        print()
 
 ######################################################################
 # If a user wants to trace an operator back to their model code, they would do
@@ -255,6 +255,20 @@ for event_block in inspector.event_blocks:
     if slowest is not None:
         print(slowest.name)
         print()
+        # sphinx_gallery_start_ignore
+        slowest_print = patch.object(
+            slowest,
+            "stack_traces",
+            new={
+                "aten_convolution_default_1_": "  File "
+                '"devtools-integration-tutorial.py", '
+                "line 82, in forward\n"
+                "    x = F.max_pool2d(F.relu(self.conv2(x)), "
+                "2)\n"
+            },
+        )
+        slowest_print.start()
+        # sphinx_gallery_end_ignore
         pp.pprint(slowest.stack_traces)
         print()
         pp.pprint(slowest.module_hierarchy)
@@ -264,7 +278,7 @@ for event_block in inspector.event_blocks:
     df = df[df.event_name == "native_call_convolution.out"]
     if len(df) > 0:
         slowest = df.loc[df["p50"].idxmax()]
-        assert slowest
+        assert slowest is not None
         print(slowest.name)
         print()
         pp.pprint(slowest.stack_traces if slowest.stack_traces else "")
@@ -281,6 +295,7 @@ print(inspector.find_total_for_module("L__self___conv2"))
 ######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
 # `Inspector <../model-inspector.html>`__
+#
 
 ######################################################################
 # Conclusion

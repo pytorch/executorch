@@ -20,12 +20,10 @@ if [[ "$BUILD_TOOL" == "cmake" ]]; then
     # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
     source .ci/scripts/setup-vulkan-linux-deps.sh
 
+    # We need the runner to test the built library.
     PYTHON_EXECUTABLE=python \
-    CMAKE_ARGS="-DEXECUTORCH_BUILD_PYBIND=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+    CMAKE_ARGS="-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \
     .ci/scripts/setup-linux.sh "$@"
-
-    # Install llama3_2_vision dependencies.
-    PYTHON_EXECUTABLE=python ./examples/models/llama3_2_vision/install_requirements.sh
 
     .ci/scripts/unittest-linux-cmake.sh
 elif [[ "$BUILD_TOOL" == "buck2" ]]; then

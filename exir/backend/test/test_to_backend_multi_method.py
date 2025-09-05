@@ -392,6 +392,77 @@ class TestToBackendMultiMethod(unittest.TestCase):
         }
         self._test(test_set)
 
+    def test_multi_method_to_backend_sequential_delegates(self):
+        class SequentialBackendModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y, z):
+                # delegate one
+                x = x - x
+                y = y - y
+                z = z - z
+                # graph break
+                a = x * y * z
+                # delegate two uses outputs from delegate one and the
+                # output from the graph break
+                b = x + a
+                b = b + z + a
+                b = b + y + a
+                return b
+
+        module = SequentialBackendModule()
+        example_inputs = (torch.ones(1), torch.ones(1), torch.ones(1))
+        seq_edgeir_m = to_edge(torch.export.export(module, example_inputs))
+
+        test_set = {
+            "seq_edgeir": (
+                seq_edgeir_m.exported_program(),
+                BackendWithPreprocessAllPartitioner(),
+                [
+                    "SecondBackendWithPreprocessAll#3#aten.sub.Tensor:aten.sub.Tensor:aten.sub.Tensor:#sub:b'\\x02';sub:b'\\x02';sub:b'\\x02';",
+                    "FirstBackendWithPreprocessAll#5#aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:#add:b'\\x00';add:b'\\x00';add:b'\\x00';add:b'\\x00';add:b'\\x00';",
+                ],
+            ),
+        }
+        self._test(test_set)
+
+    def test_multi_method_to_backend_constants(self):
+        class SequentialBackendModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const = torch.zeros(1)
+
+            def forward(self, x, y, z):
+                # delegate one
+                x = x - x
+                y = y - y
+                z = z - z
+                # graph break
+                a = x * y * z * self.const
+                # delegate two uses outputs from delegate one and the
+                # output from the graph break
+                b = x + self.const + a
+                b = z + a + b
+                b = y + a + b
+                return b
+
+        module = SequentialBackendModule()
+        example_inputs = (torch.ones(1), torch.ones(1), torch.ones(1))
+        seq_const_m = to_edge(torch.export.export(module, example_inputs))
+
+        test_set = {
+            "seq_const": (
+                seq_const_m.exported_program(),
+                BackendWithPreprocessAllPartitioner(),
+                [
+                    "SecondBackendWithPreprocessAll#3#aten.sub.Tensor:aten.sub.Tensor:aten.sub.Tensor:#sub:b'\\x02';sub:b'\\x02';sub:b'\\x02';",
+                    "FirstBackendWithPreprocessAll#6#CONSTc_const_copy_0:aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:aten.add.Tensor:#add:b'\\x00';add:b'\\x00';add:b'\\x00';add:b'\\x00';add:b'\\x00';add:b'\\x00';",
+                ],
+            ),
+        }
+        self._test(test_set)
+
     def test_multi_method_to_backend_not_found(self):
         class SinModule(torch.nn.Module):
             def __init__(self):
@@ -484,13 +555,13 @@ class TestToBackendMultiMethod(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
         self.check_backend_delegate(
             program=program,
             delegate=program.execution_plan[1].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check that there are two methods

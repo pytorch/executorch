@@ -13,6 +13,7 @@ runtime.python_test(
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
+        "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
@@ -91,5 +92,24 @@ runtime.python_test(
     ],
     external_deps = [
         "libtorch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_recipes",
+    srcs = glob([
+        "recipes/*.py",
+    ]),
+    env = {
+        "HTTP_PROXY": "http://fwdproxy:8080",
+        "HTTPS_PROXY": "http://fwdproxy:8080",
+    },
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_delegate",
+        "//executorch/export:lib",
+        "//pytorch/vision:torchvision",  # @manual
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/examples/models:models",  # @manual
+        "//executorch/examples/xnnpack:models",  # @manual
     ],
 )

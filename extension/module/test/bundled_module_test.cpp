@@ -9,7 +9,7 @@
 #include <executorch/extension/module/bundled_module.h>
 #include <gtest/gtest.h>
 
-using namespace ::executorch::extension;
+using namespace ::executorch::extension::ET_BUNDLED_MODULE_NAMESPACE;
 using namespace ::executorch::runtime;
 
 class BundledModuleTest : public ::testing::Test {

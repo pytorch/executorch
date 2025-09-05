@@ -269,9 +269,11 @@ int main(int argc, char** argv) {
         (uint32_t)inputs.error());
     ET_LOG(Debug, "Inputs prepared.");
 
-    const et_timestamp_t before_execute = et_pal_current_ticks();
+    const et_timestamp_t before_execute =
+        executorch::runtime::pal_current_ticks();
     Error status = method->execute();
-    const et_timestamp_t after_execute = et_pal_current_ticks();
+    const et_timestamp_t after_execute =
+        executorch::runtime::pal_current_ticks();
     time_spent_executing += after_execute - before_execute;
     ET_CHECK_MSG(
         status == Error::Ok,

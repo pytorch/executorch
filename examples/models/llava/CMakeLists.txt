@@ -15,14 +15,11 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-cmake_minimum_required(VERSION 3.24)  # 3.24 is required for WHOLE_ARCHIVE
+cmake_minimum_required(VERSION 3.24) # 3.24 is required for WHOLE_ARCHIVE
 project(llava)
 
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
-
-# This is a temporary hack to get around Torch dep so we can test this on android
-option(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE "Hack option to feed dummy image to remove torch.load dep" OFF)
 
 include(CMakeDependentOption)
 #
@@ -73,31 +70,19 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-# Avoid torch dep from torch.load()-ing the image.
-# This is a temporary hack.
-if(LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
-  add_definitions(-DLLAVA_NO_TORCH_DUMMY_IMAGE=1)
-  message("Buidling the runner without Torch, feeding a dummy image!")
-else()
-  find_package_torch()
-endif()
-
 #
 # llava_main: test binary to run llava, with tokenizer and sampler integrated
 #
 
 # find `executorch` libraries Same as for gflags
-set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
-find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
+find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
+executorch_target_link_options_shared_lib(executorch)
 
 # llava_runner library
 add_subdirectory(runner)
 
 set(LINK_LIBS executorch gflags)
-if(NOT LLAVA_RUNNER_NO_TORCH_DUMMY_IMAGE)
-  list(APPEND LINK_LIBS torch)
-endif()
 set(link_libraries ${LINK_LIBS})
 set(_srcs main.cpp)
 
@@ -111,17 +96,17 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     cpublas
     eigen_blas
   )
-  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  executorch_target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  target_link_options_shared_lib(portable_ops_lib)
+  executorch_target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 # quantized_ops_lib: Register quantized op kernels into the runtime
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_LLM)
   list(APPEND link_libraries $<LINK_LIBRARY:WHOLE_ARCHIVE,custom_ops>)
 endif()
 
@@ -144,24 +129,24 @@ endif()
 
 # XNNPACK
 if(TARGET xnnpack_backend)
-  set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
+  set(xnnpack_backend_libs xnnpack_backend XNNPACK xnnpack-microkernels-prod)
   if(TARGET kleidiai)
     list(APPEND xnnpack_backend_libs kleidiai)
   endif()
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  executorch_target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  target_link_options_shared_lib(vulkan_backend)
+  executorch_target_link_options_shared_lib(vulkan_backend)
 endif()
 
 # Qnn backend
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
-  target_link_options_shared_lib(qnn_executorch_backend)
+  executorch_target_link_options_shared_lib(qnn_executorch_backend)
 endif()
 
 # MPS backend
@@ -175,7 +160,7 @@ if(TARGET mpsdelegate)
     "-weak_framework MetalPerformanceShadersGraph"
     "-weak_framework Metal"
   )
-  target_link_options_shared_lib(mpsdelegate)
+  executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
 if(TARGET coremldelegate)
@@ -189,7 +174,7 @@ if(TARGET coremldelegate)
     "-framework CoreML"
     "-framework Accelerate"
   )
-  target_link_options_shared_lib(coremldelegate)
+  executorch_target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib
@@ -197,18 +182,27 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
+# stb_image: a lightweight library to load images
+include(FetchContent)
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG f0569113c93ad095470c54bf34a17b36646bbbb5
+)
+FetchContent_MakeAvailable(stb)
+# Add deprecated/ to use stb_image_resize.h for internal compatibility
+list(APPEND _common_include_directories ${stb_SOURCE_DIR}
+     ${stb_SOURCE_DIR}/deprecated
+)
+
 add_executable(llava_main ${_srcs})
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  if(APPLE)
-    target_link_options(llava_main PRIVATE "LINKER:-dead_strip,-s")
-  else()
-    target_link_options(llava_main PRIVATE "LINKER:--gc-sections,-s")
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options_gc_sections(llava_main)
+  if(NOT APPLE)
+    target_link_options(llava_main PRIVATE "LINKER:-s")
   endif()
 endif()
 
 target_include_directories(llava_main PUBLIC ${_common_include_directories})
 target_link_libraries(llava_main PUBLIC llava_runner ${link_libraries})
 target_compile_options(llava_main PUBLIC ${_common_compile_options})
-
-# Print all summary
-executorch_print_configuration_summary()

@@ -1,19 +1,29 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+
+from typing import Tuple
 
 import pytest
 
 import torch
 from executorch.backends.arm.test import common
 
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+)
+
+
+input_t1 = Tuple[torch.Tensor]  # Input x
 
 
 class Conv2D(torch.nn.Module):
+    inputs: dict[str, input_t1] = {
+        "randn": (torch.randn(1, 2, 20, 20),),
+    }
 
     def __init__(self):
         super().__init__()
@@ -22,37 +32,36 @@ class Conv2D(torch.nn.Module):
     def forward(self, x):
         return self.conv2d(x.to(memory_format=torch.channels_last))
 
-    def get_inputs(self):
-        return (torch.randn(1, 2, 20, 20),)
+
+@common.parametrize("test_data", Conv2D.inputs)
+def test_tosa_FP_pipeline(test_data: input_t1):
+    module = Conv2D()
+    pipeline = TosaPipelineFP[input_t1](
+        module,
+        test_data,
+        [],
+        [],
+        use_to_edge_transform_and_lower=False,
+    )
+    pos = pipeline.find_pos("partition")
+    pipeline._stages = pipeline._stages[:pos]
+    pipeline.run()
+    with pytest.raises(RuntimeError):
+        pipeline.tester.partition()
 
 
-class TestDimOrderGuards(unittest.TestCase):
-
-    def test_tosa_MI_pipeline(self):
-        module = Conv2D()
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge()
-        )
-        with pytest.raises(RuntimeError):
-            tester.partition()
-
-    def test_tosa_BI_pipeline(self):
-        module = Conv2D()
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=module.get_inputs(),
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge()
-        )
-        with pytest.raises(RuntimeError):
-            tester.partition()
+@common.parametrize("test_data", Conv2D.inputs)
+def test_tosa_INT_pipeline(test_data: input_t1):
+    module = Conv2D()
+    pipeline = TosaPipelineINT[input_t1](
+        module,
+        test_data,
+        [],
+        [],
+        use_to_edge_transform_and_lower=False,
+    )
+    pos = pipeline.find_pos("partition")
+    pipeline._stages = pipeline._stages[:pos]
+    pipeline.run()
+    with pytest.raises(RuntimeError):
+        pipeline.tester.partition()

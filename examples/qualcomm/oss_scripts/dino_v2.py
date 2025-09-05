@@ -10,12 +10,10 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes import ConvertUpsampleBicubicWithBilinear
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
@@ -51,7 +49,7 @@ def main(args):
         )
 
     img_size, data_num = 224, 100
-    inputs, targets, input_list = get_imagenet_dataset(
+    inputs, targets = get_imagenet_dataset(
         dataset_path=f"{args.dataset}",
         data_size=data_num,
         image_shape=(256, 256),
@@ -62,7 +60,6 @@ def main(args):
     pte_filename = "dino_v2"
     instance = get_instance()
     passes_job = get_capture_program_passes()
-    passes_job[ConvertUpsampleBicubicWithBilinear][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         instance,
         sample_input,
@@ -88,7 +85,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

@@ -3,6 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import hashlib
+from collections import defaultdict
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
@@ -21,7 +24,7 @@ class FuseEqualPlaceholdersPass(ExportPass):
     """
     This pass optimizes memory usage by finding constant placeholders
     pointing to identical tensors and fusing them to one single placeholder
-    with multiple users.
+    with multiple users, using a cache for faster comparison.
     """
 
     def __init__(self, exported_program: ExportedProgram):
@@ -30,54 +33,54 @@ class FuseEqualPlaceholdersPass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False
-        const_placeholder_nodes = []
+
+        # Build a cache of params: mapping hash_key -> list of (node, tensor)
+        hash_buckets = defaultdict(list)
         for node in graph_module.graph.nodes:
-            if is_param_node(self.exported_program, node):
-                const_placeholder_nodes.append(node)
+            if not is_param_node(self.exported_program, node):
+                continue
+            tensor = get_param_tensor(self.exported_program, node)
+            if tensor is None:
+                continue
+            # Create a lightweight fingerprint: dtype + shape + SHA1 of raw bytes
+            # Ensure tensor is on CPU and contiguous
+            t_cpu = tensor.detach().cpu().contiguous()
+            data_bytes = t_cpu.numpy().tobytes()
+            key = (
+                str(t_cpu.dtype),
+                tuple(t_cpu.shape),
+                hashlib.sha1(data_bytes).hexdigest(),
+            )
+            hash_buckets[key].append((node, t_cpu))
 
-        while const_placeholder_nodes:
-
-            # Find equal tensors
-            node1 = const_placeholder_nodes.pop()
-            eq_nodes = [node1]
-            tensor1 = get_param_tensor(self.exported_program, node1)
-            if tensor1 is None:
+        # For each bucket with more than one entry, fuse:
+        for nodes_tensors in hash_buckets.values():
+            if len(nodes_tensors) < 2:
                 continue
 
-            for node2 in const_placeholder_nodes:
-                tensor2 = get_param_tensor(self.exported_program, node2)
-                if tensor2 is None:
-                    continue
-
-                if torch.equal(tensor1, tensor2):
-                    eq_nodes.append(node2)
-
-            if len(eq_nodes) > 1:
-                common_name = node1.name + "_common"
-                common_kind = get_constant_placeholder_kind(
-                    self.exported_program, node1
+            # Create a new placeholder from first in list of equal placeholders.
+            rep_node, rep_tensor = nodes_tensors[0]
+            common_name = rep_node.name + "_common"
+            common_kind = get_constant_placeholder_kind(self.exported_program, rep_node)
+            common_persistent = True
+            with graph_module.graph.inserting_before(rep_node):
+                common_node = create_constant_placeholder(
+                    self.exported_program,
+                    graph_module.graph,
+                    common_name,
+                    common_kind,
+                    rep_tensor,
+                    common_persistent,
                 )
-                common_persisten_buffer = True
 
-                with graph_module.graph.inserting_before(node1):
-                    common_node = create_constant_placeholder(
-                        self.exported_program,
-                        graph_module.graph,
-                        common_name,
-                        common_kind,
-                        tensor1,
-                        common_persisten_buffer,
-                    )
-
-                for eq_node in eq_nodes:
-                    eq_node.replace_all_uses_with(common_node)
-                    delete_constant_placeholder(self.exported_program, eq_node)
-                    if eq_node != node1:
-                        const_placeholder_nodes.remove(eq_node)
-
+            # Replace uses and delete duplicates
+            for node, _ in nodes_tensors:
+                node.replace_all_uses_with(common_node)
+                delete_constant_placeholder(self.exported_program, node)
                 modified = True
 
         if modified:
             graph_module.recompile()
             graph_module = super().call(graph_module).graph_module
+
         return PassResult(graph_module=graph_module, modified=modified)

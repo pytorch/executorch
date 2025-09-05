@@ -7,6 +7,7 @@ from typing import Tuple
 
 import torch
 from executorch.backends.arm._passes import FoldAndAnnotateQParamsPass
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
 
@@ -14,14 +15,16 @@ input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
 
 class SimpleQuantizeModel(torch.nn.Module):
+    test_data = {
+        "rand": (torch.rand(1, 1280, 7, 7), torch.rand(1, 1280, 7, 7)),
+    }
+
     def forward(self, x, y):
         return x + torch.max((x + x), (y + y))
 
-    def get_inputs(self) -> input_t:
-        return (torch.rand(1, 1280, 7, 7), torch.rand(1, 1280, 7, 7))
 
-
-def test_fold_qdq_pass_tosa_BI():
+@common.parametrize("test_data", SimpleQuantizeModel.test_data)
+def test_fold_qdq_pass_tosa_INT(test_data: input_t):
     """
     Tests the FoldAndAnnotateQParamsPass which folds dq/q nodes into
     the node and stores the quantization parameters in meta.
@@ -32,8 +35,8 @@ def test_fold_qdq_pass_tosa_BI():
     module = SimpleQuantizeModel()
     pipeline = PassPipeline[input_t](
         module,
-        module.get_inputs(),
-        tosa_version="TOSA-0.80+BI",
+        test_data,
+        quantize=True,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 7,
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 6,

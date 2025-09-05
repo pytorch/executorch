@@ -18,9 +18,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
@@ -1010,4 +1010,100 @@ TEST_F(OpIndexPutOutTest, DynamicShapeUnbound) {
   }
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
+}
+
+class OpIndexPutInplaceTest : public OperatorTest {
+ protected:
+  Tensor& op_index_put_(
+      Tensor& input,
+      OptTensorArrayRef indices,
+      const Tensor& values,
+      const bool accumulate) {
+#ifdef USE_ATEN_LIB
+    c10::List<std::optional<at::Tensor>> indices_list(indices);
+    return torch::executor::aten::index_put_(
+        context_, input, indices_list, values, accumulate);
+#else
+    return torch::executor::aten::index_put_(
+        context_, input, indices, values, accumulate);
+#endif
+  }
+
+  template <
+      executorch::aten::ScalarType INPUT_DTYPE,
+      executorch::aten::ScalarType INDICES_DTYPE>
+  void test_dtype() {
+    TensorFactory<INPUT_DTYPE> tf;
+    TensorFactory<INDICES_DTYPE> tfl;
+
+    // clang-format off
+     Tensor x = tf.make(
+         {2, 3, 4},
+         {
+           // [0, :, :]
+           1, 1, 1, 1, // [0, 0, :]
+           0, 0, 0, 0, // [0, 1, :]
+           2, 2, 2, 2, // [0, 2, :]
+
+           // [1, :, :]
+           3, 3, 3, 3, // [0, 0, :]
+           0, 0, 0, 0, // [0, 1, :]
+           5, 5, 5, 5, // [0, 2, :]
+         });
+    // clang-format on
+
+    optional<Tensor> indices[] = {
+        optional<Tensor>(),
+        optional<Tensor>(tfl.make({2}, {0, 2})),
+    };
+
+    // clang-format off
+     Tensor values = tf.make(
+      {2, 2, 4},
+      {
+        // [0, :, :]
+        1, 2, 3, 4, // [0, 0, :]
+        5, 6, 7, 8, // [0, 1, :]
+
+        // [1, :, :]
+         9, 10, 11, 12, // [0, 0, :]
+        13, 14, 15, 16, // [0, 1, :]
+      });
+    // clang-format on
+
+    // clang-format off
+     Tensor expected = tf.make(
+        {2, 3, 4},
+        {
+          // [0, :, :]
+          1, 2, 3, 4, // [0, 0, :]
+          0, 0, 0, 0, // [0, 1, :]
+          5, 6, 7, 8, // [0, 2, :]
+
+          // [1, :, :]
+           9, 10, 11, 12, // [0, 0, :]
+           0,  0,  0,  0, // [0, 1, :]
+          13, 14, 15, 16, // [0, 2, :]
+        });
+    // clang-format on
+
+    Tensor ret = op_index_put_(x, indices, values, /*accumulate=*/false);
+
+    EXPECT_TENSOR_EQ(ret, x);
+    EXPECT_TENSOR_EQ(ret, expected);
+  }
+};
+
+TEST_F(OpIndexPutInplaceTest, AllDtypesSupportedForInput) {
+#define TEST_ENTRY(ctype, dtype) \
+  test_dtype<ScalarType::dtype, ScalarType::Long>();
+
+  ET_FORALL_REALHBBF16_TYPES(TEST_ENTRY);
+
+#undef TEST_ENTRY
+}
+
+TEST_F(OpIndexPutInplaceTest, AllDtypesSupportedForIndicesList) {
+  test_dtype<ScalarType::Float, ScalarType::Long>();
+  test_dtype<ScalarType::Float, ScalarType::Int>();
 }

@@ -129,6 +129,20 @@ at::Tensor update_cache_aten(
     at::Tensor& cache,
     const int64_t start_pos);
 
+// New functions for update_cache_with_indices
+Tensor& update_cache_with_indices_out_no_context(
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    const Tensor& indices,
+    Tensor& output);
+
+at::Tensor update_cache_with_indices_aten(
+    const at::Tensor& value,
+    at::Tensor& cache,
+    const int64_t start_pos,
+    const at::Tensor& indices);
+
 Tensor& sdpa_with_kv_cache_out_no_context(
     const Tensor& q_projected,
     const Tensor& k_projected,
@@ -340,6 +354,29 @@ at::Tensor update_cache_aten(
   return output;
 }
 
+// Implementations for update_cache_with_indices
+Tensor& update_cache_with_indices_out_no_context(
+    const Tensor& value,
+    Tensor& cache,
+    const int64_t start_pos,
+    const Tensor& indices,
+    Tensor& output) {
+  executorch::aten::RuntimeContext context{};
+  return torch::executor::native::update_cache_with_indices_out(
+      context, value, cache, start_pos, indices, output);
+}
+
+at::Tensor update_cache_with_indices_aten(
+    const at::Tensor& value,
+    at::Tensor& cache,
+    const int64_t start_pos,
+    const at::Tensor& indices) {
+  auto output = at::empty({1});
+  WRAP_TO_ATEN(update_cache_with_indices_out_no_context, 4)
+  (value, cache, start_pos, indices, output);
+  return output;
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
@@ -367,6 +404,12 @@ TORCH_LIBRARY_FRAGMENT(llama, m) {
   m.def(
       "update_cache.out(Tensor value, Tensor(a!) cache, "
       "SymInt start_pos, *, Tensor(b!) out) -> Tensor(b!)");
+  m.def(
+      "update_cache_with_indices(Tensor value, Tensor(a!) cache, "
+      "SymInt start_pos, Tensor indices) -> Tensor");
+  m.def(
+      "update_cache_with_indices.out(Tensor value, Tensor(a!) cache, "
+      "SymInt start_pos, Tensor indices, *, Tensor(b!) out) -> Tensor(b!)");
   m.def(
       "custom_quantized_sdpa(Tensor query, Tensor key, Tensor value, SymInt start_pos, "
       "Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, "
@@ -397,6 +440,14 @@ TORCH_LIBRARY_IMPL(llama, CompositeExplicitAutograd, m) {
   m.impl(
       "update_cache.out",
       WRAP_TO_ATEN(torch::executor::native::update_cache_out_no_context, 3));
+  m.impl(
+      "update_cache_with_indices",
+      torch::executor::native::update_cache_with_indices_aten);
+  m.impl(
+      "update_cache_with_indices.out",
+      WRAP_TO_ATEN(
+          torch::executor::native::update_cache_with_indices_out_no_context,
+          4));
   m.impl(
       "custom_quantized_sdpa",
       torch::executor::native::custom_quantized_sdpa_aten);

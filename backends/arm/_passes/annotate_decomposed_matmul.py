@@ -7,13 +7,14 @@
 
 import itertools
 import operator
-from typing import List
+from typing import cast, List
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, QuantArgs
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -61,7 +62,7 @@ class AnnotateDecomposedMatmulPass(ExportPass):
         }
         for partition in matmul_partitions:
             quantized_input = all(
-                input_node.target == dq_op for input_node in partition.input_nodes
+                input_node.target in DQ_OPS for input_node in partition.input_nodes
             )
             matmul_node = [
                 node for node in partition.nodes if node.target in matmul_targets
@@ -74,17 +75,14 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                     input_node = self._match_partition_to_node(
                         node, partition.input_nodes
                     )
-                    input_node_qargs = QuantArgs.from_operator(
-                        input_node.target, input_node.args
-                    )
                     # Insert new dq-node just before the mm/bmm with input_node's qparams
                     with graph_module.graph.inserting_before(matmul_node):
                         # Create new dq-node before matmul
                         dq_node = create_node(
                             graph=graph_module.graph,
-                            op_target=dq_op,
+                            op_target=cast(EdgeOpOverload, input_node.target),  # type: ignore[arg-type]
                         )
-                        dq_node.args = (node, *input_node_qargs)
+                        dq_node.args = (node, *input_node.args[1:])
                         matmul_node.replace_input_with(node, dq_node)
 
                 for partition_input in partition.input_nodes:
@@ -95,19 +93,16 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                     graph_module.graph.erase_node(partition_input)
 
             partition_output = list(partition.output_nodes[0].users)[0]
-            quantized_output = partition_output.target == q_op
+            quantized_output = partition_output.target in Q_OPS
             if quantized_output:
-                output_node_qargs = QuantArgs.from_operator(
-                    partition_output.target, partition_output.args
-                )
                 with graph_module.graph.inserting_after(matmul_node):
                     # Create q-node after matmul
                     q_node = create_node(
                         graph=graph_module.graph,
-                        op_target=q_op,
+                        op_target=cast(EdgeOpOverload, partition_output.target),  # type: ignore[arg-type]
                     )
                     matmul_node.replace_all_uses_with(q_node)
-                    q_node.args = (matmul_node, *output_node_qargs)
+                    q_node.args = (matmul_node, *partition_output.args[1:])
                 # Remove partition output q-node
                 partition_output.replace_all_uses_with(
                     partition_output.all_input_nodes[0]

@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/Logging.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/View.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
@@ -21,14 +22,14 @@ namespace vkcompute {
 void resize_clone_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& extra_args) {
-  (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
   // TODO: support for when dimensionality doesn't match, i.e. clone is used to
   // implement squeeze.
-  if (out->dim() == in->dim()) {
-    out->virtual_resize(in->sizes());
+  if (graph->dim_of(out) == graph->dim_of(in)) {
+    graph->virtual_resize(out, graph->sizes_of(in));
   }
 }
 
@@ -36,20 +37,18 @@ void add_clone_node(
     ComputeGraph& graph,
     const ValueRef in,
     const ValueRef out) {
-  vTensorPtr t_out = graph.get_tensor(out);
-
   std::string kernel_name = "clone";
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
-      {t_out->logical_limits_ubo()},
+      {graph.logical_limits_ubo(out)},
       // Push Constants
       {},
       // Specialization Constants
@@ -60,6 +59,17 @@ void add_clone_node(
       resize_clone_node));
 }
 
+utils::uvec3 clone_image_to_buffer_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef image = args.at(1).refs.at(0);
+  return graph->create_global_wg_size(image);
+}
+
 void add_image_to_buffer_node(
     ComputeGraph& graph,
     const ValueRef image,
@@ -68,18 +78,17 @@ void add_image_to_buffer_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  utils::uvec3 global_wg_size = graph.create_global_wg_size(image);
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      clone_image_to_buffer_global_wg_size,
+      default_pick_local_wg_size,
       // Input and Outputs
       {{buffer, vkapi::kWrite}, {image, vkapi::kRead}},
       // Parameter Buffers
-      {graph.sizes_ubo(image), graph.strides_ubo(buffer)},
-      // Push Constants
       {},
+      // Push Constants
+      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
       // Specialization Constants
       {graph.hashed_layout_of(image)},
       // Resize Args
@@ -96,18 +105,17 @@ void add_buffer_to_image_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  utils::uvec3 global_wg_size = graph.create_global_wg_size(image);
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Input and Outputs
       {{image, vkapi::kWrite}, {buffer, vkapi::kRead}},
       // Parameter Buffers
-      {graph.sizes_ubo(image), graph.strides_ubo(buffer)},
-      // Push Constants
       {},
+      // Push Constants
+      {graph.sizes_pc_of(image), graph.strides_pc_of(buffer)},
       // Specialization Constants
       {graph.hashed_layout_of(image)},
       // Resize Args
@@ -135,7 +143,11 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (src_storage == utils::kBuffer && dst_storage == utils::kTexture3D) {
     return add_buffer_to_image_node(graph, src, dst);
   }
-  VK_THROW("Buffer to buffer memory layout transition not supported yet!");
+
+  std::vector<ValueRef> extra_args = {};
+  // Buffer to buffer copy
+  return add_view_copy_buffer_node(
+      graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone

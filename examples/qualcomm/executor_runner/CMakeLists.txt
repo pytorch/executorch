@@ -19,8 +19,15 @@ target_include_directories(
   qnn_executor_runner PUBLIC ${_common_include_directories}
 )
 target_link_libraries(
-  qnn_executor_runner qnn_executorch_backend full_portable_ops_lib etdump
-  ${FLATCCRT_LIB} gflags
+  qnn_executor_runner
+  qnn_executorch_backend
+  executorch_core
+  extension_evalue_util
+  extension_runner_util
+  full_portable_ops_lib
+  etdump
+  flatccrt
+  gflags
 )
 set_target_properties(
   qnn_executor_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"

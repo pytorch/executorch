@@ -5,21 +5,20 @@
 
 from typing import List, Tuple
 
-import pytest
-
 import torch
 
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
-    TOSAQuantizer,
 )
+
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 
@@ -123,133 +122,124 @@ float32_scalar_cond = Where(
     scalar_condition,
 )
 
+int32_scalar_cond = Where(
+    1,
+    torch.int32,
+    scalar_condition,
+)
+
 test_modules_common = {
-    "two_dim_tensor_cond": two_dim_tensor_cond,
-    "three_dim_tensor_cond": three_dim_tensor_cond,
-    "float32_tensor_cond": float32_tensor_cond,
-    "two_dim_scalar_cond": two_dim_scalar_cond,
-    "three_dim_scalar_cond": three_dim_scalar_cond,
-    "float32_scalar_cond": float32_scalar_cond,
+    "two_dim_tensor_cond": lambda: two_dim_tensor_cond,
+    "three_dim_tensor_cond": lambda: three_dim_tensor_cond,
+    "float32_tensor_cond": lambda: float32_tensor_cond,
+    "two_dim_scalar_cond": lambda: two_dim_scalar_cond,
+    "three_dim_scalar_cond": lambda: three_dim_scalar_cond,
+    "float32_scalar_cond": lambda: float32_scalar_cond,
 }
 
-test_modules_MI = {
+test_modules_FP = {
     **test_modules_common,
-    "float32_tensor_cond_tuple_dtype": float32_tensor_cond_tuple_dtype,
-    "float32_tensor_cond_tuple_dtype_bool": float32_tensor_cond_tuple_dtype_bool,
+    "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
+    "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
+    "int32_scalar_cond": lambda: int32_scalar_cond,
 }
 
-test_modules_BI = {
+test_modules_INT = {
     **test_modules_common,
 }
 
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_module", test_modules_MI)
-def test_where_tosa_MI(test_module):
-    pipeline = TosaPipelineMI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
+@common.parametrize("test_module", test_modules_FP)
+def test_where_self_tosa_FP(test_module):
+    pipeline = TosaPipelineFP[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_BI)
-def test_where_tosa_BI(test_module):
-    compile_spec = common.get_tosa_compile_spec("TOSA-0.80+BI")
-    quantizer = TOSAQuantizer(compile_spec).set_io(get_symmetric_quantization_config())
-    pipeline = TosaPipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op
-    )
-    pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules_BI)
-def test_where_u55_BI(test_module):
-    compile_spec = common.get_u55_compile_spec()
-    quantizer = EthosUQuantizer(compile_spec).set_io(
-        get_symmetric_quantization_config()
-    )
-
-    # There will be one full_like op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
-
-    pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
-        {
-            exir_op: 1,
-            "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
-        },
-        num_delegates,
-    )
-
-    pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
+@common.parametrize("test_module", test_modules_INT)
+def test_where_self_tosa_INT(test_module):
+    pipeline = TosaPipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        symmetric_io_quantization=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_BI)
-def test_where_u85_BI(test_module):
-    compile_spec = common.get_u85_compile_spec()
-    quantizer = EthosUQuantizer(compile_spec).set_io(
-        get_symmetric_quantization_config()
-    )
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=False
-    )
-    pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
-    )
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules_BI)
-@pytest.mark.skip(reason="The same as test_where_u55_BI")
+@common.parametrize("test_module", test_modules_INT)
 @common.XfailIfNoCorstone300
-def test_where_u55_BI_on_fvp(test_module):
+def test_where_self_u55_INT_not_delegated(test_module):
+    # There will be one full_like op which will be delegated.
+    num_delegates = 1
+    num_exir = 0
+
     compile_spec = common.get_u55_compile_spec()
     quantizer = EthosUQuantizer(compile_spec).set_io(
         get_symmetric_quantization_config()
     )
 
-    # There will be one full_like op which will be delegated.
-    num_delegates = 1
-    num_exir = 0
-
     pipeline = OpNotSupportedPipeline[input_t](
-        test_module,
-        test_module.get_inputs(),
-        "TOSA-0.80+BI+u55",
+        test_module(),
+        test_module().get_inputs(),
         {
             exir_op: 1,
             "executorch_exir_dialects_edge__ops_aten_full_default": num_exir,
         },
         num_delegates,
+        quantize=True,
+        u55_subset=True,
     )
-
     pipeline.change_args(
         "quantize", Quantize(quantizer, get_symmetric_quantization_config())
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules_BI)
+@common.parametrize("test_module", test_modules_INT)
 @common.XfailIfNoCorstone320
-def test_where_u85_BI_on_fvp(test_module):
-    compile_spec = common.get_u85_compile_spec()
-    quantizer = EthosUQuantizer(compile_spec).set_io(
-        get_symmetric_quantization_config()
+def test_where_self_u85_INT(test_module):
+
+    pipeline = EthosU85PipelineINT[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        run_on_fvp=True,
+        symmetric_io_quantization=True,
     )
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module, test_module.get_inputs(), aten_op, exir_op, run_on_fvp=True
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_FP)
+@common.SkipIfNoModelConverter
+def test_where_self_vgf_FP(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
     )
-    pipeline.change_args(
-        "quantize", Quantize(quantizer, get_symmetric_quantization_config())
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_INT)
+@common.SkipIfNoModelConverter
+def test_where_self_vgf_INT(test_module):
+    pipeline = VgfPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+        symmetric_io_quantization=True,
     )
     pipeline.run()

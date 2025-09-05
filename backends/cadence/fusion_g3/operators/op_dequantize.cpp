@@ -24,7 +24,7 @@ using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
 template <typename T>
-using optional = ::executorch::aten::optional<T>;
+using optional = std::optional<T>;
 /* ScalarType in Executorch do not have support for below data types.
  * So, creating a placeholder for these data types. Once, ScalarTypes is
  * updated to have support for below data types, these can be removed and
@@ -51,7 +51,7 @@ void check_dequantize_per_tensor_args(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    ::executorch::aten::optional<ScalarType>& out_dtype,
+    std::optional<ScalarType>& out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
@@ -93,7 +93,7 @@ Tensor& dequantize_impl(
     float* scale_data,
     int* zero_point_data,
     int* axis,
-    ::executorch::aten::optional<ScalarType> out_dtype) {
+    std::optional<ScalarType> out_dtype) {
   const ::executorch::aten::ArrayRef<Tensor::SizesType> input_size =
       input.sizes();
 
@@ -260,8 +260,8 @@ Tensor& dequantize_impl(
           }
         }
 
-        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+        std::optional<::executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+            ::executorch::aten::ArrayRef<int64_t>{
                 dims, size_t(input.dim() - 1)}};
 
 // Actual dequantization logic
@@ -466,8 +466,8 @@ Tensor& dequantize_impl(
           }
         }
 
-        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+        std::optional<::executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+            ::executorch::aten::ArrayRef<int64_t>{
                 dims, size_t(input.dim() - 1)}};
 
 // Actual dequantization logic
@@ -600,7 +600,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    ::executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
 #ifdef OP_ARG_CHECK
   ET_CHECK_MSG(
@@ -639,12 +639,12 @@ Tensor& dequantize_per_channel_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
-    const ::executorch::aten::optional<Tensor>& opt_zero_points,
+    const std::optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
-    ::executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   if (axis < 0) {
     axis += executorch::runtime::nonzero_dim(input);

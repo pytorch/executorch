@@ -15,7 +15,7 @@ The MPS backend device maps machine learning computational graphs and primitives
 * [Introduction to ExecuTorch](../../../docs/source/intro-how-it-works.md)
 * [Setting up ExecuTorch](../../../docs/source/getting-started-setup.rst)
 * [Building ExecuTorch with CMake](../../../docs/source/using-executorch-cpp.md#building-with-cmake)
-* [ExecuTorch iOS Demo App](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
+* [ExecuTorch iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
 * [ExecuTorch iOS LLaMA Demo App](../../../docs/source/llm/llama-demo-ios.md)
 :::
 ::::
@@ -41,12 +41,6 @@ In order to be able to successfully build and run a model using the MPS backend 
 ## Setting up Developer Environment
 
 ***Step 1.*** Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup).
-
-***Step 2.*** Install dependencies needed to lower MPS delegate:
-
-  ```bash
-  ./backends/apple/mps/install_requirements.sh
-  ```
 
 ## Build
 
@@ -97,7 +91,7 @@ I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successf
 ### [Optional] Run the generated model directly using pybind
 1. Make sure `pybind` MPS support was installed:
 ```bash
-./install_executorch.sh --pybind mps
+CMAKE_ARGS="-DEXECUTORCH_BUILD_MPS=ON" ./install_executorch.sh
 ```
 2. Run the `mps_example` script to trace the model and run it directly from python:
 ```bash

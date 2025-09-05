@@ -24,39 +24,56 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
-)
-
-extract_sources(${EXECUTORCH_SRCS_FILE})
-
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-target_include_directories(
-  extension_module INTERFACE ${_common_include_directories}
-)
-
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch_core extension_module extension_tensor)
+set(runner_deps executorch_core extension_module extension_tensor
+                tokenizers::tokenizers
+)
+
+# depend on arange_utils
+if(NOT TARGET kernels_util_all_deps)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/kernels/portable/cpu/util
+    ${CMAKE_CURRENT_BINARY_DIR}/kernels_util
+  )
+endif()
+list(APPEND runner_deps kernels_util_all_deps)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
-
-target_include_directories(
-  extension_llm_runner
-  PUBLIC
-    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/llama.cpp-unicode/include
-    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/llama.cpp-unicode/src
+set_target_properties(
+  extension_llm_runner PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
 
 target_include_directories(
   extension_llm_runner INTERFACE ${_common_include_directories}
-                                 ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+)
+
+install(
+  TARGETS extension_llm_runner
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/runner
+  FILES_MATCHING
+  PATTERN "*.h"
+)
+# TODO: remove this once we create a proper CMake setup for sampler.
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../sampler/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/extension/llm/sampler
+  FILES_MATCHING
+  PATTERN "*.h"
 )
 
 if(BUILD_TESTING)

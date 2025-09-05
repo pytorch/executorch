@@ -13,15 +13,14 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
-toolchain_cmake=${script_dir}/../../../examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
-toolchain_cmake=$(realpath ${toolchain_cmake})
+toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
 et_build_root="${et_root_dir}/arm_test"
 build_type="Release"
-build_devtools=false
-build_with_etdump=false
+build_devtools=OFF
+build_with_etdump=OFF
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -30,6 +29,7 @@ help() {
     echo "  --build_type=<TYPE>       Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --devtools                Build Devtools libs"
     echo "  --etdump                  Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
+    echo "  --toolchain=<TOOLCHAIN>   Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
     exit 0
 }
 
@@ -38,12 +38,24 @@ for arg in "$@"; do
       -h|--help) help ;;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --build_type=*) build_type="${arg#*=}";;
-      --devtools) build_devtools=true ;;
-      --etdump) build_with_etdump=true ;;
+      --devtools) build_devtools=ON ;;
+      --etdump) build_with_etdump=ON ;;
+      --toolchain=*) toolchain="${arg#*=}";;
       *)
       ;;
     esac
 done
+
+if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
+    toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
+else
+    echo "Error: Invalid toolchain selection, provided: ${toolchain}"
+    echo "    Valid options are {arm-none-eabi-gcc, arm-zephyr-eabi-gcc}"
+    exit 1;
+fi
+toolchain_cmake=$(realpath ${toolchain_cmake})
 
 # Source the tools
 # This should be prepared by the setup.sh
@@ -54,88 +66,20 @@ source ${setup_path_script}
 
 et_build_dir="${et_build_root}/cmake-out"
 
-# Used for flatcc host excutable if Devtools is used
-et_build_host_dir=${et_build_root}/cmake-out-host-tools
-
 set -x
 cd "${et_root_dir}"
-
-if [ "$build_with_etdump" = true ] ; then
-    ( set +x ;
-        echo "--------------------------------------------------------------------------------" ;
-        echo "Build ExecuTorch Libraries host flatcc bin ${build_type} into ${et_build_host_dir}/bin/flatcc" ;
-        echo "--------------------------------------------------------------------------------" )
-
-    # Build host flatcc bin
-    # This is a way to work around that the flatcc executable get build for target (e.g. Arm) later
-    # and get replaced. flatcc is a tool used on the host for etdump and BundleIO handling.
-    # The way to solve this is to generate it once for the host, then copy it to ${et_build_host_dir}/bin
-    # and later point that out with -DFLATCC_EXECUTABLE=${et_build_host_dir}/bin/flatcc later.
-
-    cmake                                                 \
-        -DCMAKE_INSTALL_PREFIX=${et_build_host_dir}       \
-        -DCMAKE_BUILD_TYPE=${build_type}                  \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
-        -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON           \
-        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
-        -DEXECUTORCH_BUILD_DEVTOOLS=ON                    \
-        -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
-        -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=ON      \
-        -DFLATCC_ALLOW_WERROR=OFF                         \
-        -B"${et_build_host_dir}"                          \
-        "${et_root_dir}"
-
-    # third-party/flatcc/bin/flatcc gets build already in the in the cmake config step above
-    # so there is no cmake building step done
-
-    # Copy host flatcc excutable so it's saved when we build for target (Arm) later
-    et_build_host_dir=$(realpath ${et_build_host_dir})
-    mkdir -p ${et_build_host_dir}/bin
-    cp third-party/flatcc/bin/flatcc ${et_build_host_dir}/bin
-fi
 
 ( set +x ;
     echo "--------------------------------------------------------------------------------" ;
     echo "Build ExecuTorch target libs ${build_type} into '${et_build_dir}'" ;
     echo "--------------------------------------------------------------------------------" )
 
-build_devtools_flags=" -DEXECUTORCH_BUILD_DEVTOOLS=OFF "
-if [ "$build_devtools" = true ] ; then
-    build_devtools_flags=" -DEXECUTORCH_BUILD_DEVTOOLS=ON "
-fi
-
-build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF "
-if [ "$build_with_etdump" = true ] ; then
-    # Add DevTools flags use in the Target build below
-    build_with_etdump_flags="-DEXECUTORCH_BUILD_DEVTOOLS=ON                    \
-                            -DEXECUTORCH_ENABLE_EVENT_TRACER=ON               \
-                            -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF     \
-                            -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=OFF      \
-                            -DFLATCC_ALLOW_WERROR=OFF                         \
-                            -DFLATCC_EXECUTABLE=${et_build_host_dir}/bin/flatcc "
-fi
-
-echo "Building with Devtools: ${build_devtools_flags} ${build_with_etdump_flags}"
-
-
 # Build
-cmake                                                 \
-    -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
-    -DCMAKE_BUILD_TYPE=${build_type}                  \
-    -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
-    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
-    -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON           \
-    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
-    -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-    ${build_devtools_flags}                           \
-    ${build_with_etdump_flags}                        \
-    -B"${et_build_dir}"                               \
-    "${et_root_dir}"
-
-echo "[$(basename $0)] Configured CMAKE"
+cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
+-DCMAKE_BUILD_TYPE=Release \
+-DEXECUTORCH_BUILD_DEVTOOLS=$build_devtools \
+-DEXECUTORCH_BUILD_ARM_ETDUMP=$build_with_etdump \
+--preset arm-baremetal -B${et_build_dir}
 
 cmake --build ${et_build_dir} -j$(nproc) --target install --config ${build_type} --
 

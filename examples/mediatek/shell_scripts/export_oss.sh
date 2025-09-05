@@ -26,4 +26,19 @@ then
 elif [ $model = "resnet50" ]
 then
 	python3 model_export_scripts/resnet50.py -d PATH_TO_DATASET
+elif [ $model = "dcgan" ]
+then
+	python3 model_export_scripts/dcgan.py
+elif [ $model = "wav2letter" ]
+then
+	python3 model_export_scripts/wav2letter.py
+elif [ $model = "vit_b_16" ]
+then
+	python3 model_export_scripts/vit_b_16.py
+elif [ $model = "mobilebert" ]
+then
+	python3 model_export_scripts/mobilebert.py
+elif [ $model = "emformer_rnnt" ]
+then
+	python3 model_export_scripts/emformer_rnnt.py
 fi

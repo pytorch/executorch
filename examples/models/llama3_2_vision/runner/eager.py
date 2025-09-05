@@ -15,6 +15,7 @@ from executorch.examples.models.llama3_2_vision.runner.generation import (
     TorchTuneLlamaRunner,
 )
 from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 
 class EagerLlamaRunner(TorchTuneLlamaRunner):
@@ -22,18 +23,23 @@ class EagerLlamaRunner(TorchTuneLlamaRunner):
     Runs llama in eager mode with provided checkpoint file.
     """
 
-    def __init__(self, args):
-        with open(args.params, "r") as f:
+    def __init__(
+        self,
+        llm_config: LlmConfig,
+        tokenizer_config_path: Optional[str] = None,
+        use_attention_sink: bool = False,
+    ):
+        with open(llm_config.base.params, "r") as f:
             params = json.loads(f.read())
         super().__init__(
-            tokenizer_path=args.tokenizer_path,
-            max_seq_len=args.max_seq_length,
+            tokenizer_path=llm_config.base.tokenizer_path,
+            max_seq_len=llm_config.export.max_seq_length,
             max_batch_size=1,
-            use_kv_cache=args.use_kv_cache,
+            use_kv_cache=llm_config.model.use_kv_cache,
             vocab_size=params["vocab_size"],
             device="cuda" if torch.cuda.is_available() else "cpu",
         )
-        manager: LLMEdgeManager = _prepare_for_llama_export(args)
+        manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)
         self.model = manager.model.eval().to(device=self.device)
 
     def forward(

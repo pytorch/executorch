@@ -58,6 +58,8 @@ class ValueRef:
     src_cpp_type: str
     is_in: bool = False
     is_out: bool = False
+    fixed_storage_type: Optional[str] = None
+    fixed_memory_layout: Optional[str] = None
     requires_prepack: bool = False
     supports_prepack: bool = False
     # When is_dynamic_size is true, the underlying object size is not known
@@ -137,20 +139,43 @@ class ComputeGraphGen:
             if arg.name in self.suite_def.prepacked_args:
                 supports_prepack = True
 
+            fixed_storage_type = None
+            if arg.name in self.suite_def.arg_storage_types:
+                fixed_storage_type = self.suite_def.arg_storage_types[arg.name]
+
+            fixed_memory_layout = None
+            if arg.name in self.suite_def.arg_memory_layouts:
+                fixed_memory_layout = self.suite_def.arg_memory_layouts[arg.name]
+
             self.refs[arg.name] = ValueRef(
                 name=f"{arg.name}_ref",
                 src_cpp_name=arg.name,
                 src_cpp_type=cpp_type,
                 is_in=(cpp_type in InableCppType),
+                fixed_storage_type=fixed_storage_type,
+                fixed_memory_layout=fixed_memory_layout,
                 requires_prepack=requires_prepack,
                 supports_prepack=supports_prepack,
             )
 
         ret_type = cpp.returns_type(self.f.func.returns, symint=False).cpp_type()
         self.out = ATenArg(name="out", cpp_type=ret_type, default=None)
+
+        fixed_storage_type = None
+        if "out" in self.suite_def.arg_storage_types:
+            fixed_storage_type = self.suite_def.arg_storage_types["out"]
+        fixed_memory_layout = None
+        if "out" in self.suite_def.arg_memory_layouts:
+            fixed_memory_layout = self.suite_def.arg_memory_layouts["out"]
+
         if ret_type == AT_TENSOR:
             self.refs["out"] = ValueRef(
-                name="out_ref", src_cpp_name="out", src_cpp_type=ret_type, is_out=True
+                name="out_ref",
+                src_cpp_name="out",
+                src_cpp_type=ret_type,
+                is_out=True,
+                fixed_storage_type=fixed_storage_type,
+                fixed_memory_layout=fixed_memory_layout,
             )
         elif ret_type == TWO_TENSOR_TUPLE:
             self.refs["out"] = [
@@ -159,12 +184,24 @@ class ComputeGraphGen:
                     src_cpp_name="std::get<0>(out)",
                     src_cpp_type="at::Tensor",
                     is_out=True,
+                    fixed_storage_type=(
+                        fixed_storage_type[0] if fixed_storage_type else None
+                    ),
+                    fixed_memory_layout=(
+                        fixed_memory_layout[0] if fixed_memory_layout else None
+                    ),
                 ),
                 ValueRef(
                     name="out_ref_second",
                     src_cpp_name="std::get<1>(out)",
                     src_cpp_type="at::Tensor",
                     is_out=True,
+                    fixed_storage_type=(
+                        fixed_storage_type[1] if fixed_storage_type else None
+                    ),
+                    fixed_memory_layout=(
+                        fixed_memory_layout[1] if fixed_memory_layout else None
+                    ),
                 ),
                 ValueRef(
                     name="out_ref",
@@ -180,18 +217,36 @@ class ComputeGraphGen:
                     src_cpp_name="std::get<0>(out)",
                     src_cpp_type="at::Tensor",
                     is_out=True,
+                    fixed_storage_type=(
+                        fixed_storage_type[0] if fixed_storage_type else None
+                    ),
+                    fixed_memory_layout=(
+                        fixed_memory_layout[0] if fixed_memory_layout else None
+                    ),
                 ),
                 ValueRef(
                     name="out_ref_second",
                     src_cpp_name="std::get<1>(out)",
                     src_cpp_type="at::Tensor",
                     is_out=True,
+                    fixed_storage_type=(
+                        fixed_storage_type[1] if fixed_storage_type else None
+                    ),
+                    fixed_memory_layout=(
+                        fixed_memory_layout[1] if fixed_memory_layout else None
+                    ),
                 ),
                 ValueRef(
                     name="out_ref_third",
                     src_cpp_name="std::get<2>(out)",
                     src_cpp_type="at::Tensor",
                     is_out=True,
+                    fixed_storage_type=(
+                        fixed_storage_type[2] if fixed_storage_type else None
+                    ),
+                    fixed_memory_layout=(
+                        fixed_memory_layout[2] if fixed_memory_layout else None
+                    ),
                 ),
                 ValueRef(
                     name="out_ref",
@@ -302,7 +357,12 @@ class ComputeGraphGen:
                 ret_str += f"{self.graph}{self.dot}"
                 ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
                 ret_str += f"{ref.src_cpp_name}->sizes().vec(), "
-                ret_str += f"from_at_scalartype({ref.src_cpp_name}->scalar_type())); \n"
+                ret_str += f"from_at_scalartype({ref.src_cpp_name}->scalar_type()"
+                if ref.fixed_storage_type:
+                    ret_str += f", {ref.fixed_storage_type}"
+                if ref.fixed_memory_layout:
+                    ret_str += f", {ref.fixed_memory_layout}"
+                ret_str += "));\n"
             elif prepack:
                 ret_str += f"{self.graph}{self.dot}"
                 ret_str += f"add_tensorref({ref.src_cpp_name}->sizes().vec(), "
@@ -385,7 +445,12 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
         elif ref.src_cpp_type == AT_TENSOR and not prepack:
             ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
             ret_str += f"{ref.src_cpp_name}.sizes().vec(), "
-            ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type())); \n"
+            ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type())"
+            if ref.fixed_storage_type:
+                ret_str += f", {ref.fixed_storage_type}"
+            if ref.fixed_memory_layout:
+                ret_str += f", {ref.fixed_memory_layout}"
+            ret_str += ");\n"
         elif ref.src_cpp_type == AT_TENSOR and prepack:
             ret_str += f"add_tensorref({ref.src_cpp_name}.sizes().vec(), "
             ret_str += f"from_at_scalartype({ref.src_cpp_name}.scalar_type()), "
@@ -484,15 +549,13 @@ for (int i=0; i<out.size(); i++) {{
             return ""
 
         if ref.src_cpp_type == AT_TENSOR:
-            ret_str = f"{self.graph}{self.dot}get_tensor({ref.name}.value)"
-            ret_str += f"->virtual_resize({ref.src_cpp_name}.sizes().vec());\n"
+            ret_str = f"{self.graph}{self.dot}virtual_resize({ref.name}.value, "
+            ret_str += f"{ref.src_cpp_name}.sizes().vec());\n"
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += (
-                f"  {self.graph}{self.dot}get_tensor({ref.name}_io_value_refs[i].value)"
-            )
-            ret_str += f"->virtual_resize({ref.src_cpp_name}[i].sizes().vec());\n"
+            ret_str += f"  {self.graph}{self.dot}virtual_resize({ref.name}_io_value_refs[i].value, "
+            ret_str += f"{ref.src_cpp_name}[i].sizes().vec());\n"
             ret_str += "}\n"
         else:
             raise AssertionError(f"{ref.src_cpp_type} not expected")
@@ -616,9 +679,7 @@ for (int i=0; i<out.size(); i++) {{
             graph_build += self.set_output(self.refs["out"], include_declarations)
 
         graph_build += f"{self.graph}{self.dot}prepare();\n"
-        graph_build += f"{self.graph}{self.dot}encode_prepack();\n"
         graph_build += f"{self.graph}{self.dot}prepack();\n"
-        graph_build += f"{self.graph}{self.dot}encode_execute();\n"
 
         graph_build += "\n"
         return graph_build

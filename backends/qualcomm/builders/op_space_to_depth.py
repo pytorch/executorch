@@ -12,7 +12,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpSpaceToDepth, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -28,7 +29,7 @@ class SpaceToDepthVisitor(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = node.args[0]
+        input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,

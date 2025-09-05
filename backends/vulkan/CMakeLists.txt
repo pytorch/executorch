@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -24,14 +25,10 @@ if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
-# Include this file to access target_link_options_shared_lib This is required to
-# provide access to target_link_options_shared_lib which allows libraries to be
-# linked with the --whole-archive flag. This is required for libraries that
-# perform dynamic registration via static initialization.
+# Include this file to access executorch_target_link_options_shared_lib This is
+# required to provide access to executorch_target_link_options_shared_lib which
+# allows libraries to be linked with the --whole-archive flag. This is required
+# for libraries that perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 
 include(cmake/ShaderLibrary.cmake)
@@ -44,8 +41,10 @@ set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH}/include
-                    ${VOLK_PATH} ${VMA_PATH}
+set(COMMON_INCLUDES
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
+    $<BUILD_INTERFACE:${VULKAN_HEADERS_PATH}/include>
+    $<BUILD_INTERFACE:${VOLK_PATH}> $<BUILD_INTERFACE:${VMA_PATH}>
 )
 
 # Compile settings
@@ -85,8 +84,9 @@ set(GENERATED_HEADER
 add_custom_command(
   OUTPUT ${GENERATED_HEADER}
   COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
-    "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/" ${_vulkan_schema__srcs}
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
+    "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/serialization/"
+    ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   DEPENDS flatc
   COMMENT "Generating vulkan_schema headers"
@@ -99,8 +99,10 @@ add_library(vulkan_schema INTERFACE ${GENERATED_HEADER})
 set_target_properties(vulkan_schema PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(
-  vulkan_schema INTERFACE ${SCHEMA_INCLUDE_DIR}
-                          ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  vulkan_schema
+  INTERFACE
+    $<BUILD_INTERFACE:${SCHEMA_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
 # vulkan_backend
@@ -116,28 +118,15 @@ target_include_directories(
 target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch_core)
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
-target_link_options_shared_lib(vulkan_backend)
+executorch_target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
-
-# Executor Runner
-
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
-  list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
-
-  add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
-  target_link_libraries(
-    vulkan_executor_runner ${_executor_runner_libs} vulkan_schema
-    vulkan_backend
-  )
-  target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
-endif()
 
 # Test targets
 
 install(
-  TARGETS vulkan_backend
+  TARGETS vulkan_backend vulkan_schema
+  EXPORT ExecuTorchTargets
   DESTINATION lib
   INCLUDES
   DESTINATION ${COMMON_INCLUDES}

@@ -35,7 +35,7 @@ Tensor& tanh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   }
 
   return torch::executor::native::internal::
-      unary_ufunc_realhbbf16_to_floathbf16(std::tanh, ctx, in, out);
+      unary_ufunc_realhbbf16_to_floathbf16(std::tanh, std::tanh, ctx, in, out);
 }
 
 } // namespace native

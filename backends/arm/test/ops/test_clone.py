@@ -3,139 +3,146 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-#
-# Tests the clone op which copies the data of the input tensor (possibly with new data format)
-#
 
 from typing import Tuple
 
-import pytest
 import torch
 
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
-
 aten_op = "torch.ops.aten.clone.default"
-exir_op = "executorch_exir_dialects_edge__ops_aten_clone_default"
+exir_op = "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
 
 input_t = Tuple[torch.Tensor]
 
 
-class Clone(torch.nn.Module):
-    """A simple module that clones an input tensor."""
-
-    def forward(self, x: torch.Tensor):
-        return x.clone()
+class CloneFirstArg(torch.nn.Module):
+    def forward(self, x):
+        return x.clone() + x
 
 
-test_data_suite = {
-    "ones_1D_10": (torch.ones(10),),
-    "ones_1D_50": (torch.ones(50),),
-    "rand_1D_20": (torch.rand(20),),
-    "rand_2D_10x10": (torch.rand(10, 10),),
-    "rand_3D_5x5x5": (torch.rand(5, 5, 5),),
-    "rand_4D_2x3x4x5": (torch.rand(2, 3, 4, 5),),
-    "large_tensor": (torch.rand(1000),),
+class CloneSecondArg(torch.nn.Module):
+    def forward(self, x):
+        return x * x.clone()
+
+
+class CloneOutput(torch.nn.Module):
+    def forward(self, x):
+        return (x / x).clone()
+
+
+class CloneBothArgs(torch.nn.Module):
+    def forward(self, x):
+        return x.clone() + x.clone()
+
+
+class CloneAfterOtherOp(torch.nn.Module):
+    def forward(self, x):
+        x = x * 2
+        return x.clone() + x
+
+
+class CloneParallelToOtherOp(torch.nn.Module):
+    def forward(self, x):
+        return x * 2 + x.clone()
+
+
+delegated_clones = {
+    "clone_first_arg": lambda: (CloneFirstArg, (torch.rand(1, 2, 3, 4),)),
+    "clone_second_arg": lambda: (CloneSecondArg, (torch.rand(1, 2, 3, 4),)),
+    "clone_output": lambda: (CloneOutput, (torch.rand(1, 2, 3, 4),)),
+    "clone_both_args": lambda: (CloneBothArgs, (torch.rand(1, 2, 3, 4),)),
+    "clone_after_other_op": lambda: (CloneAfterOtherOp, (torch.rand(1, 2, 3, 4),)),
+    "clone_parallel_to_other_op": lambda: (
+        CloneParallelToOtherOp,
+        (torch.rand(1, 2, 3, 4),),
+    ),
 }
 
 
-@common.parametrize("test_data", test_data_suite)
-def test_clone_tosa_MI(test_data: Tuple[torch.Tensor]):
-
-    pipeline = TosaPipelineMI[input_t](
-        Clone(),
-        test_data,
-        aten_op,
-        exir_op,
-    )
-
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-def test_clone_tosa_BI(test_data):
-    pipeline = TosaPipelineBI[input_t](
-        Clone(),
-        test_data,
-        aten_op,
-        exir_op,
-        symmetric_io_quantization=True,
+@common.parametrize("input_data", delegated_clones)
+def test_clone_tosa_FP(input_data):
+    module, input_tensor = input_data()
+    pipeline = TosaPipelineFP[input_t](
+        module(),
+        input_tensor,
+        [],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
-)
-def test_clone_u55_BI(test_data):
-    pipeline = EthosU55PipelineBI[input_t](
-        Clone(),
-        test_data,
+@common.parametrize("input_data", delegated_clones)
+def test_clone_tosa_INT(input_data):
+    module, input_tensor = input_data()
+
+    pipeline = TosaPipelineINT[input_t](
+        module(),
+        input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=False,
-        symmetric_io_quantization=True,
     )
-
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
-)
-def test_clone_u85_BI(test_data):
-    pipeline = EthosU85PipelineBI[input_t](
-        Clone(),
-        test_data,
-        aten_op,
-        exir_op,
-        run_on_fvp=False,
-        symmetric_io_quantization=True,
-    )
+@common.parametrize("input_data", delegated_clones)
+@common.XfailIfNoCorstone300
+def test_clone_u55_INT(input_data):
+    module, input_tensor = input_data()
 
-    pipeline.run()
-
-
-@common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
-)
-@common.SkipIfNoCorstone300
-def test_clone_u55_BI_on_fvp(test_data):
-    pipeline = EthosU55PipelineBI[input_t](
-        Clone(),
-        test_data,
+    pipeline = EthosU55PipelineINT[input_t](
+        module(),
+        input_tensor,
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
 
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="Empty subgraph leads to Vela compilation failure. See: https://jira.arm.com/browse/MLBEDSW-10477"
-)
-@common.SkipIfNoCorstone320
-def test_clone_u85_BI_on_fvp(test_data):
-    pipeline = EthosU85PipelineBI[input_t](
-        Clone(),
-        test_data,
+@common.parametrize("input_data", delegated_clones)
+@common.XfailIfNoCorstone320
+def test_clone_u85_INT(input_data):
+    module, input_tensor = input_data()
+
+    pipeline = EthosU85PipelineINT[input_t](
+        module(),
+        input_tensor,
         aten_op,
         exir_op,
         run_on_fvp=True,
-        symmetric_io_quantization=True,
     )
 
+    pipeline.run()
+
+
+@common.parametrize("test_data", delegated_clones)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_FP(test_data):
+    module, input_tensor = test_data()
+    pipeline = VgfPipeline[input_t](
+        module(), input_tensor, aten_op, exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", delegated_clones)
+@common.SkipIfNoModelConverter
+def test_clone_vgf_INT(test_data):
+    module, input_tensor = test_data()
+    pipeline = VgfPipeline[input_t](
+        module(),
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()

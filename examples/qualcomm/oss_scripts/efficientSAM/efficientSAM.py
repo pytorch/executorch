@@ -13,10 +13,7 @@ from typing import Callable, List
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes import (
-    ConvertUpsampleBicubicWithBilinear,
-    ExpandBroadcastTensorShape,
-)
+from executorch.backends.qualcomm._passes import ExpandBroadcastTensorShape
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
     get_capture_program_passes,
 )
@@ -100,19 +97,13 @@ def get_dataset(dataset_path, data_size=1):
     dataloader = DataLoader(dataset)
 
     # prepare input data
-    inputs, input_list = [], ""
+    inputs = []
     for index, data in enumerate(dataloader):
         if index >= data_size:
             break
         inputs.append(tuple(data))
-        num_feature = len(data)
-        for idx, _ in enumerate(data):
-            input_name = f"input_{index}_{idx}.raw"
-            input_list += input_name + " " if idx < num_feature - 1 else input_name
 
-        input_list = input_list + "\n"
-
-    return inputs, input_list
+    return inputs
 
 
 def source_transform(
@@ -229,7 +220,7 @@ def main(args):
     os.makedirs(args.artifact, exist_ok=True)
 
     data_size = 1
-    inputs, input_list = get_dataset(args.dataset, data_size)
+    inputs = get_dataset(args.dataset, data_size)
     assert args.pretrained_weight, "Checkpoint params can't be empty"
 
     # Get the EfficientSAM model.
@@ -246,7 +237,6 @@ def main(args):
 
     # lower to QNN
     passes_job = get_capture_program_passes()
-    passes_job[ConvertUpsampleBicubicWithBilinear][QCOM_PASS_ACTIVATE_KEY] = True
     passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         model,
@@ -275,7 +265,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -321,6 +311,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-p",
         "--pretrained_weight",
         help="Path to ESAM checkpoint, such as ./efficient_sam_vitt.pt or ./efficient_sam_vits.pt.zip",
         type=str,

@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
-import copy
-import json
 import os
 import subprocess
 import tempfile
@@ -14,7 +12,9 @@ from typing import Callable, Dict, List, Optional, OrderedDict, Tuple
 
 import numpy as np
 import torch
+import torchao
 from executorch import exir
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import ModuleQConfig, QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
@@ -29,7 +29,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
-from executorch.devtools import generate_etrecord, Inspector
+from executorch.devtools import Inspector
 from executorch.devtools.inspector._inspector_utils import TimeScale
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
@@ -43,12 +43,12 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program import ExecutorchProgram, ExecutorchProgramManager
-from torch.ao.quantization.quantize_pt2e import (
+from torch.fx.passes.infra.pass_base import PassResult
+from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
     prepare_pt2e,
     prepare_qat_pt2e,
 )
-from torch.fx.passes.infra.pass_base import PassResult
 
 
 def generate_context_binary(
@@ -143,30 +143,6 @@ def validate_context_binary(ctx_bin: bytes):
         assert os.path.isfile(f"{tmp_dir}/ctx.json"), print(result.stderr)
 
 
-def validate_qcir(qcir: bytes):
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with open(f"{tmp_dir}/qcir.bin", "wb") as binary_file:
-            binary_file.write(qcir)
-
-        cmds = [
-            "flatc",
-            "-o",
-            tmp_dir,
-            "--raw-binary",
-            "-t",
-            f"{os.path.dirname(__file__)}/../aot/ir/qcir.fbs",
-            "--",
-            f"{tmp_dir}/qcir.bin",
-        ]
-        result = subprocess.run(
-            " ".join(cmds),
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-        )
-        assert os.path.isfile(f"{tmp_dir}/qcir.json"), print(result.stderr)
-
-
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0
@@ -182,8 +158,11 @@ class TestQNN(unittest.TestCase):
     executorch_root: str = ""
     artifact_dir: str = ""
     image_dataset: str = ""
+    qa_dataset: str = ""
+    sentence_dataset: str = ""
     pretrained_weight: str = ""
     enable_profile: bool = False
+    op_package_dir: str = ""
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
@@ -194,6 +173,8 @@ class TestQNN(unittest.TestCase):
     pre_gen_pte: str = ""
     llama_artifacts: str = ""
     dump_intermediate_outputs: bool = False
+    inference_speed: float = 0.0
+    inference_speed_output_path = "outputs/inference_speed.txt"
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -212,13 +193,6 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         dir_name: str,
     ) -> None:
-        # Save the input data list to be executed
-        input_list = ""
-        for idx, _ in enumerate(inputs):
-            input_name = f"input_0_{idx}.raw"
-            input_list += input_name + " "
-        input_list = input_list.strip() + "\n"
-
         ref_output = module(*inputs)
 
         # Save the expected output data to be verified
@@ -235,7 +209,17 @@ class TestQNN(unittest.TestCase):
         with open(pte_fname, "wb") as file:
             file.write(buffer)
 
-        return input_list, ref_outputs, pte_fname
+        return ref_outputs, pte_fname
+
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
 
     def verify_output(  # noqa: C901
         self,
@@ -249,10 +233,13 @@ class TestQNN(unittest.TestCase):
         input_encodings: Tuple = (),
         output_encodings: Tuple = (),
         check_io_shape: bool = False,
+        op_package_paths: List[str] = None,
+        extra_cmds: str = "",
+        output_callback: Optional[Callable[[str], None]] = None,
+        save_inference_speed: bool = False,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
-                input_list,
                 ref_outputs,
                 pte_fname,
             ) = self._save_model_and_expected_output(
@@ -272,7 +259,9 @@ class TestQNN(unittest.TestCase):
                     torch_to_numpy_dtype_dict,
                 )
 
-                for i, f in enumerate(sorted(os.listdir(output_dir))):
+                for i, f in enumerate(
+                    sorted(f for f in os.listdir(output_dir) if f.endswith(".raw"))
+                ):
                     enc = output_encodings[i] if len(output_encodings) != 0 else None
                     dtype = (
                         ref_outputs[i].numpy().dtype
@@ -298,7 +287,7 @@ class TestQNN(unittest.TestCase):
                     target_time_scale=TimeScale.CYCLES,
                 )
                 self.assertTrue(
-                    len(inspector.to_dataframe().index) == expected_profile_events
+                    len(inspector.to_dataframe().index) >= expected_profile_events
                 )
 
             def validate_intermediate_tensor():
@@ -322,9 +311,7 @@ class TestQNN(unittest.TestCase):
                 )
 
             if self.enable_x86_64:
-                generate_inputs(
-                    tmp_dir, "input_list.txt", [processed_inputs], input_list
-                )
+                generate_inputs(tmp_dir, "input_list.txt", [processed_inputs])
                 make_output_dir(output_dir)
 
                 target = "x86_64-linux-clang"
@@ -353,6 +340,13 @@ class TestQNN(unittest.TestCase):
                 ]
                 if expected_intermediate_events != -1:
                     cmd.append("--dump_intermediate_outputs")
+                cmd += extra_cmds.split()
+
+                if save_inference_speed:
+                    cmd += [
+                        "--performance_output_path",
+                        self.inference_speed_output_path,
+                    ]
 
                 if check_io_shape:
                     shape_info = {
@@ -372,16 +366,19 @@ class TestQNN(unittest.TestCase):
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
+                    text=True,
                     env=env,
                     cwd=tmp_dir,
                 )
 
+                if output_callback:
+                    output_callback(proc)
                 self.assertEqual(
                     proc.returncode,
                     0,
                     f"The process running qnn_executorch_runner return {proc.returncode}, "
                     "STDOUT=\n"
-                    f"{proc.stdout.decode('utf-8')}",
+                    f"{proc.stdout}",
                 )
 
                 # Verify the outputs
@@ -394,6 +391,13 @@ class TestQNN(unittest.TestCase):
 
                 if expected_intermediate_events != -1:
                     validate_intermediate_tensor()
+
+                if save_inference_speed:
+                    with open(
+                        f"{tmp_dir}/{self.inference_speed_output_path}", "r"
+                    ) as f:
+                        self.inference_speed = float(f.read())
+
             else:
                 adb = SimpleADB(
                     qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -418,8 +422,16 @@ class TestQNN(unittest.TestCase):
                         else None
                     ),
                 )
-                adb.push(inputs=[processed_inputs], input_list=input_list)
-                adb.execute(method_index=method_index)
+                adb.push(
+                    inputs=[processed_inputs],
+                    files=op_package_paths,
+                )
+                adb.extra_cmds += extra_cmds
+                if save_inference_speed:
+                    adb.extra_cmds += (
+                        f" --performance_output_path {self.inference_speed_output_path}"
+                    )
+                adb.execute(method_index=method_index, output_callback=output_callback)
                 adb.pull(output_path=tmp_dir, callback=post_process)
                 self._assert_outputs_equal(outputs, ref_outputs)
 
@@ -432,6 +444,11 @@ class TestQNN(unittest.TestCase):
                         debug_output_path,
                         callback=validate_intermediate_tensor,
                     )
+                if save_inference_speed:
+                    with open(
+                        f"{tmp_dir}/{self.inference_speed_output_path}", "r"
+                    ) as f:
+                        self.inference_speed = float(f.read())
 
     def lower_module_and_test_output(
         self,
@@ -444,7 +461,11 @@ class TestQNN(unittest.TestCase):
         passes_job: Optional[OrderedDict] = None,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
+        skip_mutable_buffer: bool = False,
         dynamic_shapes: Dict = None,
+        extra_cmds: str = "",
+        output_callback: Optional[Callable[[str], None]] = None,
+        save_inference_speed: bool = False,
     ):
         delegated_program = to_edge_transform_and_lower_to_qnn(
             module,
@@ -454,10 +475,9 @@ class TestQNN(unittest.TestCase):
             passes_job=passes_job,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
+            skip_mutable_buffer=skip_mutable_buffer,
+            generate_etrecord=self.enable_profile,
         )
-
-        # this is needed for the ETRecord as lowering modifies the graph in-place
-        edge_copy = copy.deepcopy(delegated_program)
 
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
@@ -485,7 +505,7 @@ class TestQNN(unittest.TestCase):
 
         etrecord_path = "etrecord.bin"
         if self.enable_profile:
-            generate_etrecord(etrecord_path, edge_copy, exec_prog)
+            exec_prog.get_etrecord().save(etrecord_path)
         # Check numerics
         if (
             assert_output_equal
@@ -499,6 +519,9 @@ class TestQNN(unittest.TestCase):
                 etrecord_path,
                 expected_profile_events,
                 expected_intermediate_events,
+                extra_cmds=extra_cmds,
+                output_callback=output_callback,
+                save_inference_speed=save_inference_speed,
             )
 
     def get_qdq_module(
@@ -536,8 +559,8 @@ class TestQNN(unittest.TestCase):
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
-            torch.ops.pt2e_quant.quantize_affine.default,
-            torch.ops.pt2e_quant.dequantize_affine.default,
+            torch.ops.torchao.quantize_affine.default,
+            torch.ops.torchao.dequantize_affine.default,
         }
         if not bypass_check:
             self.assertTrue(nodes.intersection(q_and_dq))
@@ -568,7 +591,7 @@ class TestQNN(unittest.TestCase):
         quantizer.set_submodule_qconfig_list(submodule_qconfig_list)
 
         prepared = prepare_qat_pt2e(m, quantizer)
-        return torch.ao.quantization.move_exported_model_to_train(prepared)
+        return torchao.quantization.pt2e.move_exported_model_to_train(prepared)
 
     def get_converted_sgd_trained_module(
         self,
@@ -583,7 +606,20 @@ class TestQNN(unittest.TestCase):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        return torch.ao.quantization.quantize_pt2e.convert_pt2e(prepared)
+        return convert_pt2e(prepared)
+
+    def get_adb_tool(self, pte_fname):
+        adb = SimpleADB(
+            qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+            build_path=self.build_folder,
+            pte_path=pte_fname,
+            workspace="/data/local/tmp/qnn_executorch_test",
+            device_id=self.device,
+            host_id=self.host,
+            soc_model=self.model,
+            error_only=self.error_only,
+        )
+        return adb
 
     def split_graph(self, division: int):
         class SplitGraph(ExportPass):
@@ -594,6 +630,10 @@ class TestQNN(unittest.TestCase):
             def __init__(self, division):
                 super().__init__()
                 self.division = division
+
+            def _is_legit_node(self, node):
+                # skip dq_ops for frozen_params
+                return node.op == "call_function" and node.target not in dq_ops
 
             def _insert_clone(
                 self, graph_module: torch.fx.GraphModule
@@ -609,16 +649,18 @@ class TestQNN(unittest.TestCase):
                 # Insert clone op to split model based on the shares
                 num_graph_nodes = 0
                 for node in graph_module.graph.nodes:
-                    num_graph_nodes += 1 if node.op == "call_function" else 0
+                    if not self._is_legit_node(node):
+                        continue
 
-                    if num_graph_nodes % shares != 0 or node.op != "call_function":
+                    num_graph_nodes += 1
+                    if num_graph_nodes % shares != 0:
                         continue
 
                     with graph_module.graph.inserting_after(node):
                         users = list(node.users.keys())
                         inserted_node = graph_module.graph.create_node(
                             "call_function",
-                            exir_ops.edge.aten.clone.default,
+                            exir_ops.edge.dim_order_ops._clone_dim_order.default,
                             (node,),
                         )
                         inserted_node.meta["val"] = node.meta["val"]
@@ -636,111 +678,3 @@ class TestQNN(unittest.TestCase):
             QCOM_PASS_ACTIVATE_KEY: True,
             QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY: {"division": division},
         }
-
-
-class QnnTool(TestQNN):
-    def __init__(
-        self,
-        tmp_dir,
-        pte_fname,
-        sample_input,
-        workspace="/data/local/tmp/qnn_executorch_test",
-    ):
-        self.qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
-        self.ndk = os.environ.get("ANDROID_NDK_ROOT", None)
-        assert self.qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
-        assert self.ndk, "ANDROID_NDK_ROOT was not found in environment"
-
-        self.tmp_dir = tmp_dir
-        self.workspace = workspace
-        self.adb = SimpleADB(
-            qnn_sdk=self.qnn_sdk,
-            build_path=self.build_folder,
-            pte_path=pte_fname,
-            workspace=self.workspace,
-            device_id=self.device,
-            host_id=self.host,
-            soc_model=self.model,
-            error_only=self.error_only,
-        )
-        self.sample_input = sample_input
-
-    def qnn_context_binary_generator(
-        self, dlc_name="forward_0.dlc", binary_name="forward.serialized"
-    ):
-        cmds = [
-            f"{self.qnn_sdk}/bin/x86_64-linux-clang/qnn-context-binary-generator",
-            "--backend",
-            f"{self.qnn_sdk}/lib/x86_64-linux-clang/libQnnHtp.so",
-            "--model",
-            f"{self.qnn_sdk}/lib/x86_64-linux-clang/libQnnModelDlc.so",
-            "--dlc_path",
-            f"{self.tmp_dir}/{dlc_name}",
-            "--binary_file",
-            f"{self.tmp_dir}/{binary_name}",
-        ]
-        result = subprocess.run(
-            " ".join(cmds),
-            shell=True,
-            executable="/bin/bash",
-            capture_output=True,
-        )
-        assert os.path.isfile(f"{self.tmp_dir}/{binary_name}.bin"), print(result.stderr)
-
-    def qnn_net_run(self, binary_name="forward.serialized"):
-        input_list = ""
-        for idx, _ in enumerate(self.sample_input):
-            input_name = f"input_{idx}_0.raw"
-            input_list += input_name + " "
-        input_list = input_list.strip() + "\n"
-        if self.enable_x86_64:
-            # TODO: Implement context binary consumption on x86_64 platform
-            return
-
-        else:
-            # Config for qnn-net-run
-            config = {
-                "backend_extension_config": {
-                    "backend_extensions": {
-                        "shared_library_path": "./libQnnHtpNetRunExtensions.so",
-                        "config_file_path": "config.json",
-                    }
-                },
-                "config": {
-                    "devices": [
-                        {
-                            "profiling_level": "linting",
-                            "cores": [
-                                {"perf_profile": "burst", "rpc_control_latency": 100}
-                            ],
-                        }
-                    ]
-                },
-            }
-
-            for file_name, data in config.items():
-                with open(f"{self.tmp_dir}/{file_name}.json", "w") as json_file:
-                    json.dump(data, json_file, indent=4)
-
-            files = [
-                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpNetRunExtensions.so",
-                f"{self.tmp_dir}/backend_extension_config.json",
-                f"{self.tmp_dir}/config.json",
-                f"{self.tmp_dir}/{binary_name}.bin",
-                f"{self.qnn_sdk}/bin/aarch64-android/qnn-net-run",
-            ]
-            cmds = [
-                f"export LD_LIBRARY_PATH={self.workspace} &&",
-                f"export ADSP_LIBRARY_PATH={self.workspace} &&",
-                f"cd {self.workspace} &&",
-                "./qnn-net-run",
-                "--backend libQnnHtp.so",
-                "--input_list input_list.txt",
-                f"--retrieve_context {binary_name}.bin",
-                "--use_native_input_files",
-                "--use_native_output_files",
-                "--config_file backend_extension_config.json",
-                "--profiling_level backend",
-            ]
-            self.adb.push(inputs=self.sample_input, input_list=input_list, files=files)
-            self.adb.execute(custom_runner_cmd=" ".join(cmds))

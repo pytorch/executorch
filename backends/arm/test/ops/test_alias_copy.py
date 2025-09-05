@@ -8,10 +8,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]
@@ -30,54 +31,84 @@ class AliasCopy(torch.nn.Module):
     exir_op = "executorch_exir_dialects_edge__ops_aten_alias_copy_default"
 
     test_data: dict[input_t1] = {
-        "1d_ramp": (torch.arange(-16, 16, 0.2),),
-        "2d_ones": (torch.ones(5, 5),),
-        "3d_rand": (torch.rand(3, 5, 5),),
-        "4d_zeros": (torch.zeros(1, 10, 10, 10),),
+        "1d_ramp": lambda: (torch.arange(-16, 16, 0.2),),
+        "2d_ones": lambda: (torch.ones(5, 5),),
+        "3d_rand": lambda: (torch.rand(3, 5, 5),),
+        "4d_zeros": lambda: (torch.zeros(1, 10, 10, 10),),
     }
 
     def __init__(self):
         super().__init__()
 
     def forward(self, x: torch.Tensor):
-        return torch.alias_copy(x)
+        return (
+            torch.alias_copy(x) * 1
+        )  # Multiply by one to make sure it is partitioned.
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_copy_tosa_MI(test_data: input_t1):
-    TosaPipelineMI[input_t1](
+def test_alias_tosa_FP(test_data: input_t1):
+    TosaPipelineFP[input_t1](
         AliasCopy(),
-        test_data,
+        test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
     ).run()
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_copy_tosa_BI(test_data: input_t1):
-    TosaPipelineBI[input_t1](
+def test_alias_tosa_INT(test_data: input_t1):
+    TosaPipelineINT[input_t1](
         AliasCopy(),
-        test_data,
+        test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
     ).run()
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_copy_u55_BI(test_data: input_t1):
-    EthosU55PipelineBI[input_t1](
+@common.XfailIfNoCorstone300
+def test_alias_u55_INT(test_data: input_t1):
+    EthosU55PipelineINT[input_t1](
         AliasCopy(),
-        test_data,
+        test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
     ).run()
 
 
 @common.parametrize("test_data", AliasCopy.test_data)
-def test_alias_copy_u85_BI(test_data: input_t1):
-    EthosU85PipelineBI[input_t1](
+@common.XfailIfNoCorstone320
+def test_alias_u85_INT(test_data: input_t1):
+    EthosU85PipelineINT[input_t1](
         AliasCopy(),
-        test_data,
+        test_data(),
         AliasCopy.aten_op,
         AliasCopy.exir_op,
     ).run()
+
+
+@common.parametrize("test_data", AliasCopy.test_data)
+@common.SkipIfNoModelConverter
+def test_alias_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AliasCopy(),
+        test_data(),
+        AliasCopy.aten_op,
+        AliasCopy.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", AliasCopy.test_data)
+@common.SkipIfNoModelConverter
+def test_alias_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        AliasCopy(),
+        test_data(),
+        AliasCopy.aten_op,
+        AliasCopy.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

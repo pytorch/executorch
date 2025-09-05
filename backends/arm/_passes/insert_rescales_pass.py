@@ -3,69 +3,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 from copy import copy
 from typing import cast
 
-import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op, QuantArgs
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
-from torch import Tensor
 from torch.fx import GraphModule, Node
-from torch.library import custom_op, register_fake
-
-logger = logging.getLogger(__name__)
-
-
-@custom_op("tosa::_rescale", mutates_args=())  # type: ignore[misc]
-def rescale(
-    x: Tensor, dtype: torch.dtype, scale: float, in_zp: int, out_zp: int
-) -> Tensor:
-    logger.warning(
-        "Ran default implementation of tosa::_rescale."
-        "This op is meant to always be inserted inside a partition and a correct default implementation is not implemented."
-    )
-    # Clone is needed to not return reference when rescaling to same dtype.
-    # This is a neccessary requirement for non-mutating custom ops.
-    return x.to(dtype=dtype).clone()
-
-
-@register_fake("tosa::_rescale")  # type: ignore[misc]
-def rescale_fake(
-    x: Tensor, dtype: torch.dtype, scale: float, in_zp: int, out_zp: int
-) -> Tensor:
-    """Casts the input tensor to dtype `dtype` to produce the correct tensor meta for a _rescale op.
-    Additionally validates TOSA constraints of a RESCALE op.
-    """
-    if dtype not in (torch.int32, torch.int8, torch.int16):
-        raise NotImplementedError(
-            f"tosa::rescale currently only supports int32, int16 and int8, not {dtype}"
-        )
-    if dtype in (torch.int32, torch.int16) and out_zp != 0:
-        raise ValueError(
-            f"TOSA requires output_zp to be zero when the output dtype is {dtype}."
-        )
-    if x.dtype in (torch.int32, torch.int16) and in_zp != 0:
-        raise ValueError(
-            f"TOSA requires input_zp to be zero when the input dtype is {dtype}"
-        )
-    if x.dtype == torch.int8 and not -128 <= in_zp <= 127:
-        raise ValueError(f"{in_zp=} outside valid range (-128,127) for int8.")
-    if dtype == torch.int8 and not -128 <= out_zp <= 127:
-        raise ValueError(f"{out_zp=} outside valid range (-128,127) for int8.")
-
-    return x.to(dtype=dtype).clone()
 
 
 class InsertRescalePass(ExportPass):
     """Finds patterns of dq -> q, and replaces them
-    with passthrough_to_tosa::rescales.
+    with backend dialect tosa::RESCALE op.
 
-    Does not garantuee that the dtypes and zero points are valid
+    Does not guarantee that the dtypes and zero points are valid
     in TOSA, that is the job of the quantization annotator that
     produced the dq and q nodes. The TOSA constraints are validated
-    in the fake implementation of passthrough_to_tosa:rescale.
+    in the fake implementation of.
     """
 
     def fold_dq_q_to_rescale(self, node: Node, user: Node, graph_module: GraphModule):
@@ -76,7 +32,7 @@ class InsertRescalePass(ExportPass):
         with graph_module.graph.inserting_before(node):
             rescale_node = create_node(
                 graph_module.graph,
-                torch.ops.tosa._rescale.default,
+                exir_ops.backend.tosa.RESCALE.default,
                 (
                     node.all_input_nodes[0],
                     q_args.dtype,
@@ -94,11 +50,11 @@ class InsertRescalePass(ExportPass):
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
 
-            if node.target is not dq_op:
+            if node.target not in DQ_OPS:
                 continue
             # Copy users since we remove them while iterating, modyfing the node.users list.
             for user in copy(node.users):
-                if user.target is q_op:
+                if user.target in Q_OPS:
                     self.fold_dq_q_to_rescale(node, user, graph_module)
                     modified = True
             if len(node.users) == 0:

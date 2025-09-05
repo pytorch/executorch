@@ -1,255 +1,400 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-#
-# Tests the mean op which changes the size of a Tensor without changing the underlying data.
-#
 
-import unittest
+from typing import Tuple
 
 import torch
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
+
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.backends.xnnpack.test.tester.tester import Quantize
-from executorch.exir.backend.backend_details import CompileSpec
-
-from parameterized import parameterized
+input_t1 = Tuple[torch.Tensor]  # Input x
 
 
-class TestVar(unittest.TestCase):
+class Var(torch.nn.Module):
+    test_parameters = {
+        "var_4d_keep_dim_0_correction": lambda: (torch.randn(1, 50, 10, 20), True, 0),
+        "var_3d_no_keep_dim_0_correction": lambda: (torch.rand(1, 50, 10), False, 0),
+        "var_4d_keep_dim_1_correction": lambda: (torch.randn(1, 30, 15, 20), True, 1),
+        "var_4d_no_keep_dim_0_5_correction": lambda: (
+            torch.rand(1, 50, 10, 20),
+            False,
+            0.5,
+        ),
+    }
 
-    class Var(torch.nn.Module):
-        test_parameters = [
-            (torch.randn(1, 50, 10, 20), True, 0),
-            (torch.rand(1, 50, 10), False, 0),
-            (torch.randn(1, 30, 15, 20), True, 1),
-            (torch.rand(1, 50, 10, 20), False, 0.5),
-        ]
+    def __init__(self, keepdim: bool = True, correction: int = 0):
+        super().__init__()
+        self.keepdim = keepdim
+        self.correction = correction
 
-        def __init__(self, keepdim: bool = True, correction: int = 0):
-            super().__init__()
-            self.keepdim = keepdim
-            self.correction = correction
-
-        def forward(
-            self,
-            x: torch.Tensor,
-        ):
-            return x.var(keepdim=self.keepdim, correction=self.correction)
-
-    class VarDim(torch.nn.Module):
-        test_parameters = [
-            (torch.randn(1, 50, 10, 20), 1, True, False),
-            (torch.rand(1, 50, 10), -2, False, False),
-            (torch.randn(1, 30, 15, 20), -3, True, True),
-            (torch.rand(1, 50, 10, 20), -1, False, True),
-        ]
-
-        test_parameters_u55 = [
-            (torch.randn(1, 50, 10, 20), 1, True, False),
-            (torch.randn(1, 30, 15, 20), -3, True, True),
-        ]
-
-        test_parameters_u55_xfails = [
-            (torch.rand(1, 50, 10), -2, True, False),
-            (torch.rand(1, 50, 10, 20), -1, True, True),
-        ]
-
-        def __init__(self, dim: int = -1, keepdim: bool = True, unbiased: bool = False):
-            super().__init__()
-            self.dim = dim
-            self.keepdim = keepdim
-            self.unbiased = unbiased
-
-        def forward(
-            self,
-            x: torch.Tensor,
-        ):
-            return x.var(dim=self.dim, keepdim=self.keepdim, unbiased=self.unbiased)
-
-    class VarCorrection(torch.nn.Module):
-        test_parameters = [
-            (torch.randn(1, 50, 10, 20), (-1, -2), True, 0),
-            (torch.rand(1, 50, 10), (-2), True, 0),
-            (torch.randn(1, 30, 15, 20), (-1, -2, -3), True, 1),
-            (torch.rand(1, 50, 10, 20), (-1, -2), True, 0.5),
-        ]
-
-        def __init__(
-            self, dim: int = -1, keepdim: bool = True, correction: bool = False
-        ):
-            super().__init__()
-            self.dim = dim
-            self.keepdim = keepdim
-            self.correction = correction
-
-        def forward(
-            self,
-            x: torch.Tensor,
-        ):
-            return x.var(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
-
-    def _test_var_tosa_MI_pipeline(
+    def forward(
         self,
-        module: torch.nn.Module,
-        test_data: torch.Tensor,
-        target_str: str = None,
+        x: torch.Tensor,
     ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+        return x.var(keepdim=self.keepdim, correction=self.correction)
 
-    def _test_var_tosa_BI_pipeline(
+
+class VarDim(torch.nn.Module):
+    test_parameters = {
+        "var_4d_dim_1_keep_dim_unbiased": lambda: (
+            torch.randn(1, 50, 10, 20),
+            1,
+            True,
+            False,
+        ),
+        "var_3d_dim_neg_2_no_keep_dim_unbiased": lambda: (
+            torch.rand(1, 50, 10),
+            -2,
+            False,
+            False,
+        ),
+        "var_3d_dim_neg_3_keep_dim_biased": lambda: (
+            torch.randn(1, 30, 15, 20),
+            -3,
+            True,
+            True,
+        ),
+        "var_3d_dim_neg_1_no_keep_dim_biased": lambda: (
+            torch.rand(1, 50, 10, 20),
+            -1,
+            False,
+            True,
+        ),
+    }
+
+    test_parameters_u55 = {
+        "var_4d_dim_1_keep_dim_unbiased": lambda: (
+            torch.randn(1, 50, 10, 20),
+            1,
+            True,
+            False,
+        ),
+        "var_4d_dim_neg_3_keep_dim_biased": lambda: (
+            torch.randn(1, 30, 15, 20),
+            -3,
+            True,
+            True,
+        ),
+    }
+
+    test_parameters_u55_xfails = {
+        "var_3d_dim_neg_2_keep_dim_unbiased": lambda: (
+            torch.rand(1, 50, 10),
+            -2,
+            True,
+            False,
+        ),
+        "var_3d_dim_neg_1_keep_dim_biased": lambda: (
+            torch.rand(1, 50, 10, 20),
+            -1,
+            True,
+            True,
+        ),
+    }
+
+    def __init__(self, dim: int = -1, keepdim: bool = True, unbiased: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.unbiased = unbiased
+
+    def forward(
         self,
-        module: torch.nn.Module,
-        test_data: torch.Tensor,
-        target_str: str = None,
+        x: torch.Tensor,
     ):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
+        return x.var(dim=self.dim, keepdim=self.keepdim, unbiased=self.unbiased)
 
-    def _test_var_ethosu_BI_pipeline(
+
+class VarCorrection(torch.nn.Module):
+    test_parameters = {
+        "var_4d_dims_keep_dim_0_correction": lambda: (
+            torch.randn(1, 50, 10, 20),
+            (-1, -2),
+            True,
+            0,
+        ),
+        "var_3d_dims_keep_dim_0_correction": lambda: (
+            torch.rand(1, 50, 10),
+            (-2),
+            True,
+            0,
+        ),
+        "var_4d_dims_keep_dim_1_correction": lambda: (
+            torch.randn(1, 30, 15, 20),
+            (-1, -2, -3),
+            True,
+            1,
+        ),
+        "var_4d_dims_keep_dim_0_5_correction": lambda: (
+            torch.rand(1, 50, 10, 20),
+            (-1, -2),
+            True,
+            0.5,
+        ),
+    }
+
+    def __init__(self, dim: int = -1, keepdim: bool = True, correction: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.correction = correction
+
+    def forward(
         self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: torch.Tensor,
-        target_str: str = None,
+        x: torch.Tensor,
     ):
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
+        return x.var(dim=self.dim, keepdim=self.keepdim, correction=self.correction)
 
-    @parameterized.expand(Var.test_parameters)
-    def test_var_tosa_MI(self, test_tensor: torch.Tensor, keepdim, correction):
-        self._test_var_tosa_MI_pipeline(self.Var(keepdim, correction), (test_tensor,))
 
-    @parameterized.expand(Var.test_parameters)
-    def test_var_tosa_BI(self, test_tensor: torch.Tensor, keepdim, correction):
-        self._test_var_tosa_BI_pipeline(self.Var(keepdim, correction), (test_tensor,))
+##########
+## Var ###
+##########
 
-    @parameterized.expand(Var.test_parameters)
-    def test_var_u55_BI(self, test_tensor: torch.Tensor, keepdim, correction):
-        self._test_var_ethosu_BI_pipeline(
-            self.Var(keepdim, correction),
-            common.get_u55_compile_spec(),
-            (test_tensor,),
-        )
 
-    @parameterized.expand(Var.test_parameters)
-    def test_var_u85_BI(self, test_tensor: torch.Tensor, keepdim, correction):
-        self._test_var_ethosu_BI_pipeline(
-            self.Var(keepdim, correction),
-            common.get_u85_compile_spec(),
-            (test_tensor,),
-        )
+@common.parametrize("test_data", Var.test_parameters)
+def test_var_dim_tosa_FP_no_dim(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_tosa_MI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
-        self._test_var_tosa_MI_pipeline(
-            self.VarDim(dim, keepdim, unbiased), (test_tensor,)
-        )
 
-    @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_tosa_BI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
-        self._test_var_tosa_BI_pipeline(
-            self.VarDim(dim, keepdim, unbiased), (test_tensor,)
-        )
+@common.parametrize("test_data", Var.test_parameters)
+def test_var_dim_tosa_INT_no_dim(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(VarDim.test_parameters_u55)
-    def test_var_dim_u55_BI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
-        self._test_var_ethosu_BI_pipeline(
-            self.VarDim(dim, keepdim, unbiased),
-            common.get_u55_compile_spec(),
-            (test_tensor,),
-        )
 
-    @parameterized.expand(VarDim.test_parameters)
-    def test_var_dim_u85_BI(self, test_tensor: torch.Tensor, dim, keepdim, unbiased):
-        self._test_var_ethosu_BI_pipeline(
-            self.VarDim(dim, keepdim, unbiased),
-            common.get_u85_compile_spec(),
-            (test_tensor,),
-        )
+@common.parametrize("test_data", Var.test_parameters)
+@common.XfailIfNoCorstone300
+def test_var_dim_u55_INT_no_dim(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(VarCorrection.test_parameters)
-    def test_var_correction_tosa_MI(
-        self, test_tensor: torch.Tensor, dim, keepdim, correction
-    ):
-        self._test_var_tosa_MI_pipeline(
-            self.VarCorrection(dim, keepdim, correction), (test_tensor,)
-        )
 
-    @parameterized.expand(VarCorrection.test_parameters)
-    def test_var_correction_tosa_BI(
-        self, test_tensor: torch.Tensor, dim, keepdim, correction
-    ):
-        self._test_var_tosa_BI_pipeline(
-            self.VarCorrection(dim, keepdim, correction), (test_tensor,)
-        )
+@common.parametrize("test_data", Var.test_parameters)
+@common.XfailIfNoCorstone320
+def test_var_dim_u85_INT_no_dim(test_data: Tuple):
+    test_data, keepdim, correction = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        Var(keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(VarCorrection.test_parameters)
-    def test_var_correction_u55_BI(
-        self, test_tensor: torch.Tensor, dim, keepdim, correction
-    ):
-        self._test_var_ethosu_BI_pipeline(
-            self.VarCorrection(dim, keepdim, correction),
-            common.get_u55_compile_spec(),
-            (test_tensor,),
-        )
 
-    @parameterized.expand(VarCorrection.test_parameters)
-    def test_var_correction_u85_BI(
-        self, test_tensor: torch.Tensor, dim, keepdim, correction
-    ):
-        self._test_var_ethosu_BI_pipeline(
-            self.VarCorrection(dim, keepdim, correction),
-            common.get_u85_compile_spec(),
-            (test_tensor,),
-        )
+@common.parametrize("test_data", Var.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_FP_no_dim(test_data: Tuple):
+    data, keepdim, correction = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Var(keepdim, correction), (data,), [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Var.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_INT_no_dim(test_data: Tuple):
+    data, keepdim, correction = test_data()
+    pipeline = VgfPipeline[input_t1](
+        Var(keepdim, correction),
+        (data,),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+#############
+## VarDim ###
+#############
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+def test_var_dim_tosa_FP(test_data: Tuple):
+    test_data, dim, keepdim, unbiased = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (test_data,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+def test_var_dim_tosa_INT(test_data: Tuple):
+
+    test_data, dim, keepdim, unbiased = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (test_data,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters_u55)
+@common.XfailIfNoCorstone300
+def test_var_dim_u55_INT(test_data: Tuple):
+    test_data, dim, keepdim, unbiased = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.XfailIfNoCorstone320
+def test_var_dim_u85_INT(test_data: Tuple):
+    test_data, dim, keepdim, unbiased = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_FP(test_data: Tuple):
+    data, dim, keepdim, unbiased = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarDim(dim, keepdim, unbiased), (data,), [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_INT(test_data: Tuple):
+    data, dim, keepdim, unbiased = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarDim(dim, keepdim, unbiased),
+        (data,),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+####################
+## VarCorrection ###
+####################
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+def test_var_dim_tosa_FP_correction(test_data: Tuple):
+    test_data, dim, keepdim, correction = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        VarCorrection(dim, keepdim, correction),
+        (test_data,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+def test_var_dim_tosa_INT_correction(test_data: Tuple):
+    test_data, dim, keepdim, correction = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        VarCorrection(dim, keepdim, correction),
+        (test_data,),
+        aten_op=[],
+        exir_op=[],
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.XfailIfNoCorstone300
+def test_var_dim_u55_INT_correction(test_data: Tuple):
+    test_data, dim, keepdim, correction = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        VarCorrection(dim, keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.XfailIfNoCorstone320
+def test_var_dim_u85_INT_correction(test_data: Tuple):
+    test_data, dim, keepdim, correction = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        VarCorrection(dim, keepdim, correction),
+        (test_data,),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_FP_correction(test_data: Tuple):
+    data, dim, keepdim, corr = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarCorrection(dim, keepdim, corr), (data,), [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", VarCorrection.test_parameters)
+@common.SkipIfNoModelConverter
+def test_var_dim_vgf_INT_correction(test_data: Tuple):
+    data, dim, keepdim, corr = test_data()
+    pipeline = VgfPipeline[input_t1](
+        VarCorrection(dim, keepdim, corr),
+        (data,),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

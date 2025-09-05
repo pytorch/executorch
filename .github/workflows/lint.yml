@@ -22,7 +22,7 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-linter
+      docker-image: ci-image:executorch-ubuntu-22.04-linter
       submodules: 'recursive'
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -46,7 +46,7 @@ jobs:
         fi
 
         # This has already been cached in the docker image
-        lintrunner init 2> /dev/null
+        lintrunner init
 
         RC=0
         # Run lintrunner on all files
@@ -76,15 +76,20 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-linter
+      docker-image: ci-image:executorch-ubuntu-22.04-linter
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
         FILES_NEEDS_FORMAT=$(/opt/google-java-format -n \
           extension/android/executorch_android/src/main/java/org/pytorch/executorch/*.java \
+          extension/android/executorch_android/src/main/java/org/pytorch/executorch/extension/llm/*.java \
+          extension/android/executorch_android/src/main/java/org/pytorch/executorch/annotations/*.java \
+          extension/android/executorch_android/src/androidTest/java/org/pytorch/executorch/*.java \
           examples/demo-apps/android/LlamaDemo/app/src/main/java/com/example/executorchllamademo/*.java \
-          extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java)
+          examples/demo-apps/android/LlamaDemo/app/src/androidTest/java/com/example/executorchllamademo/*.java \
+          extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java \
+          extension/benchmark/android/benchmark/app/src/androidTest/java/org/pytorch/minibench/*.java)
         if [ -n "$FILES_NEEDS_FORMAT" ]; then
           echo "Warning: The following files need formatting. Please use google-java-format."
           echo "Use a binary from https://github.com/google/google-java-format/releases/"

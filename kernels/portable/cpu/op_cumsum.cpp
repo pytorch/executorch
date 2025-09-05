@@ -111,10 +111,10 @@ Tensor& cumsum_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "cumsum.out";
 
-  ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&]() {
     const auto load_self =
         utils::internal::get_load_to_compute_fn<CTYPE_OUT, op_name>(
-            self, utils::SupportedTensorDtypes::REALHBBF16);
+            ctx, self, utils::SupportedTensorDtypes::REALHBBF16);
     cumsum_tensors<CTYPE_OUT>(self, load_self, dim, out);
   });
 

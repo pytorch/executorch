@@ -5,25 +5,46 @@
 from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 
 # Add edge ops which we lower but which are not included in exir/dialects/edge/edge.yaml here.
-CUSTOM_EDGE_OPS = ["linspace.default", "eye.default"]
+CUSTOM_EDGE_OPS = [
+    "linspace.default",
+    "eye.default",
+    "expm1.default",
+    "vector_norm.default",
+    "hardsigmoid.default",
+    "hardswish.default",
+    "linear.default",
+    "maximum.default",
+    "multihead_attention.default",
+    "adaptive_avg_pool2d.default",
+    "bitwise_right_shift.Tensor",
+    "bitwise_left_shift.Tensor",
+    "native_group_norm.default",
+    "silu.default",
+    "sdpa.default",
+    "unbind.int",
+    "unflatten.int",
+    "_native_batch_norm_legit_no_training.default",
+    "_native_batch_norm_legit.no_stats",
+    "alias_copy.default",
+]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
 # Add all targets and TOSA profiles we support here.
-TARGETS = {"tosa_BI", "tosa_MI", "u55_BI", "u85_BI"}
+TARGETS = ["tosa_FP", "tosa_INT", "u55_INT", "u85_INT", "vgf_INT", "vgf_FP"]
 
 
-def get_edge_ops():
+def get_op_name_map():
     """
-    Returns a set with edge_ops with names on the form to be used in unittests:
+    Returns a mapping from names on the form to be used in unittests to edge op:
     1. Names are in lowercase.
-    2. Overload is ignored if it is 'default', otherwise its appended with an underscore.
+    2. Overload is ignored if 'default', otherwise it's appended with an underscore.
     3. Overly verbose name are shortened by removing certain prefixes/suffixes.
 
     Examples:
         abs.default -> abs
         split_copy.Tensor -> split_tensor
     """
-    edge_ops = set()
+    map = {}
     for edge_name in ALL_EDGE_OPS:
         op, overload = edge_name.split(".")
 
@@ -32,25 +53,27 @@ def get_edge_ops():
         op = op.removeprefix("_")
         op = op.removesuffix("_copy")
         op = op.removesuffix("_with_indices")
-        op = op.removesuffix("_no_training")
         overload = overload.lower()
 
         if overload == "default":
-            edge_ops.add(op)
+            map[op] = edge_name
         else:
-            edge_ops.add(f"{op}_{overload}")
+            map[f"{op}_{overload}"] = edge_name
 
-    return edge_ops
+    return map
 
 
-def parse_test_name(test_name: str, edge_ops: set[str]) -> tuple[str, str, bool]:
+def parse_test_name(
+    test_name: str, op_name_map: dict[str, str]
+) -> tuple[str, str, bool]:
     """
     Parses a test name on the form
         test_OP_TARGET_<not_delegated>_<any_other_info>
-    where OP must match a string in edge_ops and TARGET must match one string in TARGETS.
-    The "not_delegated" suffix indicates that the test tests that the op is not delegated.
+    where OP must match a key in op_name_map and TARGET one string in TARGETS. The
+    "not_delegated" suffix indicates that the test tests that the op is not delegated.
 
-    Examples of valid names: "test_mm_u55_BI_not_delegated" or "test_add_scalar_tosa_MI_two_inputs".
+    Examples of valid names: "test_mm_u55_INT_not_delegated" and
+    "test_add_scalar_tosa_FP_two_inputs".
 
     Returns a tuple (OP, TARGET, IS_DELEGATED) if valid.
     """
@@ -74,7 +97,7 @@ def parse_test_name(test_name: str, edge_ops: set[str]) -> tuple[str, str, bool]
 
     assert target != "None", f"{test_name} does not contain one of {TARGETS}"
     assert (
-        op in edge_ops
+        op in op_name_map.keys()
     ), f"Parsed unvalid OP from {test_name}, {op} does not exist in edge.yaml or CUSTOM_EDGE_OPS"
 
     return op, target, is_delegated
@@ -86,13 +109,13 @@ if __name__ == "__main__":
 
     sys.tracebacklimit = 0  # Do not print stack trace
 
-    edge_ops = get_edge_ops()
+    op_name_map = get_op_name_map()
     exit_code = 0
 
     for test_name in sys.argv[1:]:
         try:
             assert test_name[:5] == "test_", f"Unexpected input: {test_name}"
-            parse_test_name(test_name, edge_ops)
+            parse_test_name(test_name, op_name_map)
         except AssertionError as e:
             print(e)
             exit_code = 1

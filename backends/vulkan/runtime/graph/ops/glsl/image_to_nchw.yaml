@@ -9,15 +9,26 @@ image_to_nchw:
     DTYPE: float
     STORAGE: texture3d
     TO_STAGING: True
+    USE_PUSH_CONST: True
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
-      - VALUE: int
+      - VALUE: double
       - VALUE: int8
+      - VALUE: uint8
+      - VALUE: int32
   shader_variants:
     - NAME: image_to_nchw_texture3d
     - NAME: image_to_nchw_texture2d
       STORAGE: texture2d
     - NAME: clone_image_to_buffer
       TO_STAGING: False
+    - NAME: image_to_nchw_no_pc_texture3d
+      USE_PUSH_CONST: False
+    - NAME: image_to_nchw_no_pc_texture2d
+      STORAGE: texture2d
+      USE_PUSH_CONST: False
+    - NAME: clone_image_to_buffer_no_pc
+      TO_STAGING: False
+      USE_PUSH_CONST: False

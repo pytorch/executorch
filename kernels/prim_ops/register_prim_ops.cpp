@@ -12,6 +12,7 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
+#include <algorithm>
 #include <cmath>
 
 using torch::executor::function::et_copy_index;
@@ -22,14 +23,19 @@ namespace function {
 
 namespace {
 
-#define __ET_PRIM_OP_ERROR_IMPL(a, b, context)                     \
-  else {                                                           \
-    ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag); \
+#define __ET_PRIM_OP_ERROR_IMPL(a, b, context) \
+  else {                                       \
+    ET_KERNEL_CHECK_MSG(                       \
+        context,                               \
+        false,                                 \
+        InvalidType,                           \
+        /* void */,                            \
+        "%zu, %zu",                            \
+        (size_t)a.tag,                         \
+        (size_t)b.tag);                        \
   }
 
-// TODO Fail using runtime context
 #define __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
-  (void)context;                                           \
   EValue& a = *stack[0];                                   \
   EValue& b = *stack[1];                                   \
   EValue& out = *stack[2];                                 \
@@ -43,11 +49,23 @@ namespace {
     out = EValue(a.toDouble() operator b.toInt());         \
   }
 
+#define __ET_PRIM_OP_NUM_ARGS_CHECK_IMPL(stack, context) \
+  ET_KERNEL_CHECK_MSG(                                   \
+      context,                                           \
+      stack.size() == 3,                                 \
+      InvalidProgram,                                    \
+      /* void */,                                        \
+      "Expected %zu args, got %zu",                      \
+      (size_t)3,                                         \
+      stack.size());
+
 #define ALGEBRA_ET_PRIM_OP(operator, stack, context) \
+  __ET_PRIM_OP_NUM_ARGS_CHECK_IMPL(stack, context)   \
   __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
   __ET_PRIM_OP_ERROR_IMPL(a, b, context)
 
 #define BOOLEAN_ET_PRIM_OP(operator, stack, context) \
+  __ET_PRIM_OP_NUM_ARGS_CHECK_IMPL(stack, context)   \
   __NUMBER_ET_PRIM_OP_IMPL(operator, stack, context) \
   else if (a.isBool() && b.isBool()) {               \
     out = EValue(a.toBool() operator b.toBool());    \
@@ -72,8 +90,15 @@ static Kernel prim_ops[] = {
     // aten::sym_size.int(Tensor self, int dim) -> SymInt
     Kernel(
         "aten::sym_size.int",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& self = *stack[0];
           EValue& dim = *stack[1];
           EValue& out = *stack[2];
@@ -86,8 +111,15 @@ static Kernel prim_ops[] = {
     // aten::_local_scalar_dense(Tensor self) -> Scalar
     Kernel(
         "aten::_local_scalar_dense",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           executorch::aten::Tensor self_tensor =
@@ -105,8 +137,15 @@ static Kernel prim_ops[] = {
     // aten::sym_numel(Tensor self) -> SymInt
     Kernel(
         "aten::sym_numel",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& self = *stack[0];
           EValue& out = *stack[1];
           executorch::aten::Tensor self_tensor =
@@ -114,25 +153,81 @@ static Kernel prim_ops[] = {
           int64_t numel = self_tensor.numel();
           out = EValue(numel);
         }),
+    // executorch_prim::sym_max.Scalar(SymInt a, SymInt b) -> SymInt
+    Kernel(
+        "executorch_prim::sym_max.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
+
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(std::max(a.toInt(), b.toInt()));
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_max only supports int inputs, got %zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
+          }
+        }),
+    // executorch_prim::sym_min.Scalar(SymInt a, SymInt b) -> SymInt
+    Kernel(
+        "executorch_prim::sym_min.Scalar",
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(std::min(a.toInt(), b.toInt()));
+          } else {
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "sym_min only supports int inputs, got %zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
+          }
+        }),
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::add.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(+, stack, context);
         }),
 
     // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::sub.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(-, stack, context);
         }),
 
     // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mul.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           ALGEBRA_ET_PRIM_OP(*, stack, context);
         }),
 
@@ -147,8 +242,15 @@ static Kernel prim_ops[] = {
      */
     Kernel(
         "executorch_prim::floordiv.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -168,17 +270,30 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble() && b.isInt()) {
             floor_div_double(a.toDouble(), static_cast<double>(b.toInt()), out);
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "%zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
           }
         }),
 
     // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::truediv.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           // can't use macro because of custom casting behavior
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -193,19 +308,32 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble() && b.isInt()) {
             out = EValue(a.toDouble() / b.toInt());
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "%zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
           }
         }),
 
     // executorch_prim::sym_float.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::sym_float.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           // can't use macro because of custom casting behavior
           // TODO: Now that we are reliably generating conversion operators,
           // we can remove the mixed type handling for other operators
-          (void)context;
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isInt()) {
@@ -214,50 +342,57 @@ static Kernel prim_ops[] = {
             // TODO: This should be impossible
             out = EValue(a.toDouble());
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+            ET_KERNEL_CHECK_MSG(
+                context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
           }
         }),
 
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::eq.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(==, stack, context);
         }),
 
     // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::gt.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(>, stack, context);
         }),
 
     // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::lt.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(<, stack, context);
         }),
 
     // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::ge.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(>=, stack, context);
         }),
 
     // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::le.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
         }),
     // executorch_prim::neg.Scalar(Scalar) -> Scalar
     Kernel(
         "executorch_prim::neg.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isInt()) {
@@ -265,16 +400,23 @@ static Kernel prim_ops[] = {
           } else if (a.isDouble()) {
             out = EValue(-a.toDouble());
           } else {
-            // TODO Fail using runtime context
-            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+            ET_KERNEL_CHECK_MSG(
+                context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
           }
         }),
 
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
         "executorch_prim::floordiv.int",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -284,8 +426,15 @@ static Kernel prim_ops[] = {
     // executorch_prim::mod.int(int, int) -> int
     Kernel(
         "executorch_prim::mod.int",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
@@ -295,37 +444,71 @@ static Kernel prim_ops[] = {
     // executorch_prim::mod.Scalar(Scalar, Scalar) -> Scalar
     Kernel(
         "executorch_prim::mod.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 3,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)3,
+              stack.size());
           EValue& a = *stack[0];
           EValue& b = *stack[1];
           EValue& out = *stack[2];
           if (a.isInt() && b.isInt()) {
             out = EValue(a.toInt() % b.toInt());
           } else {
-            ET_CHECK_MSG(false, "%zu, %zu", (size_t)a.tag, (size_t)b.tag);
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "%zu, %zu",
+                (size_t)a.tag,
+                (size_t)b.tag);
           }
         }),
 
     // ceil.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::ceil.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isDouble()) {
             out = EValue(static_cast<int64_t>(ceil(a.toDouble())));
           } else {
-            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "Unsupported DType %zu",
+                (size_t)a.tag);
           }
         }),
 
     // round.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::round.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isDouble()) {
@@ -348,34 +531,48 @@ static Kernel prim_ops[] = {
 
             out = EValue(static_cast<int64_t>(res));
           } else {
-            ET_CHECK_MSG(false, "Unsupported DType %zu", (size_t)a.tag);
+            ET_KERNEL_CHECK_MSG(
+                context,
+                false,
+                InvalidType,
+                /* void */,
+                "Unsupported DType %zu",
+                (size_t)a.tag);
           }
         }),
 
     // trunc.Scalar(Scalar a) -> Scalar
     Kernel(
         "executorch_prim::trunc.Scalar",
-        [](KernelRuntimeContext& context, EValue** stack) {
-          (void)context;
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
+          ET_KERNEL_CHECK_MSG(
+              context,
+              stack.size() == 2,
+              InvalidProgram,
+              /* void */,
+              "Expected %zu args, got %zu",
+              (size_t)2,
+              stack.size());
           EValue& a = *stack[0];
           EValue& out = *stack[1];
           if (a.isDouble()) {
             out = EValue(static_cast<int64_t>(trunc(a.toDouble())));
           } else {
-            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+            ET_KERNEL_CHECK_MSG(
+                context, false, InvalidType, /* void */, "%zu", (size_t)a.tag);
           }
         }),
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel(
         "executorch_prim::et_copy_index.tensor",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           et_copy_index(context, stack);
         }),
     // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
     Kernel(
         "executorch_prim::et_view.default",
-        [](KernelRuntimeContext& context, EValue** stack) {
+        [](KernelRuntimeContext& context, Span<EValue*> stack) {
           et_view(context, stack);
         }),
 

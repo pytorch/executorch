@@ -1,0 +1,36 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "core",
+    srcs = [
+        "lib.py",
+        "ops_registration.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/arm:tosa_specification",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "ops",
+    srcs = glob(["ops/*.py"]),
+    deps = [
+        ":core",
+        "//caffe2:torch",
+        "//executorch/backends/arm:tosa_specification",
+    ],
+)
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":core",
+        ":ops",
+        "//caffe2:torch",
+        "//executorch/backends/arm:tosa_specification",
+        "//executorch/exir/dialects:lib",
+    ],
+)

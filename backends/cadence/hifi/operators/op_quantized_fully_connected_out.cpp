@@ -19,12 +19,12 @@ namespace native {
 
 using ::executorch::aten::ArrayRef;
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::SizesType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
 void inline _quantized_fully_connected_asym8u(
     const Tensor& in,

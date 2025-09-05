@@ -10,24 +10,31 @@
 # backends. Converts via TOSA as an intermediate form supported by AoT and
 # JIT compiler flows.
 #
-
+from enum import Enum
 from typing import List, Optional
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.compile_spec_schema import (  # type: ignore[import-not-found]
+    CompileSpec,
+)
 
 
 class ArmCompileSpecBuilder:
+    class DebugMode(Enum):
+        JSON = 1
+
     def __init__(self):
         self.compile_spec: List[CompileSpec] = []
         self.compiler_flags = []
         self.output_format = None
         self.path_for_intermediates = None
         self.tosa_spec = None
+        self.tosa_debug_mode = None
 
     def vgf_compile_spec(
         self,
+        tosa_spec: TosaSpecification = None,  # type: ignore[assignment]
         compiler_flags: Optional[str] = "",
     ) -> "ArmCompileSpecBuilder":
         """
@@ -40,7 +47,33 @@ class ArmCompileSpecBuilder:
         self.compiler_flags = [
             compiler_flags,
         ]
-        self.tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+MI")
+
+        if tosa_spec is None:
+            tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
+
+        tosa_version = tosa_spec.version  # type: ignore[attr-defined]
+        tosa_profiles = tosa_spec.profiles  # type: ignore[attr-defined]
+
+        if tosa_version.major != 1:
+            raise ValueError(
+                "Arm backend only supports converter-backend for TOSA version 1. "
+                f"Invalid TOSA version: {tosa_version}"
+            )
+
+        if "FP" not in tosa_profiles and "INT" not in tosa_profiles:
+            raise ValueError(
+                "Arm backend only supports converter-backend for FP or INT. "
+                f"Invalid TOSA profile: {tosa_profiles}"
+            )
+
+        if len(tosa_profiles) != 1:
+            raise ValueError(
+                "For now Arm backend only supports converter-backend for either FP or INT. "
+                f"Invalid TOSA profile: {tosa_profiles}"
+            )
+
+        self.tosa_spec = tosa_spec
+
         return self
 
     def ethosu_compile_spec(
@@ -98,7 +131,7 @@ class ArmCompileSpecBuilder:
         self.compiler_flags.append("--output-format=raw")
         self.compiler_flags.append("--debug-force-regor")
 
-        base_tosa_version = "TOSA-0.80+BI"
+        base_tosa_version = "TOSA-1.0+INT+int16"
         if "u55" in target:
             # Add the Ethos-U55 extension marker
             base_tosa_version += "+u55"
@@ -133,6 +166,13 @@ class ArmCompileSpecBuilder:
         self.path_for_intermediates = output_path
         return self
 
+    def dump_debug_info(self, debug_mode: DebugMode) -> "ArmCompileSpecBuilder":
+        """
+        Dump debugging information into the intermediates path
+        """
+        self.tosa_debug_mode = debug_mode.name
+        return self
+
     def build(self) -> List[CompileSpec]:
         """
         Generate a list of compile spec objects from the builder
@@ -156,6 +196,16 @@ class ArmCompileSpecBuilder:
         if self.path_for_intermediates is not None:
             self.compile_spec.append(
                 CompileSpec("debug_artifact_path", self.path_for_intermediates.encode())
+            )
+
+        if self.tosa_debug_mode is not None:
+            if not self.path_for_intermediates:
+                raise ValueError(
+                    "dump_debug_info() must be used in conjunction with dump_intermediate_artifacts_to()"
+                )
+
+            self.compile_spec.append(
+                CompileSpec("dump_debug_info", self.tosa_debug_mode.encode())
             )
 
         return self.compile_spec
@@ -185,13 +235,6 @@ def is_vgf(compile_spec: List[CompileSpec]) -> bool:
         if spec.key == "output_format":
             return spec.value.decode() == "vgf"
     return False
-
-
-def get_tosa_spec(compile_spec: List[CompileSpec]) -> TosaSpecification:
-    for spec in compile_spec:
-        if spec.key == "tosa_spec":
-            return TosaSpecification.create_from_string(spec.value.decode())
-    raise ValueError("Could not find TOSA version in CompileSpec")
 
 
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:

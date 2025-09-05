@@ -11,6 +11,12 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/named_data_map.h>
 
+#ifdef __GNUC__
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 /**
@@ -25,8 +31,14 @@ class BackendInitContext final {
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr)
       : runtime_allocator_(runtime_allocator),
+#ifdef ET_EVENT_TRACER_ENABLED
+        event_tracer_(event_tracer),
+#else
+        event_tracer_(nullptr),
+#endif
         method_name_(method_name),
-        named_data_map_(named_data_map) {}
+        named_data_map_(named_data_map) {
+  }
 
   /** Get the runtime allocator passed from Method. It's the same runtime
    * executor used by the standard executor runtime and the life span is the

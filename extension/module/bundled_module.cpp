@@ -27,6 +27,8 @@ std::unique_ptr<BufferDataLoader> program_data_loader(
 }
 } // namespace
 
+namespace ET_BUNDLED_MODULE_NAMESPACE {
+
 BundledModule::BundledModule(
     const void* bundled_program_ptr,
     std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
@@ -107,6 +109,6 @@ runtime::Error BundledModule::verify_method_outputs(
   return executorch::BUNDLED_PROGRAM_NAMESPACE::verify_method_outputs(
       *method, bundled_program_ptr_, testset_idx, rtol, atol);
 }
-
+} // namespace ET_BUNDLED_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch

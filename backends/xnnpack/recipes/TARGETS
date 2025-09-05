@@ -1,0 +1,35 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "xnnpack_recipe_provider",
+    srcs = [
+        "xnnpack_recipe_provider.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/export:lib",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        ":xnnpack_recipe_types",
+    ],
+)
+
+runtime.python_library(
+    name = "xnnpack_recipe_types",
+    srcs = [
+        "xnnpack_recipe_types.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/export:lib",
+    ],
+)

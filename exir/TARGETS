@@ -277,3 +277,11 @@ python_library(
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
     ],
 )
+
+python_library(
+    name = "debug_handle_utils",
+    srcs = ["debug_handle_utils.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

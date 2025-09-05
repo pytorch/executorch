@@ -9,10 +9,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -71,6 +72,10 @@ class Pow_TensorScalar(torch.nn.Module):
             torch.abs(torch.randn((1, 2, 3, 6))),
             6.789,
         ),
+        "neg_base_exp_pos_integer": lambda: (
+            -torch.abs(torch.randn((1, 2, 3, 6))) - 10,
+            3,
+        ),
     }
 
     def __init__(self, exp):
@@ -81,9 +86,15 @@ class Pow_TensorScalar(torch.nn.Module):
         return torch.pow(x, self.exp)
 
 
-@common.parametrize("test_data", Pow_TensorTensor.test_data)
-def test_pow_tensor_tensor_MI(test_data: Pow_TensorTensor.input_t):
-    pipeline = TosaPipelineMI[Pow_TensorTensor.input_t](
+x_fail = {
+    "zero_base_zero_exp": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "neg_base_zero_exp": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+}
+
+
+@common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
+def test_pow_tensor_tensor_tosa_FP(test_data: Pow_TensorTensor.input_t):
+    pipeline = TosaPipelineFP[Pow_TensorTensor.input_t](
         Pow_TensorTensor(),
         test_data(),
         Pow_TensorTensor.aten_op,
@@ -92,10 +103,33 @@ def test_pow_tensor_tensor_MI(test_data: Pow_TensorTensor.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data)
-def test_pow_tensor_scalar_MI(test_data: Pow_TensorScalar.input_t):
+@common.parametrize("test_data", Pow_TensorTensor.test_data, x_fail, strict=False)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_tensor_vgf_FP(test_data: Pow_TensorTensor.input_t):
+    pipeline = VgfPipeline[Pow_TensorTensor.input_t](
+        Pow_TensorTensor(),
+        test_data(),
+        Pow_TensorTensor.aten_op,
+        Pow_TensorTensor.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+x_fail = {
+    "exp_minus_three": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_minus_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_zero": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_one": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "exp_two": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+    "non_neg_base_exp_pos_decimal": "TOSA constraints: If x == 0 and y ⇐ 0, the result is undefined.",
+}
+
+
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+def test_pow_tensor_scalar_tosa_FP(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = TosaPipelineMI[Pow_TensorScalar.input_t](
+    pipeline = TosaPipelineFP[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
@@ -104,10 +138,10 @@ def test_pow_tensor_scalar_MI(test_data: Pow_TensorScalar.input_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", Pow_TensorScalar.test_data)
-def test_pow_tensor_scalar_BI(test_data: Pow_TensorScalar.input_t):
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+def test_pow_tensor_scalar_tosa_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = TosaPipelineBI[Pow_TensorScalar.input_t](
+    pipeline = TosaPipelineINT[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
@@ -118,9 +152,9 @@ def test_pow_tensor_scalar_BI(test_data: Pow_TensorScalar.input_t):
 
 @common.parametrize("test_data", Pow_TensorScalar.test_data)
 @common.XfailIfNoCorstone300
-def test_pow_tensor_scalar_u55_BI(test_data: Pow_TensorScalar.input_t):
+def test_pow_tensor_scalar_u55_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = EthosU55PipelineBI[Pow_TensorScalar.input_t](
+    pipeline = EthosU55PipelineINT[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
@@ -132,13 +166,41 @@ def test_pow_tensor_scalar_u55_BI(test_data: Pow_TensorScalar.input_t):
 
 @common.parametrize("test_data", Pow_TensorScalar.test_data)
 @common.XfailIfNoCorstone320
-def test_pow_tensor_scalar_u85_BI(test_data: Pow_TensorScalar.input_t):
+def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
     base, exp = test_data()
-    pipeline = EthosU85PipelineBI[Pow_TensorScalar.input_t](
+    pipeline = EthosU85PipelineINT[Pow_TensorScalar.input_t](
         Pow_TensorScalar(exp),
         (base,),
         Pow_TensorScalar.aten_op,
         Pow_TensorScalar.exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_scalar_vgf_FP(test_data: Pow_TensorScalar.input_t):
+    base, exp = test_data()
+    pipeline = VgfPipeline[Pow_TensorScalar.input_t](
+        Pow_TensorScalar(exp),
+        (base,),
+        Pow_TensorScalar.aten_op,
+        Pow_TensorScalar.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Pow_TensorScalar.test_data, x_fail, strict=False)
+@common.SkipIfNoModelConverter
+def test_pow_tensor_scalar_vgf_INT(test_data: Pow_TensorScalar.input_t):
+    base, exp = test_data()
+    pipeline = VgfPipeline[Pow_TensorScalar.input_t](
+        Pow_TensorScalar(exp),
+        (base,),
+        Pow_TensorScalar.aten_op,
+        Pow_TensorScalar.exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

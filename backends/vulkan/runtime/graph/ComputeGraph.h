@@ -21,6 +21,7 @@
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/DispatchNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/DynamicDispatchNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
@@ -184,8 +185,45 @@ class ComputeGraph final {
   std::vector<IOValueRef> inputs_;
   std::vector<IOValueRef> outputs_;
 
+  std::unordered_set<
+      vkapi::ComputePipelineCache::Key,
+      vkapi::ComputePipelineCache::Hasher>
+      pipeline_descriptors_;
+
+  // Utility constexpr to express byte quantities
+  constexpr static size_t MB = 1024 * 1024;
+
+  // List of command buffers deferred for submission
+  std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
+
+  // Set to track which ValueRefs were updated during inference
+  std::unordered_set<ValueRef> updated_values_;
+
+  // Flag to indicate if re-encoding is required
+  bool requires_reencode_ = false;
+
  protected:
   size_t values_in_use_ = 0;
+  size_t execute_count_ = 0;
+
+  // Total number of bytes needed to store model weights
+  size_t total_constant_nbytes_ = 0;
+
+  // Represents the amount of staging buffer data that will be copied if the
+  // current Context's command buffer is submitted now.
+  size_t staging_nbytes_in_cmd_ = 0;
+
+  // Represents the nodes to wait before submitting commands.
+  // If command buffers created with config.execute_threshold_node_count exceeds
+  // config.execute_max_cmds, then execute_threshold_node_count will be
+  // increased to fit command buffers within the limit. Otherwise,
+  // execute_threshold_node_count will be set to
+  // config.execute_threshold_node_count.
+  size_t execute_threshold_node_count_ = 0;
+
+  // Whether the underlying GPU support accelerated integer dot product
+  // extensions
+  bool can_use_int8_dot_product_ = false;
 
  public:
   //
@@ -216,6 +254,9 @@ class ComputeGraph final {
     return config_;
   }
 
+  // Check if the ComputeGraph has a value at the specified index
+  bool is_valid_value_idx(const ValueRef idx) const noexcept;
+
   //
   // Value Extraction
   //
@@ -224,11 +265,20 @@ class ComputeGraph final {
   inline ptr_type get_##short_name(const ValueRef idx) {                   \
     return ptr_type(this, idx);                                            \
   }                                                                        \
-  inline bool val_is_##short_name(const ValueRef idx) {                    \
+  inline bool val_is_##short_name(const ValueRef idx) const {              \
     return values_.at(idx).is##type_name();                                \
   }
 
-  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+ protected:
+  inline vTensorPtr get_tensor(const ValueRef idx) {
+    return vTensorPtr(this, idx);
+  }
+
+ public:
+  inline bool val_is_tensor(const ValueRef idx) const {
+    return values_.at(idx).isTensor();
+  }
+
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(TensorRefPtr, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
@@ -299,6 +349,10 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().numel();
   }
 
+  inline size_t staging_buffer_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().staging_buffer_numel();
+  }
+
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().storage_type();
   }
@@ -306,6 +360,36 @@ class ComputeGraph final {
   inline bool is_buffer_storage(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
+
+  inline bool is_texture_storage(const ValueRef idx) const {
+    return !is_buffer_storage(idx);
+  }
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has buffer storage
+   * 3. The buffer backed tensor at `idx` has a contiguous memory layout
+   */
+  bool is_contiguous_buffer_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has texture storage
+   * 3. The texture backed tensor at `idx` has a standard axis mapping
+   * 4. The texture backed tensor at `idx` is channels packed
+   */
+  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` has texture storage
+   * 3. The texture backed tensor at `idx` has a standard axis mapping
+   * 4. The texture backed tensor at `idx` is width packed
+   */
+  bool is_standard_width_packed_texture_tensor(const ValueRef idx) const;
 
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
@@ -335,16 +419,28 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().sizes_ubo();
   }
 
+  inline vkapi::BufferBindInfo buffer_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().buffer_meta_ubo();
+  }
+
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().strides_ubo();
+  }
+
+  inline vkapi::BufferBindInfo dim_order_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().dim_order_ubo();
   }
 
   inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().numel_ubo();
   }
 
-  inline bool has_standard_axis_map(const ValueRef idx) {
+  inline bool has_standard_axis_map(const ValueRef idx) const {
     return values_.at(idx).toTensor().has_standard_axis_map();
+  }
+
+  inline bool is_contiguous(const ValueRef idx) const {
+    return values_.at(idx).toTensor().is_contiguous();
   }
 
   inline vkapi::BufferBindInfo logical_limits_ubo(const ValueRef idx) {
@@ -352,30 +448,52 @@ class ComputeGraph final {
   }
 
   inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+    pc_data.set_value(idx);
+    return pc_data;
+  }
+
+  inline PushConstantDataInfo dim_order_pc_of(const ValueRef idx) const {
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
+        values_.at(idx).toConstTensor().get_uniform_data(),
+        api::kTensorDimOrder);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorStrides);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo logical_limits_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorLogicalLimits);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo numel_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorNumel);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   //
   // Scalar Value Extraction
   //
+
+  bool is_scalar_or_none(const ValueRef idx) const {
+    const Value& value = values_.at(idx);
+    return value.isInt() || value.isDouble() || value.isBool() ||
+        value.isNone();
+  }
 
   template <typename T>
   T extract_scalar(const ValueRef idx) {
@@ -393,9 +511,31 @@ class ComputeGraph final {
   }
 
   template <typename T>
+  T extract_scalar_or(const ValueRef idx, const T default_value) {
+    Value& value = values_.at(idx);
+    if (value.isNone()) {
+      return default_value;
+    }
+    return extract_scalar<T>(idx);
+  }
+
+  template <typename T>
   std::optional<T> extract_optional_scalar(const ValueRef idx) {
     if (val_is_none(idx)) {
       return ::std::nullopt;
+    } else if (val_is_symint(idx)) {
+      return utils::safe_downcast<T>(read_symint(idx));
+    } else {
+      return extract_scalar<T>(idx);
+    }
+  }
+
+  template <typename T>
+  T extract_optional_scalar(const ValueRef idx, const T default_val) {
+    if (val_is_none(idx)) {
+      return default_val;
+    } else if (val_is_symint(idx)) {
+      return utils::safe_downcast<T>(read_symint(idx));
     } else {
       return extract_scalar<T>(idx);
     }
@@ -404,6 +544,15 @@ class ComputeGraph final {
   std::string extract_string(const ValueRef idx) {
     return values_.at(idx).toString();
   }
+
+  /*
+   * Utility function to extract a list of integers from a ValueRef.
+   * If the ValueRef is an IntList, returns a copy of the list.
+   * If the ValueRef is a ValueList, extracts each element as an Int or SymInt
+   * and returns the resulting list.
+   * Throws an error if the ValueRef is neither an IntList nor a ValueList.
+   */
+  std::vector<int64_t> extract_int_or_symint_list(const ValueRef idx);
 
   template <
       typename T,
@@ -544,8 +693,7 @@ class ComputeGraph final {
   ValueRef add_tensor_view(
       const ValueRef vref,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& dim_order,
-      const size_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A
@@ -556,6 +704,16 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const void* const data);
+
+  /*
+   * Add a `TensorRef` value to the graph with the specific properties. A
+   * `TensorRef` is a reference to a `api::vTensor` whose data is stored in a
+   * FreeableBuffer. The TensorRef will take ownership of the FreeableBuffer.
+   */
+  ValueRef add_tensorref(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      executorch::runtime::FreeableBuffer&& buffer);
 
   /*
    * Add a staging buffer to the graph. Staging buffers are data buffers that
@@ -580,8 +738,17 @@ class ComputeGraph final {
 
   ValueRef add_symint(const int32_t val);
 
+  /*
+   * Searches the graph's value list for a Int value with the specified value.
+   * If one is found, returns the index of the value. Otherwise, add a new value
+   * and return the index of the new value.
+   */
+  ValueRef get_or_add_value_for_int(const int64_t val);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
+
+  ValueRef set_output_value(const ValueRef idx);
 
   template <typename Block>
   vkapi::BufferBindInfo create_params_buffer(const Block& data) {
@@ -597,6 +764,10 @@ class ComputeGraph final {
    *   and return the BufferBindInfo of the created ParamsBuffer.
    */
   vkapi::BufferBindInfo get_or_create_int_param_buffer(const ValueRef idx);
+
+  vkapi::BufferBindInfo get_or_create_int_param_buffer(
+      const ValueRef idx,
+      const int32_t default_value);
 
   void set_symint(const ValueRef idx, const int32_t val);
 
@@ -668,6 +839,13 @@ class ComputeGraph final {
 
   SharedObject& get_shared_object(const int64_t idx);
 
+  /*
+   * Creates a dedicated memory allocation for a vTensor value, and have the
+   * tensor acquire the allocation object. If the tensor is already bound to a
+   * memory allocation, this function will be a no-op.
+   */
+  void create_dedicated_allocation_for(const ValueRef idx);
+
   //
   // Graph Preparation
   //
@@ -676,7 +854,15 @@ class ComputeGraph final {
       const vkapi::ShaderInfo& shader_info,
       bool execute);
 
+  void register_pipeline_to_create(
+      const vkapi::ShaderInfo& shader_info,
+      const utils::WorkgroupSize& local_workgroup_size,
+      const vkapi::SpecVarList& spec_vars,
+      const std::vector<PushConstantDataInfo>& push_constants);
+
   void prepare();
+
+  void prepare_pipelines();
 
   //
   // Dispatch Utilities
@@ -715,6 +901,20 @@ class ComputeGraph final {
    */
   utils::uvec3 create_local_wg_size(const ValueRef idx);
 
+  void bind_tensor_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags accessType,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
+  void bind_value_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags access_type,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
   //
   // Input/Output
   //
@@ -723,26 +923,87 @@ class ComputeGraph final {
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
 
+ protected:
+  // Command Buffer Management
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution.
+   */
+  void submit_current_cmd(const bool final_use = false);
+
+  /*
+   * Submits the current command buffer in the Context to the GPU for execution,
+   * and wait for it to complete before returning.
+   */
+  void submit_current_cmd_and_wait(const bool final_use = false);
+
+  /*
+   * Submit one command buffer to the GPU.
+   */
+  void submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence);
+
+  /*
+   * Submits all the commands gathered in deferred_cmd_bufs_ to the GPU.
+   */
+  void submit_deferred_cmds_and_wait();
+
+  /*
+   * Ends and invalidates all deferred commands.
+   */
+  void clear_deferred_cmds();
+
+ public:
   //
   // Graph Prepacking
   //
 
-  void encode_prepack();
-  void prepack() const;
+  inline void update_staging_nbytes_in_cmd(const size_t staging_bytes) {
+    staging_nbytes_in_cmd_ += staging_bytes;
+  }
+
+  /*
+   * Executes prepacking operations to transfer model weight data from the CPU
+   * to GPU.
+   */
+  void prepack();
 
   //
   // Graph Execution
   //
 
-  void encode_execute();
-  void execute() const;
+  void execute();
+
+  //
+  // Tensor View
+  //
+
+  void virtual_clone(const ValueRef dst, const ValueRef src);
+
+  void virtual_transpose(
+      const ValueRef tensor,
+      const int64_t dim0,
+      const int64_t dim1);
 
   //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+
+  void virtual_resize(
+      const ValueRef idx,
+      const std::vector<int64_t>& new_sizes);
+
   void propagate_resize();
+
+  // Check if a specific ValueRef (or ValueList) was updated, with recursive
+  // handling
+  bool was_value_updated(const ValueRef idx) const noexcept;
+
+  // Set the flag to indicate that re-encoding is required
+  inline void set_requires_reencode() noexcept {
+    requires_reencode_ = true;
+  }
 
   //
   // Miscellaneous Utilities
@@ -750,6 +1011,14 @@ class ComputeGraph final {
 
   inline bool int16_shader_types_enabled() const {
     return context_->adapter_ptr()->supports_int16_shader_types();
+  }
+
+  inline size_t execute_count() const {
+    return execute_count_;
+  }
+
+  inline bool can_use_int8_dot_product() const {
+    return can_use_int8_dot_product_;
   }
 
   /*
@@ -779,6 +1048,8 @@ class ComputeGraph final {
   friend class SymIntPtr;
 
   friend struct TmpTensor;
+  friend struct SharedObject;
+  friend class BlitNode;
 };
 
 template <typename T>

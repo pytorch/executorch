@@ -3,6 +3,7 @@ load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_andro
 load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
+load(":build_defs.bzl", "ET_JNI_COMPILER_FLAGS")
 
 oncall("executorch")
 
@@ -27,17 +28,13 @@ non_fbcode_target(_kind = executorch_generated_lib,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni",
-    srcs = ["jni_layer.cpp", "log.cpp"],
-    headers = ["jni_layer_constants.h"],
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = [
-        "-frtti",
-        "-fexceptions",
-        "-Wno-unused-variable",
-    ],
+    compiler_flags = ET_JNI_COMPILER_FLAGS,
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
+        ":jni_headers",
         ":log_provider_static",
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
@@ -52,17 +49,13 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni_full",
-    srcs = ["jni_layer.cpp", "log.cpp"],
-    headers = ["jni_layer_constants.h"],
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = [
-        "-frtti",
-        "-fexceptions",
-        "-Wno-unused-variable",
-    ],
+    compiler_flags = ET_JNI_COMPILER_FLAGS,
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
+        ":jni_headers",
         ":log_provider_static",
         ":generated_op_lib_optimized_static",
         "//fbandroid/libraries/fbjni:fbjni",
@@ -77,22 +70,43 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 )
 
 non_fbcode_target(_kind = fb_android_cxx_library,
-    name = "executorch_llama_jni",
-    srcs = [
-        "jni_layer.cpp",
-        "jni_layer_llama.cpp",
-    ],
-    headers = ["jni_layer_constants.h"],
+    name = "executorch_training_jni",
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_layer_training.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
-    compiler_flags = [
-        "-frtti",
-        "-fexceptions",
-        "-DEXECUTORCH_BUILD_LLAMA_JNI",
-        "-Wno-format",
+    compiler_flags = ET_JNI_COMPILER_FLAGS + [
+        "-DEXECUTORCH_BUILD_EXTENSION_TRAINING",
     ],
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
     deps = [
+        ":jni_headers",
+        ":log_provider_static",
+        ":generated_op_lib_optimized_static",
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
+        "//xplat/executorch/extension/data_loader:file_data_loader_static",
+        "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
+        "//xplat/executorch/extension/training/module:training_module_static",
+        "//xplat/executorch/extension/training/optimizer:sgd_static",
+        "//xplat/executorch/kernels/quantized:generated_lib_static",
+    ],
+)
+
+non_fbcode_target(_kind = fb_android_cxx_library,
+    name = "executorch_llama_jni",
+    srcs = ["jni_layer.cpp", "jni_layer_llama.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
+    allow_jni_merging = False,
+    compiler_flags = ET_JNI_COMPILER_FLAGS + [
+        "-DEXECUTORCH_BUILD_LLAMA_JNI",
+    ],
+    soname = "libexecutorch.$(ext)",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":jni_headers",
         ":log_provider_static",
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
@@ -112,13 +126,29 @@ non_fbcode_target(_kind = runtime.cxx_library,
     name = "log_provider",
     srcs = ["log.cpp"],
     exported_headers = ["log.h"],
-    compiler_flags = [
-        "-frtti",
-        "-fexceptions",
-        "-Wno-unused-variable",
-    ],
+    compiler_flags = ET_JNI_COMPILER_FLAGS,
     deps = [
         "//executorch/runtime/core:core",
     ],
     visibility = ["@EXECUTORCH_CLIENTS"],
+)
+
+runtime.export_file(
+    name = "jni_layer.cpp",
+)
+
+runtime.export_file(
+    name = "jni_layer_runtime.cpp",
+)
+
+runtime.export_file(
+    name = "jni_helper.cpp",
+)
+
+runtime.cxx_library(
+    name = "jni_headers",
+    exported_headers = [
+        "jni_layer_constants.h",
+        "jni_helper.h",
+    ]
 )

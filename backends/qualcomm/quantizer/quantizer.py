@@ -12,8 +12,9 @@ import torch
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
 
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule
+from torchao.quantization.pt2e import UniformQuantizationObserverBase
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 from .annotators import OP_ANNOTATOR
 
@@ -22,6 +23,7 @@ from .qconfig import (
     get_16a4w_qnn_ptq_config,
     get_16a4w_qnn_qat_config,
     get_16a8w_qnn_ptq_config,
+    get_16a8w_qnn_qat_config,
     get_8a8w_qnn_ptq_config,
     get_8a8w_qnn_qat_config,
     get_ptq_per_block_quant_config,
@@ -38,6 +40,7 @@ __all__ = [
     "QuantDtype",
     "get_16a4w_qnn_ptq_config",
     "get_16a8w_qnn_ptq_config",
+    "get_16a8w_qnn_qat_config",
     "get_16a16w_qnn_ptq_config",
     "get_8a8w_qnn_ptq_config",
     "get_8a8w_qnn_qat_config",
@@ -84,7 +87,7 @@ QUANT_CONFIG_DICT = {
         partial(
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         None,
     ),
@@ -93,12 +96,12 @@ QUANT_CONFIG_DICT = {
         partial(
             get_ptq_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         partial(
             get_ptq_per_block_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
     ),
     (QuantDtype.use_8a8w, False): (
@@ -112,7 +115,7 @@ QUANT_CONFIG_DICT = {
         partial(
             get_qat_per_channel_quant_config,
             act_dtype=torch.uint16,
-            weight_dtype="int4",
+            weight_dtype=torch.int4,
         ),
         None,
     ),
@@ -130,9 +133,7 @@ class ModuleQConfig:
     is_qat: bool = False
     is_conv_per_channel: bool = False
     is_linear_per_channel: bool = False
-    act_observer: Optional[
-        torch.ao.quantization.observer.UniformQuantizationObserverBase
-    ] = None
+    act_observer: Optional[UniformQuantizationObserverBase] = None
 
     def __post_init__(self):
         if (self.quant_dtype, self.is_qat) not in QUANT_CONFIG_DICT:
@@ -178,6 +179,29 @@ class ModuleQConfig:
 
 
 class QnnQuantizer(Quantizer):
+    """
+    QnnQuantizer is a quantization annotator designed for QNN backends.
+    It uses OP_ANNOTATOR, a dictionary mapping OpOverload to annotator functions,
+    to determine how each node should be annotated for quantization.
+
+    Example usage:
+        quantizer = QnnQuantizer()
+        quantizer.set_default_quant_config(
+            quant_dtype=QuantDtype.use_8a8w,
+            is_qat=False,
+            is_conv_per_channel=True,
+            is_linear_per_channel=True,
+            act_observer=MovingAverageMinMaxObserver,
+        )
+        quantizer.set_block_size_map({"conv2d": (1, 128, 1, 1)})
+        quantizer.set_submodule_qconfig_list([
+            (get_submodule_type_predicate("Add"), ModuleQConfig(quant_dtype=QuantDtype.use_16a4w))
+        ])
+        quantizer.add_custom_quant_annotations(...)
+        quantizer.add_discard_nodes([node.name to skip annotation])
+        quantizer.add_discard_ops([node.target to skip annotation])
+    """
+
     SUPPORTED_OPS: Set = set(OP_ANNOTATOR.keys())
 
     def __init__(self):
@@ -194,6 +218,11 @@ class QnnQuantizer(Quantizer):
         self.discard_nodes: Set[str] = set()
 
     def _annotate(self, gm: GraphModule) -> None:
+        """
+        Annotates the nodes of the provided GraphModule in-place based on user defined quant configs during prepare_pt2e.
+
+        For each node in the graph, nodes without quant config or those explicitly listed in `self.discard_nodes` are not annotated.
+        """
         for node in gm.graph.nodes:
             if node.name in self.discard_nodes:
                 continue
@@ -207,6 +236,16 @@ class QnnQuantizer(Quantizer):
             annotation_func(gm)
 
     def _get_submodule_qconfig(self, node: torch.fx.Node):
+        """
+        Retrieves the `ModuleQConfig` for a given node by matching the first applicable callable function in the `submodule_qconfig_list`.
+        You can add submodule-specific quant config using the `set_submodule_qconfig_list` method.
+
+        Args:
+            node (torch.fx.Node): The node for which to retrieve the quant config.
+
+        Returns:
+            ModuleQConfig: The matched submodule config, or the default config if no match is found.
+        """
         for func, qconfig in self.submodule_qconfig_list:
             if func(node):
                 return qconfig
@@ -214,11 +253,17 @@ class QnnQuantizer(Quantizer):
 
     def _get_quant_config(self, node: torch.fx.Node) -> Optional[QuantizationConfig]:
         """
-        How to pick:
-            1. is one of per_block_quant_config
-            2. Pick specific submodule config if given.
-            3. Pick one if op belongs to use_per_channel_weight_quant_ops
-            4. If not 3, pick normal quant config
+        Select the quant config for a node based on priority.
+
+        Priority order:
+            1. Per-block quant config if block_size is set for node.
+            2. Submodule-specific config if predicate matches.
+            3. Per-channel config if op is in per-channel set.
+            4. Default quant config if op is supported.
+
+        Args:
+            node (torch.fx.Node): The node to get quant config for.
+
         """
         op = node.target
         if isinstance(op, str):
@@ -242,22 +287,49 @@ class QnnQuantizer(Quantizer):
     def add_custom_quant_annotations(
         self, custom_quant_annotations: Sequence[Callable]
     ) -> None:
+        """
+        Add custom annotation functions to be applied during prepare_pt2e.
+
+        Args:
+            custom_quant_annotations (Sequence[Callable]): A sequence of functions that take a GraphModule and perform custom annotation.
+        """
         self.custom_quant_annotations = custom_quant_annotations
 
     def add_discard_nodes(self, nodes: Sequence[str]) -> None:
+        """
+        Specifies node IDs to exclude from quantization.
+        """
         self.discard_nodes = set(nodes)
 
     def add_discard_ops(self, ops: Sequence[OpOverload]) -> None:
+        """
+        Specifies OpOverloads to exclude from quantization.
+        """
         for op in ops:
             self.quant_ops.remove(op)
 
     def annotate(self, model: GraphModule) -> GraphModule:
+        """
+        Annotates GraphModule during prepare_pt2e.
+
+        Args:
+            model (GraphModule): The FX GraphModule to annotate.
+
+        Returns:
+            GraphModule: The annotated model.
+        """
         self._annotate(model)
         self._annotate_custom_annotation(model)
 
         return model
 
     def get_supported_ops(self) -> Set[OpOverload]:
+        """
+        Returns the set of supported OpOverloads for quantization.
+
+        Returns:
+            Set[OpOverload]: Supported ops.
+        """
         return self.SUPPORTED_OPS
 
     def set_default_quant_config(
@@ -268,6 +340,17 @@ class QnnQuantizer(Quantizer):
         is_linear_per_channel=False,
         act_observer=None,
     ) -> None:
+        """
+        Set the default quant config for quantizer.
+
+        Args:
+            quant_dtype (QuantDtype): Specifies the quantized data type. By default, 8-bit activations and weights (8a8w) are used.
+            is_qat (bool, optional): Enables Quantization-Aware Training (QAT) mode. Defaults to Post-Training Quantization (PTQ) mode.
+            is_conv_per_channel (bool, optional): Enables per-channel quantization for convolution operations.
+            is_linear_per_channel (bool, optional): Enables per-channel quantization for linear (fully connected) operations.
+            act_observer (Optional[UniformQuantizationObserverBase], optional): Custom observer for activation quantization. If not specified, the default observer is determined by `QUANT_CONFIG_DICT`.
+
+        """
         self.default_quant_config = ModuleQConfig(
             quant_dtype,
             is_qat,
@@ -277,6 +360,12 @@ class QnnQuantizer(Quantizer):
         )
 
     def set_block_size_map(self, block_size_map: Dict[str, Tuple]) -> None:
+        """
+        Set the mapping from node names to block sizes for per-block quantization.
+
+        Args:
+            block_size_map (Dict[str, Tuple]): Mapping from node name to block size.
+        """
         self.block_size_map = block_size_map
 
     def set_submodule_qconfig_list(
@@ -289,6 +378,15 @@ class QnnQuantizer(Quantizer):
         self.submodule_qconfig_list = submodule_qconfig_list
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        """
+        Applies QNN-specific transformation before annotation during prepare_pt2e.
+
+        Args:
+            model (GraphModule): The FX GraphModule to transform.
+
+        Returns:
+            GraphModule: The transformed model.
+        """
         return QnnPassManager().transform_for_annotation_pipeline(model)
 
     def validate(self, model: GraphModule) -> None:

@@ -16,9 +16,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using IntArrayRef = executorch::aten::ArrayRef<int64_t>;
 using OptIntArrayRef = executorch::aten::OptionalArrayRef<int64_t>;
 using torch::executor::testing::TensorFactory;

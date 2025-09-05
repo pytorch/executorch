@@ -6,17 +6,17 @@
 
 # model sharding with custom op
 set(CUSTOM_OP_SRCS_FILE
-  "${EXECUTORCH_SOURCE_DIR}/extension/llm/custom_ops/op_fallback.cpp"
+    "${EXECUTORCH_SOURCE_DIR}/extension/llm/custom_ops/op_fallback.cpp"
 )
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+
 add_library(custom_ops ${CUSTOM_OP_SRCS_FILE})
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../include"
 )
-target_link_libraries(
-  custom_ops PUBLIC full_portable_ops_lib
-)
-target_link_options_shared_lib(custom_ops)
+target_link_libraries(custom_ops PUBLIC executorch_core full_portable_ops_lib)
+executorch_target_link_options_shared_lib(custom_ops)
 
 # preprocess qnn runner src files for llama
 set(_llama_runner__srcs ${_llama_runner__srcs})
@@ -28,16 +28,25 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/qnn_llama_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.h
-  ${CMAKE_CURRENT_LIST_DIR}/runner/io_manager.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/runner/io_manager.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/decoder_runner.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/decoder_runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/prompt_processor.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/prompt_processor.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/token_generator.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/token_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/imem_alloc.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/client_mem.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/lhd_token_generator.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/lhd_token_generator.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/rpc_mem.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/runner/kv_manager.h
+  ${EXECUTORCH_SOURCE_DIR}/examples/models/llama/runner/runner.cpp
+  ${EXECUTORCH_SOURCE_DIR}/examples/models/llama/runner/runner.h
 )
 
-list(
-  APPEND
-  _llama_runner__srcs
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizers/src/tiktoken.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama/tokenizer/llama_tiktoken.cpp
-)
+list(APPEND _llama_runner__srcs)
 
 # build qnn llama runner
 add_executable(qnn_llama_runner ${_llama_runner__srcs})
@@ -45,24 +54,29 @@ target_include_directories(
   qnn_llama_runner PUBLIC ${_common_include_directories}
 )
 
-target_link_options_shared_lib(quantized_ops_lib)
+executorch_target_link_options_shared_lib(quantized_ops_lib)
 
 target_link_libraries(
   qnn_llama_runner
   qnn_executorch_backend
   executorch_core
   extension_data_loader
+  extension_flat_tensor
+  extension_llm_runner
   extension_module
   extension_tensor
   gflags
-  re2::re2
   custom_ops
   quantized_ops_lib
   quantized_kernels
+  tokenizers::tokenizers
 )
-target_compile_options(
-  qnn_llama_runner PUBLIC ${_common_compile_options}
+
+target_include_directories(
+  qnn_llama_runner PUBLIC ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
 )
+
+target_compile_options(qnn_llama_runner PUBLIC ${_common_compile_options})
 set_target_properties(
   qnn_llama_runner PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
 )

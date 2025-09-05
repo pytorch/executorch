@@ -43,6 +43,7 @@ _EXTERNAL_DEPS = {
     "gtest_aten": "//third-party:gtest_aten",
     "libtorch": "//third-party:libtorch",
     "libtorch_python": "//third-party:libtorch_python",
+    "log": [], # Intentionally not supporting OSS buck build log
     # Huggingface Tokenizer
     "nlohmann_json": [], # Intentionally not supporting OSS buck build HF tokenizer.
     "prettytable": "//third-party:prettytable",

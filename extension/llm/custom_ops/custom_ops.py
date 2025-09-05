@@ -33,7 +33,7 @@ except:
     package_path = Path(__file__).parent.resolve()
     logging.info(f"Looking for libcustom_ops_aot_lib.so in {package_path}")
 
-    libs = list(package_path.glob("**/libcustom_ops_aot_lib.*"))
+    libs = list(package_path.glob("**/*custom_ops_aot_lib.*"))
 
     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
     logging.info(f"Loading custom ops library: {libs[0]}")
@@ -184,6 +184,7 @@ def _validate_update_cache_params(
     value,
     cache,
     start_pos,
+    indices=None,
 ):
     seq_len = value.size(1)
     assert (
@@ -200,17 +201,30 @@ def _validate_update_cache_params(
         ), f"Expected value and cache to have same size in dimension {i} but got {value.size(i)} and {cache.size(i)}"
 
     torch._check_is_size(start_pos)
-    # Setting to arbitrary limit of 256 for now since there is no way
-    # to plumb this information from model config
-    torch._check(start_pos < cache.size(1))
-    assert start_pos < cache.size(
-        1
-    ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
+    if indices is None:
+        torch._check(start_pos < cache.size(1))
+        assert start_pos < cache.size(
+            1
+        ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
 
-    torch._check((start_pos + seq_len) < cache.size(1))
-    assert (start_pos + seq_len) < cache.size(
-        1
-    ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
+        torch._check((start_pos + seq_len) < cache.size(1))
+        assert (start_pos + seq_len) < cache.size(
+            1
+        ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
+
+    if indices is not None:
+        assert (
+            indices.dim() == 2
+        ), f"Expected indices to be 2 dimensional but got {indices.dim()} dimensions."
+        assert (
+            indices.dtype == torch.int64
+        ), f"Expected indices to be int64 but got {indices.dtype}"
+        assert indices.size(0) == value.size(
+            0
+        ), f"Expected indices batch dimension to match value batch dimension but got {indices.size(0)} and {value.size(0)}"
+        assert indices.size(1) == value.size(
+            1
+        ), f"Expected indices sequence length dimension to match value sequence length dimension but got {indices.size(1)} and {value.size(1)}"
 
 
 @impl(custom_ops_lib, "update_cache", "Meta")
@@ -223,6 +237,26 @@ def update_cache_meta(
         value,
         cache,
         start_pos,
+    )
+
+    # Update cache doesnt really return anything but I dont know a better
+    # workaround. Should we just return cache instead? But I am afraid that
+    # will result in extra memory allocation
+    return torch.empty((1,), dtype=value.dtype, device="meta")
+
+
+@impl(custom_ops_lib, "update_cache_with_indices", "Meta")
+def update_cache_with_indices_meta(
+    value,
+    cache,
+    start_pos,
+    indices,
+):
+    _validate_update_cache_params(
+        value,
+        cache,
+        start_pos,
+        indices,
     )
 
     # Update cache doesnt really return anything but I dont know a better

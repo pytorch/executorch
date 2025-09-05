@@ -17,7 +17,7 @@ namespace runtime {
  * up, and set an abnormal exit status (platform-defined).
  */
 ET_NORETURN void runtime_abort() {
-  et_pal_abort();
+  pal_abort();
 }
 
 } // namespace runtime

@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+from typing import Tuple, Union
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -15,7 +17,7 @@ aten_sqrt_ops = (
 )
 
 
-def get_sqrt_decomposition(op) -> tuple:
+def get_sqrt_decomposition(op) -> Union[Tuple, torch._ops.OpOverload]:
     # TODO : "MLETORCH-863 : Replace current sqrt -> pow.Tensor_Scalar workaround with pow.Tensor_Tensor"
     if op in edge_sqrt_ops:
         return exir_ops.edge.aten.pow.Tensor_Scalar

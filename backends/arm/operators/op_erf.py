@@ -12,41 +12,11 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
-
-
-@register_node_visitor
-class ERFVisitor_080_MI(NodeVisitor):
-    target = "aten.erf.default"
-
-    # BI case handled by op_table
-    tosa_specs = [TosaSpecification.create_from_string("TOSA-0.80+MI")]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 1)
-
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and output need same dtype."
-                f"Got {inputs[0].dtype=}, {output.dtype=}"
-            )
-        if not (inputs[0].dtype == ts.DType.FP32):
-            raise ValueError("All inputs need to be FP32." f"Got {inputs[0].dtype=}")
-        # MI lowering
-        tosa_graph.addOperator(ts.TosaOp.Op().ERF, [inputs[0].name], [output.name])
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -69,14 +39,15 @@ class ERFVisitor(NodeVisitor):
         import serializer.tosa_serializer as ts
 
         validate_num_inputs(self.target, inputs, 1)
-
-        if not (inputs[0].dtype == output.dtype):
-            raise ValueError(
-                "All inputs and output need same dtype."
-                f"Got {inputs[0].dtype=}, {output.dtype=}"
-            )
-        if not (inputs[0].dtype == ts.DType.FP32):
-            raise ValueError("All inputs need to be FP32." f"Got {inputs[0].dtype=}")
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target,
+            [*inputs, output],
+            ts.DType.FP32,
+            output.tosa_spec,
+        )
 
         # MI lowering
-        tosa_graph.addOperator(ts.TosaOp.Op().ERF, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().ERF, [inputs[0].name], [output.name]
+        )

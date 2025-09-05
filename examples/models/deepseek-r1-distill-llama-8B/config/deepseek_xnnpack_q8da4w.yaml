@@ -1,0 +1,16 @@
+base:
+  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+
+model:
+  use_kv_cache: True
+  use_sdpa_with_kv_cache: True
+  dtype_override: fp16
+
+backend:
+  xnnpack:
+    enabled: True
+
+quantization:
+  qmode: 8da4w
+  group_size: 128
+  embedding_quantize: 4,32

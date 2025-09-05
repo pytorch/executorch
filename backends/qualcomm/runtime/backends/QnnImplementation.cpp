@@ -51,8 +51,8 @@ Error QnnImplementation::StartBackend(
     const std::string& lib_path,
     const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  void* lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
-
+  void* lib_handle = nullptr;
+  lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",

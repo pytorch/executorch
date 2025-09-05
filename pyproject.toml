@@ -1,12 +1,12 @@
 [build-system]
 requires = [
-  "cmake<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "cmake>=3.29,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
   "setuptools>=63",  # For building the pip package contents.
-  "tomli",  # Imported by extract_sources.py when using python < 3.11.
   "wheel",  # For building the pip package archive.
   "zstd",  # Imported by resolve_buck.py.
+  "certifi",  # Imported by resolve_buck.py.
 ]
 build-backend = "setuptools.build_meta"
 
@@ -49,11 +49,13 @@ classifiers = [
 ]
 
 # Python dependencies required for use.
-requires-python = ">=3.10"
+# coremltools has issue with python 3.13, see https://github.com/apple/coremltools/issues/2487
+requires-python = ">=3.10,<3.13"
 dependencies=[
   "expecttest",
   "flatbuffers",
   "hypothesis",
+  "kgb",
   "mpmath==1.3.0",
   "numpy>=2.0.0; python_version >= '3.10'",
   "packaging",
@@ -61,14 +63,19 @@ dependencies=[
   "parameterized",
   "pytest",
   "pytest-xdist",
-  "pytest-rerunfailures",
+  "pytest-rerunfailures==15.1",
   "pyyaml",
   "ruamel.yaml",
   "sympy",
   "tabulate",
-  "typing-extensions",
+  # See also third-party/TARGETS for buck's typing-extensions version.
+  "typing-extensions>=4.10.0",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==8.3; platform_system == 'Darwin'",
+  "coremltools==9.0b1; platform_system == 'Darwin' or platform_system == 'Linux'",
+  # scikit-learn is used to support palettization in the coreml backend
+  "scikit-learn==1.7.1",
+  "hydra-core>=1.3.0",
+  "omegaconf>=2.3.0",
 ]
 
 [project.urls]

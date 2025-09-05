@@ -8,7 +8,6 @@
 
 #pragma once
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <inttypes.h>
 #include <stddef.h>
 #include <xa_type_def.h>
 /* For NNLIB APIs */
@@ -87,6 +86,42 @@ extern "C" WORD32 xa_nn_elm_div_mode_broadcast_4D_f32xf32_f32(
     const FLOAT32* __restrict__ p_inp2,
     const WORD32* const p_inp2_shape,
     WORD32 mode);
+
+extern "C" WORD32 xa_nn_elm_greater_lesser_equal_f32xf32_f32(
+    WORD8* __restrict__ p_out,
+    const FLOAT32* __restrict__ p_inp1,
+    const FLOAT32* __restrict__ p_inp2,
+    WORD32 num_elm,
+    WORD32 kernel_type);
+
+extern "C" WORD32 xa_nn_elm_greater_lesser_equal_broadcast_4D_f32xf32_f32(
+    WORD8* __restrict__ p_out,
+    const WORD32* const p_out_shape,
+    const FLOAT32* __restrict__ p_inp1,
+    const WORD32* const p_inp1_shape,
+    const FLOAT32* __restrict__ p_inp2,
+    const WORD32* const p_inp2_shape,
+    WORD32 kernel_type);
+
+extern "C" WORD32 xa_nn_elm_fmod_f32xf32_f32(
+    FLOAT32* __restrict__ p_out,
+    const FLOAT32* __restrict__ p_inp1,
+    const FLOAT32* __restrict__ p_inp2,
+    WORD32 num_elm);
+
+extern "C" WORD32 xa_nn_elm_fmod_broadcast_4D_f32xf32_f32(
+    FLOAT32* __restrict__ p_out,
+    const WORD32* const p_out_shape,
+    const FLOAT32* __restrict__ p_inp1,
+    const WORD32* const p_inp1_shape,
+    const FLOAT32* __restrict__ p_inp2,
+    const WORD32* const p_inp2_shape);
+
+extern "C" WORD32 xa_nn_elm_logicalxor_boolxbool_bool(
+    WORD8* __restrict__ p_out,
+    const WORD8* __restrict__ p_inp1,
+    const WORD8* __restrict__ p_inp2,
+    WORD32 num_elm);
 
 extern "C" WORD32 xa_nn_elm_maximum_f32xf32_f32(
     FLOAT32* __restrict__ p_out,

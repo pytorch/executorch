@@ -18,7 +18,6 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_BLOCK_SCALE_BITWIDTH,
     QCOM_BLOCK_SCALE_OFFSET,
     QCOM_BLOCK_SCALES,
-    QCOM_BLOCK_SIZE,
     QCOM_BLOCK_STORAGE_TYPE,
     QCOM_DTYPE,
     QCOM_ENCODING,
@@ -42,6 +41,8 @@ from .utils import (
     get_parameter,
     is_graph_input,
     is_graph_output,
+    is_mutable_buffer_input,
+    is_mutable_buffer_output,
     is_parameter,
 )
 
@@ -58,13 +59,17 @@ QNN_QUANT_TYPE_MAP = {
 QNN_TENSOR_TYPE_MAP = {
     torch.bool: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
     torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    # Note that there is no float64 tensor data type in Qnn.
+    torch.float64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     torch.int8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_8,
     torch.int16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_16,
     torch.int32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
     torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_64,
     torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
     torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
+    torch.uint32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
     float: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
+    int: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
 }
 
 PER_CHANNEL_ENCODING = {
@@ -77,6 +82,18 @@ PER_TENSOR_ENCODING = {
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+}
+
+q_ops = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+}
+
+dq_ops = {
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
 
@@ -94,6 +111,19 @@ class NodeVisitor:
         self.external_ids = external_ids or {}
         self.edge_program = edge_program
         self.enable_tensor_dump = enable_tensor_dump
+
+    def get_node(self, node):
+        """
+        Utility to skip dequantize node for frozen param
+        """
+        return node.args[0] if node is not None and node.target in dq_ops else node
+
+    def get_first_user(self, node):
+        """
+        Utility to skip dequantize user for frozen param
+        """
+        user_0 = list(node.users)[0]
+        return user_0 if user_0.target not in dq_ops else self.get_first_user(user_0)
 
     def get_tensor(self, input_node, op_node, idx=None):
         """
@@ -134,18 +164,24 @@ class NodeVisitor:
         for ch in range(num_channels):
             max_scale = scales[ch].reshape(1, -1).amax(dim=-1) / num_steps
             q_scales = torch.clamp(
-                input=scales[ch] / max_scale,
-                min=torch.iinfo(quant_scales_dtype).min,
-                max=torch.iinfo(quant_scales_dtype).max,
+                input=torch.round(input=scales[ch] / max_scale),
+                min=1,
+                max=2**bitwidth_of_scale,
             ).to(quant_scales_dtype)
-            quantized_scales.append(torch.where(q_scales == 0, 1, q_scales))
+            quantized_scales.append(q_scales)
             # symmetric quantization is required
             scale_offset.append(PyQnnWrapper.Qnn_ScaleOffset_t(max_scale, 0))
 
-        if "convolution" in list(node.users)[0].target.__name__:
+        # skip dequantize op, e.g. frozen_param -> dq -> conv2d
+        user_0 = self.get_first_user(node)
+        if "convolution" in user_0.target.__name__:
             # OIHW (pytorch) -> HWIO (QNN)
             quant_config[QCOM_AXIS] = 3
             quant_config[QCOM_AXIS_ORDER] = (2, 3, 1, 0)
+        elif "linear" in user_0.target.__name__:
+            # OI (pytorch) -> OI (QNN)
+            quant_config[QCOM_AXIS] = 0
+            quant_config[QCOM_AXIS_ORDER] = (0, 1)
         else:
             raise AttributeError("undetermined axis for block quantization")
 
@@ -178,14 +214,11 @@ class NodeVisitor:
                 PyQnnWrapper.Qnn_ScaleOffset_t(scales[i], -zero_points[i])
             )
 
-        user_0 = list(node.users)[0]
+        # skip dequantize op, e.g. frozen_param -> dq -> conv2d
+        user_0 = self.get_first_user(node)
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
-        if (
-            "convolution" in user_0.target.__name__
-            and list(node.users)[0].args[1] == node
-        ):
+        if "convolution" in user_0.target.__name__:
             quant_config[QCOM_AXIS] = 3
-
         else:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 
@@ -242,8 +275,8 @@ class NodeVisitor:
         )
         # TODO: refactor this when target could be correctly detected
         per_block_encoding = {
-            exir_ops.edge.pt2e_quant.quantize_affine.default,
-            exir_ops.edge.pt2e_quant.dequantize_affine.default,
+            exir_ops.edge.torchao.quantize_affine.default,
+            exir_ops.edge.torchao.dequantize_affine.default,
         }
         if quant_attrs[QCOM_ENCODING] in per_block_encoding:
             return self.make_qnn_per_block_config(node, quant_attrs)
@@ -256,33 +289,21 @@ class NodeVisitor:
     def get_quant_tensor_value(
         self, tensor: torch.Tensor, quant_attrs: Dict, quant_configs: Dict
     ) -> torch.Tensor:
-        dtype = quant_configs[QCOM_DTYPE]
-        if quant_attrs[QCOM_ENCODING] in PER_TENSOR_ENCODING:
+        # params should have been quantized by framework
+        # here we're handling constant operators like arange, full, etc.
+        if tensor.dtype == torch.float32:
+            assert quant_attrs[QCOM_ENCODING] in PER_TENSOR_ENCODING, (
+                f"unrecongnized quantization attribute detected {quant_attrs[QCOM_ENCODING]}",
+            )
             scale = quant_attrs[QCOM_SCALE]
             zero_point = quant_attrs[QCOM_ZERO_POINT]
-            tensor = tensor.div(scale).add(zero_point).round().to(dtype)
-        elif quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
-            scale = quant_attrs[QCOM_SCALES]
-            zero_point = quant_attrs[QCOM_ZERO_POINTS]
-            tensor = tensor.div(scale).add(zero_point).round().to(dtype)
-        else:  # per_block
-            if axis_order := quant_configs.get(QCOM_AXIS_ORDER, None):
-                origin_order = tuple(
-                    axis_order.index(x) for x in range(len(axis_order))
-                )
-                tensor = tensor.permute(origin_order)
-            tensor = torch.ops.pt2e_quant.quantize_affine(
-                tensor,
-                block_size=quant_attrs[QCOM_BLOCK_SIZE],
-                scale=quant_attrs[QCOM_SCALE],
-                zero_point=quant_attrs[QCOM_ZERO_POINT],
-                output_dtype=dtype,
-                quant_min=quant_attrs[QCOM_QUANT_MIN],
-                quant_max=quant_attrs[QCOM_QUANT_MAX],
+            tensor = (
+                tensor.div(scale).add(zero_point).round().to(quant_configs[QCOM_DTYPE])
             )
-            if axis_order:
-                tensor = tensor.permute(axis_order)
-
+        # Since we're using torch.int32 to store 16bit data
+        # need to make it compact here for QNN to correctly retrieve data
+        if quant_configs.get(QCOM_DTYPE) == torch.uint16:
+            tensor = tensor.to(torch.uint16)
         # Make the backends access data correctly
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
@@ -294,7 +315,9 @@ class NodeVisitor:
         node: torch.fx.Node,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
-        is_input = is_graph_input(node, self.edge_program)
+        is_input = is_graph_input(node, self.edge_program) or is_mutable_buffer_input(
+            node, self.edge_program
+        )
         is_output = is_graph_output(node)
         # handle logic for input/output tensors
         if is_input or is_output:
@@ -337,7 +360,34 @@ class NodeVisitor:
                 nominal_dims.append(dim)
                 dynamic_dims.append(0)
 
-        return dynamic_dims, nominal_dims
+        return dynamic_dims if any(dynamic_dims) else [], nominal_dims
+
+    def get_tensor_name(
+        self,
+        node: torch.fx.Node,
+        wrapper_idx: int = 0,
+    ):
+        tensor_name = f"{node.name}_{wrapper_idx}"
+        # The `input_{id}` is utilized for sorting at runtime. Due to multiple passes in qnn_preprocess,
+        # the input order between QNN and the original graph’s forward function may differ.
+        # The `mutbuf_{id}` is utilized for mapping I/O of mutable buffer at runtime.
+        # The `output_` is identified as the graph’s output at runtime to prevent confusion with per_tensor_dump.
+        if is_mutable_buffer_input(node, self.edge_program):
+            fqn = self.edge_program.graph_signature.inputs_to_buffers[node.target]
+            position_index = list(
+                self.edge_program.graph_signature.buffers_to_mutate.values()
+            ).index(fqn)
+            tensor_name = f"input_{str(self.external_ids[node])}_mutbuf_{str(position_index)}_{tensor_name}"
+        elif is_graph_input(node, self.edge_program):
+            tensor_name = f"input_{str(self.external_ids[node])}_{tensor_name}"
+        elif is_mutable_buffer_output(node, self.edge_program):
+            position_index = list(
+                self.edge_program.graph_signature.buffers_to_mutate.keys()
+            ).index(node.name)
+            tensor_name = f"output_mutbuf_{position_index}_{tensor_name}"
+        elif is_graph_output(node):
+            tensor_name = f"output_{tensor_name}"
+        return tensor_name
 
     def define_custom_tensor_wrapper(
         self,
@@ -400,16 +450,7 @@ class NodeVisitor:
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
 
-        tensor_name = f"{tensor_source_node.name}_{wrapper_idx}"
-        if is_graph_input(tensor_source_node, self.edge_program):
-            tensor_name = (
-                "input_"
-                + str(self.external_ids[tensor_source_node])
-                + "_"
-                + tensor_name
-            )
-        if is_graph_output(tensor_source_node):
-            tensor_name = "output_" + tensor_name
+        tensor_name = self.get_tensor_name(tensor_source_node, wrapper_idx)
         dims = torch.Size([1]) if len(tensor.size()) == 0 else tensor.size()
         dynamic_dims, nominal_dims = self.get_dynamic_dimension(dims)
         tensor_type = self.get_tensor_type(tensor_source_node, tensor_type)
@@ -459,51 +500,3 @@ class NodeVisitor:
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         """Convert torch.fx.Node to OpWrapper"""
         raise NotImplementedError("NodeVisitor must be extended!")
-
-
-# This will hold mapping of all node names to the visitor class
-_node_visitor_dict = {}
-
-
-def register_node_visitor(visitor):
-    """Register node visitor into _node_visitor_dict"""
-    assert (
-        isinstance(visitor, type)
-        and issubclass(visitor, NodeVisitor)
-        and hasattr(visitor, "target")
-    ), f"Illformed NodeVisitor subclass, can't register!, got: {visitor}"
-    for target in visitor.target:
-        _node_visitor_dict[target] = visitor
-
-
-def generate_node_to_external_map(
-    edge_program: torch.export.ExportedProgram,
-) -> Dict[torch.fx.Node, int]:
-    node_to_external_map = {}
-    for node in edge_program.graph_module.graph.nodes:
-        # The order in which we visit the placeholder node is same as the *args
-        # order for the forward(*args) signature for this gm. Using the order of
-        # the nodes as external_id to extract the right arg from *args at runtime
-        if is_graph_input(node, edge_program):
-            node_to_external_map[node] = len(node_to_external_map)
-    for node in edge_program.graph_module.graph.nodes:
-        if is_graph_output(node):
-            node_to_external_map[node] = len(node_to_external_map)
-    return node_to_external_map
-
-
-def get_node_visitors(
-    edge_program: torch.export.ExportedProgram,
-    enable_tensor_dump=False,
-) -> Dict[str, NodeVisitor]:
-    """Create a new class instance at runtime, and put them in a dict"""
-    node_to_external_map = generate_node_to_external_map(edge_program)
-    node_visitors = {}
-    for target, visitor in _node_visitor_dict.items():
-        assert callable(
-            visitor
-        ), f"Expeting a callable class, but got {visitor} of type {type(visitor)}"
-        node_visitors[target] = visitor(
-            node_to_external_map, edge_program, enable_tensor_dump
-        )
-    return node_visitors

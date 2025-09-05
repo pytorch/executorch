@@ -43,11 +43,11 @@ modules = {"div_basic": Div(), "div_tensor": DivTensor()}
 
 
 @common.parametrize("module", modules)
-def test_decompose_div_tosa_MI(module):
+def test_decompose_div_tosa_FP(module):
     pipeline = PassPipeline[input_t](
         module,
         module.get_inputs(),
-        tosa_version="TOSA-0.80+MI",
+        quantize=False,
         ops_before_pass={
             "executorch_exir_dialects_edge__ops_aten_div_Tensor": 1,
         },

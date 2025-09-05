@@ -25,6 +25,8 @@ SKIP_COMPILE_SPEC_KEYS = {"ImportForever"}
 EXTRACT_SHARED_BLOB_KEY = "ExtractSharedBlobKey"
 HEADER_SIZE = 13
 HEADER_VERSION = 1
+REQUIRED_COMPILE_SPEC_KEYS = {"platform-config"}
+SUPPORTED_PLATFORM_CONFIGS = {"mt6989", "mt6991"}
 
 
 def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
@@ -67,6 +69,28 @@ class NeuropilotBackend(BackendDetails):
         cls, edge_program: ExportedProgram, module_compile_spec: List[CompileSpec]
     ) -> PreprocessResult:
 
+        # Validate CompileSpec settings
+        compile_spec_keys = [spec.key for spec in module_compile_spec]
+        if len(compile_spec_keys) != len(set(compile_spec_keys)):
+            raise RuntimeError(
+                "Unsupported duplicated keys in the CompileSpec settings."
+            )
+        if not REQUIRED_COMPILE_SPEC_KEYS.issubset(set(compile_spec_keys)):
+            raise RuntimeError(
+                "Following keys are required in the CompileSpec settings: {}."
+                "".format(REQUIRED_COMPILE_SPEC_KEYS)
+            )
+        platform = [
+            spec.value.decode("utf-8")
+            for spec in module_compile_spec
+            if spec.key == "platform-config"
+        ][0]
+        if platform not in SUPPORTED_PLATFORM_CONFIGS:
+            raise ValueError(
+                "Unsupported value of platform-config CompileSpec. Given {} but expected to be one "
+                "of {}.".format(platform, SUPPORTED_PLATFORM_CONFIGS)
+            )
+
         # Make sure all inputs are contiguous_format or NCHW or default dim order
         assert_default_dim_order(edge_program.graph_module)
 
@@ -84,8 +108,7 @@ class NeuropilotBackend(BackendDetails):
             if name_to_node_mappings[name].meta["val"].dtype == torch.float32
         ]
 
-        # This default compile options are only for mt6989 SOC
-        compile_options = ["--arch=mdla5.1,edpa1.0", "--relax-fp32", "--opt=3"]
+        compile_options = ["--relax-fp32", "--opt=3"]
         for spec in module_compile_spec:
             # Special compile spec handling
             if spec.key in SKIP_COMPILE_SPEC_KEYS:

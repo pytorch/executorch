@@ -30,15 +30,16 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
   COMMAND
-    python3 -m test.models.export_program --modules
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
-    --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
-    python3 -m test.models.export_program --modules "ModuleAddMul"
-    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
+    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
-    python3 -m test.models.export_delegated_program --modules "ModuleAddMul"
-    --backend_id "StubBackend" --outdir "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
+    ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
+    "ModuleAddMul" --backend_id "StubBackend" --outdir
+    "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
@@ -148,6 +149,7 @@ et_cxx_test(
   portable_kernels
   extension_data_loader
   extension_runner_util
+  program_schema
 )
 add_dependencies(tensor_parser_test generated_pte_files)
 set_property(TEST tensor_parser_test PROPERTY ENVIRONMENT ${test_env})
@@ -160,20 +162,11 @@ target_include_directories(
 
 list(TRANSFORM _test_backend_compiler_lib__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(
-  test_backend_compiler_lib
-  STATIC
-  ${_test_backend_compiler_lib__srcs}
+  test_backend_compiler_lib STATIC ${_test_backend_compiler_lib__srcs}
 )
 
-target_link_libraries(
-  test_backend_compiler_lib
-  PUBLIC
-  executorch_core
-)
+target_link_libraries(test_backend_compiler_lib PUBLIC executorch_core)
 
-target_link_options_shared_lib(test_backend_compiler_lib)
+executorch_target_link_options_shared_lib(test_backend_compiler_lib)
 
-install(
-  TARGETS test_backend_compiler_lib
-  DESTINATION lib
-)
+install(TARGETS test_backend_compiler_lib DESTINATION lib)

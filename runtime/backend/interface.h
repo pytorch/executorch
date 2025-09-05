@@ -12,6 +12,8 @@
 
 #include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/backend/backend_init_context.h>
+#include <executorch/runtime/backend/backend_option_context.h>
+#include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -97,7 +99,38 @@ class BackendInterface {
   ET_NODISCARD virtual Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
-      EValue** args) const = 0;
+      Span<EValue*> args) const = 0;
+
+  /**
+   * Responsible update the backend status, if any. The backend options are
+   * passed in by users, and the backend can update its internal status based on
+   * the options.
+   *
+   * @param[in] context Runtime context if any. Currently it's not used.
+   * @param[in] args A list of BackendOptions passed in by users.
+   * @retval Error::Ok if successful.
+   */
+  ET_NODISCARD virtual Error set_option(
+      __ET_UNUSED BackendOptionContext& context,
+      const executorch::runtime::Span<BackendOption>& backend_options) {
+    return Error::Ok;
+  };
+
+  /**
+   * Responsible update the backend status, if any. The backend options are
+   * passed in by users, and the backend can update its internal status based on
+   * the options.
+   *
+   * @param[in] context Runtime context if any. Currently it's not used.
+   * @param[in] args A list of BackendOptions passed in by users, that will be
+   * filled by the backend
+   * @retval Error::Ok if successful.
+   */
+  ET_NODISCARD virtual Error get_option(
+      __ET_UNUSED BackendOptionContext& context,
+      executorch::runtime::Span<BackendOption>& backend_options) {
+    return Error::Ok;
+  };
 
   /**
    * Responsible for destroying a handle, if it's required for some backend.
@@ -149,6 +182,34 @@ size_t get_num_registered_backends();
  * Returns the backend name at the given index.
  */
 Result<const char*> get_backend_name(size_t index);
+
+/**
+ * Sets backend options for a specific backend.
+ *
+ * @param backend_name The name of the backend to set options for
+ * @param backend_options The backend option list containing the options
+ * to set
+ * @return Error::Ok on success, Error::NotFound if backend is not found, or
+ * other error codes on failure
+ */
+Error set_option(
+    const char* backend_name,
+    const executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options);
+
+/**
+ * Retrieves backend options for a specific backend.
+ *
+ * @param backend_name The name of the backend to get options from
+ * @param backend_options The backend option objects that will be filled with
+ * the populated values from the backend
+ * @return Error::Ok on success, Error::NotFound if backend is not found, or
+ * other error codes on failure
+ */
+Error get_option(
+    const char* backend_name,
+    executorch::runtime::Span<executorch::runtime::BackendOption>
+        backend_options);
 
 } // namespace ET_RUNTIME_NAMESPACE
 } // namespace executorch

@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import tempfile
 import unittest
+
+from typing import Tuple
 
 import executorch.exir as exir
 
@@ -20,7 +23,13 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
 # import the xnnpack backend implementation
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
-from executorch.exir import CaptureConfig
+from executorch.exir import (
+    CaptureConfig,
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    to_edge_transform_and_lower,
+)
+
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
@@ -131,4 +140,51 @@ class TestXnnQnnBackends(unittest.TestCase):
         # Compare the result from executor and eager mode direclty
         self.assertTrue(
             torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
+        )
+
+    def test_serde(self):
+        # The module with blank_logprobs() function
+        class BlankLogProbsModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(768, 1)
+                self.log_sigmoid = torch.nn.LogSigmoid()
+
+            def forward(self, joint_encodings: torch.Tensor) -> torch.Tensor:
+                tanh_out = torch.tanh(joint_encodings)
+                linear_out = self.linear(tanh_out)
+                blank_output = self.log_sigmoid(linear_out)
+                return blank_output
+
+        def get_blank_logprobs_inputs_fn() -> Tuple[torch.Tensor, ...]:
+            """
+            Get the input to the blank_logprobs() and nonblank_logprobs() functions.
+            """
+            return (torch.randn(1, 1, 1, 768),)
+
+        model = BlankLogProbsModule()
+        # Get the inputs for the logprobs function
+        logprobs_fake_inputs = get_blank_logprobs_inputs_fn()
+
+        # Export and partition
+        aten_prog = torch.export.export(model, logprobs_fake_inputs, strict=True)
+        partitioned_prog: EdgeProgramManager = to_edge_transform_and_lower(
+            aten_prog,
+            partitioner=[XnnpackFloatingPointPartitioner()],
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _use_edge_ops=True,
+            ),
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".pt2") as f:
+            exir.save(partitioned_prog.exported_program(), f.name)
+            f.seek(0)
+            loaded_model = exir.load(f.name)
+
+        self.assertTrue(
+            torch.allclose(
+                model(*logprobs_fake_inputs),
+                loaded_model.module()(*logprobs_fake_inputs),
+            )
         )

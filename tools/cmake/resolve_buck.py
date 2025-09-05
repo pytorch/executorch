@@ -9,6 +9,7 @@
 import argparse
 import os
 import platform
+import ssl
 import stat
 import sys
 import urllib.request
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Union
 
 import buck_util
+import certifi
 import zstd
 
 """
@@ -99,8 +101,7 @@ def parse_args() -> argparse.Namespace:
 def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
     # Find buck2, in order of priority:
     #  1) Explicit buck2 argument.
-    #  2) System buck2 (if correct version).
-    #  3) Cached buck2 (previously downloaded).
+    #  2) Cached buck2 (previously downloaded).
     #  3) Download buck2.
 
     # Read the target version (build date) from the CI pin file. Note that
@@ -158,47 +159,37 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
             # such as a failed import, which exits with 1.
             return 2
     else:
-        # Look for system buck2 and check version. Note that this can return
-        # None.
-        ver = buck_util.get_buck2_version("buck2")
-        if ver == BUCK_TARGET_VERSION:
-            # Use system buck2.
-            return "buck2"
-        else:
-            # Download buck2 or used previously cached download.
-            cache_dir = Path(args.cache_dir)
-            os.makedirs(cache_dir, exist_ok=True)
+        # Download buck2 or used previously cached download.
+        cache_dir = Path(args.cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
 
-            buck2_local_path = (
-                (cache_dir / f"buck2-{BUCK_TARGET_VERSION}").absolute().as_posix()
-            )
+        buck2_local_path = (
+            (cache_dir / f"buck2-{BUCK_TARGET_VERSION}").absolute().as_posix()
+        )
 
-            # Check for a previously cached buck2 binary. The filename includes
-            # the version hash, so we don't have to worry about using an
-            # outdated binary, in the event that the target version is updated.
-            if os.path.isfile(buck2_local_path):
-                return buck2_local_path
-
-            buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
-
-            try:
-                print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
-                archive_file, _ = urllib.request.urlretrieve(buck2_archive_url)
-
-                # Extract and chmod.
-                with open(archive_file, "rb") as f:
-                    data = f.read()
-                    decompressed_bytes = zstd.decompress(data)
-
-                with open(buck2_local_path, "wb") as f:
-                    f.write(decompressed_bytes)
-
-                file_stat = os.stat(buck2_local_path)
-                os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
-            finally:
-                os.remove(archive_file)
-
+        # Check for a previously cached buck2 binary. The filename includes
+        # the version hash, so we don't have to worry about using an
+        # outdated binary, in the event that the target version is updated.
+        if os.path.isfile(buck2_local_path):
             return buck2_local_path
+
+        buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
+
+        print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+        with urllib.request.urlopen(buck2_archive_url, context=ssl_context) as request:
+            # Extract and chmod.
+            data = request.read()
+            decompressed_bytes = zstd.decompress(data)
+
+            with open(buck2_local_path, "wb") as f:
+                f.write(decompressed_bytes)
+
+        file_stat = os.stat(buck2_local_path)
+        os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
+
+    return buck2_local_path
 
 
 def main():

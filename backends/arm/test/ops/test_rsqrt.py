@@ -1,5 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,101 +6,103 @@
 # Tests the rsqrt op.
 #
 
-import unittest
+from typing import Tuple
 
 import torch
+
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
 
 
-class TestRsqrt(unittest.TestCase):
-    class Rsqrt(torch.nn.Module):
-        test_parameters = [
-            (torch.ones(1, 10, 10, 10),),
-            (torch.rand(1, 10, 10, 10),),
-            (torch.rand(1, 5, 10, 20),),
-            (torch.rand(5, 10, 20),),
-        ]
+aten_op = "torch.ops.aten.rsqrt.default"
+input_t1 = Tuple[torch.Tensor]  # Input x
 
-        def forward(self, x: torch.Tensor):
-            return x.rsqrt()
 
-    def _test_rsqrt_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_count({"torch.ops.aten.rsqrt.default": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+class Rsqrt(torch.nn.Module):
+    test_parameters = {
+        "ones_4d": lambda: (torch.ones(1, 10, 10, 10),),
+        "rand_4d_1": lambda: (torch.rand(1, 10, 10, 10),),
+        "rand_4d_2": lambda: (torch.rand(1, 5, 10, 20),),
+        "rand_3d": lambda: (torch.rand(5, 10, 20),),
+    }
 
-    def _test_rsqrt_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: tuple[torch.Tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.rsqrt.default": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
+    def forward(self, x: torch.Tensor):
+        return x.rsqrt()
 
-    def _test_rsqrt_ethosu_BI_pipeline(
-        self,
-        compile_spec: CompileSpec,
-        module: torch.nn.Module,
-        test_data: tuple[torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.rsqrt.default": 1})
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
 
-    @parameterized.expand(Rsqrt.test_parameters)
-    def test_rsqrt_tosa_MI(self, test_tensor: torch.Tensor):
-        self._test_rsqrt_tosa_MI_pipeline(self.Rsqrt(), (test_tensor,))
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+def test_rsqrt_tosa_FP(test_tensor: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(Rsqrt.test_parameters)
-    def test_rsqrt_tosa_BI(self, test_tensor: torch.Tensor):
-        self._test_rsqrt_tosa_BI_pipeline(self.Rsqrt(), (test_tensor,))
 
-    @parameterized.expand(Rsqrt.test_parameters)
-    def test_rsqrt_u55_BI(self, test_tensor: torch.Tensor):
-        self._test_rsqrt_ethosu_BI_pipeline(
-            common.get_u55_compile_spec(), self.Rsqrt(), (test_tensor,)
-        )
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+def test_rsqrt_tosa_INT(test_tensor: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_op=[],
+    )
+    pipeline.run()
 
-    @parameterized.expand(Rsqrt.test_parameters)
-    def test_rsqrt_u85_BI(self, test_tensor: torch.Tensor):
-        self._test_rsqrt_ethosu_BI_pipeline(
-            common.get_u85_compile_spec(), self.Rsqrt(), (test_tensor,)
-        )
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.XfailIfNoCorstone300
+def test_rsqrt_u55_INT(test_tensor: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.XfailIfNoCorstone320
+def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_FP(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_INT(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

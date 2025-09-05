@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/build_defs:platform_defs.bzl", "CXX")
 
 OPERATORS = [
     "quantize_per_tensor",
@@ -17,6 +18,7 @@ def define_operator_test_target(op):
         srcs = [
             "op_{}_test.cpp".format(op),
         ],
+        platforms = CXX,
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/test:test_util",

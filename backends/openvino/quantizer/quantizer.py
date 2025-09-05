@@ -17,12 +17,12 @@ import nncf.experimental.torch.fx as nncf_fx  # type: ignore[import-untyped]
 import torch.fx
 
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
-from torch.ao.quantization.observer import (
+from torchao.quantization.pt2e import (
     HistogramObserver,
     PerChannelMinMaxObserver,
     UniformQuantizationObserverBase,
 )
-from torch.ao.quantization.quantizer.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     EdgeOrNode,
     QuantizationAnnotation,
     QuantizationSpec,
@@ -30,8 +30,7 @@ from torch.ao.quantization.quantizer.quantizer import (
     Quantizer,
     SharedQuantizationSpec,
 )
-
-QUANT_ANNOTATION_KEY = "quantization_annotation"
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 class QuantizationMode(Enum):
@@ -174,8 +173,8 @@ class OpenVINOQuantizer(Quantizer):
                 self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
         for node, annotation in node_vs_torch_annotation.items():
-            assert QUANT_ANNOTATION_KEY not in node.meta
-            node.meta[QUANT_ANNOTATION_KEY] = annotation
+            assert Q_ANNOTATION_KEY not in node.meta
+            node.meta[Q_ANNOTATION_KEY] = annotation
         return model
 
     @staticmethod

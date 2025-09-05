@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDlcManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/irbackend/IrBackend.h>
 
@@ -18,9 +19,6 @@ QnnDlcManager::QnnDlcManager(
     : qnn_loaded_backend_(""),
       qnn_context_blob_(qnn_context_blob),
       options_(options) {
-  QNN_EXECUTORCH_LOG_INFO(
-      "QnnDlcManager Get Qnn Context blob bytes %u", qnn_context_blob_.nbytes);
-
   if (options_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Fail to create QnnDlcManager, options is nullptr");
@@ -41,8 +39,7 @@ Error QnnDlcManager::Create() {
       std::make_unique<QnnDevice>(qnn_loaded_backend_, logger_.get());
 
   backend_params_ptr_->qnn_backend_cache_ptr_ =
-      std::make_unique<QnnBackendCache>(
-          qnn_context_blob_, options_->graph_name()->str());
+      std::make_unique<QnnBackendCache>(qnn_context_blob_);
 
   backend_params_ptr_->qnn_context_ptr_ = std::make_unique<IrContext>(
       qnn_loaded_backend_,
@@ -55,7 +52,7 @@ Error QnnDlcManager::Create() {
       qnn_loaded_backend_,
       backend_params_ptr_->qnn_backend_ptr_.get(),
       backend_params_ptr_->qnn_context_ptr_.get(),
-      options_->profile_level());
+      get_option(options_->profile_level()));
   backend_params_ptr_->backend_init_state_ =
       BackendInitializeState::INITIALIZED;
   return backend_params_ptr_->qnn_backend_ptr_->VerifyQNNSDKVersion();
@@ -64,12 +61,18 @@ Error QnnDlcManager::Create() {
 Error QnnDlcManager::Configure() {
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.");
+  std::vector<std::string> graph_names;
+  for (auto name : *options_->graph_name()) {
+    graph_names.emplace_back(name->str());
+  }
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_cache_ptr_->Configure() == Error::Ok,
+      backend_params_ptr_->qnn_backend_cache_ptr_->Configure(graph_names) ==
+          Error::Ok,
       Internal,
       "Fail to configure Qnn backend cache");
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+      backend_params_ptr_->qnn_backend_ptr_->Configure(
+          options_->op_package_options()) == Error::Ok,
       Internal,
       "Fail to configure Qnn backend");
   ET_CHECK_OR_RETURN_ERROR(
@@ -103,7 +106,7 @@ Error QnnDlcManager::SetUpDlcEnvironment(const Qnn_Version_t& coreApiVersion) {
       "Fail to Load Qnn IR library.");
 
   logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, options_->log_level());
+      qnn_loaded_backend_, LoggingCallback, get_option(options_->log_level()));
 
   ET_CHECK_OR_RETURN_ERROR(
       Create() == Error::Ok, Internal, "Failed to load Qnn IR backend.");

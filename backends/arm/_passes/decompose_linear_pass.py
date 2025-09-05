@@ -1,5 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
-# All rights reserved.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -7,16 +6,16 @@
 # pyre-unsafe
 
 import numpy as np
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_op, q_op
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 
-class DecomposeLinearPass(ExportPass):
+class DecomposeLinearPass(ArmPass):
     """
     This pass decomposes linear into a Conv2D with the required view operations.
     linear(x, weights, bias) becomes:
@@ -24,7 +23,6 @@ class DecomposeLinearPass(ExportPass):
         weights_reshaped = view(weights)
         conv2d           = conv2d(x_reshaped, weights_reshaped, bias)
         output           = view(conv2d)
-    It also inserts q/dq pairs if the linear node was quantized.
     """
 
     def call(self, graph_module):
@@ -47,35 +45,22 @@ class DecomposeLinearPass(ExportPass):
             weights_reshaped_shape = [weights_shape[0], weights_shape[1], 1, 1]
 
             with graph_module.graph.inserting_before(node):
-                quantize = input.op == "call_function" and input.target == dq_op
-                q_params = input.args[1:] if quantize else None
                 # Reshape input to 4D with shape (N, Ci, 1, 1)
                 input_reshaped = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(input, input_reshaped_shape),
                     kwargs={},
-                    quantize=quantize,
-                    q_params=q_params,
                 )
 
-                quantize = weights.op == "call_function" and weights.target == dq_op
-                q_params = weights.args[1:] if quantize else None
                 # Reshape weights to 4D with shape (Co, Ci, 1, 1)
                 weights_reshaped = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(weights, weights_reshaped_shape),
                     kwargs={},
-                    quantize=quantize,
-                    q_params=q_params,
                 )
 
-                consumer_node = list(node.users)[0]
-                quantize = (
-                    consumer_node.op == "call_function" and consumer_node.target == q_op
-                )
-                q_params = consumer_node.args[1:] if quantize else None
                 conv = create_node(
                     graph=graph_module.graph,
                     op_target=exir_ops.edge.aten.convolution.default,
@@ -91,8 +76,7 @@ class DecomposeLinearPass(ExportPass):
                         1,  # groups
                     ),
                     kwargs={},
-                    quantize=quantize,
-                    q_params=q_params,
+                    from_node=node,
                 )
 
             with graph_module.graph.inserting_after(conv):
@@ -104,7 +88,15 @@ class DecomposeLinearPass(ExportPass):
                     op_target=exir_ops.edge.aten.view_copy.default,
                     args=(conv, list(output_shape)),
                     kwargs={},
+                    from_node=node,
                 )
+                # Quantization parameters are inherited from original linear node, but
+                # output reshape should use the linear node's output qparams for both input
+                # and output.
+                if "input_qparams" in output.meta:
+                    output.meta["input_qparams"] = output.meta.get(
+                        "output_qparams", None
+                    )
 
             node.replace_all_uses_with(output)
             graph_module.graph.erase_node(node)

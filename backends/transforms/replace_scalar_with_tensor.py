@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -32,7 +32,12 @@ class ReplaceScalarWithTensorArgPass(ExportPass):
 
     def __init__(
         self,
-        scalar_to_tensor_ops: Optional[Dict[EdgeOpOverload, EdgeOpOverload]] = None,
+        scalar_to_tensor_ops: Optional[
+            Dict[
+                Union[EdgeOpOverload, torch._ops.OpOverload],
+                Union[EdgeOpOverload, torch._ops.OpOverload],
+            ]
+        ] = None,
     ):
         if scalar_to_tensor_ops is not None:
             self.scalar_to_tensor_ops = scalar_to_tensor_ops

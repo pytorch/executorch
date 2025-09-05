@@ -14,4 +14,4 @@ set -euxo pipefail
 # which does install them. Though we'd need to disable build isolation to be
 # able to see the installed torch package.
 
-"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"
+"${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"  --example

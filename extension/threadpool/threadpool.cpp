@@ -96,7 +96,11 @@ void ThreadPool::run(
 // get_threadpool is not thread safe due to leak_corrupted_threadpool
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
-  ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo initialization failed");
+  if (!cpuinfo_initialize()) {
+    ET_LOG(Error, "cpuinfo initialization failed");
+    return nullptr; // NOLINT(facebook-hte-NullableReturn)
+  }
+
   int num_threads = cpuinfo_get_processors_count();
   /*
    * For llvm-tsan, holding limit for the number of locks for a single thread

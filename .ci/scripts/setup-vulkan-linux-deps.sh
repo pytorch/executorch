@@ -23,6 +23,7 @@ install_swiftshader() {
 
   export VK_ICD_FILENAMES="${_swiftshader_dir}/swiftshader/build/Linux/vk_swiftshader_icd.json"
   export LD_LIBRARY_PATH="${_swiftshader_dir}/swiftshader/build/Linux/"
+  export ETVK_USING_SWIFTSHADER=1
 }
 
 install_vulkan_sdk() {
@@ -42,7 +43,7 @@ install_vulkan_sdk() {
   export PATH="${PATH}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/bin/"
 }
 
-VULKAN_SDK_VERSION="1.3.296.0"
+VULKAN_SDK_VERSION="1.4.321.1"
 
 install_swiftshader
 install_vulkan_sdk "${VULKAN_SDK_VERSION}"

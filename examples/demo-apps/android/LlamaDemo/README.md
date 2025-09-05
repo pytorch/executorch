@@ -1,6 +1,6 @@
 # ExecuTorch Llama Android Demo App
 
-**[UPDATE - 10/24]** We have added support for running quantized Llama 3.2 1B/3B models in demo apps on the [XNNPACK backend](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/docs/delegates/xnnpack_README.md). We currently support inference with SpinQuant and QAT+LoRA quantization methods.
+**[UPDATE - 2025-05-15]** We have added support for running Qwen3 0.6B and 4B model. Please see [this tutorial](https://github.com/pytorch/executorch/tree/main/examples/models/qwen3#summary) for export. Loading and running Qwen3 with this app is the same as Llama, as in this doc.
 
 We’re excited to share that the newly revamped Android demo app is live and includes many new updates to provide a more intuitive and smoother user experience with a chat use case! The primary goal of this app is to showcase how easily ExecuTorch can be integrated into an Android demo app and how to exercise the many features ExecuTorch and Llama models have to offer.
 
@@ -26,6 +26,7 @@ As a whole, the models that this app supports are (varies by delegate):
 * Llama 3 8B
 * Llama 2 7B
 * LLaVA-1.5 vision model (only XNNPACK)
+* Qwen 3 0.6B, 1.7B, and 4B
 
 
 ## Building the APK
@@ -85,7 +86,7 @@ int loadResult = mModule.load();
 
 * `modelCategory`: Indicate whether it’s a text-only or vision model
 * `modePath`: path to the .pte file
-* `tokenizerPath`: path to the tokenizer .bin file
+* `tokenizerPath`: path to the tokenizer file
 * `temperature`: model parameter to adjust the randomness of the model’s output
 
 
@@ -153,7 +154,7 @@ curl -C - -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokeni
 # Create params.json file
 touch params.json
 echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
-python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -d fp16 -n stories110m_h.pte -kv
+python -m extension.llm.export.export_llm base.checkpoint=stories110M.pt base.params=params.json model.dtype_override="fp16" export.output_name=stories110m_h.pte model.use_kv_cache=True
 python -m pytorch_tokenizers.tools.llama2c.convert -t tokenizer.model -o tokenizer.bin
 ```
 ### Push model
@@ -170,4 +171,4 @@ Go to `examples/demo-apps/android/LlamaDemo`,
 ```
 
 ## Reporting Issues
-If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
+If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new), or join our discord [here](https://lnkd.in/gWCM4ViK).

@@ -18,6 +18,8 @@ python_library(
         "//executorch/devtools/etdump:schema_flatcc",
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/exir:lib",
+        "//executorch/devtools/inspector:intermediate_output_capturer",
+        "//executorch/devtools/inspector/numerical_comparator:lib",
     ],
 )
 
@@ -45,6 +47,16 @@ python_library(
         "//executorch/devtools/etdump:schema_flatcc",
         "//executorch/devtools/etdump:serialize",
         "//executorch/devtools/etrecord:etrecord",
+    ],
+)
+
+python_library(
+    name = "intermediate_output_capturer",
+    srcs = [
+        "_intermediate_output_capturer.py",
+    ],
+    deps = [
+        "//executorch/devtools/inspector:inspector_utils",
     ],
 )
 

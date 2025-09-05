@@ -7,25 +7,17 @@
 # pyre-strict
 
 
-# This file contains functions to remove operators from the graph. The removed
-# ops should belong to either of the following categories:
-# 1. The op should be redundant for inference (e.g., dropout). Such ops are grouped
-# together in 'RemoveRedundantOps'. Anyone running inference can add this class
-# in their pass list, and it should semantic-preserving transformation.
-# 2. The op should be redundant for Jarvis (e.g., contiguous). Such ops are grouped
-# together in 'CadenceRemoveNops'. The ops removed in this class might not be nop
-# in a context outside of Jarvis', so exercise caution while invoking this in a
-# pass list outside of Jarvis.
-
 import logging
 from dataclasses import dataclass, field
-from typing import cast, List, Optional, Sequence
+from typing import cast, List, Optional, Sequence, Set
 
 import torch
 import torch.fx
 from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
+    get_arg,
     register_cadence_pass,
+    set_arg,
 )
 
 from executorch.backends.cadence.aot.simplify_ops import SimplifySliceOpPass
@@ -37,7 +29,7 @@ from executorch.exir.pass_base import ExportPass, NodeMetadata, PassResult, Prox
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from torch.fx.node import Argument
+from torch.fx.node import Argument, Node
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -150,7 +142,7 @@ class RemoveNopExpandOpPass(ExportPass):
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class RemoveToOpsPass(ExportPass):
-    # aten.to.* as of now are all nops for Jarvis
+    # aten.to.* as of now are all nops
     def call_operator(
         self,
         op,  # pyre-ignore
@@ -233,10 +225,7 @@ class RemoveNopLinalgVectorNormOpPass(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op not in {
-            exir_ops.edge.aten.linalg_vector_norm.default,
-            exir_ops.edge.cadence.linalg_vector_norm.default,
-        }:
+        if op is not exir_ops.edge.aten.linalg_vector_norm.default:
             return super().call_operator(op, args, kwargs, meta)
 
         # If the op has three args or less, it can't be a nop
@@ -414,7 +403,7 @@ class RemoveContiguousOpPass(ExportPass):
 class RemoveAliasCopyOpPass(ExportPass):
     """
 
-    alias_copy is a no-op for Jarvis and can be removed.
+    alias_copy is a no-op and can be removed.
     """
 
     def call_operator(
@@ -448,7 +437,7 @@ class RemoveNopRequantizeOpPass(ExportPass):
         kwargs: dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        if op != exir_ops.edge.cadence.requantize.default:
+        if op != exir_ops.edge.cadence.requantize.per_tensor:
             return super().call_operator(op, args, kwargs, meta)
 
         # Parse the args
@@ -708,6 +697,118 @@ class RemovePermutesAroundElementwiseOps(ExportPass):
         return cast(list[int], permute_node.kwargs["dim"])
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=2))
+class RemoveSqueezeViewBeforeElementwiseOps(ExportPass):
+    """
+    Looks for subgraphs of the form:
+    squeeze -> [elementwise ops] -> view
+    and removes the squeeze node by reshaping the intermediate ops. If the final view
+    is a corresponding unsqueeze it should also get eliminated by noop view elimination
+    later. Only handles simple chain of intermediates now.
+
+    The pass works on view ops instead of squeeze directly, thus it should be run after
+    the squeeze/unsqueeze->view lowering.
+    """
+
+    intermediate_ops: set[EdgeOpOverload] = {
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.cadence.quantize_per_tensor.default,
+        exir_ops.edge.cadence.dequantize_per_tensor.default,
+        # Ops that require special handling:
+        exir_ops.edge.aten.slice_copy.Tensor,
+    }
+
+    def get_squeeze_indices(self, view_node: Node) -> List[int]:
+        """
+        Returns the indices of the input dimensions that are squeezed in the output if
+        view node is a squeeze. Returns an empty list otherwise.
+        """
+        input_node = cast(Node, get_arg(view_node, "input"))
+        input_shape = input_node.meta["val"].shape
+        output_shape = view_node.meta["val"].shape
+
+        if len(input_shape) <= len(output_shape):
+            return []
+
+        squeeze_indices = []
+        out_idx = 0
+        for idx, dim in enumerate(input_shape):
+            if out_idx >= len(output_shape):
+                return []
+            if dim == output_shape[out_idx]:
+                out_idx += 1
+            else:
+                # If there's a mismatch between the input and output dimensions, input
+                # dimension has to be 1.
+                if dim == 1:
+                    squeeze_indices.append(idx)
+                else:
+                    return []
+
+        # Check if all the output dimensions are consumed.
+        if out_idx != len(output_shape):
+            return []
+
+        return squeeze_indices
+
+    def handle_squeeze(self, view_node: Node, visited_view_nodes: Set[Node]) -> None:
+        if view_node in visited_view_nodes:
+            return
+
+        squeeze_indices = self.get_squeeze_indices(view_node)
+        if not squeeze_indices:
+            return
+
+        # Only handle simple chains for now.
+        if len(view_node.users) != 1:
+            return
+        node = next(iter(view_node.users))
+
+        # Traverse down from the node until finding another view op.
+        intermediate_slices = []
+        while node.target != exir_ops.edge.aten.view_copy.default:
+            # Only handle simple chains for now
+            if len(node.users) != 1:
+                return
+            if node.target not in self.intermediate_ops:
+                return
+            if node.target == exir_ops.edge.aten.slice_copy.Tensor:
+                intermediate_slices.append(node)
+            node = next(iter(node.users))
+
+        # View node found. We can't optimize this view_node again since the
+        # input shape is invalid now so add it to the visited set.
+        visited_view_nodes.add(node)
+
+        # Update the intermediate slices.
+        for slice_node in intermediate_slices:
+            slice_rank = len(slice_node.meta["val"].shape)
+            slice_dim = cast(int, get_arg(slice_node, "dim"))
+            if slice_dim < 0:
+                slice_dim += slice_rank
+            for squeeze_dim in squeeze_indices:
+                if slice_dim >= squeeze_dim:
+                    slice_dim += 1
+            set_arg(slice_node, "dim", slice_dim)
+
+        # Skip the initial view node.
+        input_node = cast(Node, get_arg(view_node, "input"))
+        view_node.replace_all_uses_with(input_node)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        visited_view_nodes = set()
+        for view_node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.view_copy.default, sort=True
+        ):
+            self.handle_squeeze(view_node, visited_view_nodes)
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+
+        return super().call(graph_module)
+
+
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
 class RemoveBranchedQuantDequant(ExportPass):
     """
@@ -771,65 +872,52 @@ class RemoveBranchedQuantDequant(ExportPass):
 
 
 class RemoveCatFromSliceCopyPass(ExportPass):
-    def _remove_unused_cat(  # noqa: C901
-        self, graph_module: torch.fx.GraphModule
-    ) -> None:
-        slice_copy_nodes = [
-            node
-            for node in graph_module.graph.nodes
-            if node.target == exir_ops.edge.aten.slice_copy.Tensor
-        ]
-        for slice_copy_node in slice_copy_nodes:
-            slice_dim, start_idx, end_idx, step = 0, 0, float("inf"), 1
-            input_node, *other_args = slice_copy_node.args
-            if len(other_args) >= 1:
-                slice_dim = other_args[0]
-            if len(other_args) >= 2:
-                start_idx = other_args[1]
-            if len(other_args) >= 3:
-                end_idx = other_args[2]
-            if len(other_args) >= 4:
-                step = other_args[3]
-            if step != 1:
+    """
+    Simplifies cat->slice_copy chains where one of the cat inputs can be directly passed
+    to the slice_copy.
+    """
+
+    def _remove_unused_cat(self, graph_module: torch.fx.GraphModule) -> None:
+        for slice_copy_node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.slice_copy.Tensor
+        ):
+            cat_node = cast(Node, get_arg(slice_copy_node, "input"))
+            slice_dim = cast(int, get_arg(slice_copy_node, "dim"))
+            start_idx = cast(int, get_arg(slice_copy_node, "start"))
+            end_idx = cast(int, get_arg(slice_copy_node, "end"))
+            step = cast(int, get_arg(slice_copy_node, "step"))
+
+            if cat_node.target != exir_ops.edge.aten.cat.default or step != 1:
                 continue
-            slice_copy_dtype = slice_copy_node.meta["val"].dtype
-            if input_node.target != exir_ops.edge.aten.cat.default:
-                continue
-            cat_dtype = input_node.meta["val"].dtype
-            if slice_copy_dtype != cat_dtype:
-                continue
-            cat_dim = input_node.args[1:]
-            if len(cat_dim) == 0:
-                cat_dim = 0
+
+            # Make sure cat and slice happens on the same dimension.
+            cat_dim = cast(Node, get_arg(cat_node, "dim"))
             if cat_dim != slice_dim:
                 continue
-            cat_output_shape = input_node.meta["val"].shape
-            start_idx = (
-                cat_output_shape[cat_dim] + start_idx if start_idx < 0 else start_idx
-            )
-            end_idx = (
-                cat_output_shape[cat_dim]
-                if end_idx > cat_output_shape[cat_dim]
-                else end_idx
-            )
-            base_idx = 0
-            cat_input_to_keep = None
-            for cat_input_node in input_node.args[0]:
-                cat_input_dtype = cat_input_node.meta["val"].dtype
-                if slice_copy_dtype != cat_input_dtype:
-                    continue
+
+            # Canonicalize slice indices.
+            cat_output_shape = cat_node.meta["val"].shape
+            if start_idx is None:
+                start_idx = 0
+            elif start_idx < 0:
+                start_idx += cat_output_shape[cat_dim]
+            if end_idx is None or end_idx > cat_output_shape[cat_dim]:
+                end_idx = cat_output_shape[cat_dim]
+            elif end_idx < 0:
+                end_idx += cat_output_shape[cat_dim]
+
+            offset = 0
+            for cat_input_node in cast(List[Node], get_arg(cat_node, "tensors")):
                 cat_input_shape = cat_input_node.meta["val"].shape
 
-                # check if the slice range overlaps with the cat range
-                if (
-                    base_idx <= start_idx
-                    and end_idx <= list(cat_input_shape)[cat_dim] + base_idx
-                ):
-                    cat_input_to_keep = cat_input_node
+                # Check if the slice range overlaps with the cat input range.
+                if offset <= start_idx and end_idx <= offset + cat_input_shape[cat_dim]:
+                    slice_copy_node.replace_input_with(cat_node, cat_input_node)
+                    set_arg(slice_copy_node, "start", start_idx - offset)
+                    set_arg(slice_copy_node, "end", end_idx - offset)
                     break
-                base_idx += list(cat_input_shape)[cat_dim]
-            if cat_input_to_keep is not None:
-                slice_copy_node.replace_input_with(input_node, cat_input_to_keep)
+
+                offset += cat_input_shape[cat_dim]
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         self._remove_unused_cat(graph_module)
@@ -838,10 +926,6 @@ class RemoveCatFromSliceCopyPass(ExportPass):
         return super().call(graph_module)
 
 
-# The following class consolidates functions to remove ops that are redundant
-# in Jarvis. Currently, each function in this class iterates over each node of
-# the graph module once. In future, we could consolidate them into a monolithic
-# function.
 class CadenceRemoveNops:
     passes = [
         SimplifySliceOpPass,

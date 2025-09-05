@@ -15,7 +15,7 @@ from executorch.backends.cadence.aot.quantizer.utils import get_bias_qparams
 
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization.quantizer import (
+from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     SharedQuantizationSpec,
 )
@@ -109,7 +109,7 @@ class AddmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear
+        return torch.ops.cadence.quantized_linear.default
 
 
 class AddPattern(QuantizationPattern):
@@ -247,7 +247,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv.default
+        return torch.ops.cadence.quantized_conv_nchw.default
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -286,7 +286,7 @@ class Conv2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv.default
+        return torch.ops.cadence.quantized_conv_nchw.default
 
 
 class LayerNormPattern(QuantizationPattern):

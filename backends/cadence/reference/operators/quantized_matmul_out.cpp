@@ -60,7 +60,7 @@ void inline _typed_quantized_matmul(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -114,7 +114,7 @@ void quantized_matmul_out(
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
@@ -150,6 +150,56 @@ void quantized_matmul_out(
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(X.scalar_type()));
   }
+}
+
+void quantized_matmul_asym8sxasym8s_asym8s_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& X,
+    int64_t X_zero_point,
+    const Tensor& Y,
+    int64_t Y_zero_point,
+    const std::optional<Tensor>& bias,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    int64_t out_zero_point,
+    bool transposed,
+    Tensor& out) {
+  _typed_quantized_matmul<int8_t>(
+      X,
+      X_zero_point,
+      Y,
+      Y_zero_point,
+      bias,
+      out_multiplier,
+      out_shift,
+      out_zero_point,
+      transposed,
+      out);
+}
+
+void quantized_matmul_asym8uxasym8u_asym8u_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& X,
+    int64_t X_zero_point,
+    const Tensor& Y,
+    int64_t Y_zero_point,
+    const std::optional<Tensor>& bias,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    int64_t out_zero_point,
+    bool transposed,
+    Tensor& out) {
+  _typed_quantized_matmul<uint8_t>(
+      X,
+      X_zero_point,
+      Y,
+      Y_zero_point,
+      bias,
+      out_multiplier,
+      out_shift,
+      out_zero_point,
+      transposed,
+      out);
 }
 
 }; // namespace native

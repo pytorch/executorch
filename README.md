@@ -19,7 +19,7 @@ It supports a wide range of models including LLMs (Large Language Models), CV (C
 Platform Support:
 - Operating Systems:
   - iOS
-  - Mac
+  - MacOS (ARM64)
   - Android
   - Linux
   - Microcontrollers
@@ -29,6 +29,7 @@ Platform Support:
   - Arm
   - Cadence
   - MediaTek
+  - NXP
   - OpenVINO
   - Qualcomm
   - Vulkan

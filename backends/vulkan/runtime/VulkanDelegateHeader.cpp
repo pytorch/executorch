@@ -60,6 +60,10 @@ uint32_t getUInt16LE(const uint8_t* data) {
   return (uint32_t)data[0] | ((uint32_t)data[1] << 8);
 }
 
+bool getBool(const uint8_t* data) {
+  return data[0] != 0;
+}
+
 bool VulkanDelegateHeader::is_valid() const {
   if (header_size < kExpectedSize) {
     return false;

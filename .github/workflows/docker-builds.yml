@@ -37,10 +37,11 @@ jobs:
           executorch-ubuntu-22.04-clang12,
           executorch-ubuntu-22.04-linter,
           executorch-ubuntu-22.04-arm-sdk,
+          executorch-ubuntu-22.04-zephyr-sdk,
           executorch-ubuntu-22.04-qnn-sdk,
           executorch-ubuntu-22.04-mediatek-sdk,
           executorch-ubuntu-22.04-clang12-android
-          ]
+        ]
         include:
           - docker-image-name: executorch-ubuntu-22.04-gcc11-aarch64
             runner: linux.arm64.2xlarge
@@ -71,7 +72,7 @@ jobs:
         id: build-docker-image
         uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
         with:
-          docker-image-name: ${{ matrix.docker-image-name }}
+          docker-image-name: ci-image:${{ matrix.docker-image-name }}
           always-rebuild: true
           push: true
           force-push: true

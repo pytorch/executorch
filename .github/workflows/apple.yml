@@ -39,7 +39,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.7.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="0.8.0.$(TZ='PST8PDT' date +%Y%m%d)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
@@ -49,7 +49,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -136,7 +136,7 @@ jobs:
     needs: set-version
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -149,13 +149,15 @@ jobs:
         VERSION="${{ needs.set-version.outputs.version }}"
         FRAMEWORKS=(
           "executorch"
+          "executorch_llm"
           "backend_coreml"
           "backend_mps"
           "backend_xnnpack"
-          "kernels_custom"
+          "kernels_llm"
           "kernels_optimized"
-          "kernels_portable"
           "kernels_quantized"
+          "kernels_torchao"
+          "threadpool"
         )
 
         .ci/scripts/setup-conda.sh
@@ -168,13 +170,8 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         backends/apple/coreml/scripts/install_requirements.sh
 
-        # Install MPS Backend Requirements
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        backends/apple/mps/install_requirements.sh
-
         # Build iOS Frameworks
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
 
         # Bundle iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
@@ -279,7 +276,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     secrets: inherit
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -307,15 +304,10 @@ jobs:
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           backends/apple/coreml/scripts/install_requirements.sh
-
-        # Install MPS Backend Requirements
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch iOS frameworks"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-          scripts/build_apple_frameworks.sh --Release --Debug --coreml --custom --mps --optimized --portable --quantized --xnnpack
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output scripts/build_apple_frameworks.sh
         echo "::endgroup::"
 
         echo "::group::Build ExecuTorch benchmark app"

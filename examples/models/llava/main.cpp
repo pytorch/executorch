@@ -8,11 +8,10 @@
 
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <gflags/gflags.h>
-#ifndef LLAVA_NO_TORCH_DUMMY_IMAGE
-#include <torch/torch.h>
-#else
-#include <algorithm> // std::fill
-#endif
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include <stb_image_resize.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -28,10 +27,7 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 
-DEFINE_string(
-    image_path,
-    "",
-    "The path to a .pt file, a serialized torch tensor for an image, longest edge resized to 336.");
+DEFINE_string(image_path, "", "The path to a .jpg file.");
 
 DEFINE_double(
     temperature,
@@ -49,6 +45,56 @@ DEFINE_int32(
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
 using executorch::extension::llm::Image;
+
+void load_image(const std::string& image_path, Image& image) {
+  int width, height, channels;
+  unsigned char* data =
+      stbi_load(image_path.c_str(), &width, &height, &channels, 0);
+  if (!data) {
+    ET_LOG(Fatal, "Failed to load image: %s", image_path.c_str());
+    exit(1);
+  }
+  // resize the longest edge to 336
+  int new_width = width;
+  int new_height = height;
+  if (width > height) {
+    new_width = 336;
+    new_height = static_cast<int>(height * 336.0 / width);
+  } else {
+    new_height = 336;
+    new_width = static_cast<int>(width * 336.0 / height);
+  }
+  std::vector<uint8_t> resized_data(new_width * new_height * channels);
+  stbir_resize_uint8(
+      data,
+      width,
+      height,
+      0,
+      resized_data.data(),
+      new_width,
+      new_height,
+      0,
+      channels);
+  // transpose to CHW
+  image.data.resize(channels * new_width * new_height);
+  for (int i = 0; i < new_width * new_height; ++i) {
+    for (int c = 0; c < channels; ++c) {
+      image.data[c * new_width * new_height + i] =
+          resized_data[i * channels + c];
+    }
+  }
+  image.width = new_width;
+  image.height = new_height;
+  image.channels = channels;
+  // convert to tensor
+  ET_LOG(
+      Info,
+      "image Channels: %" PRId32 ", Height: %" PRId32 ", Width: %" PRId32,
+      image.channels,
+      image.height,
+      image.width);
+  stbi_image_free(data);
+}
 
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -84,40 +130,9 @@ int32_t main(int32_t argc, char** argv) {
   // create llama runner
   example::LlavaRunner runner(model_path, tokenizer_path, temperature);
 
-  // read image and resize the longest edge to 336
-  std::vector<uint8_t> image_data;
-
-#ifdef LLAVA_NO_TORCH_DUMMY_IMAGE
-  // Work without torch using a random data
-  image_data.resize(3 * 240 * 336);
-  std::fill(image_data.begin(), image_data.end(), 0); // black
-  std::array<int32_t, 3> image_shape = {3, 240, 336};
-  std::vector<Image> images = {
-      {.data = image_data, .width = image_shape[2], .height = image_shape[1]}};
-#else //  LLAVA_NO_TORCH_DUMMY_IMAGE
-  //   cv::Mat image = cv::imread(image_path, cv::IMREAD_COLOR);
-  //   int longest_edge = std::max(image.rows, image.cols);
-  //   float scale_factor = 336.0f / longest_edge;
-  //   cv::Size new_size(image.cols * scale_factor, image.rows * scale_factor);
-  //   cv::Mat resized_image;
-  //   cv::resize(image, resized_image, new_size);
-  //   image_data.assign(resized_image.datastart, resized_image.dataend);
-  torch::Tensor image_tensor;
-  torch::load(image_tensor, image_path); // CHW
-  ET_LOG(
-      Info,
-      "image size(0): %" PRId64 ", size(1): %" PRId64 ", size(2): %" PRId64,
-      image_tensor.size(0),
-      image_tensor.size(1),
-      image_tensor.size(2));
-  image_data.assign(
-      image_tensor.data_ptr<uint8_t>(),
-      image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
-  std::vector<Image> images = {
-      {.data = image_data,
-       .width = static_cast<int32_t>(image_tensor.size(2)),
-       .height = static_cast<int32_t>(image_tensor.size(1))}};
-#endif // LLAVA_NO_TORCH_DUMMY_IMAGE
+  Image image;
+  load_image(image_path, image);
+  std::vector<Image> images = {image};
 
   // generate
   runner.generate(std::move(images), prompt, seq_len);

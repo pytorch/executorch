@@ -126,6 +126,10 @@ def _(
             lowered_module.meta = {
                 "debug_handle_map": preprocess_result.debug_handle_map
             }
+            if preprocess_result._delegate_info_meta is not None:
+                lowered_module.meta["_delegate_info_meta"] = (
+                    preprocess_result._delegate_info_meta
+                )
             return lowered_module
     raise NotImplementedError(f"Backend {backend_id} was not found.")
 
@@ -204,12 +208,16 @@ def _insert_lowered_submodule(
     owning_graph_module = call_submodule_node.graph.owning_module
     # call delegate args should only use user_inputs
     call_delegate_args = []
-    # Preserve input order as user_inputs
-    for inp_name in submodule_program.graph_signature.user_inputs:
-        for inp_node in call_submodule_node.all_input_nodes:
-            if inp_node.name == inp_name:
-                call_delegate_args.append(inp_node)
-                break
+    # names of input_specs to delete
+    input_specs_to_delete = toplevel_input_specs_to_delete
+    # Delete owned constants from the call_submodule_node args
+    for call_sm_input in call_submodule_node.args:
+        if (
+            isinstance(call_sm_input, torch.fx.Node)
+            and call_sm_input.name in input_specs_to_delete.keys()
+        ):
+            continue
+        call_delegate_args.append(call_sm_input)
 
     def generate_debug_handle(ep: ExportedProgram) -> int:
         """
@@ -231,10 +239,11 @@ def _insert_lowered_submodule(
             call_submodule_node.kwargs,
         )
         call_delegate_node.meta["debug_handle"] = generate_debug_handle(owning_program)
-        call_delegate_node.meta["val"] = submodule_output_node.meta["val"]
+        call_delegate_node.meta["val"] = [
+            out_arg.meta["val"] for out_arg in submodule_output_node.args[0]
+        ]
         call_submodule_node.replace_all_uses_with(call_delegate_node)
         owning_graph_module.graph.erase_node(call_submodule_node)
-
     if is_submodule:
         assert len(toplevel_input_specs_to_delete) == 0
         assert len(toplevel_output_specs_to_delete) == 0
@@ -285,12 +294,8 @@ def _partition_and_lower_one_graph_module(
                 tagged_graph_module, node_list, tag
             )
 
-        tagged_graph_module_output_node = [
-            node for node in tagged_graph_module.graph.nodes if node.op == "output"
-        ][0]
-        submodule_output_node = [
-            node for node in submodule.graph.nodes if node.op == "output"
-        ][0]
+        tagged_graph_module_output_node = tagged_graph_module.graph.output_node()
+        submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
         submodule_output_node.meta = tagged_graph_module_output_node.meta
@@ -324,6 +329,7 @@ def _partition_and_lower_one_graph_module(
             toplevel_input_specs_to_delete,
             toplevel_output_specs_to_delete,
         )
+        owning_program._validate()
 
     return tagged_graph_module
 
@@ -472,15 +478,9 @@ def _create_partitions_in_graph_module(
                 tagged_graph_module, node_list, tag
             )
 
-        tagged_graph_module_output_node = [
-            node for node in tagged_graph_module.graph.nodes if node.op == "output"
-        ][0]
-        submodule_output_node = [
-            node for node in submodule.graph.nodes if node.op == "output"
-        ][0]
+        submodule_output_node = submodule.graph.output_node()
         # Copy the output node meta from the original output node, because
         # create_submodule_from_nodes doesn't cover the meta field
-        submodule_output_node.meta = tagged_graph_module_output_node.meta
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
         (
             submodule_program,
@@ -569,25 +569,29 @@ def lower_all_submodules_to_backend(
     # The created exported program for the submodules are in the call_module node's meta data
     # We just map the method_to_submodule_nodes directly to the method_to_partitioned_exported_programs
     method_to_partitioned_program = {
-        method_name: [node.meta["submodule_program"] for node in call_submodule_nodes]
+        method_name: [
+            # perform deep copy here in case backends change graph inside preprocess method
+            copy.deepcopy(node.meta["submodule_program"])
+            for node in call_submodule_nodes
+        ]
         for method_name, call_submodule_nodes in method_to_submodules_nodes.items()
     }
     method_to_compile_specs = {
         method_name: [node.meta["compile_spec"] for node in call_submodule_nodes]
         for method_name, call_submodule_nodes in method_to_submodules_nodes.items()
     }
-    backend_found = False
-    for cls in BackendDetails.__subclasses__():
-        if backend_id == cls.__name__:
-            method_to_preprocess_result: dict[str, List[PreprocessResult]] = (
-                cls.preprocess_multimethod(
-                    method_to_partitioned_program, method_to_compile_specs
-                )
-            )
-            backend_found = True
 
-    if not backend_found:
+    backend_name_to_subclass = {
+        subclass.__name__: subclass for subclass in BackendDetails.__subclasses__()
+    }
+    if backend_id not in backend_name_to_subclass:
         raise NotImplementedError(f"Backend {backend_id} was not found.")
+
+    method_to_preprocess_result: dict[str, List[PreprocessResult]] = (
+        backend_name_to_subclass[backend_id].preprocess_multimethod(
+            method_to_partitioned_program, method_to_compile_specs
+        )
+    )
 
     for method_name in method_to_preprocess_result.keys():
         owning_program = method_to_tagged_edge_program[method_name]
@@ -607,6 +611,14 @@ def lower_all_submodules_to_backend(
                 compile_specs=compile_spec,
                 named_data_store_output=preprocess_result.data_store_output,
             )
+            lowered_module.meta = {
+                "debug_handle_map": preprocess_result.debug_handle_map,
+            }
+            if preprocess_result._delegate_info_meta is not None:
+                assert lowered_module.meta is not None
+                lowered_module.meta["_delegate_info_meta"] = (
+                    preprocess_result._delegate_info_meta
+                )
             is_submodule = call_submodule_node.meta["is_submodule"]
             toplevel_input_specs_to_delete = call_submodule_node.meta[
                 "toplevel_input_specs_to_delete"
@@ -626,6 +638,20 @@ def lower_all_submodules_to_backend(
                 toplevel_input_specs_to_delete,
                 toplevel_output_specs_to_delete,
             )
+
+
+def remove_used_metadata(graph: torch.fx.Graph) -> None:
+    """
+    Remove the used metadata from the graph.
+    """
+    for node in graph.nodes:
+        node.meta.pop("delegation_tag", None)
+        node.meta.pop("backend_id", None)
+        node.meta.pop("submodule_program", None)
+        node.meta.pop("toplevel_input_specs_to_delete", None)
+        node.meta.pop("toplevel_output_specs_to_delete", None)
+        node.meta.pop("is_submodule", None)
+        node.meta.pop("submodule_output_node", None)
 
 
 @dataclass
@@ -742,6 +768,8 @@ def _(
     for method_name in method_to_edge_program.keys():
         if method_name in method_to_tagged_exported_program:
             tagged_exported_program = method_to_tagged_exported_program[method_name]
+            tagged_exported_program._validate()
+            remove_used_metadata(tagged_exported_program.graph_module.graph)
             partitioned_and_lowered_exported_programs[method_name] = ExportedProgram(
                 root=tagged_exported_program.graph_module,
                 graph=tagged_exported_program.graph_module.graph,

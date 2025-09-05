@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmax:
+    op_name: str = "Argmax"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpArgmin:
     op_name: str = "Argmin"
     param_axis: str = "axis"
@@ -106,6 +113,22 @@ class OpElementWiseAnd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAsin:
+    op_name: str = "ElementWiseAsin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseAtan:
+    op_name: str = "ElementWiseAtan"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseBinary:
+    op_name: str = "ElementWiseBinary"
+    param_operation: str = "operation"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -128,6 +151,11 @@ class OpElementWiseExp:
 @dataclass(init=False, frozen=True)
 class OpElementWiseEqual:
     op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseFloor:
+    op_name: str = "ElementWiseFloor"
 
 
 @dataclass(init=False, frozen=True)
@@ -204,6 +232,11 @@ class OpElementWisePower:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseRound:
+    op_name: str = "ElementWiseRound"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseRsqrt:
     op_name: str = "ElementWiseRsqrt"
 
@@ -219,6 +252,11 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSign:
+    op_name: str = "ElementWiseSign"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSquareRoot:
     op_name = "ElementWiseSquareRoot"
 
@@ -226,6 +264,11 @@ class OpElementWiseSquareRoot:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseXor:
+    op_name: str = "ElementWiseXor"
 
 
 @dataclass(init=False, frozen=True)
@@ -249,6 +292,12 @@ class OpFullyConnected:
 @dataclass(init=False, frozen=True)
 class OpGather:
     op_name: str = "Gather"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpGatherElements:
+    op_name: str = "GatherElements"
     param_axis: str = "axis"
 
 
@@ -379,6 +428,13 @@ class OpReduceMean:
 
 
 @dataclass(init=False, frozen=True)
+class OpReduceMin:
+    op_name: str = "ReduceMin"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpReduceSum:
     op_name: str = "ReduceSum"
     param_axes: str = "axes"
@@ -400,6 +456,16 @@ class OpReluMinMax:
 @dataclass(init=False, frozen=True)
 class OpReshape:
     op_name: str = "Reshape"
+
+
+@dataclass(init=False, frozen=True)
+class OpResize:
+    op_name: str = "Resize"
+    param_exclude_outside: str = "exclude_outside"
+    param_transformation_mode: str = "transformation_mode"
+    param_interpolation_mode: str = "interpolation_mode"
+    param_nearest_mode: str = "nearest_mode"
+    param_cubic_coeff: str = "cubic_coeff"
 
 
 @dataclass(init=False, frozen=True)

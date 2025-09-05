@@ -14,13 +14,14 @@ from typing import Any, Dict, List, Tuple, Type
 import torch
 from torch import fx
 from torch._ops import OpOverload
-from torch.ao.quantization import ObserverOrFakeQuantize
 
 from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import (
     check_subgraphs_connected,
     SourcePartition,
 )
+from torchao.quantization.pt2e import ObserverOrFakeQuantize
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 def quantize_tensor_multiplier(
@@ -88,8 +89,7 @@ def is_annotated(nodes: List[fx.Node]) -> bool:
     annotated = False
     for node in nodes:
         annotated = annotated or (
-            "quantization_annotation" in node.meta
-            and node.meta["quantization_annotation"]._annotated
+            Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated
         )
     return annotated
 

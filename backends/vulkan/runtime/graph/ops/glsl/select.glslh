@@ -1,0 +1,78 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef SELECT_GLSLH
+#define SELECT_GLSLH
+
+#ifndef USING_BUFFER
+
+/*
+ * Enable the fast path if a texel loaded from the input texture can be used as
+ * is to store to the output texture. The following conditions must be met:
+ *
+ * 1. The input and output textures have the same packed dimension.
+ * 2. The selected_dim must not be the packed dimension of the input.
+ * 3. The packed dimension of the input must "map" to the packed dimension of
+ *    the output. This occurs if selected_dim is greater than the packed dimension
+ *    of the input.
+ */
+bool can_use_fast_path() {
+  if (out_packed_dim != in_packed_dim) {
+    return false;
+  }
+  if (selected_dim <= in_packed_dim) {
+    return false;
+  }
+  return true;
+}
+
+#endif // USING_BUFFER
+
+/*
+ * Given an output tensor index, return the corresponding input tensor index for
+ * the select operator. This is done by "inserting" the select index at the
+ * selected_dim in the input tensor index.
+ *
+ * A simple example is (note all tensor index are in WHCN order):
+ *   out_tidx = [7, 5, 9]
+ *   selected_dim = 2
+ *   index = 3
+ *   in_tidx = [7, 3, 5, 9]
+ *
+ * This function assumes that the following variables are defined in the layout:
+ * - in_sizes
+ * - selected_dim
+ * - index
+ */
+ivec4 out_tidx_to_in_tidx(const ivec4 out_tidx) {
+  ivec4 in_tidx = ivec4(0);
+
+  int adjusted_index = index;
+  if (index < 0) {
+    adjusted_index = index + in_sizes[selected_dim];
+  }
+
+  // Handle different dimensions for selection
+  if (selected_dim == 0) {
+    // Select from width dimension
+    in_tidx = ivec4(adjusted_index, out_tidx.x, out_tidx.y, out_tidx.z);
+  } else if (selected_dim == 1) {
+    // Select from height dimension
+    in_tidx = ivec4(out_tidx.x, adjusted_index, out_tidx.y, out_tidx.z);
+  } else if (selected_dim == 2) {
+    // Select from channel dimension
+    in_tidx = ivec4(out_tidx.x, out_tidx.y, adjusted_index, out_tidx.z);
+  } else if (selected_dim == 3) {
+    // Select from batch dimension
+    in_tidx = ivec4(out_tidx.x, out_tidx.y, out_tidx.z, adjusted_index);
+  }
+
+  return in_tidx;
+}
+
+#endif // SELECT_GLSLH

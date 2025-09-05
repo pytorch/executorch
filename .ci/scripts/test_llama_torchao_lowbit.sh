@@ -29,24 +29,22 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --target install --config Release
+cmake --build cmake-out -j16 --config Release --target install
 
 # Install llama runner with torchao
 cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_TORCHAO=ON \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
 cmake --build cmake-out/examples/models/llama -j16 --config Release
@@ -69,16 +67,16 @@ QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
 
-${PYTHON_EXECUTABLE} -m examples.models.llama.export_llama \
-    --checkpoint "${LLAMA_CHECKPOINT:?}" \
-    --params "${LLAMA_PARAMS:?}" \
-    -kv \
-    --use_sdpa_with_kv_cache \
-    --output_name=${MODEL_OUT} \
-    -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
-    --group_size ${QLINEAR_GROUP_SIZE} \
-    -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-    -d fp32
+${PYTHON_EXECUTABLE} -m extension.llm.export.export_llm \
+    base.checkpoint="${LLAMA_CHECKPOINT:?}" \
+    base.params="${LLAMA_PARAMS:?}" \
+    model.use_kv_cache=true \
+    model.use_sdpa_with_kv_cache=true \
+    export.output_name="${MODEL_OUT}" \
+    quantization.qmode="torchao:8da${QLINEAR_BITWIDTH}w" \
+    quantization.group_size=${QLINEAR_GROUP_SIZE} \
+    quantization.embedding_quantize=\"torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}\" \
+    model.dtype_override=fp32
 
 # Test run
 ./cmake-out/examples/models/llama/llama_main --model_path=$MODEL_OUT --tokenizer_path=$TOKENIZER --prompt="Once upon a time,"

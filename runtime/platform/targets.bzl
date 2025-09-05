@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:build_variables.bzl", "PLATFORM_SRCS")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":log.bzl", "get_et_logging_flags")
 
@@ -41,13 +42,16 @@ def define_common_targets():
     # client defined implementations will overide them.
     runtime.cxx_library(
         name = "platform_private",
-        srcs = _select_pal({
-            "minimal": ["default/minimal.cpp"],
-            "posix": ["default/posix.cpp"],
-        }),
+        srcs = select({
+            "ovr_config//os:android": ["default/android.cpp"],
+            "DEFAULT": _select_pal({
+                "minimal": ["default/minimal.cpp"],
+                "posix": ["default/posix.cpp"],
+        })}),
         deps = [
             ":pal_interface",
         ],
+        external_deps = ["log"],
         visibility = [
             "//executorch/core/...",
         ],
@@ -70,12 +74,7 @@ def define_common_targets():
             "runtime.h",
             "compat_unistd.h",
         ],
-        srcs = [
-            "abort.cpp",
-            "log.cpp",
-            "profiler.cpp",
-            "runtime.cpp",
-        ],
+        srcs = PLATFORM_SRCS,
         exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",

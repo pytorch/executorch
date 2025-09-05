@@ -8,17 +8,18 @@
 
 import json
 import os
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
-
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from torchao.utils import TorchAOBaseTensor
 
 try:
@@ -36,26 +37,31 @@ from ..model_base import EagerModelBase
 
 
 class Llama2Model(EagerModelBase):
-    def __init__(self, **kwargs):
+    def __init__(self, llm_config: Optional[LlmConfig] = None):
         resource_dir = get_default_model_resource_dir(__file__)
 
-        # Use single checkpoint file.
-        checkpoint_path = kwargs.get("checkpoint", None)
-        # Check if checkpoint_dir was provided for a sharded checkpoint.
-        checkpoint_dir = kwargs.get("checkpoint_dir", None)
+        self.llm_config = llm_config if llm_config else LlmConfig()
 
-        # Params file.
-        params_path = kwargs.get("params", None)
+        checkpoint_path = self.llm_config.base.checkpoint
+        checkpoint_dir = self.llm_config.base.checkpoint_dir
+        params_path = self.llm_config.base.params
 
-        self.use_kv_cache = kwargs.get("use_kv_cache", False)
-        self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
-        self.generate_full_logits = kwargs.get("generate_full_logits", False)
-        self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
-        self.input_prune_map_path = kwargs.get("input_prune_map_path", None)
-        self.output_prune_map_path = kwargs.get("output_prune_map_path", None)
-        self.max_seq_len = kwargs.get("max_seq_len", 128)
-        self.max_context_len = kwargs.get("max_context_len", 128)
-        self.args = kwargs.get("args", None)
+        # Adapter checkpoint and config.
+        adapter_checkpoint_path = self.llm_config.base.adapter_checkpoint
+        adapter_config_path = self.llm_config.base.adapter_config
+        assert (adapter_checkpoint_path is None and adapter_config_path is None) or (
+            adapter_checkpoint_path is not None and adapter_config_path is not None
+        ), "Both adapter_checkpoint_path and adapter_config_path must be specified or neither must be specified."
+
+        self.use_kv_cache = self.llm_config.model.use_kv_cache
+        self.use_sdpa_with_kv_cache_op = self.llm_config.model.use_sdpa_with_kv_cache
+        self.generate_full_logits = self.llm_config.debug.generate_full_logits
+        self.enable_dynamic_shape = self.llm_config.model.enable_dynamic_shape
+        self.input_prune_map_path = self.llm_config.model.input_prune_map
+        self.output_prune_map_path = self.llm_config.model.output_prune_map
+        self.max_seq_len = self.llm_config.export.max_seq_length
+        self.max_context_len = self.llm_config.export.max_context_length
+        self.verbose = self.llm_config.debug.verbose
 
         assert (
             self.max_context_len >= self.max_seq_len
@@ -99,7 +105,7 @@ class Llama2Model(EagerModelBase):
             checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
 
         # If given checkpoint is fairseq, convert to llama checkpoint.
-        fairseq2_checkpoint = kwargs.get("fairseq2", False)
+        fairseq2_checkpoint = self.llm_config.base.fairseq2
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
@@ -130,6 +136,20 @@ the checkpoint format to avoid generating faulty models.
             with open(params_path, "r") as f:
                 params = json.loads(f.read())
 
+        # Get adapter checkpoint and config.
+        adapter_checkpoint = {}
+        adapter_config = {}
+        if adapter_checkpoint_path:
+            adapter_checkpoint = torch.load(
+                adapter_checkpoint_path, map_location=device, mmap=True
+            )
+            from torchtune.models import convert_weights
+
+            adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+            with open(adapter_config_path, "r") as f:
+                adapter_config = json.loads(f.read())
+            checkpoint.update(adapter_checkpoint)
+
         output_prune_map = None
         if self.output_prune_map_path is not None:
             with open(self.output_prune_map_path, "r") as f:
@@ -154,17 +174,19 @@ the checkpoint format to avoid generating faulty models.
             output_prune_map=output_prune_map,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
+            **adapter_config,
         )
 
         if model_args.use_scaled_rope:
             # Older models don't have use_scaled_rope configuration
-            assert self.args.model not in ["llama2", "stories110m"]
+            model_name = self.llm_config.base.model_class.value
+            assert model_name not in ["llama2", "stories110m"]
 
             # Llama3_2 and newer models in ExecuTorch repo should set larger scale factor
-            if self.args.model not in ["llama3", "llama3_1"]:
+            if model_name not in ["llama3", "llama3_1"]:
                 model_args.rope_scale_factor = 32
 
-        if kwargs.get("verbose", False):
+        if self.verbose:
             print("============= weights ================")
             print("{key} : {weights.numel()} : {weights.size()}")
             for key, weights in checkpoint.items():
@@ -196,7 +218,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = Int8DynActInt4WeightQuantizer()._convert_for_runtime(
                 self.model_
             )
-        elif hasattr(self.args, "use_spin_quant") and self.args.use_spin_quant:
+        elif self.llm_config.quantization.use_spin_quant:
             print("Using SPIN quantization.")
             self._transform_for_pre_quantization(checkpoint, model_args)
 
@@ -205,11 +227,12 @@ the checkpoint format to avoid generating faulty models.
             )
 
             sanitize_checkpoint_from_pre_quantization(checkpoint)
-        elif hasattr(self.args, "use_qat") and self.args.use_qat:
+        elif self.llm_config.quantization.use_qat:
             print("Using QAT quantization.")
             self._transform_for_pre_quantization(checkpoint, model_args)
-            if hasattr(self.args, "use_lora") and self.args.use_lora:
-                assert model_args.lora_args["rank"] == self.args.use_lora
+            if self.llm_config.base.use_lora:
+                lora_rank = self.llm_config.base.use_lora
+                assert model_args.lora_args["rank"] == lora_rank
                 from .source_transformation.lora import (
                     transform_linear_for_lora_after_quantization,
                 )
@@ -217,7 +240,7 @@ the checkpoint format to avoid generating faulty models.
                 self.model_ = transform_linear_for_lora_after_quantization(
                     self.model_,
                     checkpoint,
-                    self.args.use_lora,
+                    lora_rank,
                 )
 
             from .source_transformation.pre_quantization import (
@@ -226,16 +249,16 @@ the checkpoint format to avoid generating faulty models.
 
             sanitize_checkpoint_from_pre_quantization(checkpoint)
 
-        if hasattr(self.args, "use_attention_sink") and self.args.use_attention_sink:
+        if self.llm_config.model.use_attention_sink:
             from .source_transformation.attention_sink import enable_attention_sink
 
-            attention_sink_params = self.args.use_attention_sink.split(",")
+            attention_sink_params = self.llm_config.model.use_attention_sink.split(",")
             assert len(attention_sink_params) == 3
             sink_size = int(attention_sink_params[0])
             window_size = int(attention_sink_params[1])
             eviction_batch_size = int(attention_sink_params[2])
 
-            assert self.args.max_context_length == sink_size + window_size
+            assert self.llm_config.export.max_context_length == sink_size + window_size
 
             self.model_ = enable_attention_sink(
                 module=self.model_,
@@ -278,7 +301,7 @@ the checkpoint format to avoid generating faulty models.
                     f"The provided checkpoint is missing the following weights that are expected by the model: {missing_weights}. Please fix the fqn's in your checkpoint to match."
                 )
         if unexpected:
-            if kwargs.get("verbose", False):
+            if self.verbose:
                 print(f"Unexpected keys: {unexpected}")
 
         # Prune the input layer if input_prune_map is provided
@@ -326,20 +349,22 @@ the checkpoint format to avoid generating faulty models.
             )
 
     def _transform_for_pre_quantization(self, checkpoint, model_args):
-        assert hasattr(self.args, "preq_mode"), "preq_mode must be specified"
-        assert self.args.preq_mode in [
+        assert self.llm_config.base.preq_mode, "preq_mode must be specified"
+        assert self.llm_config.base.preq_mode.value in [
             "8da4w",
             "8da4w_output_8da8w",
-        ], f"Quantization mode {self.args.preq_mode} is not compatible with SpinQuant."
-        assert hasattr(
-            self.args, "preq_group_size"
-        ), "preq_group_size must be specified"
-        assert hasattr(self.args, "dtype_override"), "dtype_override must be specified"
+        ], f"Quantization mode {self.llm_config.base.preq_mode.value} is not compatible with SpinQuant."
+        assert self.llm_config.base.preq_group_size, "preq_group_size must be specified"
+        assert self.llm_config.model.dtype_override, "dtype_override must be specified"
+
         from .source_transformation.pre_quantization import (
             transform_linear_for_pre_quantization,
         )
 
-        assert self.args.preq_group_size == model_args.quantization_args["group_size"]
+        assert (
+            self.llm_config.base.preq_group_size
+            == model_args.quantization_args["group_size"]
+        )
 
         mapping = {
             "fp32": torch.float32,
@@ -348,7 +373,7 @@ the checkpoint format to avoid generating faulty models.
         }
 
         # Transform the output layer first if needed.
-        if self.args.preq_mode == "8da4w_output_8da8w":
+        if self.llm_config.base.preq_mode.value == "8da4w_output_8da8w":
             from .source_transformation.pre_quantization import (
                 transform_output_linear_for_pre_quantization,
             )
@@ -356,20 +381,20 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = transform_output_linear_for_pre_quantization(
                 module=self.model_,
                 checkpoint=checkpoint,
-                dtype=mapping[self.args.dtype_override],
+                dtype=mapping[self.llm_config.model.dtype_override.value],
             )
 
         self.model_ = transform_linear_for_pre_quantization(
             self.model_,
             checkpoint,
-            self.args.preq_group_size,
-            mapping[self.args.dtype_override],
+            self.llm_config.base.preq_group_size,
+            mapping[self.llm_config.model.dtype_override.value],
         )
 
         embedding_bit_width, embedding_group_size = None, None
-        if hasattr(self.args, "preq_embedding_quantize"):
+        if self.llm_config.base.preq_embedding_quantize:
             embedding_bit_width, embedding_group_size = (
-                self.args.preq_embedding_quantize.split(",")
+                self.llm_config.base.preq_embedding_quantize.split(",")
             )
             from .source_transformation.pre_quantization import (
                 transform_embedding_for_pre_quantization,
@@ -387,7 +412,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = transform_embedding_for_pre_quantization(
                 self.model_,
                 checkpoint,
-                mapping[self.args.dtype_override],
+                mapping[self.llm_config.model.dtype_override.value],
                 int(embedding_bit_width),
                 embedding_group_size,
             )

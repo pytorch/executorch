@@ -11,6 +11,7 @@
 
 #include <executorch/kernels/portable/cpu/util/advanced_index_util.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_shape_to_c_string.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -18,11 +19,13 @@ namespace executor {
 namespace native {
 
 using Tensor = executorch::aten::Tensor;
+using TensorOptList =
+    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>>;
 
 Tensor& index_put_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
-    executorch::aten::ArrayRef<executorch::aten::optional<Tensor>> indices,
+    TensorOptList indices,
     const Tensor& values,
     const bool accumulate,
     Tensor& out) {
@@ -152,6 +155,179 @@ Tensor& index_put_out(
   });
 
   return out;
+}
+
+namespace {
+
+bool check_special_case_in_place_args(
+    KernelRuntimeContext& ctx,
+    Tensor& in,
+    TensorOptList indices,
+    const Tensor& values,
+    const bool accumulate,
+    size_t* dim) {
+  ET_CHECK_OR_RETURN_FALSE(
+      !accumulate,
+      "Special case in-place index_put does not support accumulate");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      static_cast<ssize_t>(indices.size()) <= in.dim(),
+      "Indexing too many dimensions");
+
+  bool found_index = false;
+  for (const auto i : c10::irange(indices.size())) {
+    if (indices[i].has_value()) {
+      *dim = i;
+      ET_CHECK_OR_RETURN_FALSE(
+          !found_index,
+          "Special case in-place index_put only supports a single non-null index tensor");
+      found_index = true;
+      const Tensor& index = indices[i].value();
+      ScalarType ix_type = index.scalar_type();
+      ET_CHECK_OR_RETURN_FALSE(
+          ix_type == ScalarType::Long || ix_type == ScalarType::Int,
+          "Special case in-place index_put only supports Long or Int index tensors; got %d",
+          static_cast<int>(ix_type));
+      ET_CHECK_OR_RETURN_FALSE(
+          index.dim() == 1,
+          "Special case in-place index_put only supports 1-dimensional index tensors; got %d",
+          static_cast<int>(ix_type));
+    }
+  }
+
+  ET_CHECK_OR_RETURN_FALSE(
+      found_index,
+      "Special case in-place index_put needs at least one non-null index tensor");
+
+  const Tensor& index = indices[*dim].value();
+
+  bool is_valid_index = true;
+  ET_SWITCH_TWO_TYPES(
+      Long, Int, index.scalar_type(), ctx, "index_put_", CTYPE, [&]() {
+        const CTYPE* const index_arr = index.const_data_ptr<CTYPE>();
+        for (const auto i : c10::irange(index.numel())) {
+          if (index_arr[i] < 0 ||
+              index_arr[i] >= static_cast<CTYPE>(in.size(*dim))) {
+            ET_LOG(
+                Error,
+                "Index %" PRId64
+                " out of range for tensor with size %zd"
+                " at dimension %zu",
+                static_cast<int64_t>(index_arr[i]),
+                in.size(*dim),
+                *dim);
+            is_valid_index = false;
+            break;
+          }
+        }
+      });
+
+  ET_CHECK_OR_RETURN_FALSE(
+      is_valid_index,
+      "Some index values are not within bounds of input tensor at indexed dim");
+
+  ET_CHECK_OR_RETURN_FALSE(
+      values.size(*dim) == index.size(0),
+      "Special case in-place index_put requires values to match index length at the indexed dim; values.size(%zu) = %" ET_PRI_TENSOR_SIZE
+      ", index_length = %zd",
+      *dim,
+      values.size(*dim),
+      index.size(0));
+
+  Tensor::SizesType expected_values_size[kTensorDimensionLimit] = {};
+  size_t in_ndim = static_cast<size_t>(in.dim());
+  for (const auto i : c10::irange(in_ndim)) {
+    if (i != *dim) {
+      expected_values_size[i] = static_cast<Tensor::SizesType>(in.size(i));
+    }
+  }
+  expected_values_size[*dim] = static_cast<Tensor::SizesType>(index.size(0));
+
+#if ET_LOG_ENABLED
+  auto in_shape_str = executorch::runtime::tensor_shape_to_c_string(
+      executorch::runtime::Span<const Tensor::SizesType>(
+          in.sizes().data(), in.sizes().size()));
+  auto values_shape_str = executorch::runtime::tensor_shape_to_c_string(
+      executorch::runtime::Span<const Tensor::SizesType>(
+          values.sizes().data(), values.sizes().size()));
+
+  ET_CHECK_OR_RETURN_FALSE(
+      tensor_has_expected_size(values, {expected_values_size, in_ndim}),
+      "Special case in-place index_put requires values to match input shape except for indexed dim; got input shape %s and values shape %s",
+      in_shape_str.data(),
+      values_shape_str.data());
+#else
+  ET_CHECK_OR_RETURN_FALSE(
+      tensor_has_expected_size(values, {expected_values_size, in_ndim}),
+      "Special case in-place index_put requires values to match input shape except for indexed dim");
+#endif // ET_LOG_ENABLED
+
+  return true;
+}
+
+} // namespace
+
+Tensor& index_put_(
+    KernelRuntimeContext& ctx,
+    Tensor& in,
+    TensorOptList indices,
+    const Tensor& values,
+    const bool accumulate) {
+  (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dtype(in, values), InvalidArgument, in);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, values), InvalidArgument, in);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, in);
+
+  size_t dim = 0;
+  ET_KERNEL_CHECK(
+      ctx,
+      check_special_case_in_place_args(
+          ctx, in, indices, values, accumulate, &dim),
+      InvalidArgument,
+      in);
+
+  const Tensor& index = indices[dim].value();
+  ScalarType index_type = index.scalar_type();
+
+  if (in.dim() == 0) {
+    memcpy(in.mutable_data_ptr(), values.const_data_ptr(), in.nbytes());
+    return in;
+  }
+
+  size_t leading_dims = getLeadingDims(in, dim);
+  size_t trailing_dims = getTrailingDims(in, dim);
+
+  if (leading_dims == 0 || trailing_dims == 0) {
+    return in;
+  }
+
+  size_t values_dim_length = values.size(dim);
+  size_t in_dim_length = in.size(dim);
+
+  size_t length_per_step = trailing_dims * in.element_size();
+
+  const char* values_data = values.const_data_ptr<char>();
+  char* in_data = in.mutable_data_ptr<char>();
+
+  ET_SWITCH_TWO_TYPES(Long, Int, index_type, ctx, "index_put_", CTYPE, [&]() {
+    const CTYPE* const index_arr = index.const_data_ptr<CTYPE>();
+    for (const auto i : c10::irange(leading_dims)) {
+      const char* src = values_data + i * values_dim_length * length_per_step;
+      char* dest = in_data + i * in_dim_length * length_per_step;
+      for (const auto j : c10::irange(values_dim_length)) {
+        const char* copy_src = src + j * length_per_step;
+        char* copy_dest = dest + index_arr[j] * length_per_step;
+        memcpy(copy_dest, copy_src, length_per_step);
+      }
+    }
+  });
+
+  return in;
 }
 
 } // namespace native

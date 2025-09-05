@@ -55,7 +55,7 @@ def main(args):
         args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
     )
 
-    inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
+    inputs, targets = dataset.lr, dataset.hr
     pte_filename = "esrgan_qnn"
     instance = get_instance(args.oss_repo)
 
@@ -83,7 +83,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data

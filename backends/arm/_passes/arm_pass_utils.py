@@ -13,7 +13,7 @@ from typing import Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.arm.tosa_utils import get_node_debug_info
+from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 

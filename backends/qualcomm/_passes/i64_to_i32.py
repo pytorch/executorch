@@ -26,10 +26,21 @@ class I64toI32(ExportPass):
     """
 
     I64_OPS = {
+        exir_ops.edge.aten.argmax.default,
         exir_ops.edge.aten.argmin.default,
         exir_ops.edge.aten.arange.start_step,
+        exir_ops.edge.aten.cumsum.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.scalar_tensor.default,
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    }
+    # This dict is to ensure that the input of the OPs are int64 due to Pytorch restrictions.
+    # For example, scatter op can only accept args[2], the index, as int64.
+    # Key: Ops to cast input to i64
+    # Value: The args' indices to add casting op
+    I64_IN_OPS = {
+        exir_ops.edge.aten.gather.default: [2],
+        exir_ops.edge.aten.scatter.src: [2],
     }
     copy_op = exir_ops.edge.aten._to_copy.default
 
@@ -141,11 +152,32 @@ class I64toI32(ExportPass):
                         n.replace_all_uses_with(to_dst_node)
                         to_dst_node.args = (n,)
 
+    def _cast_op_args_to_i64(self, graph_module: torch.fx.GraphModule):
+        # input will be cast to i32 during call_operator dtype propogation
+        # insert i64 cast node to prevent PyTorch's operator validation failure
+        for node in graph_module.graph.nodes:
+            if node.target in self.I64_IN_OPS:
+                with graph_module.graph.inserting_before(node):
+                    arg_indices = self.I64_IN_OPS[node.target]
+                    for arg_index in arg_indices:
+                        input_node = node.args[arg_index]
+                        cast_i64_node = graph_module.graph.create_node(
+                            "call_function",
+                            self.copy_op,
+                            (input_node,),
+                            {"dtype": torch.int64},
+                        )
+                        cast_i64_node.meta["val"] = node.meta["val"].to(torch.int64)
+                        args_list = list(node.args)
+                        args_list[arg_index] = cast_i64_node
+                        node.args = tuple(args_list)
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         # Record original output dtype to ensure that if user expects int64 as output,
         # convert the output back to int64 if it is casted from int64->int32.
         self._record_original_output_dtype(graph_module)
         self._cast_constant_to_int32(graph_module)
+        self._cast_op_args_to_i64(graph_module)
         graph_module = super().call(graph_module).graph_module
         self._preserve_output_dtype(graph_module)
         graph_module.recompile()

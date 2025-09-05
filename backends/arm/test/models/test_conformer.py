@@ -3,32 +3,38 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
+from typing import Tuple
+
+import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
 
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test import common
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
 
 from torchaudio.models import Conformer
+
+input_t = Tuple[torch.Tensor, torch.IntTensor]  # Input x, y
 
 
 def get_test_inputs(dim, lengths, num_examples):
     return (torch.rand(num_examples, int(lengths.max()), dim), lengths)
 
 
-class TestConformer(unittest.TestCase):
+class TestConformer:
     """Tests Torchaudio Conformer"""
 
     # Adjust nbr below as we increase op support. Note: most of the delegates
     # calls are directly consecutive to each other in the .pte. The reason
     # for that is some assert ops are removed by passes in the
     # .to_executorch step, i.e. after Arm partitioner.
-    ops_after_partitioner = {
-        "executorch_exir_dialects_edge__ops_aten_max_default": 1,
-        "torch.ops.aten._assert_scalar.default": 7,
-        "torch.ops.aten._local_scalar_dense.default": 1,
-    }
+    aten_ops = ["torch.ops.aten._assert_scalar.default"]
 
     dim = 16
     num_examples = 10
@@ -43,92 +49,116 @@ class TestConformer(unittest.TestCase):
     )
     conformer = conformer.eval()
 
-    def test_conformer_tosa_MI(self):
-        (
-            ArmTester(
-                self.conformer,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-0.80+MI"),
-            )
-            .export()
-            .to_edge_transform_and_lower()
-            .dump_operator_distribution()
-            .check_count(self.ops_after_partitioner)
-            .to_executorch()
-            # TODO(MLETORCH-632): Fix numerical errors
-            .run_method_and_compare_outputs(
-                rtol=1.0,
-                atol=5.0,
-                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-            )
-        )
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
-    def test_conformer_tosa_BI(self):
-        (
-            ArmTester(
-                self.conformer,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .run_method_and_compare_outputs(
-                qtol=1.0,
-                rtol=1.0,
-                atol=5.0,
-                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-            )
-        )
+def test_conformer_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_op=TestConformer.aten_ops,
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
 
-    def test_conformer_u55_BI(self):
-        tester = (
-            ArmTester(
-                self.conformer,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_u55_compile_spec(),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .serialize()
-        )
 
-        if conftest.is_option_enabled("corstone_fvp"):
-            try:
-                tester.run_method_and_compare_outputs(
-                    qtol=1.0,
-                    rtol=1.0,
-                    atol=5.0,
-                    inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-                )
-                self.fail(
-                    "TODO(MLETORCH-635): Expected failure under FVP option, but test passed."
-                )
-            except Exception:
-                pass
+def test_conformer_tosa_INT():
+    pipeline = TosaPipelineINT[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_op=[],  # RemoveGraphAssertsPass is added in transform_for_annotation_pipeline to remove the assert ops
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check_count.exir")
+    pipeline.change_args(
+        "run_method_and_compare_outputs",
+        get_test_inputs(
+            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
+        ),
+        rtol=1.0,
+        atol=3.0,
+    )
+    pipeline.run()
 
-    @unittest.expectedFailure  # TODO(MLETORCH-635)
-    def test_conformer_u85_BI(self):
-        tester = (
-            ArmTester(
-                self.conformer,
-                example_inputs=self.model_example_inputs,
-                compile_spec=common.get_u85_compile_spec(),
-            )
-            .quantize()
-            .export()
-            .to_edge_transform_and_lower()
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(
-                qtol=1.0,
-                rtol=1.0,
-                atol=5.0,
-                inputs=get_test_inputs(self.dim, self.lengths, self.num_examples),
-            )
+
+@common.XfailIfNoCorstone300
+@pytest.mark.xfail(
+    reason="TODO(MLETORCH-635): Expected failure under FVP option, but test passed."
+)
+def test_conformer_u55_INT():
+    pipeline = EthosU55PipelineINT[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_ops=TestConformer.aten_ops,
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+    pipeline.change_args(
+        "run_method_and_compare_outputs",
+        get_test_inputs(
+            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
+        ),
+        rtol=1.0,
+        atol=5.0,
+    )
+    pipeline.run()
+
+
+@common.XfailIfNoCorstone320
+@pytest.mark.xfail(reason="All IO needs to have the same data type (MLETORCH-635)")
+def test_conformer_u85_INT():
+    pipeline = EthosU85PipelineINT[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_ops=TestConformer.aten_ops,
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+    pipeline.change_args(
+        "run_method_and_compare_outputs",
+        get_test_inputs(
+            TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
+        ),
+        rtol=1.0,
+        atol=5.0,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_conformer_vgf_INT():
+    pipeline = VgfPipeline[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_op=[],  # RemoveGraphAssertsPass is added in transform_for_annotation_pipeline to remove the assert ops
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check_count.exir")
+
+    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
+    # pipeline.change_args(
+    #     "run_method_and_compare_outputs",
+    #     get_test_inputs(
+    #         TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
+    #     ),
+    #     rtol=1.0,
+    #     atol=3.0,
+    # )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_conformer_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        TestConformer.conformer,
+        TestConformer.model_example_inputs,
+        aten_op=TestConformer.aten_ops,
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()

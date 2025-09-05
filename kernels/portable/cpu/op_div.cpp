@@ -58,17 +58,17 @@ Tensor& div_out(
   static constexpr const char op_name[] = "div.out";
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          return val_a / val_b;
-        },
+    utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::FLOATHBF16>(
+        [](const auto val_a, const auto val_b) { return val_a / val_b; },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::FLOATHBF16);
+        out);
   });
 
   return out;
@@ -78,7 +78,7 @@ Tensor& div_out_mode(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    executorch::aten::optional<executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_out(ctx, a, b, out);
@@ -122,9 +122,13 @@ Tensor& div_out_mode(
   bool div_by_zero_error = false;
 
   ET_SWITCH_REAL_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
+    utils::apply_bitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::REALHBF16>(
         [mode_is_trunc, &div_by_zero_error](
             const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
+          // TODO: rewrite this to be vectorization-capable.
           if (is_integral_type<CTYPE_COMPUTE, /*includeBool=*/true>::value) {
             if (val_b == 0) {
               div_by_zero_error = true;
@@ -146,8 +150,7 @@ Tensor& div_out_mode(
         utils::SupportedTensorDtypes::REALHBBF16,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBF16);
+        out);
   });
 
   ET_KERNEL_CHECK_MSG(
@@ -188,13 +191,15 @@ Tensor& div_scalar_out(
 
   ET_SWITCH_FLOAT_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
     const CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_b](const CTYPE_COMPUTE val_a) { return val_a / val_b; },
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        [val_b](const auto val_a) { return val_a / val_b; },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
 
   return out;
@@ -204,7 +209,7 @@ Tensor& div_scalar_mode_out(
     KernelRuntimeContext& ctx,
     const Tensor& a,
     const Scalar& b,
-    executorch::aten::optional<executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     Tensor& out) {
   if (!mode.has_value()) {
     return div_scalar_out(ctx, a, b, out);

@@ -24,6 +24,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
             "//executorch/backends/cadence/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
         exported_deps = [
             ":operators_header",

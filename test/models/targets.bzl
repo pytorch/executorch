@@ -63,7 +63,10 @@ def define_common_targets():
         "ModuleAddHalf",
         "ModuleAddMul",
         "ModuleBasic",
+        "ModuleKVCacheCachePos",
+        "ModuleKVCacheInputPos",
         "ModuleMultipleEntry",
+        "ModuleNoKVCache",
         "ModuleIndex",
         "ModuleDynamicCatUnallocatedIO",
         "ModuleSimpleTrain",
@@ -98,7 +101,7 @@ def define_common_targets():
         "ModuleLinear",
         "ModuleSimpleTrain",
     ]
-    
+
     runtime.genrule(
         name = "exported_program_and_data",
         cmd = "$(exe :export_program) --modules " + ",".join(MODULES_AND_DATA_TO_EXPORT) + " --external-constants --outdir $OUT",
@@ -213,18 +216,18 @@ def define_common_targets():
     runtime.genrule(
         name = "exported_xnnpack_program_and_data",
         cmd = "$(exe :export_delegated_program)" +
-            " --modules ModuleLinear" + 
+            " --modules ModuleLinear" +
             " --backend_id XnnpackBackend" +
             " --external_constants" +
             " --outdir $OUT",
-        
+
         outs = {
             "ModuleLinear-e.pte": ["ModuleLinear-e.pte"],
             "ModuleLinear.ptd": ["ModuleLinear.ptd"],
         },
         default_outs = ["."],
         visibility = [
-            "//executorch/runtime/executor/test/...",
+            "//executorch/backends/xnnpack/test/...",
             "//executorch/test/...",
         ],
     )
@@ -233,11 +236,11 @@ def define_common_targets():
     runtime.genrule(
         name = "exported_executor_backend_program_and_data",
         cmd = "$(exe :export_delegated_program)" +
-            " --modules ModuleLinear" + 
+            " --modules ModuleLinear" +
             " --backend_id ExecutorBackend" +
             " --external_constants" +
             " --outdir $OUT",
-        
+
         outs = {
             "ModuleLinear-e.pte": ["ModuleLinear-e.pte"],
         },

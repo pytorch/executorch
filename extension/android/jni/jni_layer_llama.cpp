@@ -13,10 +13,13 @@
 #include <unordered_map>
 #include <vector>
 
-#include <executorch/examples/models/llama/runner/runner.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
+#include <executorch/extension/llm/runner/text_llm_runner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -28,6 +31,10 @@
 
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
+
+#if defined(EXECUTORCH_BUILD_QNN)
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
+#endif
 
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
 #include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
@@ -115,7 +122,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   float temperature_ = 0.0f;
   int model_type_category_;
   std::unique_ptr<llm::IRunner> runner_;
-  std::unique_ptr<llm::MultimodalRunner> multi_modal_runner_;
+  std::unique_ptr<example::LlavaRunner> multi_modal_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -124,6 +131,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
   constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
   constexpr static int MODEL_TYPE_MEDIATEK_LLAMA = 3;
+  constexpr static int MODEL_TYPE_QNN_LLAMA = 4;
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -165,16 +173,29 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           tokenizer_path->toStdString().c_str(),
           temperature);
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      if (data_path != nullptr) {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str(),
-            data_path->toStdString().c_str());
-      } else {
-        runner_ = std::make_unique<example::Runner>(
-            model_path->toStdString().c_str(),
-            tokenizer_path->toStdString().c_str());
-      }
+      std::optional<const std::string> data_path_str = data_path
+          ? std::optional<const std::string>{data_path->toStdString()}
+          : std::nullopt;
+      runner_ = executorch::extension::llm::create_text_llm_runner(
+          model_path->toStdString(),
+          llm::load_tokenizer(tokenizer_path->toStdString()),
+          data_path_str);
+#if defined(EXECUTORCH_BUILD_QNN)
+    } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
+      std::unique_ptr<executorch::extension::Module> module = std::make_unique<
+          executorch::extension::Module>(
+          model_path->toStdString().c_str(),
+          executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
+      std::string decoder_model = "llama3"; // use llama3 for now
+      runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
+          std::move(module),
+          decoder_model.c_str(),
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          data_path->toStdString().c_str(),
+          "");
+      model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
+#endif
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
     } else if (model_type_category == MODEL_TYPE_MEDIATEK_LLAMA) {
       runner_ = std::make_unique<MTKLlamaRunner>(
@@ -298,16 +319,28 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jlong start_pos,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(multi_modal_runner_->generate_from_pos(
+          prompt->toStdString(),
+          seq_len,
+          start_pos,
+          [callback](const std::string& result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); },
+          echo));
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      executorch::extension::llm::GenerationConfig config{
+          .echo = static_cast<bool>(echo),
+          .seq_len = seq_len,
+          .temperature = temperature_,
+      };
+      return static_cast<jint>(runner_->generate_from_pos(
+          prompt->toStdString(),
+          start_pos,
+          config,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
     }
-    return static_cast<jint>(multi_modal_runner_->generate_from_pos(
-        prompt->toStdString(),
-        seq_len,
-        start_pos,
-        [callback](const std::string& result) { callback->onResult(result); },
-        [callback](const llm::Stats& stats) { callback->onStats(stats); },
-        echo));
+    return static_cast<jint>(executorch::runtime::Error::InvalidArgument);
   }
 
   void stop() {

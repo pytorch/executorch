@@ -45,6 +45,7 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        platforms = CXX,
         exported_deps = all_op_targets,
     )
 
@@ -66,4 +67,17 @@ def define_common_targets():
         platforms = CXX,
         visibility = ["PUBLIC"],
         define_static_targets = True,
+    )
+
+    executorch_generated_lib(
+        name = "cortex_m_no_except_generated_lib",
+        deps = [
+            ":ops_lib",
+            ":cortex_m_operators",
+        ],
+        functions_yaml_target = ":operators.yaml",
+        platforms = CXX,
+        visibility = ["PUBLIC"],
+        define_static_targets = True,
+        support_exceptions = False,
     )

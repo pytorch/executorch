@@ -50,20 +50,47 @@ Tensor& add_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char op_name[] = "add.out";
 
-  ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    const CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-    utils::apply_bitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [val_alpha](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          return val_a + val_alpha * val_b;
-        },
+  if (executorch::runtime::isComplexType(a.scalar_type()) ||
+      executorch::runtime::isComplexType(b.scalar_type()) ||
+      executorch::runtime::isComplexType(out.scalar_type())) {
+    // TODO: The current support for complex dtype enforces that input and
+    // output tensors have the same dtype. Support mixed dtypes in the future.
+    ET_KERNEL_CHECK(
         ctx,
-        a,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        b,
-        utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::REALHBBF16);
-  });
+        a.scalar_type() == b.scalar_type() &&
+            a.scalar_type() == out.scalar_type(),
+        InvalidArgument,
+        out);
+    ET_SWITCH_COMPLEXH_TYPES(out.scalar_type(), ctx, op_name, CTYPE, [&]() {
+      CTYPE val_alpha = utils::scalar_to<CTYPE>(alpha);
+      apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+          [val_alpha](const CTYPE val_a, const CTYPE val_b) {
+            return val_a + val_alpha * val_b;
+          },
+          a,
+          b,
+          out);
+    });
+  } else {
+    ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
+      CTYPE_COMPUTE val_alpha;
+      ET_KERNEL_CHECK(
+          ctx, utils::extract_scalar(alpha, &val_alpha), InvalidArgument, );
+      utils::apply_bitensor_elementwise_fn<
+          CTYPE_COMPUTE,
+          op_name,
+          utils::SupportedTensorDtypes::REALHBBF16>(
+          [val_alpha](const auto val_a, const auto val_b) {
+            return val_a + val_alpha * val_b;
+          },
+          ctx,
+          a,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          b,
+          utils::SupportedTensorDtypes::REALHBBF16,
+          out);
+    });
+  }
 
   return out;
 }
@@ -100,17 +127,25 @@ Tensor& add_scalar_out(
   static constexpr const char op_name[] = "add.Scalar_out";
 
   ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
-    utils::apply_unitensor_elementwise_fn<CTYPE_COMPUTE, op_name>(
-        [b, alpha](const CTYPE_COMPUTE val_a) {
-          CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
-          CTYPE_COMPUTE val_alpha = utils::scalar_to<CTYPE_COMPUTE>(alpha);
-          return val_a + val_alpha * val_b;
+    CTYPE_COMPUTE val_b = utils::scalar_to<CTYPE_COMPUTE>(b);
+    CTYPE_COMPUTE val_alpha;
+    ET_KERNEL_CHECK(
+        ctx, utils::extract_scalar(alpha, &val_alpha), InvalidArgument, );
+    auto val_alpha_times_b = val_alpha * val_b;
+    utils::apply_unitensor_elementwise_fn<
+        CTYPE_COMPUTE,
+        op_name,
+        utils::SupportedTensorDtypes::SAME_AS_COMMON>(
+        [val_alpha_times_b](const auto val_a) {
+          // Cast here supports vectorization; either it does nothing
+          // or it casts from CTYPE_COMPUTE to
+          // Vectorized<CTYPE_COMPUTE>.
+          return val_a + decltype(val_a)(val_alpha_times_b);
         },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
-        out,
-        utils::SupportedTensorDtypes::SAME_AS_COMMON);
+        out);
   });
 
   return out;

@@ -260,14 +260,33 @@ struct vec final {
     }
   }
 
-  const Type& operator[](const uint32_t& i) const {
+  template <
+      typename IndexType,
+      typename = std::enable_if_t<std::is_integral<IndexType>::value>>
+  const Type& operator[](const IndexType& i) const {
     VK_CHECK_COND(i >= 0 && i < N, "Index out of bounds!");
     return data[i];
   }
 
-  Type& operator[](const uint32_t& i) {
+  template <
+      typename IndexType,
+      typename = std::enable_if_t<std::is_integral<IndexType>::value>>
+  Type& operator[](const IndexType& i) {
     VK_CHECK_COND(i >= 0 && i < N, "Index out of bounds!");
     return data[i];
+  }
+
+  bool operator==(const vec<Type, N>& other) const {
+    for (uint32_t i = 0; i < N; ++i) {
+      if (data[i] != other.data[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool operator!=(const vec<Type, N>& other) const {
+    return !(*this == other);
   }
 };
 
@@ -520,6 +539,16 @@ class WorkgroupSize final {
 
   inline constexpr uint32_t operator[](const int idx) const {
     return (val >> (11 * idx)) & 0x7ffu;
+  }
+
+  // Equality operator
+  bool operator==(const WorkgroupSize& other) const {
+    return val == other.val;
+  }
+
+  // Inequality operator (optional, for completeness)
+  bool operator!=(const WorkgroupSize& other) const {
+    return !(*this == other);
   }
 };
 

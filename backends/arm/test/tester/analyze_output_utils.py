@@ -10,11 +10,10 @@ import torch
 from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.test.runner_utils import (
     get_input_quantization_params,
-    get_output_nodes,
     get_output_quantization_params,
 )
 
-from executorch.backends.xnnpack.test.tester.tester import Export, Quantize
+from executorch.backends.test.harness.stages import StageType
 
 logger = logging.getLogger(__name__)
 
@@ -22,22 +21,36 @@ logger = logging.getLogger(__name__)
 def _print_channels(result, reference, channels_close, C, H, W, rtol, atol):
 
     output_str = ""
+    booldata = False
+    if reference.dtype == torch.bool or result.dtype == torch.bool:
+        booldata = True
+
     for c in range(C):
         if channels_close[c]:
             continue
-
-        max_diff = torch.max(torch.abs(reference - result))
-        exp = f"{max_diff:2e}"[-3:]
-        output_str += f"channel {c} (e{exp})\n"
+        if not booldata:
+            max_diff = torch.max(torch.abs(reference - result))
+            exp = f"{max_diff:2e}"[-3:]
+            output_str += f"channel {c} (e{exp})\n"
+        else:
+            max_diff = torch.max(reference ^ result)
+            output_str += f"channel {c} (bool)\n"
 
         for y in range(H):
             res = "["
             for x in range(W):
                 if torch.allclose(reference[c, y, x], result[c, y, x], rtol, atol):
-                    res += " .    "
+                    if not booldata:
+                        res += " .    "
+                    else:
+                        res += " . "
                 else:
-                    diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (int(exp))
-                    res += f"{diff: .2f} "
+                    if not booldata:
+                        diff = (reference[c, y, x] - result[c, y, x]) / 10 ** (int(exp))
+                        res += f"{diff: .2f} "
+                    else:
+                        diff = reference[c, y, x] ^ result[c, y, x]
+                        res += " X "
 
                 # Break early for large widths
                 if x == 16:
@@ -125,7 +138,9 @@ def print_error_diffs(
         result = result[0]
 
     if not result.shape == reference.shape:
-        raise ValueError("Output needs to be of same shape")
+        raise ValueError(
+            f"Output needs to be of same shape: {result.shape} != {reference.shape}"
+        )
     shape = result.shape
 
     match len(shape):
@@ -154,6 +169,7 @@ def print_error_diffs(
         output_str += f"BATCH {n}\n"
         result_batch = result[n, :, :, :]
         reference_batch = reference[n, :, :, :]
+
         is_close = torch.allclose(result_batch, reference_batch, rtol, atol)
         if is_close:
             output_str += ".\n"
@@ -180,14 +196,20 @@ def print_error_diffs(
                 output_str += _print_elements(
                     result[n, :, :, :], reference[n, :, :, :], C, H, W, rtol, atol
                 )
+        if reference_batch.dtype == torch.bool or result_batch.dtype == torch.bool:
+            mismatches = (reference_batch != result_batch).sum().item()
+            total = reference_batch.numel()
+            output_str += f"(BOOLEAN tensor) {mismatches} / {total} elements differ ({mismatches / total:.2%})\n"
 
-    reference_range = torch.max(reference) - torch.min(reference)
-    diff = torch.abs(reference - result).flatten()
-    diff = diff[diff.nonzero()]
-    if not len(diff) == 0:
-        diff_percent = diff / reference_range
-        output_str += "\nMEAN      MEDIAN    MAX       MIN    (error as % of reference output range)\n"
-        output_str += f"{torch.mean(diff_percent):<8.2%}  {torch.median(diff_percent):<8.2%}  {torch.max(diff_percent):<8.2%}  {torch.min(diff_percent):<8.2%}\n"
+    # Only compute numeric error metrics if tensor is not boolean
+    if reference.dtype != torch.bool and result.dtype != torch.bool:
+        reference_range = torch.max(reference) - torch.min(reference)
+        diff = torch.abs(reference - result).flatten()
+        diff = diff[diff.nonzero()]
+        if not len(diff) == 0:
+            diff_percent = diff / reference_range
+            output_str += "\nMEAN      MEDIAN    MAX       MIN    (error as % of reference output range)\n"
+            output_str += f"{torch.mean(diff_percent):<8.2%}  {torch.median(diff_percent):<8.2%}  {torch.max(diff_percent):<8.2%}  {torch.min(diff_percent):<8.2%}\n"
 
     # Over-engineer separators to match output width
     lines = output_str.split("\n")
@@ -228,12 +250,12 @@ def dump_error_output(
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
 
-    export_stage = tester.stages.get(tester.stage_name(Export), None)
-    quantize_stage = tester.stages.get(tester.stage_name(Quantize), None)
+    export_stage = tester.stages.get(StageType.EXPORT, None)
+    quantize_stage = tester.stages.get(StageType.QUANTIZE, None)
     if export_stage is not None and quantize_stage is not None:
-        output_nodes = get_output_nodes(export_stage.artifact)
+        output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
-        qp_output = get_output_quantization_params(output_nodes)
+        qp_output = get_output_quantization_params(output_node)
         logger.error(f"Input QuantArgs: {qp_input}")
         logger.error(f"Output QuantArgs: {qp_output}")
 

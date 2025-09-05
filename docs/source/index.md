@@ -21,8 +21,7 @@ ExecuTorch provides support for:
 * **Strong Model Support** LLMs (Large Language Models),
   CV (Computer Vision), ASR (Automatic Speech Recognition), TTS (Text To Speech)
 * **All Major Platforms** Android, Mac, Linux, Windows
-* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek,
-  Qualcomm, Vulkan, XNNPACK
+* **Rich Acceleration Support** Apple, Arm, Cadence, MediaTek, NXP, OpenVino, Qualcomm, Vulkan, XNNPACK
 
 ### Documentation Navigation
 #### Introduction
@@ -39,10 +38,11 @@ ExecuTorch provides support for:
 - [Runtime Integration](using-executorch-runtime-integration)
 - [Troubleshooting](using-executorch-troubleshooting)
 - [Building from Source](using-executorch-building-from-source)
+- [Quantization](quantization-overview)
 - [FAQs](using-executorch-faqs)
 #### Examples
-- [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
-- [iOS Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
+- [Android Demo Apps](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
+- [iOS Demo Apps](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
 - [Hugging Face Models](https://github.com/huggingface/optimum-executorch/blob/main/README.md)
 #### Backends
 - [Overview](backends-overview)
@@ -54,6 +54,8 @@ ExecuTorch provides support for:
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
+- [OpenVINO](build-run-openvino)
+- [NXP](backend-nxp)
 #### Developer Tools
 - [Overview](devtools-overview)
 - [Bundled IO](bundled-io)
@@ -69,29 +71,30 @@ ExecuTorch provides support for:
 - [Overview](runtime-overview)
 - [Extension Module](extension-module)
 - [Extension Tensor](extension-tensor)
-- [Running a Model (C++ Tutorial)](running-a-model-cpp-tutorial)
+- [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial)
 - [Backend Delegate Implementation and Linking](runtime-backend-delegate-implementation-and-linking)
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming
 - [PTE File Format](pte-file-format)
+- [PTD File Format](ptd-file-format)
 #### API Reference
 - [Export to Executorch API Reference](export-to-executorch-api-reference)
 - [Executorch Runtime API Reference](executorch-runtime-api-reference)
 - [Runtime Python API Reference](runtime-python-api-reference)
 - [API Life Cycle](api-life-cycle)
 - [Javadoc](https://pytorch.org/executorch/main/javadoc/)
-#### Quantization
-- [Overview](quantization-overview)
 #### Kernel Library
 - [Overview](kernel-library-overview)
 - [Custom ATen Kernel](kernel-library-custom-aten-kernel)
 - [Selective Build](kernel-library-selective-build)
 #### Working with LLMs
-- [Llama](llm/llama.md)
-- [Llama on Android](llm/llama-demo-android.md)
-- [Llama on iOS](llm/llama-demo-ios.md)
-- [Llama on Android via Qualcomm backend](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
-- [Intro to LLMs in Executorch](llm/getting-started.md)
+- [Getting Started](llm/getting-started.md)
+- [Exporting LLMs](llm/export-llm.md)
+- [Exporting custom LLMs](llm/export-custom-llm.md)
+- [Running with C++](llm/run-with-c-plus-plus.md)
+- [Running on Android (XNNPack)](llm/llama-demo-android.md)
+- [Running on Android (QNN)](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
+- [Running on iOS](llm/run-on-ios.md)
 #### Backend Development
 - [Delegates Integration](backend-delegates-integration)
 - [XNNPACK Reference](backend-delegates-xnnpack-reference)
@@ -144,8 +147,8 @@ using-executorch-faqs
 :hidden:
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
-Building an ExecuTorch iOS Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
-tutorial-arm-ethos-u.md
+Building an ExecuTorch iOS Demo App <https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
+tutorial-arm.md
 ```
 
 ```{toctree}
@@ -163,6 +166,8 @@ backends-arm-ethos-u
 backends-qualcomm
 backends-mediatek
 backends-cadence
+OpenVINO Backend <build-run-openvino>
+backends-nxp
 ```
 
 ```{toctree}
@@ -197,6 +202,7 @@ runtime-backend-delegate-implementation-and-linking
 runtime-platform-abstraction-layer
 portable-cpp-programming
 pte-file-format
+ptd-file-format
 ```
 
 ```{toctree}
@@ -238,11 +244,13 @@ kernel-library-selective-build
 :caption: Working with LLMs
 :hidden:
 
-Llama <llm/llama>
-Llama on Android <llm/llama-demo-android>
-Llama on iOS <llm/llama-demo-ios>
-Llama on Android via Qualcomm backend <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-Intro to LLMs in Executorch <llm/getting-started>
+Getting Started <llm/getting-started>
+Exporting LLMs with export_llm <llm/export-llm>
+Exporting custom LLMs <llm/export-custom-llm>
+Running with C++ <llm/run-with-c-plus-plus>
+Running on Android <XNNPack> <llm/llama-demo-android>
+Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
+Running on iOS <llm/run-on-ios>
 ```
 
 ```{toctree}

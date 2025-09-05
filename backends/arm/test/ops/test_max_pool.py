@@ -5,280 +5,279 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
 from typing import Tuple
 
-import pytest
-
 import torch
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
+
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.arm.tosa_specification import TosaSpecification
 
-from executorch.backends.xnnpack.test.tester.tester import Quantize
-from executorch.exir.backend.backend_details import CompileSpec
-from parameterized import parameterized
-
-
-test_data_suite = [
+test_data_suite = {
     # (test_name, test_data, [kernel_size, stride, padding])
-    ("zeros", torch.zeros(1, 1, 4, 8), [2, 2, 1]),
-    ("ones", torch.ones(1, 16, 50, 32), [4, 2, 0]),
-    ("rand", torch.rand(1, 16, 52, 16), [4, 3, 0]),
-    ("non_divisible", torch.rand(1, 16, 112, 112), [3, 2, 1]),
+    "zeros": lambda: (torch.zeros(1, 1, 4, 8), [(4, 6), 2, (2, 0)]),
+    "ones": lambda: (torch.ones(1, 16, 50, 32), [4, 2, 0]),
+    "rand": lambda: (torch.rand(1, 16, 52, 16), [4, 3, 0]),
+    "non_divisible": lambda: (torch.rand(1, 16, 112, 112), [3, 2, 1]),
+    "non_divisible_window_height": lambda: (torch.rand(1, 16, 56, 56), [3, (2, 1), 1]),
+    "non_divisible_window_width": lambda: (torch.rand(1, 16, 56, 56), [3, (1, 2), 1]),
+    "non_divisible_ceil_mode": lambda: (
+        torch.rand(1, 16, 112, 112),
+        [3, 2, 1, 1, True],
+    ),
+    "non_divisible_window_height_ceil_mode": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (2, 1), 1, 1, True],
+    ),
+    "non_divisible_window_width_ceil_mode": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (1, 2), 1, 1, True],
+    ),
+    "non_divisible_window_adjust_padding": lambda: (
+        torch.rand(1, 16, 112, 112),
+        [3, 2, 1],
+    ),
+    "non_divisible_window_height_adjust_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (2, 1), 1],
+    ),
+    "non_divisible_window_width_adjust_padding": lambda: (
+        torch.rand(1, 16, 56, 56),
+        [3, (1, 2), 1],
+    ),
+    "non_divisble_no_padding": lambda: (torch.rand(1, 16, 56, 56), [3, 2, 0]),
+    "non_divisible_window_adjust_padding+input": lambda: (
+        torch.rand(1, 16, 54, 54),
+        [3, 3, 1],
+    ),
+    "non_divisible_window_height_adjust_padding+input": lambda: (
+        torch.rand(1, 16, 54, 54),
+        [3, (3, 1), 1],
+    ),
+    "non_divisible_window_width_adjust_padding+input": lambda: (
+        torch.rand(1, 16, 54, 54),
+        [3, (1, 3), 1],
+    ),
+    "randn": lambda: (torch.randn(5, 16, 50, 32), [4, 2, 0]),
+}
+
+
+test_data_suite_dilation = [
+    # Simple dilation=2 on 8x8 input, kernel=3, stride=1, no padding
+    ("dilation2", torch.rand(1, 1, 8, 8), [3, 1, 0, 2]),
+    # Input is 6x6, kernel=3, stride=1, dilation=2.
+    # Padding=1 expands the effective input to 8x8.
+    ("pad_then_dil2", torch.rand(1, 1, 6, 6), [3, 1, 1, 2]),
+    # Input is 16x16, kernel=2x2, stride=2x2, dilation=1 (no dilation).
+    # Padding of 1 ensures the input size remains divisible by stride
+    # after padding.
+    ("even_kernel_fast", torch.rand(1, 3, 16, 16), [(2, 2), (2, 2), (1, 1), 1]),
+    # Multi-batch, multi-channel input (N=4, C=3), kernel=3x3,
+    # stride=3x3, no padding, dilation=1.
+    ("mb_ch_dil1", torch.rand(4, 3, 12, 12), [(3, 3), (3, 3), 0, 1]),
 ]
 
-test_data_suite_mult_batches = [
-    ("randn", torch.randn(5, 16, 50, 32), [4, 2, 0]),
-]
+aten_op = "torch.ops.aten.max_pool2d.default"
+exir_op = "executorch_exir_dialects_edge__ops_aten_max_pool2d_default"
+
+input_t1 = Tuple[torch.Tensor]
 
 
-class TestMaxPool2d(unittest.TestCase):
-    """Tests MaxPool2d."""
-
-    class MaxPool2d(torch.nn.Module):
-        def __init__(
-            self,
-            kernel_size: int | Tuple[int, int],
-            stride: int | Tuple[int, int],
-            padding: int | Tuple[int, int],
-        ):
-            super().__init__()
-            self.max_pool_2d = torch.nn.MaxPool2d(
-                kernel_size=kernel_size, stride=stride, padding=padding
-            )
-
-        def forward(self, x):
-            return self.max_pool_2d(x)
-
-    def _test_maxpool2d_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(
-                    "TOSA-0.80+MI",
-                ),
-            )
-            .export()
-            .check(["torch.ops.aten.max_pool2d.default"])
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_max_pool2d_default"])
-            .check_not(
-                [
-                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
-                ]
-            )
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
-
-    def _test_maxpool2d_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
-    ):
-        tosa_spec = TosaSpecification.create_from_string("TOSA-0.80+BI")
-        compile_spec = common.get_tosa_compile_spec(tosa_spec)
-        quantizer = TOSAQuantizer(tosa_spec).set_io(get_symmetric_quantization_config())
-        (
-            ArmTester(module, example_inputs=test_data, compile_spec=compile_spec)
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.max_pool2d.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_max_pool2d_default"])
-            .check_not(
-                [
-                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
-                ]
-            )
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
-
-    def _test_maxpool2d_tosa_ethos_BI_pipeline(
+class MaxPool2d(torch.nn.Module):
+    def __init__(
         self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: Tuple[torch.tensor],
+        kernel_size: int | Tuple[int, int],
+        stride: int | Tuple[int, int],
+        padding: int | Tuple[int, int],
+        dilation: int | Tuple[int, int] = 1,
+        ceil_mode: bool = False,
     ):
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.max_pool2d.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_max_pool2d_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
+        super().__init__()
+        self.max_pool_2d = torch.nn.MaxPool2d(
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            ceil_mode=ceil_mode,
         )
 
-        return tester
+    def forward(self, x):
+        return self.max_pool_2d(x)
 
-    @parameterized.expand(test_data_suite)
-    def test_maxpool2d_tosa_MI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        self._test_maxpool2d_tosa_MI_pipeline(
-            self.MaxPool2d(*model_params), (test_data,)
-        )
 
-    @parameterized.expand(test_data_suite)
-    def test_maxpool2d_tosa_BI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        self._test_maxpool2d_tosa_BI_pipeline(
-            self.MaxPool2d(*model_params), (test_data,)
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_max_pool2d_tosa_FP(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params), (test_data,), aten_op, exir_op
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.corstone_fvp
-    def test_maxpool2d_tosa_u55_BI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
-            self.MaxPool2d(*model_params),
-            common.get_u55_compile_spec(),
-            (test_data,),
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.corstone_fvp
-    def test_maxpool2d_tosa_u85_BI(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
-            self.MaxPool2d(*model_params),
-            common.get_u85_compile_spec(),
-            (test_data,),
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
+@common.parametrize("test_data", test_data_suite)
+def test_max_pool2d_tosa_INT(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite_mult_batches)
-    def test_maxpool2d_tosa_MI_mult_batches(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        self._test_maxpool2d_tosa_MI_pipeline(
-            self.MaxPool2d(*model_params), (test_data,)
-        )
 
-    @parameterized.expand(test_data_suite_mult_batches)
-    def test_maxpool2d_tosa_BI_mult_batches(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        self._test_maxpool2d_tosa_BI_pipeline(
-            self.MaxPool2d(*model_params), (test_data,)
-        )
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_max_pool2d_u55_INT(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    EthosU55PipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    ).run()
 
-    @parameterized.expand(test_data_suite_mult_batches)
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
-    def test_maxpool2d_tosa_u85_BI_mult_batches(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
-            self.MaxPool2d(*model_params),
-            common.get_u85_compile_spec(),
-            (test_data,),
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
 
-    @parameterized.expand(test_data_suite_mult_batches)
-    @pytest.mark.corstone_fvp
-    @conftest.expectedFailureOnFVP  # TODO: MLETORCH-433
-    def test_maxpool2d_tosa_u55_BI_mult_batches(
-        self,
-        test_name: str,
-        test_data: torch.Tensor,
-        model_params: int | Tuple[int, int],
-    ):
-        tester = self._test_maxpool2d_tosa_ethos_BI_pipeline(
-            self.MaxPool2d(*model_params),
-            common.get_u55_compile_spec(),
-            (test_data,),
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(qtol=1, inputs=(test_data,))
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_max_pool2d_u85_INT(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    EthosU85PipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        run_on_fvp=True,
+    ).run()
 
-    reject_data_suite = [
-        (MaxPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
-        (MaxPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
-        (MaxPool2d((800, 90), 1, 0), torch.rand(1, 16, 850, 100)),
-    ]
 
-    @parameterized.expand(reject_data_suite)
-    def test_reject_maxpool2d_u55_BI(
-        self,
-        module: torch.nn.Module,
-        test_data: torch.tensor,
-    ):
-        compile_spec = common.get_u55_compile_spec()
-        quantizer = EthosUQuantizer(compile_spec).set_io(
-            get_symmetric_quantization_config()
-        )
+reject_data_suite = {
+    "reject_1": lambda: (MaxPool2d(1, 4, 0), torch.rand(1, 10, 10, 10)),
+    "reject_2": lambda: (MaxPool2d((1, 257), 1, 0), torch.rand(1, 16, 5, 300)),
+    "reject_3": lambda: (MaxPool2d((800, 90), 1, 0), torch.rand(1, 16, 850, 100)),
+}
 
-        (
-            ArmTester(
-                module,
-                example_inputs=(test_data,),
-                compile_spec=compile_spec,
-            )
-            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
-            .export()
-            .check_count({"torch.ops.aten.max_pool2d.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge_transform_and_lower()
-            .check(
-                [
-                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
-                ]
-            )
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
-        )
+
+@common.parametrize("test_data", reject_data_suite)
+@common.XfailIfNoCorstone300
+def test_max_pool2d_u55_INT_failure_set(test_data: Tuple):
+    module, test_data = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        module,
+        (test_data,),
+        aten_op,
+        exir_op,
+        run_on_fvp=False,
+        use_to_edge_transform_and_lower=True,
+    )
+    pipeline.pop_stage("check_count.exir")
+    pipeline.run()
+
+
+# Convert the list of (name, tensor, params) into the dict-of-lambdas shape
+dilation_test_data = {
+    name: (lambda data=data, params=params: (data, params))
+    for name, data, params in test_data_suite_dilation
+}
+
+
+@common.parametrize("test_data", dilation_test_data)
+def test_max_pool2d_tosa_FP_dilation(test_data):
+    """
+    TOSA FP pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    data, model_params = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", dilation_test_data)
+def test_max_pool2d_tosa_INT_dilation(test_data):
+    """
+    TOSA INT pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    data, model_params = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        MaxPool2d(*model_params),
+        (data,),
+        aten_op,
+        exir_op,
+        symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+# VGF tests
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_FP(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_INT(test_data: torch.Tensor):
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", dilation_test_data)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_FP_dilation(test_data: torch.Tensor):
+    """
+    VGF FP pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", dilation_test_data)
+@common.SkipIfNoModelConverter
+def test_max_pool2d_vgf_INT_dilation(test_data: torch.Tensor):
+    """
+    VGF INT pipeline with dilation > 1 (and dilation=1 sanity cases).
+    """
+    test_data, model_params = test_data()
+    pipeline = VgfPipeline[input_t1](
+        MaxPool2d(*model_params),
+        (test_data,),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

@@ -9,30 +9,33 @@
 #import "LLaMARunner.h"
 
 #import <ExecuTorch/ExecuTorchLog.h>
-#import <executorch/examples/models/llama/runner/runner.h>
-#import <executorch/examples/models/llava/runner/llava_runner.h>
-
-using executorch::extension::llm::GenerationConfig;
-using executorch::extension::llm::Image;
-using executorch::runtime::Error;
-
-NSErrorDomain const LLaMARunnerErrorDomain = @"LLaMARunnerErrorDomain";
-NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
+#if BUILD_WITH_XCODE
+#import "ExecuTorchTextLLMRunner.h"
+#else
+#import <ExecuTorchLLM/ExecuTorchLLM.h>
+#endif
+#import <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
 
 @interface LLaMARunner ()<ExecuTorchLogSink>
 @end
 
 @implementation LLaMARunner {
-  std::unique_ptr<example::Runner> _runner;
+  ExecuTorchTextLLMRunner *_runner;
 }
 
-- (instancetype)initWithModelPath:(NSString*)modelPath
-                    tokenizerPath:(NSString*)tokenizerPath {
+- (instancetype)initWithModelPath:(NSString *)modelPath
+                    tokenizerPath:(NSString *)tokenizerPath {
   self = [super init];
   if (self) {
     [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<example::Runner>(
-        modelPath.UTF8String, tokenizerPath.UTF8String);
+    auto tokens = example::get_special_tokens(example::Version::Default);
+    NSMutableArray<NSString*> *specialTokens = [[NSMutableArray alloc] initWithCapacity:tokens->size()];
+    for (const auto &token : *tokens) {
+      [specialTokens addObject:(NSString *)@(token.c_str())];
+    }
+    _runner = [[ExecuTorchTextLLMRunner alloc] initWithModelPath:modelPath
+                                                   tokenizerPath:tokenizerPath
+                                                   specialTokens:specialTokens];
   }
   return self;
 }
@@ -42,46 +45,25 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 }
 
 - (BOOL)isLoaded {
-  return _runner->is_loaded();
+  return [_runner isLoaded];
 }
 
 - (BOOL)loadWithError:(NSError**)error {
-  const auto status = _runner->load();
-  if (status != Error::Ok) {
-    if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-                                   code:(NSInteger)status
-                               userInfo:nil];
-    }
-    return NO;
-  }
-  return YES;
+  return [_runner loadWithError:error];
 }
 
-- (BOOL)generate:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error {
-  const GenerationConfig config{
-    .seq_len = static_cast<int32_t>(seq_len)
-  };
-  const auto status = _runner->generate(
-      prompt.UTF8String, config, [callback](const std::string& token) {
-        callback(@(token.c_str()));
-      });
-  if (status != Error::Ok) {
-    if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-                                   code:(NSInteger)status
-                               userInfo:nil];
-      return NO;
-    }
-  }
-  return YES;
+- (BOOL)generate:(NSString *)prompt
+    sequenceLength:(NSInteger)seq_len
+ withTokenCallback:(nullable void (^)(NSString *))callback
+             error:(NSError **)error {
+  return [_runner generate:prompt
+            sequenceLength:seq_len
+         withTokenCallback:callback
+                     error:error];
 }
 
 - (void)stop {
-  _runner->stop();
+  [_runner stop];
 }
 
 #pragma mark - ExecuTorchLogSink
@@ -97,113 +79,16 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   NSUInteger seconds = totalSeconds % 60;
   NSUInteger microseconds = (timestamp - totalSeconds) * 1000000;
   NSLog(
-      @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
-      (char)level,
-      hours,
-      minutes,
-      seconds,
-      microseconds,
-      filename.UTF8String,
-      line,
-      message.UTF8String);
-}
-
-@end
-
-@interface LLaVARunner ()<ExecuTorchLogSink>
-@end
-
-@implementation LLaVARunner {
-  std::unique_ptr<example::LlavaRunner> _runner;
-}
-
-- (instancetype)initWithModelPath:(NSString*)modelPath
-                    tokenizerPath:(NSString*)tokenizerPath {
-  self = [super init];
-  if (self) {
-    [ExecuTorchLog.sharedLog addSink:self];
-    _runner = std::make_unique<example::LlavaRunner>(
-        modelPath.UTF8String, tokenizerPath.UTF8String);
-  }
-  return self;
-}
-
-- (void)dealloc {
-  [ExecuTorchLog.sharedLog removeSink:self];
-}
-
-- (BOOL)isLoaded {
-  return _runner->is_loaded();
-}
-
-- (BOOL)loadWithError:(NSError**)error {
-  const auto status = _runner->load();
-  if (status != Error::Ok) {
-    if (error) {
-      *error = [NSError errorWithDomain:LLaVARunnerErrorDomain
-                                   code:(NSInteger)status
-                               userInfo:nil];
-    }
-    return NO;
-  }
-  return YES;
-}
-
-- (BOOL)generate:(void*)imageBuffer
-                width:(CGFloat)width
-               height:(CGFloat)height
-               prompt:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error {
-  const auto* data = static_cast<uint8_t*>(imageBuffer);
-  const auto status = _runner->generate(
-      {Image{
-          std::vector<uint8_t>(
-              data, data + (int32_t)width * (int32_t)height * 3),
-          (int32_t)width,
-          (int32_t)height,
-          3}},
-      prompt.UTF8String,
-      seq_len,
-      [callback](const std::string& token) { callback(@(token.c_str())); });
-  if (status != Error::Ok) {
-    if (error) {
-      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-                                   code:(NSInteger)status
-                               userInfo:nil];
-      return NO;
-    }
-  }
-  return YES;
-}
-
-- (void)stop {
-  _runner->stop();
-}
-
-#pragma mark - ExecuTorchLogSink
-
-- (void)logWithLevel:(ExecuTorchLogLevel)level
-           timestamp:(NSTimeInterval)timestamp
-            filename:(NSString*)filename
-                line:(NSUInteger)line
-             message:(NSString*)message {
-  NSUInteger totalSeconds = (NSUInteger)timestamp;
-  NSUInteger hours = (totalSeconds / 3600) % 24;
-  NSUInteger minutes = (totalSeconds / 60) % 60;
-  NSUInteger seconds = totalSeconds % 60;
-  NSUInteger microseconds = (timestamp - totalSeconds) * 1000000;
-  NSLog(
-      @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
-      (char)level,
-      hours,
-      minutes,
-      seconds,
-      microseconds,
-      filename.UTF8String,
-      line,
-      message.UTF8String);
+    @"%c %02lu:%02lu:%02lu.%06lu executorch:%s:%zu] %s",
+    (char)level,
+    hours,
+    minutes,
+    seconds,
+    microseconds,
+    filename.UTF8String,
+    line,
+    message.UTF8String
+  );
 }
 
 @end

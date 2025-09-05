@@ -11,25 +11,30 @@
 #pragma once
 
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/tensor/tensor.h>
 
 namespace example {
 
 class ET_EXPERIMENTAL LlavaTextDecoderRunner
     : public executorch::extension::llm::TextDecoderRunner {
  public:
-  explicit LlavaTextDecoderRunner(executorch::extension::Module* module)
-      : TextDecoderRunner(module, true) {}
+  explicit LlavaTextDecoderRunner(
+      executorch::extension::Module* module,
+      executorch::extension::llm::IOManager* io_manager)
+      : TextDecoderRunner(module, io_manager) {}
 
   inline executorch::runtime::Result<executorch::aten::Tensor> step(
       executorch::extension::TensorPtr& tokens,
-      executorch::extension::TensorPtr& start_pos) override {
+      int64_t start_pos) override {
     // run token embedding
     auto token_embedding_outputs =
         ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, tokens));
 
+    auto start_pos_tensor = ::executorch::extension::from_blob(
+        &start_pos, {1}, executorch::aten::ScalarType::Long);
     // run text model
     auto outputs_res = ET_UNWRAP(module_->execute(
-        kTextModelMethod, {start_pos, token_embedding_outputs[0]}));
+        kTextModelMethod, {start_pos_tensor, token_embedding_outputs[0]}));
 
     ET_CHECK_MSG(
         outputs_res.size() == 1,
@@ -84,7 +89,7 @@ class ET_EXPERIMENTAL LlavaTextDecoderRunner
   }
 
   inline static const std::string kTokenEmbeddingMethod = "token_embedding";
-  inline static const std::string kTextModelMethod = "text_model";
+  inline static const std::string kTextModelMethod = "text_decoder";
 };
 
 } // namespace example

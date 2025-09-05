@@ -5,12 +5,13 @@
 
 # pyre-unsafe
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import torch
 
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.debug.schema import DebugHook
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.export import ExportedProgram
 
 
@@ -24,21 +25,43 @@ class NodeVisitor:
     # a specific TOSA version.
     # When all node_visitors has been refactored to target a specific
     # version, this list should be removed.
-    tosa_specs_1_00 = [
+    tosa_specs = [
         TosaSpecification.create_from_string("TOSA-1.0+INT"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 
-    tosa_specs_0_80 = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
-    ]
-
-    tosa_specs = tosa_specs_0_80 + tosa_specs_1_00
-
-    def __init__(self, exported_program: ExportedProgram, tosa_spec: TosaSpecification):
+    def __init__(
+        self,
+        exported_program: ExportedProgram,
+        tosa_spec: TosaSpecification,
+        debug_hook: Optional[DebugHook] = None,
+    ):
         self._exported_program = exported_program
         self.tosa_spec = tosa_spec
+        self.debug_hook = debug_hook
+
+    def _serialize_operator(
+        self,
+        node: torch.fx.Node,
+        tosa_graph: Any,
+        tosa_op: Any,
+        inputs: List[str],
+        outputs: List[str],
+        attributes: Optional[Any] = None,
+    ) -> None:
+        tosa_graph.addOperator(
+            tosa_op,
+            inputs=inputs,
+            outputs=outputs,
+            attributes=attributes,
+        )
+
+        if self.debug_hook:
+            self.debug_hook.add(
+                node,
+                tosa_op=outputs[0],
+                tosa_op_id=tosa_op,
+            )
 
     def define_node(
         self,
@@ -52,8 +75,6 @@ class NodeVisitor:
 
 # container for all node visitors
 _node_visitor_dicts: Dict[TosaSpecification, Dict] = {
-    TosaSpecification.create_from_string("TOSA-0.80+BI"): {},
-    TosaSpecification.create_from_string("TOSA-0.80+MI"): {},
     TosaSpecification.create_from_string("TOSA-1.0+INT"): {},
     TosaSpecification.create_from_string("TOSA-1.0+FP"): {},
 }

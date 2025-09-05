@@ -21,7 +21,7 @@ class ET_EXPERIMENTAL TextPrefiller {
  public:
   TextPrefiller(
       TextDecoderRunner* text_decoder_runner,
-      bool use_kv_cache_,
+      bool use_kv_cache,
       bool enable_parallel_prefill,
       int64_t max_seq_len = 128);
 
@@ -45,9 +45,26 @@ class ET_EXPERIMENTAL TextPrefiller {
    * Module.
    * @return The next token of the LLM Module after prefilling this chunk.
    */
-  ::executorch::runtime::Result<uint64_t> prefillChunk(
+  virtual ::executorch::runtime::Result<uint64_t> prefill_chunk(
       std::vector<uint64_t>& prompt_tokens,
       int64_t& start_pos);
+
+  /**
+   * Load the necessary resources for the TextPrefiller.
+   * This method should be called before using the prefill methods.
+   */
+  ::executorch::runtime::Error load() {
+    return text_decoder_runner_->load();
+  }
+
+  /**
+   * Check if the TextPrefiller has been successfully loaded.
+   * @return True if the resources are loaded, false otherwise.
+   */
+  bool inline is_loaded() const {
+    // Implementation to check if resources are loaded
+    return text_decoder_runner_->is_method_loaded();
+  }
 
  private:
   /**

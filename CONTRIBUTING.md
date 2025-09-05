@@ -420,7 +420,7 @@ for basics.
 - Use [this](docs/source/backend-delegates-integration.md) guide when
   integrating your delegate with ExecuTorch.
 - Refer to [this](docs/source/backend-delegates-dependencies.md) set of
-  guidelines when including a third-party depenency for your delegate.
+  guidelines when including a third-party dependency for your delegate.
 
 &nbsp;
 

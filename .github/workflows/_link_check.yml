@@ -11,18 +11,18 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-linter
+      docker-image: ci-image:executorch-ubuntu-22.04-linter
       submodules: false
       fetch-depth: 0
       ref: ${{ inputs.ref }}
       timeout: 120
       script: |
         ./scripts/lint_urls.sh $(
-          { [ "${{ github.event_name }}" = "pull_request" ] \
-              && git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"; } \
-          || \
-          { [ "${{ github.event_name }}" = "push" ] \
-              && git diff --name-only "${{ github.event.before }}...${{ github.sha }}"; }
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+          else
+            echo "${{ github.event.before }}" "${{ github.sha }}"
+          fi
         ) || {
           echo
           echo "URL lint failed."
@@ -36,18 +36,18 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-linter
+      docker-image: ci-image:executorch-ubuntu-22.04-linter
       submodules: false
       fetch-depth: 0
       ref: ${{ inputs.ref }}
       timeout: 60
       script: |
         ./scripts/lint_xrefs.sh $(
-          { [ "${{ github.event_name }}" = "pull_request" ] \
-              && git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"; } \
-          || \
-          { [ "${{ github.event_name }}" = "push" ] \
-              && git diff --name-only "${{ github.event.before }}...${{ github.sha }}"; }
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+          else
+            echo "${{ github.event.before }}" "${{ github.sha }}"
+          fi
         ) || {
           echo
           echo "Xref lint failed."

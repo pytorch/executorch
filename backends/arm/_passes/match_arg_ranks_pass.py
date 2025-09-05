@@ -51,8 +51,12 @@ class MatchArgRanksPass(ExportPass):
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.ge.Tensor,
         exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.pow.Tensor_Tensor,
         exir_ops.edge.aten.where.self,
+        exir_ops.edge.aten.bitwise_and.Tensor,
+        exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.bitwise_or.Tensor,
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):

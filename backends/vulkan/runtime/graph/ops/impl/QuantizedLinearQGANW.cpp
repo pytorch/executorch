@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
@@ -49,25 +50,117 @@ void resize_linear_qga4w_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
 
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
+  ValueRef out = args.at(0).refs.at(0);
+  ValueRef mat1 = args.at(1).refs.at(0);
+  ValueRef mat2_data = extra_args.at(0);
 
-  const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = utils::val_at(-1, mat2->sizes()) * 2;
+  std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2_data);
+
+  const int64_t out_cols = utils::val_at(-2, mat1_sizes);
+  const int64_t out_rows = utils::val_at(-2, mat2_sizes);
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
+  if (mat1_sizes.size() == 2) {
     new_out_sizes.resize(2);
     new_out_sizes.at(0) = out_cols;
     new_out_sizes.at(1) = out_rows;
   } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(0) = mat1_sizes.at(0);
     new_out_sizes.at(1) = out_cols;
     new_out_sizes.at(2) = out_rows;
   }
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
+}
+
+/**
+ * Determines if the cooperative algorithm should be used based on input tensor
+ * dimensions. Apply the coop algorithm for gemv cases, i.e. mat1 is avector as
+ * as opposed to a matrix.
+ */
+bool should_use_coop_algorithm(ComputeGraph* graph, const ValueRef& mat1) {
+  return graph->size_at<uint32_t>(-2, mat1) == 1;
+}
+
+vkapi::ShaderInfo pick_linear_qga4w_shader(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+  const ValueRef mat2 = args.at(1).refs.at(1);
+
+  const bool use_coop_algorithm = should_use_coop_algorithm(graph, mat1);
+
+  std::string kernel_name = "linear_qga4w";
+  if (use_coop_algorithm) {
+    kernel_name += "_coop";
+  } else {
+    kernel_name += "_tiled";
+  }
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(out));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(mat1));
+  add_storage_type_suffix(kernel_name, graph->storage_type_of(mat2));
+  add_dtype_suffix(kernel_name, graph->dtype_of(out));
+
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+utils::uvec3 linear_qga4w_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+
+  const bool use_coop_algorithm =
+      shader.kernel_name.find("_coop") != std::string::npos;
+
+  if (!use_coop_algorithm) {
+    // Constructing the global workgroup size for the tiled algorithm
+    utils::uvec3 global_wg_size = graph->logical_limits_of(out);
+    // Each shader thread computes a 4 high x 8 wide tile of the output matrix,
+    // which is equivalent to 4 x 2 texels. Since the output tensor must be
+    // width packed, div-up the "texel-width" of the output by 2 and the height
+    // of the output tensor by 4 to obtain the number of tiles that need to be
+    // computed.
+    global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
+    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(4));
+    return global_wg_size;
+  }
+
+  uint32_t output_channels = graph->size_at<uint32_t>(-1, out);
+  uint32_t batch_size = graph->size_at<uint32_t>(-2, out);
+
+  // Constructing the global workgroup size of the co-operative algorithm. The
+  // local work group size is 64, and each local work group co-operates to
+  // compute 8 output channels of the output. Therefore, a total of
+  // (output_channels / 8 x 64) threads should be launched, assuming a batch
+  // size of 1.
+  return {64, utils::div_up(output_channels, 8u), batch_size};
+}
+
+utils::uvec3 linear_qga4w_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)args;
+  (void)resize_args;
+  const bool use_coop_algorithm =
+      shader.kernel_name.find("_coop") != std::string::npos;
+
+  if (use_coop_algorithm) {
+    return {64, 1, 1};
+  } else {
+    return pick_hw_square_wg_size(
+        graph, shader, global_workgroup_size, args, resize_args);
+  }
 }
 
 void add_linear_qga4w_node(
@@ -82,45 +175,17 @@ void add_linear_qga4w_node(
 
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
-  bool use_coop_algorithm = false;
-  // Apply the coop algorithm for gemv cases, i.e. mat1 is a vector as opposed
-  // to a matrix.
-  if (graph.size_at<uint32_t>(-2, mat1) == 1) {
-    use_coop_algorithm = true;
-  }
-
   ValueRef mat2 =
-      prepack_int4_linear_weight_transposed_interleaved(graph, mat2_data);
+      prepack_int4_linear_weight_transposed_block_4x8(graph, mat2_data);
 
-  ValueRef scales_and_zeros = prepack_standard_hw_transposed(
+  ValueRef scales_and_zeros = prepack_standard(
       graph, scales_and_zeros_data, utils::kBuffer, utils::kWidthPacked);
 
-  std::string kernel_name = "linear_qga4w";
-  if (use_coop_algorithm) {
-    kernel_name += "_coop";
-  } else {
-    kernel_name += "_tiled";
-  }
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat1));
-  add_storage_type_suffix(kernel_name, graph.storage_type_of(mat2));
-  add_dtype_suffix(kernel_name, graph.dtype_of(out));
-
-  utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  global_wg_size[0] = utils::div_up(global_wg_size[0], uint32_t(2));
-  utils::uvec3 local_wg_size = graph.create_local_wg_size(global_wg_size);
-
-  if (use_coop_algorithm) {
-    local_wg_size = {8, 1, 8};
-  } else {
-    global_wg_size[1] = utils::div_up(global_wg_size[1], uint32_t(3));
-  }
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      local_wg_size,
+      pick_linear_qga4w_shader,
+      linear_qga4w_global_wg_size,
+      linear_qga4w_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, scales_and_zeros}, vkapi::kRead}},
       // Shader params buffers
@@ -132,7 +197,7 @@ void add_linear_qga4w_node(
       // Specialization Constants
       {SV(group_size_val)},
       // Resize Args
-      {},
+      {mat2_data},
       // Resizing Logic
       resize_linear_qga4w_node));
 }

@@ -48,7 +48,7 @@ class PlatformMemoryAllocator final : public MemoryAllocator {
 
     // Allocate enough memory for the node, the data and the alignment bump.
     size_t alloc_size = sizeof(AllocationNode) + size + alignment;
-    void* node_memory = et_pal_allocate(alloc_size);
+    void* node_memory = runtime::pal_allocate(alloc_size);
 
     // If allocation failed, log message and return nullptr.
     if (node_memory == nullptr) {
@@ -87,7 +87,7 @@ class PlatformMemoryAllocator final : public MemoryAllocator {
     AllocationNode* current = head_;
     while (current != nullptr) {
       AllocationNode* next = current->next;
-      et_pal_free(current);
+      runtime::pal_free(current);
       current = next;
     }
     head_ = nullptr;

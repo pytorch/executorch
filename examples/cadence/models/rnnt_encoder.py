@@ -103,7 +103,6 @@ if __name__ == "__main__":
             layer_norm_out = self.layer_norm(output_linear_out)
             return layer_norm_out, transformer_lengths
 
-        @torch.jit.export
         def infer(
             self,
             input: torch.Tensor,

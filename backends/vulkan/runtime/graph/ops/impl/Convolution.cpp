@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -19,23 +20,31 @@
 
 namespace vkcompute {
 
+enum class Conv2dMethod : uint8_t {
+  Depthwise,
+  Pointwise,
+  SlidingWindow,
+  Transposed,
+};
+
 void resize_conv2d_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
 
-  size_t ndim = self->sizes().size();
+  size_t ndim = graph->dim_of(self);
   std::vector<int64_t> new_out_sizes(ndim);
-  const bool transposed = graph->get_bool(extra_args[4]);
+  const bool transposed = graph->get_bool(extra_args.at(4));
 
+  std::vector<int64_t> self_sizes = graph->sizes_of(self);
   // Batch, Channel
   if (ndim == 4) {
-    new_out_sizes.at(ndim - 4) = self->sizes().at(ndim - 4);
+    new_out_sizes.at(ndim - 4) = self_sizes.at(ndim - 4);
   }
 
-  TensorRefPtr weight_ref = graph->get_tref(extra_args[0]);
+  TensorRefPtr weight_ref = graph->get_tref(extra_args.at(0));
   const auto& weight_sizes = weight_ref->sizes;
   new_out_sizes.at(ndim - 3) =
       transposed ? weight_sizes.at(ndim - 3) : weight_sizes.at(ndim - 4);
@@ -43,44 +52,44 @@ void resize_conv2d_node(
   // Height, Width
   const auto& new_out_sizes_hw = calc_out_sizes_hw(
       *graph,
-      self->sizes(),
-      extra_args[0],
+      self_sizes,
+      extra_args.at(0),
       /*kernel_size_only = */ false,
-      {extra_args[1], extra_args[2], extra_args[3], extra_args[5]},
+      {extra_args.at(1), extra_args.at(2), extra_args.at(3), extra_args.at(5)},
       transposed);
   new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 void resize_conv1d_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
-  TensorRefPtr weight_ref = graph->get_tref(extra_args[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
+  TensorRefPtr weight_ref = graph->get_tref(extra_args.at(0));
 
-  int64_t stride_size = graph->get_int_list(extra_args[1])->at(0);
-  int64_t padding_size = graph->get_int_list(extra_args[2])->at(0);
-  int64_t dilation_size = graph->get_int_list(extra_args[3])->at(0);
+  const int64_t stride_size = graph->get_int_list(extra_args.at(1))->at(0);
+  const int64_t padding_size = graph->get_int_list(extra_args.at(2))->at(0);
+  const int64_t dilation_size = graph->get_int_list(extra_args.at(3))->at(0);
 
   const std::vector<int64_t>& weight_sizes = weight_ref->sizes;
 
-  const std::vector<int64_t>& in_sizes = self->sizes();
-  size_t ndim = in_sizes.size();
+  const std::vector<int64_t> in_sizes = graph->sizes_of(self);
+  const size_t ndim = in_sizes.size();
   std::vector<int64_t> new_out_sizes(ndim);
 
-  int64_t kernel_size = weight_sizes.at(2);
-  int64_t in_length = in_sizes.at(2);
+  const int64_t kernel_size = weight_sizes.at(2);
+  const int64_t in_length = in_sizes.at(2);
 
   new_out_sizes.at(0) = in_sizes.at(0);
   new_out_sizes.at(1) = weight_sizes.at(0);
   new_out_sizes.at(2) = calc_out_size(
       in_length, kernel_size, stride_size, padding_size, dilation_size, false);
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 ValueRef prepack_biases(
@@ -95,9 +104,8 @@ ValueRef prepack_biases(
 
   ValueRef v = graph.add_tensor(
       {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
-  vTensorPtr t = graph.get_tensor(v);
 
-  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
+  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(graph, v);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -106,28 +114,23 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo()},
+      {},
       // Specialization constants
-      {t->hashed_layout()}));
+      {graph.hashed_layout_of(v)},
+      {graph.sizes_pc_of(v)}));
 
   return v;
 }
 
-enum class Conv2dMethod : uint8_t {
-  Depthwise,
-  Pointwise,
-  SlidingWindow,
-  Transposed,
-};
-
 vkapi::ShaderInfo get_conv2d_shader(
     ComputeGraph& graph,
-    const api::vTensor& t_out,
+    const ValueRef out,
     const bool prepack_weights,
     const Conv2dMethod method,
     const ValueRef weight,
     const bool clamp_out = false,
-    const bool stride_equals_dilation = false) {
+    const bool stride_equals_dilation = false,
+    const bool stride_1_padding_0 = false) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
@@ -150,7 +153,7 @@ vkapi::ShaderInfo get_conv2d_shader(
       if (prepack_weights) {
         kernel_name = "conv2d";
       } else {
-        kernel_name = "conv2d_pw";
+        kernel_name = stride_1_padding_0 ? "conv2d_pw_s1p0" : "conv2d_pw";
       }
       break;
     case Conv2dMethod::SlidingWindow:
@@ -165,7 +168,7 @@ vkapi::ShaderInfo get_conv2d_shader(
   } else if (clamp_out) {
     kernel_name += "_clamp";
   }
-  add_dtype_suffix(kernel_name, t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
@@ -204,11 +207,12 @@ ValueRef prepack_weights(
       graph.dtype_of(vref),
       utils::kTexture2D,
       utils::kChannelsPacked);
-  vTensorPtr t = graph.get_tensor(v);
 
   vkapi::ShaderInfo shader =
-      get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
+      get_conv2d_shader(graph, v, /*prepack_weights = */ true, method, vref);
 
+  const auto original_sizes_pc =
+      utils::make_ivec4(original_sizes, /*reverse = */ true);
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -216,18 +220,21 @@ ValueRef prepack_weights(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo(),
-       graph.create_params_buffer(
-           utils::make_ivec4(original_sizes, /*reverse = */ true))},
+      {},
       // Specialization constants
-      {SV(t->packed_dim())}));
+      {graph.packed_dim_of(v)},
+      {graph.sizes_pc_of(v),
+       PushConstantDataInfo(&original_sizes_pc, sizeof(original_sizes_pc))}));
 
   return v;
 }
 
-void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_packed_dim_is(in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(out, WHCN::kChannelsDim));
+void check_conv_args(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out) {
+  VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kChannelsDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kChannelsDim);
 }
 
 struct Conv2dParams final {
@@ -273,9 +280,6 @@ Conv2dMethod get_conv2d_method(
   if (!transposed && weight_sizes.at(0) == groups && weight_sizes.at(1) == 1) {
     return Conv2dMethod::Depthwise;
   }
-  if (groups > 1) {
-    VK_THROW("aten.convolution.default: groups > 1 is not supported yet!");
-  }
   if (transposed) {
     return Conv2dMethod::Transposed;
   }
@@ -305,8 +309,8 @@ utils::uvec3 create_conv2d_global_wg_size(
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.logical_limits_of(out);
     return {
-        utils::div_up(image_extents[0u], 2u),
-        utils::div_up(image_extents[1u], 2u),
+        utils::div_up(image_extents[0u], 1u),
+        utils::div_up(image_extents[1u], 4u),
         image_extents[2u]};
   } else if (method == Conv2dMethod::Depthwise && stride_equals_dilation) {
     const utils::uvec3 image_extents = graph.create_global_wg_size(out);
@@ -319,6 +323,108 @@ utils::uvec3 create_conv2d_global_wg_size(
   } else {
     return graph.create_global_wg_size(out);
   }
+}
+
+// Custom global workgroup size function for conv2d
+utils::uvec3 conv2d_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef weight_data = resize_args.at(0);
+
+  // Determine method from shader name
+  Conv2dMethod method;
+  if (shader.kernel_name.find("conv2d_dw") != std::string::npos) {
+    method = Conv2dMethod::Depthwise;
+  } else if (
+      shader.kernel_name.find("conv2d_pw") != std::string::npos ||
+      (shader.kernel_name.find("conv2d") != std::string::npos &&
+       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
+    // Check if it's pointwise by examining weight sizes
+    const auto& weight_sizes = graph->get_tref(weight_data)->sizes;
+    if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
+      method = Conv2dMethod::Pointwise;
+    } else {
+      method = Conv2dMethod::SlidingWindow;
+    }
+  } else if (shader.kernel_name.find("conv_transpose2d") != std::string::npos) {
+    method = Conv2dMethod::Transposed;
+  } else {
+    method = Conv2dMethod::SlidingWindow;
+  }
+
+  // Determine stride_equals_dilation from shader name
+  bool stride_equals_dilation =
+      shader.kernel_name.find("_sned") == std::string::npos;
+
+  utils::uvec3 wg_size = create_conv2d_global_wg_size(
+      *graph, method, out, weight_data, stride_equals_dilation);
+
+  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
+    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+  }
+
+  return wg_size;
+}
+
+// Custom local workgroup size function for conv2d
+utils::uvec3 conv2d_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)args;
+  (void)resize_args;
+
+  // Determine method from shader name
+  Conv2dMethod method;
+  if (shader.kernel_name.find("conv2d_dw") != std::string::npos) {
+    method = Conv2dMethod::Depthwise;
+  } else if (
+      shader.kernel_name.find("conv2d_pw") != std::string::npos ||
+      (shader.kernel_name.find("conv2d") != std::string::npos &&
+       shader.kernel_name.find("conv_transpose2d") == std::string::npos)) {
+    method = Conv2dMethod::Pointwise;
+  } else {
+    method = Conv2dMethod::SlidingWindow;
+  }
+
+  if (method == Conv2dMethod::Pointwise) {
+    uint32_t local_wg_size_y = 1;
+    if (global_workgroup_size[1] % 8 == 0) {
+      local_wg_size_y = 8;
+    } else if (global_workgroup_size[1] % 4 == 0) {
+      local_wg_size_y = 4;
+    } else if (global_workgroup_size[1] % 2 == 0) {
+      local_wg_size_y = 2;
+    }
+    return {64 / local_wg_size_y, local_wg_size_y, 1};
+  } else if (method == Conv2dMethod::Depthwise) {
+    return {64, 1, 1};
+  } else {
+    return graph->create_local_wg_size(global_workgroup_size);
+  }
+}
+
+// Custom global workgroup size function for conv1d
+utils::uvec3 conv1d_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+
+  return {// out length
+          graph->size_at<uint32_t>(-1, out),
+          // out channels
+          static_cast<uint32_t>(graph->size_at<int64_t>(-2, out)),
+          // out batches
+          utils::div_up_4(graph->size_at<uint32_t>(-3, out))};
 }
 
 void add_conv2d_node(
@@ -361,12 +467,12 @@ void add_conv2d_node(
       /* storage_type = */ utils::kTexture2D,
       /* memory_layout = */ utils::kWidthPacked);
 
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-  if (t_in->sizes().at(0) > 1) {
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+  if (in_sizes.at(0) > 1) {
     VK_THROW("conv2d: input batch size > 1 is not supported yet!");
   }
-  check_conv_args(*t_in, *t_out);
+
+  check_conv_args(graph, in, out);
 
   Kernel2dParams kernel_params = create_kernel2d_params(
       graph,
@@ -382,29 +488,71 @@ void add_conv2d_node(
       (kernel_params.stride[0] == kernel_params.dilation[0] &&
        kernel_params.stride[1] == kernel_params.dilation[1]);
 
+  const bool stride_1_padding_0 =
+      (kernel_params.stride[0] == 1 && kernel_params.stride[1] == 1 &&
+       kernel_params.padding[0] == 0 && kernel_params.padding[1] == 0);
+
   OutputParams out_params = {out_min_val, out_max_val};
 
   check_conv2d_params(kernel_params, transposed_val);
 
   vkapi::ShaderInfo shader = get_conv2d_shader(
       graph,
-      *t_out,
+      out,
       /*prepack_weights = */ false,
       method,
       weight_data,
       clamp_out,
-      stride_equals_dilation);
+      stride_equals_dilation,
+      stride_1_padding_0);
 
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
 
-  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
-    wg_size = {wg_size[0] * wg_size[1] * wg_size[2], 1, 1};
+  utils::uvec3 local_wg_size;
+  if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
+    wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+  }
+
+  if (method == Conv2dMethod::Pointwise) {
+    uint32_t local_wg_size_y = 1;
+    if (wg_size[1] % 8 == 0) {
+      local_wg_size_y = 8;
+    } else if (wg_size[1] % 4 == 0) {
+      local_wg_size_y = 4;
+    } else if (wg_size[1] % 2 == 0) {
+      local_wg_size_y = 2;
+    }
+    local_wg_size = {64 / local_wg_size_y, local_wg_size_y, 1};
+  } else if (method == Conv2dMethod::Depthwise) {
+    local_wg_size = {64, 1, 1};
+  } else {
+    local_wg_size = graph.create_local_wg_size(wg_size);
   }
 
   vkapi::ParamsBindList param_buffers;
   std::vector<PushConstantDataInfo> push_constants;
-  if (method == Conv2dMethod::Pointwise || method == Conv2dMethod::Depthwise) {
+  if (method == Conv2dMethod::Pointwise) {
+    const utils::ivec4 kernel_param_stride_pad = {
+        kernel_params.stride[0],
+        kernel_params.stride[1],
+        kernel_params.padding[0],
+        kernel_params.padding[1],
+    };
+
+    struct Conv2dPWParams final {
+      int in_group_size;
+      int dummy_padding;
+      OutputParams out_params;
+    } param{extra_params.in_group_size, 0, out_params};
+
+    push_constants = {
+        graph.logical_limits_pc_of(out),
+        PushConstantDataInfo(
+            &kernel_param_stride_pad, sizeof(kernel_param_stride_pad)),
+        PushConstantDataInfo(&param, sizeof(param)),
+    };
+  } else if (method == Conv2dMethod::Depthwise) {
     const utils::ivec4 kernel_param_size_stride = {
         kernel_params.kernel_size[0],
         kernel_params.kernel_size[1],
@@ -430,19 +578,19 @@ void add_conv2d_node(
     };
   } else {
     param_buffers = {
-        t_out->logical_limits_ubo(),
-        t_in->sizes_ubo(),
+        graph.logical_limits_ubo(out),
+        graph.sizes_ubo(in),
         graph.create_params_buffer(kernel_params),
         graph.create_params_buffer(extra_params),
         graph.create_params_buffer(out_params),
     };
   }
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
-      wg_size,
-      graph.create_local_wg_size(wg_size),
+      conv2d_global_wg_size,
+      conv2d_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
@@ -450,7 +598,7 @@ void add_conv2d_node(
       // Push Constants
       push_constants,
       // Specialization Constants
-      {},
+      {utils::safe_downcast<int32_t>(groups_val)},
       // Resize Args
       {weight_data, stride, padding, dilation, transposed, output_padding},
       // Resizing Logic
@@ -494,17 +642,13 @@ void add_conv1d_node(
     out_max_val = graph.extract_scalar<float>(out_max);
   }
 
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_weight = graph.get_tensor(arg_weight);
-  vTensorPtr t_bias = graph.get_tensor(arg_bias);
-  vTensorPtr t_out = graph.get_tensor(out);
   const int64_t groups_val = graph.get_int(groups);
 
-  std::vector<int64_t> in_sizes = t_in->sizes();
-  std::vector<int64_t> weight_sizes = t_weight->sizes();
-  std::vector<int64_t> out_sizes = t_out->sizes();
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+  const std::vector<int64_t> weight_sizes = graph.sizes_of(arg_weight);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(out);
 
-  check_conv_args(*t_in, *t_out);
+  check_conv_args(graph, in, out);
 
   const int32_t in_channels = in_sizes.at(1);
   const int32_t out_channels = weight_sizes.at(0);
@@ -515,15 +659,6 @@ void add_conv1d_node(
   const int32_t in_group_size = static_cast<int64_t>(in_channels / groups_val);
   const int32_t out_group_size =
       static_cast<int64_t>(out_channels / groups_val);
-
-  const utils::uvec3 global_size = {
-      // out length
-      graph.size_at<uint32_t>(-1, out),
-      // out channels
-      static_cast<uint32_t>(out_channels),
-      // out batches
-      utils::div_up_4(graph.size_at<uint32_t>(-3, out))};
-  const utils::uvec3 local_size = graph.create_local_wg_size(global_size);
 
   Kernel1dParams kernel_params = {
       kernel_size,
@@ -541,29 +676,29 @@ void add_conv1d_node(
   }
   kernel_name.reserve(kShaderNameReserve);
 
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      conv1d_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
       // Shader params buffers
       {
-          t_out->logical_limits_ubo(),
-          t_in->sizes_ubo(),
+          graph.logical_limits_ubo(out),
+          graph.sizes_ubo(in),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(out_params),
       },
       // Push Constants
       {},
       // Specialization Constants
-      {t_out->hashed_layout(),
-       t_in->hashed_layout(),
-       t_weight->hashed_layout(),
-       t_bias->hashed_layout()},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(in),
+       graph.hashed_layout_of(arg_weight),
+       graph.hashed_layout_of(arg_bias)},
       // Resize Args
       {weight, stride, padding, dilation},
       // Resizing Logic
@@ -571,7 +706,7 @@ void add_conv1d_node(
 }
 
 void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  int64_t in_ndim = graph.get_tensor(args[0])->sizes().size();
+  int64_t in_ndim = graph.dim_of(args[0]);
   if (in_ndim == 4) {
     if (args.size() == 10) {
       // ordinary conv2d

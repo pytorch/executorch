@@ -82,7 +82,8 @@ class NeuronBackend final : public ::executorch::runtime::BackendInterface {
   ::executorch::runtime::Error execute(
       ET_UNUSED ::executorch::runtime::BackendExecutionContext& context,
       ::executorch::runtime::DelegateHandle* handle,
-      ::executorch::runtime::EValue** args) const override;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> args)
+      const override;
 
   void destroy(::executorch::runtime::DelegateHandle* handle) const override;
 
@@ -178,7 +179,7 @@ class NeuronExecuTorchDelegate {
 
   ::executorch::runtime::Error execute(
       ET_UNUSED ::executorch::runtime::BackendExecutionContext& context,
-      ::executorch::runtime::EValue** args) const;
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> args) const;
 
  private:
   template <bool isInput>
@@ -211,6 +212,7 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
+<<<<<<< HEAD
   int CheckDimOrder(EValue** args) const {
     size_t data_input_count = mInputSizes.size();
     for (int i = 0; i < data_input_count; i++) {
@@ -265,6 +267,10 @@ class NeuronExecuTorchDelegate {
   }
 
   int HintNeuronBackend(::executorch::runtime::EValue** args) const;
+=======
+  int HintNeuronBackend(
+      ::executorch::runtime::Span<::executorch::runtime::EValue*> args) const;
+>>>>>>> upstream/main
 
  private:
   std::vector<size_t> mInputSizes;

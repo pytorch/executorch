@@ -16,6 +16,7 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/backends/transforms:lib",
+        "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/backends/xnnpack/operators:operators",
         "//executorch/backends/xnnpack/serialization:xnnpack_serializer",
@@ -35,7 +36,10 @@ runtime.python_library(
     ],
     deps = [
         ":xnnpack_preprocess",
+        "//executorch/export:lib",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipe_provider",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipe_types",
     ],
 )

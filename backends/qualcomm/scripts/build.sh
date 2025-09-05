@@ -30,7 +30,7 @@ CMAKE_X86_64="build-x86"
 BUILD_AARCH64="true"
 CMAKE_AARCH64="build-android"
 CLEAN="true"
-BUILD_TYPE="Debug"
+BUILD_TYPE="RelWithDebInfo"
 BUILD_JOB_NUMBER="16"
 
 if [ -z PYTHON_EXECUTABLE ]; then
@@ -71,7 +71,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/devtools && make clean
+        cd $BUILD_ROOT/third-party/flatcc && make clean
     fi
 
     cd $BUILD_ROOT
@@ -80,9 +80,14 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
@@ -94,7 +99,7 @@ if [ "$BUILD_AARCH64" = true ]; then
     cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 
     EXAMPLE_ROOT=examples/qualcomm
-    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
+    CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -102,12 +107,30 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_PLATFORM=android-30 \
         -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+        -DSUPPORT_REGEX_LOOKAHEAD=ON \
+        -DBUILD_TESTING=OFF \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
+
+    LLAMA_EXAMPLE_ROOT=examples/models/llama
+    cmake $PRJ_ROOT/$LLAMA_EXAMPLE_ROOT \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+        -DANDROID_ABI='arm64-v8a' \
+        -DANDROID_PLATFORM=android-30 \
+        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -B$LLAMA_EXAMPLE_ROOT
+
+    cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi
 
 if [ "$BUILD_X86_64" = true ]; then
@@ -116,7 +139,7 @@ if [ "$BUILD_X86_64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/devtools && make clean
+        cd $BUILD_ROOT/third-party/flatcc && make clean
     fi
 
     cd $BUILD_ROOT
@@ -126,10 +149,15 @@ if [ "$BUILD_X86_64" = true ]; then
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -S $PRJ_ROOT \
         -B $BUILD_ROOT \
@@ -142,7 +170,7 @@ if [ "$BUILD_X86_64" = true ]; then
     cp -fv "$PRJ_ROOT/schema/scalar_type.fbs" "$PRJ_ROOT/exir/_serialize/scalar_type.fbs"
 
    EXAMPLE_ROOT=examples/qualcomm
-   CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
+   CMAKE_PREFIX_PATH="${BUILD_ROOT};${BUILD_ROOT}/third-party/gflags;"
 
    echo "Update tokenizers submodule..."
    pushd $PRJ_ROOT/extension/llm/tokenizers
@@ -153,7 +181,24 @@ if [ "$BUILD_X86_64" = true ]; then
        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+       -DSUPPORT_REGEX_LOOKAHEAD=ON \
+       -DBUILD_TESTING=OFF \
+       -DEXECUTORCH_ENABLE_LOGGING=ON \
        -B$EXAMPLE_ROOT
 
    cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
+
+   LLAMA_EXAMPLE_ROOT=examples/models/llama
+    cmake $PRJ_ROOT/$LLAMA_EXAMPLE_ROOT \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+        -DANDROID_ABI='arm64-v8a' \
+        -DANDROID_PLATFORM=android-30 \
+        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -B$LLAMA_EXAMPLE_ROOT
+
+    cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi

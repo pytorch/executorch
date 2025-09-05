@@ -7,25 +7,24 @@
 
 set -euxo pipefail
 
-SOURCE_ROOT_DIR=""
-OUTPUT="cmake-out"
 MODES=()
-TOOLCHAIN=""
-PYTHON=$(which python3)
-COREML=OFF
-CUSTOM=OFF
-MPS=OFF
-OPTIMIZED=OFF
-PORTABLE=OFF
-QUANTIZED=OFF
-XNNPACK=OFF
-HEADERS_PATH="include"
+PRESETS=("ios" "ios-simulator" "macos")
+# To support backwards compatibility, we want to retain the same output directory.
+PRESETS_RELATIVE_OUT_DIR=("ios" "simulator" "macos")
 
-PLATFORMS=("ios" "simulator" "macos")
-PLATFORM_FLAGS=("OS64" "SIMULATORARM64" "MAC_ARM64")
-PLATFORM_TARGET=("17.0" "17.0" "10.15")
+SOURCE_ROOT_DIR=$(git rev-parse --show-toplevel)
+OUTPUT_DIR="${SOURCE_ROOT_DIR}/cmake-out"
 
-FRAMEWORK_EXECUTORCH="executorch:\
+BUCK2=$(python3 "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
+if [[ "$BUCK2" == "buck2" ]]; then
+  BUCK2=$(command -v buck2)
+fi
+
+FRAMEWORK_EXECUTORCH_NAME="executorch"
+FRAMEWORK_EXECUTORCH_MODULE_NAME="ExecuTorch"
+FRAMEWORK_EXECUTORCH_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_NAME}_include"
+FRAMEWORK_EXECUTORCH_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH="${FRAMEWORK_EXECUTORCH_NAME}:\
 libexecutorch.a,\
 libexecutorch_core.a,\
 libextension_apple.a,\
@@ -33,7 +32,65 @@ libextension_data_loader.a,\
 libextension_flat_tensor.a,\
 libextension_module.a,\
 libextension_tensor.a,\
-:$HEADERS_PATH"
+:${FRAMEWORK_EXECUTORCH_HEADERS_DIR}:${FRAMEWORK_EXECUTORCH_MODULE_NAME}"
+
+FRAMEWORK_EXECUTORCH_LLM_NAME="executorch_llm"
+FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME="ExecuTorchLLM"
+FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR="${FRAMEWORK_EXECUTORCH_LLM_NAME}_include"
+FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH="${OUTPUT_DIR}/${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
+FRAMEWORK_EXECUTORCH_LLM="${FRAMEWORK_EXECUTORCH_LLM_NAME}:\
+libabsl_base.a,\
+libabsl_city.a,\
+libabsl_decode_rust_punycode.a,\
+libabsl_demangle_internal.a,\
+libabsl_demangle_rust.a,\
+libabsl_examine_stack.a,\
+libabsl_graphcycles_internal.a,\
+libabsl_hash.a,\
+libabsl_int128.a,\
+libabsl_kernel_timeout_internal.a,\
+libabsl_leak_check.a,\
+libabsl_log_globals.a,\
+libabsl_log_internal_check_op.a,\
+libabsl_log_internal_format.a,\
+libabsl_log_internal_globals.a,\
+libabsl_log_internal_log_sink_set.a,\
+libabsl_log_internal_message.a,\
+libabsl_log_internal_nullguard.a,\
+libabsl_log_internal_proto.a,\
+libabsl_log_severity.a,\
+libabsl_log_sink.a,\
+libabsl_low_level_hash.a,\
+libabsl_malloc_internal.a,\
+libabsl_raw_hash_set.a,\
+libabsl_raw_logging_internal.a,\
+libabsl_spinlock_wait.a,\
+libabsl_stacktrace.a,\
+libabsl_str_format_internal.a,\
+libabsl_strerror.a,\
+libabsl_strings.a,\
+libabsl_strings_internal.a,\
+libabsl_symbolize.a,\
+libabsl_synchronization.a,\
+libabsl_throw_delegate.a,\
+libabsl_time.a,\
+libabsl_time_zone.a,\
+libabsl_tracing_internal.a,\
+libabsl_utf8_for_code_point.a,\
+libextension_llm_apple.a,\
+libextension_llm_runner.a,\
+libpcre2-8.a,\
+libre2.a,\
+libregex_lookahead.a,\
+libsentencepiece.a,\
+libtokenizers.a,\
+:${FRAMEWORK_EXECUTORCH_LLM_HEADERS_DIR}"
+
+FRAMEWORK_THREADPOOL="threadpool:\
+libcpuinfo.a,\
+libextension_threadpool.a,\
+libpthreadpool.a,\
+:"
 
 FRAMEWORK_BACKEND_COREML="backend_coreml:\
 libcoreml_util.a,\
@@ -47,14 +104,12 @@ libmpsdelegate.a,\
 
 FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
 libXNNPACK.a,\
-libcpuinfo.a,\
-libextension_threadpool.a,\
-libpthreadpool.a,\
+libkleidiai.a,\
 libxnnpack_backend.a,\
-libmicrokernels-prod.a,\
+libxnnpack-microkernels-prod.a,\
 :"
 
-FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
+FRAMEWORK_KERNELS_LLM="kernels_llm:\
 libcustom_ops.a,\
 :"
 
@@ -62,11 +117,7 @@ FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
 libcpublas.a,\
 liboptimized_kernels.a,\
 liboptimized_native_cpu_ops_lib.a,\
-:"
-
-FRAMEWORK_KERNELS_PORTABLE="kernels_portable:\
 libportable_kernels.a,\
-libportable_ops_lib.a,\
 :"
 
 FRAMEWORK_KERNELS_QUANTIZED="kernels_quantized:\
@@ -74,34 +125,57 @@ libquantized_kernels.a,\
 libquantized_ops_lib.a,\
 :"
 
+FRAMEWORK_KERNELS_TORCHAO="kernels_torchao:\
+libtorchao_ops_executorch.a,\
+libtorchao_kernels_aarch64.a,\
+:"
+
 usage() {
-  echo "Usage: $0 [SOURCE_ROOT_DIR] [OPTIONS]"
+  echo "Usage: $0 [OPTIONS]"
   echo "Build frameworks for Apple platforms."
-  echo "SOURCE_ROOT_DIR defaults to the current directory if not provided."
   echo
   echo "Options:"
-  echo "  --output=DIR         Output directory. Default: 'cmake-out'"
   echo "  --Debug              Build Debug version."
   echo "  --Release            Build Release version."
-  echo "  --toolchain=FILE     CMake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
-  echo "  --python=FILE        Python executable path. Default: Path of python3 in \$PATH"
-  echo "  --coreml             Build the Core ML backend."
-  echo "  --custom             Build the Custom kernels."
-  echo "  --mps                Build the Metal Performance Shaders backend."
-  echo "  --optimized          Build the Optimized kernels."
-  echo "  --portable           Build the Portable kernels."
-  echo "  --quantized          Build the Quantized kernels."
-  echo "  --xnnpack            Build the XNNPACK backend."
+  echo "  --coreml             Only build the Core ML backend."
+  echo "  --llm                Only build the LLM custom kernels."
+  echo "  --mps                Only build the Metal Performance Shaders backend."
+  echo "  --optimized          Only build the Optimized kernels."
+  echo "  --quantized          Only build the Quantized kernels."
+  echo "  --torchao            Only build the TorchAO kernels."
+  echo "  --xnnpack            Only build the XNNPACK backend."
   echo
-  echo "Example:"
-  echo "  $0 /path/to/source/root --output=cmake-out --toolchain=/path/to/toolchain --python=/path/to/python3 --coreml --mps --xnnpack"
   exit 0
+}
+
+CMAKE_OPTIONS_OVERRIDE=()
+set_cmake_options_override() {
+  local option_name="$1"
+
+  if [[ ${#CMAKE_OPTIONS_OVERRIDE[@]} -eq 0 ]]; then
+    # Since the user wants specific options, turn everything off
+    CMAKE_OPTIONS_OVERRIDE=(
+      "-DEXECUTORCH_BUILD_COREML=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_LLM=OFF"
+      "-DEXECUTORCH_BUILD_MPS=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=OFF"
+      "-DEXECUTORCH_BUILD_KERNELS_TORCHAO=OFF"
+      "-DEXECUTORCH_BUILD_XNNPACK=OFF"
+    )
+  fi
+
+  for i in "${!CMAKE_OPTIONS_OVERRIDE[@]}"; do
+    if [[ "${CMAKE_OPTIONS_OVERRIDE[$i]}" =~ "-D${option_name}=OFF" ]]; then
+      CMAKE_OPTIONS_OVERRIDE[$i]="-D${option_name}=ON"
+      break
+    fi
+  done
 }
 
 for arg in "$@"; do
   case $arg in
       -h|--help) usage ;;
-      --output=*) OUTPUT="${arg#*=}" ;;
       --Release)
         if [[ ! " ${MODES[*]:-} " =~ \bRelease\b ]]; then
           MODES+=("Release")
@@ -112,118 +186,59 @@ for arg in "$@"; do
           MODES+=("Debug")
         fi
         ;;
-      --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
-      --python=*) PYTHON="${arg#*=}" ;;
-      --coreml) COREML=ON ;;
-      --custom) CUSTOM=ON ;;
-      --mps) MPS=ON ;;
-      --optimized) OPTIMIZED=ON ;;
-      --portable) PORTABLE=ON ;;
-      --quantized) QUANTIZED=ON ;;
-      --xnnpack) XNNPACK=ON ;;
+      --coreml) set_cmake_options_override "EXECUTORCH_BUILD_COREML";;
+      --llm) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_LLM" ;;
+      --mps) set_cmake_options_override "EXECUTORCH_BUILD_MPS" ;;
+      --optimized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" ;;
+      --quantized) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_QUANTIZED" ;;
+      --torchao) set_cmake_options_override "EXECUTORCH_BUILD_KERNELS_TORCHAO" ;;
+      --xnnpack) set_cmake_options_override "EXECUTORCH_BUILD_XNNPACK" ;;
       *)
-      if [[ -z "$SOURCE_ROOT_DIR" ]]; then
-          SOURCE_ROOT_DIR="$arg"
-      else
-          echo "Invalid argument: $arg"
-          exit 1
-      fi
+        echo -e "\033[31m[error] unknown option: ${arg}\033[0m"
+        exit 1
       ;;
   esac
 done
 
-if [ ${#MODES[@]} -eq 0 ]; then
-  MODES=("Release")
+# If no modes are specified, default to both Release and Debug
+if [[ ${#MODES[@]} -eq 0 ]]; then
+  MODES=("Release" "Debug")
 fi
-
-if [[ -z "$SOURCE_ROOT_DIR" ]]; then
-    SOURCE_ROOT_DIR=$(pwd)
-fi
-
-if [[ -z "$TOOLCHAIN" ]]; then
-    TOOLCHAIN="$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake"
-fi
-[[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
-
-BUCK2=$("$PYTHON" "$SOURCE_ROOT_DIR/tools/cmake/resolve_buck.py" --cache_dir="$SOURCE_ROOT_DIR/buck2-bin")
-
-if [[ "$BUCK2" == "buck2" ]]; then
-  BUCK2=$(command -v buck2)
-fi
-
-check_command() {
-  if [[ "$1" == */* ]]; then
-    if [[ ! -x "$1" ]]; then
-      echo "Error: Command not found or not executable at '$1'" >&2
-      exit 1
-    fi
-  else
-    if ! command -v "$1" >/dev/null 2>&1; then
-      echo "Error: Command '$1' not found in PATH" >&2
-      exit 1
-    fi
-  fi
-}
-
-check_command cmake
-check_command rsync
-check_command "$PYTHON"
-check_command "$BUCK2"
 
 echo "Building libraries"
 
-rm -rf "$OUTPUT" && mkdir -p "$OUTPUT" && cd "$OUTPUT" || exit 1
+rm -rf "${OUTPUT_DIR}"
+for preset_index in "${!PRESETS[@]}"; do
+  preset="${PRESETS[$preset_index]}"
+  preset_output_dir="${OUTPUT_DIR}/${PRESETS_RELATIVE_OUT_DIR[$preset_index]}"
 
-cmake_build() {
-    local platform=$1
-    local platform_flag=$2
-    local platform_target=$3
-    local mode=$4
-    echo "Building for $platform ($mode) with flag $platform_flag"
-    mkdir -p "$platform" && cd "$platform" || exit 1
-    cmake "$SOURCE_ROOT_DIR" -G Xcode \
-        -DCMAKE_BUILD_TYPE="$mode" \
-        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
-        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
-        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
-        -DCMAKE_C_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-        -DCMAKE_CXX_FLAGS="-ffile-prefix-map=$SOURCE_ROOT_DIR=/executorch -fdebug-prefix-map=$SOURCE_ROOT_DIR=/executorch" \
-        -DPYTHON_EXECUTABLE="$PYTHON" \
-        -DEXECUTORCH_BUILD_COREML=$COREML \
-        -DEXECUTORCH_BUILD_MPS=$MPS \
-        -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
-        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=$CUSTOM \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=$OPTIMIZED \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=$QUANTIZED \
-        -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
-        ${platform_flag:+-DPLATFORM=$platform_flag} \
-        ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
-        --log-level=VERBOSE
-    cmake --build . \
-        --config "$mode" \
-        --verbose
-    cd -
-}
-
-for index in ${!PLATFORMS[*]}; do
   for mode in "${MODES[@]}"; do
-    cmake_build "${PLATFORMS[$index]}" "${PLATFORM_FLAGS[$index]}" "${PLATFORM_TARGET[$index]}" "$mode"
+    echo "Building preset ${preset} (${mode}) in ${preset_output_dir}..."
+
+    # Do NOT add options here. Update the respective presets instead.
+    cmake -S "${SOURCE_ROOT_DIR}" \
+          -B "${preset_output_dir}" \
+          --fresh \
+          -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${preset_output_dir}" \
+          -DCMAKE_BUILD_TYPE="${mode}" \
+          ${CMAKE_OPTIONS_OVERRIDE[@]:-} \
+          --preset "${preset}"
+
+    cmake --build "${preset_output_dir}" \
+          --config "${mode}"
   done
 done
 
 echo "Exporting headers"
 
-mkdir -p "$HEADERS_PATH"
+# FRAMEWORK_EXECUTORCH
+
+mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
 "$SOURCE_ROOT_DIR"/scripts/print_exported_headers.py --buck2=$(realpath "$BUCK2") --targets \
   //extension/module: \
   //extension/tensor: \
-| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
+| rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 
 # HACK: XCFrameworks don't appear to support exporting any build
 # options, but we need the following:
@@ -233,58 +248,90 @@ mkdir -p "$HEADERS_PATH"
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' \
-"$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
-"$HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h"
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h" \
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Macros.h"
 
-cp -r $HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$HEADERS_PATH/"
+cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
+cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
 
-cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
-cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.modulemap "$HEADERS_PATH"
+cp "$SOURCE_ROOT_DIR/extension/apple/$FRAMEWORK_EXECUTORCH_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
+
+cat > "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_MODULE_NAME}/${FRAMEWORK_EXECUTORCH_MODULE_NAME}.h"
+  export *
+}
+EOF
+
+# FRAMEWORK_EXECUTORCH_LLM
+
+mkdir -p "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
+
+cp "$SOURCE_ROOT_DIR/extension/llm/apple/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/Exported/"*.h "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME"
+
+cat > "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME/module.modulemap" << EOF
+module ${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME} {
+  umbrella header "${FRAMEWORK_EXECUTORCH_LLM_MODULE_NAME}.h"
+  export *
+}
+EOF
 
 echo "Creating frameworks"
 
 append_framework_flag() {
-  local flag="$1"
+  local option_name="$1"
   local framework="$2"
-  local mode="${3:-}"
-  if [[ $flag == ON ]]; then
-    if [[ -n "$mode" && "$mode" != "Release" ]]; then
+  local mode="$3"
+
+  if [[ ${#CMAKE_OPTIONS_OVERRIDE[@]} -gt 0 && -n "$option_name" ]]; then
+    for cmake_option in "${CMAKE_OPTIONS_OVERRIDE[@]}"; do
+      if [[ "$cmake_option" =~ "-D${option_name}=OFF" ]]; then
+        echo "Skipping framework: ${framework}"
+        return
+      fi
+    done
+  fi
+
+  if [[ -n "$mode" && "$mode" != "Release" ]]; then
       local name spec
       name=$(echo "$framework" | cut -d: -f1)
       spec=$(echo "$framework" | cut -d: -f2-)
       framework="${name}_$(echo "$mode" | tr '[:upper:]' '[:lower:]'):${spec}"
-    fi
-    echo "Framework: $framework"
-    FRAMEWORK_FLAGS+=("--framework=$framework")
   fi
+  echo "Adding framework: ${framework}"
+  FRAMEWORK_FLAGS+=("--framework=$framework")
 }
 
 for mode in "${MODES[@]}"; do
   FRAMEWORK_FLAGS=()
-  for platform in "${PLATFORMS[@]}"; do
-    echo "Directory: $platform/$mode"
-    FRAMEWORK_FLAGS+=("--directory=$platform/$mode")
+  for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
+    echo "Framework directory: ${preset_out_dir}/${mode}"
+    FRAMEWORK_FLAGS+=("--directory=${preset_out_dir}/${mode}")
   done
 
-  append_framework_flag "ON" "$FRAMEWORK_EXECUTORCH" "$mode"
-  append_framework_flag "$COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
-  append_framework_flag "$MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
-  append_framework_flag "$XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
-  append_framework_flag "$CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM" "$mode"
-  append_framework_flag "$OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
-  append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE" "$mode"
-  append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+  append_framework_flag "" "$FRAMEWORK_EXECUTORCH" "$mode"
+  append_framework_flag "" "$FRAMEWORK_EXECUTORCH_LLM" "$mode"
+  append_framework_flag "" "$FRAMEWORK_THREADPOOL" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_COREML" "$FRAMEWORK_BACKEND_COREML" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_MPS" "$FRAMEWORK_BACKEND_MPS" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_LLM" "$FRAMEWORK_KERNELS_LLM" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED" "$mode"
+  append_framework_flag "EXECUTORCH_BUILD_KERNELS_TORCHAO" "$FRAMEWORK_KERNELS_TORCHAO" "$mode"
 
+  cd "${OUTPUT_DIR}"
   "$SOURCE_ROOT_DIR"/scripts/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 done
 
 echo "Cleaning up"
 
-for platform in "${PLATFORMS[@]}"; do
-  rm -rf "$platform"
+for preset_out_dir in "${PRESETS_RELATIVE_OUT_DIR[@]}"; do
+  rm -rf "${OUTPUT_DIR}/${preset_out_dir}"
 done
 
-rm -rf "$HEADERS_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_HEADERS_PATH"
+rm -rf "$FRAMEWORK_EXECUTORCH_LLM_HEADERS_PATH"
 
 echo "Running tests"
 

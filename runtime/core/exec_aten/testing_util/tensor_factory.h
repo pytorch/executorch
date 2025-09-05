@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -78,7 +79,7 @@ inline bool check_strides(
   // a.strides == (1, 1, 2). We want to sort create a mapping to make the
   // sorted_stride as (2, 1, 1) while sorted_size == (3, 2, 1)
   std::vector<std::int32_t> sorted_idx(sizes.size());
-  for (size_t i = 0; i < sizes.size(); i++) {
+  for (const auto i : c10::irange(sizes.size())) {
     sorted_idx[i] = i;
   }
   std::sort(
@@ -98,7 +99,7 @@ inline bool check_strides(
   // Use the mapping to rearrange the sizes and strides
   std::vector<std::int32_t> sorted_sizes(sizes.size());
   std::vector<std::int32_t> sorted_strides(sizes.size());
-  for (size_t i = 0; i < sizes.size(); i++) {
+  for (const auto i : c10::irange(sizes.size())) {
     sorted_sizes[i] = sizes[sorted_idx[i]] == 0 ? 1 : sizes[sorted_idx[i]];
     sorted_strides[i] = strides[sorted_idx[i]];
   }
@@ -132,7 +133,7 @@ inline bool check_dim_order(
   }
   size_t gauss_sum = 0;
   std::vector<int> count(dim_order.size(), 0);
-  for (int i = 0; i < dim_order.size(); i++) {
+  for (const auto i : c10::irange(dim_order.size())) {
     if (dim_order[i] >= sizes.size()) {
       return false;
     }
@@ -378,7 +379,7 @@ class TensorFactory {
     std::vector<executorch::aten::StridesType> contiguous_strides =
         internal::strides_from_dim_order(sizes, contiguous_dim_order);
 
-    for (int32_t i = 0; i < input.dim(); i++) {
+    for (const auto i : c10::irange(input.dim())) {
       ET_CHECK_MSG(
           input.strides()[i] == contiguous_strides[i],
           "Input tensor is not contiguous");
@@ -394,10 +395,10 @@ class TensorFactory {
     std::vector<ctype> channels_last_data(
         N * C * H * W); // Create a new blob with the same total size to contain
                         // channels_last data
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t c = 0; c < C; ++c) {
-        for (int32_t h = 0; h < H; ++h) {
-          for (int32_t w = 0; w < W; ++w) {
+    for (const auto n : c10::irange(N)) {
+      for (const auto c : c10::irange(C)) {
+        for (const auto h : c10::irange(H)) {
+          for (const auto w : c10::irange(W)) {
             // Calculate the index in the original blob
             int32_t old_index = ((n * C + c) * H + h) * W + w;
             // Calculate the index in the new blob
@@ -614,7 +615,7 @@ inline void validate_strides(
     }
   }
   // No two dimensions can have same stride value
-  for (int32_t i = 0; i < strides.size(); ++i) {
+  for (const auto i : c10::irange(strides.size())) {
     for (int32_t j = i + 1; j < strides.size(); ++j) {
       if ((sizes[i] == 0) || (sizes[j] == 0) ||
           ((sizes[i] == 1) || (sizes[j] == 1))) {
@@ -625,12 +626,12 @@ inline void validate_strides(
             false,
             "Stride value and size dont comply at index %d."
             " strides[%d]: %d, strides[%d] = %d, sizes[%d] = %d, sizes[%d] = %d",
-            i,
-            i,
+            static_cast<uint32_t>(i),
+            static_cast<uint32_t>(i),
             strides[i],
             j,
             strides[j],
-            i,
+            static_cast<uint32_t>(i),
             sizes[i],
             j,
             sizes[j]);
@@ -830,7 +831,7 @@ class TensorFactory {
     // given strides is empty.
     if (!sizes.empty() && dim_order.empty()) {
       default_dim_order.resize(sizes.size(), 1);
-      for (size_t i = 0; i < sizes.size(); ++i) {
+      for (const auto i : c10::irange(sizes.size())) {
         default_dim_order[i] = i;
       }
     }
@@ -904,10 +905,10 @@ class TensorFactory {
     std::vector<ctype> channels_last_data(
         N * C * H * W); // Create a new blob with the same total size to contain
                         // channels_last data
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t c = 0; c < C; ++c) {
-        for (int32_t h = 0; h < H; ++h) {
-          for (int32_t w = 0; w < W; ++w) {
+    for (const auto n : c10::irange(N)) {
+      for (const auto c : c10::irange(C)) {
+        for (const auto h : c10::irange(H)) {
+          for (const auto w : c10::irange(W)) {
             // Calculate the index in the original blob
             int32_t old_index = ((n * C + c) * H + h) * W + w;
             // Calculate the index in the new blob

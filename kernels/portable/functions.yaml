@@ -452,6 +452,11 @@
     - arg_meta: null
       kernel_name: torch::executor::index_put_out
 
+- op: index_put_
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_put_
+
 - op: index_select.out
   kernels:
     - arg_meta: null
@@ -708,6 +713,18 @@
     - arg_meta: null
       kernel_name: torch::executor::prod_out
 
+- op: rand.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rand_out
+  tags: nondeterministic_seeded
+
+- op: randn.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::randn_out
+  tags: nondeterministic_seeded
+
 - op: reciprocal.out
   kernels:
     - arg_meta: null
@@ -948,6 +965,11 @@
     - arg_meta: null
       kernel_name: torch::executor::upsample_bilinear2d_vec_out
 
+- op: _upsample_bilinear2d_aa.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_upsample_bilinear2d_aa_out
+
 - op: upsample_nearest2d.vec_out
   kernels:
     - arg_meta: null
@@ -992,3 +1014,8 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::_to_dim_order_copy_out
+
+- func: dim_order_ops::_clone_dim_order.out(Tensor self, *, bool non_blocking=False, int[]? dim_order=None, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_clone_dim_order_out

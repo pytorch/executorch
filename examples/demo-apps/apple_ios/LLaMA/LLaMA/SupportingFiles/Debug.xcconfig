@@ -7,7 +7,7 @@ OTHER_LDFLAGS = $(inherited) \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_coreml_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_mps_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libbackend_xnnpack_debug_$(ET_PLATFORM).a \
-    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_custom_debug_$(ET_PLATFORM).a \
+    -force_load $(BUILT_PRODUCTS_DIR)/libkernels_llm_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_optimized_debug_$(ET_PLATFORM).a \
     -force_load $(BUILT_PRODUCTS_DIR)/libkernels_quantized_debug_$(ET_PLATFORM).a \
     @$(TEMP_DIR)/cmake/linker_flags
@@ -17,7 +17,9 @@ OTHER_LDFLAGS = $(inherited) \
 HEADER_SEARCH_PATHS = $(inherited) \
     $(SRCROOT)/../../../../.. \
     $(TEMP_DIR)/cmake/include \
-    $(SRCROOT)/../../../../extension/llm/tokenizers/include 
+    $(SRCROOT)/../../../../extension/llm/tokenizers/include \
+    $(SRCROOT)/../../../../extension/llm/tokenizers/third-party/sentencepiece \
+    $(SRCROOT)/../../../../extension/llm/tokenizers/third-party/sentencepiece/src
 
 LIBRARY_SEARCH_PATHS = $(inherited) \
     $(TEMP_DIR)/cmake/lib

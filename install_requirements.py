@@ -71,32 +71,29 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250325"
+NIGHTLY_VERSION = "dev20250811"
 
 
 def install_requirements(use_pytorch_nightly):
+    # Skip pip install on Intel macOS if using nightly.
+    if use_pytorch_nightly and is_intel_mac_os():
+        print(
+            "ERROR: Prebuilt PyTorch wheels are no longer available for Intel-based macOS.\n"
+            "Please build from source by following https://docs.pytorch.org/executorch/main/using-executorch-building-from-source.html",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # pip packages needed by exir.
-    EXIR_REQUIREMENTS = [
+    TORCH_PACKAGE = [
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
-        (
-            f"torchvision==0.22.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torchvision"
-        ),  # For testing.
+        f"torch==2.9.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
     ]
 
-    EXAMPLES_REQUIREMENTS = [
-        f"torchaudio==2.6.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
-    ]
-
-    # Assemble the list of requirements to actually install.
-    # TODO: Add options for reducing the number of requirements.
-    REQUIREMENTS_TO_INSTALL = EXIR_REQUIREMENTS + EXAMPLES_REQUIREMENTS
-
-    # Install the requirements. `--extra-index-url` tells pip to look for package
+    # Install the requirements for core ExecuTorch package.
+    # `--extra-index-url` tells pip to look for package
     # versions on the provided URL if they aren't available on the default URL.
     subprocess.run(
         [
@@ -105,10 +102,8 @@ def install_requirements(use_pytorch_nightly):
             "pip",
             "install",
             "-r",
-            "requirements-examples.txt",
-            "-r",
             "requirements-dev.txt",
-            *REQUIREMENTS_TO_INSTALL,
+            *TORCH_PACKAGE,
             "--extra-index-url",
             TORCH_NIGHTLY_URL,
         ],
@@ -117,13 +112,25 @@ def install_requirements(use_pytorch_nightly):
 
     LOCAL_REQUIREMENTS = [
         "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
-        "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
-    ]
+    ] + (
+        [
+            "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
+        ]
+        if sys.platform != "win32"
+        else []
+    )  # TODO(gjcomer): Re-enable when buildable on Windows.
 
     # Install packages directly from local copy instead of pypi.
     # This is usually not recommended.
     new_env = os.environ.copy()
-    new_env["USE_CPP"] = "1"  # install torchao kernels
+    if ("EXECUTORCH_BUILD_KERNELS_TORCHAO" not in new_env) or (
+        new_env["EXECUTORCH_BUILD_KERNELS_TORCHAO"] == "0"
+    ):
+        new_env["USE_CPP"] = "0"
+    else:
+        assert new_env["EXECUTORCH_BUILD_KERNELS_TORCHAO"] == "1"
+        new_env["USE_CPP"] = "1"
+        new_env["CMAKE_POLICY_VERSION_MINIMUM"] = "3.5"
     subprocess.run(
         [
             sys.executable,
@@ -139,6 +146,59 @@ def install_requirements(use_pytorch_nightly):
     )
 
 
+def install_optional_example_requirements(use_pytorch_nightly):
+    print("Installing torch domain libraries")
+    DOMAIN_LIBRARIES = [
+        (
+            f"torchvision==0.24.0.{NIGHTLY_VERSION}"
+            if use_pytorch_nightly
+            else "torchvision"
+        ),
+        f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+    ]
+    # Then install domain libraries
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            *DOMAIN_LIBRARIES,
+            "--extra-index-url",
+            TORCH_NIGHTLY_URL,
+        ],
+        check=True,
+    )
+
+    print("Installing packages in requirements-examples.txt")
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            "requirements-examples.txt",
+            "--extra-index-url",
+            TORCH_NIGHTLY_URL,
+            "--upgrade-strategy",
+            "only-if-needed",
+        ],
+        check=True,
+    )
+
+
+# Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
+# PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
+def is_intel_mac_os():
+    # Returns True if running on Intel macOS.
+    return platform.system().lower() == "darwin" and platform.machine().lower() in (
+        "x86",
+        "x86_64",
+        "i386",
+    )
+
+
 def main(args):
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -146,8 +206,16 @@ def main(args):
         action="store_true",
         help="build from the pinned PyTorch commit instead of nightly",
     )
+    parser.add_argument(
+        "--example",
+        action="store_true",
+        help="Also installs required packages for running example scripts.",
+    )
     args = parser.parse_args(args)
-    install_requirements(use_pytorch_nightly=not bool(args.use_pt_pinned_commit))
+    use_pytorch_nightly = not bool(args.use_pt_pinned_commit)
+    install_requirements(use_pytorch_nightly)
+    if args.example:
+        install_optional_example_requirements(use_pytorch_nightly)
 
 
 if __name__ == "__main__":

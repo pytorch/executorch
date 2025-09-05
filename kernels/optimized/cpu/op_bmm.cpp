@@ -155,10 +155,10 @@ Tensor& opt_bmm_out(
 
   if (executorch::runtime::isComplexType(self_type)) {
     ET_SWITCH_COMPLEXH_TYPES(self_type, ctx, name, CTYPE, [&]() {
-      internal::bmm_out_impl<CTYPE>(self, mat2, out);
+      bmm_kernel<CTYPE>(self, mat2, out);
     });
   } else {
-    ET_SWITCH_REALH_TYPES(self_type, ctx, name, CTYPE, [&]() {
+    ET_SWITCH_REALHBF16_TYPES(self_type, ctx, name, CTYPE, [&]() {
       bmm_kernel<CTYPE>(self, mat2, out);
     });
   }

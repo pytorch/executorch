@@ -14,105 +14,19 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
+    validate_same_dtype,
+    validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
-from executorch.backends.arm.tosa_utils import get_resize_parameters, tosa_shape
-
-
-@register_node_visitor
-class UpsampleBilinear2dVisitor_0_80(NodeVisitor):
-    target = "aten.upsample_bilinear2d.vec"
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-        from tosa_tools.v0_80.tosa.ResizeMode import ResizeMode  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 4)
-
-        if inputs[0].shape is None or output.shape is None:
-            raise ValueError("Only static shapes are supported")
-
-        input_dtype = inputs[0].dtype
-
-        # tosa_shape output is NHWC, take HW
-        input_size_yx = torch.tensor(
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)[1:3]
-        )
-        # Ignore scale and size parameters, directly use the output size as
-        # we only support static shapes currently
-        output_size_yx = torch.tensor(tosa_shape(output.shape, output.dim_order)[1:3])
-
-        scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=True
-        )
-
-        def in_int16_range(x):
-            return torch.all(x >= -(2**15)) and torch.all(x <= 2**15 - 1)
-
-        if not in_int16_range(scale_n_yx):
-            raise ValueError("scale_n_yx is out of the int16 range")
-        if not in_int16_range(scale_d_yx):
-            raise ValueError("scale_d_yx is out of the int16 range")
-        if not in_int16_range(border_yx):
-            raise ValueError("border_yx is out of the int16 range")
-
-        attr = ts.TosaSerializerAttribute()
-        attr.ResizeAttribute(
-            scale=[scale_n_yx[0], scale_d_yx[0], scale_n_yx[1], scale_d_yx[1]],
-            offset=offset_yx.tolist(),
-            border=border_yx.tolist(),
-            mode=ResizeMode.BILINEAR,
-        )
-
-        if input_dtype == output.dtype == ts.DType.FP32:
-            tosa_graph.addOperator(
-                ts.TosaOp.Op().RESIZE, [inputs[0].name], [output.name], attr
-            )
-            return
-        elif input_dtype == output.dtype == ts.DType.INT8:
-            intermediate = tosa_graph.addIntermediate(
-                tosa_shape(output.shape, output.dim_order), ts.DType.INT32
-            )
-
-            tosa_graph.addOperator(
-                ts.TosaOp.Op().RESIZE, [inputs[0].name], [intermediate.name], attr
-            )
-
-            final_output_scale = float(1 / (scale_n_yx[0] * scale_n_yx[1]))
-
-            build_rescale_v0_80(
-                tosa_fb=tosa_graph,
-                scale=[final_output_scale],
-                input_node=intermediate,
-                output_name=output.name,
-                output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
-                is_double_round=False,
-            )
-        else:
-            raise ValueError(
-                "Input/output dtype not in {float32, int8}: {input_dtype=} {output.dtype=}"
-            )
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
+from executorch.backends.arm.tosa.utils import get_resize_parameters, tosa_shape
 
 
 @register_node_visitor
 class UpsampleBilinear2dVisitor(NodeVisitor):
 
     target = "aten.upsample_bilinear2d.vec"
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -129,6 +43,13 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         from tosa.RoundingMode import RoundingMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 4)
+        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_valid_dtype(
+            self.target,
+            [inputs[0], output],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            output.tosa_spec,
+        )
 
         if inputs[0].shape is None or output.shape is None:
             raise ValueError("Only static shapes are supported")
@@ -136,23 +57,29 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         input_dtype = inputs[0].dtype
 
         # tosa_shape output is NHWC, take HW
-        input_size_yx = torch.tensor(
-            tosa_shape(inputs[0].shape, inputs[0].dim_order)[1:3]
-        )
-        # Ignore scale and size parameters, directly use the output size as
-        # we only support static shapes currently
-        output_size_yx = torch.tensor(tosa_shape(output.shape, output.dim_order)[1:3])
+        input_size_yx = tuple([inputs[0].shape[dim] for dim in inputs[0].dim_order])[
+            1:3
+        ]
+        output_size_yx = tuple([output.shape[dim] for dim in output.dim_order])[1:3]
 
+        # Get align_corners value from the node arguments.
+        align_corners = bool(node.args[2])
         scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=True
+            input_size_yx,
+            output_size_yx,
+            ResizeMode.NEAREST,
+            align_corners=align_corners,
         )
 
         def in_int16_range(x):
             return torch.all(x >= -(2**15)) and torch.all(x <= 2**15 - 1)
 
-        assert in_int16_range(scale_n_yx)
-        assert in_int16_range(scale_d_yx)
-        assert in_int16_range(border_yx)
+        if not in_int16_range(scale_n_yx):
+            raise ValueError("scale_n_yx is out of the int16 range")
+        if not in_int16_range(scale_d_yx):
+            raise ValueError("scale_d_yx is out of the int16 range")
+        if not in_int16_range(border_yx):
+            raise ValueError("border_yx is out of the int16 range")
 
         scales = [scale_n_yx[0], scale_d_yx[0], scale_n_yx[1], scale_d_yx[1]]
 
@@ -171,7 +98,9 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             [len(border)], ts.DType.SHAPE, border, node.name + "_border"
         )
         if input_dtype == output.dtype == ts.DType.FP32:
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESIZE,
                 [
                     inputs[0].name,
@@ -187,7 +116,9 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
             intermediate = tosa_graph.addIntermediate(
                 tosa_shape(output.shape, output.dim_order), ts.DType.INT32
             )
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().RESIZE,
                 [
                     inputs[0].name,
@@ -207,8 +138,8 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
                 input_node=intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
-                input_zp=0,
-                output_zp=0,
+                input_zp=[0],
+                output_zp=[0],
                 rounding_mode=RoundingMode.SINGLE_ROUND,
             )
         else:

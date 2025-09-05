@@ -69,18 +69,6 @@
         ]
     },
     {
-        "directory": "kernels/portable/cpu/util/test",
-        "sources": [
-            "broadcast_indexes_range_test.cpp",
-            "broadcast_test.cpp",
-            "reduce_test.cpp"
-        ],
-        "additional_libs": [
-            "portable_kernels",
-            "portable_ops_lib"
-        ]
-    },
-    {
         "directory": "runtime/core/portable_type/test",
         "sources": [
             "bfloat16_test.cpp",

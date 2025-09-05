@@ -70,6 +70,9 @@ using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
+
+#define ETHOSU_NUM_BASE_ADDRS 3
 
 namespace executorch {
 namespace backends {
@@ -82,6 +85,8 @@ typedef struct {
 extern "C" {
 void __attribute__((weak)) EthosUBackend_execute_begin() {}
 void __attribute__((weak)) EthosUBackend_execute_end() {}
+__attribute__((weak)) unsigned char* ethosu_fast_scratch = nullptr;
+__attribute__((weak)) size_t ethosu_fast_scratch_size = 0;
 }
 
 class EthosUBackendExecuteCallbacks {
@@ -109,9 +114,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
-    ET_LOG(Info, "EthosUBackend::init %p", processed->data());
+    ET_LOG(Info, "data:%p", processed->data());
 
-    char* data = (char*)processed->data();
+    const char* data = static_cast<const char*>(processed->data());
     size_t size = processed->size();
 
     // Verify format of vela_bin
@@ -136,7 +141,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
-      EValue** args) const override {
+      Span<EValue*> args) const override {
 #if defined(ET_EVENT_TRACER_ENABLED)
     EventTracer* event_tracer = context.event_tracer();
     EventTracerEntry event_tracer_local_scope;
@@ -156,7 +161,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // we might do it).
     EthosUBackendExecuteCallbacks CollectArm_CPU_Cycles;
 
-    ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
+    ExecutionHandle* execution_handle =
+        static_cast<ExecutionHandle*>(input_handle);
     VelaHandles handles;
 
     // Command stream - we know at this point it's aligned
@@ -164,10 +170,11 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         event_tracer,
         event_tracer_local_scope,
         "+EthosUBackend::execute()processed_data");
-    char* data = (char*)execution_handle->processed->data();
+    const char* data =
+        static_cast<const char*>(execution_handle->processed->data());
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
-    ET_LOG(Debug, "EthosUBackend::execute %p", data);
+    ET_LOG(Debug, "data:%p", data);
 
     EXECUTORCH_PROF_START(
         event_tracer,
@@ -176,20 +183,36 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // Read key sections from the vela_bin_stream
     if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
         false) {
-      ET_LOG(Error, "EthosUBackend::vela_read: error, invalid binary layout");
+      ET_LOG(Error, "vela_read: error, invalid binary layout");
       return Error::InvalidProgram;
     }
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
+    MemoryAllocator* temp_allocator = context.get_temp_allocator();
+    // Use a temporary allocator for the intermediate tensors of the
+    // computation. The allocator is released in runtime/executor/method.cpp at
+    // the end of the execution of the Ethos-U custom delegate
+    // Ethos-U driver requires 16 bit alignment.
+    char* ethosu_scratch = static_cast<char*>(
+        temp_allocator->allocate(handles.scratch_data_size, 16UL));
+    if (ethosu_scratch == nullptr) {
+      ET_LOG(
+          Error,
+          "Failed to allocate scratch buffer of %zu bytes from temp_allocator",
+          handles.scratch_data_size);
+      return Error::MemoryAllocationFailed;
+    }
     ET_LOG(
         Debug,
-        "EthosUBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
+        "Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n  fast scratch %p %zu\n",
         handles.cmd_data,
         handles.cmd_data_size,
         handles.weight_data,
         handles.weight_data_size,
-        handles.scratch_data,
-        handles.scratch_data_size);
+        ethosu_scratch,
+        handles.scratch_data_size,
+        ethosu_fast_scratch,
+        ethosu_fast_scratch_size);
 
     // Write argument values (from EValue tensor) into Ethos-U scratch
     // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
@@ -197,7 +220,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     for (int i = 0; i < handles.inputs->count; i++) {
       auto tensor_count = 1, io_count = 1;
       auto tensor_in = args[i]->toTensor();
-      char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
+      char* scratch_addr = ethosu_scratch + handles.inputs->io[i].offset;
 
       // We accept:
       bool supported = 0;
@@ -213,12 +236,17 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       supported |=
           (tensor_in.scalar_type() == ScalarType::Short and
            handles.inputs->io[i].elem_size == 2);
+      // bool (IOQDQ pass prepared networks)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Bool and
+           handles.inputs->io[i].elem_size == 1);
       if (!supported) {
         ET_LOG(
             Error,
-            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
+            "Input %d expected Integer (4 byte), Char (1 byte) or Bool (1 byte) integer inputs, got ScalarType id %s size %d",
             i,
-            executorch::runtime::toString(tensor_in.scalar_type()));
+            executorch::runtime::toString(tensor_in.scalar_type()),
+            handles.inputs->io[i].elem_size);
         return Error::InvalidProgram;
       }
       supported = executorch::runtime::is_contiguous_dim_order(
@@ -233,29 +261,16 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
 
       // Select a compatible copy routine including checking for input layouts
       // which require permutation.
-      bool permuted_input_shape;
-      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i, tensor_in, &handles.inputs->io[i], &permuted_input_shape));
-      bool both_char = tensor_in.scalar_type() == ScalarType::Char and
-          handles.inputs->io[i].elem_size == 1;
-      bool both_int = tensor_in.scalar_type() == ScalarType::Int and
+      bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
           handles.inputs->io[i].elem_size == 4;
-      bool both_short = tensor_in.scalar_type() == ScalarType::Short and
+      bool both_char = tensor_in.scalar_type() == ScalarType::Char &&
+          handles.inputs->io[i].elem_size == 1;
+      bool both_short = tensor_in.scalar_type() == ScalarType::Short &&
           handles.inputs->io[i].elem_size == 2;
+      bool both_bool = tensor_in.scalar_type() == ScalarType::Bool &&
+          (handles.inputs->io[i].elem_size == 1);
 
-      // Select a compatible copy routine
-      if (both_char and permuted_input_shape) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer,
-            "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
-        // permuted byte copy CHW to HWC
-        permute_CHW_to_HWC(
-            tensor_in.mutable_data_ptr<char>(),
-            scratch_addr,
-            tensor_in.size(1),
-            tensor_in.size(2),
-            tensor_in.size(3));
-      } else if (both_char or both_int or both_short) {
+      if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
@@ -267,18 +282,16 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
       }
-      if (!permuted_input_shape) {
-        calculate_dimensions(
-            tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
-        if (tensor_count != io_count) {
-          ET_LOG(Error, "Input tensor sizes do not match");
-          ET_LOG(
-              Error,
-              "Program expects %d elements but got %d",
-              io_count,
-              tensor_count);
-          return Error::InvalidProgram;
-        }
+      calculate_dimensions(
+          tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
+      if (tensor_count != io_count) {
+        ET_LOG(Error, "Input tensor sizes do not match");
+        ET_LOG(
+            Error,
+            "Program expects %d elements but got %d",
+            io_count,
+            tensor_count);
+        return Error::InvalidProgram;
       }
     }
 
@@ -287,46 +300,46 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
             ethosu_reserve_driver(), ethosu_release_driver);
     if (driver == NULL) {
-      ET_LOG(Error, "EthosUBackend::execute: ethosu_reserve_driver failed");
+      ET_LOG(Error, "ethosu_reserve_driver failed");
       return Error::InvalidState;
     }
 
     // Ethos-U low level driver expected order for Ethos U-55, we have
     // constant weight data, then scratch (which contains input and output)
     // scratch is written above in this function.
-    uint64_t bases[2] = {
+
+    uint64_t bases[ETHOSU_NUM_BASE_ADDRS] = {
         static_cast<uint64_t>(
             reinterpret_cast<uintptr_t>((handles.weight_data))),
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ethosu_scratch)),
         static_cast<uint64_t>(
-            reinterpret_cast<uintptr_t>((handles.scratch_data)))};
-    size_t bases_size[2] = {
-        handles.weight_data_size, handles.scratch_data_size};
+            reinterpret_cast<uintptr_t>(ethosu_fast_scratch))};
+    size_t bases_size[ETHOSU_NUM_BASE_ADDRS] = {
+        handles.weight_data_size,
+        handles.scratch_data_size,
+        ethosu_fast_scratch_size};
     int result = 0;
     EXECUTORCH_PROF_START(
         event_tracer, event_tracer_local_scope, "+EthosUBackend::execute()NPU");
     result = ethosu_invoke_v3(
         driver.get(),
-        (void*)handles.cmd_data,
+        static_cast<const void*>(handles.cmd_data),
         handles.cmd_data_size,
         bases,
         bases_size,
-        2, /* fixed array of pointers to binary interface*/
+        ETHOSU_NUM_BASE_ADDRS, /* fixed array of pointers to binary interface*/
         nullptr);
     EXECUTORCH_PROF_END(event_tracer, event_tracer_local_scope);
 
     if (result != 0) {
-      ET_LOG(
-          Error,
-          "EthosUBackend::execute: Ethos-U invocation failed error (%d)",
-          result);
+      ET_LOG(Error, "Ethos-U invocation failed error (%d)", result);
       return Error::InvalidProgram;
     }
     int tensor_dim = 0, io_dim = 0;
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
       int tensor_count = 1, io_count = 1;
-      const char* output_addr =
-          handles.scratch_data + handles.outputs->io[i].offset;
+      const char* output_addr = ethosu_scratch + handles.outputs->io[i].offset;
       // Process input EValue into scratch
       // Outputs are in the index immediately after inputs
       auto tensor_out = args[handles.inputs->count + i]->toTensor();
@@ -339,35 +352,13 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       tensor_dim = tensor_dim + tensor_count;
       io_dim = io_dim + io_count;
 
-      bool permuted_output_shape;
-      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i, tensor_out, &handles.outputs->io[i], &permuted_output_shape));
-      if (tensor_out.scalar_type() == ScalarType::Char and
-          permuted_output_shape) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer,
-            "+EthosUBackend::execute()handles.output.permute_HWC_to_CHW()");
+      EXECUTORCH_PROF_SCOPE(
+          event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
 
-        char* output_address = (char*)output_addr;
-        permute_HWC_to_CHW(
-            output_address,
-            tensor_out.mutable_data_ptr<char>(),
-            tensor_out.size(1),
-            tensor_out.size(2),
-            tensor_out.size(3));
-      } else {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer, "+EthosUBackend::execute()handles.output.move()");
-        for (int j = 0; j < tensor_out.numel(); j++) {
-          if (tensor_out.scalar_type() == ScalarType::Char) {
-            char* output_address = (char*)output_addr;
-            tensor_out.mutable_data_ptr<char>()[j] = output_address[j];
-          } else {
-            int* output_address = (int*)output_addr;
-            tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
-          }
-        }
-      }
+      memcpy(
+          tensor_out.mutable_data_ptr<char>(),
+          static_cast<const char*>(output_addr),
+          tensor_out.nbytes());
     }
     if (tensor_dim != io_dim) {
       ET_LOG(Error, "Total output tensor sizes do not match");
@@ -395,46 +386,6 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
     // The VelaIO type has a shape of fixed size 4
     for (int i = 0; i < 4; i++) {
       *io_count = *io_count * io->shape[i];
-    }
-  }
-
-  Error check_requires_permute(
-      int index,
-      const executorch::aten::Tensor tensor,
-      VelaIO* io,
-      bool* is_permuted) const {
-    bool permuted_shape = false;
-
-    if (tensor.dim() == 4) {
-      // special case for NHWC workaround in AOT; as the compilation has
-      // permuted to channel last in an undetectable way, we assume here
-      // that the application has similarly permuted any input/output tensors.
-      permuted_shape = tensor.size(0) == io->shape[0] &&
-          tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
-          tensor.size(3) == io->shape[2];
-      if (permuted_shape) {
-        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
-      }
-    }
-    *is_permuted = permuted_shape;
-    return Error::Ok;
-  }
-
-  void permute_CHW_to_HWC(char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i * C + j] = input[i + j * W * H];
-      }
-    }
-  }
-
-  void permute_HWC_to_CHW(char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i + j * W * H] = input[i * C + j];
-      }
     }
   }
 };

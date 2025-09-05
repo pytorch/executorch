@@ -72,20 +72,16 @@ class UnaryUfuncRealHBBF16ToFloatHBF16Test : public OperatorTest {
 
     auto expected = tf_out.make({1, 6}, expected_vector);
     if (IN_DTYPE == ScalarType::BFloat16 || OUT_DTYPE == ScalarType::BFloat16) {
-      double rtol = executorch::runtime::testing::internal::kDefaultRtol;
-      // It appears we need a higher tolerance for at least some ATen
-      // tests, like aten_op_acosh_test.
-      if (get_supported_features()->is_aten) {
-        rtol = 3e-3;
-      }
+      // Raise tolerance because both we and ATen run these
+      // computations at internal float32 precision rather than
+      // float64.
+      double rtol = 3e-3;
       EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, rtol, executorch::runtime::testing::internal::kDefaultBFloat16Atol);
     } else if (IN_DTYPE == ScalarType::Half || OUT_DTYPE == ScalarType::Half) {
-      double rtol = executorch::runtime::testing::internal::kDefaultRtol;
-      // It appears we need a higher tolerance for at least some ATen
-      // tests, like aten_op_acosh_test.
-      if (get_supported_features()->is_aten) {
-        rtol = 1e-3;
-      }
+      // Raise tolerance because both we and ATen run these
+      // computations at internal float32 precision rather than
+      // float64.
+      double rtol = 1e-3;
       EXPECT_TENSOR_CLOSE_WITH_TOL(out, expected, rtol, executorch::runtime::testing::internal::kDefaultHalfAtol);
     } else {
       EXPECT_TENSOR_CLOSE(out, expected);

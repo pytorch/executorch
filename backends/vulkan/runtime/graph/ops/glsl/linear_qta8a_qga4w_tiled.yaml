@@ -1,0 +1,26 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+linear_qta8a_qga4w_tiled:
+  parameter_names_with_default_values:
+    DTYPE: float
+    OUT_STORAGE: texture3d
+    IN_STORAGE: texture3d
+    WEIGHT_STORAGE: texture2d
+    PARAMS_STORAGE: buffer
+    TILE_ROWS: 3
+  shader_variants:
+    - NAME: linear_qta8a_qga4w_tiled_texture3d_texture3d_texture2d_float
+    - NAME: linear_qta8a_qga4w_tiled_buffer_buffer_texture2d_float
+      OUT_STORAGE: buffer
+      IN_STORAGE: buffer
+    - NAME: linear_qta8a_qga4w_tiled_buffer_buffer_buffer_float
+      OUT_STORAGE: buffer
+      IN_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
+    - NAME: linear_qta8a_qga4w_tiled_buffer_texture2d_buffer_float
+      OUT_STORAGE: buffer
+      WEIGHT_STORAGE: buffer

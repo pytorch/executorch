@@ -19,6 +19,8 @@
 namespace vkcompute {
 namespace api {
 
+static constexpr size_t kTensorDimLimit = 8;
+
 /*
  * Given a GPUMemoryLayout value, produce a dim order vector that matches the
  * given memory layout. The produced dim order vector will be in the NCHW
@@ -35,10 +37,6 @@ std::vector<int64_t> calculate_dim_order(
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
     const std::vector<int64_t>& dim_order);
-
-std::vector<int64_t> unsqueeze_strides(
-    const std::vector<int64_t>& strides,
-    const int64_t numel);
 
 /*
  * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
@@ -81,6 +79,18 @@ struct LastAccess {
       : stage{stage_flags}, access{access_flags} {}
 };
 
+/*
+ * Calculate the number of elements that a GPU buffer would require to store the
+ * contents of a tensor. This will depend on the storage type and dtype of the
+ * tensor, as well as the features available on the device.
+ */
+int64_t calculate_gpu_buffer_numel(
+    Context* const context,
+    const std::vector<int64_t>& sizes,
+    const utils::uvec3 image_extents,
+    const utils::StorageType storage_type,
+    const vkapi::ScalarType dtype);
+
 class vTensorStorage final {
  public:
   // Do not allow empty vTensorStorage construction
@@ -91,25 +101,14 @@ class vTensorStorage final {
       const utils::StorageType storage_type,
       const std::vector<int64_t>& axis_map,
       const int32_t packed_dim,
-      const std::vector<int64_t>& padded_sizes,
+      const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
   vTensorStorage(Context* const context, const vkapi::VulkanImage& image);
 
- protected:
-  /*
-   * This allows for creation of tensors that use the same underlying storage
-   * as another tensor. Note that this functionality is currently enabled for
-   * tensors that have buffer storage only. The created tensor will not have
-   * ownership of the underlying VkBuffer. This constructor is marked protected
-   * because this behaviour is unsafe, since the original tensor may be
-   * destroyed before the copy is destroyed.
-   */
-  vTensorStorage(vTensorStorage& other, const int64_t buffer_offset = 0);
-
  public:
-  // To discourage creating copies, the assignment operator is still deleted.
+  vTensorStorage(vTensorStorage& other) = delete;
   vTensorStorage& operator=(const vTensorStorage& other) = delete;
 
   vTensorStorage(vTensorStorage&& other) = default;
@@ -136,8 +135,6 @@ class vTensorStorage final {
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
-  // Indicates whether copies of this vTensorStorage have been made
-  bool has_copies_;
 
  private:
   // Registers underlying memory for cleanup
@@ -153,19 +150,13 @@ class vTensorStorage final {
   void verify() const;
 
  public:
+  inline size_t buffer_len() const {
+    return utils::safe_downcast<size_t>(buffer_length_);
+  }
+
   inline VkFormat texture_format() {
     return image_.format();
   }
-
-  /*
-   * Check if the underlying resource is a copy of another resource
-   */
-  bool is_copy() const;
-
-  /*
-   * Used for checking if this vTensorStorage is a copy of another instance
-   */
-  bool is_copy_of(const vTensorStorage& other) const;
 };
 
 class vTensor final {
@@ -174,6 +165,8 @@ class vTensor final {
     // component vector with components of size N must have base alignment of
     // 4N.
     alignas(16) utils::ivec3 limits;
+
+    TextureLimits(const utils::uvec3& ulimits) : limits{ulimits} {}
   };
 
  public:
@@ -222,8 +215,7 @@ class vTensor final {
   vTensor(
       vTensor& other,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& dim_order,
-      const int64_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order);
 
   // To discourage making copies, the copy assignment operator is still deleted
   vTensor& operator=(const vTensor& other) = delete;
@@ -231,33 +223,34 @@ class vTensor final {
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
 
+  ~vTensor() = default;
+
   enum class Attribute : uint8_t {
     SIZES,
+    WHCN_DIM_ORDER,
     STRIDES,
     LOGICAL_LIMITS,
     NUMEL,
   };
 
   class UniformData {
-    utils::ivec4 sizes_v;
-    utils::ivec4 strides_v;
-    // See the comments documenting logical_limits() for more context.
-    TextureLimits logical_limits;
     // Contains the number of elements in the tensor according to the canonical
     // sizes.
     int32_t numel;
+    utils::ivec4 sizes_v;
+    utils::ivec4 dim_order_v;
+    utils::ivec4 strides_v;
+    // See the comments documenting logical_limits() for more context.
+    TextureLimits logical_limits;
 
     friend class vTensor;
 
     UniformData(
+        const size_t numel_ll,
         const std::vector<int64_t>& sizes,
+        const std::vector<int64_t>& dim_order,
         const std::vector<int64_t>& strides,
-        const TextureLimits& logical_limits,
-        const size_t numel_ll)
-        : sizes_v(utils::make_whcn_ivec4(sizes)),
-          strides_v(utils::make_whcn_ivec4(strides)),
-          logical_limits(logical_limits),
-          numel(utils::safe_downcast<int32_t>(numel_ll)) {}
+        const utils::uvec3& limits);
 
    public:
     /*
@@ -269,6 +262,26 @@ class vTensor final {
         const uint32_t dst_offset,
         const uint32_t max_dst_size,
         const Attribute attr);
+  };
+
+  struct BufferMetadata {
+    uint32_t sizes[kTensorDimLimit];
+    uint32_t dim_order[kTensorDimLimit];
+    uint32_t strides[kTensorDimLimit];
+    uint32_t ndim;
+    uint32_t numel;
+
+    BufferMetadata(
+        std::vector<int64_t>& sizes,
+        std::vector<int64_t>& dim_order,
+        std::vector<int64_t>& strides,
+        size_t numel);
+
+    void update(
+        std::vector<int64_t>& sizes,
+        std::vector<int64_t>& dim_order,
+        std::vector<int64_t>& strides,
+        size_t numel);
   };
 
  private:
@@ -317,21 +330,17 @@ class vTensor final {
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
 
-  /*
-   * The below metadata members are derived from the above, and are typically
-   * to i.e. pass tensor metadata to compute shaders.
-   */
+  // number of elements based on the canonical sizes
+  size_t numel_;
 
-  // padded sizes of the tensor in NCHW dimension order. See the
-  // calculate_padded_sizes() function for more context. Note that padded sizes
-  // are only used for texture storage, and not for buffer storage.
-  std::vector<int64_t> padded_sizes_;
-  // Contains the strides of the tensor, with the dimensionality padded to the
-  // nearest multiple of 4. Unsqueezed dims will have a stride of int32_t max.
-  std::vector<int64_t> unsqueezed_strides_;
-  // Contains the number of elements in the tensor according to the padded
-  // sizes.
-  size_t padded_numel_;
+  // For texture backed tensors, this int32 contains the axis map data packed
+  // into a single int32. For buffer backed tensors, this int32 contains the
+  // wchn dim order data packed into a single int32.
+  int32_t hashed_layout_;
+
+  // Pre-compute these quantities to avoid frequent re-computation
+  size_t min_nbytes_per_ubo_;
+  size_t max_ubo_nbytes_;
 
   /*
    * Utility GPU buffer that can be passed to shaders in order to convey tensor
@@ -344,21 +353,24 @@ class vTensor final {
    * context about the data contained in each buffer.
    */
   ParamsBuffer uniforms_;
-  uint32_t uniforms_size_;
-  uint32_t sizes_uniform_offset_;
-  uint32_t unsqueezed_strides_offset_;
-  uint32_t numel_uniform_offset_;
-  uint32_t logical_limits_uniform_offset_;
 
-  // Maximum number of metadata fields that can be stored in the metadata UBO.
-  // This is used to calculate the size of the UBO that should be allocated.
-  constexpr static size_t kMaxMetadataFieldCount = 4;
+  /*
+   * Used to store data for BufferMetadata to pass to shaders as buffer_meta_ubo
+   */
+  ParamsBuffer buffer_meta_;
+
+  uint32_t uniforms_size_ = 0u;
+  uint32_t sizes_uniform_offset_ = kUniformOffsetUnset;
+  uint32_t dim_order_uniform_offset_ = kUniformOffsetUnset;
+  uint32_t strides_uniform_offset = kUniformOffsetUnset;
+  uint32_t numel_uniform_offset_ = kUniformOffsetUnset;
+  uint32_t logical_limits_uniform_offset_ = kUniformOffsetUnset;
 
   // Initial value of uniform buffer offsets. 1 is selected as it is essentially
   // impossible for a ubo to have an offset of 1.
   constexpr static uint32_t kUniformOffsetUnset = 1;
 
-  vTensorStorage storage_;
+  std::shared_ptr<vTensorStorage> storage_;
 
   std::shared_ptr<UniformData> uniform_data_;
 
@@ -368,7 +380,7 @@ class vTensor final {
   */
 
   inline vkapi::VulkanImage& image() const& {
-    return storage_.image_;
+    return storage_->image_;
   }
 
   vkapi::VulkanImage& image(
@@ -381,7 +393,7 @@ class vTensor final {
       const vkapi::MemoryAccessFlags) &;
 
   inline vkapi::VulkanBuffer& buffer() const& {
-    return storage_.buffer_;
+    return storage_->buffer_;
   }
 
   vkapi::VulkanBuffer& buffer(
@@ -398,15 +410,12 @@ class vTensor final {
   */
 
   inline utils::StorageType storage_type() const {
-    return storage_.storage_type_;
+    return storage_->storage_type_;
   }
 
   inline bool has_buffer_storage() const {
-    return storage_.storage_type_ == utils::kBuffer;
+    return storage_->storage_type_ == utils::kBuffer;
   }
-
- private:
-  void set_logical_limits(const utils::uvec3& image_extents);
 
  public:
   /*
@@ -475,21 +484,37 @@ class vTensor final {
     return dim_order_;
   }
 
+  inline const std::vector<int64_t>& strides() const {
+    return strides_;
+  }
+
+  inline size_t numel() const {
+    return numel_;
+  }
+
+  inline size_t nbytes() const {
+    return element_size(dtype()) * numel();
+  }
+
   inline const std::vector<int64_t>& axis_map() const {
     return axis_map_;
   }
 
   /*
-   * Returns a single int32_t that contains the values of the axis map and the
-   * packed dimension packed into a single int32_t, such that it can be used as
-   * a specialization constant in a compute shader. This allows for the SPIR-V
-   * to bytecode compilation to perform compile-time unfolding on the axis map.
-   * Each element of the axis map and the value of the packed dimension take up
-   * 4 bits in the packed int32_t.
+   * For texture backed tensors, this function return a int32_t that contains
+   * the axis map + packed dimension. Each element of the axis map occupies 4
+   * bits of the int32.
+   *
+   * For buffer backed tensors, the int32_t contains the WHCN dim order, where
+   * each element of the dim order array occupies 4 bits of the int32.
+   *
+   * This int32 is typically consumed as a specialization constant in compute
+   * shaders where it is subsequently unpacked. The layout data of a vTensor
+   * instance is typically static once created, which is why this method is
+   * appropriate.
    */
   inline int32_t hashed_layout() const {
-    return axis_map_.at(0) + (axis_map_.at(1) << 4) + (axis_map_.at(2) << 8) +
-        (axis_map_.at(3) << 12) + (packed_dim_ << 16);
+    return hashed_layout_;
   }
 
   /*
@@ -502,56 +527,69 @@ class vTensor final {
     return axis_map_.at(0) == 0 && axis_map_.at(1) == 1 && axis_map_.at(2) == 2;
   }
 
-  inline const std::vector<int64_t>& strides() const {
-    return strides_;
-  }
-
-  inline const std::vector<int64_t>& unsqueezed_strides() const {
-    return unsqueezed_strides_;
-  }
-
   /*
-   * Returns a GPU buffer containing the sizes of the tensor in WHCN order.
-   * Note that dimensions that are not present in the tensor's sizes are set to
-   * a size of 1.
+   * Return true if a buffer backed tensor's dim order matches that of a
+   * contiguous tensor, i.e. the dim order will be {0, 1, 2, ... }.
+   * Returns false for texture backed tensors.
    */
+  bool is_contiguous() const;
+
+ private:
+  inline size_t nbytes_per_ubo() const {
+    return storage_->context_->adapter_ptr()->min_ubo_alignment();
+  }
+
+  size_t get_max_ubo_nbytes(const size_t nbytes_per_ubo) const;
+
+  template <typename T>
+  const vkapi::BufferBindInfo metadata_ubo_impl(
+      uint32_t* param_buffer_offset,
+      const T& data) {
+    if (!uniforms_.buffer()) {
+      uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
+    }
+    size_t ubo_nbytes = utils::align_up(sizeof(data), min_nbytes_per_ubo_);
+    if (*param_buffer_offset == kUniformOffsetUnset) {
+      VK_CHECK_COND(
+          (uniforms_size_ + ubo_nbytes) <= max_ubo_nbytes_,
+          "Uniform data allocation has exceeded Tensor uniform buffer size");
+      *param_buffer_offset = uniforms_size_;
+      uniforms_size_ += ubo_nbytes;
+      uniforms_.update(data, *param_buffer_offset);
+    }
+    return vkapi::BufferBindInfo(
+        uniforms_.buffer(), *param_buffer_offset, ubo_nbytes);
+  }
+
+ public:
+  /*
+   * The functions below return the buffer binding info for a UBO that contains
+   * some metadata of the tensor, which can be used to pass in tensor metadata
+   * to a compute shader. The other method of passing in tensor metadata is via
+   * push constants. The trade-off between each is that push constants may be
+   * slightly more performant and memory efficient; however, to update the
+   * values in a push constant due to i.e. a tensor resize between inferences,
+   * the command buffer must be re-encoded. On the other hand, UBOs can update
+   * their data by writing to their mapped memory without requiring a command
+   * buffer re-encode.
+   */
+
   const vkapi::BufferBindInfo sizes_ubo();
 
-  /*
-   * Returns a GPU buffer containing the strides of the tensor in WHCN order.
-   * Note that the strides are extended to a dimensionality that is a multiple
-   * of 4, thus dimensions that are not present in the tensor's sizes are set to
-   * have a stride equal to the stride of the "slowest moving" dimension.
-   */
+  const vkapi::BufferBindInfo dim_order_ubo();
+
   const vkapi::BufferBindInfo strides_ubo();
 
-  /*
-   * Returns a GPU buffer containing the logical limits of the tensor. See the
-   * comments for logical_limits() for more context.
-   */
   const vkapi::BufferBindInfo logical_limits_ubo();
 
-  /*
-   * Returns the number of elements in the buffer used to store the tensor.
-   */
   const vkapi::BufferBindInfo numel_ubo();
 
-  inline size_t numel() const {
-    return uniform_data_->numel;
-  }
+  const vkapi::BufferBindInfo buffer_meta_ubo();
 
-  inline size_t nbytes() const {
-    return element_size(dtype()) * numel();
+ public:
+  inline size_t staging_buffer_numel() const {
+    return storage_->buffer_len();
   }
-
-  /*
-   * Returns numel but based on padded_sizes_ instead of sizes_
-   */
-  inline size_t padded_numel() const {
-    return padded_numel_;
-  }
-
-  size_t staging_buffer_numel() const;
 
   inline size_t staging_buffer_nbytes() const {
     return element_size(dtype()) * staging_buffer_numel();
@@ -563,6 +601,12 @@ class vTensor final {
   VmaAllocationCreateInfo get_allocation_create_info() const;
 
   /*
+   * Checks if the tensor's underlying buffer or image resource is bound to a
+   * memory allocation.
+   */
+  bool memory_is_bound() const;
+
+  /*
    * Return the VkMemoryRequirements of the underlying resource
    */
   VkMemoryRequirements get_memory_requirements() const;
@@ -571,6 +615,11 @@ class vTensor final {
    * Binds the underlying resource to the given memory allocation
    */
   void bind_allocation(const vkapi::Allocation& allocation);
+
+  /*
+   * Binds and acquires a rvalue memory allocation
+   */
+  void acquire_allocation(vkapi::Allocation&& allocation);
 
  private:
   /*
@@ -623,20 +672,88 @@ class vTensor final {
    * Check if this vTensor instance is a view of another vTensor instance
    */
   inline bool is_view_of(const vTensor& other) const {
-    return storage_.is_copy_of(other.storage_);
+    return storage_.get() == other.storage_.get();
   }
 
   const std::shared_ptr<UniformData>& get_uniform_data() const {
+    VK_CHECK_COND(sizes_.size() <= 4);
     return uniform_data_;
   }
 };
 
 static constexpr vTensor::Attribute kTensorSizes = vTensor::Attribute::SIZES;
+static constexpr vTensor::Attribute kTensorDimOrder =
+    vTensor::Attribute::WHCN_DIM_ORDER;
 static constexpr vTensor::Attribute kTensorStrides =
     vTensor::Attribute::STRIDES;
 static constexpr vTensor::Attribute kTensorLogicalLimits =
     vTensor::Attribute::LOGICAL_LIMITS;
 static constexpr vTensor::Attribute kTensorNumel = vTensor::Attribute::NUMEL;
+
+/*
+ * Prepare tensor metadata vector for consumption on the GPU:
+ * 1. Convert NCHW dim order and indexes to WCHN dim order and indexes
+ * 2. Unsqueeze to the next multiple of 4 dims
+ * 3. Convert to requested output dtype
+ */
+template <
+    typename T,
+    typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
+std::vector<T> flip_and_unsqueeze(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel,
+    const int32_t fixed_ndim = -1) {
+  const size_t ndim = tensor_metadata.size();
+  size_t ndim_up4 =
+      std::max(utils::align_up_4(tensor_metadata.size()), size_t(4));
+
+  if (fixed_ndim > 0) {
+    VK_CHECK_COND(fixed_ndim >= ndim);
+    ndim_up4 = static_cast<size_t>(fixed_ndim);
+  }
+
+  std::vector<T> flipped_metadata(ndim_up4);
+
+  for (int flipped_i = 0; flipped_i < ndim; ++flipped_i) {
+    T val_at_dim =
+        utils::safe_downcast<T>(tensor_metadata.at(ndim - 1 - flipped_i));
+    if (metadata_type == kTensorDimOrder) {
+      val_at_dim = utils::safe_downcast<T>(ndim - 1 - val_at_dim);
+    }
+    flipped_metadata.at(flipped_i) = val_at_dim;
+  }
+
+  switch (metadata_type) {
+    case kTensorStrides:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) = utils::safe_downcast<T>(numel);
+      }
+      break;
+    case kTensorDimOrder:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) =
+            utils::safe_downcast<T>(unsqueezed_i);
+      }
+      break;
+    // Default: unsqueeze with ones
+    default:
+      for (int unsqueezed_i = ndim; unsqueezed_i < ndim_up4; ++unsqueezed_i) {
+        flipped_metadata.at(unsqueezed_i) = utils::safe_downcast<T>(1);
+      }
+      break;
+  }
+
+  return flipped_metadata;
+}
+
+/*
+ * Same as flip and unsqueeze, but returns the metadata as an `ivec4`.
+ */
+utils::ivec4 flip_and_unsqueezed_ivec4(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel);
 
 } // namespace api
 } // namespace vkcompute

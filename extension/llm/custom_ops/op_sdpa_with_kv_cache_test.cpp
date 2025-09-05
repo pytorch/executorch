@@ -26,10 +26,10 @@ executorch::aten::Tensor op_sdpa_with_kv_cache(
     executorch::aten::Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
-    const executorch::aten::optional<executorch::aten::Tensor>& attn_mask,
+    const std::optional<executorch::aten::Tensor>& attn_mask,
     double dropout_p,
     bool is_causal,
-    executorch::aten::optional<double> scale,
+    std::optional<double> scale,
     executorch::aten::Tensor& out) {
   executorch::runtime::KernelRuntimeContext context{};
   return torch::executor::native::sdpa_with_kv_cache_out(
@@ -142,10 +142,10 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
   executorch::aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
   executorch::aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
   executorch::aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
 
   // start pos: 0 layer id 0
   executorch::aten::Tensor ret_expected_0 = tfFloat.make(
@@ -384,10 +384,10 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
   executorch::aten::Tensor value_cache_1 = tfFloat.zeros({1, 8, 7, 4});
   executorch::aten::Tensor key_cache_2 = tfFloat.zeros({1, 8, 7, 4});
   executorch::aten::Tensor value_cache_2 = tfFloat.zeros({1, 8, 7, 4});
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
 
   // start pos: 0 layer id 0
   executorch::aten::Tensor ret_expected_0 = tfFloat.make(
@@ -549,10 +549,10 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
   executorch::aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 8, 4});
   executorch::aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 8, 4});
 
-  executorch::aten::optional<executorch::aten::Tensor> attn_mask;
+  std::optional<executorch::aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
-  executorch::aten::optional<double> scale;
+  std::optional<double> scale;
 
   // start pos: 0 layer id 0
   executorch::aten::Tensor ret_expected_0 = tfFloat.make(

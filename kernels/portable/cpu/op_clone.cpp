@@ -21,7 +21,7 @@ using Tensor = executorch::aten::Tensor;
 Tensor& clone_out(
     KernelRuntimeContext& context,
     const Tensor& self,
-    executorch::aten::optional<executorch::aten::MemoryFormat> memory_format,
+    std::optional<executorch::aten::MemoryFormat> memory_format,
     Tensor& out) {
   (void)context;
 

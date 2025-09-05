@@ -447,3 +447,14 @@ python_unittest(
         "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )
+
+python_unittest(
+    name = "test_group_partitioner",
+    srcs = [
+        "test_group_partitioner.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/backend/canonical_partitioners:group_partitioner_lib",
+    ],
+)

@@ -194,7 +194,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check the delegate instruction
@@ -414,7 +414,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check the delegate instruction
@@ -1033,7 +1033,7 @@ class TestBackends(unittest.TestCase):
 
         def f(x, y):
             x = x + y
-            x = torch.ops.higher_order.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
+            x = torch.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
             x = x - y
             return x
 
@@ -1320,7 +1320,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check the delegate instruction

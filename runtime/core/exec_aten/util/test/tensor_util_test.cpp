@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/irange.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -228,8 +229,8 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 
   // Any two tensors in `same_stride_tensor_list` have same strides. The two
   // could contain duplicate tensors.
-  for (int i = 0; i < same_stride_tensor_list.size(); i++) {
-    for (int j = i; j < same_stride_tensor_list.size(); j++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
+    for (const auto j : c10::irange(i, same_stride_tensor_list.size())) {
       auto ti = same_stride_tensor_list[i];
       auto tj = same_stride_tensor_list[j];
       ET_CHECK_SAME_STRIDES2(ti, tj);
@@ -238,16 +239,16 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 
   // Any tensor in `same_stride_tensor_list` shall not have same stride with
   // `different_stride`.
-  for (int i = 0; i < same_stride_tensor_list.size(); i++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
     auto ti = same_stride_tensor_list[i];
     ET_EXPECT_DEATH(ET_CHECK_SAME_STRIDES2(ti, different_stride), "");
   }
 
   // Any three tensors in same_stride_tensor_list have same strides. The three
   // could contain duplicate tensors.
-  for (size_t i = 0; i < same_stride_tensor_list.size(); i++) {
-    for (size_t j = i; j < same_stride_tensor_list.size(); j++) {
-      for (size_t k = j; k < same_stride_tensor_list.size(); k++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
+    for (const auto j : c10::irange(i, same_stride_tensor_list.size())) {
+      for (const auto k : c10::irange(j, same_stride_tensor_list.size())) {
         auto ti = same_stride_tensor_list[i];
         auto tj = same_stride_tensor_list[j];
         auto tk = same_stride_tensor_list[k];
@@ -258,8 +259,8 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 
   // Any two tensors in same_stride_tensor_list shall not have same strides with
   // `different_stride`. The two could contain duplicate tensors.
-  for (int i = 0; i < same_stride_tensor_list.size(); i++) {
-    for (int j = i; j < same_stride_tensor_list.size(); j++) {
+  for (const auto i : c10::irange(same_stride_tensor_list.size())) {
+    for (const auto j : c10::irange(i, same_stride_tensor_list.size())) {
       auto ti = same_stride_tensor_list[i];
       auto tj = same_stride_tensor_list[j];
       ET_EXPECT_DEATH(ET_CHECK_SAME_STRIDES3(ti, tj, different_stride), "");

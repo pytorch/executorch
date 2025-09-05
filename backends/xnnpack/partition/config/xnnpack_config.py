@@ -10,12 +10,18 @@ from enum import Enum
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_qparam,
+    is_quant,
+)
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
     PartitionerConfig,
 )
 from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
+from torch.fx.experimental.symbolic_shapes import has_free_unbacked_symbols
 
 logger = logging.getLogger(__name__)
 why = WhyNoPartition(logger=logger)
@@ -168,8 +174,10 @@ class XNNPartitionerConfig(PartitionerConfig):
             if not isinstance(arg_val, torch.Tensor):
                 return False
 
-            # XNNPACK does not support empty tensors
-            if arg_val.numel() == 0:
+            # XNNPACK does not support empty tensors. But we can't get numel()
+            # for unbacked symints, so we conservatively bail out here if any
+            # dimension of the tensor is unbacked symint.
+            if has_free_unbacked_symbols(arg_val) or arg_val.numel() == 0:
                 return False
 
             if arg_val.dtype not in valid_dtypes:
@@ -220,9 +228,18 @@ class XNNPartitionerConfig(PartitionerConfig):
         valid_dtypes = {
             torch.float32,
             torch.float16,
-            torch.int8,
-            torch.qint8,
         }
+        # Only allow int8 and quant dtypes for quant operations
+        if is_quant(node) or is_dequant(node) or is_qparam(node):
+            valid_dtypes.update(
+                {
+                    torch.qint32,
+                    torch.qint8,
+                    torch.quint8,
+                    torch.int8,
+                }
+            )
+
         if (
             node.op != "placeholder"
             and node.op != "call_function"

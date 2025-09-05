@@ -4,135 +4,118 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
-from typing import Tuple
 
-import pytest
+from typing import Tuple
 
 import torch
 
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+from executorch.backends.arm.test import common
 
-test_data_suite = [
-    (torch.ones(10), [(3, -3)]),
-    (torch.ones(10), [(-8, 3)]),
-    (torch.ones(10, 10), [(1, 3), (3, None)]),
-    (torch.ones(10, 10, 10), [(0, 7), (0, None), (0, 8)]),
-    (torch.ones((1, 12, 10, 10)), [(None, None), (None, 5), (3, 5), (4, 10)]),
-]
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
+
+aten_op = "torch.ops.aten.slice.Tensor"
+exir_op = "executorch_exir_dialects_edge__ops_aten_slice_copy"
+
+input_t1 = Tuple[torch.Tensor]  # Input x
+
+test_data_suite = {
+    "ones_neg_3": lambda: (torch.ones(10), [(3, -3)]),
+    "ones_neg_8": lambda: (torch.ones(10), [(-8, 3)]),
+    "ones_slice_2": lambda: (torch.ones(10, 10), [(1, 3), (3, None)]),
+    "ones_slice_3": lambda: (torch.ones(10, 10, 10), [(0, 7), (0, None), (0, 8)]),
+    "ones_slice_4": lambda: (
+        torch.ones((1, 12, 10, 10)),
+        [(None, None), (None, 5), (3, 5), (4, 10)],
+    ),
+}
 
 
-class TestSimpleSlice(unittest.TestCase):
+class Slice(torch.nn.Module):
 
-    class Slice(torch.nn.Module):
-        def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
-            slices = [slice(*i) for i in s]
-            return x[slices]
+    def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
+        slices = [slice(*i) for i in s]
+        return x[slices]
 
-    def _test_slice_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: torch.Tensor
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check(["torch.ops.aten.slice.Tensor"])
-            .to_edge()
-            .check(["executorch_exir_dialects_edge__ops_aten_slice_copy"])
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
 
-        if conftest.is_option_enabled("tosa_ref_model"):
-            tester.run_method_and_compare_outputs(inputs=test_data)
+@common.parametrize("test_data", test_data_suite)
+def test_slice_tensor_tosa_FP(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](Slice(), test_data(), aten_op, exir_op)
+    pipeline.run()
 
-    def _test_slice_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
 
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check(["torch.ops.aten.slice.Tensor"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_slice_tensor_tosa_INT_nchw(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
+        Slice(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-        if conftest.is_option_enabled("tosa_ref_model"):
-            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
-    def _test_slice_ethos_BI_pipeline(
-        self,
-        compile_spec: list[CompileSpec],
-        module: torch.nn.Module,
-        test_data: Tuple[torch.Tensor],
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
-            )
-            .quantize()
-            .export()
-            .check(["torch.ops.aten.slice.Tensor"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_slice_tensor_tosa_INT_nhwc(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
+        Slice(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
 
-    def _test_slice_u55_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        self._test_slice_ethos_BI_pipeline(
-            common.get_u55_compile_spec(), module, test_data
-        )
 
-    def _test_slice_u85_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
-    ):
-        self._test_slice_ethos_BI_pipeline(
-            common.get_u85_compile_spec(), module, test_data
-        )
+@common.parametrize("test_data", test_data_suite)
+def test_slice_tensor_u55_INT(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
+        Slice(),
+        test_data(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=False,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.tosa_ref_model
-    def test_slice_tosa_MI(self, tensor: torch.Tensor, slices: list[tuple[int, int]]):
-        self._test_slice_tosa_MI_pipeline(self.Slice(), (tensor, slices))
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.tosa_ref_model
-    def test_slice_nchw_tosa_BI(
-        self, tensor: torch.Tensor, slices: list[tuple[int, int]]
-    ):
-        self._test_slice_tosa_BI_pipeline(self.Slice(), (tensor, slices))
+@common.parametrize("test_data", test_data_suite)
+def test_slice_tensor_u85_INT(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
+        Slice(),
+        test_data(),
+        aten_ops=[],
+        exir_ops=[],
+        run_on_fvp=False,
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    @pytest.mark.tosa_ref_model
-    def test_slice_nhwc_tosa_BI(
-        self, tensor: torch.Tensor, slices: list[tuple[int, int]]
-    ):
-        self._test_slice_tosa_BI_pipeline(self.Slice(), (tensor, slices))
 
-    @parameterized.expand(test_data_suite)
-    def test_slice_u55_BI(self, tensor: torch.Tensor, slices: list[tuple[int, int]]):
-        self._test_slice_u55_BI_pipeline(self.Slice(), (tensor, slices))
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_slice_tensor_vgf_FP(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Slice(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
 
-    @parameterized.expand(test_data_suite)
-    def test_slice_u85_BI(self, tensor: torch.Tensor, slices: list[tuple[int, int]]):
-        self._test_slice_u85_BI_pipeline(self.Slice(), (tensor, slices))
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_slice_tensor_vgf_INT(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Slice(),
+        test_data(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

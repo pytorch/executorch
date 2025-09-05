@@ -35,7 +35,7 @@ if $STEPWISE_BUILD; then
         -Bcmake-out .
 
     echo "Building any Cadence-specific binaries on top"
-    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DBUCK2="$BUCK" \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
         -DCMAKE_TOOLCHAIN_FILE=./backends/cadence/cadence.cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
@@ -45,11 +45,10 @@ if $STEPWISE_BUILD; then
         -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DEXECUTORCH_ENABLE_PROGRAM_VERIFICATION=ON \
         -DEXECUTORCH_USE_DL=OFF \
-        -DBUILD_EXECUTORCH_PORTABLE_OPS=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF \
+        -DEXECUTORCH_BUILD_PORTABLE_OPS=ON \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=OFF \
         -DPYTHON_EXECUTABLE=python3 \
         -DEXECUTORCH_NNLIB_OPT=ON \
-        -DEXECUTORCH_BUILD_GFLAGS=ON \
         -DHAVE_FNMATCH_H=OFF \
         -Bcmake-out/backends/cadence \
         backends/cadence
@@ -57,7 +56,7 @@ if $STEPWISE_BUILD; then
 else
     echo "Building Cadence toolchain with ExecuTorch packages"
     cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
-    CXXFLAGS="-fno-exceptions -fno-rtti" cmake -DBUCK2="$BUCK" \
+    CXXFLAGS="-fno-exceptions -fno-rtti" cmake \
         -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
         -DCMAKE_TOOLCHAIN_FILE=./backends/cadence/cadence.cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -70,8 +69,8 @@ else
         -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DEXECUTORCH_ENABLE_PROGRAM_VERIFICATION=ON \
         -DEXECUTORCH_USE_DL=OFF \
-        -DBUILD_EXECUTORCH_PORTABLE_OPS=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=OFF \
+        -DEXECUTORCH_BUILD_PORTABLE_OPS=ON \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=OFF \
         -DPYTHON_EXECUTABLE=python3 \
         -DEXECUTORCH_NNLIB_OPT=ON \
         -DHAVE_FNMATCH_H=OFF \

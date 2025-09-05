@@ -15,6 +15,7 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/test/harness:tester",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer_utils",

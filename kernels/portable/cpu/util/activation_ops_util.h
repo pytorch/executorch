@@ -13,7 +13,10 @@
 namespace torch {
 namespace executor {
 
-bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out);
+bool check_gelu_args(
+    const Tensor& in,
+    std::string_view approximate,
+    Tensor& out);
 
 bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out);
 

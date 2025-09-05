@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 import LLaMARunner
 
 class RunnerHolder: ObservableObject {
-  var runner: Runner?
+  var llamaRunner: LLaMARunner?
   var llavaRunner: LLaVARunner?
 }
 
@@ -87,7 +87,7 @@ struct ContentView: View {
     case llava
     case qwen3
     case phi4
-    
+
     static func fromPath(_ path: String) -> ModelType {
       let filename = (path as NSString).lastPathComponent.lowercased()
       if filename.hasPrefix("llama") {
@@ -347,7 +347,7 @@ struct ContentView: View {
 
       switch modelType {
       case .llama, .qwen3, .phi4:
-        runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+        runnerHolder.llamaRunner = runnerHolder.llamaRunner ?? LLaMARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
       case .llava:
         runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
       }
@@ -355,7 +355,7 @@ struct ContentView: View {
       guard !shouldStopGenerating else { return }
       switch modelType {
       case .llama, .qwen3, .phi4:
-        if let runner = runnerHolder.runner, !runner.isLoaded() {
+        if let runner = runnerHolder.llamaRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -481,7 +481,7 @@ struct ContentView: View {
               prompt = String(format: Constants.phi4PromptTemplate, text)
           }
 
-          try runnerHolder.runner?.generate(prompt, sequenceLength: seq_len) { token in
+          try runnerHolder.llamaRunner?.generate(prompt, sequenceLength: seq_len) { token in
 
             if token != prompt {
                 if token == "<|eot_id|>" {
@@ -534,7 +534,7 @@ struct ContentView: View {
                   }
                 }
                 if shouldStopGenerating {
-                  runnerHolder.runner?.stop()
+                  runnerHolder.llamaRunner?.stop()
                 }
               }
             }
@@ -577,7 +577,7 @@ struct ContentView: View {
         return
       }
       runnerQueue.async {
-        runnerHolder.runner = nil
+        runnerHolder.llamaRunner = nil
         runnerHolder.llavaRunner = nil
       }
       switch pickerType {

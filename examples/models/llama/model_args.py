@@ -1,11 +1,12 @@
+import dataclasses
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
 class ModelArgs:
     dim: int = 4096
-    n_layers: int = 8
+    n_layers: int = 1
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
     vocab_size: int = 512  # Arbitrary value, should be defined later by tokenizer.
@@ -14,7 +15,7 @@ class ModelArgs:
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
-    max_batch_size: int = 32
+    max_batch_size: int = 1
     max_seq_len: int = 2048
     max_context_len: int = 2048
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
@@ -55,7 +56,21 @@ class ModelArgs:
     eos_count: int = 2
 
     quantization_args: Optional[dict] = None
+    # LoRA for QAT.
     lora_args: Optional[dict] = None
+
+    # LoRA arguments to set up a LoRA inference model.
+    # These arguments come directly from a torchtune adapter_config.json file.
+    r: Optional[int] = None  # Rank.
+    lora_alpha: Optional[int] = None  # Alpha.
+    # Eg. q_proj, k_proj, v_proj, output_proj
+    target_modules: Optional[list] = None
+    peft_type: Optional[str] = None  # PEFT type.
+    base_model_name_or_path: Optional[str] = None  # Base model name or path.
+    kv_io_bit_width: Optional[int] = (
+        None  # KV cache bit width. This is for QNN backend only for now.
+    )
+    attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self):
         if self.n_kv_heads is None:

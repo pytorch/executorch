@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/runtime/core/freeable_buffer.h>
 
 namespace vkcompute {
 
@@ -24,10 +25,30 @@ struct TensorRef final {
   vkapi::ScalarType dtype;
   const void* data;
 
+  // Optional FreeableBuffer for managing memory lifecycle
+  // This will be empty (default constructed) for the raw pointer constructor
+  executorch::runtime::FreeableBuffer buffer;
+
   explicit TensorRef(
       const std::vector<int64_t>& t_sizes,
       vkapi::ScalarType t_dtype,
       const void* const t_data);
+
+  // Constructor that takes ownership of a FreeableBuffer
+  explicit TensorRef(
+      const std::vector<int64_t>& t_sizes,
+      vkapi::ScalarType t_dtype,
+      executorch::runtime::FreeableBuffer&& t_buffer);
+
+  inline size_t nbytes() const {
+    return utils::multiply_integers(sizes) * vkapi::element_size(dtype);
+  }
+
+  // Manually free the buffer if needed (though it will be freed automatically
+  // on destruction)
+  void free_buffer() {
+    buffer.Free();
+  }
 };
 
 } // namespace vkcompute

@@ -1,165 +1,191 @@
 # Copyright 2024-2025 Arm Limited and/or its affiliates.
-# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
 
-from typing import Callable, Tuple
+from typing import Tuple
 
 import pytest
 
 import torch
-from executorch.backends.arm.test import common, conftest
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from parameterized import parameterized
+
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.test_pipeline import (
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
+
+aten_op_bmm = "torch.ops.aten.bmm.default"
+exir_op_bmm = "executorch_exir_dialects_edge__ops_aten_bmm_default"
+
+aten_op_mm = "torch.ops.aten.matmul.default"
+exir_op_mm = "executorch_exir_dialects_edge__ops_aten_matmul_default"
+
+input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x
 
 
-class TestBMM(unittest.TestCase):
-    """Tests Batch MatMul"""
+class BMM(torch.nn.Module):
+    test_data_generators = {
+        "rand_same": lambda: (torch.rand(2, 1, 1), torch.rand(2, 1, 1)),
+        "rand_diff": lambda: (torch.rand(5, 3, 5), torch.rand(5, 5, 2)),
+        "rand_ones": lambda: (torch.ones(1, 55, 3), torch.ones(1, 3, 44)),
+        "rand_big": lambda: (10000 * torch.randn(10, 1, 10), torch.randn(10, 10, 5)),
+        "rand_neg": lambda: (
+            -10 * torch.randn(2, 32, 64),
+            5 + 5 * torch.randn(2, 64, 32),
+        ),
+    }
 
-    class BMM(torch.nn.Module):
-        test_data_generators = [
-            lambda: (torch.rand(2, 1, 1), torch.rand(2, 1, 1)),
-            lambda: (torch.rand(5, 3, 5), torch.rand(5, 5, 2)),
-            lambda: (torch.ones(1, 55, 3), torch.ones(1, 3, 44)),
-            lambda: (10000 * torch.randn(10, 1, 10), torch.randn(10, 10, 5)),
-            lambda: (-10 * torch.randn(2, 32, 64), 5 + 5 * torch.randn(2, 64, 32)),
-        ]
+    def forward(self, x, y):
+        return torch.bmm(x, y)
 
-        def forward(self, x, y):
-            return torch.bmm(x, y)
 
-    class BMMSingleInput(torch.nn.Module):
-        test_data_generators = [
-            lambda: (torch.rand(20, 3, 3),),
-            lambda: (torch.rand(2, 128, 128),),
-            lambda: (10000 * torch.randn(4, 25, 25),),
-            lambda: (5 + 5 * torch.randn(3, 64, 64),),
-        ]
+class BMMSingleInput(torch.nn.Module):
+    test_data_generators = {
+        "rand_3d_1": lambda: (torch.rand(20, 3, 3),),
+        "rand_3d_2": lambda: (torch.rand(2, 128, 128),),
+        "rand_big_1": lambda: (10000 * torch.randn(4, 25, 25),),
+        "rand_big_2": lambda: (5 + 5 * torch.randn(3, 64, 64),),
+    }
 
-        def forward(self, x):
-            return torch.bmm(x, x)
+    def forward(self, x):
+        return torch.bmm(x, x)
 
-    def _test_bmm_tosa_MI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor, ...]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+MI"),
-            )
-            .export()
-            .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 1})
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data)
-        )
 
-    def _test_bmm_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor, ...]
-    ):
-        (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec("TOSA-0.80+BI"),
-            )
-            .quantize()
-            .export()
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 1})
-            .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_bmm_default"])
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
-        )
+@common.parametrize("test_data", BMM.test_data_generators)
+def test_bmm_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](BMM(), test_data(), aten_op_bmm, exir_op_bmm)
+    pipeline.run()
 
-    def _test_bmm_ethosu_BI_pipeline(
-        self,
-        module: torch.nn.Module,
-        compile_spec: CompileSpec,
-        test_data: Tuple[torch.Tensor, ...],
-    ):
-        tester = (
-            ArmTester(
-                module,
-                example_inputs=test_data,
-                compile_spec=compile_spec,
-            )
-            .quantize()
-            .export()
-            .check_count({"torch.ops.aten.bmm.default": 1})
-            .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .to_executorch()
-            .serialize()
-        )
-        if conftest.is_option_enabled("corstone_fvp"):
-            tester.run_method_and_compare_outputs(inputs=test_data, qtol=1)
 
-    @parameterized.expand(BMM.test_data_generators)
-    def test_bmm_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_tosa_MI_pipeline(self.BMM(), test_data)
+@pytest.mark.flaky(reruns=5)  # TODO: Investigate flakyness (MLETORCH-534)
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+def test_bmm_tosa_FP_single_input(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](
+        BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
+    )
+    pipeline.run()
 
-    @parameterized.expand(BMMSingleInput.test_data_generators)
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
-    def test_bmm_single_input_tosa_MI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_tosa_MI_pipeline(self.BMMSingleInput(), test_data)
 
-    @parameterized.expand(BMM.test_data_generators)
-    def test_bmm_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_tosa_BI_pipeline(self.BMM(), test_data)
+@common.parametrize("test_data", BMM.test_data_generators)
+def test_bmm_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        BMM(), test_data(), aten_op_bmm, exir_op_bmm, qtol=1
+    )
+    pipeline.run()
 
-    @parameterized.expand(BMMSingleInput.test_data_generators)
-    @pytest.mark.flaky  # TODO: Investigate flakyness (MLETORCH-534)
-    def test_bmm_single_input_tosa_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_tosa_BI_pipeline(self.BMMSingleInput(), test_data)
 
-    @parameterized.expand(BMM.test_data_generators)
-    @pytest.mark.corstone_fvp
-    def test_bmm_u55_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_ethosu_BI_pipeline(
-            self.BMM(), common.get_u55_compile_spec(), test_data
-        )
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+def test_bmm_tosa_INT_single_input(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
+        BMMSingleInput(), test_data(), aten_op_bmm, exir_op_bmm
+    )
+    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
 
-    @parameterized.expand(BMM.test_data_generators)
-    @pytest.mark.corstone_fvp
-    def test_bmm_u85_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_ethosu_BI_pipeline(
-            self.BMM(), common.get_u85_compile_spec(), test_data
-        )
 
-    # Expected to fail on FVP as TOSA.MATMUL is not supported on U55
-    @parameterized.expand(BMMSingleInput.test_data_generators)
-    @pytest.mark.corstone_fvp
-    def test_bmm_single_input_u55_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_ethosu_BI_pipeline(
-            self.BMMSingleInput(), common.get_u55_compile_spec(), test_data
-        )
+@common.parametrize("test_data", BMM.test_data_generators)
+@common.XfailIfNoCorstone300
+def test_bmm_u55_INT(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        BMM(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        run_on_fvp=True,
+    )
+    pipeline.run()
 
-    @parameterized.expand(BMMSingleInput.test_data_generators)
-    @pytest.mark.corstone_fvp
-    def test_bmm_single_input_u85_BI(self, test_data_generator: Callable[[], Tuple]):
-        test_data = test_data_generator()
-        self._test_bmm_ethosu_BI_pipeline(
-            self.BMMSingleInput(), common.get_u85_compile_spec(), test_data
-        )
+
+@common.parametrize("test_data", BMM.test_data_generators)
+@common.XfailIfNoCorstone320
+def test_bmm_u85_INT(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        BMM(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+@common.XfailIfNoCorstone300
+def test_bmm_u55_INT_single_input(test_data: input_t1):
+    pipeline = EthosU55PipelineINT[input_t1](
+        BMMSingleInput(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+@common.XfailIfNoCorstone320
+def test_bmm_u85_INT_single_input(test_data: input_t1):
+    pipeline = EthosU85PipelineINT[input_t1](
+        BMMSingleInput(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMM.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMM(), test_data(), aten_op_bmm, exir_op_bmm, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_FP_single_input(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMMSingleInput(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMM.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMM(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_bmm_vgf_INT_single_input(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        BMMSingleInput(),
+        test_data(),
+        aten_op_bmm,
+        exir_op_bmm,
+        tosa_version="TOSA-1.0+INT",
+    )
+    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
+    # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()

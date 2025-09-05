@@ -9,22 +9,28 @@ from collections import OrderedDict
 from typing import Dict
 
 from executorch.backends.qualcomm._passes import (
+    AnnotateAdaptiveAvgPool1D,
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    CanonicalizeConv,
     ConvertBmmToMatmul,
-    ConvertConv1dToConv2d,
+    ConvertLinearToConv2d,
     ConvertSquareToPow,
-    ConvertUpsampleBicubicWithBilinear,
     DecomposeAny,
     DecomposeCDist,
+    DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
+    DecomposeMinMaxDim,
+    DecomposeRoll,
     DecomposeSilu,
+    DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
     FoldQDQ,
+    FuseConsecutiveCast,
     FuseConsecutiveTranspose,
     I64toI32,
     InsertIOQDQ,
@@ -37,7 +43,6 @@ from executorch.backends.qualcomm._passes import (
     Remove0DTensor,
     RemoveRedundancy,
     ReplaceArangeArgs,
-    ReplaceIndexPutInput,
     ReplaceInfValues,
     TagQuantIO,
 )
@@ -73,23 +78,24 @@ def get_capture_program_passes():
     # The second value in each tuple in `default_passes_and_setting` indicates whether the corresponding pass is activated by default.
     # If a pass is activated, it will be executed by default.
     default_passes_and_setting = [
+        (AnnotateAdaptiveAvgPool1D, True),
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
-        (ConvertBmmToMatmul, True),
-        (ConvertConv1dToConv2d, True),
-        (ConvertUpsampleBicubicWithBilinear, False),
+        (CanonicalizeConv, True),
+        (ConvertBmmToMatmul, False),
         (DecomposeAny, True),
+        (DecomposeColIm, True),
+        (DecomposeMinMaxDim, True),
         (ExpandBroadcastTensorShape, False),
         (FixedLinearKeepDim, True),
         (FoldQDQ, True),
         (I64toI32, True),
         (LayoutTransform, True),
         (RecomposePixelUnshuffle, True),
-        (RecomposeRmsNorm, False),
+        (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
-        (ReplaceIndexPutInput, True),
         (TagQuantIO, False),
     ]
 
@@ -128,11 +134,11 @@ class QnnPassManager(PassManager):
         dep_table: Dict = None,
     ):
         # TODO: remove this workaround when target could be correctly detected
-        from executorch.backends.qualcomm._passes import utils
+        from executorch.backends.qualcomm.builders import node_visitor
         from executorch.exir.dialects._ops import ops as exir_ops
 
-        utils.q_ops.add(exir_ops.edge.pt2e_quant.quantize_affine.default)
-        utils.dq_ops.add(exir_ops.edge.pt2e_quant.dequantize_affine.default)
+        node_visitor.q_ops.add(exir_ops.edge.torchao.quantize_affine.default)
+        node_visitor.dq_ops.add(exir_ops.edge.torchao.dequantize_affine.default)
 
         passes_job = (
             passes_job if passes_job is not None else get_capture_program_passes()
@@ -182,12 +188,16 @@ class QnnPassManager(PassManager):
 
     # Before quantizer
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(RemoveRedundancy(quantization_capture=True))
         self.add_pass(ReduceDynamicRange())
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
+        self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
@@ -195,11 +205,20 @@ class QnnPassManager(PassManager):
         self.add_pass(LiftConstantScalarOperands())
         return self._transform(graph_module)
 
-    def transform_for_export_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_export_pipeline(
+        self, exported_program: ExportedProgram, convert_linear_to_conv2d: bool = False
+    ):
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
+        self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeWrapWithAutocast())
+        # this pass will rewrite state_dict, it needs to be accomplished before
+        # to_edge_transform_and_lower
+        self.add_pass(CanonicalizeConv(exported_program))
+        if convert_linear_to_conv2d:
+            self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
         self._transform(exported_program.graph_module)
@@ -207,8 +226,17 @@ class QnnPassManager(PassManager):
         return ep
 
     def transform_for_preprocess_pipeline(self, exported_program: ExportedProgram):
+        self.add_pass(FoldQDQ(exported_program, force_fold=True))
         self.add_pass(InsertRequantize())
         self.add_pass(InsertIOQDQ(exported_program))
         self.add_pass(LayoutTransform(exported_program, insert_permute=True))
+        self.add_pass(FuseConsecutiveCast())
         self.add_pass(FuseConsecutiveTranspose())
-        return self._transform(exported_program.graph_module)
+        self._transform(exported_program.graph_module)
+        # Update inputs_to_buffers and buffers_to_mutate in graph signature for mutable buffer
+        # Since I/O will be inserted Q/DQ, it results in failed to mapping output node names and buffer
+        exported_program._graph_signature = _get_updated_graph_signature(
+            exported_program.graph_signature,
+            exported_program.graph_module,
+        )
+        return exported_program.graph_module
