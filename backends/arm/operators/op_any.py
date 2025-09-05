@@ -16,7 +16,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 
-from executorch.backends.arm.tosa_mapping import TosaArg  # type: ignore
+from executorch.backends.arm.tosa.mapping import TosaArg  # type: ignore
 from torch.fx import Node
 
 

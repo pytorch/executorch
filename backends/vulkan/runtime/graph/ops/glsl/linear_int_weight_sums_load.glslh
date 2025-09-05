@@ -9,13 +9,13 @@
 #ifndef LINEAR_FP_WEIGHT_SUMS_LOAD_GLSLH
 #define LINEAR_FP_WEIGHT_SUMS_LOAD_GLSLH
 
-#include "linear_fp_per_out_channel_params.glslh"
+#include "linear_int_per_out_channel_params.glslh"
 
-VEC4_T load_sum_x4(const int n4) {
-  return VEC4_T(t_weight_sums[n4]);
+ivec4 load_sum_x4(const int n4) {
+  return ivec4(t_weight_sums[n4]);
 }
 
-void load_sums_tile(out FPPerOutChannelParams sums, const int n4_start) {
+void load_sums_tile(out IntPerOutChannelParams sums, const int n4_start) {
 #if TILE_N4 == 1
   sums.data[0] = load_sum_x4(n4_start);
 
