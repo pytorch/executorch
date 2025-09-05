@@ -133,6 +133,15 @@ class TOSABackend(BackendDetails):
         out_node = next(n for n in graph_module.graph.nodes if n.op == "output")
         _counter = count()
 
+        node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
+
+        # Re-shuffle output nodes to preserve author's order
+        def _external_id(n: Node, node_2_id, fallback: int) -> int:
+            return node_2_id.get(n.name, fallback)
+
+        out_node = next(n for n in graph_module.graph.nodes if n.op == "output")
+        _counter = count()
+
         # sort nodes by the key that is id
         def _sort_key(t: Node) -> int:
             return _external_id(t, node_2_id, next(_counter))
