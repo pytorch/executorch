@@ -176,3 +176,34 @@ TEST_F(OpAnyOutTest, EmptyInput) {
   op_any_dims_out(x, dim_list, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tfBool.make({2, 0, 1}, {}));
 }
+
+TEST_F(OpAnyOutTest, TestAnyDimsOutNullDimList) {
+  TensorFactory<ScalarType::Int> tfInt;
+  TensorFactory<ScalarType::Bool> tfBool;
+
+  Tensor self = tfInt.make({2, 6}, {0, 2, 0, 3, 0, 1, 5, 0, 2, 0, 4, 0});
+  optional<ArrayRef<int64_t>> opt_dim_list = std::nullopt;
+  bool keepdim = false;
+  Tensor out = tfBool.zeros({});
+  Tensor out_expected = tfBool.make({}, {true});
+
+  op_any_dims_out(self, opt_dim_list, keepdim, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST_F(OpAnyOutTest, TestAnyDimsOutEmptyDimList) {
+  TensorFactory<ScalarType::Int> tfInt;
+  TensorFactory<ScalarType::Bool> tfBool;
+
+  Tensor self = tfInt.make({2, 3}, {0, 2, 0, 0, 1, 5});
+  int64_t dims[0] = {};
+  size_t dims_size = 0;
+  optional<ArrayRef<int64_t>> opt_dim_list{ArrayRef<int64_t>{dims, dims_size}};
+  bool keepdim = false;
+  Tensor out = tfBool.zeros({2, 3});
+  Tensor out_expected =
+      tfBool.make({2, 3}, {false, true, false, false, true, true});
+
+  op_any_dims_out(self, opt_dim_list, keepdim, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
