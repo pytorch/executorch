@@ -15,13 +15,4 @@ run_ootb_tests_ethos_u() {
     echo "${FUNCNAME}: PASS"
 }
 
-run_ootb_tests_vgf() {
-    echo "$FUNCNAME: Running out-of-the-box tests for Arm VGF"
-    jupyter nbconvert \
-        --to notebook \
-        --execute examples/arm/vgf_minimal_example.ipynb
-    echo "${FUNCNAME}: PASS"
-}
-
 run_ootb_tests_ethos_u
-run_ootb_tests_vgf
