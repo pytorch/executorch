@@ -50,6 +50,4 @@ cd et
 mklink /d executorch %work_dir%
 cd executorch
 
-REM %args% || exit /b 1
-%args%
-timeout 600
+%args% || exit /b 1
