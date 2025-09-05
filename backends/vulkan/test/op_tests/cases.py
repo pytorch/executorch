@@ -270,11 +270,13 @@ def get_avg_pool2d_inputs():
     return test_suite
 
 
-@register_test_suite("aten.max_pool2d_with_indices.default")
+@register_test_suite(
+    ["aten.max_pool2d_with_indices.default", "aten.max_pool2d.default"]
+)
 def get_max_pool2d_inputs():
     test_suite = VkTestSuite(
         [
-            ((S, M1, M2), [2, 2], [1, 1], [0, 0], [1, 1]),
+            ((1, 7, 89, 77), [2, 2], [1, 1], [0, 0], [1, 1]),
         ]
     )
     return test_suite
