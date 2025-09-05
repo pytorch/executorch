@@ -212,7 +212,6 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-<<<<<<< HEAD
   int CheckDimOrder(EValue** args) const {
     size_t data_input_count = mInputSizes.size();
     for (int i = 0; i < data_input_count; i++) {
@@ -267,10 +266,6 @@ class NeuronExecuTorchDelegate {
   }
 
   int HintNeuronBackend(::executorch::runtime::EValue** args) const;
-=======
-  int HintNeuronBackend(
-      ::executorch::runtime::Span<::executorch::runtime::EValue*> args) const;
->>>>>>> upstream/main
 
  private:
   std::vector<size_t> mInputSizes;
