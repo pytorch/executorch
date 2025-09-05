@@ -1895,8 +1895,9 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   xnn_weights_cache_t weights_cache_ptr = nullptr;
 #endif
 
-  // NOLINTBEGIN(facebook-hte-NullableDereference) - weights cache is allowed to
-  // be null
+#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
+  ET_CHECK_OR_RETURN_ERROR(
+      workspace != nullptr, Internal, "Failed to initialize XNNPACK workspace");
   status = xnn_create_runtime_v4(
       subgraph.get(),
       weights_cache_ptr,
@@ -1904,7 +1905,14 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
-  // NOLINTEND(facebook-hte-NullableDereference)
+#else
+  status = xnn_create_runtime_v3(
+      subgraph.get(),
+      weights_cache_ptr,
+      ::executorch::extension::threadpool::get_pthreadpool(),
+      runtime_flags,
+      &runtime_ptr);
+#endif
 
   ET_CHECK_OR_RETURN_ERROR(
       xnn_status_success == status,
