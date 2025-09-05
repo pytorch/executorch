@@ -3,4 +3,4 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-ethos-u-vela @ git+https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela@9a43a1bf26bfc7588358d7e6e6bb2613b4981a34
+ethos-u-vela @ git+https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela@4.4.0
