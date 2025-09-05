@@ -1,17 +1,11 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+#
 # @noautodeps
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
-python_library(
-    name = "ethosu_partitioner",
-    srcs = [
-        "ethosu/__init__.py",
-        "ethosu/backend.py",
-        "ethosu/partitioner.py"
-    ],
-    deps = [
-        ":arm_partitioner",
-    ]
-)
 python_library(
     name = "constants",
     srcs = [
@@ -35,12 +29,13 @@ python_library(
     ],
 )
 python_library(
-    name = "arm_partitioner",
+    name = "tosa_partitioner",
     srcs = [
-        "tosa_backend.py",
-        "tosa_partitioner.py",
+        "tosa/__init__.py",
+        "tosa/backend.py",
+        "tosa/partitioner.py",
         "vgf_backend.py",
-        "vgf_partitioner.py",
+        "vgf_partitioner.py"
     ],
     deps = [
         ":arm_backend",
@@ -48,7 +43,18 @@ python_library(
         "//executorch/backends/arm/operator_support:operator_support",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
+    ]
+)
+python_library(
+    name = "ethosu_partitioner",
+    srcs = [
+        "ethosu/__init__.py",
+        "ethosu/backend.py",
+        "ethosu/partitioner.py"
     ],
+    deps = [
+        ":tosa_partitioner",
+    ]
 )
 python_library(
     name = "arm_backend",

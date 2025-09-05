@@ -1,3 +1,8 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load(":targets.bzl", "define_arm_tests")
 
@@ -41,6 +46,7 @@ python_library(
     deps = [
         ":common",
         "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/backends/arm:tosa_partitioner",
         "//executorch/backends/arm:ethosu_partitioner",
         "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm:tosa_mapping",
