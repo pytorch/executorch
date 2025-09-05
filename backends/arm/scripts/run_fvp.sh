@@ -92,7 +92,7 @@ if [[ ${target} == *"ethos-u55"*  ]]; then
         -C mps3_board.uart0.shutdown_on_eot=1               \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
-        --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
+        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 elif [[ ${target} == *"ethos-u85"*  ]]; then
     ${nobuf} ${fvp_model}                                   \
@@ -104,11 +104,26 @@ elif [[ ${target} == *"ethos-u85"*  ]]; then
         -C mps4_board.uart0.shutdown_on_eot=1               \
         -a "${elf_file}"                                    \
         ${data_file}                                        \
-        --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
+        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 else
     echo "Running ${elf_file} for ${target} is not supported"
     exit 1
+fi
+
+echo "Checking for a etdump in log"
+! grep "#\[RUN THIS\]" ${log_file} >/dev/null
+if [ $? != 0 ]; then
+    echo "Found ETDump in log!"
+    echo "#!/bin/sh" > etdump_script.sh
+    sed -n '/^#\[RUN THIS\]$/,/^#\[END\]$/p' ${log_file} >> etdump_script.sh
+    # You can run etdump_script.sh if you do
+    # $ chmod a+x etdump_script.sh
+    # $ ./etdump_script.sh
+    # But lets not trust the script as a bad patch would run bad code on your machine
+    grep ">etdump.bin" etdump_script.sh | cut -d\" -f2- | cut -d\" -f1 >etdump.base64
+    base64 -d etdump.base64 >etdump.bin
+    python3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles
 fi
 
 echo "Checking for problems in log:"
