@@ -36,9 +36,8 @@ else
 fi
 
 function setup_vulkan_sdk() {
-
-    if command -v vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK already installed..."
+    if command -v glslc > /dev/null 2>&1; then
+        echo "[${FUNCNAME[0]}] GLSL already installed, no need to get Vulkan SDK..."
         enable_vulkan_sdk=0
         return
     fi
@@ -57,10 +56,11 @@ function setup_vulkan_sdk() {
     tar -C ${vulkan_sdk_base_dir} -xJf "${vulkan_sdk_tar_file}"
 
     vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
-    if ${vulkan_sdk_bin_path}/vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK OK"
+    if ${vulkan_sdk_bin_path}/glslc --version > /dev/null 2>&1; then
+        echo "[${FUNCNAME[0]}] Vulkan SDK install (GLSL) OK"
     else
-        echo "[${FUNCNAME[0]}] Vulkan SDK NOK - perhaps need manual install of swifthshader or mesa-vulkan driver?"
+        echo "[${FUNCNAME[0]}] Vulkan SDK install NOK - glslc returned error"
+        ${vulkan_sdk_bin_path}/glslc --version
         exit 1
     fi
 }
