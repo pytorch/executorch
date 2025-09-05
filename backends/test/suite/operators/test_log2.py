@@ -7,6 +7,8 @@
 # pyre-unsafe
 
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -46,6 +48,7 @@ class TestLog2(OperatorTest):
         # 3D tensor
         self._test_op(Log2Model(), (torch.rand(3, 4, 5) + 0.01,), flow)
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_log2_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
         # Tensor with infinity
