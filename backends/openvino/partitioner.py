@@ -138,7 +138,7 @@ class OpenvinoPartitioner(Partitioner):
         return (ops_not_decompose, None)
 
     def check_pattern(
-        self, node: torch.fx.Node, pattern: PatternNode, enabled_ops: list
+        self, node: torch.fx.Node, pattern: type[PatternNode], enabled_ops: list
     ) -> bool:
         if node.op == "call_function":
             if ("call_function" + ":" + str(node.target.__name__)) in pattern.op_types:  # type: ignore[union-attr]
