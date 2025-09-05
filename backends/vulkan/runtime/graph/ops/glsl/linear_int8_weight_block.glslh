@@ -16,8 +16,8 @@
  * texture/buffer.
  *
  * Requires:
- * - t_qmat2 to be defined in shader layout (output texture/buffer)
- * - t_input to be defined in shader layout (input buffer)
+ * - t_packed_int8_weight to be defined in shader layout (output texture/buffer)
+ * - t_int8_weight to be defined in shader layout (input buffer)
  *
  * Settings:
  * - USING_BUFFER to indicate if output resource is a buffer. Otherwise texture
@@ -41,7 +41,7 @@ void load_block_data_no_checks(
     const int ntexels_K,
     const int N) {
   [[unroll]] for (int n = 0; n < 4; ++n) {
-    block.data[n] = t_input[(n_start + n) * ntexels_K + k4];
+    block.data[n] = t_int8_weight[(n_start + n) * ntexels_K + k4];
   }
 }
 
@@ -53,7 +53,7 @@ void load_block_data_with_checks(
     const int N) {
   [[unroll]] for (int n = 0; n < 4; ++n) {
     if (n_start + n < N) {
-      block.data[n] = t_input[(n_start + n) * ntexels_K + k4];
+      block.data[n] = t_int8_weight[(n_start + n) * ntexels_K + k4];
     } else {
       block.data[n] = 0;
     }
@@ -67,7 +67,7 @@ void write_weight_block(
     const int n4,
     const int k4,
     const int ntexels_N) {
-  t_qmat2[k4 * ntexels_N + n4] = block.data;
+  t_packed_int8_weight[k4 * ntexels_N + n4] = block.data;
 }
 
 #else // USING_TEXTURE
@@ -77,7 +77,7 @@ void write_weight_block(
     const int n4,
     const int k4,
     const int ntexels_N) {
-  imageStore(t_qmat2, ivec2(n4, k4), block.data);
+  imageStore(t_packed_int8_weight, ivec2(n4, k4), block.data);
 }
 
 #endif // USING_BUFFER

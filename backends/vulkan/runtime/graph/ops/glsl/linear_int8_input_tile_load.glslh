@@ -10,7 +10,7 @@
  * Defines functions to load a Int8InputTile from input buffer/texture.
  *
  * Requires:
- * - t_input to be declared in the shader layout (input buffer/texture)
+ * - t_packed_int8_input to be declared in the shader layout
  *
  * Settings:
  * - INPUT_BUFFER to indicate resource is a buffer, otherwise texture storage is
@@ -30,7 +30,7 @@ ivec4 load_input_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
-  return t_input[(block_y * nblocks_x) + block_x];
+  return t_packed_int8_input[(block_y * nblocks_x) + block_x];
 }
 
 #else
@@ -39,7 +39,7 @@ ivec4 load_input_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
-  return texelFetch(t_input, ivec3(block_x, block_y, 0), 0);
+  return texelFetch(t_packed_int8_input, ivec3(block_x, block_y, 0), 0);
 }
 
 #endif // INPUT_BUFFER

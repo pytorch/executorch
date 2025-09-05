@@ -15,8 +15,8 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 
 from executorch.backends.arm.test.common import SkipIfNoModelConverter
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.passes.quantize_io_pass import extract_io_quant_params
