@@ -18,7 +18,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def unary_operator_factory(unary_target: str, tosa_op):
