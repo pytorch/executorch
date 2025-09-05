@@ -122,6 +122,7 @@ echo "Checking for .so files inside the wheel..."
 WHEEL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/python" || true)
 if [ -z "$WHEEL_SO_FILES" ]; then
     echo "WARNING: No .so files found in wheel under executorch/backends/qualcomm/python"
+    exit 1
 else
     echo "Wheel contains the following .so files:"
     echo "$WHEEL_SO_FILES"
