@@ -161,7 +161,6 @@ class TOSABackend(BackendDetails):
             graph_module.graph.lint()
             graph_module.recompile()
 
-        node_visitors = get_node_visitors(edge_program, tosa_spec)
         input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
