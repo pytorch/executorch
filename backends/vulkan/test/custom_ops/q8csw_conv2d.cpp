@@ -163,7 +163,7 @@ TestCase create_test_case_from_config(
 
   ValueSpec weight_sums(
       {config.channels.out}, // Per output channel
-      vkapi::kFloat,
+      vkapi::kInt,
       storage_type,
       utils::kWidthPacked,
       DataGenType::ZEROS);
@@ -705,9 +705,9 @@ void conv2d_q8ta_q8csw_reference_impl(TestCase& test_case) {
           // weight_scale + bias zero_point_correction = input_zero_point *
           // sum_of_weights_for_this_output_channel
           int32_t zero_point_correction = input_zero_point * weight_sum;
-          float float_result = (static_cast<float>(int_sum) -
-                                static_cast<float>(zero_point_correction)) *
-              input_scale * weight_scales_data[out_c];
+          int32_t accum_adjusted = int_sum - zero_point_correction;
+          float float_result =
+              accum_adjusted * input_scale * weight_scales_data[out_c];
 
           // Add bias and store result
           float_result += bias_data[out_c];

@@ -13,11 +13,12 @@
  * Defines functions to load a Int8WeightTile from input buffer/texture.
  *
  * Requires:
- * - t_qmat2 to be declared in the shader layout (input buffer/texture)
+ * - t_packed_int8_weight to be declared in the shader layout (input
+ * buffer/texture)
  *
  * Settings:
- * - WEIGHT_BUFFER to indicate t_qmat2 is a buffer, otherwise texture storage is
- *   assumed.
+ * - WEIGHT_BUFFER to indicate t_packed_int8_weight is a buffer, otherwise
+ * texture storage is assumed.
  */
 
 #extension GL_EXT_control_flow_attributes : require
@@ -30,7 +31,7 @@ ivec4 load_weight_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
-  return t_qmat2[(block_y * nblocks_x) + block_x];
+  return t_packed_int8_weight[(block_y * nblocks_x) + block_x];
 }
 
 #else // WEIGHT_TEXTURE
@@ -39,7 +40,7 @@ ivec4 load_weight_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
-  return texelFetch(t_qmat2, ivec2(block_x, block_y), 0);
+  return texelFetch(t_packed_int8_weight, ivec2(block_x, block_y), 0);
 }
 
 #endif // WEIGHT_BUFFER
