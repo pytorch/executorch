@@ -1,5 +1,5 @@
 param (
-    [string]$editable = $false
+    [string]$buildMode = "Release"
 )
 
 Set-PSDebug -Trace 1
@@ -17,13 +17,13 @@ if ($LASTEXITCODE -ne 0) {
 New-Item -Path "test-build" -ItemType Directory
 cd "test-build"
 
-cmake .. --preset windows -B . -DCMAKE_BUILD_TESTS=ON
+cmake .. --preset windows -B . -DEXECUTORCH_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=$buildMode
 if ($LASTEXITCODE -ne 0) {
     Write-Host "CMake configuration was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
 }
 
-cmake --build . -j8 --config Release
+cmake --build . -j8 --config $buildMode --verbose
 if ($LASTEXITCODE -ne 0) {
     Write-Host "CMake build was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
