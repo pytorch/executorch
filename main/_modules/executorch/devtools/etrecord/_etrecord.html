@@ -562,6 +562,7 @@
     <span class="n">ET_DIALECT_GRAPH_MODULE</span> <span class="o">=</span> <span class="s2">&quot;et_dialect_graph_module&quot;</span>
     <span class="n">DEBUG_HANDLE_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;debug_handle_map&quot;</span>
     <span class="n">DELEGATE_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;delegate_map&quot;</span>
+    <span class="n">INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;instruction_id_to_num_outs_map&quot;</span>
     <span class="n">REFERENCE_OUTPUTS</span> <span class="o">=</span> <span class="s2">&quot;reference_outputs&quot;</span>
     <span class="n">REPRESENTATIVE_INPUTS</span> <span class="o">=</span> <span class="s2">&quot;representative_inputs&quot;</span>
 
@@ -576,6 +577,9 @@
         <span class="n">_debug_handle_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">_delegate_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
             <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">_instruction_id_to_num_outs_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+            <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]</span>
         <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">_reference_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">ProgramOutput</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">_representative_inputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ProgramInput</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -602,6 +606,7 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">graph_map</span> <span class="o">=</span> <span class="n">graph_map</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="o">=</span> <span class="n">_debug_handle_map</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_map</span> <span class="o">=</span> <span class="n">_delegate_map</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_instruction_id_to_num_outs_map</span> <span class="o">=</span> <span class="n">_instruction_id_to_num_outs_map</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">_reference_outputs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="o">=</span> <span class="n">_representative_inputs</span>
 
@@ -680,6 +685,12 @@
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
                 <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DELEGATE_MAP_NAME</span><span class="p">,</span>
                 <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_map</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_instruction_id_to_num_outs_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
+                <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME</span><span class="p">,</span>
+                <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_instruction_id_to_num_outs_map</span><span class="p">),</span>
             <span class="p">)</span>
 
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -794,6 +805,7 @@
         <span class="k">if</span> <span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_instruction_id_to_num_outs_map</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="p">):</span>
@@ -803,13 +815,18 @@
             <span class="p">)</span>
 
         <span class="c1"># Process executorch program and extract data</span>
-        <span class="n">debug_handle_map</span><span class="p">,</span> <span class="n">delegate_map</span><span class="p">,</span> <span class="n">reference_outputs</span><span class="p">,</span> <span class="n">representative_inputs</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">_process_executorch_program</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
-        <span class="p">)</span>
+        <span class="p">(</span>
+            <span class="n">debug_handle_map</span><span class="p">,</span>
+            <span class="n">delegate_map</span><span class="p">,</span>
+            <span class="n">instruction_id_to_num_outs_map</span><span class="p">,</span>
+            <span class="n">reference_outputs</span><span class="p">,</span>
+            <span class="n">representative_inputs</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="n">_process_executorch_program</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
 
         <span class="c1"># Set the extracted data</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_debug_handle_map</span> <span class="o">=</span> <span class="n">debug_handle_map</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_map</span> <span class="o">=</span> <span class="n">delegate_map</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_instruction_id_to_num_outs_map</span> <span class="o">=</span> <span class="n">instruction_id_to_num_outs_map</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_reference_outputs</span> <span class="o">=</span> <span class="n">reference_outputs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_representative_inputs</span> <span class="o">=</span> <span class="n">representative_inputs</span>
 
@@ -1103,7 +1120,9 @@
     <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
         <span class="n">ExecutorchProgram</span><span class="p">,</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">BundledProgram</span>
     <span class="p">]</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">]]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span>
+    <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">]</span>
+<span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Process executorch program and return debug maps and bundled program data.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">,</span> <span class="n">BundledProgram</span><span class="p">):</span>
         <span class="n">reference_outputs</span> <span class="o">=</span> <span class="n">_get_reference_outputs</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">)</span>
@@ -1112,11 +1131,30 @@
         <span class="n">debug_handle_map</span> <span class="o">=</span> <span class="n">executorch_program</span><span class="o">.</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">debug_handle_map</span>
         <span class="c1"># pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `debug_handle_map`</span>
         <span class="n">delegate_map</span> <span class="o">=</span> <span class="n">executorch_program</span><span class="o">.</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">delegate_map</span>
-        <span class="k">return</span> <span class="n">debug_handle_map</span><span class="p">,</span> <span class="n">delegate_map</span><span class="p">,</span> <span class="n">reference_outputs</span><span class="p">,</span> <span class="n">representative_inputs</span>
+        <span class="c1"># pyre-ignore[16]: Item `None` of `typing.Union[None, exir.program._program.ExecutorchProgram, exir.program._program.ExecutorchProgramManager]` has no attribute `instruction_id_to_num_outs_map`</span>
+        <span class="n">instruction_id_to_num_outs_map</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">executorch_program</span><span class="o">.</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">instruction_id_to_num_outs_map</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">debug_handle_map</span><span class="p">,</span>
+            <span class="n">delegate_map</span><span class="p">,</span>
+            <span class="n">instruction_id_to_num_outs_map</span><span class="p">,</span>
+            <span class="n">reference_outputs</span><span class="p">,</span>
+            <span class="n">representative_inputs</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">debug_handle_map</span> <span class="o">=</span> <span class="n">executorch_program</span><span class="o">.</span><span class="n">debug_handle_map</span>
         <span class="n">delegate_map</span> <span class="o">=</span> <span class="n">executorch_program</span><span class="o">.</span><span class="n">delegate_map</span>
-        <span class="k">return</span> <span class="n">debug_handle_map</span><span class="p">,</span> <span class="n">delegate_map</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">instruction_id_to_num_outs_map</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">executorch_program</span><span class="o">.</span><span class="n">instruction_id_to_num_outs_map</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">debug_handle_map</span><span class="p">,</span>
+            <span class="n">delegate_map</span><span class="p">,</span>
+            <span class="n">instruction_id_to_num_outs_map</span><span class="p">,</span>
+            <span class="kc">None</span><span class="p">,</span>
+            <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ETRecord</span><span class="p">:</span>  <span class="c1"># noqa: C901</span>
@@ -1150,6 +1188,7 @@
     <span class="n">graph_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">debug_handle_map</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">delegate_map</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">instruction_id_to_num_outs_map</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">exported_program</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">reference_outputs</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1168,6 +1207,12 @@
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DELEGATE_MAP_NAME</span><span class="p">:</span>
             <span class="n">delegate_map</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span>
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DELEGATE_MAP_NAME</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME</span><span class="p">:</span>
+            <span class="n">instruction_id_to_num_outs_map</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span>
+                <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span>
+                    <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">INSTRUCTION_ID_TO_NUM_OUTS_MAP_NAME</span>
+                <span class="p">)</span>
             <span class="p">)</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">:</span>
             <span class="k">continue</span>
@@ -1234,6 +1279,7 @@
         <span class="n">graph_map</span><span class="o">=</span><span class="n">graph_map</span><span class="p">,</span>
         <span class="n">_debug_handle_map</span><span class="o">=</span><span class="n">debug_handle_map</span><span class="p">,</span>
         <span class="n">_delegate_map</span><span class="o">=</span><span class="n">delegate_map</span><span class="p">,</span>
+        <span class="n">_instruction_id_to_num_outs_map</span><span class="o">=</span><span class="n">instruction_id_to_num_outs_map</span><span class="p">,</span>
         <span class="n">_reference_outputs</span><span class="o">=</span><span class="n">reference_outputs</span><span class="p">,</span>
         <span class="n">_representative_inputs</span><span class="o">=</span><span class="n">representative_inputs</span><span class="p">,</span>
         <span class="n">export_graph_id</span><span class="o">=</span><span class="n">export_graph_id</span><span class="p">,</span>

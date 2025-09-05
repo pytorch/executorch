@@ -1155,6 +1155,14 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_emitter_output</span><span class="p">()</span><span class="o">.</span><span class="n">method_to_delegate_debug_id_map</span>
 
     <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">instruction_id_to_num_outs_map</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">instruction_id_to_num_outs_map</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_emitter_output</span><span class="p">()</span><span class="o">.</span><span class="n">instruction_id_to_num_outs_map</span>
+
+    <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
 
@@ -2369,6 +2377,12 @@
         <span class="bp">self</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">method_to_delegate_debug_id_map</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">instruction_id_to_num_outs_map</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">instruction_id_to_num_outs_map</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
