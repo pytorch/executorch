@@ -83,7 +83,7 @@ class OpParamWrapper {
 
   template <typename T>
   void SetVectorValue(const std::vector<T>& value) {
-    auto bytes = sizeof(std::string::value_type) * value.size();
+    auto bytes = sizeof(T) * value.size();
     storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes]);
     memcpy(storage_.get(), value.data(), bytes);
     size_ = value.size();
@@ -92,9 +92,9 @@ class OpParamWrapper {
   }
 
   void SetStringValue(const std::string& value) {
-    auto bytes_ = sizeof(std::string::value_type) * value.size();
-    storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes_]);
-    memcpy(storage_.get(), value.data(), bytes_);
+    auto bytes = sizeof(std::string::value_type) * value.size();
+    storage_ = std::unique_ptr<uint8_t[]>(new uint8_t[bytes]);
+    memcpy(storage_.get(), value.data(), bytes);
     size_ = value.size();
     is_scalar_ = false;
     scalar_type_ = ScalarType::CHAR;
