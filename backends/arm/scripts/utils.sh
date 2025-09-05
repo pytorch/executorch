@@ -84,7 +84,7 @@ function check_os_support() {
     # Linux on arm64/aarch64
     # Darwin on arm64/aarch64
     if [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-        if [[ "${OS}" != "Darwin" ]] || [[ "${OS}" != "Linux" ]]; then
+        if [[ "${OS}" != "Darwin" ]] && [[ "${OS}" != "Linux" ]]; then
             echo "Error: Only Linux and Darwin are supported on arm64"
             exit 1
         fi
