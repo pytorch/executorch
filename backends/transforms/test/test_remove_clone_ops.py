@@ -140,7 +140,7 @@ class TestRemoveCloneOpsTransform(TestCase):
             transformed_gm.code
         )
 
-    def test_clone_channels_last_survives(self):
+    def test_clone_non_identity_survives(self):
         """Verify clone ops that modify memory_format are preserved by RemoveCloneOpsTransform."""
 
         for skip_dim_order, clone_op_str in self.CLONE_OP_CASES:
