@@ -8,5 +8,9 @@ runtime.python_test(
     deps = [
         "//executorch/extension/pybindings/test:make_test",
         "//executorch/runtime:runtime",
+        "//executorch/devtools/etdump:serialize",
     ],
+    labels = ci.labels(
+        ci.buckconfig("executorch.event_tracer_enabled", "true"),
+    ),
 )
