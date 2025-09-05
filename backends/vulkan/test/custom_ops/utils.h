@@ -66,6 +66,7 @@ struct ValueSpec {
   SpecType spec_type;
   DataGenType data_gen_type;
   bool is_constant_tensor;
+  bool is_none_flag;
 
   std::vector<float> float_data;
   std::vector<int32_t> int32_data;
@@ -90,7 +91,8 @@ struct ValueSpec {
         storage_type(storage_type),
         spec_type(SpecType::Tensor),
         data_gen_type(DataGenType::ZEROS),
-        is_constant_tensor(false) {
+        is_constant_tensor(false),
+        is_none_flag(false) {
     generate_tensor_data();
   }
 
@@ -107,7 +109,8 @@ struct ValueSpec {
         storage_type(storage_type),
         spec_type(SpecType::Tensor),
         data_gen_type(data_gen_type),
-        is_constant_tensor(false) {
+        is_constant_tensor(false),
+        is_none_flag(false) {
     generate_tensor_data();
   }
 
@@ -119,7 +122,8 @@ struct ValueSpec {
         storage_type(utils::kTexture3D),
         spec_type(SpecType::Int),
         data_gen_type(DataGenType::FIXED),
-        is_constant_tensor(false) {
+        is_constant_tensor(false),
+        is_none_flag(false) {
     int32_data.push_back(value);
   }
 
@@ -131,7 +135,8 @@ struct ValueSpec {
         storage_type(utils::kTexture3D),
         spec_type(SpecType::Float),
         data_gen_type(DataGenType::FIXED),
-        is_constant_tensor(false) {
+        is_constant_tensor(false),
+        is_none_flag(false) {
     float_data.push_back(value);
   }
 
@@ -143,7 +148,8 @@ struct ValueSpec {
         storage_type(utils::kTexture3D),
         spec_type(SpecType::Bool),
         data_gen_type(DataGenType::FIXED),
-        is_constant_tensor(false) {
+        is_constant_tensor(false),
+        is_none_flag(false) {
     int32_data.push_back(value ? 1 : 0);
   }
 
@@ -156,6 +162,7 @@ struct ValueSpec {
         spec_type(SpecType::IntList),
         data_gen_type(DataGenType::FIXED),
         is_constant_tensor(false),
+        is_none_flag(false),
         int32_data(values) {}
 
   // Default constructor
@@ -165,7 +172,8 @@ struct ValueSpec {
         storage_type(utils::kTexture3D),
         spec_type(SpecType::Tensor),
         data_gen_type(DataGenType::ZEROS),
-        is_constant_tensor(false) {}
+        is_constant_tensor(false),
+        is_none_flag(false) {}
 
   int64_t numel() const;
   size_t nbytes() const;
@@ -277,6 +285,14 @@ struct ValueSpec {
   }
   void set_constant(bool is_constant) {
     is_constant_tensor = is_constant;
+  }
+
+  // Set/get none flag
+  bool is_none() const {
+    return is_none_flag;
+  }
+  void set_none(bool is_none) {
+    is_none_flag = is_none;
   }
 
   const void* get_data_ptr() const;
@@ -401,12 +417,22 @@ class BenchmarkResult {
   BenchmarkResult(const std::string& name)
       : kernel_name(name), correctness_status_(CorrectnessStatus::SKIPPED) {}
 
+  BenchmarkResult(
+      const std::string& kernel_name,
+      const std::string& operator_name)
+      : kernel_name(kernel_name),
+        operator_name(operator_name),
+        correctness_status_(CorrectnessStatus::SKIPPED) {}
+
   // Add timing for a single iteration
   void add_iter_timing(float time_us);
 
   // Getters
   const std::string& get_kernel_name() const {
     return kernel_name;
+  }
+  const std::string& get_operator_name() const {
+    return operator_name;
   }
   float get_avg_time_us() const;
   size_t get_num_iterations() const {
@@ -422,6 +448,9 @@ class BenchmarkResult {
   // Setters
   void set_kernel_name(const std::string& name) {
     kernel_name = name;
+  }
+  void set_operator_name(const std::string& name) {
+    operator_name = name;
   }
   void set_correctness_status(CorrectnessStatus status) {
     correctness_status_ = status;
@@ -445,6 +474,7 @@ class BenchmarkResult {
 
  private:
   std::string kernel_name;
+  std::string operator_name;
   std::vector<float>
       iter_timings; // Individual iteration timings in microseconds
   CorrectnessStatus correctness_status_;

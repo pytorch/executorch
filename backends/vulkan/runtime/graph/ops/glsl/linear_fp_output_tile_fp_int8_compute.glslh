@@ -1,0 +1,68 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Defines functions to compute a FPOutTile using fp input and weight tiles.
+ */
+
+#ifndef LINEAR_FP_OUTPUT_TILE_FP_INT8_COMPUTE_GLSLH
+#define LINEAR_FP_OUTPUT_TILE_FP_INT8_COMPUTE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_common.glslh"
+#include "linear_fp_input_tile.glslh"
+#include "linear_fp_output_tile.glslh"
+#include "linear_int8_weight_tile.glslh"
+
+// Unpacks a int containing 4 packed 8-bit integers into a vec4 containing each
+// of the 4 unpacked 8-bit integers.
+VEC4_T unpack_packed_4xint8(int int8x4) {
+  return VEC4_T(
+      extract_8bit_from_packed_int_le(int8x4, 0),
+      extract_8bit_from_packed_int_le(int8x4, 1),
+      extract_8bit_from_packed_int_le(int8x4, 2),
+      extract_8bit_from_packed_int_le(int8x4, 3));
+}
+
+void fp_accumulate_with_int8_weight(
+    inout FPOutTile accum,
+    FPInputTile in_tile,
+    Int8WeightTile w_tile) {
+  // Accum tile is indexed as accum[m][n4][n4i]
+  //   -> gives fp accumulator for output tile element at (x = n, y = m)
+  // Input tile is indexed as in_tile.data[m][k4]
+  //   -> gives vec4 containing the fp inputs at index
+  //      (k, m), (k + 1, m), (k + 2, m), (k + 3, m)
+  // Weight tile is indexed as w_tile.data[k4][n4][n4i]
+  //   -> gives packed integer containing the 4x 8-bit quantized values at index
+  //      (n, k), (n, k + 1), (n, k + 2), (n, k + 3)
+  VEC4_T weight_texel;
+#if TILE_K4 == 1 && TILE_N4 == 1
+  [[unroll]] for (int k = 0; k < 4; ++k) {
+    // Unpack one column of weights
+    weight_texel = VEC4_T(
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][0], k),
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][1], k),
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][2], k),
+        extract_8bit_from_packed_int_le(w_tile.data[0][0][3], k));
+
+    for (int m = 0; m < TILE_M; ++m) {
+      accum.data[m][0] =
+          fma(VEC4_T(in_tile.data[m][0][k]), weight_texel, accum.data[m][0]);
+    }
+  }
+
+#else
+  // TODO(ssjia): implement the general case
+  not implemented
+
+#endif
+}
+
+#endif // LINEAR_FP_OUTPUT_TILE_FP_INT8_COMPUTE_GLSLH
