@@ -12,6 +12,25 @@ import sys
 #
 
 
+def escape_for_markdown(text: str) -> str:
+    """
+    Modify a string to properly display in a markdown table cell.
+    """
+    if not text:
+        return text
+    
+    # Replace newlines with <br /> tags
+    escaped = text.replace('\n', '<br />')
+
+    # Escape backslashes.
+    escaped = escaped.replace('\\', '\\\\')
+    
+    # Escape pipe characters that would break table structure
+    escaped = escaped.replace('|', '\\|')
+    
+    return escaped
+
+
 def generate_markdown(csv_path: str, exit_code: int = 0):  # noqa (C901)
     # Print warning if exit code is non-zero
     if exit_code != 0:
@@ -46,7 +65,7 @@ def generate_markdown(csv_path: str, exit_code: int = 0):  # noqa (C901)
 
     for row in data_rows:
         # Make a copy of the row to avoid modifying the original
-        processed_row = row.copy()
+        processed_row = [escape_for_markdown(cell) for cell in row]
 
         # Count results and collect failed tests
         if result_column_index is not None and result_column_index < len(row):
@@ -96,7 +115,8 @@ def generate_markdown(csv_path: str, exit_code: int = 0):  # noqa (C901)
     # Generate Failed Tests section
     print("# Failed Tests\n")
     if failed_tests:
-        print("| " + " | ".join(header) + " |")
+        escaped_header = [escape_for_markdown(col) for col in header]
+        print("| " + " | ".join(escaped_header) + " |")
         print("|" + "|".join(["---"] * len(header)) + "|")
         for row in failed_tests:
             print("| " + " | ".join(row) + " |")
