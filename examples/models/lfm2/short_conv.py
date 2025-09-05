@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 from executorch.examples.models.llama.attention import ForwardOptions
 from executorch.examples.models.llama.feed_forward import FeedForward
@@ -12,8 +14,8 @@ class ShortConv(nn.Module):
         dim: int,
         L_cache: int = 3,
         bias: bool = False,
-        device: torch.device = None,
-        dtype: torch.dtype = None,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
         self.dim = dim
@@ -99,7 +101,7 @@ class ShortConvBlock(nn.Module):
         x,
         freqs_cos=None,
         freqs_sin=None,
-        _unused_attn_options: ForwardOptions = None,
+        _unused_attn_options: Optional[ForwardOptions] = None,
     ):  # x: 1xN
         h = self.conv.forward(self.attention_norm(x))
         h = x + h
