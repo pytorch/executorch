@@ -147,6 +147,11 @@ Error share_tensor_data(
       t_dst.nbytes(),
       t_src.nbytes());
 
+  if (t_src.numel() == 0) {
+    // If the tensor is empty, we don't need to do anything.
+    return Error::Ok;
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       t_src.mutable_data_ptr() != nullptr,
       InvalidArgument,
