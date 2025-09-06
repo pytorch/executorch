@@ -15,8 +15,9 @@ from nncf.experimental.torch.fx.node_utils import (  # type: ignore[import-untyp
     get_tensor_constant_from_node,
 )
 from nncf.experimental.torch.fx.transformations import (  # type: ignore[import-untyped]
-    constant_update_fn,
-    module_insertion_transformation_builder,
+    constant_update,
+    module_insertion,
+    node_removal,
 )
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
@@ -103,7 +104,7 @@ class WeightObserverBase(ObserverBase, ABC):
         packed_q_weight = decompressor.pack_weight(q_weight)
 
         # Weight port id is 0 since observer is inserted for a single weight only.
-        constant_update_fn(model, observer_node, packed_q_weight, input_port_id=0)
+        constant_update(model, observer_node, packed_q_weight, input_port_id=0)
 
         compressed_weight_name = observer_node.all_input_nodes[0].name
         decompressor_suffix = "_".join(
@@ -111,7 +112,8 @@ class WeightObserverBase(ObserverBase, ABC):
         )
         decompressor_name = f"{decompressor.quantization_mode}_weights_decompressor_{decompressor_suffix}"
 
-        module_insertion_transformation_builder(
+        module_insertion(
+            model,
             decompressor,
             [
                 PTTargetPoint(
@@ -120,11 +122,8 @@ class WeightObserverBase(ObserverBase, ABC):
                 )
             ],
             decompressor_name,
-        )(model)
-
-        decomp_node = observer_node.args[0]
-        observer_node.replace_all_uses_with(decomp_node)  # type: ignore[arg-type]
-        model.graph.erase_node(observer_node)
+        )
+        node_removal(model, observer_node, 0)
 
     @abstractmethod
     def _create_decompressor(
