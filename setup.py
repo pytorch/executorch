@@ -143,7 +143,7 @@ class Version:
     def write_to_python_file(cls, path: str) -> None:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
-        print(f"Writing version.py to {os.getcwd()}", file=sys.stderr)
+        print(f"Writing version.py to {path}", file=sys.stderr)
 
         lines = [
             "from typing import Optional",
