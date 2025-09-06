@@ -154,6 +154,9 @@ class Version:
         ]
         with open(path, "w") as fp:
             fp.write("\n".join(lines) + "\n")
+        
+        file_dir = os.path.dirname()
+        print(f"Files: {list(os.listdir(file_dir))}", file.stderr)
 
 
 # The build type is determined by the DEBUG environment variable. If DEBUG is
