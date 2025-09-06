@@ -7,7 +7,7 @@
 # pyre-strict
 
 
-from typing import Optional
+from typing import Callable, Optional
 
 import torch
 
@@ -22,8 +22,6 @@ qdtype_map: dict[ScalarType, torch.dtype] = {
     ScalarType.QUINT8: torch.quint8,
     ScalarType.QINT32: torch.qint32,
 }
-
-_Number = bool | int | float
 
 
 @impl(m, "quantize_per_tensor")
@@ -66,9 +64,9 @@ def quantize_per_tensor(
             f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_quant_types}"
         )
 
-    dequantized = torch.round(input_tensor * scale + zero_point).to(dtype)
+    quantized = torch.round(input_tensor * scale + zero_point).to(dtype)
     return torch.max(
-        torch.min(dequantized, torch.tensor(quant_max)),
+        torch.min(quantized, torch.tensor(quant_max)),
         torch.tensor(quant_min),
     )
 
@@ -249,12 +247,12 @@ def quantized_linear(
     ).reshape(*leading_dims, N)
 
 
-@impl(m, "quantized_layer_norm_per_tensor")
+@impl(m, "quantized_layer_norm.per_tensor")
 def quantized_layer_norm_per_tensor(
     input_tensor: torch.Tensor,
     X_scale: float,
     X_zero_point: int,
-    normalized_shape: int,
+    normalized_shape: list[int],
     weight: torch.Tensor,
     bias: torch.Tensor,
     eps: float,
@@ -285,7 +283,7 @@ def quantized_layer_norm_per_tensor(
         input_tensor, X_scale, X_zero_point, -128, 127, torch.float32
     )
     out = torch.nn.functional.layer_norm(
-        float_input_tensor, (normalized_shape,), weight, bias, eps=eps
+        float_input_tensor, normalized_shape, weight, bias, eps=eps
     )
 
     return quantize_per_tensor(
@@ -298,8 +296,7 @@ def quantized_layer_norm_per_tensor(
     )
 
 
-@impl(m, "quantized_conv_nchw")
-def quantized_conv_nchw(
+def quantized_conv_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -308,12 +305,12 @@ def quantized_conv_nchw(
     dilation: tuple[int, int],
     groups: int,
     in_zero_point: int,
-    weight_zero_point: torch.Tensor,
-    bias_scale: torch.Tensor,
+    weight_zero_point: int,
+    bias_scale: float,
     output_scale: float,
     output_zero_point: int,
-    out_multiplier: torch.Tensor,
-    out_shift: torch.Tensor,
+    out_multiplier: int,
+    out_shift: int,
 ) -> torch.Tensor:
     """
     Quantized convolution operation.
@@ -327,19 +324,13 @@ def quantized_conv_nchw(
         - dilation (Tuple[int]): The dilation of the convolution
         - groups (int): The number of groups
         - in_zero_point (int): The quantized mapping of zero for the input
-        - weight_zero_point (Tensor): The quantized mapping of zero for the weight
-        - bias_scale (Tensor): The quantized bias scale
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
         - output_scale (float): The scale of the output
         - output_zero_point (int): The zero point of the output
-        - out_multiplier (Tensor): Unused
-        - out_shift (Tensor): Unused
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
     """
-    if weight_zero_point.view(-1).shape != (1,):
-        raise ValueError("Weight zero point must be a scalar")
-
-    if bias_scale.view(-1).shape != (1,):
-        raise ValueError("Bias scale must be a scalar")
-
     if len(input_tensor.shape) == 3:
         float_out = torch.nn.functional.conv1d(
             (input_tensor - in_zero_point).float(),
@@ -371,6 +362,293 @@ def quantized_conv_nchw(
         torch.iinfo(input_tensor.dtype).min,
         torch.iinfo(input_tensor.dtype).max,
         input_tensor.dtype,
+    )
+
+
+@impl(m, "quantized_conv_nchw.per_tensor")
+def quantized_conv_nchw_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized convolution operation.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+    if not input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+        raise ValueError("Input tensor must be in NCHW format")
+    return quantized_conv_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+@impl(m, "quantized_conv_nhwc.per_tensor")
+def quantized_conv_nhwc_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized convolution operation.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+
+    if not input_tensor.is_contiguous(memory_format=torch.channels_last):
+        raise ValueError("Input tensor must be in NHWC format")
+
+    return quantized_conv_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+def quantized_conv_variant(
+    layout: str,
+    input_dtype: torch.dtype,
+    weight_dtype: torch.dtype,
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+    """Create a quantized conv variant with type checking."""
+
+    def decorator(_: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
+        def variant(
+            input_tensor: torch.Tensor,
+            weight: torch.Tensor,
+            bias: torch.Tensor,
+            stride: tuple[int, int],
+            padding: tuple[int, int],
+            dilation: tuple[int, int],
+            groups: int,
+            in_zero_point: int,
+            weight_zero_point: int,
+            bias_scale: float,
+            output_scale: float,
+            output_zero_point: int,
+            out_multiplier: int,
+            out_shift: int,
+        ) -> torch.Tensor:
+            assert (
+                input_tensor.dtype == input_dtype
+            ), f"Expected input dtype {input_dtype}, got {input_tensor.dtype}"
+            assert (
+                weight.dtype == weight_dtype
+            ), f"Expected weight dtype {weight_dtype}, got {weight.dtype}"
+
+            assert (
+                bias.dtype == torch.int32
+            ), f"Expected bias dtype int32, got {bias.dtype}"
+
+            # Call the appropriate base function
+            match layout:
+                case "nchw":
+                    return quantized_conv_nchw_per_tensor(
+                        input_tensor,
+                        weight,
+                        bias,
+                        stride,
+                        padding,
+                        dilation,
+                        groups,
+                        in_zero_point,
+                        weight_zero_point,
+                        bias_scale,
+                        output_scale,
+                        output_zero_point,
+                        out_multiplier,
+                        out_shift,
+                    )
+                case "nhwc":
+                    return quantized_conv_nhwc_per_tensor(
+                        input_tensor,
+                        weight,
+                        bias,
+                        stride,
+                        padding,
+                        dilation,
+                        groups,
+                        in_zero_point,
+                        weight_zero_point,
+                        bias_scale,
+                        output_scale,
+                        output_zero_point,
+                        out_multiplier,
+                        out_shift,
+                    )
+                case _:
+                    raise ValueError(f"Unknown layout {layout}")
+
+        return variant
+
+    return decorator
+
+
+@impl(m, "quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nchw", torch.int8, torch.int8)
+def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nchw", torch.uint8, torch.uint8)
+def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nhwc", torch.int8, torch.int8)
+def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
+def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nchw", torch.int8, torch.int8)
+def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nchw", torch.uint8, torch.uint8)
+def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nhwc", torch.int8, torch.int8)
+def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
+def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nchw", torch.int8, torch.int8)
+def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nchw", torch.uint8, torch.uint8)
+def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nhwc", torch.int8, torch.int8)
+def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
+def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_relu")
+def quantized_relu(
+    X: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    out_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Quantized ReLU operation followed by requantization.
+
+    Args:
+        - X (Tensor): The input tensor
+        - X_zero_point (Tensor): The quantized mapping of zero for the input
+        - out_zero_point (int): The quantized mapping of zero for the output
+        - out_multiplier (Tensor): The multiplier used to scale the output
+        - out_shift (Tensor): The shift used to scale the output
+    """
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8, torch.uint16]
+    if X.dtype not in supported_dtypes:
+        raise ValueError(f"X dtype must be one of {supported_dtypes}. Got {X.dtype}")
+
+    out_scale = -out_multiplier * (1 / (1 << 31)) * (2 ** out_shift[0])
+    dequantized_X = torch.where(X > X_zero_point, X - X_zero_point, torch.zeros_like(X))
+    return quantize_per_tensor(
+        dequantized_X,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(X.dtype).min,
+        torch.iinfo(X.dtype).max,
+        X.dtype,
     )
 
 
