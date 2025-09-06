@@ -144,7 +144,7 @@ class Version:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
         print(f"Writing version.py to {path}, cwd: {os.getcwd()}", file=sys.stderr)
-        print(f"WD files: {list(os.listdir(os.getcwd()))}")
+        print(f"WD files: {list(os.listdir(os.getcwd()))}", file=sys.stderr)
 
         try:
             path1 = os.path.dirname(path)
