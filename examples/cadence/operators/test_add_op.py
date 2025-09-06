@@ -15,7 +15,7 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 import torch
 import torch.nn as nn
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 
 
 class ATenOpTestCases(unittest.TestCase):
@@ -64,7 +64,7 @@ class ATenOpTestCases(unittest.TestCase):
         Y = torch.randn(Yshape)
 
         model.eval()
-        export_model(
+        export_and_run_model(
             model, (X, Y), file_name=self._testMethodName, run_and_compare=False
         )
 
@@ -114,7 +114,7 @@ class ATenOpTestCases(unittest.TestCase):
         Y = 2.34
 
         model.eval()
-        export_model(
+        export_and_run_model(
             model, (X, Y), file_name=self._testMethodName, run_and_compare=False
         )
 

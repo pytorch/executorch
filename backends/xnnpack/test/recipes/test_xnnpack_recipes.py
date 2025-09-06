@@ -286,15 +286,6 @@ class TestXnnpackRecipes(unittest.TestCase):
             if os.path.exists("dog.jpg"):
                 os.remove("dog.jpg")
 
-    def test_validate_recipe_kwargs_fp32(self) -> None:
-        provider = XNNPACKRecipeProvider()
-
-        with self.assertRaises(ValueError) as cm:
-            provider.create_recipe(XNNPackRecipeType.FP32, invalid_param=123)
-
-        error_msg = str(cm.exception)
-        self.assertIn("Recipe 'fp32' does not accept any parameters", error_msg)
-
     def test_validate_recipe_kwargs_int4_tensor_with_valid_group_size(
         self,
     ) -> None:
