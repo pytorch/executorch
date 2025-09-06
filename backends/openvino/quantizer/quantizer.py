@@ -188,8 +188,8 @@ class OpenVINOQuantizer(Quantizer):
             )
             annotation = node_vs_torch_annotation[target_node]
             edge_or_node = self._get_weight_edge(target_node, nncf_graph)
-            qspec = self._get_torch_ao_qspec_from_nncf_config(
-                qp=None, wc_param=wc_param
+            qspec = self._get_torch_ao_qspec_from_nncf_config_for_wc(
+                wc_param=wc_param
             )
             self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
@@ -217,7 +217,7 @@ class OpenVINOQuantizer(Quantizer):
             edge_or_node, annotation = self._get_edge_or_node_and_annotation(
                 graph, nncf_graph, qp, node_vs_torch_annotation
             )
-            qspec: QuantizationSpecBase = self._get_torch_ao_qspec_from_nncf_config(qp)
+            qspec: QuantizationSpecBase = self._get_torch_ao_qspec_from_nncf_config_for_ptq(qp)
             self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
         for quantizer_ids in quantization_setup.unified_scale_groups.values():
@@ -412,56 +412,64 @@ class OpenVINOQuantizer(Quantizer):
             annotation_to_update.input_qspec_map[edge_or_node[0]] = qspec
 
     @staticmethod
-    def _get_torch_ao_qspec_from_nncf_config(
-        qp: quantization.quantizer_setup.QuantizationPointBase,
-        wc_param: WeightCompressionParameters = None,
+    def _get_torch_ao_qspec_from_nncf_config_for_wc(
+        wc_param: WeightCompressionParameters,
     ) -> QuantizationSpec:
         """
-        Returns a TorchAO QuantizationSpec based on NNCF quantization config and other arguments.
-        For weight-only quantization (e.g., INT4/INT8 compression), uses `wc_param` which carries 
-        weight only quantization info such as group_size, reduction_axes etc. For post-training 
-        quantization, only `qp` is required.
+        Returns a TorchAO QuantizationSpec based on NNCF weight compression parameter.
+
+        :param wc_param: NNCF Weight compression parameters for the node.
+        :return: A TorchAO QuantizationSpec.
+        """
+        observer: Type[UniformQuantizationObserverBase]
+
+        extra_args: Dict[str, Any] = {}
+
+        qmode = wc_param.compression_config.mode
+        if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
+            extra_args["wc_param"] = wc_param
+            observer = INT4WeightObserver
+            quant_min = -8 if not wc_param.compression_config.is_asym_mode else 0
+            quant_max = 7 if not wc_param.compression_config.is_asym_mode else 15
+            dtype = torch.int8
+            channel_axis = 0
+            torch_qscheme = None
+        else:
+            extra_args["wc_param"] = wc_param
+            observer = INT8WeightObserver
+            quant_min = -128 if not wc_param.compression_config.is_asym_mode else 0
+            quant_max = 127 if not wc_param.compression_config.is_asym_mode else 255
+            dtype = torch.int8
+            channel_axis = 0
+            torch_qscheme = (
+                torch.per_channel_symmetric
+                if qmode == QuantizationMode.INT8WO_SYM
+                else torch.per_channel_affine
+            )
+        return QuantizationSpec(
+            dtype=dtype,
+            observer_or_fake_quant_ctr=observer.with_args(**extra_args),
+            quant_min=quant_min,
+            quant_max=quant_max,
+            qscheme=torch_qscheme,
+            ch_axis=channel_axis,
+            is_dynamic=False,
+        )
+
+    @staticmethod
+    def _get_torch_ao_qspec_from_nncf_config_for_ptq(
+        qp: quantization.quantizer_setup.QuantizationPointBase,
+    ) -> QuantizationSpec:
+        """
+        Returns a TorchAO QuantizationSpec based on NNCF quantization point.
 
         :param qp: Quantization point from NNCF.
-        :param wc_param: NNCF Weight compression parameters for the node.
         :return: A TorchAO QuantizationSpec.
         """
         observer: Type[UniformQuantizationObserverBase]
 
         # Eps value is copied from nncf/torch/quantization/layers.py
         extra_args: Dict[str, Any] = {"eps": 1e-16}
-
-        if wc_param:
-            qmode = wc_param.compression_config.mode
-            if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
-                extra_args["wc_param"] = wc_param
-                observer = INT4WeightObserver
-                quant_min = -8 if not wc_param.compression_config.is_asym_mode else 0
-                quant_max = 7 if not wc_param.compression_config.is_asym_mode else 15
-                dtype = torch.int8
-                channel_axis = 0
-                torch_qscheme = None
-            else:
-                extra_args["wc_param"] = wc_param
-                observer = INT8WeightObserver
-                quant_min = -128 if not wc_param.compression_config.is_asym_mode else 0
-                quant_max = 127 if not wc_param.compression_config.is_asym_mode else 255
-                dtype = torch.int8
-                channel_axis = 0
-                torch_qscheme = (
-                    torch.per_channel_symmetric
-                    if qmode == QuantizationMode.INT8WO_SYM
-                    else torch.per_channel_affine
-                )
-            return QuantizationSpec(
-                dtype=dtype,
-                observer_or_fake_quant_ctr=observer.with_args(**extra_args),
-                quant_min=quant_min,
-                quant_max=quant_max,
-                qscheme=torch_qscheme,
-                ch_axis=channel_axis,
-                is_dynamic=False,
-            )
 
         is_weight = qp.is_weight_quantization_point()
         qconfig = qp.qconfig
