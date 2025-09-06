@@ -145,6 +145,7 @@ class Version:
 
         print(f"Writing version.py to {path}, cwd: {os.getcwd()}", file=sys.stderr)
         print(f"WD files: {list(os.listdir(os.getcwd()))}", file=sys.stderr)
+        print(f"Pip out: {list(os.listdir(os.getcwd() + "/pip-out"))}", file=sys.stderr)
 
         try:
             path1 = os.path.dirname(path)
