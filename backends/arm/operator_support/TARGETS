@@ -6,7 +6,7 @@ python_library(
     deps = [
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm/_passes:passes",
-        "//executorch/backends/arm:tosa_specification",
+        "//executorch/backends/arm/tosa:tosa",
         "//executorch/backends/transforms:remove_getitem_op",
         "//executorch/backends/xnnpack/_passes:xnnpack_passes",
         "//executorch/exir:lib",

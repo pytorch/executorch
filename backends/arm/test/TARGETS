@@ -30,7 +30,7 @@ python_library(
     srcs = ["common.py"],
     deps = [
         ":runner_utils",
-        "//executorch/backends/arm:tosa_specification",
+        "//executorch/backends/arm/tosa:tosa",
         "fbsource//third-party/pypi/pytest:pytest",
     ]
 )
@@ -43,7 +43,7 @@ python_library(
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/arm:ethosu_partitioner",
         "//executorch/backends/arm/quantizer:lib",
-        "//executorch/backends/arm:tosa_mapping",
+        "//executorch/backends/arm/tosa:mapping",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
