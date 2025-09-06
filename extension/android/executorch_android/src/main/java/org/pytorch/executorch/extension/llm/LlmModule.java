@@ -177,7 +177,7 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
-    long[] nativeResult = prefillImagesNative(image, width, height, channels, startPos);
+    long[] nativeResult = addImageInputNative(image, width, height, channels, startPos);
     if (nativeResult[0] != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
     }
@@ -185,7 +185,7 @@ public class LlmModule {
   }
 
   // returns a tuple of (status, updated startPos)
-  private native long[] prefillImagesNative(
+  private native long[] addImageInputNative(
       int[] image, int width, int height, int channels, long startPos);
 
   /**
@@ -200,7 +200,7 @@ public class LlmModule {
    * @throws RuntimeException if the prefill failed
    */
   public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
-    long[] nativeResult = prefillPromptNative(prompt, startPos, bos, eos);
+    long[] nativeResult = addTextInputNative(prompt, startPos, bos, eos);
     if (nativeResult[0] != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
     }
@@ -208,11 +208,20 @@ public class LlmModule {
   }
 
   // returns a tuple of (status, updated startPos)
-  private native long[] prefillPromptNative(String prompt, long startPos, int bos, int eos);
+  private native long[] addTextInputNative(String prompt, long startPos, int bos, int eos);
+
+  // returns the status code
+  private native int addAudioInputNative(int[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.
    *
+   * @param prompt The text prompt to LLaVA.
+   * @param seqLen The total sequence length, including the prompt tokens and new tokens.
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @param callback callback object to receive results.
+   * @param echo indicate whether to echo the
+   *     <p>/** Generate tokens from the given prompt, starting from the given position.
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
    * @param startPos The starting position in KV cache of the input in the LLM.
