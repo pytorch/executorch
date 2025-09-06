@@ -1,11 +1,15 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 
 oncall("executorch")
 
 python_unittest(
     name = "inspector_test",
     srcs = ["inspector_test.py"],
+    labels = ci.labels(
+        ci.buckconfig("executorch.event_tracer_enabled", "true"),
+    ),
     deps = [
         "//executorch/devtools:lib",
         "//executorch/devtools/debug_format:et_schema",

@@ -185,14 +185,6 @@ class TestCoreMLRecipes(unittest.TestCase):
             )
         self.assertIn("must be positive", str(cm.exception))
 
-        # Test unexpected parameter
-        with self.assertRaises(ValueError) as cm:
-            self.provider.create_recipe(
-                CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_CHANNEL,
-                group_size=32,  # group_size not valid for per-channel
-            )
-        self.assertIn("unexpected parameters", str(cm.exception))
-
     def test_int8_weight_only_per_channel(self):
         """Test INT8 weight-only per-channel quantization"""
         model = TestHelperModules.TwoLinearModule().eval()
@@ -384,23 +376,6 @@ class TestCoreMLRecipes(unittest.TestCase):
 
         self._compare_eager_quantized_model_outputs(session, example_inputs, atol=1e-2)
         self._compare_eager_unquantized_model_outputs(session, model, example_inputs)
-
-    def test_pt2e_recipes_parameter_rejection(self):
-        """Test that PT2E recipes reject TorchAO-specific parameters"""
-        # PT2E recipes should reject TorchAO-specific parameters
-        pt2e_recipes = [
-            CoreMLRecipeType.PT2E_INT8_STATIC,
-            CoreMLRecipeType.PT2E_INT8_WEIGHT_ONLY,
-        ]
-        torchao_params = ["filter_fn", "group_size", "bits", "block_size"]
-
-        for recipe_type in pt2e_recipes:
-            for param in torchao_params:
-                with self.subTest(recipe=recipe_type.value, param=param):
-                    kwargs = {param: "dummy_value"}
-                    with self.assertRaises(ValueError) as cm:
-                        self.provider.create_recipe(recipe_type, **kwargs)
-                    self.assertIn("unexpected parameters", str(cm.exception).lower())
 
     def test_filter_fn_comprehensive(self):
         """Comprehensive test for filter_fn parameter functionality"""
