@@ -161,8 +161,7 @@ void setup_output_storage(
 inline std::unique_ptr<Module> load_module_from_buffer(
     const void* ptr,
     size_t ptr_len,
-    bool enable_etdump,
-    size_t debug_buffer_size,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
     Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_buffer");
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
@@ -170,14 +169,13 @@ inline std::unique_ptr<Module> load_module_from_buffer(
       std::move(loader),
       nullptr, // memory_allocator
       nullptr, // temp_allocator
-      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
+      std::move(event_tracer), // event_tracer
       nullptr); // data_map_loader
 }
 
 inline std::unique_ptr<Module> load_module_from_file(
     const std::string& path,
-    bool enable_etdump,
-    size_t debug_buffer_size,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
     Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_file");
 
@@ -194,7 +192,7 @@ inline std::unique_ptr<Module> load_module_from_file(
       std::move(loader),
       nullptr, // memory_allocator
       nullptr, // temp_allocator
-      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
+      std::move(event_tracer), // event_tracer
       nullptr); // data_map_loader
 }
 
@@ -490,11 +488,11 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : module_(load_module_from_buffer(
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_buffer(
             buffer.cast<std::string_view>().data(),
             py::len(buffer),
-            enable_etdump,
-            debug_buffer_size,
+            setup_event_tracer(enable_etdump, debug_buffer_size),
             program_verification)) {}
 
   explicit PyModule(
@@ -504,11 +502,11 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : module_(load_module_from_buffer(
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_buffer(
             ptr,
             ptr_len,
-            enable_etdump,
-            debug_buffer_size,
+            setup_event_tracer(enable_etdump, debug_buffer_size),
             program_verification)) {}
 
   explicit PyModule(
@@ -517,10 +515,10 @@ struct PyModule final {
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency)
-      : module_(load_module_from_file(
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_file(
             path,
-            enable_etdump,
-            debug_buffer_size,
+            setup_event_tracer(enable_etdump, debug_buffer_size),
             program_verification)) {}
 
   PyModule(const PyModule&) = delete;
@@ -694,10 +692,9 @@ struct PyModule final {
         // Also write out the debug buffer to a separate file if requested.
         std::string debug_buffer_path_str =
             py::cast<std::string>(debug_buffer_path);
-        const auto debug_buffer = module_->debug_buffer();
-        if (debug_buffer.size() > 0) {
+        if (debug_buffer_ && debug_buffer_size_ > 0) {
           write_data_to_file(
-              debug_buffer_path_str, debug_buffer.data(), debug_buffer.size());
+              debug_buffer_path_str, debug_buffer_.get(), debug_buffer_size_);
         }
       }
     } else {
@@ -747,11 +744,34 @@ struct PyModule final {
   }
 
  private:
+  // Hold onto the debug_buffer_ for the event_tracer.
+  std::unique_ptr<uint8_t[]> debug_buffer_;
+  size_t debug_buffer_size_;
+
   std::shared_ptr<Module> module_;
   // Need to keep-alive output tensors until they can be compared in case of
   // bundled programs.
   std::vector<std::optional<TensorPtr>> output_tensors_;
 
+  // Set debug buffer for potential event tracer.
+  std::unique_ptr<torch::executor::ETDumpGen> setup_event_tracer(
+      bool enable_etdump,
+      size_t debug_buffer_size) {
+    std::unique_ptr<torch::executor::ETDumpGen> event_tracer = enable_etdump
+        ? std::make_unique<torch::executor::ETDumpGen>()
+        : nullptr;
+    if (enable_etdump && debug_buffer_size > 0) {
+      debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
+      debug_buffer_size_ = debug_buffer_size;
+      event_tracer->set_debug_buffer(
+          Span<uint8_t>(debug_buffer_.get(), debug_buffer_size));
+      event_tracer->set_event_tracer_debug_level(
+          EventTracerDebugLogLevel::kIntermediateOutputs);
+    }
+    return event_tracer;
+  }
+
+  // Allocate output tensors when they are not memory planned.
   void allocate_output_tensors(const std::string& method_name) {
     auto method_meta_result = module_->method_meta(method_name);
     THROW_IF_ERROR(
