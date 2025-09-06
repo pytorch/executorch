@@ -26,7 +26,7 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
