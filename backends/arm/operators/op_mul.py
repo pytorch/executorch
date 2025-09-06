@@ -51,7 +51,7 @@ class MulVisitor_INT(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
             output.tosa_spec,
         )
 
@@ -80,7 +80,7 @@ class MulVisitor_INT(NodeVisitor):
                 tosa_spec=self.tosa_spec,
             )
         else:
-            # input[0].dtype == ts.DType.INT32
+            # input[0].dtype == ts.DType.INT16 or ts.DType.INT32
             # Non quantized input, natively support by TOSA.MUL
             input_A_rescaled, input_B_rescaled = inputs[0], inputs[1]
 
@@ -88,7 +88,7 @@ class MulVisitor_INT(NodeVisitor):
             output_shape = tutils.tosa_shape(output.shape, output.dim_order)
             mul_output = tosa_graph.addIntermediate(output_shape, ts.DType.INT32)
         else:
-            # output.dtype == ts.DType.INT32
+            # output.dtype == ts.DType.INT16 or ts.DType.INT32
             mul_output = output
 
         # Do the INT32 Mul
