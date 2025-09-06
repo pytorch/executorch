@@ -180,6 +180,9 @@ def get_symmetric_a16w8_cat_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", Cat.test_parameters)
+@pytest.mark.xfail(
+    reason="missing int16 cat ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13978"
+)
 def test_cat_16a8w_tosa_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
