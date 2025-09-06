@@ -15,8 +15,8 @@ from executorch.backends.cadence.aot.ref_implementations import (
     dequantize_per_tensor,
     quantize_per_tensor,
     quantized_add,
-    quantized_conv_nchw,
-    quantized_conv_nhwc,
+    quantized_conv_nchw_per_tensor,
+    quantized_conv_nhwc_per_tensor,
     quantized_layer_norm_per_tensor,
     quantized_linear,
     quantized_relu,
@@ -356,8 +356,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor([0], dtype=torch.int8),  # weight_zero_point
-                    torch.tensor([1.0], dtype=torch.float32),  # bias_scale
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.1,  # output_scale
                     0,  # output_zero_point
                     torch.tensor(
@@ -387,8 +387,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor([0], dtype=torch.int8),  # weight_zero_point
-                    torch.tensor([1.0], dtype=torch.float32),  # bias_scale
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.25,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -416,8 +416,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     128,  # in_zero_point
-                    torch.tensor([128], dtype=torch.uint8),  # weight_zero_point
-                    torch.tensor([0.1], dtype=torch.float32),  # bias_scale
+                    128,  # weight_zero_point
+                    0.1,  # bias_scale
                     0.1,  # output_scale
                     128,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -447,8 +447,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation (padding for 2D, actual dilation is dilation[1])
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor([0], dtype=torch.int8),  # weight_zero_point
-                    torch.tensor([1.0], dtype=torch.float32),  # bias_scale
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.5,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -482,8 +482,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor([0], dtype=torch.int8),  # weight_zero_point
-                    torch.tensor([1.0], dtype=torch.float32),  # bias_scale
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.2,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -523,8 +523,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor([0], dtype=torch.int16),  # weight_zero_point
-                    torch.tensor([1.0], dtype=torch.float32),  # bias_scale
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.1,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -576,12 +576,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor(
-                        [0], dtype=torch.int16
-                    ),  # weight_zero_point for each output channel
-                    torch.tensor(
-                        [1.0], dtype=torch.float32
-                    ),  # bias_scale for each channel
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.05,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -623,12 +619,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     2,  # groups (grouped convolution)
                     0,  # in_zero_point
-                    torch.tensor(
-                        [0], dtype=torch.int8
-                    ),  # weight_zero_point for each output channel
-                    torch.tensor(
-                        [1.0], dtype=torch.float32
-                    ),  # bias_scale for each channel
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.2,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -666,8 +658,8 @@ class TestRefImplementations(unittest.TestCase):
                     (1, 1),  # dilation
                     1,  # groups
                     0,  # in_zero_point
-                    torch.tensor([0], dtype=torch.int8),  # weight_zero_point
-                    torch.tensor([1.0], dtype=torch.float32),  # bias_scale
+                    0,  # weight_zero_point
+                    1.0,  # bias_scale
                     0.5,  # output_scale
                     0,  # output_zero_point
                     typing.cast(None, torch.Tensor),
@@ -682,7 +674,7 @@ class TestRefImplementations(unittest.TestCase):
             ],
         ]
     )
-    def test_quantized_conv(
+    def test_quantized_conv_per_tensor(
         self,
         input_tensor: torch.Tensor,
         weight: torch.Tensor,
@@ -692,12 +684,12 @@ class TestRefImplementations(unittest.TestCase):
         dilation: tuple[int, int],
         groups: int,
         in_zero_point: int,
-        weight_zero_point: torch.Tensor,
-        bias_scale: torch.Tensor,
+        weight_zero_point: int,
+        bias_scale: float,
         output_scale: float,
         output_zero_point: int,
-        out_multiplier: torch.Tensor,
-        out_shift: torch.Tensor,
+        out_multiplier: int,
+        out_shift: int,
         dtype: torch.dtype,
         expected_output: torch.Tensor,
         memory_format: torch.memory_format,
@@ -710,9 +702,9 @@ class TestRefImplementations(unittest.TestCase):
         input_tensor = input_tensor.to(memory_format=memory_format)
 
         conv = (
-            quantized_conv_nchw
+            quantized_conv_nchw_per_tensor
             if memory_format == torch.contiguous_format
-            else quantized_conv_nhwc
+            else quantized_conv_nhwc_per_tensor
         )
 
         output = conv(
