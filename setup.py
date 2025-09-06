@@ -143,7 +143,7 @@ class Version:
     def write_to_python_file(cls, path: str) -> None:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
-        print(f"Writing version.py to {path}", file=sys.stderr)
+        print(f"Writing version.py to {path}, cwd: {os.getcwd()}", file=sys.stderr)
 
         path1 = os.path.dirname(path)
         path2 = os.path.dirname(path1)
