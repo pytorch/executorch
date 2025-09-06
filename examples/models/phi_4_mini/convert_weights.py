@@ -6,6 +6,7 @@ from typing import Dict
 import torch
 
 from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 
 from torchtune.training import FullModelHFCheckpointer
 
@@ -105,42 +106,6 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
         "tok_embeddings.weight"
     ]
     return converted_state_dict
-
-
-def load_checkpoint_from_pytorch_model(input_dir: str) -> Dict:
-    index_path = os.path.join(input_dir, "pytorch_model.bin.index.json")
-    if os.path.exists(index_path):
-        # Sharded checkpoint.
-        with open(index_path, "r") as f:
-            index = json.load(f)
-        weight_map = index["weight_map"]
-        checkpoint_shards = sorted(set(weight_map.values()))
-
-        # Load all the shards into memory
-        shard_to_weights = {}
-        for shard in checkpoint_shards:
-            shard_to_weights[shard] = torch.load(
-                os.path.join(input_dir, shard),
-                weights_only=True,
-                map_location=torch.device("cpu"),
-            )
-
-        # Merge tensors into consolidated state dict.
-        merged_state_dict = {}
-        for weight_name, shard in weight_map.items():
-            tensor = shard_to_weights[shard][weight_name]
-            merged_state_dict[weight_name] = tensor
-        return merged_state_dict
-
-    # Single checkpoint
-    model_path = os.path.join(input_dir, "pytorch_model.bin")
-    if os.path.exists(model_path):
-        state_dict = torch.load(
-            model_path, weights_only=True, map_location=torch.device("cpu")
-        )
-        return state_dict
-
-    raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")
 
 
 def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
