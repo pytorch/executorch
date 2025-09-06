@@ -568,13 +568,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--nncf_compression",
-        default=False,
-        action="store_true",
-        help="Enables nncf compression for openvino backend",
-    )
-
-    parser.add_argument(
         "--export_only",
         default=False,
         action="store_true",
@@ -909,7 +902,6 @@ def _to_edge_and_lower_llama_openvino(
     quantizers,
     additional_passes,
     openvino_device: str = "CPU",
-    nncf_compression: bool = False,
     verbose: bool = False,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
@@ -921,51 +913,8 @@ def _to_edge_and_lower_llama_openvino(
     logging.info("Lowering model using following partitioner(s): ")
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
-    try:
-        import nncf
-        from functools import partial
-        from pytorch_tokenizers import get_tokenizer
-    except ImportError:
-        raise ImportError(
-            "Please install nncf via backends/openvino/requirements.txt"
-        )
-   
-    tokenizer = get_tokenizer(builder_exported.tokenizer_path)
-    from datasets import load_dataset
-    # Use NNCF compression if enabled
-    # TODO: Enable passing OpenVINOQuantizer as a parameter to pt2e_quantize
-    if nncf_compression:
-        dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
-        dataset = dataset.filter(lambda example: example['text'].strip() != "")
-        dataset = dataset.filter(lambda example: example['text'].strip() != "\n")
-        def transform_fn(
-            prompts: str, tokenizer
-        ):
-            tokenized_text = tokenizer.encode(prompts["text"], bos=False, eos=False)
-            device = torch.device("cpu") if openvino_device=="CPU" else torch.device("cuda")
-            inputs = ()
-            inputs = (
-                torch.tensor(tokenized_text[:128], device=device).unsqueeze(0),
-                {"input_pos": torch.tensor([0], device=device)},
-            )
 
-            return inputs
-        
-        builder_exported.pre_autograd_graph_module = nncf.compress_weights(
-                                                            builder_exported.pre_autograd_graph_module,
-                                                            dataset=nncf.Dataset(dataset,  partial(transform_fn, tokenizer=tokenizer)),
-                                                            mode=nncf.CompressWeightsMode.INT4_SYM,
-                                                            group_size=32,
-                                                            backup_mode=nncf.BackupMode.NONE,
-                                                            ratio=0.8,
-                                                            sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
-                                                        )
- 
-        builder = builder_exported.to_edge_transform_and_lower(partitioners)
-    
-    else:
-        builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(partitioners)
-
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(partitioners)
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
@@ -1211,7 +1160,6 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quantizers,
             additional_passes,
             openvino_device=llm_config.backend.openvino.device,
-            nncf_compression=llm_config.backend.openvino.nncf_compression,
             verbose=llm_config.debug.verbose,
         )
     else:
