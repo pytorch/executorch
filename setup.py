@@ -144,12 +144,16 @@ class Version:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
         print(f"Writing version.py to {path}, cwd: {os.getcwd()}", file=sys.stderr)
+        print(f"WD files: {list(os.listdir(os.getcwd()))}")
 
-        path1 = os.path.dirname(path)
-        path2 = os.path.dirname(path1)
+        try:
+            path1 = os.path.dirname(path)
+            path2 = os.path.dirname(path1)
 
-        print(f"Files at {path2}: {list(os.listdir(path2))}", file=sys.stderr)
-        print(f"Files at {path1}: {list(os.listdir(path1))}", file=sys.stderr)
+            print(f"Files at {path2}: {list(os.listdir(path2))}", file=sys.stderr)
+            print(f"Files at {path1}: {list(os.listdir(path1))}", file=sys.stderr)
+        finally:
+            pass
 
         lines = [
             "from typing import Optional",
