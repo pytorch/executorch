@@ -97,7 +97,7 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
+  if [[ "${MODEL_NAME}" == "qwen2_5_1_5b" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llm script: python3 -m extension.llm.export.export_llm.
