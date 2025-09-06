@@ -979,18 +979,18 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
     ) -> ProxyValue:
         if op not in {
             exir_ops.edge.cadence.convolution.default,
-            exir_ops.edge.cadence.quantized_conv_nchw.default,
+            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.default
+        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
 
         if not quantized_op and len(args) == 8 and args[-1] is True:
             # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
 
         new_op = (
-            exir_ops.edge.cadence.quantized_conv_nhwc.default
+            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor
             if quantized_op
             else exir_ops.edge.cadence.convolution.default
         )

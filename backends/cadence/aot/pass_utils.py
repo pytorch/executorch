@@ -5,9 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-
 from dataclasses import dataclass
+from functools import partial
+from operator import attrgetter
 from typing import Callable, List, Optional, Set, Type, Union
+
+import executorch.backends.cadence.aot.ops_registrations  # noqa
+import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -16,6 +20,7 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPac
 from executorch.exir.pass_base import PassBase, PassResult
 
 from torch._ops import OpOverloadPacket
+from torch.utils._pytree import PyTree
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?
@@ -113,6 +118,155 @@ def op_counts_match(
         if count_node(graph_module, op) != count:
             return False
     return True
+
+
+def construct_reference_graph_module(
+    graph_module: torch.fx.GraphModule,
+) -> torch.fx.GraphModule:
+    """
+    Given a graph module in edge dialect, construct a new graph module with the same
+    structure as the input graph module, but with all cadence custom op nodes
+    replaced with their corresponding reference implementations in torch.ops.cadence.<name>.
+    """
+    new_graph = torch.fx.Graph()
+    val_map = {}
+
+    def _get_cadence_op_with_overload(node: torch.fx.Node) -> Optional[str]:
+        """Get full cadence operation name with overload."""
+        if not (node.op == "call_function" and isinstance(node.target, EdgeOpOverload)):
+            return None
+
+        schema_name = node.target._schema.name
+        if not schema_name.startswith("cadence::"):
+            return None
+
+        base_op_name = schema_name.split("::", 1)[1]
+        prefix = f"cadence_{base_op_name}_"
+
+        return (
+            f"{base_op_name}.{node.name[len(prefix):]}"
+            if node.name.startswith(prefix)
+            else base_op_name
+        )
+
+    for node in graph_module.graph.nodes:
+        if node.op == "call_function" and isinstance(node.target, EdgeOpOverload):
+            # Schema name format: "namespace::operation_name"
+            op = _get_cadence_op_with_overload(node)
+            if op is None:  # Copy the nodes as-is
+                new_node = new_graph.node_copy(node, lambda n: val_map[n])
+                val_map[node] = new_node
+                continue
+
+            try:
+                ref_op = attrgetter(op)(torch.ops.cadence)
+            except AttributeError:
+                raise RuntimeError(
+                    f"Could not find reference implementation for {op} in {torch.ops.cadence}"
+                )
+            new_node = new_graph.create_node(
+                node.op,
+                ref_op,
+                args=tuple(
+                    val_map[arg] if isinstance(arg, torch.fx.Node) else arg
+                    for arg in node.args
+                ),
+                kwargs={
+                    k: val_map[v] if isinstance(v, torch.fx.Node) else v
+                    for k, v in node.kwargs.items()
+                },
+                name=node.name,
+            )
+            val_map[node] = new_node
+        else:
+            # Copy all other nodes as-is
+            new_node = new_graph.node_copy(node, lambda n: val_map[n])
+            val_map[node] = new_node
+
+    # Create a new GraphModule with the new graph and the same code as the original
+    return torch.fx.GraphModule(graph_module, new_graph)
+
+
+def numerically_equivalent(
+    graph_module: torch.fx.GraphModule,
+    example_inputs: tuple[torch.Tensor, ...],
+    exact_match: bool,
+    rtol: float = 1e-3,
+    atol: float = 1e-3,
+    validate_intermediates: bool = False,
+) -> Union[bool, tuple[bool, dict[str, torch.Tensor], dict[str, torch.Tensor]]]:
+    """
+    Constructs a new GraphModule from the input graph_module, replacing all cadence EdgeOpOverload
+    nodes with their corresponding reference implementations in
+    executorch.backends.cadence.aot.ref_implementations (i.e., torch.ops.cadence.<name>).
+    All aten nodes are left unchanged.
+
+    Args:
+        graph_module: The input graph module to be checked for numerical equivalence.
+        example_inputs: Example inputs to the graph module.
+        exact_match: If True, the outputs the original and transformed graph modules must be exactly equal.
+        rtol: Relative tolerance for torch.allclose. Unused if exact_match is True.
+        atol: Absolute tolerance for torch.allclose. Unused if exact_match is True.
+        validate_intermediates: If True, also check that the intermediate values of the original and transformed
+            graph modules are numerically equivalent. If False, only check that the final outputs are equivalent.
+
+    Returns:
+        True if the original and transformed graph modules are numerically equivalent, False otherwise. Raises
+        an error if the cadence reference implementation does not exist.
+    """
+
+    # Create a new GraphModule with the new graph and the same code as the original
+    new_graph_module = construct_reference_graph_module(graph_module)
+
+    # Add forward hooks to capture all intermediates from both original and new GraphModules
+    orig_intermediates: list[PyTree] = []
+    ref_intermediates: list[PyTree] = []
+
+    def get_orig_intermediate(
+        module: torch.fx.GraphModule, input: PyTree, output: PyTree
+    ) -> None:
+        nonlocal orig_intermediates
+        orig_intermediates.append(output)
+
+    def get_new_intermediate(
+        module: torch.fx.GraphModule, input: PyTree, output: PyTree
+    ) -> None:
+        nonlocal ref_intermediates
+        ref_intermediates.append(output)
+
+    hooks = []
+    if validate_intermediates:
+        for module in graph_module.modules():
+            hooks.append(module.register_forward_hook(get_orig_intermediate))
+
+        for module in new_graph_module.modules():
+            # Don't bother saving hooks for new graph module since we're
+            # throwing out the new graph after this function call
+            module.register_forward_hook(get_new_intermediate)
+
+    orig_outs = graph_module(*example_inputs)
+    new_outs = new_graph_module(*example_inputs)
+    for hook in hooks:
+        hook.remove()
+
+    if not validate_intermediates:
+        orig_intermediates = [orig_outs]
+        ref_intermediates = [new_outs]
+
+    assert (
+        len(orig_intermediates) == len(ref_intermediates)
+        and len(orig_intermediates) > 0
+    )
+    if exact_match:
+        comparison_func = torch.equal
+    else:
+        comparison_func = partial(torch.allclose, rtol=rtol, atol=atol, equal_nan=False)
+
+    close_tree = torch.utils._pytree.tree_map(
+        comparison_func, orig_intermediates, ref_intermediates
+    )
+    close_leaves, _ = torch.utils._pytree.tree_flatten(close_tree)
+    return all(close_leaves)
 
 
 # Testing utils
