@@ -36,6 +36,7 @@ from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
+    get_openvino_partitioner,
     get_qnn_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
@@ -455,6 +456,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
     )
+    parser.add_argument("--openvino", action="store_true")
+    parser.add_argument(
+        "--openvino_device",
+        type=str,
+        default="CPU",
+        choices=["CPU", "GPU"],
+        help="Specify the device for Openvino (CPU or GPU).",
+    )
 
     parser.add_argument(
         "--expand_rope_table",
@@ -552,6 +561,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--input_prune_map",
         default=None,
         help="path to the input pruning token mapping file (token_map.json)",
+    )
+
+    parser.add_argument(
+        "--nncf_compression",
+        default=False,
+        action="store_true",
+        help="Enables nncf compression for openvino backend",
     )
 
     parser.add_argument(
@@ -869,6 +885,86 @@ def _to_edge_and_lower_llama_xnnpack(
     return builder.to_executorch(passes=additional_passes)
 
 
+def _to_edge_and_lower_llama_openvino(
+    builder_exported,
+    modelname,
+    additional_passes,
+    openvino_device: str = "CPU",
+    nncf_compression: bool = False,
+    nncf_compression_group_size: int = 32,
+    verbose: bool = False,
+) -> LLMEdgeManager:  # noqa: C901
+    partitioners = []
+
+    # Add OpenVINO partitioner
+    partitioners.append(get_openvino_partitioner(openvino_device))
+    modelname = f"openvino_{modelname}"
+
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
+    # Use NNCF compression if enabled
+    # TODO: Enable passing OpenVINOQuantizer as a parameter to pt2e_quantize
+    if nncf_compression:
+        try:
+            from functools import partial
+
+            import nncf
+            from pytorch_tokenizers import get_tokenizer
+        except ImportError:
+            raise ImportError(
+                "Please install nncf via backends/openvino/requirements.txt"
+            )
+        tokenizer = get_tokenizer(builder_exported.tokenizer_path)
+
+        def transform_fn(prompts: str, tokenizer):
+            tokenized_text = tokenizer.encode(prompts, bos=False, eos=False)
+            logging.error(tokenized_text)
+
+            inputs = ()
+            inputs = (
+                torch.tensor(tokenized_text).unsqueeze(0),
+                {"input_pos": torch.tensor([0])},
+            )
+
+            return inputs
+
+        builder_exported.calibration_data = (
+            [builder_exported.calibration_data]
+            if isinstance(builder_exported.calibration_data, str)
+            else builder_exported.calibration_data
+        )
+        builder_exported.calibration_data = (
+            [
+                word
+                for prompt in builder_exported.calibration_data
+                for word in prompt.split()
+            ]
+            if not builder_exported.dynamic_shapes
+            else builder_exported.calibration_data
+        )
+
+        builder_exported.pre_autograd_graph_module = nncf.compress_weights(
+            builder_exported.pre_autograd_graph_module,
+            dataset=nncf.Dataset(
+                builder_exported.calibration_data,
+                transform_func=partial(transform_fn, tokenizer=tokenizer),
+            ),
+            mode=nncf.CompressWeightsMode.INT4_SYM,
+            ratio=0.8,
+            group_size=nncf_compression_group_size,
+            sensitivity_metric=nncf.SensitivityMetric.HESSIAN_INPUT_ACTIVATION,
+        )
+
+    builder = builder_exported.to_edge_transform_and_lower(partitioners)
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    return builder.to_executorch(passes=additional_passes)
+
+
 def _to_edge_and_lower_llama(  # noqa: C901
     builder_exported,
     modelname,
@@ -1102,6 +1198,16 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quant_dtype,
             xnnpack_extended_ops=llm_config.backend.xnnpack.extended_ops,
             generate_etrecord=llm_config.debug.generate_etrecord,
+            verbose=llm_config.debug.verbose,
+        )
+    elif llm_config.backend.openvino.enabled:
+        builder = _to_edge_and_lower_llama_openvino(
+            builder_exported,
+            modelname,
+            additional_passes,
+            openvino_device=llm_config.backend.openvino.device,
+            nncf_compression=llm_config.backend.openvino.nncf_compression,
+            nncf_compression_group_size=llm_config.backend.openvino.nncf_compression_group_size,
             verbose=llm_config.debug.verbose,
         )
     else:
