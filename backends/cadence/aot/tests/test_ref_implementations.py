@@ -15,7 +15,19 @@ from executorch.backends.cadence.aot.ref_implementations import (
     dequantize_per_tensor,
     quantize_per_tensor,
     quantized_add,
+    quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor,
+    quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor,
+    quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor,
+    quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor,
+    quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor,
+    quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor,
     quantized_conv_nchw_per_tensor,
+    quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor,
+    quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor,
+    quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor,
+    quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor,
+    quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor,
+    quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor,
     quantized_conv_nhwc_per_tensor,
     quantized_layer_norm_per_tensor,
     quantized_linear,
@@ -350,7 +362,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[[1, 0], [0, 1]]]], dtype=torch.int8
                     ),  # weight: 1x1x2x2 (identity-like)
-                    torch.tensor([0], dtype=torch.int8),  # bias
+                    torch.tensor([0], dtype=torch.int32),  # bias
                     (1, 1),  # stride
                     (0, 0),  # padding
                     (1, 1),  # dilation
@@ -381,7 +393,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[[1, 1], [1, 1]]]], dtype=torch.int8
                     ),  # weight: 1x1x2x2 (sum filter)
-                    torch.tensor([0], dtype=torch.int8),  # bias
+                    torch.tensor([0], dtype=torch.int32),  # bias
                     (1, 1),  # stride
                     (0, 0),  # padding
                     (1, 1),  # dilation
@@ -410,7 +422,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[[129, 128], [128, 129]]]], dtype=torch.uint8
                     ),  # weight: 1x1x2x2 (values close to zero_point)
-                    torch.tensor([10], dtype=torch.uint8),  # bias
+                    torch.tensor([10], dtype=torch.int32),  # bias
                     (1, 1),  # stride
                     (0, 0),  # padding
                     (1, 1),  # dilation
@@ -441,7 +453,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[1, 1]]], dtype=torch.int8
                     ),  # weight: 1x1x2 (OC, IC, KW)
-                    torch.tensor([0], dtype=torch.int8),  # bias
+                    torch.tensor([0], dtype=torch.int32),  # bias
                     (1, 1),  # stride (padding for 2D, actual stride is stride[1])
                     (0, 0),  # padding (padding for 2D, actual padding is padding[1])
                     (1, 1),  # dilation (padding for 2D, actual dilation is dilation[1])
@@ -517,7 +529,7 @@ class TestRefImplementations(unittest.TestCase):
                         ],
                         dtype=torch.int16,
                     ),  # weight: 1x2x2x2 (1 output channel, 2 input channels)
-                    torch.tensor([0], dtype=torch.int16),  # bias
+                    torch.tensor([0], dtype=torch.int32),  # bias
                     (1, 1),  # stride
                     (0, 0),  # padding
                     (1, 1),  # dilation
@@ -652,7 +664,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [[[[1, 1], [1, 1]]]], dtype=torch.int8
                     ),  # weight: 1x1x2x2 (sum filter)
-                    torch.tensor([0], dtype=torch.int8),  # bias
+                    torch.tensor([0], dtype=torch.int32),  # bias
                     (2, 2),  # stride=2
                     (1, 1),  # padding=1
                     (1, 1),  # dilation
@@ -701,42 +713,76 @@ class TestRefImplementations(unittest.TestCase):
 
         input_tensor = input_tensor.to(memory_format=memory_format)
 
-        conv = (
-            quantized_conv_nchw_per_tensor
-            if memory_format == torch.contiguous_format
-            else quantized_conv_nhwc_per_tensor
-        )
+        convs = [
+            (
+                quantized_conv_nchw_per_tensor
+                if memory_format == torch.contiguous_format
+                else quantized_conv_nhwc_per_tensor
+            )
+        ]
 
-        output = conv(
-            input_tensor,
-            weight,
-            bias,
-            stride,
-            padding,
-            dilation,
-            groups,
-            in_zero_point,
-            weight_zero_point,
-            bias_scale,
-            output_scale,
-            output_zero_point,
-            out_multiplier,
-            out_shift,
-        ).to(memory_format=torch.contiguous_format)
+        optimized_convs = []
+        if input_tensor.dtype == torch.int8 and weight.dtype == torch.int8:
+            if input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+                optimized_convs = [
+                    quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor,
+                    quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor,
+                    quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor,
+                ]
 
-        # Verify output properties
-        self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
-        self.assertEqual(
-            output.shape,
-            expected_output.shape,
-            "Output shape should match expected shape",
-        )
+            else:
+                optimized_convs = [
+                    quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor,
+                    quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor,
+                    quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor,
+                ]
+        elif input_tensor.dtype == torch.uint8 and weight.dtype == torch.uint8:
+            if input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+                optimized_convs = [
+                    quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor,
+                    quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor,
+                    quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor,
+                ]
 
-        # Verify output matches expected values
-        self.assertTrue(
-            torch.equal(output, expected_output),
-            f"Output values don't match expected. Got {output}, expected {expected_output}",
-        )
+            else:
+                optimized_convs = [
+                    quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor,
+                    quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor,
+                    quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor,
+                ]
+
+        convs.extend(optimized_convs)
+        for conv in convs:
+            output = conv(
+                input_tensor,
+                weight,
+                bias,
+                stride,
+                padding,
+                dilation,
+                groups,
+                in_zero_point,
+                weight_zero_point,
+                bias_scale,
+                output_scale,
+                output_zero_point,
+                out_multiplier,
+                out_shift,
+            ).to(memory_format=torch.contiguous_format)
+
+            # Verify output properties
+            self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
+            self.assertEqual(
+                output.shape,
+                expected_output.shape,
+                "Output shape should match expected shape",
+            )
+
+            # Verify output matches expected values
+            self.assertTrue(
+                torch.equal(output, expected_output),
+                f"Output values don't match expected. Got {output}, expected {expected_output}",
+            )
 
     @expand(
         [
