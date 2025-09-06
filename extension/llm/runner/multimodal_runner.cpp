@@ -57,9 +57,9 @@ Error MultimodalRunner::load() {
 // Don't print with the same priority during warmup
 #define RUNNER_ET_LOG(warmup, format, ...) \
   if (warmup) {                            \
-    ET_LOG(Debug, format, __VA_ARGS__);    \
+    ET_LOG(Error, format, __VA_ARGS__);    \
   } else {                                 \
-    ET_LOG(Info, format, __VA_ARGS__);     \
+    ET_LOG(Error, format, __VA_ARGS__);     \
   }
 
 Error MultimodalRunner::generate(
@@ -104,9 +104,12 @@ Error MultimodalRunner::generate(
 
   uint64_t prefill_next_token = 0;
   // Process multimodal inputs in order
+  ET_LOG(Error, "0000000000000000000000000000000000000000000000000000SIZE%d", inputs.size());
   for (const MultimodalInput& input : inputs) {
+  ET_LOG(Error, "00000000000000000000000000000000123321451345143100");
     prefill_next_token = ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
   }
+  ET_LOG(Error, "1111111111111111111111111111111111111111111111111111");
 
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
@@ -114,6 +117,7 @@ Error MultimodalRunner::generate(
 
   wrapped_callback(ET_UNWRAP_TOKENIZER(
       tokenizer_->decode(prefill_next_token, prefill_next_token)));
+  ET_LOG(Info, "2222222222222222222222222222222222222222222222222222");
 
   RUNNER_ET_LOG(
       config.warming,
