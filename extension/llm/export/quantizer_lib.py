@@ -233,7 +233,7 @@ def get_ov_quantizer(
     ), f"The quantization config is for backend {backend} instead of openvino."
     assert group_size != None, "Group Size None is Not Supported. It should be set to -1 for per-channel."
 
-    # Manually ignore MP layers.
+    # (TODO) Manually ignore MP layers. This is done manually for now till we use the dynamic allocation MP 
     fp_node_names = [
         "linear_14",
         "linear_15",
