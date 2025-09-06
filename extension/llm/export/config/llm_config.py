@@ -275,8 +275,8 @@ class Pt2eQuantize(str, Enum):
 
     xnnpack_dynamic = "xnnpack_dynamic"
     xnnpack_dynamic_qc4 = "xnnpack_dynamic_qc4"
-    openvino_8da4w = "openvino_8da4w"
-    openvino_8da8w = "openvino_8da8w"
+    openvino_4wo = "openvino_4wo"
+    openvino_8wo = "openvino_8wo"
     qnn_8a8w = "qnn_8a8w"
     qnn_16a16w = "qnn_16a16w"
     qnn_16a4w = "qnn_16a4w"
