@@ -263,10 +263,10 @@ def get_ov_quantizer(
         "linear_109",
         "linear_110",]
 
-    if quant_config == "8da4w":
+    if quant_config == "4wo":
         mode = QuantizationMode.INT4WO_SYM
 
-    elif quant_config == "8da8w":
+    elif quant_config == "8wo":
         group_size = -1
         mode = QuantizationMode.INT8WO_SYM
     else:
