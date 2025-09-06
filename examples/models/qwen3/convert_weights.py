@@ -9,6 +9,7 @@ from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_m
 from safetensors.torch import load_file
 
 from torchtune.models.convert_weights import get_mapped_key
+from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 
 # Standard _FROM_META weight mapping of Meta weights to TorchTune + additional bias weight mappings.
 _QWEN_3_FROM_META = {
@@ -88,9 +89,6 @@ def load_checkpoint_from_safetensors(input_dir: str) -> Dict:
         return load_file(os.path.join(input_dir, "model.safetensors"))
 
     raise FileNotFoundError(f"Could not find safetensors checkpoint in {input_dir}")
-
-    raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")
-
 
 def load_checkpoint(input_dir: str) -> Dict:
     try:
