@@ -699,9 +699,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/csrc/cpu)
   unset(EXECUTORCH_INCLUDE_DIRS)
 
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
