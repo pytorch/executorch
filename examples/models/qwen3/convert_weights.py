@@ -5,10 +5,10 @@ import os
 from typing import Dict
 
 import torch
+from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 from safetensors.torch import load_file
 
 from torchtune.models.convert_weights import get_mapped_key
-from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 
 # Standard _FROM_META weight mapping of Meta weights to TorchTune + additional bias weight mappings.
 _QWEN_3_FROM_META = {

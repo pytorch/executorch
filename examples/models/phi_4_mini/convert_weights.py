@@ -4,9 +4,9 @@ import os
 from typing import Dict
 
 import torch
+from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 
 from torchtune.models.convert_weights import get_mapped_key
-from executorch.examples.models.checkpoint import load_checkpoint_from_pytorch_model
 
 from torchtune.training import FullModelHFCheckpointer
 
