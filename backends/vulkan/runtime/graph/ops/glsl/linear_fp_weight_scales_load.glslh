@@ -6,25 +6,27 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#ifndef LINEAR_FP_SCALES_LOAD_GLSLH
-#define LINEAR_FP_SCALES_LOAD_GLSLH
+#ifndef LINEAR_FP_WEIGHT_SCALES_LOAD_GLSLH
+#define LINEAR_FP_WEIGHT_SCALES_LOAD_GLSLH
 
 #include "linear_fp_per_out_channel_params.glslh"
 
-VEC4_T load_scale_x4(const int n4) {
+VEC4_T load_weight_scale_x4(const int n4) {
   return t_weight_scales[n4];
 }
 
-void load_scales_tile(out FPPerOutChannelParams scales, const int n4_start) {
+void load_weight_scales_tile(
+    out FPPerOutChannelParams scales,
+    const int n4_start) {
 #if TILE_N4 == 1
-  scales.data[0] = load_scale_x4(n4_start);
+  scales.data[0] = load_weight_scale_x4(n4_start);
 
 #else
   [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-    scales.data[n4] = load_scale_x4(n4_start + n4);
+    scales.data[n4] = load_weight_scale_x4(n4_start + n4);
   }
 
 #endif
 }
 
-#endif // LINEAR_FP_SCALES_LOAD_GLSLH
+#endif // LINEAR_FP_WEIGHT_SCALES_LOAD_GLSLH
