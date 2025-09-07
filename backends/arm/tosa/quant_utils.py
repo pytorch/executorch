@@ -5,7 +5,7 @@
 
 # pyre-unsafe
 
-# Utiliy functions for TOSA quantized lowerings
+# Utility functions for TOSA quantized lowerings
 
 import math
 
@@ -29,11 +29,11 @@ def insert_rescale_ops_to_int32_maxscale(
     tosa_graph: Any, inputs: list[TosaArg], node: Node, tosa_spec=None
 ) -> tuple[list[Any], float]:
     """For ADD and SUB, we rescale to int32 using a different common scale(2*max(left scale,right scale))
-    compared to all the other cases. We also multply the left and right scales by 1<<20 giving us extra precision
+    compared to all the other cases. We also multiply the left and right scales by 1<<20 giving us extra precision
     for the computation without overflowing.
 
     Returns a list of the rescaled nodes and the scale factor used,
-    needed by rescale_node_back_to_int8.
+    needed by insert_rescale_op_to_int8.
     """
 
     if len(inputs) > 2:
@@ -88,7 +88,7 @@ def insert_rescale_ops_to_int32(
     The scales are adjusted using the smallest scale of all 'nodes'.
 
     Returns a list of the rescaled nodes and the scale factor used,
-    needed by rescale_node_back_to_int8.
+    needed by insert_rescale_op_to_int8.
 
     This functions is used in serialization to TOSA for target ops that are
     handled by the DQ/D folding pass, which stores the quantization parameters
@@ -136,7 +136,7 @@ def insert_rescale_op_to_int8(
     Parameters:
         node: The original node that is being handled by the rescales.
         last_tensor:the tosa tensor to rescale back.
-        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_op_to_int32'
+        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_ops_to_int32'
         compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
         tosa_graph: the tosa_graph to manipulate.
 
@@ -161,7 +161,7 @@ def insert_rescale_op_to_int16(
     Parameters:
         node: The original node that is being handled by the rescales.
         last_tensor:the tosa tensor to rescale back.
-        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_op_to_int32'
+        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_ops_to_int32'
         compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
         tosa_graph: the tosa_graph to manipulate.
 
@@ -187,7 +187,7 @@ def _insert_rescale_op_to_dtype(
     Parameters:
         node: The original node that is being handled by the rescales.
         last_tensor:the tosa tensor to rescale back.
-        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_op_to_int32'
+        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_ops_to_int32'
         output_dtype: The target dtype (ts.DType.INT8 or ts.DType.INT16)
         compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
         tosa_graph: the tosa_graph to manipulate.
@@ -224,7 +224,7 @@ def _insert_rescale_op_to_dtype(
 
 # TOSA uses the RESCALE operation to scale between values with differing precision.
 # The RESCALE operator is defined using an integer multiply, add, and shift.
-# This utility function is for calculating the multier and shift given a scale.
+# This utility function is for calculating the multiplier and shift given a scale.
 # Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_precision_scaling
 def compute_multiplier_and_shift(
     scales: list[float], scaleWidth: int = 32
@@ -269,7 +269,7 @@ def compute_multiplier_and_shift(
     return multipliers, shifts
 
 
-# For TOSA spec v1.0 RESCALE operator requires multipler, shifts, input_zp and output_zp to be
+# For TOSA spec v1.0 RESCALE operator requires multiplier, shifts, input_zp and output_zp to be
 # const inputs. Create constant operators from the data already initialized.
 def create_const_ops_for_rescale(
     tosa_fb,
