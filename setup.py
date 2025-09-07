@@ -790,7 +790,7 @@ setup(
     # platform-specific files using InstallerBuildExt.
     ext_modules=[
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/third-party/flatc_proj/bin/",
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatc_ep/bin/",
             src_name="flatc",
             dst="executorch/data/bin/",
             is_executable=True,
