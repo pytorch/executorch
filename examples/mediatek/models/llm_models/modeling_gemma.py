@@ -1022,7 +1022,7 @@ class Gemma3ModelChunk(ModelChunk):
         self.sliding_window_pattern = self.config.sliding_window_pattern
         self.global_local_attention_pattern = self.config.global_local_attention_pattern
 
-    def forward(self, inputs_embeds, mask, pos_emb, *cache):
+    def forward(self, inputs_embeds, global_mask, local_mask, pos_emb, *cache):
         if not self.jit_trace:
             assert (
                 len(cache) == 2 * self.num_blocks
@@ -1055,11 +1055,17 @@ class Gemma3ModelChunk(ModelChunk):
         for idx, decoder_layer in enumerate(self.layers):
             outer_layer_idx = self.chunk_idx * self.num_blocks + idx
             mask_pos = outer_layer_idx % self.sliding_window_pattern
-            temp_mask = mask[self.global_local_attention_pattern[mask_pos]]
-
+            mask_type = self.global_local_attention_pattern[mask_pos]
+            if mask_type == "SLIDING_LOCAL":
+                mask = local_mask
+            elif mask_type == "GLOBAL":
+                mask = global_mask
+            else:
+                raise TypeError(f"Unrecognized mask type: {mask_type}")
+            
             decoder_outputs = decoder_layer(
                 hidden_states.to(self.device_list[idx]),
-                mask=temp_mask.to(self.device_list[idx]),
+                mask=mask.to(self.device_list[idx]),
                 pos_emb=pos_emb.to(self.device_list[idx]),
                 past_key=cache[idx].to(self.device_list[idx]),
                 past_value=cache[self.num_blocks + idx].to(self.device_list[idx]),
@@ -1517,24 +1523,22 @@ class Gemma3ModelChunk(ModelChunk):
             torch.randn(
                 1, num_token, self.config.hidden_size, device="cpu", dtype=torch.float32
             ),
-            {
-                "SLIDING_LOCAL": torch.randn(
-                    1,
-                    1,
-                    num_token,
-                    cache_size + num_token,
-                    device="cpu",
-                    dtype=torch.float32,
-                ),
-                "GLOBAL": torch.randn(
-                    1,
-                    1,
-                    num_token,
-                    cache_size + num_token,
-                    device="cpu",
-                    dtype=torch.float32,
-                ),
-            },
+            torch.randn(    # Global mask
+                1,
+                1,
+                num_token,
+                cache_size + num_token,
+                device="cpu",
+                dtype=torch.float32,
+            ),
+            torch.randn(    # Local mask
+                1,
+                1,
+                num_token,
+                cache_size + num_token,
+                device="cpu",
+                dtype=torch.float32,
+            ),
             torch.randn(1, 2, num_token, head_dim, device="cpu", dtype=torch.float32),
             *[
                 torch.randn(
@@ -1556,15 +1560,8 @@ class Gemma3ModelChunk(ModelChunk):
             cache_dims = tuple(({} for _ in range(2 * self.num_blocks)))
             dynamic_shapes = (
                 {0: Dim.STATIC, 1: nt, 2: Dim.STATIC},
-                {
-                    "SLIDING_LOCAL": {
-                        0: Dim.STATIC,
-                        1: Dim.STATIC,
-                        2: nt,
-                        3: nt + cache_size,
-                    },
-                    "GLOBAL": {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
-                },
+                {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
+                {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: nt + cache_size},
                 {0: Dim.STATIC, 1: Dim.STATIC, 2: nt, 3: Dim.STATIC},
                 cache_dims,
             )

@@ -217,10 +217,20 @@ def forward_and_save(
                     "cache": cache_in,
                 }
             }
-        with torch.no_grad():
-            model_out = models[chunk_idx](
-                hidden_state, mask, pos_emb, *torch.split(cache_in, 1, dim=0)
-            )
+
+        if isinstance(mask, dict):
+            global_mask = mask["GLOBAL"]
+            local_mask = mask["SLIDING_LOCAL"]
+            with torch.no_grad():
+                model_out = models[chunk_idx](
+                    hidden_state, global_mask, local_mask, pos_emb, *torch.split(cache_in, 1, dim=0)
+                )
+        else:
+            with torch.no_grad():
+                model_out = models[chunk_idx](
+                    hidden_state, mask, pos_emb, *torch.split(cache_in, 1, dim=0)
+                )
+
         hidden_state = model_out[0]
         cache[chunk_idx] = torch.cat(
             model_out[1 : 1 + 2 * num_blocks_per_chunk[chunk_idx]], dim=0
@@ -329,14 +339,16 @@ def calibrate_model(model, cal_dataset, chunk_idx: str):
             for batch in tqdm(inp[chunk_idx].keys(), desc="Batch: "):
                 if inp[chunk_idx][batch] is not None:
                     inputs_embeds = torch.tensor(inp[chunk_idx][batch]["hidden_state"])
-                    mask = inp[chunk_idx][batch]["mask"]
-                    try:
-                        mask = torch.tensor(mask)
-                    except:
-                        mask = {k: torch.tensor(v) for k, v in mask.items()}
                     pos_emb = torch.tensor(inp[chunk_idx][batch]["pos_emb"])
                     cache = torch.tensor(inp[chunk_idx][batch]["cache"])
-                    model(inputs_embeds, mask, pos_emb, *torch.split(cache, 1, dim=0))
+                    mask = inp[chunk_idx][batch]["mask"]
+                    if isinstance(mask, dict):
+                        global_mask = torch.tensor(mask["GLOBAL"])
+                        local_mask = torch.tensor(mask["SLIDING_LOCAL"])
+                        model(inputs_embeds, global_mask, local_mask, pos_emb, *torch.split(cache, 1, dim=0))
+                    else:
+                        mask = torch.tensor(mask)
+                        model(inputs_embeds, mask, pos_emb, *torch.split(cache, 1, dim=0))
 
 
 def export_to_et_ir(
