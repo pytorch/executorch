@@ -81,7 +81,7 @@ void main() {
   load_input_im2col_tile(in_tile, k4, m4, logical_K, logical_M);
 
   Int8InputBlock packed_block;
-  quantize_and_pack(packed_block, in_tile);
+  quantize_and_pack(packed_block, in_tile, inv_scale, zp);
 
   // Number of texels in the x dim of the output matrix
   const int K4 = div_4(matrix_sizes.x);

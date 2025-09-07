@@ -18,6 +18,8 @@
  * - TILE_K4: number of (groups of 4) columns in the tile
  */
 
+#extension GL_EXT_control_flow_attributes : require
+
 struct FPInputTile {
   VEC4_T data[TILE_M][TILE_K4];
 };

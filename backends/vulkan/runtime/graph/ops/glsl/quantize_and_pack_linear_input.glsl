@@ -73,7 +73,7 @@ void main() {
   }
 
   Int8InputBlock packed_block;
-  quantize_and_pack(packed_block, in_tile);
+  quantize_and_pack(packed_block, in_tile, inv_scale, zp);
 
   write_block(packed_block, k4, m4, K4);
 }

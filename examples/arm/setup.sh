@@ -27,8 +27,6 @@ enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
 mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
-vulkan_sdk_version="1.4.321.1"
-vulkan_sdk_base_dir="vulkan_sdk"
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -38,23 +36,6 @@ toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
 
-if [[ "${ARCH}" == "x86_64" ]]; then
-    # Vulkan SDK
-    vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/linux/vulkansdk-linux-x86_64-${vulkan_sdk_version}.tar.xz"
-    vulkan_sdk_sha256="f22a3625bd4d7a32e7a0d926ace16d5278c149e938dac63cecc00537626cbf73"
-
-elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-    # Vulkan SDK
-    vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/1.4.321.1/vulkansdk-ubuntu-22.04-arm-1.4.321.1.tar.xz"
-    vulkan_sdk_sha256="c57e318d0940394d3a304034bb7ddabda788b5b0b54638e80e90f7264efe9f84"
-
-else
-    echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-fi
-
-# MLSDK dependencies
-mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
-vulkan_sdk_bin_dir="${vulkan_sdk_base_dir}/${vulkan_sdk_version}/${ARCH}/bin"
 
 # List of supported options and their descriptions
 OPTION_LIST=(
@@ -198,36 +179,6 @@ function setup_root_dir() {
     setup_path_script="${root_dir}/setup_path"
 }
 
-function setup_vulkan_sdk() {
-
-    if command -v vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK already installed..."
-        enable_vulkan_sdk=0
-        return
-    fi
-
-    cd "${root_dir}"
-
-    vulkan_sdk_tar_file="${vulkan_sdk_url##*/}"
-    if [[ ! -e "${vulkan_sdk_tar_file}" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading Vulkan SDK - ${vulkan_sdk_url}.."
-        curl -L --output "${vulkan_sdk_tar_file}" "${vulkan_sdk_url}"
-        echo "${vulkan_sdk_sha256} ${vulkan_sdk_tar_file}" | sha256sum -c -
-        rm -fr ${vulkan_sdk_base_dir}
-    fi
-
-    mkdir -p ${vulkan_sdk_base_dir}
-    tar -C ${vulkan_sdk_base_dir} -xJf "${vulkan_sdk_tar_file}"
-
-    vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
-    if ${vulkan_sdk_bin_path}/vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK OK"
-    else
-        echo "[${FUNCNAME[0]}] Vulkan SDK NOK - perhaps need manual install of swifthshader or mesa-vulkan driver?"
-        exit 1
-    fi
-}
-
 function setup_ethos_u_tools() {
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
@@ -305,6 +256,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     source $et_dir/backends/arm/scripts/utils.sh
     source $et_dir/backends/arm/scripts/fvp_utils.sh
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
+    source $et_dir/backends/arm/scripts/vulkan_utils.sh
 
     echo "[main]: Checking platform and os"
     check_platform_support
