@@ -13,8 +13,8 @@
  * - t_packed_int8_input to be declared in the shader layout
  *
  * Settings:
- * - INPUT_BUFFER to indicate resource is a buffer, otherwise texture storage is
- *   assumed.
+ * - PACKED_INT8_INPUT_BUFFER to indicate resource is a buffer, otherwise
+ *   texture storage is assumed.
  */
 
 #ifndef LINEAR_INT8_INPUT_TILE_LOAD_GLSLH
@@ -24,9 +24,9 @@
 
 #include "linear_int8_input_tile.glslh"
 
-#ifdef INPUT_BUFFER
+#ifdef PACKED_INT8_INPUT_BUFFER
 
-ivec4 load_input_block(
+ivec4 load_int8_input_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
@@ -35,38 +35,38 @@ ivec4 load_input_block(
 
 #else
 
-ivec4 load_input_block(
+ivec4 load_int8_input_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
   return texelFetch(t_packed_int8_input, ivec3(block_x, block_y, 0), 0);
 }
 
-#endif // INPUT_BUFFER
+#endif // PACKED_INT8_INPUT_BUFFER
 
-void load_input_tile(
+void load_int8_input_tile(
     out Int8InputTile in_tile,
     const int block_x,
     const int block_y,
     const int nblocks_x) {
 #if TILE_M4 == 1 && TILE_K4 == 1
-  in_tile.data[0][0] = load_input_block(block_x, block_y, nblocks_x);
+  in_tile.data[0][0] = load_int8_input_block(block_x, block_y, nblocks_x);
 
 #elif TILE_M4 == 1 && TILE_K4 > 1
   [[unroll]] for (int x = 0; x < TILE_K4; ++x) {
-    in_tile.data[0][x] = load_input_block(block_x + x, block_y, nblocks_x);
+    in_tile.data[0][x] = load_int8_input_block(block_x + x, block_y, nblocks_x);
   }
 
 #elif TILE_M4 > 1 && TILE_K4 == 1
   [[unroll]] for (int y = 0; y < TILE_M4; ++y) {
-    in_tile.data[y][0] = load_input_block(block_x, block_y + y, nblocks_x);
+    in_tile.data[y][0] = load_int8_input_block(block_x, block_y + y, nblocks_x);
   }
 
 #else
   [[unroll]] for (int y = 0; y < TILE_M4; ++y) {
     [[unroll]] for (int x = 0; x < TILE_K4; ++x) {
       in_tile.data[y][x] =
-          load_input_block(block_x + x, block_y + y, nblocks_x);
+          load_int8_input_block(block_x + x, block_y + y, nblocks_x);
     }
   }
 #endif

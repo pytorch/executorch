@@ -49,7 +49,7 @@ ${layout_declare_spec_const(C, "uint", "apply_bias", "0")}
 #include "linear_fp_output_tile_fp_compute.glslh"
 #include "linear_fp_output_tile_fp_int8_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
-#include "linear_fp_scales_load.glslh"
+#include "linear_fp_weight_scales_load.glslh"
 #include "linear_fp_bias_load.glslh"
 
 void main() {
@@ -75,34 +75,34 @@ void main() {
   initialize(out_tile);
 
   FPInputTile in_tile;
-  Int8WeightTile weight_tile;
+  Int8WeightTile int8_weight_tile;
 
   const bool dont_check_bounds = (M - m) >= TILE_M;
   if (dont_check_bounds) {
     for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
       load_input_tile_no_checks(in_tile, k4, m, K4, M);
-      load_weight_tile(weight_tile, n4, k4, N4);
-      fp_accumulate_with_int8_weight(out_tile, in_tile, weight_tile);
+      load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
+      fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);
     }
   } else {
     for (int k4 = 0; k4 < K4; k4 += TILE_K4) {
       load_input_tile_with_checks(in_tile, k4, m, K4, M);
-      load_weight_tile(weight_tile, n4, k4, N4);
-      fp_accumulate_with_int8_weight(out_tile, in_tile, weight_tile);
+      load_int8_weight_tile(int8_weight_tile, n4, k4, N4);
+      fp_accumulate_with_int8_weight(out_tile, in_tile, int8_weight_tile);
     }
   }
 
-  FPPerOutChannelParams scales_tile;
-  load_scales_tile(scales_tile, n4);
+  FPPerOutChannelParams weight_scales_tile;
+  load_weight_scales_tile(weight_scales_tile, n4);
 
   if (apply_bias > 0) {
     FPPerOutChannelParams bias_tile;
     load_bias_tile(bias_tile, n4);
 
-    apply_scales_and_biases(out_tile, scales_tile, bias_tile);
+    apply_scales_and_biases(out_tile, weight_scales_tile, bias_tile);
   }
   else {
-    apply_scales(out_tile, scales_tile);
+    apply_scales(out_tile, weight_scales_tile);
   }
 
   if (dont_check_bounds) {
