@@ -34,7 +34,7 @@ For more information on TOSA see https://www.mlplatform.org/tosa/tosa_spec.html
 ## Layout of key components
 
 Export:
-* `tosa_backend.py` - The TOSA conversion flow all other backends rely on.
+* `tosa/backend.py` - The TOSA conversion flow all other backends rely on.
 * `ethosu/backend.py` - Main entrypoint for the EthosUBackend.
 * `vgf_backend.py` - Main entrypoint for VgfBackend.
   * For more information see the section on [Arm Backend Architecture](#arm-backend-architecture).
