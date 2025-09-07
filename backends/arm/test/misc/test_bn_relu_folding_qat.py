@@ -40,13 +40,17 @@ class ConvModule(torch.nn.Module):
 
 
 models = {
-    "conv_bn_relu": ConvModule(batch_norm=True),
-    "conv_relu": ConvModule(batch_norm=False),
+    # name : (model, is_per_channel)
+    "conv_bn_relu_per_channel": (ConvModule(batch_norm=True), True),
+    "conv_relu_per_channel": (ConvModule(batch_norm=False), True),
+    "conv_bn_relu_per_tensor": (ConvModule(batch_norm=True), False),
+    "conv_relu_per_tensor": (ConvModule(batch_norm=False), False),
 }
 
 
-@common.parametrize("model", models)
-def test_qat_tosa_INT(model: torch.nn.Module):
+@common.parametrize("test_data", models)
+def test_qat_tosa_INT(test_data):
+    model, per_channel = test_data
     pipeline = TosaPipelineINT[input_t1](model, model.test_data, [], [], qtol=1)
     tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
@@ -59,7 +63,7 @@ def test_qat_tosa_INT(model: torch.nn.Module):
         Quantize(
             quantizer=quantizer,
             quantization_config=get_symmetric_quantization_config(
-                is_qat=True, is_per_channel=False
+                is_qat=True, is_per_channel=per_channel
             ),
             is_qat=True,
         ),

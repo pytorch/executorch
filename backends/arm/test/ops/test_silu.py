@@ -15,6 +15,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -109,5 +110,51 @@ def test_silu_u85_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = EthosU85PipelineINT[input_t](
         Silu(), silu_data, Silu.aten_op_INT, run_on_fvp=True
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_FP(test_data: input_t):
+    silu_data = (test_data(), False)
+    pipeline = VgfPipeline[input_t](
+        Silu(), silu_data, Silu.aten_op_FP, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_FP_inplace(test_data: input_t):
+    silu_data = (test_data(), True)
+    pipeline = VgfPipeline[input_t](
+        Silu(), silu_data, Silu.aten_op_inplace_FP, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_INT(test_data: input_t):
+    silu_data = (test_data(), False)
+    pipeline = VgfPipeline[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Silu.test_data)
+@common.SkipIfNoModelConverter
+def test_silu_vgf_INT_inplace(test_data: input_t):
+    silu_data = (test_data(), True)
+    pipeline = VgfPipeline[input_t](
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

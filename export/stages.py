@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -20,7 +21,10 @@ from torch import nn
 from torch._export.pass_base import PassType
 from torchao.quantization import quantize_
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torchao.quantization.pt2e.quantizer import ComposableQuantizer
+from torchao.quantization.pt2e.quantizer import (
+    ComposableQuantizer,
+    Quantizer as TorchAOPT2EQuantizer,
+)
 from torchao.utils import unwrap_tensor_subclass
 
 
@@ -199,6 +203,7 @@ class EdgeTransformAndLowerStage(Stage):
         """
         exported_programs = artifact.data
         constant_methods = artifact.get_context("constant_methods")
+        generate_etrecord = artifact.get_context("generate_etrecord", False)
 
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
@@ -207,6 +212,7 @@ class EdgeTransformAndLowerStage(Stage):
                 transform_passes=self._transform_passes,
                 constant_methods=constant_methods,
                 compile_config=self._compile_config,
+                generate_etrecord=generate_etrecord,
             )
 
         delegation_info = get_delegation_info(
@@ -287,7 +293,7 @@ class SourceTransformStage(Stage):
         """
         if (
             not self._quantization_recipe
-            or not self._quantization_recipe.ao_base_config
+            or not self._quantization_recipe.ao_quantization_configs
         ):
             logging.info(
                 "Quantization recipe is invalid to run SourceTransform, returning original artifact"
@@ -298,15 +304,19 @@ class SourceTransformStage(Stage):
         assert isinstance(artifact.data, dict)
 
         # Store the original models
-        self._transformed_models = artifact.data
+        self._transformed_models = copy.deepcopy(artifact.data)
 
         # Apply torchao quantize_ to each model
-        for method_name, model in artifact.data.items():
+        for _, model in artifact.data.items():
             # pyre-ignore
-            for config in self._quantization_recipe.ao_base_config:
-                quantize_(model, config)
-                unwrap_tensor_subclass(model)
-                self._transformed_models[method_name] = model
+            if len(self._quantization_recipe.ao_quantization_configs) > 1:
+                raise ValueError(
+                    "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
+                )
+
+            ao_config = self._quantization_recipe.ao_quantization_configs[0]
+            quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
+            unwrap_tensor_subclass(model)
 
         self._artifact = artifact.copy_with_new_data(self._transformed_models)
 
@@ -330,6 +340,36 @@ class QuantizeStage(Stage):
     @property
     def can_start_pipeline(self) -> bool:
         return True
+
+    def _get_quantizer_for_prepare_pt2e(self, quantizers: List[Any]):
+        torch_ao_quantizers = []
+        torchao_pt2e_quantizers = []
+
+        for quantizer in quantizers:
+            if isinstance(quantizer, TorchAOPT2EQuantizer):
+                torchao_pt2e_quantizers.append(quantizer)
+            else:
+                # torch.ao quantizer support will soon be deprecated, remove this once CoreML moves to torchao quantizer
+                logging.warning(
+                    f"torch.ao quantizer {quantizer} is deprecated, consider moving to torchao quantizer"
+                )
+                torch_ao_quantizers.append(quantizer)
+
+        if torch_ao_quantizers and torchao_pt2e_quantizers:
+            raise ValueError("Mixed quantizer types are not supported")
+        if len(torch_ao_quantizers) > 1:
+            raise ValueError(
+                "Multiple quantizers of torch.ao.quantization.quantizer not supported"
+            )
+
+        if torch_ao_quantizers:
+            # prepare_pt2e has backward compat with torch.ao quantizer
+            return torch_ao_quantizers[0]
+        elif torchao_pt2e_quantizers:
+            # Multiple torchao quantizers - use ComposableQuantizer
+            return ComposableQuantizer(torchao_pt2e_quantizers)
+        else:
+            raise ValueError("No quantizers detected")
 
     def run(self, artifact: PipelineArtifact) -> None:
         if not self._quantization_recipe or not self._quantization_recipe.quantizers:
@@ -355,11 +395,10 @@ class QuantizeStage(Stage):
             inputs = example_inputs[method_name][0]
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
-            composed_quantizer = ComposableQuantizer(
-                # pyre-ignore
+            quantizer = self._get_quantizer_for_prepare_pt2e(
                 self._quantization_recipe.quantizers
             )
-            prepared_model = prepare_pt2e(captured_graph, composed_quantizer)
+            prepared_model = prepare_pt2e(captured_graph, quantizer)
 
             for calibration_input in example_inputs[method_name]:
                 prepared_model(*calibration_input)
@@ -418,6 +457,7 @@ class ToEdgeStage(Stage):
             exported_programs,
             constant_methods=constant_methods,
             compile_config=self._edge_compile_config,
+            generate_etrecord=artifact.get_context("generate_etrecord", False),
         )
 
         self._artifact = artifact.copy_with_new_data(edge_program_manager)

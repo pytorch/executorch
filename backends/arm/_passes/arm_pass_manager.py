@@ -10,7 +10,6 @@
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
-    AnnotateChannelsLastDimOrder,
     AnnotateDecomposedMatmulPass,
     BroadcastArgsPass,
     CastBoolToInt8Pass,
@@ -19,8 +18,11 @@ from executorch.backends.arm._passes import (
     ComputeConstantOpsAOT,
     Conv1dUnsqueezePass,
     ConvertAnyDefaultDimDimsPass,
+    ConvertELUParamsPass,
     ConvertExpandCopyToRepeatPass,
     ConvertFullLikeToFullPass,
+    ConvertInt64ConstOpsToInt32Pass,
+    ConvertInt64OutputOpsToInt32Pass,
     ConvertIntPowToMuls,
     ConvertMinMaxPass,
     ConvertMmToBmmPass,
@@ -30,22 +32,28 @@ from executorch.backends.arm._passes import (
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAddmmPass,
+    DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
-    DecomposeAsinPass,
     DecomposeAtanhPass,
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
+    DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
+    DecomposeCumsumPass,
     DecomposeDivPass,
+    DecomposeEluPass,
     DecomposeEmbeddingPass,
+    DecomposeExpm1Pass,
     DecomposeGeluPass,
+    DecomposeGluPass,
     DecomposeGroupedConv,
     DecomposeGroupNormPass,
     DecomposeLayerNormPass,
     DecomposeLeakyReLUPass,
     DecomposeLinearPass,
     DecomposeLinearVectorNormPass,
+    DecomposeLogitPass,
     DecomposeMaskedFill,
     DecomposeMaxPool2DPass,
     DecomposeMeanDimPass,
@@ -79,10 +87,12 @@ from executorch.backends.arm._passes import (
     RetraceFoldedDtypesPass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
+    ToTosaMemoryFormatPass,
     UnsqueezeBeforeRepeatPass,
     UnsqueezeScalarPlaceholdersPass,
 )
-from executorch.backends.arm.tosa_specification import (
+
+from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
 )
@@ -93,6 +103,7 @@ from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from torch.fx import GraphModule
 
 
@@ -127,6 +138,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(AnnotateDecomposedMatmulPass())
         self.add_pass(QuantizeOperatorArguments())
+        self.add_pass(ConvertELUParamsPass())
         self.add_pass(FoldAndAnnotateQParamsPass(exported_program))  # type: ignore[call-arg]
         self.add_pass(RetraceFoldedDtypesPass())
         self.add_pass(UnsqueezeScalarPlaceholdersPass(exported_program))
@@ -144,6 +156,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
+        self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
@@ -156,21 +169,26 @@ class ArmPassManager(PassManager):
 
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
-        self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(DecomposeExpm1Pass())
+        self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
         self.add_pass(DecomposeRoundPass())
         self.add_pass(DecomposeAcoshPass())
-        self.add_pass(DecomposeAsinPass())
         self.add_pass(DecomposeAsinhPass())
+        self.add_pass(DecomposeCoshPass())
+        self.add_pass(DecomposeAsinAndAcosPass())
         self.add_pass(DecomposeSqrtPass())
         self.add_pass(DecomposeAtanPass())
         self.add_pass(DecomposeAtanhPass())
         self.add_pass(DecomposeAddmmPass())
+        self.add_pass(DecomposeEluPass())
+        self.add_pass(DecomposeExpm1Pass())
         self.add_pass(ConvertIntPowToMuls())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
@@ -182,6 +200,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(FuseBatchnorm2DPass(exported_program))
         self.add_pass(ConvertMmToBmmPass())
+        self.add_pass(DecomposeGluPass())
         self.add_pass(DecomposeLinearPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeGroupNormPass())
@@ -219,6 +238,7 @@ class ArmPassManager(PassManager):
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
+        self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
         self.add_pass(DecomposeMaxPool2DPass())
         self.add_pass(SizeAdjustInputPass())
@@ -230,7 +250,7 @@ class ArmPassManager(PassManager):
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
-        self.add_pass(AnnotateChannelsLastDimOrder())
+        self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
@@ -247,10 +267,16 @@ class ArmPassManager(PassManager):
             )
 
     def transform_for_annotation_pipeline(self, graph_module: GraphModule):
+        self.add_pass(
+            RemoveGraphAssertsPass()
+        )  # ConvertInt64ConstOpsToInt32Pass requires this pass to remove the assertation in Graph
+        self.add_pass(ConvertInt64ConstOpsToInt32Pass())
+        self.add_pass(ConvertInt64OutputOpsToInt32Pass())
         self.add_pass(InsertCastForOpsWithInt64InputPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
+        self.add_pass(DecomposeLogitPass())
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())
@@ -262,6 +288,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeMeanDimPass(graph_module, self.tosa_spec))
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeCosineSimilarityPass())
+        self.add_pass(DecomposeGluPass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeLinearVectorNormPass())

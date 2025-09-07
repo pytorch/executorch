@@ -76,6 +76,10 @@ DEFINE_string(
     gen_model_paths,
     "model_1t.pte",
     "Comma-separated generative model paths.");
+DEFINE_string(
+    model_package_paths,
+    "model_package.pte",
+    "Comma-separated weight-shared model package paths.");
 
 // Tokenizer
 DEFINE_string(tokenizer_path, "tokenizer.model", "tokenizer.model vocab path.");
@@ -136,7 +140,9 @@ LlamaModelPaths get_model_paths() {
       .tokenizer_path = FLAGS_tokenizer_path,
       .token_embedding_path = FLAGS_token_embedding_path,
       .prompt_model_paths = split(FLAGS_prompt_model_paths, ','),
-      .gen_model_paths = split(FLAGS_gen_model_paths, ',')};
+      .gen_model_paths = split(FLAGS_gen_model_paths, ','),
+      .model_package_paths = split(FLAGS_model_package_paths, ','),
+  };
   return model_paths;
 }
 
@@ -319,7 +325,8 @@ int main(int argc, char** argv) {
   LlamaModelOptions model_options = get_model_options();
   LlamaModelPaths model_paths = get_model_paths();
 
-  if (model_paths.prompt_model_paths.empty()) {
+  if (model_paths.prompt_model_paths.empty() &&
+      model_paths.model_package_paths.empty()) {
     model_options.prompt_token_batch_size = 1;
     ET_LOG(
         Info,

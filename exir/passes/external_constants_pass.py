@@ -27,6 +27,7 @@ def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
 
 def external_constants_pass(
     gm: GraphModule,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
 ) -> PassResult:
     """
     Move all non-lifted constants to external file.
@@ -42,7 +43,10 @@ def external_constants_pass(
             if (node.op == "placeholder") and ("_lifted_tensor" not in node.name):
                 spec = node.meta.get("spec")
                 if isinstance(spec, TensorSpec) and spec.const:
-                    node.meta["constant_tag"] = "_default_external_constant"
+                    if gen_tag_fn is not None:
+                        node.meta["constant_tag"] = gen_tag_fn(node)
+                    else:
+                        node.meta["constant_tag"] = "_default_external_constant"
                     mutated = True
     return PassResult(gm, mutated)
 
@@ -88,31 +92,22 @@ def external_mutable_weights_pass(
     return PassResult(gm, mutated)
 
 
-def delegate_external_constants_pass(
-    gm: GraphModule,
-    ep: ExportedProgram,
-    gen_tag_fn: Optional[Callable[[torch.fx.Node], str]] = None,
+# Note: this pass must be run on an unlifted graph, e.g. ep.module(),
+# and not on a lifted graph, e.g. ep.graph_module.
+# This is using 'get_attr' to tag constants, which only appears in
+# unlifted graphs.
+def delegate_external_constants_pass_unlifted(
+    module: torch.nn.Module,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
 ) -> PassResult:
-    """
-    Tag external constants before to_backend.
-
-    Note: this pass must be run after run_decompositions(), as tags on
-    constants are removed then.
-
-    Args:
-        gm: GraphModule to tag.
-        ep: ExportedProgram, to distinguish if a node is a constant.
-        gen_tag_fn: node -> str callable indicating the tag for the node.
-    Returns:
-        PassResult: The resulting gm, and if it was mutated or not.
-    """
     mutated = False
-    for module in gm.modules():
-        if not isinstance(module, torch.fx.GraphModule):
+    for m in module.modules():
+        if not isinstance(m, torch.fx.GraphModule):
             continue
-        for node in module.graph.nodes:
-            if node.op == "placeholder" and is_param_node(ep, node):
+        for node in m.graph.nodes:
+            if node.op == "get_attr":
                 if gen_tag_fn is not None:
-                    node.meta["delegate_constant_tag"] = gen_tag_fn(node)
+                    node.meta.setdefault("custom", {})
+                    node.meta["custom"]["delegate_constant_tag"] = gen_tag_fn(node)
                     mutated = True
-    return PassResult(gm, mutated)
+    return PassResult(module, mutated)

@@ -43,6 +43,7 @@ struct LlamaModelPaths {
   std::string token_embedding_path;
   std::vector<std::string> prompt_model_paths;
   std::vector<std::string> gen_model_paths;
+  std::vector<std::string> model_package_paths;
 };
 
 } // namespace example

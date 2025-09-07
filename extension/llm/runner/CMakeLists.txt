@@ -24,22 +24,27 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
-)
-
-extract_sources(${EXECUTORCH_SRCS_FILE})
-
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 # build llm runner library
 list(TRANSFORM _extension_llm_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(extension_llm_runner STATIC ${_extension_llm_runner__srcs})
 
-set(runner_deps executorch_core extension_module extension_tensor tokenizers)
+set(runner_deps executorch_core extension_module extension_tensor
+                tokenizers::tokenizers
+)
+
+# depend on arange_utils
+if(NOT TARGET kernels_util_all_deps)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/kernels/portable/cpu/util
+    ${CMAKE_CURRENT_BINARY_DIR}/kernels_util
+  )
+endif()
+list(APPEND runner_deps kernels_util_all_deps)
 
 target_link_libraries(extension_llm_runner PUBLIC ${runner_deps})
 set_target_properties(

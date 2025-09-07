@@ -55,7 +55,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_masked_language_model_dataset(
+        inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
 
@@ -109,7 +109,7 @@ def main(args):
     sample_input["attention_mask"] = sample_input["attention_mask"].to(torch.float32)
     sample_input = tuple(sample_input.values())
     golden = model(*sample_input)[0]
-    adb.push(inputs=[sample_input], input_list="input_0_0.raw input_0_1.raw\n")
+    adb.push(inputs=[sample_input])
     adb.execute()
     adb.pull(output_path=args.artifact)
 
@@ -121,7 +121,7 @@ def main(args):
     print(f"QNN output: {tokenizer.batch_decode(predictions.argmax(axis=2))}")
 
     # accuracy analysis
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
     adb.pull(output_path=args.artifact)
     goldens, predictions = [], []

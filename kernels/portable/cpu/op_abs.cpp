@@ -37,13 +37,16 @@ Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "abs.out";
+
   if (in_is_complex) {
     // NOTE: Elected not to add COMPLEXH to dtype_util.h for now
     // because I am not planning wide rollout of complex support; if
     // we do add SupportedTensorDtypes::COMPLEXH support, then we
     // should use it here.
-    ET_SWITCH_COMPLEXH_TYPES(in.scalar_type(), ctx, "abs.out", CTYPE_IN, [&] {
-      ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "abs.out", CTYPE_OUT, [&] {
+    ET_SWITCH_COMPLEXH_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+      ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
         apply_unary_map_fn<CTYPE_IN, CTYPE_OUT>(
             [](const CTYPE_IN val_in) -> CTYPE_OUT {
               return sqrt(
@@ -55,7 +58,7 @@ Tensor& abs_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
       });
     });
   } else {
-    ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, "abs.out", CTYPE, [&] {
+    ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
       apply_unary_map_fn(
           [](const CTYPE val_in) {
             if (val_in < 0) {

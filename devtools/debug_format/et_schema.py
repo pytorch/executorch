@@ -29,6 +29,11 @@ from executorch.devtools.debug_format.base_schema import (
     OperatorNode,
     ValueNode,
 )
+
+from torch._higher_order_ops.auto_functionalize import (
+    auto_functionalized,
+    auto_functionalized_v2,
+)
 from torch._subclasses import FakeTensor
 
 
@@ -120,6 +125,12 @@ class FXOperatorGraph(OperatorGraph):
         if node.op == "call_function" and hasattr(node.target, "_schema"):
             # pyre-ignore
             named_args = node.target._schema.arguments
+
+        if node.op == "call_function" and (
+            node.target == auto_functionalized or node.target == auto_functionalized_v2
+        ):
+            # for functioanlized HOPs, args for the corresponding functional op are stored in kwargs
+            args = tuple(kwargs.values())
 
         for index, arg in enumerate(args):
             if isinstance(arg, torch.fx.node.Node):

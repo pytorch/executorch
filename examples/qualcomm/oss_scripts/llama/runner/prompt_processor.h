@@ -19,6 +19,7 @@ namespace example {
  * @class PromptProcessor
  * @brief Class for processing prompts using decoder and key-value manager.
  */
+template <typename T>
 class PromptProcessor {
  public:
   struct Metadata {
@@ -31,7 +32,7 @@ class PromptProcessor {
   };
   PromptProcessor(
       DecoderRunner* decoder_runner,
-      KVManager* kv_manager,
+      KVManager<T>* kv_manager,
       const std::string& method_name,
       Metadata metadata);
 
@@ -92,7 +93,7 @@ class PromptProcessor {
       int64_t prompt_pos,
       int64_t start_pos);
   DecoderRunner* decoder_runner_;
-  KVManager* kv_manager_;
+  KVManager<T>* kv_manager_;
   std::string method_name_;
 
   // metadata

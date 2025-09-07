@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONCAT_UTILS_H
+#define CONCAT_UTILS_H
+
+
+/**********************************
+ * Concatenation utililty functions
+ *
+ */
+
+/*
+ * Returns the total number of elements along the concatenation dim that will
+ * be concatenated  in this input batch.
+ */
+$for N in range(1, 4):
+  #if NUM_INPUTS == ${N}
+  int total_concat_dim_numel() {
+    int total = 0;
+    $for i in range(N):
+      total += inp${i}_sizes[concat_dim];
+
+    return total;
+  }
+  #endif
+
+#endif // CONCAT_UTILS_H

@@ -51,16 +51,8 @@ Error QnnImplementation::StartBackend(
     const std::string& lib_path,
     const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  // RTLD_GLOBAL is needed on x86 as HTP op package has a requirement for the
-  // symbols in backend to be visible. Using RTLD_LOCAL on Android to allow full
-  // unloading of HTP backend shared library on dlclose() as RTLD_GLOBAL isn't
-  // letting it happen.
   void* lib_handle = nullptr;
-#if defined(__ANDROID__)
-  lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
-#else
   lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
-#endif
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",

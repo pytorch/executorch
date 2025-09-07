@@ -19,10 +19,10 @@ void resize_to_copy_op_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef self = args.at(1).refs.at(0);
 
-  out->virtual_resize(self->sizes());
+  graph->virtual_resize(out, graph->sizes_of(self));
 }
 
 void add_to_copy_node(ComputeGraph& graph, ValueRef in, ValueRef out) {

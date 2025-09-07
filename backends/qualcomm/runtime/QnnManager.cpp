@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
@@ -63,7 +64,8 @@ QnnManager::QnnManager(
       options->backend_options()->backend_type();
   std::string library_path = options->library_path()->str();
 
-  if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+  if (get_option(options_->log_level()) >=
+      QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "soc_model in soc_info: %s",
         EnumNameQcomChipset(options_->soc_info()->soc_model()));
@@ -75,10 +77,12 @@ QnnManager::QnnManager(
     QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
-        "log_level: %s", EnumNameQnnExecuTorchLogLevel(options_->log_level()));
+        "log_level: %s",
+        EnumNameQnnExecuTorchLogLevel(get_option(options_->log_level())));
     QNN_EXECUTORCH_LOG_INFO(
         "profile_level: %s",
-        EnumNameQnnExecuTorchProfileLevel(options_->profile_level()));
+        EnumNameQnnExecuTorchProfileLevel(
+            get_option(options_->profile_level())));
     QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
@@ -202,7 +206,8 @@ Error QnnManager::RegisterIonMem(
     return Error::Internal;
   } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
                  tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
           tensor_wrapper->GetName().c_str());
@@ -231,7 +236,8 @@ Error QnnManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
           tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
           tensor_wrapper->GetName().c_str());
@@ -251,7 +257,8 @@ Error QnnManager::RegisterCustomMem(
   Qnn_MemHandle_t pre_registered_handle =
       backend_params_ptr_->qnn_mem_manager_ptr_->GetPreRegisteredHandle(info);
   if (pre_registered_handle != nullptr) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo) {
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s found a pre-registered memHandle.",
           tensor_wrapper->GetName().c_str());
@@ -284,7 +291,8 @@ Error QnnManager::RegisterCustomMem(
           data_ptr,
           unaligned_custom_mem_base,
           total_custom_mem_size,
-          tensor_offset) == Error::Ok,
+          tensor_offset,
+          info) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
@@ -295,7 +303,7 @@ Error QnnManager::Init() {
   ET_CHECK_OR_RETURN_ERROR(
       LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
   logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, options_->log_level());
+      qnn_loaded_backend_, LoggingCallback, get_option(options_->log_level()));
   std::vector<std::string> graph_names;
   for (auto name : *options_->graph_name()) {
     graph_names.emplace_back(name->str());
@@ -492,7 +500,8 @@ Error QnnManager::ProfileExecuteData(
     const std::string& graph_name,
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
+  if (get_option(options_->profile_level()) !=
+      QnnExecuTorchProfileLevel::kProfileOff) {
     error = backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(
         graph_name, event_tracer);
     if (error != QNN_SUCCESS) {

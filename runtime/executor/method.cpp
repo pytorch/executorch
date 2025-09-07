@@ -127,7 +127,7 @@ class BackendDelegate final {
 
   Error Execute(
       BackendExecutionContext& backend_execution_context,
-      EValue** args) const {
+      Span<EValue*> args) const {
     EXECUTORCH_SCOPE_PROF("delegate_execute");
     return backend_->execute(backend_execution_context, handle_, args);
   }
@@ -407,10 +407,21 @@ Error Method::parse_values(const NamedDataMap* external_data_map) {
   auto flatbuffer_values = serialization_plan_->values();
   ET_CHECK_OR_RETURN_ERROR(
       flatbuffer_values != nullptr, InvalidProgram, "Missing values");
-  size_t n_value = flatbuffer_values->size();
+  const size_t n_value = flatbuffer_values->size();
   values_ = memory_manager_->method_allocator()->allocateList<EValue>(n_value);
   if (values_ == nullptr) {
     return Error::MemoryAllocationFailed;
+  }
+  const size_t n_input = inputs_size();
+  if (n_input > 0) {
+    input_set_ =
+        memory_manager_->method_allocator()->allocateList<bool>(n_input);
+    if (input_set_ == nullptr) {
+      return Error::MemoryAllocationFailed;
+    }
+    for (size_t i = 0; i < n_input; ++i) {
+      input_set_[i] = false;
+    }
   }
 
   // Count the number of tensors marked as EXTERNAL for this method. The actual
@@ -670,7 +681,7 @@ Error Method::resolve_operator(
     size_t kernel_index,
     InstructionArgs args,
     size_t n_args) {
-  // TODO(T153505381, T153506819) Investigate optimizing this function for both
+  // TODO(T153506819) Investigate optimizing this function for both
   // space and time.
 
   // resolve name
@@ -691,9 +702,20 @@ Error Method::resolve_operator(
   }
 
   // resolve tensor meta
-  auto method_allocator = memory_manager_->method_allocator();
-  TensorMeta* meta = method_allocator->allocateList<TensorMeta>(n_args);
+  // Since temp allocator can be freed, we optimistically
+  // try to use that allocator first.
+  auto allocator = memory_manager_->temp_allocator();
+  // However, it does not have to be provided, so if it
+  // is not provided (or an empty one is provided), we
+  // fall back to the method allocator.
+  if (allocator == nullptr || allocator->size() == 0) {
+    allocator = memory_manager_->method_allocator();
+  }
+  TensorMeta* meta = allocator->allocateList<TensorMeta>(n_args);
   if (meta == nullptr) {
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return Error::MemoryAllocationFailed;
   }
 
@@ -705,9 +727,11 @@ Error Method::resolve_operator(
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
       executorch::aten::DimOrderType* dim_order_ptr =
-          method_allocator->allocateList<executorch::aten::DimOrderType>(
-              tensor.dim());
+          allocator->allocateList<executorch::aten::DimOrderType>(tensor.dim());
       if (dim_order_ptr == nullptr) {
+        if (allocator == memory_manager_->temp_allocator()) {
+          memory_manager_->temp_allocator()->reset();
+        }
         return Error::MemoryAllocationFailed;
       }
       size_t size = tensor.dim();
@@ -730,12 +754,21 @@ Error Method::resolve_operator(
   if (!op_function.ok()) {
     ET_LOG(
         Error,
-        "Missing operator: [%zd] %s",
+        "Missing operator: [%" ET_PRIssize_t "] %s",
         static_cast<ssize_t>(op_index),
         operator_name);
+    if (allocator == memory_manager_->temp_allocator()) {
+      memory_manager_->temp_allocator()->reset();
+    }
     return op_function.error();
   }
   kernels[kernel_index] = op_function.get();
+
+  // If we used the temp allocator here, reset it.
+  if (allocator == memory_manager_->temp_allocator()) {
+    memory_manager_->temp_allocator()->reset();
+  }
+
   return Error::Ok;
 }
 
@@ -1022,7 +1055,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
   const auto& e = get_value(get_input_index(input_idx));
 
-  if (!e.isTensor() && !e.isScalar()) {
+  if (!(e.isNone() || e.isTensor() || e.isScalar() || e.isString())) {
 #if ET_LOG_ENABLED
     std::array<char, kTagNameBufferSize> tag_name;
     tag_to_string(e.tag, tag_name.data(), tag_name.size());
@@ -1055,7 +1088,9 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     return Error::InvalidArgument;
   }
 
-  if (e.isTensor()) {
+  if (e.isNone()) {
+    // no-op
+  } else if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
     const auto& t_src = input_evalue.toTensor();
 
@@ -1069,26 +1104,22 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         executorch::runtime::toString(t_src.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
-    Error err = resize_tensor(t_dst, t_src.sizes());
-    ET_CHECK_OR_RETURN_ERROR(
-        err == Error::Ok,
-        InvalidArgument,
-        "Error setting input %" ET_PRIsize_t ": 0x%" PRIx32,
-        input_idx,
-        static_cast<uint32_t>(err));
-    Error error;
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        resize_tensor(t_dst, t_src.sizes()),
+        "Error resizing tensor at input %" ET_PRIsize_t,
+        input_idx);
     auto tensor_meta = this->method_meta().input_tensor_meta(input_idx);
     if (tensor_meta->is_memory_planned()) {
-      error = internal::copy_tensor_data(t_dst, t_src);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          internal::copy_tensor_data(t_dst, t_src),
+          "Error copying tensor data at input %" ET_PRIsize_t,
+          input_idx);
     } else {
-      error = internal::share_tensor_data(t_dst, t_src);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          internal::share_tensor_data(t_dst, t_src),
+          "Error sharing tensor data at input %" ET_PRIsize_t,
+          input_idx);
     }
-    ET_CHECK_OR_RETURN_ERROR(
-        error == Error::Ok,
-        InvalidArgument,
-        "Error setting data_ptr %" ET_PRIsize_t ": 0x%" PRIx32,
-        input_idx,
-        static_cast<uint32_t>(error));
     // Prims have to be the same as what was traced
   } else if (e.isInt()) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -1156,35 +1187,23 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
 
     return Error::InvalidArgument;
   }
+  input_set_[input_idx] = true;
+
   return Error::Ok;
 }
 
 ET_NODISCARD Error
 Method::set_inputs(const executorch::aten::ArrayRef<EValue>& input_evalues) {
+  const size_t n_input = inputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      initialized(),
-      InvalidState,
-      "Inputs can not be set until method has been initialized.");
-
-  ET_CHECK_OR_RETURN_ERROR(
-      step_state_.instr_idx == 0 && step_state_.chain_idx == 0,
-      InvalidState,
-      "Inputs can not be set mid execution.");
-
-  size_t input_size = inputs_size();
-  ET_CHECK_OR_RETURN_ERROR(
-      input_size == input_evalues.size(),
+      input_evalues.size() == n_input,
       InvalidArgument,
-      "The length of given input array (%" ET_PRIsize_t
-      ") must be same as the number of inputs in method (%" ET_PRIsize_t ").",
-      input_evalues.size(),
-      input_size);
-
-  for (size_t i = 0; i < input_size; i++) {
-    Error status = set_input(input_evalues[i], i);
-    if (status != Error::Ok) {
-      return status;
-    }
+      "Invalid number of inputs provided. Expected %" ET_PRIsize_t
+      ", but got %" ET_PRIsize_t,
+      n_input,
+      input_evalues.size());
+  for (size_t i = 0; i < n_input; ++i) {
+    ET_CHECK_OK_OR_RETURN_ERROR(set_input(input_evalues[i], i));
   }
   return Error::Ok;
 }
@@ -1255,20 +1274,17 @@ ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
-
+  const size_t n_output = outputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= outputs_size(),
+      length >= n_output,
       InvalidArgument,
       "The given array is not large enough to hold all outputs.");
-
-  for (size_t i = 0; i < outputs_size(); i++) {
-    output_evalues[i] = values_[get_output_index(i)];
+  for (size_t i = 0; i < n_output; ++i) {
+    output_evalues[i] = get_output(i);
   }
-
-  for (size_t i = outputs_size(); i < length; i++) {
+  for (size_t i = n_output; i < length; ++i) {
     output_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
@@ -1277,20 +1293,21 @@ ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
       initialized(),
       InvalidState,
       "Inputs can not be retrieved until method has been initialized.");
-
+  const size_t n_input = inputs_size();
   ET_CHECK_OR_RETURN_ERROR(
-      length >= inputs_size(),
+      length >= n_input,
       InvalidArgument,
       "The given array is not large enough to hold all inputs.");
 
-  for (size_t i = 0; i < inputs_size(); i++) {
+  for (size_t i = 0; i < n_input; ++i) {
     input_evalues[i] = values_[get_input_index(i)];
+    // Accessing inputs this way is deprecated.
+    // We assume the users to be responsible to set the inputs they get.
+    input_set_[i] = true;
   }
-
-  for (size_t i = inputs_size(); i < length; i++) {
+  for (size_t i = n_input; i < length; ++i) {
     input_evalues[i] = EValue();
   }
-
   return Error::Ok;
 }
 
@@ -1370,7 +1387,7 @@ Error Method::execute_instruction() {
           /*method_name=*/serialization_plan_->name()->c_str());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
-          chain.argument_lists_[step_state_.instr_idx].data());
+          chain.argument_lists_[step_state_.instr_idx]);
       if (err != Error::Ok) {
         ET_LOG(
             Error,
@@ -1538,7 +1555,18 @@ Error Method::execute() {
       initialized(),
       NotSupported,
       "Cannot execute until method has been initialized.");
+  const size_t n_input = inputs_size();
+  for (size_t i = 0; i < n_input; ++i) {
+    ET_CHECK_OR_RETURN_ERROR(
+        input_set_[i],
+        InvalidArgument,
+        "Input %" ET_PRIsize_t " has not been set.",
+        i);
+  }
   ET_LOG(Debug, "Executing method: %s.", method_meta().name());
+  if (temp_allocator_ != nullptr) {
+    temp_allocator_->reset();
+  }
 
   // Chains are executed sequentially today, but future async designs may
   // branch and run many in parallel or out of order.
@@ -1615,10 +1643,16 @@ size_t Method::get_input_index(size_t i) const {
 }
 
 const EValue& Method::get_input(size_t i) const {
+  // Accessing inputs this way is deprecated.
+  // We assume the users to be responsible to set the inputs they get.
+  input_set_[i] = true;
   return get_value(get_input_index(i));
 }
 
 EValue& Method::mutable_input(size_t i) {
+  // Accessing inputs this way is deprecated.
+  // We assume the users to be responsible to set the inputs they get.
+  input_set_[i] = true;
   return mutable_value(get_input_index(i));
 }
 

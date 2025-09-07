@@ -29,19 +29,16 @@ endif()
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..
-  ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
-  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-  ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+    ${EXECUTORCH_ROOT}/extension/llm/tokenizers/third-party/json/single_include
+)
 
 #
-# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+# The `_<target>_srcs` lists are defined by executorch_load_build_variables.
 #
-set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
-extract_sources(${EXECUTORCH_SRCS_FILE})
-include(${EXECUTORCH_SRCS_FILE})
+executorch_load_build_variables()
 
 # Find prebuilt libraries. executorch package should contain portable_ops_lib,
 # etdump, bundled_program.
@@ -73,7 +70,10 @@ if(${ANDROID})
   )
 
   target_link_libraries(
-    mtk_executor_runner ${_executor_runner_libs} executorch neuron_backend
+    mtk_executor_runner
+    ${_executor_runner_libs}
+    executorch
+    neuron_backend
     executorch_core
     extension_evalue_util
     extension_runner_util
@@ -83,42 +83,30 @@ if(${ANDROID})
   add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
   set(_mtk_oss_executor_runner__srcs ${_executor_runner__srcs})
-  list(
-      TRANSFORM
-      _mtk_oss_executor_runner__srcs
-      PREPEND
-      "${EXECUTORCH_SOURCE_DIR}/"
+  list(TRANSFORM _mtk_oss_executor_runner__srcs
+       PREPEND "${EXECUTORCH_SOURCE_DIR}/"
   )
-  list(
-      FILTER
-      _mtk_oss_executor_runner__srcs
-      EXCLUDE REGEX
-      ".*executor_runner.cpp$"
+  list(FILTER _mtk_oss_executor_runner__srcs EXCLUDE REGEX
+       ".*executor_runner.cpp$"
   )
-  list(
-      PREPEND
-      _mtk_oss_executor_runner__srcs
-      ${CMAKE_CURRENT_LIST_DIR}/executor_runner/mtk_oss_executor_runner.cpp
+  list(PREPEND _mtk_oss_executor_runner__srcs
+       ${CMAKE_CURRENT_LIST_DIR}/executor_runner/mtk_oss_executor_runner.cpp
   )
 
   add_executable(mtk_oss_executor_runner ${_mtk_oss_executor_runner__srcs})
 
-  target_include_directories(mtk_oss_executor_runner
-      PUBLIC
-      ${_common_include_directories}
-      ${EXECUTORCH_ROOT}/cmake-android-out/third-party/gflags/include
+  target_include_directories(
+    mtk_oss_executor_runner
+    PUBLIC ${_common_include_directories}
+           ${EXECUTORCH_ROOT}/cmake-android-out/third-party/gflags/include
   )
 
-  target_link_libraries(mtk_oss_executor_runner
-      ${_executor_runner_libs}
-      extension_module
-      executorch
-      neuron_backend
-      gflags
+  target_link_libraries(
+    mtk_oss_executor_runner ${_executor_runner_libs} extension_module
+    executorch neuron_backend gflags
   )
-  target_compile_options(mtk_oss_executor_runner
-      PUBLIC
-      ${_common_compile_options}
+  target_compile_options(
+    mtk_oss_executor_runner PUBLIC ${_common_compile_options}
   )
 
   set(_mtk_llama_executor_runner__srcs ${_mtk_executor_runner__srcs})
@@ -130,7 +118,9 @@ if(${ANDROID})
   )
   # Build ABSL and RE2
   set(EXTENSIONS_LLM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm)
-  set(THIRD_PARTY_ABSL_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/abseil-cpp)
+  set(THIRD_PARTY_ABSL_DIR
+      ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/abseil-cpp
+  )
   set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/re2)
   set(THIRD_PARTY_JSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/json)
   set(THIRD_PARTY_UNICODE_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/llama.cpp-unicode)
@@ -140,10 +130,12 @@ if(${ANDROID})
   set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_subdirectory(
-    ${THIRD_PARTY_ABSL_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/abseil
+    ${THIRD_PARTY_ABSL_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/abseil
   )
   add_subdirectory(
-    ${THIRD_PARTY_RE2_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/re2
+    ${THIRD_PARTY_RE2_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/re2
   )
   add_subdirectory(
     ${THIRD_PARTY_JSON_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/json

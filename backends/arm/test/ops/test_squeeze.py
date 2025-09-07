@@ -18,6 +18,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -54,6 +55,11 @@ class Squeeze(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return x.squeeze()
+
+
+##############
+## Squeeze ###
+##############
 
 
 @common.parametrize("test_data", Squeeze.test_parameters)
@@ -104,6 +110,37 @@ def test_squeeze_dim_u85_INT(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", Squeeze.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Squeeze(),
+        test_data(),
+        "torch.ops.aten.squeeze.default",
+        [],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Squeeze.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        Squeeze(),
+        test_data(),
+        "torch.ops.aten.squeeze.default",
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+#################
+## SqueezeDim ###
+#################
+
+
 @common.parametrize("test_data", SqueezeDim.test_parameters)
 def test_squeeze_dim_tosa_FP_2(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
@@ -152,6 +189,37 @@ def test_squeeze_dim_u85_INT_2(test_data: Tuple):
     pipeline.run()
 
 
+@common.parametrize("test_data", SqueezeDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_FP_2(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDim(),
+        test_data(),
+        "torch.ops.aten.squeeze.dim",
+        [],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SqueezeDim.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dim_vgf_INT_2(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDim(),
+        test_data(),
+        "torch.ops.aten.squeeze.dim",
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+##################
+## SqueezeDims ###
+##################
+
+
 @common.parametrize("test_data", SqueezeDims.test_parameters)
 def test_squeeze_dims_tosa_FP(test_data: Tuple):
     pipeline = TosaPipelineFP[input_t1](
@@ -196,5 +264,31 @@ def test_squeeze_dims_u85_INT(test_data: Tuple):
         aten_ops="torch.ops.aten.squeeze.dims",
         exir_ops=[],
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SqueezeDims.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dims_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDims(),
+        test_data(),
+        "torch.ops.aten.squeeze.dims",
+        [],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", SqueezeDims.test_parameters)
+@common.SkipIfNoModelConverter
+def test_squeeze_dims_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[input_t1](
+        SqueezeDims(),
+        test_data(),
+        "torch.ops.aten.squeeze.dims",
+        [],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

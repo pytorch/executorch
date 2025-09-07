@@ -16,7 +16,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_valid_dtype,
 )
 
-from executorch.backends.arm.tosa_mapping import TosaArg  # type: ignore
+from executorch.backends.arm.tosa.mapping import TosaArg  # type: ignore
 from torch.fx import Node
 
 
@@ -52,6 +52,11 @@ class AnyVisitor(NodeVisitor):
         attr = ts.TosaSerializerAttribute()
         attr.ReduceAnyAttribute(inputs[0].dim_order.index(dim))
 
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().REDUCE_ANY, [inputs[0].name], [output.name], attr
+        self._serialize_operator(
+            node,
+            tosa_graph,
+            ts.TosaOp.Op().REDUCE_ANY,
+            [inputs[0].name],
+            [output.name],
+            attr,
         )

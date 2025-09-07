@@ -5,9 +5,11 @@
 
 import unittest
 
-from executorch.backends.arm.arm_backend import get_tosa_spec
-
-from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    get_tosa_spec,
+    Tosa_1_00,
+    TosaSpecification,
+)
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized  # type: ignore[import-untyped]

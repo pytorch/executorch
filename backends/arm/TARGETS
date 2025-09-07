@@ -13,6 +13,28 @@ python_library(
     ]
 )
 python_library(
+    name = "constants",
+    srcs = [
+        "constants.py",
+    ],
+    deps = [
+        "//executorch/exir/dialects:lib",
+    ],
+)
+python_library(
+    name = "common",
+    srcs = [
+        "common/__init__.py",
+        "common/debug.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+python_library(
     name = "arm_partitioner",
     srcs = [
         "tosa_backend.py",
@@ -22,6 +44,7 @@ python_library(
     ],
     deps = [
         ":arm_backend",
+        ":constants",
         "//executorch/backends/arm/operator_support:operator_support",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
@@ -90,6 +113,7 @@ python_library(
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
         "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        ":constants",
         ":tosa_mapping",
         "//executorch/exir/dialects:lib",
     ],

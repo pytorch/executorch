@@ -61,10 +61,14 @@ def duplicate_constant_node(
     new_input_specs = []
     old_signature = exported_program.graph_signature
     copied_nodes = set()
-    for idx, node in enumerate(exported_program.graph.nodes):
+
+    placeholder_idx = -1
+    for node in exported_program.graph.nodes:
         if node.op != "placeholder":
             continue
-        old_input_spec = old_signature.input_specs[idx]
+
+        placeholder_idx += 1
+        old_input_spec = old_signature.input_specs[placeholder_idx]
         old_input_spec_copy = copy.deepcopy(old_input_spec)
         if node == to_be_copied[0]:
             constant_or_attribute_node = node

@@ -20,10 +20,12 @@ dist/
 ethos-u-scratch/
 executorch.egg-info
 pip-out/
+build-profiling/
 
 # Any exported models and profiling outputs
 *.bin
 *.model
+*.etdump
 tokenizer.json
 *.pte
 *.ptd
@@ -58,6 +60,12 @@ xcuserdata/
 /include/
 /share/
 /version.py
+*.csv
+*_etdump
 
 # Android
 *.aar
+
+# Windows
+*.dll
+*.pyd

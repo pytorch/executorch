@@ -14,9 +14,82 @@
 
 #include <cassert>
 #include <random>
+#include <string>
 
 using namespace vkcompute;
 
+bool is_bitw8(vkapi::ScalarType dtype) {
+  return dtype == vkapi::kByte || dtype == vkapi::kChar ||
+      dtype == vkapi::kQInt8 || dtype == vkapi::kQUInt8;
+}
+
+vkapi::ShaderInfo get_nchw_to_tensor_shader(
+    const api::vTensor& v_dst,
+    bool int8_buffer_enabled,
+    bool push_constant_variant) {
+  std::string kernel_name;
+  kernel_name.reserve(kShaderNameReserve);
+
+  if (is_bitw8(v_dst.dtype()) && v_dst.storage_type() != utils::kBuffer &&
+      !int8_buffer_enabled) {
+    kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
+    if (!push_constant_variant) {
+      kernel_name += "_no_pc";
+    }
+    add_storage_type_suffix(kernel_name, v_dst.storage_type());
+    add_dtype_suffix(kernel_name, v_dst.dtype());
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
+
+  if (v_dst.storage_type() == utils::kBuffer) {
+    kernel_name = "nchw_to_buffer";
+    add_dtype_suffix(kernel_name, v_dst.dtype());
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
+
+  kernel_name = "nchw_to_image";
+  if (!push_constant_variant) {
+    kernel_name += "_no_pc";
+  }
+  add_storage_type_suffix(kernel_name, v_dst.storage_type());
+  add_dtype_suffix(kernel_name, v_dst.dtype());
+
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
+
+vkapi::ShaderInfo get_tensor_to_nchw_shader(
+    const api::vTensor& v_src,
+    bool int8_buffer_enabled,
+    bool push_constant_variant) {
+  std::string kernel_name;
+  kernel_name.reserve(kShaderNameReserve);
+
+  if (is_bitw8(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
+      !int8_buffer_enabled) {
+    kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
+    if (!push_constant_variant) {
+      kernel_name += "_no_pc";
+    }
+    add_storage_type_suffix(kernel_name, v_src.storage_type());
+    add_dtype_suffix(kernel_name, v_src.dtype());
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
+
+  if (v_src.storage_type() == utils::kBuffer) {
+    kernel_name = "buffer_to_nchw";
+    add_dtype_suffix(kernel_name, v_src.dtype());
+    return VK_KERNEL_FROM_STR(kernel_name);
+  }
+
+  kernel_name = "image_to_nchw";
+  if (!push_constant_variant) {
+    kernel_name += "_no_pc";
+  }
+  add_storage_type_suffix(kernel_name, v_src.storage_type());
+  add_dtype_suffix(kernel_name, v_src.dtype());
+
+  return VK_KERNEL_FROM_STR(kernel_name);
+}
 //
 // Operator Recording Functions
 //
@@ -41,9 +114,7 @@ void record_nchw_to_buffer_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.sizes_ubo(),
-      v_dst.strides_ubo(),
-      v_dst.numel_ubo());
+      v_dst.buffer_meta_ubo());
 }
 
 void record_buffer_to_nchw_op(
@@ -61,9 +132,7 @@ void record_buffer_to_nchw_op(
       0,
       dst_buffer,
       v_src.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo(),
-      v_src.strides_ubo(),
-      v_src.numel_ubo());
+      v_src.buffer_meta_ubo());
 }
 
 void record_nchw_to_image_op(
@@ -121,8 +190,8 @@ void record_bitw8_image_to_nchw_nobitw8buffer_op(
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
 
   std::string kernel_name = "bitw8_image_to_nchw_nobitw8buffer_no_pc";
-  add_storage_type_suffix(kernel_name, v_src);
-  add_dtype_suffix(kernel_name, v_src);
+  add_storage_type_suffix(kernel_name, v_src.storage_type());
+  add_dtype_suffix(kernel_name, v_src.dtype());
 
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
@@ -145,7 +214,7 @@ void record_binary_op(
     api::vTensor& v_in2,
     api::vTensor& v_dst) {
   std::string kernel_name = "binary_" + op_name + "_nobroadcast__test";
-  add_dtype_suffix(kernel_name, v_dst);
+  add_dtype_suffix(kernel_name, v_dst.dtype());
 
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {};
@@ -236,7 +305,7 @@ void record_scalar_add_buffer(
   vkapi::PipelineBarrier pipeline_barrier{};
   vkapi::SpecVarList specialization_constants = {SV(offset)};
   std::string kernel = "scalar_add_buffer";
-  add_dtype_suffix(kernel, v_ten);
+  add_dtype_suffix(kernel, v_ten.dtype());
   api::context()->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel),
       pipeline_barrier,
@@ -398,10 +467,9 @@ void fill_vtensor(
     const IOValueRef idx,
     float val,
     bool iota) {
-  vTensorPtr t = graph.get_tensor(idx.value);
-  std::vector<float> data(t->numel());
-  if (t->storage_type() != utils::kBuffer) {
-    data.resize(t->staging_buffer_numel());
+  std::vector<float> data(graph.numel_of(idx.value));
+  if (graph.storage_type_of(idx.value) != utils::kBuffer) {
+    data.resize(graph.staging_buffer_numel_of(idx.value));
   }
   if (iota) {
     std::iota(data.begin(), data.end(), val);
@@ -489,13 +557,12 @@ void execute_graph_and_check_output(
 
   for (size_t i = 0; i < graph.outputs().size(); ++i) {
     IOValueRef out_ioval = graph.outputs().at(i);
-    vTensorPtr t_out = graph.get_tensor(out_ioval.value);
-
-    std::vector<float> output_data(t_out->staging_buffer_numel());
+    std::vector<float> output_data(
+        graph.staging_buffer_numel_of(out_ioval.value));
     graph.copy_from_staging(
         out_ioval.staging, output_data.data(), output_data.size());
 
-    for (size_t j = 0; j < t_out->numel(); ++j) {
+    for (size_t j = 0; j < graph.numel_of(out_ioval.value); ++j) {
       CHECK_VALUE(output_data, j, expected_outputs.at(i));
     }
   }

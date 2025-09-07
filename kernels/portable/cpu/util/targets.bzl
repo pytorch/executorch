@@ -32,6 +32,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:slice_util",
+            "//executorch/kernels/portable/cpu/util:stack_util",
             "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/kernels/portable/cpu/util:upsample_util",
             "//executorch/kernels/portable/cpu/util:vectorized_math",
@@ -147,6 +148,9 @@ def define_common_targets():
             "copy_ops_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
+        exported_deps = [
+            ":broadcast_util",
+        ],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -293,6 +297,17 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "stack_util",
+        srcs = ["stack_util.cpp"],
+        exported_headers = ["stack_util.h"],
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.cxx_library(
         name = "upsample_util",
         srcs = ["upsample_util.cpp"],
         exported_headers = ["upsample_util.h"],
@@ -347,7 +362,6 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
         )
-
 
         runtime.cxx_library(
             name = "arange_util{}".format(suffix),

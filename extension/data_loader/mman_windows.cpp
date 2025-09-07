@@ -24,7 +24,7 @@
 #include <windows.h>
 
 #ifndef STATUS_SECTION_TOO_BIG
-#define STATUS_SECTION_TOO_BIG ((NTSTATUS)0xC0000040L)
+#define STATUS_SECTION_TOO_BIG 0xC0000040L
 #endif
 
 #ifndef FILE_MAP_EXECUTE

@@ -34,7 +34,6 @@ from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.arm_backend import (
     get_intermediate_path,
-    get_tosa_spec,
     is_ethosu,
     is_tosa,
     is_vgf,
@@ -49,10 +48,9 @@ from executorch.backends.arm.quantizer import (
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_elf_path,
-    get_output_nodes,
     get_output_quantization_params,
     get_target_board,
-    run_corstone,
+    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -60,9 +58,10 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import extract_tensor_meta
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 
 from executorch.backends.arm.vgf_partitioner import VgfPartitioner
 
@@ -172,7 +171,9 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
         super().dump_artifact(path_to_dump)
         _dump_lowered_modules_artifact(path_to_dump, self.artifact, self.graph_module)
 
-    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+    def run(
+        self, artifact: ExportedProgram, inputs=None, generate_etrecord: bool = False
+    ) -> None:
         artifact_to_run = copy.deepcopy(artifact)
         self.edge_dialect_program = to_edge_transform_and_lower(
             artifact_to_run,
@@ -180,6 +181,7 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             compile_config=self.edge_compile_conf,
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
+            generate_etrecord=generate_etrecord,
         )
 
 
@@ -210,7 +212,7 @@ class Serialize(tester.Serialize):
                 f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
             )
 
-        return run_corstone(
+        return run_target(
             self.executorch_program_manager,
             inputs_flattened,
             intermediate_path,
@@ -482,9 +484,8 @@ class ArmTester(Tester):
             reference_stage = self.stages[StageType.INITIAL_MODEL]
 
         exported_program = self.stages[StageType.EXPORT].artifact
-        output_nodes = get_output_nodes(exported_program)
-
-        output_qparams = get_output_quantization_params(output_nodes)
+        output_node = exported_program.graph_module.graph.output_node()
+        output_qparams = get_output_quantization_params(output_node)
 
         quantization_scales = []
         for node in output_qparams:

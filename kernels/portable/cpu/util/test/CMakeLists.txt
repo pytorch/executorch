@@ -21,5 +21,9 @@ et_cxx_test(
 )
 
 find_package_torch_headers()
-target_include_directories(kernels_portable_cpu_util_test PRIVATE ${TORCH_INCLUDE_DIRS})
-target_compile_definitions(kernels_portable_cpu_util_test PRIVATE ET_USE_PYTORCH_HEADERS)
+target_include_directories(
+  kernels_portable_cpu_util_test PRIVATE ${TORCH_INCLUDE_DIRS}
+)
+target_compile_definitions(
+  kernels_portable_cpu_util_test PRIVATE ET_USE_PYTORCH_HEADERS
+)

@@ -24,12 +24,12 @@ void resize_clone_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr in = graph->get_tensor(args[1].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
   // TODO: support for when dimensionality doesn't match, i.e. clone is used to
   // implement squeeze.
-  if (out->dim() == in->dim()) {
-    out->virtual_resize(in->sizes());
+  if (graph->dim_of(out) == graph->dim_of(in)) {
+    graph->virtual_resize(out, graph->sizes_of(in));
   }
 }
 
@@ -37,10 +37,8 @@ void add_clone_node(
     ComputeGraph& graph,
     const ValueRef in,
     const ValueRef out) {
-  vTensorPtr t_out = graph.get_tensor(out);
-
   std::string kernel_name = "clone";
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
@@ -50,7 +48,7 @@ void add_clone_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Parameter Buffers
-      {t_out->logical_limits_ubo()},
+      {graph.logical_limits_ubo(out)},
       // Push Constants
       {},
       // Specialization Constants
@@ -145,7 +143,11 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   if (src_storage == utils::kBuffer && dst_storage == utils::kTexture3D) {
     return add_buffer_to_image_node(graph, src, dst);
   }
-  VK_THROW("Buffer to buffer memory layout transition not supported yet!");
+
+  std::vector<ValueRef> extra_args = {};
+  // Buffer to buffer copy
+  return add_view_copy_buffer_node(
+      graph, src, dst, extra_args, resize_clone_node);
 }
 
 // Clone node is not the most efficient implementation for the aten.clone

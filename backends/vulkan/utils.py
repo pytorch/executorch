@@ -18,6 +18,8 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
 
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
+
 from executorch.exir.tensor import TensorSpec
 
 from torch._export.utils import is_buffer, is_param
@@ -52,6 +54,18 @@ _Q_OPS = {
 
 # Convenience type
 MaybeNodeList = Union[torch.fx.Node, List[torch.fx.Node], Tuple[torch.fx.Node]]
+
+
+def is_torch_op_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+
+    if isinstance(node.target, EdgeOpOverload):
+        return True
+    if isinstance(node.target, torch._ops.OpOverload):
+        return True
+
+    return False
 
 
 def is_dequant_node(node: torch.fx.Node) -> bool:
@@ -234,6 +248,31 @@ def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
             return i
 
     return primary_arg_idx
+
+
+def node_comes_from_any_nn_module_in_set(
+    node,
+    nn_module_typenames: Set[str],
+) -> bool:
+    if isinstance(node, (list, tuple)):
+        return all(
+            node_comes_from_any_nn_module_in_set(n, nn_module_typenames) for n in node
+        )
+
+    if not isinstance(node, torch.fx.Node):
+        return False
+
+    nn_module_stack = node.meta.get("nn_module_stack", None)
+    if nn_module_stack is None:
+        return False
+
+    for _, packed in nn_module_stack.items():
+        _, typename = packed
+        for partial_name in nn_module_typenames:
+            if partial_name in typename:
+                return True
+
+    return False
 
 
 ##
@@ -585,9 +624,9 @@ def make_filtered_tensor_repset(
         if extents_are_valid(extents, texture_limits):
             valid_texture_layouts.add(memory_layout)
 
-    # High dimensional tensors are currently not supported
+    # High dimensional tensors require buffer storage
     if len(tensor_val.shape) > 4:
-        return NO_STORAGE
+        return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
     # Bool tensors are currently not supported
     if tensor_val.dtype == torch.bool:
@@ -607,6 +646,7 @@ WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
+ANY_BUFFER = TensorRepSet(all_memory_layouts, set())
 
 ANY_STORAGE = TensorRepSet(all_memory_layouts, all_memory_layouts)
 NO_STORAGE = TensorRepSet(set(), set())
@@ -1031,6 +1071,51 @@ def get_node_repr(node) -> Union[TensorRepr, TensorReprList]:
 ##
 ## Misc
 ##
+
+
+def get_tensor_val_str(tensor_val: FakeTensor) -> str:
+    return f"{tensor_val.dtype}: {tensor_val.shape}"
+
+
+def get_node_val_str(node: torch.fx.Node) -> str:
+    if is_single_tensor_node(node):
+        assert isinstance(node.meta["val"], FakeTensor)
+        return get_tensor_val_str(node.meta["val"])
+    elif is_tensor_collection_node(node):
+        assert isinstance(node.meta["val"], (list, tuple))
+        return f"[{', '.join(get_tensor_val_str(t) for t in node.meta['val'])}]"
+    else:
+        if "val" not in node.meta:
+            return str(node)
+        return str(node.meta["val"])
+
+
+def get_arg_node_val_str(arg_node: Any) -> str:
+    if isinstance(arg_node, torch.fx.Node):
+        return get_node_val_str(arg_node)
+    elif isinstance(arg_node, (list, tuple)):
+        return f"[{', '.join(get_arg_node_val_str(n) for n in arg_node)}]"
+    else:
+        return str(arg_node)
+
+
+def node_io_str(node: torch.fx.Node) -> str:
+    target = node.target
+    if isinstance(target, EdgeOpOverload):
+        assert isinstance(target, EdgeOpOverload)
+        target_name = target.__name__
+    elif isinstance(target, torch._ops.OpOverload):
+        assert isinstance(target, torch._ops.OpOverload)
+        target_name = target.name()
+    else:
+        target_name = str(target)
+
+    out_str = f"{get_node_val_str(node)} = {target_name}("
+    for arg in node.args:
+        out_str += get_arg_node_val_str(arg) + ", "
+
+    out_str += " ...)"
+    return out_str
 
 
 def update_program_state_dict(

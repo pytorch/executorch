@@ -48,6 +48,15 @@ runtime.python_test(
     ],
 )
 
+runtime.python_library(
+    name = "test_pybindings_lib",
+    srcs = ["test_pybindings.py"],
+    deps = [
+        ":make_test",
+    ],
+)
+
+
 runtime.python_test(
     name = "test_backend_pybinding",
     srcs = ["test_backend_pybinding.py"],

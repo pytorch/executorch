@@ -73,6 +73,7 @@ class Method final {
         event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
         values_(rhs.values_),
+        input_set_(rhs.input_set_),
         n_delegate_(rhs.n_delegate_),
         delegates_(rhs.delegates_),
         n_chains_(rhs.n_chains_),
@@ -85,6 +86,7 @@ class Method final {
     // anything twice.
     rhs.n_value_ = 0;
     rhs.values_ = nullptr;
+    rhs.input_set_ = nullptr;
     rhs.n_delegate_ = 0;
     rhs.delegates_ = nullptr;
 
@@ -181,6 +183,9 @@ class Method final {
   ET_NODISCARD Error get_outputs(EValue* output_evalues, size_t length);
 
   /**
+   * DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
+   * update Method inputs.
+   *
    * Copies the method's inputs into the provided array.
    *
    * WARNING: The input contains shallow copies of internal tensor inputs.
@@ -194,7 +199,8 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
+  ET_DEPRECATED ET_NODISCARD Error
+  get_inputs(EValue* input_evalues, size_t length);
 
   /**
    *
@@ -314,6 +320,7 @@ class Method final {
         event_tracer_(event_tracer),
         n_value_(0),
         values_(nullptr),
+        input_set_(nullptr),
         n_delegate_(0),
         delegates_(nullptr),
         n_chains_(0),
@@ -362,6 +369,7 @@ class Method final {
 
   size_t n_value_;
   EValue* values_;
+  bool* input_set_;
 
   size_t n_delegate_;
   BackendDelegate* delegates_;

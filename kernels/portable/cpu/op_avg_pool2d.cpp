@@ -67,53 +67,56 @@ Tensor& avg_pool2d_out(
       out);
 
   ScalarType in_type = in.scalar_type();
-  ET_SWITCH_FLOATHBF16_TYPES_AND(
-      Long, in_type, ctx, "avg_pool2d.out", CTYPE, [&]() {
-        if (divisor_override.has_value()) {
-          int64_t divisor = divisor_override.value();
-          // If divisor_override is specified, then we don't need to use `count`
-          // in the calculation. Simply sum x / divisor to get the output.
-          apply_kernel_2d_reduce_then_map_fn<CTYPE>(
-              [](const CTYPE in_val,
-                 int64_t in_idx,
-                 CTYPE accum,
-                 int64_t accum_idx) {
-                // Average pooling does not track indexes, so return 0 for
-                // accum_idx
-                return std::tuple<CTYPE, int64_t>(in_val + accum, 0);
-              },
-              [divisor](const int64_t count, const CTYPE accum) {
-                return accum / static_cast<CTYPE>(divisor);
-              },
-              count_include_pad,
-              in,
-              kernel_size,
-              stride,
-              padding,
-              {},
-              out);
-        } else {
-          apply_kernel_2d_reduce_then_map_fn<CTYPE>(
-              [](const CTYPE in_val,
-                 int64_t in_idx,
-                 CTYPE accum,
-                 int64_t accum_idx) {
-                // Average pooling does not track indexes, so return 0 for
-                // accum_idx
-                return std::tuple<CTYPE, int64_t>(in_val + accum, 0);
-              },
-              [](const int64_t count, const CTYPE accum) {
-                return accum / static_cast<CTYPE>(count);
-              },
-              count_include_pad,
-              in,
-              kernel_size,
-              stride,
-              padding,
-              {},
-              out);
-        }
-      });
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "avg_pool2d.out";
+
+  ET_SWITCH_FLOATHBF16_TYPES_AND(Long, in_type, ctx, op_name, CTYPE, [&]() {
+    if (divisor_override.has_value()) {
+      int64_t divisor = divisor_override.value();
+      // If divisor_override is specified, then we don't need to use `count`
+      // in the calculation. Simply sum x / divisor to get the output.
+      apply_kernel_2d_reduce_then_map_fn<CTYPE>(
+          [](const CTYPE in_val,
+             int64_t in_idx,
+             CTYPE accum,
+             int64_t accum_idx) {
+            // Average pooling does not track indexes, so return 0 for
+            // accum_idx
+            return std::tuple<CTYPE, int64_t>(in_val + accum, 0);
+          },
+          [divisor](const int64_t count, const CTYPE accum) {
+            return accum / static_cast<CTYPE>(divisor);
+          },
+          count_include_pad,
+          in,
+          kernel_size,
+          stride,
+          padding,
+          {},
+          out);
+    } else {
+      apply_kernel_2d_reduce_then_map_fn<CTYPE>(
+          [](const CTYPE in_val,
+             int64_t in_idx,
+             CTYPE accum,
+             int64_t accum_idx) {
+            // Average pooling does not track indexes, so return 0 for
+            // accum_idx
+            return std::tuple<CTYPE, int64_t>(in_val + accum, 0);
+          },
+          [](const int64_t count, const CTYPE accum) {
+            return accum / static_cast<CTYPE>(count);
+          },
+          count_include_pad,
+          in,
+          kernel_size,
+          stride,
+          padding,
+          {},
+          out);
+    }
+  });
 
   return out;
 }

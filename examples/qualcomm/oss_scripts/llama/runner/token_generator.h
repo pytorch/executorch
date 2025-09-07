@@ -20,6 +20,7 @@ namespace example {
  * @class TokenGenerator
  * @brief Class for generating the token using decoder and key-value manager.
  */
+template <typename T>
 class TokenGenerator {
  public:
   struct Metadata {
@@ -33,7 +34,7 @@ class TokenGenerator {
   TokenGenerator(
       tokenizers::Tokenizer* tokenizer,
       DecoderRunner* decoder_runner,
-      KVManager* kv_manager,
+      KVManager<T>* kv_manager,
       const std::string& method_name,
       std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Metadata metadata,
@@ -79,7 +80,7 @@ class TokenGenerator {
  protected:
   tokenizers::Tokenizer* tokenizer_;
   DecoderRunner* decoder_runner_;
-  KVManager* kv_manager_;
+  KVManager<T>* kv_manager_;
   std::string method_name_;
   std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
 

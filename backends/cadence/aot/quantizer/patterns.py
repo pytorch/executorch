@@ -247,7 +247,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv.default
+        return torch.ops.cadence.quantized_conv_nchw.default
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -286,7 +286,7 @@ class Conv2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv.default
+        return torch.ops.cadence.quantized_conv_nchw.default
 
 
 class LayerNormPattern(QuantizationPattern):

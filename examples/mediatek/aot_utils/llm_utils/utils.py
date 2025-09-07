@@ -408,10 +408,10 @@ def generate_mask(
     return combined_mask.copy()
 
 
-def get_dest_path(output_folder, exp_name, shape, chunk_idx):
-    dest_folder_root = output_folder + f"_{shape}"
+def get_dest_path(output_folder, exp_name, shape=None, chunk_idx=0):
+    dest_folder_root = output_folder + f"{f'_{shape}' if shape is not None else ''}"
     os.makedirs(dest_folder_root, exist_ok=True)
-    fname = f"{exp_name}_{shape}_{chunk_idx}.pte"
+    fname = f"{exp_name}{f'_{shape}' if shape is not None else ''}_{chunk_idx}.pte"
     dest_path = os.path.join(dest_folder_root, fname)
 
     return dest_path
