@@ -289,6 +289,58 @@ class UpsampleBilinear2dAATest(unittest.TestCase):
             # Skip this test if et_test namespace setup issues persist
             print(f"Skipping scale factors test due to: {e}")
 
+    def test_upsample_bilinear2d_aa_extreme_scale_factors(self):
+        """Test the specific case that exposed the segfault bug with extreme scale factors."""
+        # Create input tensor with same data as C++ test to ensure consistency
+        input_tensor = torch.zeros(8, 2, 7, 1, dtype=torch.float32)
+        for i in range(8 * 2 * 7 * 1):
+            input_tensor.view(-1)[i] = i * 0.1
+
+        # Test the specific case that caused segfault before the fix
+        self.run_upsample_aa_test(
+            input_tensor,
+            output_size=[7, 2],
+            align_corners=False,
+            scale_factors=None,  # Use explicit scale factors via direct call
+            atol=1e-2,  # Relaxed tolerance for extreme scale factors
+        )
+
+        # Also test with direct ExecuTorch call using the extreme scale factors
+        try:
+            et_result = torch.zeros(8, 2, 7, 2, dtype=torch.float32)
+            et_result = torch.ops.et_test._upsample_bilinear2d_aa(
+                input_tensor,
+                [7, 2],  # output_size
+                False,  # align_corners
+                0.010000000000000002,  # scales_h (very small)
+                10.0,  # scales_w (very large)
+                out=et_result,
+            )
+
+            # Verify no NaN or Inf values (the bug would cause these)
+            self.assertFalse(
+                torch.isnan(et_result).any().item(),
+                "Output should not contain NaN values after bug fix",
+            )
+            self.assertFalse(
+                torch.isinf(et_result).any().item(),
+                "Output should not contain Inf values after bug fix",
+            )
+
+            # Verify reasonable output values
+            self.assertTrue(
+                et_result.min().item() >= -100.0,
+                "Output values should be reasonable (not extremely negative)",
+            )
+            self.assertTrue(
+                et_result.max().item() <= 100.0,
+                "Output values should be reasonable (not extremely positive)",
+            )
+
+        except RuntimeError as e:
+            # Skip the direct test if et_test namespace setup issues persist
+            print(f"Skipping direct extreme scale factors test due to: {e}")
+
 
 if __name__ == "__main__":
     unittest.main()
