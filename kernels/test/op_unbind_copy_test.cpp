@@ -374,3 +374,54 @@ TEST_F(OpUnbindCopyIntOutTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpUnbindCopyIntOutTest, BooleanTensorUnbindDim2) {
+  // Test case with inputs:
+  // ArgType.Tensor torch.bool (1, 7, 4)
+  // ArgType.Dim 2
+  TensorFactory<ScalarType::Bool> tf;
+  TensorListFactory<ScalarType::Bool> tlf;
+
+  // Create input tensor of shape (1, 7, 4) filled with bool values
+  Tensor input = tf.zeros({1, 7, 4});
+  auto in_data = input.mutable_data_ptr<bool>();
+
+  // Fill with alternating true/false pattern
+  for (int i = 0; i < 1 * 7 * 4; i++) {
+    in_data[i] = (i % 2) == 0;
+  }
+
+  // Unbinding along dimension 2 should produce 4 tensors of shape (1, 7)
+  int64_t unbind_dim = 2;
+  int64_t num_outputs = input.size(unbind_dim); // Should be 4
+
+  // Create output tensors
+  std::vector<Tensor> outputs;
+  for (int i = 0; i < num_outputs; i++) {
+    outputs.push_back(tf.zeros({1, 7}));
+  }
+  TensorList out = tlf.zeros_like(outputs);
+
+  // Perform unbind operation - boolean tensors are now supported
+  op_unbind_copy_int_out(input, unbind_dim, out);
+
+  // Verify outputs
+  for (int output_idx = 0; output_idx < num_outputs; output_idx++) {
+    EXPECT_EQ(out[output_idx].dim(), 2);
+    EXPECT_EQ(out[output_idx].size(0), 1);
+    EXPECT_EQ(out[output_idx].size(1), 7);
+
+    auto out_data = out[output_idx].const_data_ptr<bool>();
+
+    // Verify the data correctness
+    for (int i = 0; i < 1; i++) {
+      for (int j = 0; j < 7; j++) {
+        int input_idx = i * 7 * 4 + j * 4 + output_idx;
+        bool expected = (input_idx % 2) == 0;
+        EXPECT_EQ(out_data[i * 7 + j], expected)
+            << "Mismatch at output[" << output_idx << "][" << i << "][" << j
+            << "]";
+      }
+    }
+  }
+}
