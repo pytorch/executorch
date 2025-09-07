@@ -17,6 +17,12 @@ namespace llm_helper {
 
 class MaskBuilder {
  public:
+  // Construct mask builder without specifying the mask buffer.
+  explicit MaskBuilder(
+      const LLMType maskType,
+      const size_t cacheLength);
+
+  // Construct mask builder and initialize mask buffer.
   explicit MaskBuilder(
       void* maskBuffer,
       const size_t maskSizeBytes,
@@ -24,6 +30,13 @@ class MaskBuilder {
       const size_t cacheLength);
 
   ~MaskBuilder();
+
+  // Specify the mask buffer to build/update mask.
+  MaskBuilder& setMaskBuffer(void* maskBuffer, const size_t maskSizeBytes);
+
+  MaskBuilder& enableSlidingWindow(const size_t windowSize);
+
+  MaskBuilder& disableSlidingWindow();
 
   // Build mask from scratch.
   void buildMask(const size_t tokenBatchSize, const size_t numSeenToken);
@@ -45,6 +58,12 @@ class MaskBuilder {
   // Update the model input mask size. Use raw byte size to account for any HW
   // alignment.
   void updateMaskSize(const size_t sizeBytes);
+
+  void resetPadLength();
+
+  bool getMaskUpdateStatus();
+
+  void setIsMaskUpdatable(const bool status);
 
  private:
   template <typename MaskType>
@@ -73,6 +92,10 @@ class MaskBuilder {
   size_t mRightPadLength = 0;
 
   bool mIsMaskUpdatable = false;
+
+  // Sliding Window Attention (SWA) size.
+  // Set to non-zero to enable SWA, or set to zero to disable SWA.
+  size_t mSlidingWindowSize = 0;
 };
 
 } // namespace llm_helper
