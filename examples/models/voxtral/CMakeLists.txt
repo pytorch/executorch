@@ -20,6 +20,10 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
 # Let files say "include <executorch/path/to/header.h>"
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
