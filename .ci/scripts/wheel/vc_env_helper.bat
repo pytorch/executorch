@@ -45,9 +45,13 @@ REM Setup a symlink to shorten the path length.
 REM Note that the ET directory has to be named "executorch".
 set work_dir=%CD%
 cd %GITHUB_WORKSPACE%
-mkdir et
+if not exist et (
+    mkdir et
+)
 cd et
-mklink /d executorch %work_dir%
+if not exist executorch (
+    mklink /d executorch %work_dir%
+)
 cd executorch
 
 %args% || exit /b 1
