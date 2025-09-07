@@ -36,10 +36,10 @@ jobs:
       matrix:
         include:
           - repository: pytorch/executorch
-            pre-script: .ci/scripts/wheel/pre_build_script.sh
-            env-script: .ci/scripts/wheel/vc_env_helper.bat
-            post-script: .ci/scripts/wheel/post_build_script.sh
-            smoke-test-script: .ci/scripts/wheel/test_windows.py
+            pre-script: .ci\\scripts\\wheel\\pre_build_script.sh
+            env-script: .ci\\scripts\\wheel\\vc_env_helper.bat
+            post-script: .ci\\scripts\\wheel\\post_build_script.sh
+            smoke-test-script: .ci\\scripts\\wheel\\test_windows.py
             package-name: executorch
     name: ${{ matrix.repository }}
     uses: pytorch/test-infra/.github/workflows/build_wheels_windows.yml@main
