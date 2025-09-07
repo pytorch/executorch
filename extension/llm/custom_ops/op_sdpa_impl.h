@@ -24,7 +24,7 @@
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
-#include <torchao/experimental/kernels/cpu/interface/quantized_matmul.h>
+#include <torchao/csrc/cpu/torch_free_kernels/interface/quantized_matmul.h>
 
 namespace torch {
 namespace executor {

@@ -18,6 +18,7 @@
 #define LINEAR_FP_OUTPUT_TILE_INT8_INT8_COMPUTE_GLSLH
 
 #extension GL_EXT_control_flow_attributes : require
+#extension GL_EXT_integer_dot_product : require
 
 #include "linear_common.glslh"
 #include "linear_fp_output_tile.glslh"
@@ -104,17 +105,20 @@ void int_accumulate_with_int8_weight(
 void accumulate_out_tile_with_int_accum(
     inout FPOutTile out_tile,
     const Int32Accum accum,
-    const IntPerOutChannelParams sums,
-    const FPPerOutChannelParams scales) {
-  ivec4 input_zp_vec = ivec4(-input_zp);
+    const float input_q_scale,
+    const int input_q_zp,
+    const IntPerOutChannelParams weight_sums,
+    const FPPerOutChannelParams weight_scales) {
+  ivec4 input_zp_vec = ivec4(-input_q_zp);
 #if TILE_N4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     // Unfortunately fma doesn't work with ivec4. Prefer to preserve integer
     // format for as long as possible to avoid precision loss.
-    ivec4 accum_adjusted = input_zp_vec * sums.data[0] + accum.data[m][0];
+    ivec4 accum_adjusted =
+        input_zp_vec * weight_sums.data[0] + accum.data[m][0];
     out_tile.data[m][0] =
         fma(VEC4_T(accum_adjusted),
-            input_scale * scales.data[0],
+            input_q_scale * weight_scales.data[0],
             out_tile.data[m][0]);
   }
 
@@ -128,17 +132,20 @@ void accumulate_out_tile_with_int_accum(
 void accumulate_out_tile_with_int_accum(
     inout FPOutTile out_tile,
     const Int32Accum accum,
-    const IntPerOutChannelParams sums,
-    const FPPerOutChannelParams scales,
+    const float input_q_scale,
+    const int input_q_zp,
+    const IntPerOutChannelParams weight_sums,
+    const FPPerOutChannelParams weight_scales,
     const FPPerOutChannelParams bias) {
-  ivec4 input_zp_vec = ivec4(-input_zp);
+  ivec4 input_zp_vec = ivec4(-input_q_zp);
 #if TILE_N4 == 1
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     // Apply scale and zero points to the int accumulator
-    ivec4 accum_adjusted = input_zp_vec * sums.data[0] + accum.data[m][0];
+    ivec4 accum_adjusted =
+        input_zp_vec * weight_sums.data[0] + accum.data[m][0];
     out_tile.data[m][0] =
         fma(VEC4_T(accum_adjusted),
-            input_scale * scales.data[0],
+            input_q_scale * weight_scales.data[0],
             out_tile.data[m][0]);
     out_tile.data[m][0] += bias.data[0];
   }
