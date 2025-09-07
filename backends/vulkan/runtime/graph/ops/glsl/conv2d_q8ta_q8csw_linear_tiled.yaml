@@ -8,7 +8,7 @@ conv2d_q8ta_q8csw_linear_tiled:
   parameter_names_with_default_values:
     DTYPE: float
     OUTPUT_STORAGE: texture3d
-    INPUT_STORAGE: buffer
+    PACKED_INT8_INPUT_STORAGE: buffer
     WEIGHT_STORAGE: texture2d
     TILE_M4: 1
     TILE_N4: 1

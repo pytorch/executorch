@@ -27,7 +27,7 @@
 
 #ifdef WEIGHT_BUFFER
 
-ivec4 load_weight_block(
+ivec4 load_int8_weight_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
@@ -36,7 +36,7 @@ ivec4 load_weight_block(
 
 #else // WEIGHT_TEXTURE
 
-ivec4 load_weight_block(
+ivec4 load_int8_weight_block(
     const int block_x,
     const int block_y,
     const int nblocks_x) {
@@ -45,29 +45,31 @@ ivec4 load_weight_block(
 
 #endif // WEIGHT_BUFFER
 
-void load_weight_tile(
+void load_int8_weight_tile(
     out Int8WeightTile weight_tile,
     const int block_x,
     const int block_y,
     const int nblocks_x) {
 #if TILE_K4 == 1 && TILE_N4 == 1
-  weight_tile.data[0][0] = load_weight_block(block_x, block_y, nblocks_x);
+  weight_tile.data[0][0] = load_int8_weight_block(block_x, block_y, nblocks_x);
 
 #elif TILE_K4 == 1 && TILE_N4 > 1
   [[unroll]] for (int x = 0; x < TILE_N4; ++x) {
-    weight_tile.data[0][x] = load_weight_block(block_x + x, block_y, nblocks_x);
+    weight_tile.data[0][x] =
+        load_int8_weight_block(block_x + x, block_y, nblocks_x);
   }
 
 #elif TILE_K4 > 1 && TILE_N4 == 1
   [[unroll]] for (int y = 0; y < TILE_M4; ++y) {
-    weight_tile.data[y][0] = load_weight_block(block_x, block_y + y, nblocks_x);
+    weight_tile.data[y][0] =
+        load_int8_weight_block(block_x, block_y + y, nblocks_x);
   }
 
 #else
   [[unroll]] for (int y = 0; y < TILE_K4; ++y) {
     [[unroll]] for (int x = 0; x < TILE_N4; ++x) {
       weight_tile.data[y][x] =
-          load_weight_block(block_x + x, block_y + y, nblocks_x);
+          load_int8_weight_block(block_x + x, block_y + y, nblocks_x);
     }
   }
 #endif
