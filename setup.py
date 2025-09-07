@@ -144,8 +144,6 @@ class Version:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
         print(f"Writing version.py to {path}, cwd: {os.getcwd()}", file=sys.stderr)
-        print(f"WD files: {list(os.listdir(os.getcwd()))}", file=sys.stderr)
-        print(f"Pip out: {list(os.listdir(os.getcwd() + "/pip-out"))}", file=sys.stderr)
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
