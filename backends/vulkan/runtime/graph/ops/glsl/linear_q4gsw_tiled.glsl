@@ -32,6 +32,8 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
+#include "common.glslh"
+
 ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
 ${layout_declare_tensor(B, "r", "t_packed_int4_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
@@ -46,16 +48,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "apply_bias", "0")}
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 
-#define DEBUG_MODE
-#include "common.glslh"
 #include "linear_fp_input_tile_load.glslh"
 #include "linear_int4_weight_tile_load.glslh"
-#include "linear_fp_weight_tile.glslh"
+#include "linear_fp_weight_scales_load.glslh"
+#include "linear_fp_bias_load.glslh"
 #include "linear_fp_output_tile_fp_int4_compute.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
-#include "linear_fp_scales_load.glslh"
-#include "linear_fp_bias_load.glslh"
 
 void main() {
   const int out_tile_x = int(gl_GlobalInvocationID.x);
@@ -85,26 +84,31 @@ void main() {
   initialize(out_tile);
 
   FPInputTile in_tile;
-  Int4WeightTile weight_tile;
+  Int4WeightTile int4_weight_tile;
 
-  FPPerOutChannelParams scales_tile;
-  FPPerOutChannelParams zeros_tile;
-  zeros_tile.data[0] = VEC4_T(0.0);
-  zeros_tile.data[1] = VEC4_T(0.0);
+  FPPerOutChannelParams weight_scales_tile;
+  FPPerOutChannelParams weight_zeros_tile;
+  weight_zeros_tile.data[0] = VEC4_T(0.0);
+  weight_zeros_tile.data[1] = VEC4_T(0.0);
 
   const int num_groups = K4 / K4_per_group;
 
   for (int group_i = 0; group_i < num_groups; ++group_i) {
     // Load quantization scales and zeros for the current group
-    load_scales_tile_for_group(scales_tile, n4, group_i, N4);
+    load_weight_scales_tile_for_group(weight_scales_tile, n4, group_i, N4);
 
     for (int k4_inner = 0; k4_inner < K4_per_group; k4_inner++) {
       const int k4 = group_i * K4_per_group + k4_inner;
 
       load_input_tile_no_checks(in_tile, k4, m, K4, M);
-      load_weight_tile(weight_tile, k4, n8, K4);
+      load_int4_weight_tile(int4_weight_tile, k4, n8, K4);
 
-      fp_accumulate_with_int4_weight(out_tile, in_tile, weight_tile, scales_tile, zeros_tile);
+      fp_accumulate_with_int4_weight(
+          out_tile,
+          in_tile,
+          int4_weight_tile,
+          weight_scales_tile,
+          weight_zeros_tile);
     }
   }
 

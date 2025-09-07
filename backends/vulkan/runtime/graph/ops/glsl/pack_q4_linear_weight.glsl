@@ -24,7 +24,6 @@ layout(push_constant) uniform restrict Block {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-#define DEBUG_MODE
 #include "common.glslh"
 #include "linear_int4_weight_block.glslh"
 
@@ -45,9 +44,6 @@ void main() {
     return;
   }
 
-  bool should_print = n8 == 0 && k8 == 1;
-  should_print = false;
-
   Int4Weight2xBlockSourceData src_data;
   const int n = mul_8(n8);
   if (N - n >= 8) {
@@ -65,12 +61,6 @@ void main() {
   // of the loaded weight block
   Int4WeightBlockPacked packed_block_2;
   create_packed_blocks(packed_block_1, packed_block_2, src_data);
-
-  if (should_print) {
-    printInt4Weight2xBlockSourceData(src_data);
-    printInt4WeightBlockPacked(packed_block_1);
-  }
-
 
   const int k4 = mul_2(k8);
   write_packed_block(packed_block_1, k4, n8, K4);

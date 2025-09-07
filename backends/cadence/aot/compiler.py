@@ -388,9 +388,6 @@ def quantize_and_export_to_cadence(
     )
 
 
-# Export the model and lower it to an EdgeProgramManager (in edge IR), and
-# apply passes specific to Cadence DSP execution. Return both to print the
-# differences.
 def export_to_executorch_gen_etrecord(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
@@ -402,7 +399,33 @@ def export_to_executorch_gen_etrecord(
     memory_config: Optional[MemoryConfig] = None,
     dump_graphs: bool = False,
 ) -> ExecutorchProgramManager:
-    edge_prog_manager = export_to_edge(model, inputs, dump_graphs)
+    ep = torch.export.export(model, inputs, strict=True)
+    return _lower_ep_to_cadence_gen_etrecord(
+        ep,
+        output_dir=output_dir,
+        opt_level=opt_level,
+        mem_algo=mem_algo,
+        alloc_graph_input=alloc_graph_input,
+        alloc_graph_output=alloc_graph_output,
+        memory_config=memory_config,
+        dump_graphs=dump_graphs,
+    )
+
+
+# Export the model and lower it to an EdgeProgramManager (in edge IR), and
+# apply passes specific to Cadence DSP execution. Return both to print the
+# differences.
+def _lower_ep_to_cadence_gen_etrecord(
+    ep: ExportedProgram,
+    output_dir: Optional[str] = None,
+    opt_level: int = 1,
+    mem_algo: int = 0,
+    alloc_graph_input: bool = True,
+    alloc_graph_output: bool = True,
+    memory_config: Optional[MemoryConfig] = None,
+    dump_graphs: bool = False,
+) -> ExecutorchProgramManager:
+    edge_prog_manager = _lower_ep_to_edge(ep, dump_graphs)
     cadence_prog_manager = apply_exir_ops_passes(opt_level, edge_prog_manager)
 
     # Print some information to terminal

@@ -31,11 +31,13 @@ struct Int8InputBlock {
   ivec4 data;
 };
 
-ivec4 quantize(const VEC4_T val) {
-  vec4 quantized = round(vec4(val) * inv_scale) + zp;
-
+ivec4 quantize(
+    const VEC4_T val,
+    const float q_inv_scale,
+    const int q_zero_point) {
+  vec4 quantized = round(vec4(val) * q_inv_scale) + q_zero_point;
   // hard-code 8 bit quantization range
-  return clamp(ivec4(quantized), -127, 127);
+  return clamp(ivec4(quantized), -128, 127);
 }
 
 int pack_into_int32(const ivec4 quant_vals) {
@@ -45,9 +47,14 @@ int pack_into_int32(const ivec4 quant_vals) {
   return packed;
 }
 
-void quantize_and_pack(out Int8InputBlock packed, const FPInputTile in_block) {
+void quantize_and_pack(
+    out Int8InputBlock packed,
+    const FPInputTile in_block,
+    const float q_inv_scale,
+    const int q_zero_point) {
   for (int row = 0; row < 4; ++row) {
-    ivec4 quantized_inputs = quantize(in_block.data[row][0]);
+    ivec4 quantized_inputs =
+        quantize(in_block.data[row][0], q_inv_scale, q_zero_point);
     packed.data[row] = pack_into_int32(quantized_inputs);
   }
 }

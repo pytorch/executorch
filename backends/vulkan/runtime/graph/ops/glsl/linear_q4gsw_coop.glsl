@@ -47,15 +47,13 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "apply_bias", "0")}
 ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 
-#define DEBUG_MODE
 #include "common.glslh"
 #include "linear_fp_input_tile_load.glslh"
 #include "linear_int4_weight_tile_load.glslh"
-#include "linear_fp_weight_tile.glslh"
+#include "linear_fp_weight_scales_load.glslh"
 #include "linear_fp_output_tile_fp_int4_compute.glslh"
 #include "linear_fp_output_tile_fp_compute.glslh"
 #include "linear_fp_output_tile_store.glslh"
-#include "linear_fp_scales_load.glslh"
 #include "linear_fp_bias_load.glslh"
 
 shared FPOutTile partial_sums[WGS];
@@ -82,12 +80,12 @@ void main() {
   initialize(out_tile);
 
   FPInputTile in_tile;
-  Int4WeightTile weight_tile;
+  Int4WeightTile int4_weight_tile;
 
-  FPPerOutChannelParams scales_tile;
-  FPPerOutChannelParams zeros_tile;
-  zeros_tile.data[0] = VEC4_T(0.0);
-  zeros_tile.data[1] = VEC4_T(0.0);
+  FPPerOutChannelParams weight_scales_tile;
+  FPPerOutChannelParams weight_zeros_tile;
+  weight_zeros_tile.data[0] = VEC4_T(0.0);
+  weight_zeros_tile.data[1] = VEC4_T(0.0);
 
   // initialize the group index to a value larger than the largest possible
   int cur_group_idx = input_sizes.x;
@@ -98,14 +96,19 @@ void main() {
     // Only update the scales/zeros if the current iteration is now working on a
     // new quantization group.
     if (group_idx != cur_group_idx) {
-      load_scales_tile_for_group(scales_tile, n4, group_idx, N4);
+      load_weight_scales_tile_for_group(weight_scales_tile, n4, group_idx, N4);
       cur_group_idx = group_idx;
     }
 
     load_input_tile_no_checks(in_tile, k4, 0, K4, 1);
-    load_weight_tile(weight_tile, k4, n8, K4);
+    load_int4_weight_tile(int4_weight_tile, k4, n8, K4);
 
-    fp_accumulate_with_int4_weight(out_tile, in_tile, weight_tile, scales_tile, zeros_tile);
+    fp_accumulate_with_int4_weight(
+        out_tile,
+        in_tile,
+        int4_weight_tile,
+        weight_scales_tile,
+        weight_zeros_tile);
   }
 
   partial_sums[lid] = out_tile;
