@@ -44,10 +44,12 @@ DEFINE_uint64(hidden_size, 4096, "Model hidden size.");
 DEFINE_uint64(num_head, 32, "Number of attention heads in each layer.");
 DEFINE_uint64(num_layer, 32, "Number of layers in the model.");
 DEFINE_uint64(head_dim, 0, "Head dimension of the model.");
+DEFINE_uint64(window_size, 0, "Window size of Sliding Window Attention.");
 DEFINE_uint64(
     max_token_length,
     2048,
     "Maximum token length that the model supports.");
+DEFINE_double(partial_rotary_factor, 1, "Partial rotary factor of the model.");
 DEFINE_double(
     rot_emb_base,
     10000,
@@ -123,7 +125,9 @@ LlamaModelOptions get_model_options() {
       .num_head = FLAGS_num_head,
       .num_layer = FLAGS_num_layer,
       .head_dim = FLAGS_head_dim,
+      .window_size = FLAGS_window_size,
       .max_token_length = FLAGS_max_token_length,
+      .partial_rotary_factor = FLAGS_partial_rotary_factor,
       .rot_emb_base = FLAGS_rot_emb_base,
 
       // Types

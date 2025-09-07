@@ -1062,7 +1062,7 @@ class Gemma3ModelChunk(ModelChunk):
                 mask = global_mask
             else:
                 raise TypeError(f"Unrecognized mask type: {mask_type}")
-            
+
             decoder_outputs = decoder_layer(
                 hidden_states.to(self.device_list[idx]),
                 mask=mask.to(self.device_list[idx]),
@@ -1523,7 +1523,7 @@ class Gemma3ModelChunk(ModelChunk):
             torch.randn(
                 1, num_token, self.config.hidden_size, device="cpu", dtype=torch.float32
             ),
-            torch.randn(    # Global mask
+            torch.randn(  # Global mask
                 1,
                 1,
                 num_token,
@@ -1531,7 +1531,7 @@ class Gemma3ModelChunk(ModelChunk):
                 device="cpu",
                 dtype=torch.float32,
             ),
-            torch.randn(    # Local mask
+            torch.randn(  # Local mask
                 1,
                 1,
                 num_token,

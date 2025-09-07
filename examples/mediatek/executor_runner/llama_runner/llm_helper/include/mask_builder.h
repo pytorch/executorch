@@ -18,9 +18,7 @@ namespace llm_helper {
 class MaskBuilder {
  public:
   // Construct mask builder without specifying the mask buffer.
-  explicit MaskBuilder(
-      const LLMType maskType,
-      const size_t cacheLength);
+  explicit MaskBuilder(const LLMType maskType, const size_t cacheLength);
 
   // Construct mask builder and initialize mask buffer.
   explicit MaskBuilder(

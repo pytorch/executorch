@@ -48,6 +48,10 @@ from executorch.backends.mediatek import (
     NeuropilotQuantizer,
     Precision,
 )
+from executorch.exir.backend.backend_api import (
+    MethodProgramsPartitionerSpec,
+    to_backend,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from tqdm import tqdm
@@ -232,7 +236,11 @@ def forward_and_save(
             local_mask = mask["SLIDING_LOCAL"]
             with torch.no_grad():
                 model_out = models[chunk_idx](
-                    hidden_state, global_mask, local_mask, pos_emb, *torch.split(cache_in, 1, dim=0)
+                    hidden_state,
+                    global_mask,
+                    local_mask,
+                    pos_emb,
+                    *torch.split(cache_in, 1, dim=0),
                 )
         else:
             with torch.no_grad():
@@ -354,10 +362,18 @@ def calibrate_model(model, cal_dataset, chunk_idx: str):
                     if isinstance(mask, dict):
                         global_mask = torch.tensor(mask["GLOBAL"])
                         local_mask = torch.tensor(mask["SLIDING_LOCAL"])
-                        model(inputs_embeds, global_mask, local_mask, pos_emb, *torch.split(cache, 1, dim=0))
+                        model(
+                            inputs_embeds,
+                            global_mask,
+                            local_mask,
+                            pos_emb,
+                            *torch.split(cache, 1, dim=0),
+                        )
                     else:
                         mask = torch.tensor(mask)
-                        model(inputs_embeds, mask, pos_emb, *torch.split(cache, 1, dim=0))
+                        model(
+                            inputs_embeds, mask, pos_emb, *torch.split(cache, 1, dim=0)
+                        )
 
 
 def export_to_et_ir(
@@ -390,52 +406,64 @@ def export_to_et_ir(
         prepared_graph(*example_inputs)  # dummy calibration
     converted_graph = convert_pt2e(prepared_graph, fold_quantize=False)
 
-    print("Getting ATen Dialect Graph")
+    method_to_edge_program = {}
+    method_to_partitioner = {}
+    edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
+
+    model_shared_key_name = f"{exp_name}_{chunk_idx}"
+
     # Fixed Shape Export Here
     for shape, ntok_and_cache in export_shapes.items():
-        dest_path = get_dest_path(output_folder, exp_name, shape, chunk_idx)
-        print(f"Exporting Shape {shape} to:\n{dest_path}")
+        model_fname = f"{exp_name}_{shape}_{chunk_idx}"
         example_inputs = model.get_example_inputs(*ntok_and_cache)
+        print(f"Getting ATen Dialect Graph for {exp_name} {shape} chunk {chunk_idx}")
         aten_dialect: exir.ExportedProgram = torch.export.export(
             converted_graph, example_inputs, strict=True
         )
 
-        print("Lowering to Edge Dialect Graph")
-        edge_program: exir.EdgeProgramManager = exir.to_edge(
-            aten_dialect,
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        )
+        method_to_edge_program[f"{model_fname}"] = exir.to_edge(
+            aten_dialect
+        ).exported_program()
         del aten_dialect
 
-        print("Delegating Edge Program to Neuropilot Backend")
         compile_spec = [
             CompileSpec("gno", b"LTS"),
             CompileSpec("gno-exp", b""),
             CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
             CompileSpec("platform-config", platform_b),
+            CompileSpec("ExtractSharedBlobKey", model_shared_key_name.encode()),
         ]
-        partitioner = NeuropilotPartitioner(compile_spec)
-        delegated_program = edge_program.to_backend(partitioner)
-        print("Exported Delegated Program:")
-        print(delegated_program.exported_program())
-        del edge_program
+        method_to_partitioner[f"{model_fname}"] = NeuropilotPartitioner(compile_spec)
 
-        print("Transforming delegated program to executorch backend")
-        executorch_program = delegated_program.to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                memory_planning_pass=exir.passes.MemoryPlanningPass(
-                    alloc_graph_input=False,
-                    alloc_graph_output=False,
-                ),
-                extract_delegate_segments=True,
-            )
+    print("Delegating Edge Program to Neuropilot Backend")
+    delegated_program = to_backend(
+        MethodProgramsPartitionerSpec(method_to_edge_program, method_to_partitioner)
+    )
+
+    edge_manager = exir.EdgeProgramManager(
+        delegated_program, compile_config=edge_compile_config
+    )
+    del delegated_program
+
+    print("Transforming delegated program to executorch backend")
+    executorch_program = edge_manager.to_executorch(
+        config=exir.ExecutorchBackendConfig(
+            memory_planning_pass=exir.passes.MemoryPlanningPass(
+                alloc_graph_input=False,
+                alloc_graph_output=False,
+            ),
+            extract_delegate_segments=True,
         )
+    )
+    del edge_manager
+    print(f"\n Model Size: {len(executorch_program.buffer)}")
 
-        print(f"ET Model Dest: {dest_path}\n")
-        os.makedirs(dest_path.rsplit("/", 1)[0], exist_ok=True)
-        with open(dest_path, "wb") as file:
-            file.write(executorch_program.buffer)
+    dest_path = get_dest_path(output_folder, exp_name, None, chunk_idx)
+    print(f"{exp_name} ET Model chunk {chunk_idx} Dest: {dest_path}\n")
+    os.makedirs(dest_path.rsplit("/", 1)[0], exist_ok=True)
+    with open(dest_path, "wb") as file:
+        file.write(executorch_program.buffer)
 
 
 def main():

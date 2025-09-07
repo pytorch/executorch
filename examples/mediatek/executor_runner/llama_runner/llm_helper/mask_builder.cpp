@@ -32,9 +32,7 @@ __DECL_MASK__(__fp16, 0, -100)
 __DECL_MASK__(float, 0, -100)
 #undef __DECL_MASK__
 
-MaskBuilder::MaskBuilder(
-    const LLMType maskType,
-    const size_t cacheLength)
+MaskBuilder::MaskBuilder(const LLMType maskType, const size_t cacheLength)
     : mMaskBuffer(nullptr),
       mMaskSizeBytes(0),
       kMaskType(maskType),
@@ -54,8 +52,9 @@ MaskBuilder::MaskBuilder(
 
 MaskBuilder::~MaskBuilder() {}
 
-MaskBuilder& MaskBuilder::setMaskBuffer(void* maskBuffer,
-                                        const size_t maskSizeBytes) {
+MaskBuilder& MaskBuilder::setMaskBuffer(
+    void* maskBuffer,
+    const size_t maskSizeBytes) {
   mMaskBuffer = maskBuffer;
   mMaskSizeBytes = maskSizeBytes;
   return *this;
@@ -87,7 +86,7 @@ void MaskBuilder::buildMask(
   constexpr auto maskFalse = MaskVal<MaskType>::kFalse;
   const size_t maskLength = kCacheLength + tokenBatchSize;
   const size_t curWindowSize =
-    mSlidingWindowSize ? mSlidingWindowSize : maskLength;
+      mSlidingWindowSize ? mSlidingWindowSize : maskLength;
 
   // The mask is a combination (concat) of input cache mask and attention mask
   const size_t numVisibleCacheTokens = std::min(kCacheLength, numSeenToken);
@@ -115,13 +114,16 @@ void MaskBuilder::buildMask(
         reinterpret_cast<MaskType*>(mMaskBuffer) + rowIdx * rowSize;
 
     const size_t rowTrueCount =
-      std::min(curWindowSize, numVisibleCacheTokens + attnTrueCount);
+        std::min(curWindowSize, numVisibleCacheTokens + attnTrueCount);
     const size_t lastTrueIdx = kCacheLength + attnTrueCount - 1;
     const size_t firstTrueIdx = lastTrueIdx - rowTrueCount + 1;
     size_t i = 0;
-    while (i < firstTrueIdx) curMaskBuffer[i++] = maskFalse;
-    while (i <= lastTrueIdx) curMaskBuffer[i++] = maskTrue;
-    while (i < maskLength) curMaskBuffer[i++] = maskFalse;
+    while (i < firstTrueIdx)
+      curMaskBuffer[i++] = maskFalse;
+    while (i <= lastTrueIdx)
+      curMaskBuffer[i++] = maskTrue;
+    while (i < maskLength)
+      curMaskBuffer[i++] = maskFalse;
   }
 
   // Modify mask for padding if needed. Mask is not updatable if modified for
@@ -279,7 +281,7 @@ bool MaskBuilder::adjustMaskForPadding(const size_t tokenBatchSize) {
   return true; // Mask is modified for padding
 }
 
-void MaskBuilder::resetPadLength () {
+void MaskBuilder::resetPadLength() {
   if (mLeftPadLength > 0) {
     mLeftPadLength = 0;
   } else if (mRightPadLength > 0) {
@@ -287,11 +289,11 @@ void MaskBuilder::resetPadLength () {
   }
 }
 
-bool MaskBuilder::getMaskUpdateStatus () {
+bool MaskBuilder::getMaskUpdateStatus() {
   return mIsMaskUpdatable;
 }
 
-void MaskBuilder::setIsMaskUpdatable (const bool status) {
+void MaskBuilder::setIsMaskUpdatable(const bool status) {
   mIsMaskUpdatable = status;
 }
 
