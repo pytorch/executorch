@@ -147,6 +147,8 @@ class Version:
         print(f"WD files: {list(os.listdir(os.getcwd()))}", file=sys.stderr)
         print(f"Pip out: {list(os.listdir(os.getcwd() + "/pip-out"))}", file=sys.stderr)
 
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
         try:
             path1 = os.path.dirname(path)
             path2 = os.path.dirname(path1)
@@ -155,7 +157,7 @@ class Version:
             print(f"Files at {path1}: {list(os.listdir(path1))}", file=sys.stderr)
         finally:
             pass
-
+        
         lines = [
             "from typing import Optional",
             '__all__ = ["__version__", "git_version"]',
