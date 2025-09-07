@@ -7,10 +7,11 @@
  */
 
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
-#include <math.h>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
+
 namespace impl {
 namespace reference {
 namespace kernels {
@@ -18,10 +19,18 @@ namespace kernels {
 // Quantize a fp32 value to an int8_t/uint8_t value
 template <typename T>
 T quantize(const float x, float scale, int32_t zero_point) {
-  constexpr float min_val = std::numeric_limits<T>::min();
-  constexpr float max_val = std::numeric_limits<T>::max();
-  float tmp = roundf(x * scale + zero_point);
-  return std::max(std::min(tmp, max_val), min_val);
+  // constexpr float min_val = std::numeric_limits<T>::min();
+  // constexpr float max_val = std::numeric_limits<T>::max();
+  // float tmp = roundf(x * scale + zero_point);
+  // return std::max(std::min(tmp, max_val), min_val);
+  // Match Executorch CPU kernel implementation at
+  // https://fburl.com/code/fxizw6u6
+  int64_t qvalue;
+  qvalue = static_cast<int64_t>(zero_point + std::nearbyint(scale * x));
+
+  qvalue = std::max<int64_t>(qvalue, std::numeric_limits<T>::min());
+  qvalue = std::min<int64_t>(qvalue, std::numeric_limits<T>::max());
+  return static_cast<T>(qvalue);
 }
 
 // Quantize an fp32 array to an int8_t/uint8_t array
