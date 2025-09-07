@@ -4,6 +4,7 @@ tok=${3:-128}
 cache=${4:-512}
 cal=${5:-None}
 pres=${6:-A16W4}
+plat=${7:-DX4}
 
 if [ $model = "Qwen3-4B" ]
 then
@@ -46,6 +47,7 @@ echo "Cache Size: $cache"
 echo "Precision: $pres"
 echo "Calibration Dataset: $cal"
 echo "Preformatter: $pref"
+echo "Platform: $plat"
 
 python3 model_export_scripts/qwen.py \
     models/llm_models/weights/${config_path} \
@@ -53,4 +55,6 @@ python3 model_export_scripts/qwen.py \
     --num_chunks $chunks \
 	${data} \
 	${pref} \
-    -shapes ${tok}t${cache}c 1t${cache}c
+    -shapes ${tok}t${cache}c 1t${cache}c \
+	--platform $plat
+	

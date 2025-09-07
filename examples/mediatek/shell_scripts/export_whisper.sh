@@ -4,6 +4,7 @@ tok=${3:-10}
 cache=${4:-512}
 cal=${5:-None}
 pres=${6:-A16W4}
+plat=${7:-DX4}
 
 if [ $model = "whisper-large-v3-turbo" ]
 then
@@ -30,10 +31,12 @@ echo "Cache Size: $cache"
 echo "Precision: $pres"
 echo "Calibration Dataset: $cal"
 echo "Preformatter: $pref"
+echo "Platform: $plat"
 
 python3 model_export_scripts/whisper.py \
     models/llm_models/weights/${config_path} \
     -p $pres \
     --num_chunks $chunks \
 	${data} \
-    -shapes ${tok}t${cache}c 1t${cache}c
+    -shapes ${tok}t${cache}c 1t${cache}c \
+	--platform $plat

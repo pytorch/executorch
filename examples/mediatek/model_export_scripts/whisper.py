@@ -75,6 +75,14 @@ def get_argument_parser():
         help="Precision to quantize entire model to.",
     )
     parser.add_argument(
+        "--platform",
+        type=str,
+        default="DX4",
+        choices=["DX3", "DX4"],
+        help="Chip model of the inference device. "
+        "DX3 for Dimensity 9300, DX4 for Dimensity 9400.",
+    )
+    parser.add_argument(
         "-d",
         "--dataset",
         type=str,
@@ -149,6 +157,7 @@ def print_args(args, exp_name):
     print(f"Max Response Tokens:          {args.response_cap}")
     print(f"Number of chunks:             {args.num_chunks}")
     print(f"Export shape(s):              {args.shapes}")
+    print(f"Platform:                     {args.platform}")
     print()
 
 
@@ -393,6 +402,7 @@ def export_to_et_ir(
     max_cache_size,
     chunk_idx,
     export_shapes,
+    platform_b,
     cal_dataset=None,
 ):
     print(f"Exporting Chunk {chunk_idx} to PTE")
@@ -436,7 +446,7 @@ def export_to_et_ir(
             CompileSpec("gno-exp", b""),
             CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
-            CompileSpec("platform-config", b"mt6989"),
+            CompileSpec("platform-config", platform_b),
         ]
         partitioner = NeuropilotPartitioner(compile_spec)
         delegated_program = edge_program.to_backend(partitioner)
@@ -467,6 +477,7 @@ def export_encoder_to_et_ir(
     model,
     precision,
     num_mel_bins,
+    platform_b,
     cal_dataset=None,
 ):
     print(f"Exporting Encoder to PTE")
@@ -511,7 +522,7 @@ def export_encoder_to_et_ir(
         CompileSpec("gno-exp", b""),
         CompileSpec("gno-non-4d-tiling", b""),
         CompileSpec("ImportForever", struct.pack("?", True)),
-        CompileSpec("platform-config", b"mt6989"),
+        CompileSpec("platform-config", platform_b),
     ]
     partitioner = NeuropilotPartitioner(compile_spec)
     delegated_program = edge_program.to_backend(partitioner)
@@ -545,6 +556,14 @@ def main():
     else:
         exp_name = (
             f"{get_exp_name(args.config)}_{args.precision}_{args.num_chunks}_chunks"
+        )
+    if args.platform == "DX4":
+        platform_b = b"mt6991"
+    elif args.platform == "DX3":
+        platform_b = b"mt6989"
+    else:
+        raise ValueError(
+            f"Platform should be either DX3 or DX4, but got {args.platform}"
         )
     print_args(args, exp_name)
     enc_exp_name = f"{get_exp_name(args.config)}_{args.precision}_encoder"
@@ -647,6 +666,7 @@ def main():
         encoder,
         args.precision,
         config.encoder.num_mel_bins,
+        platform_b,
         encoder_cal_dataset,
     )
 
@@ -660,6 +680,7 @@ def main():
             max_cache_size,
             chunk_idx,
             export_shapes,
+            platform_b,
             cal_dataset,
         )
 
