@@ -273,47 +273,47 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  # test-arm-backend:
-  #   name: test-arm-backend
-  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   strategy:
-  #     matrix:
-  #       include:
-  #         - test_arm_baremetal: test_pytest_ops_ethosu_fvp
-  #         - test_arm_baremetal: test_pytest_models_ethosu_fvp
-  #         - test_arm_baremetal: test_run_ethosu_fvp
-  #         - test_arm_baremetal: test_models_tosa
-  #         - test_arm_baremetal: test_models_ethos-u55
-  #         - test_arm_baremetal: test_models_ethos-u85
-  #         - test_arm_baremetal: test_smaller_stories_llama
-  #     fail-fast: false
-  #   with:
-  #     runner: linux.2xlarge.memory
-  #     docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 120
-  #     script: |
-  #       # The generic Linux job chooses to use base env, not the one setup by the image
-  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-  #       conda activate "${CONDA_ENV}"
+  test-arm-backend:
+    name: test-arm-backend
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - test_arm_baremetal: test_pytest_ops_ethosu_fvp
+          - test_arm_baremetal: test_pytest_models_ethosu_fvp
+          - test_arm_baremetal: test_run_ethosu_fvp
+          - test_arm_baremetal: test_models_tosa
+          - test_arm_baremetal: test_models_ethos-u55
+          - test_arm_baremetal: test_models_ethos-u85
+          - test_arm_baremetal: test_smaller_stories_llama
+      fail-fast: false
+    with:
+      runner: linux.2xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-  #       source .ci/scripts/utils.sh
-  #       install_executorch "--use-pt-pinned-commit"
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
 
-  #       .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh
 
-  #       # Increase number of files user can monitor to bypass buck failures.
-  #       # Hopefully this is high enough for this setup.
-  #       sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+        # Increase number of files user can monitor to bypass buck failures.
+        # Hopefully this is high enough for this setup.
+        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-  #       ARM_TEST=${{ matrix.test_arm_baremetal }}
+        ARM_TEST=${{ matrix.test_arm_baremetal }}
 
-  #       # Test test_arm_baremetal.sh with test
-  #       backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+        # Test test_arm_baremetal.sh with test
+        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
   test-arm-cortex-m-size-test:
     name: test-arm-cortex-m-size-test
@@ -666,71 +666,71 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-  # test-models-macos-coreml:
-  #   name: test-models-macos-coreml
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-  #   strategy:
-  #     matrix:
-  #       model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
-  #     fail-fast: false
-  #   with:
-  #     runner: macos-m1-stable
-  #     python-version: '3.11'
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 90
-  #     script: |
-  #       MODEL_NAME=${{ matrix.model }}
-  #       BUILD_TOOL=cmake
-  #       BACKEND="coreml-pybind"
+  test-models-macos-coreml:
+    name: test-models-macos-coreml
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=cmake
+        BACKEND="coreml-pybind"
 
 
-  #       # Set model specific overrides
-  #       if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
-  #         # See https://github.com/pytorch/executorch/issues/12907
-  #         # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
-  #         BACKEND="coreml"
-  #       fi
+        # Set model specific overrides
+        if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12907
+          # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
+          BACKEND="coreml"
+        fi
 
-  #       if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
-  #         # See https://github.com/pytorch/executorch/issues/12906
-  #         # efficient_sam fails to run on CoreML
-  #         BACKEND="coreml"
-  #       fi
+        if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12906
+          # efficient_sam fails to run on CoreML
+          BACKEND="coreml"
+        fi
 
-  #       bash .ci/scripts/setup-conda.sh
+        bash .ci/scripts/setup-conda.sh
 
-  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
-  #       echo "Finishing installing coreml."
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        echo "Finishing installing coreml."
 
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-  # test-models-macos-mps:
-  #   name: test-models-macos-mps
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-  #   strategy:
-  #     fail-fast: false
-  #   with:
-  #     runner: macos-m1-stable
-  #     python-version: '3.11'
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 90
-  #     script: |
-  #       BUILD_TOOL=cmake
-  #       bash .ci/scripts/setup-conda.sh
+  test-models-macos-mps:
+    name: test-models-macos-mps
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=cmake
+        bash .ci/scripts/setup-conda.sh
 
-  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
-  #       # Build and test mps model
-  #       for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
-  #         echo "::group::Exporting mps model: $MODEL_NAME"
-  #         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
-  #         echo "::endgroup::"
-  #       done
+        # Build and test mps model
+        for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
+          echo "::group::Exporting mps model: $MODEL_NAME"
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
+          echo "::endgroup::"
+        done
 
   test-huggingface-transformers-xnnpack:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway

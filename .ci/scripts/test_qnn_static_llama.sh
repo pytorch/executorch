@@ -14,7 +14,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/qnn_confi
 # Download QNN_SDK. If already downloaded, export environment path
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
 
-export QNN_SDK_ROOT="/tmp/qnn/2.37.0.250724"
 export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
 export PYTHONPATH=".."
