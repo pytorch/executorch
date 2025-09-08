@@ -10,20 +10,40 @@ set -ex
 
 
 download_ai_lite_core() {
-  AI_LITE_CORE_VERSION=$1
-  _exynos_ai_lite_core_url="https://ko.ai-studio-farm.com:26310/api/v1/buckets/lite-core/objects/download?prefix=05/ubuntu2204/exynos-ai-litecore-v0.5.0,tar.gz"
+  API_BASE="https://soc-developer.semiconductor.samsung.com/api/v1/resource/ai-litecore/download"
+  API_KEY="kn10SoSY3hkC-9Qny5TqD2mnqVrlupv3krnjLeBt5cY"
 
-  _exynos_lite_core_dir=/tmp/exynos_ai_lite_core
-  mkdir -p ${_exynos_lite_core_dir}
+  VERSION="0.5"
+  OS_NAME="Ubuntu 22.04"
+  OUT_FILE="/tmp/exynos-ai-litecore-v${VERSION}.tar.gz"
+  TARGET_PATH="/tmp/exynos_ai_lite_core"
 
-  _tmp_archive="/tmp/exynos-ai-litecore-v0.5.0.tar.gz"
+  mkdir -p ${TARGET_PATH}
+  # Presigned issue URL
+  JSON_RESP=$(curl -sS -G \
+    --location --fail --retry 3 \
+    -H "apikey: ${API_KEY}" \
+    --data-urlencode "version=${VERSION}" \
+    --data-urlencode "os=${OS_NAME}" \
+    "${API_BASE}")
 
-  sudo update-ca-certificates
+  DOWNLOAD_URL=$(echo "$JSON_RESP" | sed -n 's/.*"data":[[:space:]]*"\([^"]*\)".*/\1/p')
 
-  curl --silent --show-error --location --fail --retry 3 \
-    --output "${_tmp_archive}" --insecure "${_exynos_ai_lite_core_url}"
+  if [[ -z "$DOWNLOAD_URL" ]]; then
+    echo "Failed to extract download URL"
+    echo "$JSON_RESP"
+    exit 1
+  fi
 
-  tar -C "${_exynos_lite_core_dir}" --strip-components=1 -xzvf "${_tmp_archive}"
+  # Download LiteCore
+  curl -sS -L --fail --retry 3 \
+    --output "$OUT_FILE" \
+    "$DOWNLOAD_URL"
+
+  echo "Download done: $OUT_FILE"
+
+
+  tar -C "${TARGET_PATH}" --strip-components=1 -xzvf "${OUT_FILE}"
 
   export EXYNOS_AI_LITECORE_ROOT=${_exynos_lite_core_dir}
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}:${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux
