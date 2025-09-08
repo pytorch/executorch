@@ -485,6 +485,40 @@ def quantized_conv_nhwc(
     )
 
 
+@impl(m, "quantized_relu")
+def quantized_relu(
+    X: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    out_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Quantized ReLU operation followed by requantization.
+
+    Args:
+        - X (Tensor): The input tensor
+        - X_zero_point (Tensor): The quantized mapping of zero for the input
+        - out_zero_point (int): The quantized mapping of zero for the output
+        - out_multiplier (Tensor): The multiplier used to scale the output
+        - out_shift (Tensor): The shift used to scale the output
+    """
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8, torch.uint16]
+    if X.dtype not in supported_dtypes:
+        raise ValueError(f"X dtype must be one of {supported_dtypes}. Got {X.dtype}")
+
+    out_scale = -out_multiplier * (1 / (1 << 31)) * (2 ** out_shift[0])
+    dequantized_X = torch.where(X > X_zero_point, X - X_zero_point, torch.zeros_like(X))
+    return quantize_per_tensor(
+        dequantized_X,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(X.dtype).min,
+        torch.iinfo(X.dtype).max,
+        X.dtype,
+    )
+
+
 @impl(m, "requantize")
 def requantize(
     input: torch.Tensor,
