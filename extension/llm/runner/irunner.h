@@ -134,6 +134,7 @@ class ET_EXPERIMENTAL IRunner {
    * @param config Generation configuration parameters
    * @param token_callback Callback function called for each generated token
    * @param stats_callback Callback function for generation statistics
+   * @param stats_callback Callback function for the updated start_pos
    * @return Error::Ok if successful, an error otherwise
    */
   virtual runtime::Error generate_from_pos(
@@ -141,7 +142,8 @@ class ET_EXPERIMENTAL IRunner {
       int64_t start_pos,
       const GenerationConfig& config,
       std::function<void(const std::string&)> token_callback,
-      std::function<void(const Stats&)> stats_callback) = 0;
+      std::function<void(const Stats&)> stats_callback,
+      std::function<void(int)> updated_start_pos) = 0;
   /**
    * Stop the generation process.
    */
