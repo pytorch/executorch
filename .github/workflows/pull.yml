@@ -932,6 +932,7 @@ jobs:
         # Custom operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
         ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
 
   nxp-build-test:
     name: nxp-build-test
