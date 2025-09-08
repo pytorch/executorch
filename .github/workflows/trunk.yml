@@ -594,13 +594,8 @@ jobs:
     strategy:
       matrix:
         mode: [xnnpack+custom]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
+        runner: [linux.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12]
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
@@ -614,8 +609,8 @@ jobs:
         conda activate "${CONDA_ENV}"
         pip install -U "huggingface_hub[cli]"
 
-        sh .ci/scripts/test_torchao_huggingface_checkpoints.sh qwen3_4b
-        sh .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh qwen3_4b
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
 
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:

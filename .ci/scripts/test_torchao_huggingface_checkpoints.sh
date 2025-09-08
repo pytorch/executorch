@@ -47,19 +47,19 @@ case "$MODEL_NAME" in
       $HF_MODEL_DIR \
       pytorch_model_converted.bin
 
-    # $PYTHON_EXECUTABLE -m executorch.examples.models.llama.export_llama \
-    #   --model "phi_4_mini" \
-    #   --checkpoint pytorch_model_converted.bin \
-    #   --params examples/models/phi_4_mini/config/config.json \
-    #   --output_name $MODEL_OUT \
-    #   -kv \
-    #   --use_sdpa_with_kv_cache \
-    #   -X \
-    #   --xnnpack-extended-ops \
-    #   --max_context_length 1024 \
-    #   --max_seq_length 1024 \
-    #   --dtype fp32 \
-    #   --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}'
+    $PYTHON_EXECUTABLE -m executorch.examples.models.llama.export_llama \
+      --model "phi_4_mini" \
+      --checkpoint pytorch_model_converted.bin \
+      --params examples/models/phi_4_mini/config/config.json \
+      --output_name $MODEL_OUT \
+      -kv \
+      --use_sdpa_with_kv_cache \
+      -X \
+      --xnnpack-extended-ops \
+      --max_context_length 1024 \
+      --max_seq_length 1024 \
+      --dtype fp32 \
+      --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}'
     ;;
 
   *)
