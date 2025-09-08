@@ -15,3 +15,8 @@ set -euxo pipefail
 # able to see the installed torch package.
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh"  --example
+
+# On aarch64, we need to install libatomic explicitly for meta-pytorch/tokenizers to work.
+if [[ "$(uname -m)" == "aarch64" ]]; then
+    sudo dnf install -y libatomic
+fi
