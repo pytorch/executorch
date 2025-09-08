@@ -571,7 +571,7 @@ if(EXECUTORCH_BUILD_QNN)
   list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
-if(EXECUTORCH_BUILD_SAMSUNG)
+if(EXECUTORCH_BUILD_ENN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
   list(APPEND _executorch_backends enn_backend)
 endif()
@@ -824,7 +824,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs qnn_executorch_backend)
   endif()
 
-  if(EXECUTORCH_BUILD_SAMSUNG)
+  if(EXECUTORCH_BUILD_ENN)
     list(APPEND _dep_libs enn_backend)
   endif()
 
