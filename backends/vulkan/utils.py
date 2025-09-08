@@ -1142,17 +1142,17 @@ def maybe_skip_q_dq_arg_chain(
 
     # If the arg is a view copy node, check if the original node is a dequant node
     if is_dequant_node(arg) or (
-        is_view_copy_node(arg) and is_dequant_node(arg.args[0])
+        is_view_copy_node(arg) and is_dequant_node(arg.args[0])  # pyre-ignore[6]
     ):
+        dequant_node = arg
         if is_view_copy_node(arg):
             dequant_node = arg.args[0]
-        else:
-            dequant_node = arg
 
-        quant_node = dequant_node.args[0]
+        quant_node = dequant_node.args[0]  # pyre-ignore[16]
         assert isinstance(quant_node, torch.fx.Node)
         source_arg = quant_node.args[0]
         assert isinstance(source_arg, torch.fx.Node)
+        assert isinstance(dequant_node, torch.fx.Node)
         return source_arg, quant_node, dequant_node
     else:
         return arg, None, None

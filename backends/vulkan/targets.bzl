@@ -330,7 +330,8 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/exir:tensor",
                 "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
                 "//executorch/backends/vulkan/serialization:lib",
-            ]
+            ],
+            typing = True,
         )
 
         runtime.python_library(

@@ -267,9 +267,14 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
     config.test_case_name = generated_test_case_name;
 
     for (const auto& storage_type : storage_types) {
-      // Test both activation+weight quantized and weight only quantized
-      test_cases.push_back(
-          create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      // Test both activation+weight quantized and weight only quantized, but
+      // only if the current device supports int8 dot product
+      if (vkcompute::api::context()
+              ->adapter_ptr()
+              ->supports_int8_dot_product()) {
+        test_cases.push_back(
+            create_test_case_from_config(config, storage_type, vkapi::kFloat));
+      }
 
       LinearConfig wo_quant_config = config;
       wo_quant_config.op_name = "linear_q4gsw";
