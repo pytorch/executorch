@@ -608,6 +608,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
         pip install -U "huggingface_hub[cli]"
+        python install_executorch.py
 
         bash .ci/scripts/test_torchao_huggingface_checkpoints.sh qwen3_4b
         bash .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
