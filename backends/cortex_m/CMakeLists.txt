@@ -21,31 +21,59 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 include(FetchContent)
 
-# CMSIS-NN version to download
-set(CMSIS_NN_VERSION
-    "v4.1.0"
-    CACHE STRING "CMSIS-NN version to download"
-)
+set(USE_LOCAL_CMSIS_NN OFF)
 
-# Declare CMSIS-NN as a FetchContent project
-FetchContent_Declare(
-  cmsis_nn
-  GIT_REPOSITORY https://github.com/ARM-software/CMSIS-NN.git
-  GIT_TAG ${CMSIS_NN_VERSION}
-)
+if(USE_LOCAL_CMSIS_NN)
+  if(NOT EXISTS ${CMSIS_NN_LOCAL_PATH})
+    message(
+      FATAL_ERROR "CMSIS-NN local path does not exist: ${CMSIS_NN_LOCAL_PATH}"
+    )
+  endif()
+  if(NOT EXISTS ${CMSIS_NN_LOCAL_LIB})
+    message(
+      FATAL_ERROR "CMSIS-NN local lib does not exist: ${CMSIS_NN_LOCAL_LIB}"
+    )
+  endif()
+  message(STATUS "Using CMSIS-NN from: ${CMSIS_NN_LOCAL_PATH}")
+  add_subdirectory(${CMSIS_NN_LOCAL_PATH} cmsis_nn_build)
+  # Add MVEI define to cmsis-nn target
+  target_compile_definitions(cmsis-nn PUBLIC ARM_MATH_MVEI=1)
 
-# Download and make CMSIS-NN available
-FetchContent_MakeAvailable(cmsis_nn)
+  set(CMSIS_NN_INCLUDE_DIR "${CMSIS_NN_LOCAL_PATH}/Include")
+  set(CMSIS_NN_LIB "${CMSIS_NN_LOCAL_LIB}/libcmsis-nn.a")
 
-# Print paths for debugging
-message(STATUS "CMSIS-NN source dir: ${cmsis_nn_SOURCE_DIR}")
-message(STATUS "CMSIS-NN binary dir: ${cmsis_nn_BINARY_DIR}")
+else()
+  message(STATUS "Using  CMSIS-NN from via : FetchContent")
+  set(CMSIS_NN_VERSION
+      "v7.0.0"
+      CACHE STRING "CMSIS-NN version to download"
+  )
+  FetchContent_Declare(
+    cmsis_nn
+    GIT_REPOSITORY https://github.com/ARM-software/CMSIS-NN.git
+    GIT_TAG ${CMSIS_NN_VERSION}
+  )
+  FetchContent_MakeAvailable(cmsis_nn)
+  # Add MVEI define to cmsis-nn target
+  target_compile_definitions(cmsis-nn PUBLIC ARM_MATH_MVEI=1)
+  # Get the correct source and binary dirs
+  FetchContent_GetProperties(
+    cmsis_nn
+    SOURCE_DIR CMSIS_NN_SOURCE_DIR
+    BINARY_DIR CMSIS_NN_BINARY_DIR
+  )
+  set(CMSIS_NN_INCLUDE_DIR "${CMSIS_NN_SOURCE_DIR}/Include")
+  set(CMSIS_NN_LIB "${CMSIS_NN_BINARY_DIR}/libcmsis-nn.a")
+  message(STATUS " ${CMSIS_NN_SOURCE_DIR}")
+  message(STATUS "CMSIS-NN binary dir: ${CMSIS_NN_BINARY_DIR}")
+endif()
 
 # Cortex-M ops kernel sources
 set(_cortex_m_kernels__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_dequantize_per_tensor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_add.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ops/op_quantized_linear.cpp
 )
 
 # Generate C++ bindings to register kernels into Executorch (for runtime)
@@ -66,13 +94,11 @@ target_include_directories(
   cortex_m_kernels
   PRIVATE ${EXECUTORCH_ROOT}/..
           ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
-          ${cmsis_nn_SOURCE_DIR}/Include
+          ${CMSIS_NN_INCLUDE_DIR}
 )
 
 # Link directly to the CMSIS-NN static library file
-target_link_libraries(
-  cortex_m_kernels PUBLIC ${cmsis_nn_BINARY_DIR}/libcmsis-nn.a executorch
-)
+target_link_libraries(cortex_m_kernels PUBLIC ${CMSIS_NN_LIB} executorch)
 
 # Add dependency to ensure CMSIS-NN builds before we try to link. Use the actual
 # CMSIS-NN target name (usually 'cmsis-nn')

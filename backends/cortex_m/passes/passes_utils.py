@@ -6,7 +6,12 @@
 
 import math
 
+from typing import Optional
+
 import torch
+
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch.fx import Node
 
 
 def dequantize_per_tensor_cmsis(
@@ -92,3 +97,77 @@ def quantize_multiplier_aot(scale: float) -> tuple[int, int]:
 def cleanup_erased_nodes(graph_module: torch.fx.GraphModule):
     # Placeholder for any additional cleanup if needed
     pass
+
+
+def transfer_metadata(
+    new_node: Node, source_node: Node, pass_name: str = "QuantizedPass"
+) -> None:
+    """Transfer metadata with proper provenance tracking."""
+    if hasattr(source_node, "meta") and source_node.meta:
+        new_node.meta = source_node.meta.copy()
+        if "from_node" in new_node.meta:
+            from_node_list = new_node.meta.get("from_node", []).copy()
+            from_node_list.append(
+                {"source": source_node.name, "pass": pass_name, "op": "fuse"}
+            )
+            new_node.meta["from_node"] = from_node_list
+        for field in ["tensor_meta", "stack_trace"]:
+            if field in source_node.meta:
+                new_node.meta[field] = source_node.meta[field]
+
+
+def find_insertion_point(graph) -> Node:
+    """Find appropriate insertion point in graph."""
+    for node in graph.nodes:
+        if node.op == "placeholder":
+            if not any(node.name.startswith(prefix) for prefix in ["p_", "b_"]):
+                return node
+    return next(iter(graph.nodes))
+
+
+def is_dequant_node(node: Node) -> bool:
+    """Check if node is a dequantize operation."""
+    dequant_targets = {
+        exir_ops.edge.cortex_m.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    }
+    return node.op == "call_function" and node.target in dequant_targets
+
+
+def is_quant_node(node: Node) -> bool:
+    """Check if node is a quantize operation."""
+    quant_targets = {
+        exir_ops.edge.cortex_m.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    }
+    return node.op == "call_function" and node.target in quant_targets
+
+
+def trace_to_dequantize(node: Optional[Node], max_depth=3) -> Optional[Node]:
+    """Trace through transformations to find dequantize node."""
+    current_node = node
+    depth = 0
+    while current_node and depth < max_depth:
+        if is_dequant_node(current_node):
+            return current_node
+        if current_node.op == "call_function" and current_node.target in {
+            exir_ops.edge.aten.permute_copy.default,
+            exir_ops.edge.aten.view_copy.default,
+        }:
+            if current_node.args:
+                current_node = current_node.args[0]
+                depth += 1
+                continue
+        break
+    return None
+
+
+def cleanup_nodes(nodes_to_erase, graph):
+    """Clean up marked nodes from graph."""
+    for node in reversed(nodes_to_erase):
+        if node in graph.nodes and len(node.users) == 0:
+            try:
+                graph.erase_node(node)
+            except Exception as e:
+                print(f"Warning: Failed to erase node {node}: {e}")
