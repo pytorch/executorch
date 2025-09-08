@@ -4,12 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.devtools.visualization.visualization_utils import visualize_graph
 from executorch.exir import ExportedProgram
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 
-class VisualizePass(ExportPass):
+class VisualizePass(ArmPass):
     """
     This pass visualizes the graph at the point of insertion in the pass manager
     """

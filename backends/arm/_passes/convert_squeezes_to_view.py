@@ -8,13 +8,15 @@
 
 from typing import Set, Type
 
+from executorch.backends.arm._passes import ArmPass
+
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class ConvertSqueezesToViewPass(ExportPass):
+class ConvertSqueezesToViewPass(ArmPass):
     """
     Replaces squeeze/unsqueeze operators with view. These are simply special cases of the view op, so removing them gives us less cases to handle in the node visitiors.
     """
