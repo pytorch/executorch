@@ -10,6 +10,7 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 )
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    apply_permutation_to,
     create_channels_first_to_channels_last_permutation,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
@@ -85,9 +86,29 @@ class CatConverter(NodeConverter):
 
         dim = CatConverter._get_normalized_dim(node)
 
-        # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1491
-        if dim == 0:
-            return False
+        # There is a bug in the NeutronConverter, where if none of the dimensions before the one referenced by
+        #  `dim` are `!= 1`, the `Concat` is not delegated.
+        # This only happens when the inputs to the `Concat` are model inputs, and not outputs of other
+        #  operators. However, such a requirement cannot be currently enforced during partitioning, so we must
+        #  take the conservative approach and decline delegation.
+        input_shapes = [list(n.meta["val"].shape) for n in node.args[0]]
+        if node.meta[NXP_NODE_FORMAT].is_channels_first():
+            # Transform the shapes to channels last.
+            to_nhwc_perm = create_channels_first_to_channels_last_permutation(
+                len(node.meta["val"].shape), True
+            )
+            input_shapes = [
+                apply_permutation_to(shape, to_nhwc_perm)
+                for shape in input_shapes
+            ]
+
+            # Transform the `dim` to refer to a channels last dimension.
+            dim = to_nhwc_perm.index(dim)
+
+        for input_shape in input_shapes:
+            if not any(d != 1 for d in input_shape[:dim]):
+                # Do not delegate if there are no "non-1" dimensions in the shape before the `dim` dimension.
+                return False
 
         # Neutron requires the channels to be a multiple of `num_macs`. The channels could either be the second or the
         #  last dimension, depending on the formats of the node.
