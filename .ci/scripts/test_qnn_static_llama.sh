@@ -13,7 +13,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/qnn_config.sh"
 # Download QNN_SDK. If already downloaded, export environment path
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
-echo "WK checking LIBC=${CPLUS_INCLUDE_PATH}"
 
 export QNN_SDK_ROOT="/tmp/qnn/2.37.0.250724"
 export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
