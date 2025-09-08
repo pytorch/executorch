@@ -214,12 +214,12 @@ class TestRefImplementations(unittest.TestCase):
         expected_output: torch.Tensor,
     ) -> None:
         src = (
-            torch.arange(np.product(src_shape))
+            torch.arange(np.prod(src_shape))
             .reshape(src_shape)
             .to(expected_output.dtype)
         )
         weight = (
-            torch.arange(np.product(weight_shape))
+            torch.arange(np.prod(weight_shape))
             .reshape(weight_shape)
             .to(expected_output.dtype)
         )
