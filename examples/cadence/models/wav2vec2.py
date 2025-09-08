@@ -12,7 +12,7 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 import torch
 
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 from torchaudio.models.wav2vec2.model import wav2vec2_model, Wav2Vec2Model
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -58,7 +58,7 @@ def main() -> None:
     audio_len = 1680
     example_inputs = (torch.rand(1, audio_len),)
 
-    export_model(model, example_inputs)
+    export_and_run_model(model, example_inputs)
 
 
 if __name__ == "__main__":
