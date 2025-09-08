@@ -52,8 +52,9 @@ if exist setup.py (
         mkdir et
     )
     cd et
+    echo Work dir: %work_dir%
     if not exist executorch\ (
-        mklink /d executorch !work_dir!
+        mklink /d executorch %work_dir%
     )
     cd executorch
 )
