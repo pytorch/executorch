@@ -2650,3 +2650,85 @@ class TestVulkanBackend(unittest.TestCase):
             atol=1e-2,
             rtol=1e-1,
         )
+
+    def test_vulkan_backend_torchao_8da4w_quantized_linear(self):
+        """
+        Test TorchAO 8da4w quantization (int8 dynamic activation + int4 weight) with Vulkan backend.
+        This test uses the same quantization approach as the 8da4w qmode in quantize.py.
+        """
+        in_features = 1024
+        out_features = 512
+        bias = False
+        group_size = 128
+
+        class TorchAO8da4wQuantizedLinearModule(torch.nn.Module):
+            def __init__(
+                self,
+                in_features: int,
+                out_features: int,
+                bias: bool = False,
+                group_size: int = 128,
+            ):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
+                self.group_size = group_size
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.linear(x)
+
+            def apply_8da4w_quantization(self):
+                """Apply TorchAO 8da4w quantization (int8 dynamic activation + int4 weight)."""
+                from torchao.quantization import (
+                    int8_dynamic_activation_int4_weight,
+                    quantize_,
+                )
+                from torchao.utils import unwrap_tensor_subclass
+
+                quantize_(
+                    self,
+                    int8_dynamic_activation_int4_weight(group_size=self.group_size),
+                )
+                unwrap_tensor_subclass(self)
+                return self
+
+        # Test with GEMV pattern (batch_size=1, seq_len=1)
+        quantized_linear_module = TorchAO8da4wQuantizedLinearModule(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            group_size=group_size,
+        )
+
+        # Apply 8da4w quantization
+        quantized_linear_module = quantized_linear_module.apply_8da4w_quantization()
+
+        # Test with 2D input (GEMV pattern)
+        sample_inputs = (torch.randn(size=(1, in_features), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantized_linear_module, sample_inputs, atol=1e-2, rtol=1e-2
+        )
+
+        # Test with GEMM pattern (batch_size > 1)
+        quantized_linear_module_gemm = TorchAO8da4wQuantizedLinearModule(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            group_size=group_size,
+        )
+
+        # Apply 8da4w quantization
+        quantized_linear_module_gemm = (
+            quantized_linear_module_gemm.apply_8da4w_quantization()
+        )
+
+        # Test with 3D input (GEMM pattern)
+        sample_inputs_gemm = (
+            torch.randn(size=(1, 248, in_features), dtype=torch.float32),
+        )
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
+        )

@@ -84,11 +84,25 @@ def is_quant_node(node: torch.fx.Node) -> bool:
     return node_name in _Q_OPS
 
 
+def is_choose_qparams_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return "choose_qparams" in node_name
+
+
 def is_dequant_per_channel_node(node: torch.fx.Node) -> bool:
     if node.op != "call_function":
         return False
     node_name = format_target_name(node.target.__name__)  # pyre-ignore
     return node_name == "dequantize_per_channel.default"
+
+
+def is_view_copy_node(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+    return "view_copy" in node_name
 
 
 def is_linear_node(node: torch.fx.Node) -> bool:
@@ -1126,8 +1140,15 @@ def maybe_skip_q_dq_arg_chain(
     if not isinstance(arg, torch.fx.Node):
         return None, None, None
 
-    if is_dequant_node(arg):
-        dequant_node = arg
+    # If the arg is a view copy node, check if the original node is a dequant node
+    if is_dequant_node(arg) or (
+        is_view_copy_node(arg) and is_dequant_node(arg.args[0])
+    ):
+        if is_view_copy_node(arg):
+            dequant_node = arg.args[0]
+        else:
+            dequant_node = arg
+
         quant_node = dequant_node.args[0]
         assert isinstance(quant_node, torch.fx.Node)
         source_arg = quant_node.args[0]
