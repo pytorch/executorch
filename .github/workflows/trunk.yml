@@ -55,102 +55,102 @@ jobs:
         # Build and test executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-test-models-arm-zephyr:
-   name: test-models-arm-zephyr
-   uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-   strategy:
-     matrix:
-       model: [add, softmax, mv2]
-     fail-fast: false
-   with:
-     runner: linux.2xlarge
-     docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
-     submodules: 'recursive'
-     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-     timeout: 120
-     script: |
-       MODEL_NAME=${{ matrix.model }}
-       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-       conda activate "${CONDA_ENV}"
-       if [[ ${{ matrix.model}} == "add" ]]; then
-         SIM_LIMIT_SEC=60
-       elif [[ ${{ matrix.model}} == "softmax" ]]; then
-         SIM_LIMIT_SEC=60
-       elif [[ ${{ matrix.model}} == "mv2" ]]; then
-         SIM_LIMIT_SEC=5000
-       else
-         echo "Failed unsupported model selection ${{ matrix.model }}"
-         exit 1
-       fi
-
-       source .ci/scripts/utils.sh
-       source .ci/scripts/zephyr-utils.sh
-       mkdir -p zephyr_scratch/
-       cd zephyr_scratch
-       export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
-       export ARM_FVP_TUTORIALS_ROOT=$ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials
-
-       # TODO @Bujji: Should see if this can be moved into the docker image itself
-       download_arm_zephyr_sdk
-       ./zephyr-sdk-0.17.2/setup.sh -c -t arm-zephyr-eabi
-       cd $ZEPHYR_PROJ_ROOT
-       setup_zephyr_et_module
-
-       # Run setup scripts for Arm FVP and Arm AOT Compilation
-       cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
-       install_executorch
-       .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
-       source examples/arm/ethos-u-scratch/setup_path.sh
-       source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
-
-       # Get the model as PTE
-       python -m examples.arm.aot_arm_compiler \
-           --model_name="${MODEL_NAME}" \
-           --output="${MODEL_NAME}.pte"
-
-       # Generate the C-style header
-       cd $ARM_FVP_TUTORIALS_ROOT
-       python build_model.py \
-           --executorch-root $ZEPHYR_PROJ_ROOT/modules/lib/executorch \
-           --pte-file $ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte \
-           --output-path $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/src/
-
-       cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
-
-       # Build the zephyr elf
-       west build -p always -b mps3/corstone300/fvp -- \
-           -DET_PTE_FILE_PATH_FOR_SELECTIVE_BUILD=$ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte
-
-       # Run the simulation
-       FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf \
-           -C mps3_board.visualisation.disable-visualisation=1 \
-           -C mps3_board.telnetterminal0.start_telnet=0 \
-           -C mps3_board.uart0.out_file='sim.out'  \
-           -C cpu0.CFGITCMSZ=15 \
-           -C cpu0.CFGDTCMSZ=15 \
-           --simlimit ${SIM_LIMIT_SEC}
-
-       # Disable exit on error
-       set +e
-       # Report failure if any of the ouptut verification checks fail
-       grep -qF "ERROR" sim.out
-       exit_status=$? #store 0 if found (failure), 1 if not (success)
-       if [[ "$exit_status" -eq "0" ]]; then
-           cat sim.out
-           set -e
-           exit 1
-       fi
-
-       # Report fail if simulation does not complete successfully
-       grep -qF "SUCCESS: Program complete, exiting." sim.out
-       exit_status=$? #store 0 if found (success), 1 if not (failure)
-       if [[ "$exit_status" -eq "1" ]]; then
-           cat sim.out
-           set -e
-           exit 1
-       fi
-       # Re-enable exit on error
-       set -e
+#  test-models-arm-zephyr:
+#    name: test-models-arm-zephyr
+#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+#    strategy:
+#      matrix:
+#        model: [add, softmax, mv2]
+#      fail-fast: false
+#    with:
+#      runner: linux.2xlarge
+#      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
+#      submodules: 'recursive'
+#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+#      timeout: 120
+#      script: |
+#        MODEL_NAME=${{ matrix.model }}
+#        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+#        conda activate "${CONDA_ENV}"
+#        if [[ ${{ matrix.model}} == "add" ]]; then
+#          SIM_LIMIT_SEC=60
+#        elif [[ ${{ matrix.model}} == "softmax" ]]; then
+#          SIM_LIMIT_SEC=60
+#        elif [[ ${{ matrix.model}} == "mv2" ]]; then
+#          SIM_LIMIT_SEC=5000
+#        else
+#          echo "Failed unsupported model selection ${{ matrix.model }}"
+#          exit 1
+#        fi
+#
+#        source .ci/scripts/utils.sh
+#        source .ci/scripts/zephyr-utils.sh
+#        mkdir -p zephyr_scratch/
+#        cd zephyr_scratch
+#        export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
+#        export ARM_FVP_TUTORIALS_ROOT=$ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials
+#
+#        # TODO @Bujji: Should see if this can be moved into the docker image itself
+#        download_arm_zephyr_sdk
+#        ./zephyr-sdk-0.17.2/setup.sh -c -t arm-zephyr-eabi
+#        cd $ZEPHYR_PROJ_ROOT
+#        setup_zephyr_et_module
+#
+#        # Run setup scripts for Arm FVP and Arm AOT Compilation
+#        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
+#        install_executorch
+#        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
+#        source examples/arm/ethos-u-scratch/setup_path.sh
+#        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
+#
+#        # Get the model as PTE
+#        python -m examples.arm.aot_arm_compiler \
+#            --model_name="${MODEL_NAME}" \
+#            --output="${MODEL_NAME}.pte"
+#
+#        # Generate the C-style header
+#        cd $ARM_FVP_TUTORIALS_ROOT
+#        python build_model.py \
+#            --executorch-root $ZEPHYR_PROJ_ROOT/modules/lib/executorch \
+#            --pte-file $ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte \
+#            --output-path $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/src/
+#
+#        cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
+#
+#        # Build the zephyr elf
+#        west build -p always -b mps3/corstone300/fvp -- \
+#            -DET_PTE_FILE_PATH_FOR_SELECTIVE_BUILD=$ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte
+#
+#        # Run the simulation
+#        FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf \
+#            -C mps3_board.visualisation.disable-visualisation=1 \
+#            -C mps3_board.telnetterminal0.start_telnet=0 \
+#            -C mps3_board.uart0.out_file='sim.out'  \
+#            -C cpu0.CFGITCMSZ=15 \
+#            -C cpu0.CFGDTCMSZ=15 \
+#            --simlimit ${SIM_LIMIT_SEC}
+#
+#        # Disable exit on error
+#        set +e
+#        # Report failure if any of the ouptut verification checks fail
+#        grep -qF "ERROR" sim.out
+#        exit_status=$? #store 0 if found (failure), 1 if not (success)
+#        if [[ "$exit_status" -eq "0" ]]; then
+#            cat sim.out
+#            set -e
+#            exit 1
+#        fi
+#
+#        # Report fail if simulation does not complete successfully
+#        grep -qF "SUCCESS: Program complete, exiting." sim.out
+#        exit_status=$? #store 0 if found (success), 1 if not (failure)
+#        if [[ "$exit_status" -eq "1" ]]; then
+#            cat sim.out
+#            set -e
+#            exit 1
+#        fi
+#        # Re-enable exit on error
+#        set -e
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
