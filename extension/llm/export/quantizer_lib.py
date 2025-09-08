@@ -235,21 +235,17 @@ def get_ov_quantizer(
 
     # (TODO) Manually ignore MP layers. This is done manually for now till we use the dynamic allocation MP 
     fp_node_names = [
+        "linear_13",
         "linear_14",
-        "linear_15",
         "linear_35",
         "linear_56",
-        "linear_57",
-        "linear_63",
         "linear_70",
         "linear_71",
         "linear_77",
         "linear_78",
-        "linear_81",
         "linear_84",
         "linear_85",
         "linear_88",
-        "linear_89",
         "linear_91",
         "linear_92",
         "linear_95",
@@ -261,10 +257,11 @@ def get_ov_quantizer(
         "linear_105",
         "linear_106",
         "linear_109",
-        "linear_110",]
+        "linear_110",
+        "linear_111",]
 
     if quant_config == "4wo":
-        mode = QuantizationMode.INT4WO_SYM
+        mode = QuantizationMode.INT4WO_ASYM
 
     elif quant_config == "8wo":
         group_size = -1
