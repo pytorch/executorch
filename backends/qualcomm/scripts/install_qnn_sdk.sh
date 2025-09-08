@@ -154,5 +154,6 @@ setup_libcpp() {
   echo "libc++ installed to ${INSTALL_DIR}"
 }
 
+setup_libcpp 12
 setup_android_ndk
 install_qnn
