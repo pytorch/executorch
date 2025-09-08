@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.convert_squeezes_to_view import (
     ConvertSqueezesToViewPass,
 )
@@ -18,7 +19,7 @@ from executorch.exir.pass_base import (  # type: ignore[import-not-found]
 )
 
 
-class ConvertAnyDefaultDimDimsPass(ExportPass):
+class ConvertAnyDefaultDimDimsPass(ArmPass):
     """
     Converts any.default, any.dim and any.dims to a sequence of any.dim by unrolling multi-dimensional reduction.
     Please refer to KeepDimsFalseToSqueezePass for an explanation of this coversion.

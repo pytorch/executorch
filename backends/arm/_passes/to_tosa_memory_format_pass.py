@@ -10,6 +10,7 @@ import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.annotate_decomposed_matmul import (
     AnnotateDecomposedMatmulPass,
 )
@@ -41,7 +42,7 @@ def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
     return node.op == "placeholder" and not is_param_node(exported_program, node)
 
 
-class ToTosaMemoryFormatPass(ExportPass):
+class ToTosaMemoryFormatPass(ArmPass):
     """
     Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
     that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts backend.tosa.TRANSPOSE
@@ -58,8 +59,8 @@ class ToTosaMemoryFormatPass(ExportPass):
     NNHWC_inverse_order = (0, 1, 4, 2, 3)
 
     def __init__(self, exported_program: ExportedProgram) -> None:
-        self.exported_program = exported_program
         super().__init__()
+        self.exported_program = exported_program
 
     @staticmethod
     def _is_consumer_node_depthwise_conv2d(node: torch.fx.Node):

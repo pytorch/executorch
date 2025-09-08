@@ -8,11 +8,13 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
+from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer, is_param
 
 
-class UnsqueezeScalarPlaceholdersPass(ExportPass):
+class UnsqueezeScalarPlaceholdersPass(ArmPass):
     """
     Placeholders that have node.meta["val"].shape = () cause issues later in the lowering.
     This pass unsqueezes the placeholders to make sure shape is at least (1,).
@@ -20,9 +22,9 @@ class UnsqueezeScalarPlaceholdersPass(ExportPass):
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
-    def __init__(self, exported_program):
-        self.exported_program = exported_program
+    def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
+        self.exported_program = exported_program
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:

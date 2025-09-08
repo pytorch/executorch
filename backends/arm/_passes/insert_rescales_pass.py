@@ -6,6 +6,8 @@
 from copy import copy
 from typing import cast, Set, Type
 
+from executorch.backends.arm._passes import ArmPass
+
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
@@ -14,7 +16,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
 
 
-class InsertRescalePass(ExportPass):
+class InsertRescalePass(ArmPass):
     """Finds patterns of dq -> q, and replaces them
     with backend dialect tosa::RESCALE op.
 
