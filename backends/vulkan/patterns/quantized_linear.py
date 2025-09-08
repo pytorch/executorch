@@ -181,6 +181,9 @@ class QuantizedLinearMatch(PatternMatch):
         if self.quantize_input_node is None:
             return False
 
+        if not isinstance(self.input_scales_node, torch.fx.Node):
+            return False
+
         # For dynamic quantization, input scale node should be a getitem operator
         # retrieving the output of a choose_qparams op
         if self.input_scales_node.target != operator.getitem:
