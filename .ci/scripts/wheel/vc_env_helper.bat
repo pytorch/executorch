@@ -42,6 +42,7 @@ if "%args%" == "" (
 )
 
 echo "Evaluating symlink status. CWD: %CD%"
+echo ON
 if exist setup.py (
     echo "Creating symlink..."
     REM Setup a symlink to shorten the path length.
@@ -58,5 +59,6 @@ if exist setup.py (
     cd executorch
 )
 echo "Post symlink CWD: %CD%"
+echo OFF
 
 %args% || exit /b 1
