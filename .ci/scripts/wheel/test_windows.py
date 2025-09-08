@@ -39,7 +39,7 @@ def run_tests(model_tests: List[ModelTest]) -> None:
 
 
 if __name__ == "__main__":
-    test_base.run_tests(
+    run_tests(
         model_tests=[
             ModelTest(
                 model=Model.Mv3,
