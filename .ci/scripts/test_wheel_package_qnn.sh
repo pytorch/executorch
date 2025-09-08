@@ -87,6 +87,8 @@ EOF
 # Wheel build and .so checks
 # ----------------------------
 echo "=== Building Wheel Package ==="
+source .ci/scripts/utils.sh
+install_executorch "--use-pt-pinned-commit"
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 unset EXECUTORCH_BUILDING_WHEEL
 
