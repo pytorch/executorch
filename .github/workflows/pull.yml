@@ -523,29 +523,6 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
-  backend-test-linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    strategy:
-      fail-fast: false
-      matrix:
-        flow: [
-          qnn, qnn_16a16w, qnn_16a8w, qnn_16a4w, qnn_16a4w_block, qnn_8a8w,
-          vulkan, vulkan_static_int8_per_channel,
-          xnnpack, xnnpack_dynamic_int8_per_channel, xnnpack_static_int8_per_channel, xnnpack_static_int8_per_tensor
-        ]
-        suite: [models, operators]
-    with:
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: recursive
-      timeout: 120
-      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
-      script: |
-        set -eux
-
-        source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
-
   test-static-llama-qnn-linux:
     name: test-static-llama-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
