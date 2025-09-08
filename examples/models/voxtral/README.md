@@ -26,33 +26,36 @@ pip install git+https://github.com/huggingface/transformers@6121e9e46c4fc4e5c91d
 ## Using the export CLI
 We export Voxtral using the Optimum CLI, which will export `model.pte` to the `voxtral` output directory:
 ```
-optimum-cli export executorch
-  --model "mistralai/Voxtral-Mini-3B-2507"
-  --task "multimodal-text-to-text"
-  --recipe "xnnpack"
-  --use_custom_sdpa
-  --use_custom_kv_cache
-  --qlinear 8da4w
-  --qembedding 4w
-  --output_dir="voxtral
+optimum-cli export executorch \
+  --model "mistralai/Voxtral-Mini-3B-2507" \
+  --task "multimodal-text-to-text" \
+  --recipe "xnnpack" \
+  --use_custom_sdpa \
+  --use_custom_kv_cache \
+  --qlinear 8da4w \
+  --qembedding 4w \
+  --output_dir="voxtral"
 ```
 
 This exports Voxtral with XNNPack backend acceleration and 4-bit weight/8-bit activation linear quantization.
 
-# [Optional] Exporting the audio preprocessor
+# Running the model
+To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's MultiModal runner API.
+The Voxtral runner will do the following things:
+
+- Audio Input:
+  - Option A:  Pass the raw audio tensor into exported preprocessor to produce a mel spectrogram tensor.
+  - Option B:  If starting directly with an already processed audio input tensor, format the inputs to the multimodal runner (metadata tokens, audio tokens, text tokens, etc.).
+- Feed the formatted inputs to the multimodal modal runner.
+
+
+# [Option A] Exporting the audio preprocessor
 The exported model takes in a mel spectrogram input tensor as its audio inputs.
 We provide a simple way to transform raw audio data into a mel spectrogram by exporting a version of Voxtral's audio preprocessor used directly by Transformers.
 
 ```
 python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --output_file voxtral_preprocessor.pte
 ```
-
-# Running the model
-To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's MultiModal runner API.
-The Voxtral runner will do the following things:
-1. [Optional] Pass the raw audio tensor into exported preprocessor to produce a mel spectrogram tensor.
-2. [If starting directly with an already processed audio input tensor] Format the inputs to the multimodal runner (metadata tokens, audio tokens, text tokens, etc.).
-3. Feed the formatted inputs to the multimodal modal runner.
 
 ## Building the multimodal runner
 ```
@@ -66,11 +69,12 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Re
 ## Running the model
 You can download the `tekken.json` tokenizer from [Voxtral's HuggingFace repo](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507).
 ```
-./cmake-out/examples/models/voxtral/voxtral_runner
-  --model_path voxtral/model.pte
-  --tokenizer_path path/to/tekken.json
-  --prompt "What can you tell me about this audio?"
-  --audio_path ~/models/voxtral/audio_input.bin
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path path/to/model.pte \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What can you tell me about this audio?" \
+  --audio_path path/to/audio_input.bin \
+  --processor_path path/to/voxtral_preprocessor.pte # If you're passing raw audio file in audio_path
 ```
 
 Example output:
@@ -92,4 +96,10 @@ You can easily produce an `.bin` for the audio input in Python like this:
 # t = some torch.Tensor
 with open("tensor.bin", "wb") as f:
     f.write(t.numpy().tobytes())
+```
+
+You can also produce raw audio file as follows (for Option A):
+
+```
+ffmpeg -i audio.mp3 -f f32le -acodec pcm_f32le audio_input.bin
 ```
