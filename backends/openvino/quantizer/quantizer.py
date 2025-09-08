@@ -426,24 +426,29 @@ class OpenVINOQuantizer(Quantizer):
         extra_args: Dict[str, Any] = {}
 
         qmode = wc_param.compression_config.mode
+        is_asym_mode = wc_param.compression_config.is_asym_mode
         if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
             extra_args["wc_param"] = wc_param
             observer = INT4WeightObserver
-            quant_min = -8 if not wc_param.compression_config.is_asym_mode else 0
-            quant_max = 7 if not wc_param.compression_config.is_asym_mode else 15
+            quant_min = -8 if not is_asym_mode else 0
+            quant_max = 7 if not is_asym_mode else 15
             dtype = torch.int8
             channel_axis = 0
-            torch_qscheme = None
+            torch_qscheme = torch_qscheme = (
+                torch.per_channel_symmetric
+                if not is_asym_mode
+                else torch.per_channel_affine
+            )
         else:
             extra_args["wc_param"] = wc_param
             observer = INT8WeightObserver
-            quant_min = -128 if not wc_param.compression_config.is_asym_mode else 0
-            quant_max = 127 if not wc_param.compression_config.is_asym_mode else 255
+            quant_min = -128 if not is_asym_mode else 0
+            quant_max = 127 if not is_asym_mode else 255
             dtype = torch.int8
             channel_axis = 0
             torch_qscheme = (
                 torch.per_channel_symmetric
-                if qmode == QuantizationMode.INT8WO_SYM
+                if not is_asym_mode
                 else torch.per_channel_affine
             )
         return QuantizationSpec(
