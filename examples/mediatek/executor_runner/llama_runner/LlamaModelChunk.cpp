@@ -83,7 +83,9 @@ std::string LlamaModelChunk::SelectMethod(
       return methodName;
     }
   }
-  ET_LOG(Error, "Unable to find suitable method, fallback to use the first method.");
+  ET_LOG(
+      Error,
+      "Unable to find suitable method, fallback to use the first method.");
   return {};
 }
 
