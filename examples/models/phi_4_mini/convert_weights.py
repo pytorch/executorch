@@ -106,34 +106,6 @@ def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.T
     return converted_state_dict
 
 
-def phi_4_tune_to_meta(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-    """
-    Convert a state dict from torchtune's format to Meta's format. This function
-    doesn't handle any sharding or splitting of state dicts. It follows the
-    state_dict IN -> state_dict OUT pattern.
-    Args:
-        state_dict (Dict[str, torch.Tensor]): State dict in torchtune's format.
-    Returns:
-        Dict[str, torch.Tensor]: State dict in Meta's format.
-    """
-    converted_state_dict = {}
-    inverted_mapping_dict = {v: k for k, v in _PHI_4_FROM_META.items()}
-
-    # Single checkpoint
-    model_path = os.path.join(input_dir, "pytorch_model.bin")
-    if os.path.exists(model_path):
-        state_dict = torch.load(
-            model_path, weights_only=True, map_location=torch.device("cpu")
-        )
-        return state_dict
-
-    # Input and output embeddings are tied.
-    converted_state_dict["output.weight"] = converted_state_dict[
-        "tok_embeddings.weight"
-    ]
-    return converted_state_dict
-
-
 def convert_weights(input_dir_or_checkpoint: str, output_file: str) -> None:
     try:
         sd = load_checkpoint_from_pytorch_model(input_dir_or_checkpoint)
