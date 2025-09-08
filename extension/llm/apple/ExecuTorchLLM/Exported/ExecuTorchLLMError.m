@@ -7,5 +7,5 @@
  */
 
 #import "ExecuTorchLLMError.h"
-#import "ExecuTorchLLMMultimodalRunner.h"
-#import "ExecuTorchLLMTextRunner.h"
+
+NSErrorDomain const ExecuTorchLLMErrorDomain = @"org.pytorch.executorch.llm.error";

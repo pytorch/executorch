@@ -10,16 +10,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-FOUNDATION_EXPORT NSErrorDomain const ExecuTorchTextLLMRunnerErrorDomain;
-
 /**
  A wrapper class for the C++ llm::TextLLMRunner that provides
  Objective-C APIs to load models, manage tokenization with custom
  special tokens, generate text sequences, and stop the runner.
 */
-NS_SWIFT_NAME(TextLLMRunner)
+NS_SWIFT_NAME(TextRunner)
 __attribute__((deprecated("This API is experimental.")))
-@interface ExecuTorchTextLLMRunner : NSObject
+@interface ExecuTorchLLMTextRunner : NSObject
 
 /**
  Initializes a text LLM runner with the given model and tokenizer paths,
@@ -28,11 +26,12 @@ __attribute__((deprecated("This API is experimental.")))
  @param modelPath      File system path to the serialized model.
  @param tokenizerPath  File system path to the tokenizer data.
  @param tokens         An array of NSString special tokens to use during tokenization.
- @return An initialized ExecuTorchTextLLMRunner instance.
+ @return An initialized ExecuTorchLLMTextRunner instance.
 */
 - (instancetype)initWithModelPath:(NSString *)modelPath
                     tokenizerPath:(NSString *)tokenizerPath
-                    specialTokens:(NSArray<NSString *> *)tokens;
+                    specialTokens:(NSArray<NSString *> *)tokens
+    NS_DESIGNATED_INITIALIZER;
 
 /**
  Checks whether the underlying model has been successfully loaded.
@@ -68,6 +67,9 @@ withTokenCallback:(nullable void (^)(NSString *))callback
  Stops any ongoing generation and cleans up internal resources.
 */
 - (void)stop;
+
++ (instancetype)new NS_UNAVAILABLE;
+- (instancetype)init NS_UNAVAILABLE;
 
 @end
 
