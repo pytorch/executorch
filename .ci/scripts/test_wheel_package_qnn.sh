@@ -84,7 +84,6 @@ EOF
 # ----------------------------
 echo "=== Building Wheel Package ==="
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
-
 unset EXECUTORCH_BUILDING_WHEEL
 
 WHEEL_FILE=$(ls dist/*.whl | head -n 1)
@@ -104,18 +103,6 @@ else
 fi
 
 # ----------------------------
-# Conda environment setup & tests
-# ----------------------------
-TEMP_ENV_DIR=$(mktemp -d)
-echo "Using temporary directory: $TEMP_ENV_DIR"
-
-conda create -y -p "$TEMP_ENV_DIR/env" python=3.10
-conda run -p "$TEMP_ENV_DIR/env" pip install "$WHEEL_FILE"
-
-conda run -p "$TEMP_ENV_DIR/env" pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
-conda run -p "$TEMP_ENV_DIR/env" pip install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
-
-# ----------------------------
 # Check .so files in the wheel
 # ----------------------------
 echo "Checking for .so files inside the wheel..."
@@ -129,28 +116,81 @@ else
 fi
 
 # ----------------------------
-# Check installed .so files in conda env
+# Helpers
 # ----------------------------
-echo "Checking installed executorch/backends/qualcomm/python contents in conda env..."
-ENV_SO_DIR="$TEMP_ENV_DIR/env/lib/python3.10/site-packages/executorch/backends/qualcomm/python"
-ls -l "$ENV_SO_DIR" || echo "Folder does not exist!"
+get_site_packages_dir () {
+  local PYBIN="$1"
+  "$PYBIN" - <<'PY'
+import sysconfig, sys
+print(sysconfig.get_paths().get("purelib") or sysconfig.get_paths().get("platlib"))
+PY
+}
 
-# Run import tests
-conda run -p "$TEMP_ENV_DIR/env" python -c "import executorch; print('executorch imported successfully')"
-conda run -p "$TEMP_ENV_DIR/env" python -c "import executorch.backends.qualcomm; print('executorch.backends.qualcomm imported successfully')"
+run_core_tests () {
+  local PYBIN="$1"      # path to python
+  local PIPBIN="$2"     # path to pip
+  local LABEL="$3"      # label to print (conda/venv)
 
-# Run the dynamically created script using absolute path
-conda run -p "$TEMP_ENV_DIR/env" python "$REPO_ROOT/script.py"
+  echo "=== [$LABEL] Installing wheel & deps ==="
+  "$PIPBIN" install --upgrade pip
+  "$PIPBIN" install "$WHEEL_FILE"
+  "$PIPBIN" install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  "$PIPBIN" install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
 
-# Check if linear.pte was created
-if [ -f "linear.pte" ]; then
-    echo "Model file linear.pte successfully created"
-else
-    echo "ERROR: Model file linear.pte was not created"
-fi
+  echo "=== [$LABEL] Import smoke tests ==="
+  "$PYBIN" -c "import executorch; print('executorch imported successfully')"
+  "$PYBIN" -c "import executorch.backends.qualcomm; print('executorch.backends.qualcomm imported successfully')"
 
-# Cleanup
-conda env remove -p "$TEMP_ENV_DIR/env" -y
+  echo "=== [$LABEL] List installed executorch/backends/qualcomm/python ==="
+  local SITE_DIR
+  SITE_DIR="$(get_site_packages_dir "$PYBIN")"
+  local SO_DIR="$SITE_DIR/executorch/backends/qualcomm/python"
+  ls -l "$SO_DIR" || echo "Folder does not exist!"
+
+  echo "=== [$LABEL] Run export script to generate linear.pte ==="
+  (cd "$REPO_ROOT" && "$PYBIN" "$REPO_ROOT/script.py")
+
+  if [ -f "$REPO_ROOT/linear.pte" ]; then
+      echo "[$LABEL] Model file linear.pte successfully created"
+  else
+      echo "ERROR: [$LABEL] Model file linear.pte was not created"
+      exit 1
+  fi
+}
+
+# ----------------------------
+# Conda environment setup & tests
+# ----------------------------
+echo "=== Testing in Conda env ==="
+TEMP_ENV_DIR=$(mktemp -d)
+echo "Using temporary directory for conda: $TEMP_ENV_DIR"
+conda create -y -p "$TEMP_ENV_DIR/env" python=3.10
+# derive python/pip paths inside the conda env
+CONDA_PY="$TEMP_ENV_DIR/env/bin/python"
+CONDA_PIP="$TEMP_ENV_DIR/env/bin/pip"
+# Some images require conda run; keep pip/python direct to simplify path math
+run_core_tests "$CONDA_PY" "$CONDA_PIP" "conda"
+
+# Cleanup conda env
+conda env remove -p "$TEMP_ENV_DIR/env" -y || true
 rm -rf "$TEMP_ENV_DIR"
+
+# ----------------------------
+# Python venv setup & tests
+# ----------------------------
+echo "=== Testing in Python venv ==="
+TEMP_VENV_DIR=$(mktemp -d)
+echo "Using temporary directory for venv: $TEMP_VENV_DIR"
+python3 -m venv "$TEMP_VENV_DIR/venv"
+VENV_PY="$TEMP_VENV_DIR/venv/bin/python"
+VENV_PIP="$TEMP_VENV_DIR/venv/bin/pip"
+
+# Ensure venv has wheel/build basics if needed
+"$VENV_PIP" install --upgrade pip
+
+run_core_tests "$VENV_PY" "$VENV_PIP" "venv"
+
+# Cleanup venv
+rm -rf "$TEMP_VENV_DIR"
 
 echo "=== All tests completed! ==="
