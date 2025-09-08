@@ -1,0 +1,103 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Defines the FPWeightTile struct, which is used to represent a fp tile of a
+ * weight matrix in matrix multiplication.
+ *
+ * Settings:
+ * - TILE_K: number of rows in the output tile
+ * - TILE_N4: number of (groups of 4) columns in the output tile
+ */
+
+#ifndef LINEAR_FP_WEIGHT_TILE_GLSLH
+#define LINEAR_FP_WEIGHT_TILE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "common.glslh"
+
+struct FPWeightTile {
+  VEC4_T data[TILE_K][TILE_N4];
+};
+
+#ifdef LINEAR_INT8_WEIGHT_TILE_GLSLH
+
+int sign_extend(const int val) {
+  if ((val & 0x80) != 0) {
+    return val | (~0xFF);
+  }
+  return val;
+}
+
+T extract_8bit_value(const Int8WeightTile w_tile, const int k, const int n) {
+#if TILE_K4 == 1 && TILE_N4 == 1
+  const int k4i = k;
+  const int n4i = n;
+  ivec4 block = w_tile.data[0][0];
+
+#else
+  const int k4 = div_4(k);
+  const int k4i = mod_4(k);
+
+  const int n4 = div_4(n);
+  const int n4i = mod_4(n);
+
+  ivec4 block = w_tile.data[k4][n4];
+#endif
+
+  int col = block[n4i];
+  int val = (col >> (k4i * 8)) & 0xFF;
+
+  return T(sign_extend(val));
+}
+
+void unpack(out FPWeightTile fp_w_tile, const Int8WeightTile w_tile) {
+#if TILE_K > 1 && TILE_N4 == 1
+  [[unroll]] for (int k = 0; k < TILE_K; ++k) {
+    fp_w_tile.data[k][0][0] = extract_8bit_value(w_tile, k, 0);
+    fp_w_tile.data[k][0][1] = extract_8bit_value(w_tile, k, 1);
+    fp_w_tile.data[k][0][2] = extract_8bit_value(w_tile, k, 2);
+    fp_w_tile.data[k][0][3] = extract_8bit_value(w_tile, k, 3);
+  }
+
+#else
+  [[unroll]] for (int k = 0; k < TILE_M; ++k) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      const int n = mul_4(n4);
+      fp_w_tile.data[k][n4][0] = extract_8bit_value(w_tile, k, n);
+      fp_w_tile.data[k][n4][1] = extract_8bit_value(w_tile, k, n + 1);
+      fp_w_tile.data[k][n4][2] = extract_8bit_value(w_tile, k, n + 2);
+      fp_w_tile.data[k][n4][3] = extract_8bit_value(w_tile, k, n + 3);
+    }
+  }
+#endif
+}
+
+#endif // LINEAR_INT8_WEIGHT_TILE_GLSLH
+
+#ifdef DEBUG_MODE
+
+void printFPWeightTile(const FPWeightTile tile) {
+  debugPrintfEXT("weight_tile: \\n");
+  [[unroll]] for (int k = 0; k < TILE_K; ++k) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      debugPrintfEXT(
+          "  %f, %f, %f, %f, ",
+          tile.data[k][n4].x,
+          tile.data[k][n4].y,
+          tile.data[k][n4].z,
+          tile.data[k][n4].w);
+    }
+    debugPrintfEXT("\\n");
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_FP_WEIGHT_TILE_GLSLH

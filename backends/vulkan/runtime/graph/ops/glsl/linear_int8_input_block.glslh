@@ -1,0 +1,84 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * This file defines utilties to perform int8 quantization and block packing of
+ * matrix multiplation inputs. It also defines utilities to store packed block
+ * data to an output buffer or texture.
+ *
+ * Requires:
+ * - t_packed_int8_input to be defined in shader layout (output buffer/texture)
+ *
+ * Settings:
+ * - OUTPUT_BUFFER to indicate if output resource is a buffer. Otherwise texture
+ *   is assumed.
+ */
+
+#ifndef LINEAR_INT8_INPUT_BLOCK_GLSLH
+#define LINEAR_INT8_INPUT_BLOCK_GLSLH
+
+#define TILE_M 4
+#define TILE_K4 1
+
+#include "linear_fp_input_tile.glslh"
+
+struct Int8InputBlock {
+  ivec4 data;
+};
+
+ivec4 quantize(
+    const VEC4_T val,
+    const float q_inv_scale,
+    const int q_zero_point) {
+  vec4 quantized = round(vec4(val) * q_inv_scale) + q_zero_point;
+  // hard-code 8 bit quantization range
+  return clamp(ivec4(quantized), -128, 127);
+}
+
+int pack_into_int32(const ivec4 quant_vals) {
+  int packed = ((quant_vals[0] & 0xFF) << 0) | ((quant_vals[1] & 0xFF) << 8) |
+      ((quant_vals[2] & 0xFF) << 16) | ((quant_vals[3] & 0xFF) << 24);
+
+  return packed;
+}
+
+void quantize_and_pack(
+    out Int8InputBlock packed,
+    const FPInputTile in_block,
+    const float q_inv_scale,
+    const int q_zero_point) {
+  for (int row = 0; row < 4; ++row) {
+    ivec4 quantized_inputs =
+        quantize(in_block.data[row][0], q_inv_scale, q_zero_point);
+    packed.data[row] = pack_into_int32(quantized_inputs);
+  }
+}
+
+#ifdef OUTPUT_BUFFER
+
+void write_block(
+    const Int8InputBlock block,
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+  t_packed_int8_input[block_y * nblocks_x + block_x] = block.data;
+}
+
+#else // OUTPUT_TEXTURE
+
+void write_block(
+    const Int8InputBlock block,
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+  imageStore(t_packed_int8_input, ivec3(block_x, block_y, 0), block.data);
+}
+
+#endif // OUTPUT_BUFFER
+
+#endif // LINEAR_INT8_INPUT_BLOCK_GLSLH
