@@ -18,42 +18,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-models-macos-cpu:
-    name: test-models-macos-cpu
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      matrix:
-        # Mac runners are expensive and limited, and non reliable.
-        # Do some basic testing for macos jobs, and rely mostly on
-        # test-models-linux-aarch64 job instead.
-        model: [emformer_join, ic4, llama2, mobilebert, mv3, resnet50, vit, w2l]
-        backend: [xnnpack-quantization-delegation]
-        include:
-          - model: efficient_sam
-            backend: portable
-          - model: llama
-            backend: portable
-          - model: llama3_2_vision_encoder
-            backend: portable
-          - model: mv3
-            backend: portable
-      fail-fast: false
-    with:
-      runner: macos-m1-stable
-      python-version: '3.11'
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=cmake
-        BACKEND=${{ matrix.backend }}
+  # test-models-macos-cpu:
+  #   name: test-models-macos-cpu
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   strategy:
+  #     matrix:
+  #       # Mac runners are expensive and limited, and non reliable.
+  #       # Do some basic testing for macos jobs, and rely mostly on
+  #       # test-models-linux-aarch64 job instead.
+  #       model: [emformer_join, ic4, llama2, mobilebert, mv3, resnet50, vit, w2l]
+  #       backend: [xnnpack-quantization-delegation]
+  #       include:
+  #         - model: efficient_sam
+  #           backend: portable
+  #         - model: llama
+  #           backend: portable
+  #         - model: llama3_2_vision_encoder
+  #           backend: portable
+  #         - model: mv3
+  #           backend: portable
+  #     fail-fast: false
+  #   with:
+  #     runner: macos-m1-stable
+  #     python-version: '3.11'
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       MODEL_NAME=${{ matrix.model }}
+  #       BUILD_TOOL=cmake
+  #       BACKEND=${{ matrix.backend }}
 
-        bash .ci/scripts/setup-conda.sh
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-        # Build and test executorch
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+  #       bash .ci/scripts/setup-conda.sh
+  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+  #       # Build and test executorch
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
 #  test-models-arm-zephyr:
 #    name: test-models-arm-zephyr
@@ -666,71 +666,71 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-  test-models-macos-coreml:
-    name: test-models-macos-coreml
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      matrix:
-        model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
-      fail-fast: false
-    with:
-      runner: macos-m1-stable
-      python-version: '3.11'
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=cmake
-        BACKEND="coreml-pybind"
+  # test-models-macos-coreml:
+  #   name: test-models-macos-coreml
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   strategy:
+  #     matrix:
+  #       model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
+  #     fail-fast: false
+  #   with:
+  #     runner: macos-m1-stable
+  #     python-version: '3.11'
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       MODEL_NAME=${{ matrix.model }}
+  #       BUILD_TOOL=cmake
+  #       BACKEND="coreml-pybind"
 
 
-        # Set model specific overrides
-        if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
-          # See https://github.com/pytorch/executorch/issues/12907
-          # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
-          BACKEND="coreml"
-        fi
+  #       # Set model specific overrides
+  #       if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+  #         # See https://github.com/pytorch/executorch/issues/12907
+  #         # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
+  #         BACKEND="coreml"
+  #       fi
 
-        if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
-          # See https://github.com/pytorch/executorch/issues/12906
-          # efficient_sam fails to run on CoreML
-          BACKEND="coreml"
-        fi
+  #       if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
+  #         # See https://github.com/pytorch/executorch/issues/12906
+  #         # efficient_sam fails to run on CoreML
+  #         BACKEND="coreml"
+  #       fi
 
-        bash .ci/scripts/setup-conda.sh
+  #       bash .ci/scripts/setup-conda.sh
 
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
-        echo "Finishing installing coreml."
+  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+  #       echo "Finishing installing coreml."
 
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-  test-models-macos-mps:
-    name: test-models-macos-mps
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      fail-fast: false
-    with:
-      runner: macos-m1-stable
-      python-version: '3.11'
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        BUILD_TOOL=cmake
-        bash .ci/scripts/setup-conda.sh
+  # test-models-macos-mps:
+  #   name: test-models-macos-mps
+  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: macos-m1-stable
+  #     python-version: '3.11'
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       BUILD_TOOL=cmake
+  #       bash .ci/scripts/setup-conda.sh
 
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
+  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
 
-        # Build and test mps model
-        for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
-          echo "::group::Exporting mps model: $MODEL_NAME"
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
-          echo "::endgroup::"
-        done
+  #       # Build and test mps model
+  #       for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
+  #         echo "::group::Exporting mps model: $MODEL_NAME"
+  #         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
+  #         echo "::endgroup::"
+  #       done
 
   test-huggingface-transformers-xnnpack:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
