@@ -6,37 +6,32 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-/*
- * Macro Settings:
- * - TILE_M
- * - TILE_N4
- */
-
-#ifndef LINEAR_FP_OUTPUT_TILE_GLSLH
-#define LINEAR_FP_OUTPUT_TILE_GLSLH
+#ifndef LINEAR_INT_ACCUM_GLSLH
+#define LINEAR_INT_ACCUM_GLSLH
 
 #extension GL_EXT_control_flow_attributes : require
 
-struct FPOutTile {
-  VEC4_T data[TILE_M][TILE_N4];
+// Stores integer accumulators for an output tile.
+struct Int32Accum {
+  ivec4 data[TILE_M][TILE_N4];
 };
 
-void initialize(out FPOutTile out_tile) {
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-      out_tile.data[m][n4] = VEC4_T(0);
+void initialize(out Int32Accum out_accum) {
+  [[unroll]] for (int y = 0; y < TILE_M; ++y) {
+    [[unroll]] for (int x4 = 0; x4 < TILE_N4; ++x4) {
+      out_accum.data[y][x4] = ivec4(0);
     }
   }
 }
 
 #ifdef DEBUG_MODE
 
-void printFPOutTile(const FPOutTile tile) {
-  debugPrintfEXT("output_tile: \\n");
+void printInt32Accum(const Int32Accum tile) {
+  debugPrintfEXT("int accum: \\n");
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       debugPrintfEXT(
-          "  %f, %f, %f, %f,",
+          "  %d, %d, %d, %d,",
           tile.data[m][n4].x,
           tile.data[m][n4].y,
           tile.data[m][n4].z,
@@ -46,6 +41,6 @@ void printFPOutTile(const FPOutTile tile) {
   }
 }
 
-#endif // DEBUG_MODE
+#endif
 
-#endif // LINEAR_FP_OUTPUT_TILE_GLSLH
+#endif // LINEAR_INT_ACCUM_GLSLH
