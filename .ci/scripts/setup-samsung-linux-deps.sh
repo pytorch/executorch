@@ -45,7 +45,7 @@ download_ai_lite_core() {
 
   tar -C "${TARGET_PATH}" --strip-components=1 -xzvf "${OUT_FILE}"
 
-  export EXYNOS_AI_LITECORE_ROOT=${_exynos_lite_core_dir}
+  export EXYNOS_AI_LITECORE_ROOT=${TARGET_PATH}
   export LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}:${EXYNOS_AI_LITECORE_ROOT}/lib/x86_64-linux
 }
 
