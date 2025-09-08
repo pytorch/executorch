@@ -87,7 +87,8 @@ EOF
 # Wheel build and .so checks
 # ----------------------------
 echo "=== Building Wheel Package ==="
-pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+# pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+./install_executorch.sh --minimal
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 unset EXECUTORCH_BUILDING_WHEEL
 
