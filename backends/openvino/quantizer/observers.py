@@ -56,9 +56,9 @@ class WeightObserverBase(ObserverBase, ABC):
         :param dtype: target dtype for the quantization.
         """
         super().__init__(dtype=dtype, is_dynamic=False)
-        self.wc_param = wc_param
+        self._wc_param = wc_param
 
-    def calculate_qparams(  # type: ignore[override]
+    def _calculate_qparams(  # type: ignore[override]
         self,
         weight: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
@@ -68,7 +68,7 @@ class WeightObserverBase(ObserverBase, ABC):
         :param weight: FP weight to be used for calculating qparams.
         :return: A tuple containing the quantized weight, quantization scale and quantization zero point.
         """
-        wc_param = self.get_wc_param()
+        wc_param = self._wc_param
         wc_config = wc_param.compression_config
         reduction_axes = wc_param.reduction_axes
         q_weight, scale, zp = do_integer_quantization(
@@ -143,13 +143,6 @@ class WeightObserverBase(ObserverBase, ABC):
         :return: NNCF observer according to the qmode which creates the decompression subgraph supported by OpenVINO.
         """
 
-    def get_wc_param(self) -> WeightCompressionParameters:
-        """
-        Returns a respective NNCF Weight Compression Config.
-
-        :return: Weight compression config with the compression information such as qmode, group_size etc.
-        """
-        return self.wc_param
 
 class INT4WeightObserver(WeightObserverBase):
     """
