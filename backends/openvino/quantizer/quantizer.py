@@ -424,6 +424,7 @@ class OpenVINOQuantizer(Quantizer):
         extra_args: Dict[str, Any] = {}
 
         qmode = wc_param.compression_config.mode
+        extra_args["wc_param"] = wc_param
         is_asym_mode = wc_param.compression_config.is_asym_mode
         if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
             observer = INT4WeightObserver
@@ -449,7 +450,7 @@ class OpenVINOQuantizer(Quantizer):
             )
         return QuantizationSpec(
             dtype=dtype,
-            observer_or_fake_quant_ctr=observer.with_args(wc_param=wc_param),
+            observer_or_fake_quant_ctr=observer.with_args(**extra_args),
             quant_min=quant_min,
             quant_max=quant_max,
             qscheme=torch_qscheme,
