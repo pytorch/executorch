@@ -933,7 +933,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
         ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
         ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
-        ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_conv2d
+        ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
         ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
 
         # Run e2e testing for selected operators. More operators will be tested via this
