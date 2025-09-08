@@ -582,7 +582,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
-  list(APPEND _executorch_extensions apple_extension)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -649,7 +648,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-  list(APPEND _executorch_extensions extension_llm_apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -701,9 +699,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/csrc/cpu)
   unset(EXECUTORCH_INCLUDE_DIRS)
 
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
@@ -967,6 +963,10 @@ else()
   endif()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
+
+install(TARGETS executorch_backends executorch_extensions executorch_kernels
+        EXPORT ExecuTorchTargets
+)
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.

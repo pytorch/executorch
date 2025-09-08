@@ -1,0 +1,114 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Defines functions store a FpOutTile to output buffer/texture.
+ *
+ * Requires:
+ * - t_output to be declared in the shader layout
+ *
+ * Settings:
+ * - OUTPUT_BUFFER to indicate t_output is a vec4 buffer, otherwise texture
+ *   storage is assumed.
+ */
+
+#ifndef LINEAR_FP_OUTPUT_TILE_STORE_GLSLH
+#define LINEAR_FP_OUTPUT_TILE_STORE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_output_tile.glslh"
+
+#ifdef OUTPUT_BUFFER
+
+void write_output_x4(
+    const VEC4_T out_texel,
+    const int n4,
+    const int m,
+    const int N4) {
+  t_output[m * N4 + n4] = out_texel;
+}
+
+#else
+
+void write_output_x4(
+    const VEC4_T out_texel,
+    const int n4,
+    const int m,
+    const int N4) {
+  imageStore(t_output, ivec3(n4, m, 0), out_texel);
+}
+
+#endif // OUTPUT_BUFFER
+
+void write_output_tile(
+    const FPOutTile out_tile,
+    const int n4_start,
+    const int m_start,
+    const int N4) {
+#if TILE_K4 == 1
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    write_output_x4(out_tile.data[m][0], n4_start, m_start + m, N4);
+  }
+
+#else
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      write_output_x4(out_tile.data[m][n4], n4_start + n4, m_start + m, N4);
+    }
+  }
+#endif
+}
+
+// To be used if M - m >= TILE_M && N4 - n4 >= TILE_N4
+void write_output_tile_no_checks(
+    const FPOutTile out_tile,
+    const int n4_start,
+    const int m_start,
+    const int N4,
+    const int M) {
+#if TILE_N4 == 1
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    write_output_x4(out_tile.data[m][0], n4_start, m_start + m, N4);
+  }
+
+#else
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      write_output_x4(out_tile.data[m][n4], n4_start + n4, m_start + m, N4);
+    }
+  }
+#endif
+}
+
+// To be used if close to tensor boundaries
+void write_output_tile_with_checks(
+    const FPOutTile out_tile,
+    const int n4_start,
+    const int m_start,
+    const int N4,
+    const int M) {
+#if TILE_N4 == 1
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    if (m_start + m < M) {
+      write_output_x4(out_tile.data[m][0], n4_start, m_start + m, N4);
+    }
+  }
+
+#else
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      if (m_start + m < M && n4_start + n4 < N4) {
+        write_output_x4(out_tile.data[m][n4], n4_start + n4, m_start + m, N4);
+      }
+    }
+  }
+#endif
+}
+
+#endif // LINEAR_FP_OUTPUT_TILE_STORE_GLSLH

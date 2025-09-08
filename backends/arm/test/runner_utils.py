@@ -20,7 +20,7 @@ import torch
 
 from executorch.backends.arm.arm_backend import is_tosa, is_vgf
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_tosa_spec,
     Tosa_1_00,
     TosaSpecification,
@@ -257,10 +257,20 @@ def run_vkml_emulation_layer(
     result_stdout = result.stdout.decode()  # noqa: F841
     # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
-    # TODO: Retrieve and return the output tensors once VGF runtime is able to dump them.
-    raise NotImplementedError(
-        "Output parsing from VKML Emulation Layer is not yet implemented. "
+    # Regex to extract tensor values from stdout
+    output_np = []
+    matches = re.findall(
+        r"Output\s+\d+:\s+tensor\(sizes=\[(.*?)\],\s+\[(.*?)\]\)",
+        result_stdout,
+        re.DOTALL,
     )
+
+    for shape_str, values_str in matches:
+        shape = list(map(int, shape_str.split(",")))
+        values = list(map(float, re.findall(r"[-+]?\d*\.\d+|\d+", values_str)))
+        output_np.append(torch.tensor(values).reshape(shape))
+
+    return tuple(output_np)
 
 
 def run_corstone(
@@ -626,7 +636,8 @@ def vkml_emulation_layer_installed() -> bool:
 def assert_elf_path_exists(elf_path):
     if not os.path.exists(elf_path):
         raise FileNotFoundError(
-            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, run setup_testing.sh?"
+            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, \
+            run setup_testing.sh or setup_testing_vkml.sh?"
         )
 
 
@@ -643,7 +654,7 @@ def get_elf_path(target_board):
         assert_elf_path_exists(elf_path)
     elif target_board == "vkml_emulation_layer":
         elf_path = os.path.join(
-            "cmake-out",
+            "arm_test/arm_executor_runner_vkml",
             "executor_runner",
         )
         assert_elf_path_exists(elf_path)

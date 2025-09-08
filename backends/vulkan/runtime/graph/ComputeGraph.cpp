@@ -155,6 +155,11 @@ ComputeGraph::ComputeGraph(GraphConfig config)
     config_.execute_threshold_node_count = 128;
     config_.execute_initial_threshold_node_count = 64;
   }
+
+  // Check if the underlying GPU can access accelerated integer dot product
+  // instructions
+  can_use_int8_dot_product_ =
+      context_->adapter_ptr()->supports_int8_dot_product();
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -327,6 +332,16 @@ bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
   return is_contiguous(idx);
 }
 
+bool ComputeGraph::is_contiguous_texture_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 0;
+}
+
 bool ComputeGraph::is_standard_channels_packed_texture_tensor(
     const ValueRef idx) const {
   if (!val_is_tensor(idx)) {
@@ -338,15 +353,50 @@ bool ComputeGraph::is_standard_channels_packed_texture_tensor(
   return has_standard_axis_map(idx) && packed_dim_of(idx) == 2;
 }
 
-bool ComputeGraph::is_standard_width_packed_texture_tensor(
+bool ComputeGraph::is_2d_matrix(const ValueRef idx) const {
+  std::vector<int64_t> sizes = sizes_of(idx);
+  const size_t ndim = sizes.size();
+  if (sizes.size() < 2) {
+    return false;
+  }
+  if (sizes.size() == 2) {
+    return true;
+  }
+
+  // Check that outermost dims have size of 1
+  for (int d = 0; d < ndim - 2; d++) {
+    if (sizes[d] != 1) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool ComputeGraph::is_vectorizable_contiguous_2d_matrix(
     const ValueRef idx) const {
+  if (!is_2d_matrix(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return is_contiguous_buffer_tensor(idx) &&
+        size_at<int32_t>(-1, idx) % 4 == 0;
+  }
+  return is_contiguous_texture_tensor(idx);
+}
+
+bool ComputeGraph::is_vectorizable_width_packed_tensor(
+    const ValueRef idx) const {
+  // Not a tensor - return false
   if (!val_is_tensor(idx)) {
     return false;
   }
   if (is_buffer_storage(idx)) {
-    return false;
+    return is_contiguous_buffer_tensor(idx) &&
+        size_at<int32_t>(-1, idx) % 4 == 0;
   }
-  return has_standard_axis_map(idx) && packed_dim_of(idx) == 0;
+
+  return is_standard_channels_packed_texture_tensor(idx);
 }
 
 ValueRef ComputeGraph::add_tensor(

@@ -309,9 +309,14 @@ class SourceTransformStage(Stage):
         # Apply torchao quantize_ to each model
         for _, model in artifact.data.items():
             # pyre-ignore
-            for ao_config in self._quantization_recipe.ao_quantization_configs:
-                quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
-                unwrap_tensor_subclass(model)
+            if len(self._quantization_recipe.ao_quantization_configs) > 1:
+                raise ValueError(
+                    "AO quantization configs cannot be reliably composed together, multiple quantization configs are disallowed for source transform at this point"
+                )
+
+            ao_config = self._quantization_recipe.ao_quantization_configs[0]
+            quantize_(model, ao_config.ao_base_config, ao_config.filter_fn)
+            unwrap_tensor_subclass(model)
 
         self._artifact = artifact.copy_with_new_data(self._transformed_models)
 

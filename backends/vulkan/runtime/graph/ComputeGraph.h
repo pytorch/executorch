@@ -221,6 +221,10 @@ class ComputeGraph final {
   // config.execute_threshold_node_count.
   size_t execute_threshold_node_count_ = 0;
 
+  // Whether the underlying GPU support accelerated integer dot product
+  // extensions
+  bool can_use_int8_dot_product_ = false;
+
  public:
   //
   // Accessors
@@ -304,6 +308,10 @@ class ComputeGraph final {
     return idx == kDummyValueRef ? true : values_.at(idx).isNone();
   }
 
+  inline bool val_is_not_none(const ValueRef idx) {
+    return !val_is_none(idx);
+  }
+
   inline TypeTag get_val_type(const ValueRef idx) {
     return values_.at(idx).type();
   }
@@ -374,18 +382,40 @@ class ComputeGraph final {
    * 1. The value at `idx` is a tensor
    * 2. The tensor at `idx` has texture storage
    * 3. The texture backed tensor at `idx` has a standard axis mapping
-   * 4. The texture backed tensor at `idx` is channels packed
+   * 4. The texture backed tensor at `idx` is width packed
    */
-  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+  bool is_contiguous_texture_tensor(const ValueRef idx) const;
 
   /*
    * Checks that the following is true:
    * 1. The value at `idx` is a tensor
    * 2. The tensor at `idx` has texture storage
    * 3. The texture backed tensor at `idx` has a standard axis mapping
-   * 4. The texture backed tensor at `idx` is width packed
+   * 4. The texture backed tensor at `idx` is channels packed
    */
-  bool is_standard_width_packed_texture_tensor(const ValueRef idx) const;
+  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the value at `idx` is either a 2D tensor, or if the tensor has
+   * more than 2 dims, the outermost dims have size of 1, i.e. can be squeezed
+   * to be a 2D tensor.
+   */
+  bool is_2d_matrix(const ValueRef idx) const;
+
+  /*
+   * Same as the above, but also requires that the tensor is a contiguous
+   * buffer with a width divisible by 4 or a standard width packed texture.
+   */
+  bool is_vectorizable_contiguous_2d_matrix(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` is width packed
+   * 3. The tensor at `idx` has a standard axis mapping or is a contiguous
+   * buffer
+   */
+  bool is_vectorizable_width_packed_tensor(const ValueRef idx) const;
 
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
@@ -1011,6 +1041,10 @@ class ComputeGraph final {
 
   inline size_t execute_count() const {
     return execute_count_;
+  }
+
+  inline bool can_use_int8_dot_product() const {
+    return can_use_int8_dot_product_;
   }
 
   /*

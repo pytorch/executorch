@@ -212,6 +212,15 @@ class Adapter final {
 #endif /* VK_KHR_shader_float16_int8 */
   }
 
+  inline bool supports_int8_dot_product() {
+#ifdef VK_KHR_shader_integer_dot_product
+    return physical_device_.shader_int_dot_product_features
+               .shaderIntegerDotProduct == VK_TRUE;
+#else
+    return false;
+#endif /* VK_KHR_shader_integer_dot_product */
+  }
+
   inline bool supports_int16_shader_types() {
     return physical_device_.supports_int16_shader_types;
   }

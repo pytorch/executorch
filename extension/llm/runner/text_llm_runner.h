@@ -134,10 +134,10 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       const std::string& prompt,
       int32_t max_new_tokens);
   /**
-   * @brief Remove prefilled tokens and reset start position
+   * @brief Remove prefilled tokens and reset start position, and stats.
    *
    * This method removes the prefilled tokens from the KV cache and resets the
-   * start position to 0.
+   * start position to 0. It also clears the stats for previous runs.
    */
   void reset() override;
   /**
