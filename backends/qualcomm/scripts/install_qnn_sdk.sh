@@ -94,15 +94,15 @@ setup_libcpp() {
   LLVM_VERSION="14.0.0"
   INSTALL_DIR="/tmp/libcxx-${LLVM_VERSION}"
 
-  # # Check if we already have a local installation
-  # if [ -d "${INSTALL_DIR}/include" ] && [ -d "${INSTALL_DIR}/lib" ]; then
-  #   echo "Local libc++ already installed at ${INSTALL_DIR} - skipping"
-  #   # Set environment variables
-  #   export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
-  #   export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
-  #   export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
-  #   return
-  # fi
+  # Check if we already have a local installation
+  if [ -d "${INSTALL_DIR}/include" ] && [ -d "${INSTALL_DIR}/lib" ]; then
+    echo "Local libc++ already installed at ${INSTALL_DIR} - skipping"
+    # Set environment variables
+    export CPLUS_INCLUDE_PATH="${INSTALL_DIR}/include:$CPLUS_INCLUDE_PATH"
+    export LD_LIBRARY_PATH="${INSTALL_DIR}/lib:$LD_LIBRARY_PATH"
+    export LIBRARY_PATH="${INSTALL_DIR}/lib:$LIBRARY_PATH"
+    return
+  fi
 
   echo "Installing libc++ manually to ${INSTALL_DIR}"
 
