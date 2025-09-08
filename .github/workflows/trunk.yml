@@ -11,9 +11,6 @@ on:
     paths:
       - .ci/docker/ci_commit_pins/pytorch.txt
       - .ci/scripts/**
-    branches:
-      - main
-      - release/*
   workflow_dispatch:
 
 concurrency:
