@@ -19,6 +19,7 @@ from executorch.backends.cadence.aot.ref_implementations import (
     quantized_conv_nhwc,
     quantized_layer_norm_per_tensor,
     quantized_linear,
+    quantized_relu,
 )
 from executorch.backends.cadence.aot.typing_stubs import expand
 
@@ -743,4 +744,85 @@ class TestRefImplementations(unittest.TestCase):
         self.assertTrue(
             torch.equal(output, expected_output),
             f"Output values don't match expected. Got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Test case 1: Basic int8 case with negative scale
+            (
+                "basic_int8",
+                torch.tensor([-1, 0, 1, 3], dtype=torch.int8),  # input
+                torch.tensor([0], dtype=torch.int8),  # X_zero_point (scalar broadcast)
+                0,  # out_zero_point
+                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
+                torch.tensor([0]),  # out_shift
+                torch.int8,  # dtype
+                torch.tensor(
+                    [0, 0, 0, -2], dtype=torch.int8
+                ),  # expected: relu(-1,0,1,3) = (0,0,1,3) * (-0.5) + 0 = (0,0,-0.5,-1.5) -> (0,0,0,-2)
+            ),
+            # Test case 2: uint8 with non-zero zero point
+            (
+                "uint8_with_zp",
+                torch.tensor([126, 128, 130, 132], dtype=torch.uint8),  # input
+                torch.tensor([128], dtype=torch.uint8),  # X_zero_point
+                64,  # out_zero_point
+                torch.tensor([536870912]),  # out_multiplier (0.25 * 2^31)
+                torch.tensor([0]),  # out_shift
+                torch.uint8,  # dtype
+                torch.tensor(
+                    [64, 64, 64, 63], dtype=torch.uint8
+                ),  # expected: relu(-2,0,2,4) = (0,0,2,4) * (-0.25) + 64 = (64,64,63.5,63) -> (64,64,64,63)
+            ),
+            # Test case 3: All negative values (should all become zero after ReLU)
+            (
+                "all_negative_int8",
+                torch.tensor([-5, -3, -1], dtype=torch.int8),  # input
+                torch.tensor([0], dtype=torch.int8),  # X_zero_point
+                10,  # out_zero_point
+                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
+                torch.tensor([0]),  # out_shift
+                torch.int8,  # dtype
+                torch.tensor(
+                    [10, 10, 10], dtype=torch.int8
+                ),  # expected: relu(-5,-3,-1) = (0,0,0) * (-0.5) + 10 = (10,10,10)
+            ),
+            # Test case 4: All positive values with shift (scale becomes -0.25)
+            (
+                "positive_with_shift",
+                torch.tensor([2, 4, 6, 8], dtype=torch.int8),  # input
+                torch.tensor([1], dtype=torch.int8),  # X_zero_point
+                5,  # out_zero_point
+                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
+                torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
+                torch.int8,  # dtype
+                torch.tensor(
+                    [4, 2, 0, -2], dtype=torch.int8
+                ),  # expected: relu(1,3,5,7) = (1,3,5,7) * (-1.0) + 5 = (4,2,0,-2)
+            ),
+        ]
+    )
+    def test_quantized_relu(
+        self,
+        name: str,
+        X: torch.Tensor,
+        X_zero_point: torch.Tensor,
+        out_zero_point: int,
+        out_multiplier: torch.Tensor,
+        out_shift: torch.Tensor,
+        dtype: torch.dtype,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = quantized_relu(
+            X, X_zero_point, out_zero_point, out_multiplier, out_shift
+        )
+
+        # Verify output properties
+        self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
+        self.assertEqual(output.shape, X.shape, "Output shape should match input shape")
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
         )
