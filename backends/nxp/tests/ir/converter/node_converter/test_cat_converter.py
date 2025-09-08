@@ -73,7 +73,7 @@ class CatConvModule(torch.nn.Module):
     ],
 )
 def test_cat__same_shapes(dim, num_inputs, rank, mocker):
-    input_shape = tuple([2, 8, 8, 8, 8][-rank:])
+    input_shape = tuple([8, 8, 8, 8][:rank])
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
@@ -134,11 +134,20 @@ def test_cat__channels_first__same_shapes(dim, num_inputs, mocker):
     )
 
 
-@pytest.mark.parametrize("dim", [0, -4])
-@pytest.mark.parametrize("num_inputs", [2])
-def test_cat__unsupported_dim__imxrt700(dim, num_inputs):
-    input_shape = (2, 8, 6, 8)
-
+@pytest.mark.parametrize(
+    "dim, input_shape",
+    [
+        pytest.param(0, (1, 8, 8, 8), id="axis = 0"),
+        pytest.param(0, (8, 8, 8, 8), id="axis = 0, no `1s` in the shape."),
+        pytest.param(-4, (1, 8, 8, 8), id="axis = -4"),
+        pytest.param(1, (1, 1, 8, 8), id="axis = 1"),
+        pytest.param(-3, (1, 1, 8, 8), id="axis = -3"),
+        pytest.param(2, (1, 1, 1, 8), id="axis = 2"),
+        pytest.param(-2, (1, 1, 1, 8), id="axis = -2"),
+    ],
+)
+def test_cat__unsupported__imxrt700(dim, input_shape):
+    num_inputs = 2
     quantized_program = to_quantized_edge_program(
         CatModule(dim), [input_shape] * num_inputs, target="imxrt700"
     ).exported_program()
