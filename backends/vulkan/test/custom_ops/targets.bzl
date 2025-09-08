@@ -12,7 +12,6 @@ def define_custom_op_test_binary(custom_op_name, extra_deps = [], src_file = Non
         ":operator_implementations",
         ":custom_ops_shaderlib",
         "//executorch/backends/vulkan:vulkan_graph_runtime",
-        "//executorch/runtime/core/exec_aten:lib",
         runtime.external_dep_location("libtorch"),
     ] + extra_deps
 
@@ -68,8 +67,6 @@ def define_common_targets(is_fbcode = False):
         platforms = get_platforms(),
         deps = [
             "//executorch/backends/vulkan:vulkan_graph_runtime",
-            "//executorch/runtime/core/exec_aten:lib",
-            runtime.external_dep_location("libtorch"),
         ],
         visibility = [
             "//executorch/backends/vulkan/test/custom_ops/...",
@@ -86,7 +83,6 @@ def define_common_targets(is_fbcode = False):
         platforms = get_platforms(),
         deps = [
             "//executorch/backends/vulkan:vulkan_graph_runtime",
-            "//executorch/runtime/core/exec_aten:lib",
             ":custom_ops_shaderlib",
         ],
         visibility = [
@@ -97,3 +93,4 @@ def define_common_targets(is_fbcode = False):
     )
 
     define_custom_op_test_binary("add")
+    define_custom_op_test_binary("q8csw_linear")
