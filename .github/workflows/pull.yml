@@ -964,7 +964,14 @@ jobs:
         CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
+        # Custom operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
+        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
+
+        # Run e2e testing for selected operators. More operators will be tested via this
+        # route in the future.
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
 
   nxp-build-test:
     name: nxp-build-test
