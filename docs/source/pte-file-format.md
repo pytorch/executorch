@@ -72,7 +72,7 @@ Optional extended header:
 | [24..31] uint64_t offset (from byte offset zero above) to the start of the
 |          first segment, or zero if there are no segments.
 | [32..39] uint64_t size of the segment data, ie. the size from the segment_base_offset
-|          to the end of the file
+|          to the end of the segments.
 | [40..?]  Any zero-padding necessary to preserve the alignment of the data
 |          that follows.
 End of optional extended header.

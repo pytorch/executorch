@@ -157,7 +157,8 @@ class _ExtendedHeader:
     # Offset to the start of the first segment, or zero if there
     # are no segments.
     segment_base_offset: int
-    # Size of the segment data, in bytes, or zero if there are no segments.
+    # Size of the segment data, in bytes, or zero if there are no segments, or
+    # if the this field isn't populated in the PTE file.
     segment_data_size: int
 
     # The magic bytes read from or to be written to the binary header.
