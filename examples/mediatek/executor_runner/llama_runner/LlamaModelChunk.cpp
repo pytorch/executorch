@@ -21,6 +21,7 @@
 
 #include "LlamaConfig.h"
 #include "LlamaModelChunk.h"
+#include "Utils.h"
 #include "llm_helper/include/llm_types.h"
 
 #include "llm_helper/include/mask_builder.h"
@@ -42,11 +43,13 @@ inline std::vector<size_t> getIndexRange(
 LlamaModelChunk::LlamaModelChunk(
     const ModelPathMap& modelPathMap,
     const LlamaModelOptions& modelOptions,
+    const bool useSharedWeights,
     const size_t initBatchSize,
     const size_t numCache,
     const size_t numRotEmbInputs,
     const RotaryEmbeddingMasterLut* rotEmbMasterLut)
     : ModelChunk(modelPathMap, initBatchSize),
+      kIsSharedWeightsUsed(useSharedWeights),
       kMaxTokenLength(modelOptions.max_token_length),
       kCacheLength(modelOptions.cache_size),
       kMaskType(modelOptions.mask_type),
@@ -60,6 +63,31 @@ LlamaModelChunk::LlamaModelChunk(
       kCacheOutputIndexes(getIndexRange(1, numCache)) {}
 
 LlamaModelChunk::~LlamaModelChunk() {}
+
+std::string LlamaModelChunk::SelectMethod(
+    const std::vector<std::string>& methodNames) const {
+  const size_t curTokenSize = GetModelId();
+  for (const auto& methodName : methodNames) {
+    const auto matches = utils::extract_substr(methodName, "([0-9]+)t[0-9]+c");
+    ET_CHECK_MSG(
+        matches.size() == 2, "Invalid method name: %s", methodName.c_str());
+    // Extract the first match group as token size
+    const size_t methodTokenSize =
+        static_cast<size_t>(std::atol(matches[1].c_str()));
+    if (curTokenSize == methodTokenSize) {
+      ET_LOG(
+          Debug,
+          "Selected method \"%s\" for token size %zu",
+          methodName.c_str(),
+          curTokenSize);
+      return methodName;
+    }
+  }
+  ET_LOG(
+      Error,
+      "Unable to find suitable method, fallback to use the first method.");
+  return {};
+}
 
 size_t LlamaModelChunk::GetExpectedInputCount() const {
   const size_t rotEmbInputCount = kRotEmbInputIndexes.size();
