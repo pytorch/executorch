@@ -434,6 +434,7 @@ def register_reduce_op():
 @update_features(
     [
         exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
     ]
 )
