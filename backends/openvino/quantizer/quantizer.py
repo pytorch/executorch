@@ -175,7 +175,6 @@ class OpenVINOQuantizer(Quantizer):
         :param graph: The underlying FX graph.
         :param nncf_graph: The corresponding NNCF graph.
         :param node_vs_torch_annotation: A mapping of FX nodes to quantization annotations.
-
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
         self._algo.set_backend_entity(model)
@@ -343,7 +342,7 @@ class OpenVINOQuantizer(Quantizer):
     def _get_weight_edge(
         target_node: torch.fx.Node,
         nncf_graph: NNCFGraph,
-    ):
+    ) -> tuple[torch.fx.Node, torch.fx.Node]:
         """
         Returns the FX node corresponding to the weight tensor input of a given operator node.
         Uses the NNCF graph to identify which input port of the target node holds the weight.
@@ -351,7 +350,6 @@ class OpenVINOQuantizer(Quantizer):
 
         :param target_node: FX node representing a weighted operation (e.g., Linear, Conv).
         :param nncf_graph: NNCFGraph used to determine weight port indices.
-
         :return: Edge represented by a Tuple of (weight_node, target_node), where weight_node is the FX node supplying the weight.
         """
         nncf_node = nncf_graph.get_node_by_name(target_node.name)
@@ -428,7 +426,6 @@ class OpenVINOQuantizer(Quantizer):
         qmode = wc_param.compression_config.mode
         is_asym_mode = wc_param.compression_config.is_asym_mode
         if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
-            extra_args["wc_param"] = wc_param
             observer = INT4WeightObserver
             quant_min = -8 if not is_asym_mode else 0
             quant_max = 7 if not is_asym_mode else 15
@@ -440,7 +437,6 @@ class OpenVINOQuantizer(Quantizer):
                 else torch.per_channel_affine
             )
         else:
-            extra_args["wc_param"] = wc_param
             observer = INT8WeightObserver
             quant_min = -128 if not is_asym_mode else 0
             quant_max = 127 if not is_asym_mode else 255
@@ -453,7 +449,7 @@ class OpenVINOQuantizer(Quantizer):
             )
         return QuantizationSpec(
             dtype=dtype,
-            observer_or_fake_quant_ctr=observer.with_args(**extra_args),
+            observer_or_fake_quant_ctr=observer.with_args(wc_param=wc_param),
             quant_min=quant_min,
             quant_max=quant_max,
             qscheme=torch_qscheme,
