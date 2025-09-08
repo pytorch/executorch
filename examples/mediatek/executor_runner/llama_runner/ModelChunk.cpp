@@ -41,20 +41,171 @@ using executorch::runtime::Tag;
 
 static constexpr size_t kMethodAllocatorPoolSize = 4 * 1024U * 1024U; // 4MB
 
-// ExecuTorch model instance
-// The member ordering affects the order of destruction.
-struct ModelInstance {
-  std::unique_ptr<Program> program;
+// ExecuTorch model instance with cacheable program.
+class ModelInstance {
+ public:
+  explicit ModelInstance(const std::string& modelPath) {
+    if (mCachedPrograms.find(modelPath) != mCachedPrograms.end()) {
+      auto cachedProgram = mCachedPrograms.at(modelPath).lock();
+      if (cachedProgram) {
+        mProgramInstance = cachedProgram;
+        ET_LOG(
+            Debug, "Loaded existing program from cache: %s", modelPath.c_str());
+        return;
+      } else {
+        mCachedPrograms.erase(modelPath); // Expired
+      }
+    }
+    ET_LOG(Debug, "Loading model from scratch: %s", modelPath.c_str());
+    mProgramInstance = std::make_shared<ProgramInstance>();
 
-  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers;
-  std::vector<Span<uint8_t>> planned_spans;
+    // Create a loader to get the data of the program file. There are other
+    // DataLoaders that use mmap() or point to data that's already in memory,
+    // and users can create their own DataLoaders to load from arbitrary
+    // sources.
+    Result<FileDataLoader> loader = FileDataLoader::from(modelPath.c_str());
+    ET_CHECK_MSG(
+        loader.ok(),
+        "FileDataLoader::from() failed: 0x%" PRIx32,
+        loader.error());
+    // Extract the data loader out to a persistent storage before loading the
+    // program.
+    mProgramInstance->dataLoader =
+        std::make_unique<FileDataLoader>(std::move(loader.get()));
 
-  std::vector<uint8_t> method_allocator_pool;
-  std::unique_ptr<MemoryAllocator> method_allocator;
-  std::unique_ptr<HierarchicalAllocator> planned_memory;
-  std::unique_ptr<MemoryManager> memory_manager;
+    // Parse the program file. This is immutable, and can also be reused between
+    // multiple execution invocations across multiple threads.
+    Result<Program> program_loaded =
+        Program::load(mProgramInstance->dataLoader.get());
+    ET_CHECK_MSG(
+        program_loaded.ok(),
+        "Failed to parse model file %s",
+        modelPath.c_str());
+    ET_LOG(Debug, "Model file %s is loaded.", modelPath.c_str());
 
-  std::unique_ptr<Method> method;
+    // Extract program out to a persistent storage before calling any of its
+    // methods.
+    mProgramInstance->program =
+        std::make_unique<Program>(std::move(program_loaded.get()));
+    mCachedPrograms.emplace(modelPath, mProgramInstance);
+  }
+
+  Method& GetMethod() {
+    ET_CHECK_MSG(mMethod != nullptr, "Method is not loaded.");
+    return *mMethod;
+  }
+
+  const Method& GetMethod() const {
+    ET_CHECK_MSG(mMethod != nullptr, "Method is not loaded.");
+    return *mMethod;
+  }
+
+  Program& GetProgram() {
+    return *(mProgramInstance->program);
+  }
+
+  const Program& GetProgram() const {
+    return *(mProgramInstance->program);
+  }
+
+  std::vector<std::string> GetMethodNames() const {
+    std::vector<std::string> methodNames;
+    for (size_t i = 0; i < GetProgram().num_methods(); i++) {
+      const auto method_name_result = GetProgram().get_method_name(i);
+      ET_CHECK_MSG(method_name_result.ok(), "Program has no method %zu", i);
+      methodNames.emplace_back(*method_name_result);
+    }
+    return methodNames;
+  }
+
+  void LoadFirstMethod() {
+    // Use the first method in the program.
+    const char* method_name = nullptr;
+    const auto method_name_result = GetProgram().get_method_name(0);
+    ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
+    method_name = *method_name_result;
+    ET_LOG(Debug, "Loading the first method.");
+    LoadMethod(method_name);
+  }
+
+  void LoadMethod(const std::string& method_name) {
+    ET_CHECK_MSG(!mMethod, "Method is already loaded.");
+    const auto method_name_cstr = method_name.c_str();
+
+    // MethodMeta describes the memory requirements of the method.
+    Result<MethodMeta> method_meta = GetProgram().method_meta(method_name_cstr);
+    ET_CHECK_MSG(
+        method_meta.ok(),
+        "Failed to get method_meta for %s: 0x%x",
+        method_name_cstr,
+        (unsigned int)method_meta.error());
+
+    mMethodAllocatorPool.resize(kMethodAllocatorPoolSize);
+    mMethodAllocator = std::make_unique<MemoryAllocator>(
+        kMethodAllocatorPoolSize, mMethodAllocatorPool.data());
+    mMethodAllocator->enable_profiling("method allocator");
+
+    size_t num_memory_planned_buffers =
+        method_meta->num_memory_planned_buffers();
+    for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
+      // .get() will always succeed because id < num_memory_planned_buffers.
+      size_t buffer_size = static_cast<size_t>(
+          method_meta->memory_planned_buffer_size(id).get());
+      ET_LOG(
+          Debug, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
+      mPlannedBuffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
+      mPlannedSpans.push_back({mPlannedBuffers.back().get(), buffer_size});
+    }
+    mPlannedMemory = std::make_unique<HierarchicalAllocator>(
+        Span<Span<uint8_t>>{mPlannedSpans.data(), mPlannedSpans.size()});
+
+    // Assemble all of the allocators into the MemoryManager that the Executor
+    // will use.
+    auto& neuron_allocator = GET_NEURON_ALLOCATOR;
+    mMemoryManager = std::make_unique<MemoryManager>(
+        mMethodAllocator.get(),
+        mPlannedMemory.get(),
+        dynamic_cast<MemoryAllocator*>(&neuron_allocator));
+
+    ET_LOG(Debug, "Loading method %s", method_name_cstr);
+    Result<Method> method =
+        GetProgram().load_method(method_name_cstr, mMemoryManager.get());
+    ET_CHECK_MSG(
+        method.ok(),
+        "Loading of method %s failed with status 0x%" PRIx32,
+        method_name_cstr,
+        method.error());
+
+    mMethod = std::make_unique<Method>(std::move(method.get()));
+  }
+
+ private:
+  ModelInstance(const ModelInstance&) = delete;
+  ModelInstance& operator=(ModelInstance&&) = delete;
+  ModelInstance& operator=(const ModelInstance&) = delete;
+
+ private:
+  // The member ordering below affects the order of destruction.
+
+  struct ProgramInstance {
+    std::unique_ptr<FileDataLoader> dataLoader;
+    std::unique_ptr<Program> program;
+  };
+  std::shared_ptr<ProgramInstance> mProgramInstance;
+
+  std::vector<std::unique_ptr<uint8_t[]>> mPlannedBuffers;
+  std::vector<Span<uint8_t>> mPlannedSpans;
+
+  std::vector<uint8_t> mMethodAllocatorPool;
+  std::unique_ptr<MemoryAllocator> mMethodAllocator;
+  std::unique_ptr<HierarchicalAllocator> mPlannedMemory;
+  std::unique_ptr<MemoryManager> mMemoryManager;
+
+  std::unique_ptr<Method> mMethod;
+
+  // Maps .pte file paths to the cached program instances.
+  inline static std::unordered_map<std::string, std::weak_ptr<ProgramInstance>>
+      mCachedPrograms;
 };
 
 void ModelChunk::Initialize() {
@@ -487,94 +638,18 @@ void ModelChunk::ReleaseIoBuffers() {
 
 Method& ModelChunk::GetModelMethod() {
   auto modelInstance = reinterpret_cast<ModelInstance*>(GetModelInstance());
-  return *(modelInstance->method);
+  return modelInstance->GetMethod();
 }
 
 // Override the virtual functions
 void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
-  auto modelInstance = new ModelInstance;
-
-  // Create a loader to get the data of the program file. There are other
-  // DataLoaders that use mmap() or point to data that's already in memory, and
-  // users can create their own DataLoaders to load from arbitrary sources.
-  Result<FileDataLoader> loader = FileDataLoader::from(modelPath.c_str());
-  ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
-
-  // Parse the program file. This is immutable, and can also be reused between
-  // multiple execution invocations across multiple threads.
-  Result<Program> program_loaded = Program::load(&loader.get());
-  if (!program_loaded.ok()) {
-    ET_LOG(Error, "Failed to parse model file %s", modelPath.c_str());
-    return nullptr;
+  auto modelInstance = new ModelInstance(modelPath);
+  const auto selectedMethod = SelectMethod(modelInstance->GetMethodNames());
+  if (!selectedMethod.empty()) {
+    modelInstance->LoadMethod(selectedMethod);
+  } else {
+    modelInstance->LoadFirstMethod(); // Load the first available method
   }
-  ET_LOG(Debug, "Model file %s is loaded.", modelPath.c_str());
-
-  // Extract program out to a persistent storage before calling any of its
-  // methods.
-  modelInstance->program =
-      std::make_unique<Program>(std::move(program_loaded.get()));
-  auto& program = modelInstance->program;
-
-  // Use the first method in the program.
-  const char* method_name = nullptr;
-  {
-    const auto method_name_result = program->get_method_name(0);
-    ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
-    method_name = *method_name_result;
-  }
-  ET_LOG(Debug, "Using method %s", method_name);
-
-  // MethodMeta describes the memory requirements of the method.
-  Result<MethodMeta> method_meta = program->method_meta(method_name);
-  ET_CHECK_MSG(
-      method_meta.ok(),
-      "Failed to get method_meta for %s: 0x%x",
-      method_name,
-      (unsigned int)method_meta.error());
-
-  modelInstance->method_allocator_pool.resize(kMethodAllocatorPoolSize);
-  modelInstance->method_allocator = std::make_unique<MemoryAllocator>(
-      kMethodAllocatorPoolSize, modelInstance->method_allocator_pool.data());
-  auto& method_allocator = modelInstance->method_allocator;
-  method_allocator->enable_profiling("method allocator");
-
-  auto& planned_buffers = modelInstance->planned_buffers; // Owns the memory
-  auto& planned_spans = modelInstance->planned_spans; // Passed to the allocator
-
-  size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
-  for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
-    // .get() will always succeed because id < num_memory_planned_buffers.
-    size_t buffer_size =
-        static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
-    ET_LOG(Debug, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
-    planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
-    planned_spans.push_back({planned_buffers.back().get(), buffer_size});
-  }
-  modelInstance->planned_memory = std::make_unique<HierarchicalAllocator>(
-      Span<Span<uint8_t>>{planned_spans.data(), planned_spans.size()});
-  auto& planned_memory = modelInstance->planned_memory;
-
-  // Assemble all of the allocators into the MemoryManager that the Executor
-  // will use.
-  auto& neuron_allocator = GET_NEURON_ALLOCATOR;
-  modelInstance->memory_manager = std::make_unique<MemoryManager>(
-      method_allocator.get(),
-      planned_memory.get(),
-      dynamic_cast<MemoryAllocator*>(&neuron_allocator));
-  auto& memory_manager = modelInstance->memory_manager;
-
-  ET_LOG(Debug, "Begin loading method %s", method_name);
-  Result<Method> method =
-      program->load_method(method_name, memory_manager.get());
-  ET_CHECK_MSG(
-      method.ok(),
-      "Loading of method %s failed with status 0x%" PRIx32,
-      method_name,
-      method.error());
-  ET_LOG(Debug, "Method loaded.");
-
-  modelInstance->method = std::make_unique<Method>(std::move(method.get()));
   return modelInstance;
 }
 
