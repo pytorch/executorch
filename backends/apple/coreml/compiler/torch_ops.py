@@ -15,6 +15,7 @@ from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
     _get_kwinputs,
+    noop,
     NUM_TO_NUMPY_DTYPE,
     NUM_TO_TORCH_DTYPE,
     split,
@@ -91,6 +92,28 @@ else:
         to(context, node)
 
 
+@register_torch_op(
+    torch_alias=[
+        "dim_order_ops::_clone_dim_order",
+        "dim_order_ops._clone_dim_order",
+    ],
+    override=False,
+)
+def _clone_dim_order(context, node):
+    dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
+    node.kwinputs.pop("dim_order")
+
+    # In CoreML, dim_order.val will be a ndarray, so we convert it to a list to check memory format.
+    dim_order = [int(d) for d in dim_order.val]
+    memory_format = get_memory_format(dim_order)
+    assert (
+        memory_format == _torch.contiguous_format
+    ), "Only contiguous memory format is supported in CoreML"
+
+    # Since CoreML only supports contiguous format, no dim_order preservation is needed. Treat this as a no-op clone.
+    noop(context, node)
+
+
 # https://github.com/apple/coremltools/pull/2558
 @register_torch_op(
     torch_alias=["torchao::dequantize_affine", "torchao.dequantize_affine"],
@@ -152,7 +175,6 @@ def dequantize_affine(context, node):
         int_data.astype(quantized_np_dtype),
         zero_point,
         scale,
-        axis=-1,
         name=node.name,
     )
     context.add(output, node.name)

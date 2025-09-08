@@ -27,8 +27,6 @@ enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
 mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
-vulkan_sdk_version="1.4.321.1"
-vulkan_sdk_base_dir="vulkan_sdk"
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -38,23 +36,6 @@ toolchain_url=""
 toolchain_dir=""
 toolchain_md5_checksum=""
 
-if [[ "${ARCH}" == "x86_64" ]]; then
-    # Vulkan SDK
-    vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${vulkan_sdk_version}/linux/vulkansdk-linux-x86_64-${vulkan_sdk_version}.tar.xz"
-    vulkan_sdk_sha256="f22a3625bd4d7a32e7a0d926ace16d5278c149e938dac63cecc00537626cbf73"
-
-elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-    # Vulkan SDK
-    vulkan_sdk_url="https://github.com/jakoch/vulkan-sdk-arm/releases/download/1.4.321.1/vulkansdk-ubuntu-22.04-arm-1.4.321.1.tar.xz"
-    vulkan_sdk_sha256="c57e318d0940394d3a304034bb7ddabda788b5b0b54638e80e90f7264efe9f84"
-
-else
-    echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-fi
-
-# MLSDK dependencies
-mlsdk_manifest_dir="ml-sdk-for-vulkan-manifest"
-vulkan_sdk_bin_dir="${vulkan_sdk_base_dir}/${vulkan_sdk_version}/${ARCH}/bin"
 
 # List of supported options and their descriptions
 OPTION_LIST=(
@@ -198,93 +179,6 @@ function setup_root_dir() {
     setup_path_script="${root_dir}/setup_path"
 }
 
-function setup_vulkan_sdk() {
-
-    if command -v vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK already installed..."
-        enable_vulkan_sdk=0
-        return
-    fi
-
-    cd "${root_dir}"
-
-    vulkan_sdk_tar_file="${vulkan_sdk_url##*/}"
-    if [[ ! -e "${vulkan_sdk_tar_file}" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading Vulkan SDK - ${vulkan_sdk_url}.."
-        curl -L --output "${vulkan_sdk_tar_file}" "${vulkan_sdk_url}"
-        echo "${vulkan_sdk_sha256} ${vulkan_sdk_tar_file}" | sha256sum -c -
-        rm -fr ${vulkan_sdk_base_dir}
-    fi
-
-    mkdir -p ${vulkan_sdk_base_dir}
-    tar -C ${vulkan_sdk_base_dir} -xJf "${vulkan_sdk_tar_file}"
-
-    vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
-    if ${vulkan_sdk_bin_path}/vulkaninfo > /dev/null 2>&1; then
-        echo "[${FUNCNAME[0]}] Vulkan SDK OK"
-    else
-        echo "[${FUNCNAME[0]}] Vulkan SDK NOK - perhaps need manual install of swifthshader or mesa-vulkan driver?"
-        exit 1
-    fi
-}
-
-function select_toolchain() {
-    if [[ "${ARCH}" == "x86_64" ]]; then
-        if [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-	        # TODO can include support for zephyr toolchain for other host platforms later
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-x86_64_arm-zephyr-eabi.tar.xz"
-                toolchain_dir="arm-zephyr-eabi"
-                toolchain_md5_checksum="93128be0235cf5cf5f1ee561aa6eac5f"
-            else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi"
-                toolchain_md5_checksum="0601a9588bc5b9c99ad2b56133b7f118"
-	    fi
-        else
-            echo "[main] Error: only Linux is currently supported for x86-64 architecture now!"; exit 1;
-	fi
-   elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-        if [[ "${OS}" == "Darwin" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                echo "[main] Error: only Linux OS is currently supported for aarch64 architecture targeting Zephyr now!"; exit 1;
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-darwin-arm64-arm-none-eabi"
-                toolchain_md5_checksum="f1c18320bb3121fa89dca11399273f4e"
-	    fi
-        elif [[ "${OS}" == "Linux" ]]; then
-	    if [[ "${target_toolchain}" == "zephyr" ]]; then
-                toolchain_url="https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.2/toolchain_linux-aarch64_arm-zephyr-eabi.tar.xz"
-                toolchain_dir="arm-zephyr-eabi"
-		toolchain_md5_checksum="ef4ca56786204439a75270ba800cc64b"
-	    else
-                toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/13.3.rel1/binrel/arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi.tar.xz"
-                toolchain_dir="arm-gnu-toolchain-13.3.rel1-aarch64-arm-none-eabi"
-                toolchain_md5_checksum="303102d97b877ebbeb36b3158994b218"
-	    fi
-        fi
-    else
-        echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
-    fi
-    echo "[main] Info selected ${toolchain_dir} for ${ARCH} - ${OS} platform"
-}
-
-function setup_toolchain() {
-    # Download and install the arm toolchain (default is arm-none-eabi)
-    # setting --target-toolchain to zephyr sets this to arm-zephyr-eabi
-    cd "${root_dir}"
-    if [[ ! -e "${toolchain_dir}.tar.xz" ]]; then
-        echo "[${FUNCNAME[0]}] Downloading ${toolchain_dir} toolchain ..."
-        curl --output "${toolchain_dir}.tar.xz" -L "${toolchain_url}"
-        verify_md5 ${toolchain_md5_checksum} "${toolchain_dir}.tar.xz" || exit 1
-    fi
-
-    echo "[${FUNCNAME[0]}] Installing ${toolchain_dir} toolchain ..."
-    rm -rf "${toolchain_dir}"
-    tar xf "${toolchain_dir}.tar.xz"
-}
-
 function setup_ethos_u_tools() {
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
@@ -361,6 +255,8 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Import utils
     source $et_dir/backends/arm/scripts/utils.sh
     source $et_dir/backends/arm/scripts/fvp_utils.sh
+    source $et_dir/backends/arm/scripts/toolchain_utils.sh
+    source $et_dir/backends/arm/scripts/vulkan_utils.sh
 
     echo "[main]: Checking platform and os"
     check_platform_support
@@ -382,11 +278,11 @@ if [[ $is_script_sourced -eq 0 ]]; then
     echo "enable-vela=${enable_vela}"
     echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
 
-    # Select appropriate toolchain
-    select_toolchain
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
+        # Select appropriate toolchain
+        select_toolchain
         setup_toolchain
     fi
 

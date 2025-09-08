@@ -10,6 +10,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
         ],
         platforms = CXX,
     )
