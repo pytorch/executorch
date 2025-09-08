@@ -1,8 +1,0 @@
-set_zero:
-  parameter_names_with_default_values:
-    DTYPE: float
-  generate_variant_forall:
-    DTYPE:
-      - VALUE: int32
-  shader_variants:
-    - NAME: set_zero
