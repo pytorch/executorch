@@ -14,8 +14,8 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import to_edge_transform_and_lower
 from torch import nn
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
