@@ -550,65 +550,6 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
 
-  test-llama-runner-linux:
-    # Test Both linux x86 and linux aarch64
-    name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        dtype: [fp32]
-        mode: [portable, xnnpack+custom]
-        runner: [linux.2xlarge, linux.arm64.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12, executorch-ubuntu-22.04-gcc11-aarch64]
-        include:
-          - dtype: bf16
-            mode: portable
-            runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-          - dtype: bf16
-            mode: portable
-            runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - dtype: bf16
-            mode: custom
-            runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-        # Excluding specific runner + docker image combinations that don't make sense:
-        #   - Excluding the ARM64 gcc image on the x86 runner (linux.2xlarge)
-        #   - Excluding the x86 clang image on the ARM64 runner (linux.arm64.2xlarge)
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 900
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL="cmake"
-        MODE=${{ matrix.mode }}
-        ARTIFACTS_DIR_NAME="artifacts-to-be-uploaded/${DTYPE}-${MODE}"
-        ARTIFACTS_DIR_NAME="${ARTIFACTS_DIR_NAME/+/-}"
-
-        # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Install requirements for export_llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-        # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -dtype "${DTYPE}" -mode "${MODE}" -upload "${ARTIFACTS_DIR_NAME}"
-
   test-llama-runner-macos:
     name: test-llama-runner-mac
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -644,8 +585,8 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
-  test-torchao_huggingface_checkpoints:
-    name: test-llama-runner-linux
+  test-torchao-huggingface-checkpoints:
+    name: test-torchao-huggingface-checkpoints
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -672,8 +613,8 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        sh .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
         sh .ci/scripts/test_torchao_huggingface_checkpoints.sh qwen3_4b
+        sh .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
 
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
