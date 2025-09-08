@@ -11,6 +11,7 @@ from math import prod
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
-class DecomposeEmbeddingPass(ExportPass):
+class DecomposeEmbeddingPass(ArmPass):
     """
     This pass decomposes embedding into index_select.
 
