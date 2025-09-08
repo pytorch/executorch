@@ -191,65 +191,43 @@ def find_quantized_linear_patterns(
 ##
 
 
-def pack_4bit_weight_tensor(inp: torch.Tensor) -> torch.Tensor:
+def pack_4bit_weight_tensor(weight_tensor: torch.Tensor) -> torch.Tensor:
     """
     Given a 8-bit weight tensor containing values quantized to 4 bits, create a packed
-    weight tensor by packing 2 4-bit values in one unsigned 8-bit value.
+    weight tensor by transposing the weight tensor, then packing 2 4-bit values in one
+    8-bit value.
 
-    An input weight tensor of shape (M, K) will produce a packed weight tensor of shape
-    (M, K / 2).
-
-    The packing implemented here is the same as the packing produced by
-    backends/vulkan/_passes/int4_weight_only_quantizer.py
+    An input weight tensor of shape (N, K) will produce a packed weight tensor of shape
+    (K, N / 2).
     """
 
     # Assert we got a properly quantized tensor.
-    min, max = inp.min().item(), inp.max().item()
+    min_val, max_val = weight_tensor.min().item(), weight_tensor.max().item()
     assert (
-        max <= 7 and min >= -8
-    ), f"pack_4bit_weight_tensor: [min,max] out of [-8, 7] range, got [{min}, {max}]"
+        max_val <= 7 and min_val >= -8
+    ), f"pack_4bit_weight_tensor: [min_val,max_val] out of [-8, 7] range, got [{min_val}, {max_val}]"
 
     # Assuming we have a 2d tensor
-    if inp.ndim != 2:
-        inp = inp.squeeze()
+    if weight_tensor.ndim != 2:
+        weight_tensor = weight_tensor.squeeze()
     assert (
-        inp.ndim == 2
-    ), f"pack_4bit_weight_tensor: expecting input tensor to be 2d, got {inp.ndim}"
+        weight_tensor.ndim == 2
+    ), f"pack_4bit_weight_tensor: expecting input tensor to be 2d, got {weight_tensor.ndim}"
 
-    # pad ic
-    if inp.shape[-1] % 2 != 0:
-        inp = F.pad(input=inp, pad=(0, 1, 0, 0), mode="constant", value=0)
+    # Need to pad innermost dim to be a multiple of 8, since the minimum load granularity
+    # is int32 (4 bytes), which contains 8 4-bit values.
+    if weight_tensor.shape[-1] % 8 != 0:
+        num_pad = 8 - (weight_tensor.shape[-1] % 8)
+        weight_tensor = F.pad(input=weight_tensor, pad=(0, num_pad))
 
     # Shape after padding
-    oc, ic = inp.shape
-    assert ic % 2 == 0, "convert_to_qc4w: expecting ic to be even"
+    _, in_channels = weight_tensor.shape
+    assert in_channels % 8 == 0, "convert_to_qc4w: expecting ic to be divisible by 8"
 
-    # Adjust inp tensor for zp
-    inp = inp.to(dtype=torch.uint8) + 8
+    # Adjust weight_tensor tensor for zp
+    weight_tensor = weight_tensor.to(dtype=torch.uint8) + 8
     # Pack each 4-bit value into a single 8-bit value
-    return inp[::, ::2] << 4 | inp[::, 1::2]
-
-
-def make_combined_scales_and_zeros_tensor(
-    scales: torch.Tensor, zeros: torch.Tensor
-) -> torch.Tensor:
-    """
-    Given a scales and zeros tensor, create a combined tensor by stacking them into a
-    single tensor.
-
-    The scales and zeros tensors are expected to be 2D tensors of shape
-    (OUTPUT_CHANNELS, NUM_GROUPS). The combined tensor will have the shape
-    (NUM_GROUPS, OUTPUT_CHANNELS, 2).
-
-    This is the scales and zeros format produced by
-    backends/vulkan/_passes/int4_weight_only_quantizer.py, which in turn is the scales
-    and zeros format expected by the _weight_int4pack_mm op in ATen.
-    """
-    scales_reshaped = scales.transpose(0, 1).unsqueeze(2)
-    zeros_reshaped = zeros.transpose(0, 1).unsqueeze(2)
-
-    zeros_scaled = zeros_reshaped * scales_reshaped * -1
-    return torch.cat((scales_reshaped, zeros_scaled), dim=2)
+    return weight_tensor[::, 1::2] << 4 | weight_tensor[::, ::2]
 
 
 ##
@@ -257,50 +235,50 @@ def make_combined_scales_and_zeros_tensor(
 ##
 
 
-def make_linear_q4ga_op(
+def make_linear_q4gsw_op(
     ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     match: QuantizedLinearMatch,
     weight_tensor: torch.Tensor,
     weight_scales_tensor: torch.Tensor,
-    weight_zeros_tensor: torch.Tensor,
 ):
-    packed_quantized_weight_tensor = pack_4bit_weight_tensor(weight_tensor)
-    utils.update_program_state_dict(
-        ep, match.weight_node.name, packed_quantized_weight_tensor
-    )
-    # Need to make sure corresponding FakeTensor has same size
-    match.weight_node.meta["val"] = match.weight_node.meta["val"][:, ::2].to(
-        torch.uint8
-    )
+    num_groups = weight_scales_tensor.shape[-1]
+    in_channels = weight_tensor.shape[-1]
+    group_size = in_channels // num_groups
 
-    group_size = weight_tensor.shape[1] // weight_scales_tensor.shape[1]
-
-    combined_scales_zeros_tensor = make_combined_scales_and_zeros_tensor(
-        weight_scales_tensor, weight_zeros_tensor
+    weight_tensor = pack_4bit_weight_tensor(weight_tensor)
+    # Use this function for convenience to update the state dict with the packed
+    # weight tensor. Alignment will already have been done in the above function.
+    weight_tensor = utils.align_width_and_update_state_dict(
+        ep, match.weight_node, weight_tensor, align_to=1, force_update=True
     )
 
-    combined_scales_zeros_name = f"{match.weight_node.name}_scales_zeros"
-    graph_module.register_parameter(
-        combined_scales_zeros_name, torch.nn.Parameter(combined_scales_zeros_tensor)
+    # Also transpose the weight scales tensor to shape [num_groups, N]
+    weight_scales_tensor = weight_scales_tensor.transpose(0, 1).contiguous()
+    # Align to multiple of 8 to ensure that data loads from the weight scales
+    # tensor do not go out of bounds. Each thread computes 8 output channels.
+    utils.align_width_and_update_state_dict(
+        ep,
+        match.weight_scales_node,
+        weight_scales_tensor,
+        align_to=8,
+        force_update=True,
     )
 
     with graph_module.graph.inserting_before(match.output_node):
-        combined_scales_zeros = graph_module.graph.get_attr(combined_scales_zeros_name)
-        linear_q4ga_node = graph_module.graph.create_node(
+        linear_q4gsw_node = graph_module.graph.create_node(
             "call_function",
-            exir_ops.edge.et_vk.linear_weight_int4.default,
+            exir_ops.edge.et_vk.linear_q4gsw.default,
             args=(
                 match.fp_input_node,
                 match.weight_node,
+                match.weight_scales_node,
                 group_size,
-                combined_scales_zeros,
-                1,
             ),
         )
 
-    linear_q4ga_node.meta["val"] = match.output_node.meta["val"]
-    match.output_node.replace_all_uses_with(linear_q4ga_node)
+    linear_q4gsw_node.meta["val"] = match.output_node.meta["val"]
+    match.output_node.replace_all_uses_with(linear_q4gsw_node)
 
 
 def make_linear_q8ta_q8csw_custom_op(
@@ -373,13 +351,8 @@ def replace_quantized_linear_patterns(
         and match.is_weight_pergroup_quantized()
         and utils.is_in_4bit_range(weight_tensor)
     ):
-        make_linear_q4ga_op(
-            ep,
-            graph_module,
-            match,
-            weight_tensor,
-            weight_scales_tensor,
-            weight_zeros_tensor,
+        make_linear_q4gsw_op(
+            ep, graph_module, match, weight_tensor, weight_scales_tensor
         )
     elif (
         match.is_input_static_per_tensor_quantized()

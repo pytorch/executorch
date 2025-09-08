@@ -46,6 +46,8 @@ void generate_random_uint8_data(
     std::vector<uint8_t>& data,
     uint8_t min_val = 0,
     uint8_t max_val = 255);
+void generate_random_2xint4_data(std::vector<uint8_t>& data);
+void generate_random_2xint4_data(std::vector<int8_t>& data);
 void generate_random_int4_data(
     std::vector<int8_t>& data,
     int8_t min_val = -8,
@@ -186,9 +188,12 @@ void ValueSpec::generate_tensor_data() {
       } else if (data_gen_type == DataGenType::RANDINT8) {
         generate_random_int8_data(int8_data, -128, 127);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_int4_data(int8_data);
+        generate_random_2xint4_data(int8_data);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(int8_data.begin(), int8_data.end(), 1);
+      } else if (data_gen_type == DataGenType::ONES_INT4) {
+        int8_t packed_data = (1 << 4) | 1;
+        std::fill(int8_data.begin(), int8_data.end(), packed_data);
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(int8_data.begin(), int8_data.end(), 0);
       } else {
@@ -205,7 +210,7 @@ void ValueSpec::generate_tensor_data() {
       } else if (data_gen_type == DataGenType::RANDINT8) {
         generate_random_uint8_data(uint8_data, 0, 255);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_uint8_data(uint8_data, 0, 15);
+        generate_random_2xint4_data(uint8_data);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(uint8_data.begin(), uint8_data.end(), 1);
       } else if (data_gen_type == DataGenType::ZEROS) {
@@ -561,6 +566,30 @@ void generate_random_int4_data(
   std::uniform_int_distribution<int16_t> dis(min_val, max_val);
   for (auto& val : data) {
     val = static_cast<int8_t>(dis(gen));
+  }
+}
+
+void generate_random_2xint4_data(std::vector<int8_t>& data) {
+  std::mt19937 gen(get_seed());
+  std::uniform_int_distribution<int16_t> dis(-8, 7); // Signed 4-bit range
+  for (auto& val : data) {
+    // Generate two separate 4-bit values
+    int8_t lower_4bits = static_cast<int8_t>(dis(gen)) & 0x0F;
+    int8_t upper_4bits = static_cast<int8_t>(dis(gen)) & 0x0F;
+    // Pack them into a single 8-bit value
+    val = (upper_4bits << 4) | lower_4bits;
+  }
+}
+
+void generate_random_2xint4_data(std::vector<uint8_t>& data) {
+  std::mt19937 gen(get_seed());
+  std::uniform_int_distribution<uint16_t> dis(0, 15); // Unsigned 4-bit range
+  for (auto& val : data) {
+    // Generate two separate 4-bit values
+    uint8_t lower_4bits = static_cast<uint8_t>(dis(gen)) & 0x0F;
+    uint8_t upper_4bits = static_cast<uint8_t>(dis(gen)) & 0x0F;
+    // Pack them into a single 8-bit value
+    val = (upper_4bits << 4) | lower_4bits;
   }
 }
 
@@ -1442,19 +1471,69 @@ void print_valuespec_data(
     }
     case vkapi::kChar: {
       const auto& data = spec.get_int8_data();
-      for (size_t i = 0; i < print_count; ++i) {
-        std::cout << static_cast<int>(data[i]);
-        if (i < print_count - 1)
-          std::cout << ", ";
+      if (spec.is_int4()) {
+        // Print each 4-bit value individually
+        size_t element_count = 0;
+        for (size_t i = 0; i < data.size() && element_count < print_count;
+             ++i) {
+          // Extract lower 4 bits (signed)
+          int8_t lower_4bits = data[i] & 0x0F;
+          if (lower_4bits > 7)
+            lower_4bits -= 16; // Convert to signed
+          std::cout << static_cast<int>(lower_4bits);
+          element_count++;
+
+          if (element_count < print_count) {
+            std::cout << ", ";
+            // Extract upper 4 bits (signed)
+            int8_t upper_4bits = (data[i] >> 4) & 0x0F;
+            if (upper_4bits > 7)
+              upper_4bits -= 16; // Convert to signed
+            std::cout << static_cast<int>(upper_4bits);
+            element_count++;
+
+            if (element_count < print_count)
+              std::cout << ", ";
+          }
+        }
+      } else {
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << static_cast<int>(data[i]);
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
       }
       break;
     }
     case vkapi::kByte: {
       const auto& data = spec.get_uint8_data();
-      for (size_t i = 0; i < print_count; ++i) {
-        std::cout << static_cast<unsigned int>(data[i]);
-        if (i < print_count - 1)
-          std::cout << ", ";
+      if (spec.is_int4()) {
+        // Print each 4-bit value individually
+        size_t element_count = 0;
+        for (size_t i = 0; i < data.size() && element_count < print_count;
+             ++i) {
+          // Extract lower 4 bits
+          uint8_t lower_4bits = data[i] & 0x0F;
+          std::cout << static_cast<unsigned int>(lower_4bits);
+          element_count++;
+
+          if (element_count < print_count) {
+            std::cout << ", ";
+            // Extract upper 4 bits
+            uint8_t upper_4bits = (data[i] >> 4) & 0x0F;
+            std::cout << static_cast<unsigned int>(upper_4bits);
+            element_count++;
+
+            if (element_count < print_count)
+              std::cout << ", ";
+          }
+        }
+      } else {
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << static_cast<unsigned int>(data[i]);
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
       }
       break;
     }
