@@ -6,5 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # QNN SDK Configuration
-QNN_VERSION="2.37.0.250724"
+QNN_MAJOR_VERSION="2.37.0"
+QNN_MINOR_VERSION="250724"
+QNN_VERSION="${QNN_MAJOR_VERSION}.${QNN_MINOR_VERSION}"
 QNN_ZIP_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/${QNN_VERSION}/v${QNN_VERSION}.zip"
