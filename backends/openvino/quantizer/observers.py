@@ -94,7 +94,7 @@ class WeightObserverBase(ObserverBase, ABC):
         """
         weight_node = observer_node.args[0]
         original_weight = get_tensor_constant_from_node(weight_node, model)
-        q_weight, scale, zero_point = self.calculate_qparams(
+        q_weight, scale, zero_point = self._calculate_qparams(
             original_weight
         )
 
@@ -156,18 +156,17 @@ class INT4WeightObserver(WeightObserverBase):
         q_weight: torch.Tensor,
         original_weight: torch.Tensor,
     ) -> BaseWeightsDecompressor:
-        if zero_point is not None:
-            return INT4AsymmetricWeightsDecompressor(
-                scale,
-                zero_point,
-                q_weight.shape,
-                original_weight.shape,
-                original_weight.dtype,
-            )
-        else:
+        if zero_point is None:
             return INT4SymmetricWeightsDecompressor(
                 scale, q_weight.shape, original_weight.shape, original_weight.dtype
             )
+        return INT4AsymmetricWeightsDecompressor(
+            scale,
+            zero_point,
+            q_weight.shape,
+            original_weight.shape,
+            original_weight.dtype,
+        )
 
 
 class INT8WeightObserver(WeightObserverBase):
@@ -182,10 +181,11 @@ class INT8WeightObserver(WeightObserverBase):
         q_weight: torch.Tensor,
         original_weight: torch.Tensor,
     ) -> BaseWeightsDecompressor:
-        if zero_point is not None:
-            return INT8AsymmetricWeightsDecompressor(
-                scale, zero_point, original_weight.dtype
+        if zero_point is None:
+            return INT8SymmetricWeightsDecompressor(
+                scale, original_weight.dtype
             )
-        else:
-            return INT8SymmetricWeightsDecompressor(scale, original_weight.dtype)
+        return INT8AsymmetricWeightsDecompressor(
+            scale, zero_point, original_weight.dtype
+        )
 
