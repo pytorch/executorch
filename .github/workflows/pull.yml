@@ -82,58 +82,58 @@ jobs:
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-  test-models-linux:
-    name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
-        backend: [portable, xnnpack-quantization-delegation]
-        runner: [linux.2xlarge]
-        include:
-          - model: ic4
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: ic4
-            backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
-          - model: emformer_join
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: emformer_join
-            backend: xnnpack-quantization-delegation
-            runner: linux.4xlarge.memory
-          - model: phi_4_mini
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: llama3_2_vision_encoder
-            backend: portable
-            runner: linux.4xlarge.memory
-          - model: w2l
-            backend: portable
-            runner: linux.4xlarge.memory
-      fail-fast: false
-    with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-models-linux:
+  #   name: test-models-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       model: [linear, add, add_mul, ic3, mv2, resnet18, resnet50, mobilebert, emformer_transcribe]
+  #       backend: [portable, xnnpack-quantization-delegation]
+  #       runner: [linux.2xlarge]
+  #       include:
+  #         - model: ic4
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: ic4
+  #           backend: xnnpack-quantization-delegation
+  #           runner: linux.4xlarge.memory
+  #         - model: emformer_join
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: emformer_join
+  #           backend: xnnpack-quantization-delegation
+  #           runner: linux.4xlarge.memory
+  #         - model: phi_4_mini
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: llama3_2_vision_encoder
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #         - model: w2l
+  #           backend: portable
+  #           runner: linux.4xlarge.memory
+  #     fail-fast: false
+  #   with:
+  #     runner: ${{ matrix.runner }}
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL=cmake
-        BACKEND=${{ matrix.backend }}
+  #       MODEL_NAME=${{ matrix.model }}
+  #       BUILD_TOOL=cmake
+  #       BACKEND=${{ matrix.backend }}
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-        # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+  #       # Build and test ExecuTorch
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64

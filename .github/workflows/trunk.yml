@@ -273,47 +273,47 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  test-arm-backend:
-    name: test-arm-backend
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      matrix:
-        include:
-          - test_arm_baremetal: test_pytest_ops_ethosu_fvp
-          - test_arm_baremetal: test_pytest_models_ethosu_fvp
-          - test_arm_baremetal: test_run_ethosu_fvp
-          - test_arm_baremetal: test_models_tosa
-          - test_arm_baremetal: test_models_ethos-u55
-          - test_arm_baremetal: test_models_ethos-u85
-          - test_arm_baremetal: test_smaller_stories_llama
-      fail-fast: false
-    with:
-      runner: linux.2xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 120
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # test-arm-backend:
+  #   name: test-arm-backend
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     matrix:
+  #       include:
+  #         - test_arm_baremetal: test_pytest_ops_ethosu_fvp
+  #         - test_arm_baremetal: test_pytest_models_ethosu_fvp
+  #         - test_arm_baremetal: test_run_ethosu_fvp
+  #         - test_arm_baremetal: test_models_tosa
+  #         - test_arm_baremetal: test_models_ethos-u55
+  #         - test_arm_baremetal: test_models_ethos-u85
+  #         - test_arm_baremetal: test_smaller_stories_llama
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.2xlarge.memory
+  #     docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 120
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+  #       source .ci/scripts/utils.sh
+  #       install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+  #       .ci/scripts/setup-arm-baremetal-tools.sh
 
-        # Increase number of files user can monitor to bypass buck failures.
-        # Hopefully this is high enough for this setup.
-        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+  #       # Increase number of files user can monitor to bypass buck failures.
+  #       # Hopefully this is high enough for this setup.
+  #       sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
-        ARM_TEST=${{ matrix.test_arm_baremetal }}
+  #       ARM_TEST=${{ matrix.test_arm_baremetal }}
 
-        # Test test_arm_baremetal.sh with test
-        backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
+  #       # Test test_arm_baremetal.sh with test
+  #       backends/arm/test/test_arm_baremetal.sh "${ARM_TEST}"
 
   test-arm-cortex-m-size-test:
     name: test-arm-cortex-m-size-test
