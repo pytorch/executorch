@@ -7,8 +7,8 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.quant_utils as tqutils
+import executorch.backends.arm.tosa.utils as tutils
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -19,8 +19,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -47,10 +47,16 @@ class AddVisitor_INT(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
+        valid_dtypes = []
+        if self.tosa_spec.support_integer():
+            valid_dtypes.extend([ts.DType.INT8, ts.DType.INT16, ts.DType.INT32])
+        if self.tosa_spec.support_float():
+            valid_dtypes.extend([ts.DType.INT32])
+
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT32],
+            valid_dtypes,
             output.tosa_spec,
         )
         scale_back = 1.0
@@ -59,7 +65,7 @@ class AddVisitor_INT(NodeVisitor):
                 tosa_graph, inputs, node, self.tosa_spec
             )
         else:
-            # input[0].dtype == ts.DType.INT32
+            # input[0].dtype == ts.DType.INT16 or ts.DType.INT32
             # Non quantized input, natively support by TOSA.ADD
             rescaled_inputs = inputs
 
@@ -67,7 +73,7 @@ class AddVisitor_INT(NodeVisitor):
             broadcasted_shape = tutils.tosa_shape(output.shape, output.dim_order)
             add_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
         else:
-            # output.dtype == ts.DType.INT32
+            # output.dtype == ts.DType.INT16 or ts.DType.INT32
             add_output = output
 
         input1, input2 = rescaled_inputs
@@ -117,7 +123,7 @@ class AddVisitor_FP(AddVisitor_INT):
         validate_num_inputs(self.target, inputs, 2)
         validate_same_dtype(self.target, [*inputs, output], ts)
 
-        if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT32]:
+        if inputs[0].dtype in [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32]:
             # Call the inherited define_node for handling integers
             super().define_node(node, tosa_graph, inputs, output)
         else:
