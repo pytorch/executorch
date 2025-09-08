@@ -21,7 +21,7 @@ from executorch.backends.arm.test.runner_utils import (
     model_converter_installed,
     vkml_emulation_layer_installed,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
@@ -63,16 +63,24 @@ def maybe_get_tosa_collate_path() -> str | None:
 
 
 def get_tosa_compile_spec(
-    tosa_spec: str | TosaSpecification, custom_path=None
+    tosa_spec: str | TosaSpecification,
+    custom_path: Optional[str] = None,
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for TOSA tests.
     """
-    return get_tosa_compile_spec_unbuilt(tosa_spec, custom_path).build()
+    return get_tosa_compile_spec_unbuilt(
+        tosa_spec,
+        custom_path,
+        tosa_debug_mode,
+    ).build()
 
 
 def get_tosa_compile_spec_unbuilt(
-    tosa_spec: str | TosaSpecification, custom_path=None
+    tosa_spec: str | TosaSpecification,
+    custom_path: Optional[str],
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -82,11 +90,15 @@ def get_tosa_compile_spec_unbuilt(
 
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
+
     compile_spec_builder = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec(tosa_spec)
         .dump_intermediate_artifacts_to(custom_path)
     )
+
+    if tosa_debug_mode is not None:
+        compile_spec_builder.dump_debug_info(tosa_debug_mode)
 
     return compile_spec_builder
 
@@ -97,6 +109,7 @@ def get_u55_compile_spec(
     memory_mode: str = "Shared_Sram",
     extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
     config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
@@ -108,16 +121,18 @@ def get_u55_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        tosa_debug_mode=tosa_debug_mode,
         config=config,
     ).build()
 
 
 def get_u85_compile_spec(
     macs: int = 128,
-    system_config="Ethos_U85_SYS_DRAM_Mid",
-    memory_mode="Shared_Sram",
-    extra_flags="--output-format=raw",
-    custom_path=None,
+    system_config: str = "Ethos_U85_SYS_DRAM_Mid",
+    memory_mode: str = "Shared_Sram",
+    extra_flags: str = "--output-format=raw",
+    custom_path: Optional[str] = None,
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
     config: Optional[str] = "Arm/vela.ini",
 ) -> list[CompileSpec]:
     """
@@ -129,6 +144,7 @@ def get_u85_compile_spec(
         memory_mode=memory_mode,
         extra_flags=extra_flags,
         custom_path=custom_path,
+        tosa_debug_mode=tosa_debug_mode,
         config=config,
     ).build()
 
@@ -136,12 +152,15 @@ def get_u85_compile_spec(
 def get_vgf_compile_spec(
     tosa_spec: str | TosaSpecification,
     compiler_flags: Optional[str] = "",
-    custom_path=None,
+    custom_path: Optional[str] = "",
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
 ) -> list[CompileSpec]:
     """
     Default compile spec for VGF tests.
     """
-    return get_vgf_compile_spec_unbuilt(tosa_spec, compiler_flags, custom_path).build()
+    return get_vgf_compile_spec_unbuilt(
+        tosa_spec, compiler_flags, custom_path, tosa_debug_mode
+    ).build()
 
 
 def get_u55_compile_spec_unbuilt(
@@ -150,6 +169,7 @@ def get_u55_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode],
     config: Optional[str],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
@@ -173,6 +193,10 @@ def get_u55_compile_spec_unbuilt(
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
+
+    if tosa_debug_mode is not None:
+        compile_spec.dump_debug_info(tosa_debug_mode)
+
     return compile_spec
 
 
@@ -182,6 +206,7 @@ def get_u85_compile_spec_unbuilt(
     memory_mode: str,
     extra_flags: str,
     custom_path: Optional[str],
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode],
     config: Optional[str],
 ) -> list[CompileSpec]:
     """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
@@ -204,13 +229,18 @@ def get_u85_compile_spec_unbuilt(
         )
         .dump_intermediate_artifacts_to(artifact_path)
     )
+
+    if tosa_debug_mode is not None:
+        compile_spec.dump_debug_info(tosa_debug_mode)
+
     return compile_spec  # type: ignore[return-value]
 
 
 def get_vgf_compile_spec_unbuilt(
     tosa_spec: str | TosaSpecification,
-    compiler_flags: Optional[str] = "",
-    custom_path=None,
+    compiler_flags: Optional[str],
+    custom_path: Optional[str],
+    tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode],
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the default VGF tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -230,6 +260,9 @@ def get_vgf_compile_spec_unbuilt(
         .vgf_compile_spec(tosa_spec, compiler_flags)
         .dump_intermediate_artifacts_to(artifact_path)
     )
+
+    if tosa_debug_mode is not None:
+        compile_spec_builder.dump_debug_info(tosa_debug_mode)
 
     return compile_spec_builder
 

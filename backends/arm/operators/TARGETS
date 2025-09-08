@@ -5,8 +5,9 @@ python_library(
     name = "node_visitor",
     srcs = ["node_visitor.py"],
     deps = [
-        "//executorch/backends/arm:tosa_mapping",
-        "//executorch/backends/arm:tosa_specification",
+        "//executorch/backends/arm/debug:schema",
+        "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm/tosa:tosa",
     ],
 )
 
@@ -23,9 +24,9 @@ python_library(
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         ":node_visitor",
         ":operator_validation_utils",
-        "//executorch/backends/arm:tosa_mapping",
-        "//executorch/backends/arm:tosa_quant_utils",
-        "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm/tosa:quant_utils",
+        "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
     ],

@@ -176,7 +176,7 @@ jobs:
           - model: phi_4_mini
             backend: portable
             runner: linux.arm64.m7g.4xlarge
-          - model: qwen2_5
+          - model: qwen2_5_1_5b
             backend: portable
             runner: linux.arm64.2xlarge
           - model: llama3_2_vision_encoder
@@ -823,10 +823,10 @@ jobs:
           --tsv_path ${TSV_PATH}
         echo "::endgroup::"
 
-  test-huggingface-transformers-coreml:
+  test-huggingface-transformers-macos:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-transformers-coreml
+    name: test-huggingface-transformers-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
@@ -844,10 +844,10 @@ jobs:
           # phi4-mini|xnnpack|--quantize,
           # smollm2-135m|xnnpack|--quantize,
           # smollm3-3b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
           # CoreML.
           llama3.2-1b|coreml_fp32_gpu|--quantize,
           qwen3-0.6b|coreml_fp32_gpu|--quantize,
-          qwen3-1.7b|xnnpack|--quantize,
           smollm2-135m|coreml_fp32_gpu|--quantize,
           olmo-1b|coreml_fp32_gpu|--quantize,
           bert|coreml_fp32_gpu|--quantize,
@@ -979,3 +979,27 @@ jobs:
         # Run MCU models
         chmod +x examples/arm/run_mcu_models_fvp.sh
         examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
+
+  test-models-windows:
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
+        backend: [portable, xnnpack-f32, xnnpack-q8]
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        conda init powershell
+        
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1       
+
+          powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+        }"

@@ -22,6 +22,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAddWithAttributes,
     ModuleChannelsLast,
     ModuleChannelsLastInDefaultOut,
+    ModuleLinear,
     ModuleMulti,
 )
 from torch.export import export
@@ -518,19 +519,32 @@ class PybindingsTest(unittest.TestCase):
         )
 
     def test_program_method_meta(self) -> None:
-        exported_program, inputs = create_program(ModuleAdd())
+        eager_module = ModuleAddWithAttributes()
+        inputs = eager_module.get_inputs()
 
-        executorch_program = self.load_prog_fn(exported_program.buffer)
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_prog = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(
+                emit_mutable_buffer_names=True,
+            )
+        )
+
+        exec_prog.dump_executorch_program(verbose=True)
+
+        executorch_program = self.load_prog_fn(exec_prog.buffer)
+
         meta = executorch_program.method_meta("forward")
 
         del executorch_program
         self.assertEqual(meta.name(), "forward")
         self.assertEqual(meta.num_inputs(), 2)
         self.assertEqual(meta.num_outputs(), 1)
+        self.assertEqual(meta.num_attributes(), 1)
 
         tensor_info = (
             "TensorInfo(sizes=[2, 2], dtype=Float, is_memory_planned=True, nbytes=16)"
         )
+
         float_dtype = 6
         self.assertEqual(
             str(meta),
@@ -541,9 +555,13 @@ class PybindingsTest(unittest.TestCase):
 
         input_tensors = [meta.input_tensor_meta(i) for i in range(2)]
         output_tensor = meta.output_tensor_meta(0)
+        attribute_tensor = meta.attribute_tensor_meta(0)
 
         with self.assertRaises(IndexError):
             meta.input_tensor_meta(2)
+
+        with self.assertRaises(IndexError):
+            meta.attribute_tensor_meta(1)
 
         del meta
         self.assertEqual([t.sizes() for t in input_tensors], [(2, 2), (2, 2)])
@@ -557,6 +575,12 @@ class PybindingsTest(unittest.TestCase):
         self.assertEqual(output_tensor.is_memory_planned(), True)
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
+
+        self.assertEqual(attribute_tensor.sizes(), (2, 2))
+        self.assertEqual(attribute_tensor.dtype(), float_dtype)
+        self.assertEqual(attribute_tensor.is_memory_planned(), True)
+        self.assertEqual(attribute_tensor.nbytes(), 16)
+        self.assertEqual(str(attribute_tensor), tensor_info)
 
     def test_method_method_meta(self) -> None:
         exported_program, inputs = create_program(ModuleAdd())
@@ -600,3 +624,35 @@ class PybindingsTest(unittest.TestCase):
         self.assertEqual(output_tensor.is_memory_planned(), True)
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
+
+    def test_program_data_separation(self) -> None:
+        eager_module = ModuleLinear()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_program = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(
+                # Move all tensor data to '_default_external_constant' file.
+                external_constants=True,
+            )
+        )
+
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pte_file = os.path.join(tmpdir, "linear.pte")
+            with open(pte_file, "wb") as f:
+                f.write(exec_program.buffer)
+
+            ptd_file = os.path.join(tmpdir, "linear.ptd")
+            with open(ptd_file, "wb") as ptd:
+                tensor_data = bytes(
+                    exec_program._tensor_data.pop("_default_external_constant")
+                )
+                ptd.write(tensor_data)
+
+            executorch_program = self.runtime._load_for_executorch(pte_file, ptd_file)
+
+            expected = eager_module(inputs[0])
+            executorch_output = executorch_program.forward(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output))

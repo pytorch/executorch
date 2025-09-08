@@ -20,7 +20,7 @@ import torch
 
 from executorch.backends.arm.arm_backend import is_tosa, is_vgf
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_tosa_spec,
     Tosa_1_00,
     TosaSpecification,

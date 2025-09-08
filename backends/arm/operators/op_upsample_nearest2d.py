@@ -17,8 +17,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_utils import get_resize_parameters
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.utils import get_resize_parameters
 
 from tosa.ResizeMode import ResizeMode  # type: ignore
 
@@ -89,7 +89,9 @@ class UpsampleNearest2dVisitor(NodeVisitor):
             mode=ResizeMode.NEAREST,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().RESIZE,
             [
                 inputs[0].name,
