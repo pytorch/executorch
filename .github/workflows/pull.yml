@@ -939,6 +939,7 @@ jobs:
         # Run e2e testing for selected operators. More operators will be tested via this
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
   nxp-build-test:
     name: nxp-build-test

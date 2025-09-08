@@ -2651,6 +2651,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no 8-bit int support")
     def test_vulkan_backend_torchao_8da4w_quantized_linear(self):
         """
         Test TorchAO 8da4w quantization (int8 dynamic activation + int4 weight) with Vulkan backend.
