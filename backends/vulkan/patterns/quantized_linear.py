@@ -116,7 +116,6 @@ class QuantizedLinearMatch(PatternMatch):
 
         # If input is not quantized, then we are done
         if self.quantize_input_node is None:
-            raise Exception("Input is not quantized")
             self.match_found = True
             return
 
@@ -478,7 +477,6 @@ def replace_quantized_linear_patterns(
         and match.is_weight_pergroup_quantized()
         and utils.is_in_4bit_range(weight_tensor)
     ):
-        raise Exception("Unsupported pattern")
         make_linear_q4gsw_op(
             ep, graph_module, match, weight_tensor, weight_scales_tensor
         )
