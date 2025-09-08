@@ -172,7 +172,6 @@ def register_affine_quantization_op():
 
 @update_features(
     [
-        exir_ops.edge.torchao.choose_qparams_affine.default,
         exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
         exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
     ]
@@ -180,6 +179,20 @@ def register_affine_quantization_op():
 def register_torchao_quantization_op():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
+    )
+
+
+@update_features(
+    exir_ops.edge.torchao.choose_qparams_affine.default,
+)
+def register_torchao_choose_qparams_affine():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        outputs_storage=[
+            utils.CONTIGUOUS_BUFFER,  # scales
+            utils.CONTIGUOUS_BUFFER,  # zero_points
+        ],
         supports_resize=True,
     )
 
@@ -320,6 +333,20 @@ def register_int8_mm_op():
 
 @update_features(
     [
+        exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
+        exir_ops.edge.et_vk.linear_q4gsw.default,
+    ]
+)
+def register_quantized_linear_ops():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        supports_prepacking=True,
+        supports_resize=False,
+    )
+
+
+@update_features(
+    [
         exir_ops.edge.et_vk.linear_weight_int4.default,
     ]
 )
@@ -421,6 +448,7 @@ def register_reduce_op():
 @update_features(
     [
         exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
     ]
 )
@@ -453,6 +481,33 @@ def register_convolution_op():
             utils.NO_STORAGE,  # output_max (non tensor)
         ],
         supports_resize=True,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw.default,
+    ]
+)
+def register_quantized_conv_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        supports_resize=False,
         supports_prepacking=True,
     )
 

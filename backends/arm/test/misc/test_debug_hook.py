@@ -6,6 +6,7 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.debug.schema import DebugHook, DebugSchema
 from executorch.backends.arm.test import common
 
@@ -156,8 +157,8 @@ TESTCASES = {
 
 
 @common.parametrize("test_data", TESTCASES)
-def test_debug_hook_add_1(test_data: DebugHookTestCase):
-    hook = DebugHook()
+def test_debug_hook_add_json(test_data: DebugHookTestCase):
+    hook = DebugHook(ArmCompileSpecBuilder.DebugMode.JSON)
     hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
@@ -165,4 +166,18 @@ def test_debug_hook_add_1(test_data: DebugHookTestCase):
     assert len(debug_events[0].torch_info.node_trace) == test_data.num_nodes_traced
 
     _compare_tosa_and_schema(debug_events[0], test_data.tosa_op)
+    _compare_node_and_schema(debug_events[0], test_data.mock_node)
+
+
+@common.parametrize("test_data", TESTCASES)
+def test_debug_hook_add_tosa(test_data: DebugHookTestCase):
+    hook = DebugHook(ArmCompileSpecBuilder.DebugMode.TOSA)
+    hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
+
+    debug_events = hook._debug_events
+    assert len(debug_events) == test_data.expected_events
+    assert len(debug_events[0].torch_info.node_trace) == test_data.num_nodes_traced
+
+    assert debug_events[0].tosa_info is None
+
     _compare_node_and_schema(debug_events[0], test_data.mock_node)

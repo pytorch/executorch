@@ -22,6 +22,7 @@ from executorch.extension.pybindings.test.make_test import (
     ModuleAddWithAttributes,
     ModuleChannelsLast,
     ModuleChannelsLastInDefaultOut,
+    ModuleLinear,
     ModuleMulti,
 )
 from torch.export import export
@@ -623,3 +624,35 @@ class PybindingsTest(unittest.TestCase):
         self.assertEqual(output_tensor.is_memory_planned(), True)
         self.assertEqual(output_tensor.nbytes(), 16)
         self.assertEqual(str(output_tensor), tensor_info)
+
+    def test_program_data_separation(self) -> None:
+        eager_module = ModuleLinear()
+        inputs = eager_module.get_inputs()
+        exported_program = export(eager_module, inputs, strict=True)
+        exec_program = to_edge(exported_program).to_executorch(
+            config=ExecutorchBackendConfig(
+                # Move all tensor data to '_default_external_constant' file.
+                external_constants=True,
+            )
+        )
+
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pte_file = os.path.join(tmpdir, "linear.pte")
+            with open(pte_file, "wb") as f:
+                f.write(exec_program.buffer)
+
+            ptd_file = os.path.join(tmpdir, "linear.ptd")
+            with open(ptd_file, "wb") as ptd:
+                tensor_data = bytes(
+                    exec_program._tensor_data.pop("_default_external_constant")
+                )
+                ptd.write(tensor_data)
+
+            executorch_program = self.runtime._load_for_executorch(pte_file, ptd_file)
+
+            expected = eager_module(inputs[0])
+            executorch_output = executorch_program.forward(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output))

@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_FP_INPUT_TILE_GLSLH
+#define LINEAR_FP_INPUT_TILE_GLSLH
+
+/*
+ * Defines the FPInputTile struct, which is used to represent a tile of the
+ * input matrix of a matrix multiplication operation.
+ *
+ * Settings:
+ * - TILE_M: number of rows in the tile
+ * - TILE_K4: number of (groups of 4) columns in the tile
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct FPInputTile {
+  VEC4_T data[TILE_M][TILE_K4];
+};
+
+#ifdef DEBUG_MODE
+
+void printFPInputTile(const FPInputTile in_tile) {
+  debugPrintfEXT("input_tile: \\n");
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      debugPrintfEXT(
+          "  %f, %f, %f, %f, \\n",
+          in_tile.data[m][k4].x,
+          in_tile.data[m][k4].y,
+          in_tile.data[m][k4].z,
+          in_tile.data[m][k4].w);
+    }
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_FP_INPUT_TILE_GLSLH
