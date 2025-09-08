@@ -8,3 +8,6 @@
 set -ex
 
 source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
+
+setup_libcpp 12
+install_qnn
