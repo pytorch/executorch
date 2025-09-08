@@ -42,23 +42,21 @@ if "%args%" == "" (
 )
 
 echo "Evaluating symlink status. CWD: %CD%"
-echo ON
+set work_dir=%CD%
 if exist setup.py (
     echo "Creating symlink..."
     REM Setup a symlink to shorten the path length.
     REM Note that the ET directory has to be named "executorch".
-    set work_dir=%CD%
     cd %GITHUB_WORKSPACE%
-    if not exist et (
+    if not exist et\ (
         mkdir et
     )
     cd et
-    if not exist executorch (
+    if not exist executorch\ (
         mklink /d executorch %work_dir%
     )
     cd executorch
 )
 echo "Post symlink CWD: %CD%"
-echo OFF
 
 %args% || exit /b 1

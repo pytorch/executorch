@@ -155,7 +155,7 @@ class Version:
             print(f"Files at {path1}: {list(os.listdir(path1))}", file=sys.stderr)
         finally:
             pass
-        
+
         lines = [
             "from typing import Optional",
             '__all__ = ["__version__", "git_version"]',
@@ -165,7 +165,7 @@ class Version:
         ]
         with open(path, "w") as fp:
             fp.write("\n".join(lines) + "\n")
-        
+
         file_dir = os.path.dirname(path)
         print(f"Files: {list(os.listdir(file_dir))}", file=sys.stderr)
 
