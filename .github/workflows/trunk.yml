@@ -612,6 +612,7 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
+        pip install -U "huggingface_hub[cli]"
 
         sh .ci/scripts/test_torchao_huggingface_checkpoints.sh qwen3_4b
         sh .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
