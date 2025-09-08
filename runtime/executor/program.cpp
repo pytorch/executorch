@@ -67,6 +67,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   // See if the program size is in the header.
   size_t program_size = 0;
   size_t segment_base_offset = 0;
+  size_t segment_data_size = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
     Result<FreeableBuffer> header = loader->load(
@@ -82,6 +83,25 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // The header has the program size.
       program_size = eh->program_size;
       segment_base_offset = eh->segment_base_offset;
+      segment_data_size = eh->segment_data_size;
+
+      // Check the expected file size in two cases:
+      // 1. segment_base_offset == 0 && segment_data_size == 0: this indicates
+      // there are no segments.
+      // 2. segment_data_size > 0; a 0 value may indicate that the field was
+      // not set, e.g. on older PTE files.
+      if ((segment_data_size == 0 && segment_base_offset == 0) ||
+          segment_data_size > 0) {
+        size_t expected =
+            ExtendedHeader::kHeaderOffset + program_size + segment_data_size;
+        size_t actual = loader->size().get();
+        ET_CHECK_OR_RETURN_ERROR(
+            expected <= actual,
+            InvalidProgram,
+            "File size is too small. Expected file size from extended header is %zu, actual file size from data loader is %zu",
+            expected,
+            actual);
+      }
     } else if (eh.error() == Error::NotFound) {
       // No header; the program consumes the whole file, and there are no
       // segments.
