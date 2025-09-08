@@ -875,28 +875,16 @@ jobs:
   #       CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
   #       .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-<<<<<<< HEAD
         # Install test requirements
         # pip install -r backends/nxp/requirements-tests-pypi.txt
         # pip install -r backends/nxp/requirements-tests-eiq.txt
-=======
-  #       # Install test requirements
-  #       pip install -r backends/nxp/requirements-tests-pypi.txt
-  #       pip install -r backends/nxp/requirements-tests-eiq.txt
->>>>>>> 5c905fcadd (address some feedback and disable some jobs for now)
 
   #       # Run pytest
   #       PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
-<<<<<<< HEAD
         # Run aot examples:
         # PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         # PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
-=======
-  #       # Run aot examples:
-  #       PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
-  #       PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
->>>>>>> 5c905fcadd (address some feedback and disable some jobs for now)
 
 
   # test-samsung-models-linux:
