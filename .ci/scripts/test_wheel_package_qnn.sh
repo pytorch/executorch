@@ -25,6 +25,7 @@ from executorch.backends.qualcomm.utils.utils import (
     get_soc_to_chipset_map,
     to_edge_transform_and_lower_to_qnn,
 )
+from executorch.exir.backend.utils import format_delegated_graph
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
@@ -70,6 +71,9 @@ def main() -> None:
         backend_options=backend_options,
     )
     delegated_program = to_edge_transform_and_lower_to_qnn(m, example_inputs, compile_spec)
+    output_graph = format_delegated_graph(delegated_program.exported_program().graph_module)
+    # Ensure QnnBackend is in the output graph
+    assert "QnnBackend" in output
     executorch_program = delegated_program.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
