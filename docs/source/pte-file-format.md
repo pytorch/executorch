@@ -71,7 +71,9 @@ Optional extended header:
 |          byte offset zero above. I.e., it includes these headers.
 | [24..31] uint64_t offset (from byte offset zero above) to the start of the
 |          first segment, or zero if there are no segments.
-|  [31..?] Any zero-padding necessary to preserve the alignment of the data
+| [32..39] uint64_t size of the segment data, ie. the size from the segment_base_offset
+|          to the end of the file
+| [40..?]  Any zero-padding necessary to preserve the alignment of the data
 |          that follows.
 End of optional extended header.
 ```
@@ -81,13 +83,16 @@ Example:
         Offset to flatbuffer root (0x38)
         |            File magic ("ET??")
         |            |            Extended header magic ("eh??")
-        |            |            |            Extended header size (0x18)
+        |            |            |            Extended header size (0x20)
         vvvvvvvvvvv  vvvvvvvvvvv  vvvvvvvvvvv  vvvvvvvvvvv
-0x0000  38 00 00 00  45 54 3F 3F  65 68 3F 3F  18 00 00 00
+0x0000  38 00 00 00  45 54 3F 3F  65 68 3F 3F  20 00 00 00
 0x0010  F0 02 00 00  00 00 00 00  00 10 00 00  00 00 00 00
+0x0020  20
         ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^
         |                         Offset to segments (0x1000)
         Size of program flatbuffer data (0x2f0)
+        |
+        Segment data size (0x20)
 ```
 
 ## Program data
