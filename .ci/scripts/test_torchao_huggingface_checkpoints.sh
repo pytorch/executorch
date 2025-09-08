@@ -1,13 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL_NAME=${1:-}
+# -------------------------
+# Args / flags
+# -------------------------
+TEST_WITH_RUNNER=0
+MODEL_NAME=""
 
-if [[ -z "$MODEL_NAME" ]]; then
-  echo "Usage: $0 <model_name>"
+# Parse args
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <model_name> [--test_with_runner]"
   echo "Supported model_name values: qwen3_4b, phi_4_mini"
   exit 1
 fi
+
+MODEL_NAME="$1"
+shift
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --test_with_runner)
+      TEST_WITH_RUNNER=1
+      ;;
+    -h|--help)
+      echo "Usage: $0 <model_name> [--test_with_runner]"
+      echo "  model_name: qwen3_4b | phi_4_mini"
+      echo "  --test_with_runner: build ET + run llama_main to sanity-check the export"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
@@ -77,33 +104,35 @@ if [[ $MODEL_SIZE -gt $EXPECTED_MODEL_SIZE_UPPER_BOUND ]]; then
 fi
 
 # Install ET with CMake
-cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DEXECUTORCH_ENABLE_LOGGING=1 \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
-    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-    -Bcmake-out .
-cmake --build cmake-out -j16 --config Release --target install
+if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
+  echo "[runner] Building and testing llama_main ..."
+    cmake -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DEXECUTORCH_ENABLE_LOGGING=1 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
+        -Bcmake-out .
+    cmake --build cmake-out -j16 --config Release --target install
 
-# Install llama runner
-cmake -DPYTHON_EXECUTABLE=python \
-    -DCMAKE_BUILD_TYPE=Release \
-    -Bcmake-out/examples/models/llama \
-    examples/models/llama
-cmake --build cmake-out/examples/models/llama -j16 --config Release
+    # Install llama runner
+    cmake -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_BUILD_TYPE=Release \
+        -Bcmake-out/examples/models/llama \
+        examples/models/llama
+    cmake --build cmake-out/examples/models/llama -j16 --config Release
 
-# Run the model
-./cmake-out/examples/models/llama/llama_main --model_path=$MODEL_OUT --tokenizer_path="${HF_MODEL_DIR}/tokenizer.json" --prompt="Once upon a time,"
+    # Run the model
+    ./cmake-out/examples/models/llama/llama_main --model_path=$MODEL_OUT --tokenizer_path="${HF_MODEL_DIR}/tokenizer.json" --prompt="Once upon a time,"
+fi
 
 # Clean up
-rm pytorch_model_converted.bin
-rm $MODEL_OUT
+rm -f pytorch_model_converted.bin "$MODEL_OUT"

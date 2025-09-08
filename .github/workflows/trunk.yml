@@ -593,13 +593,16 @@ jobs:
       contents: read
     strategy:
       matrix:
-        mode: [xnnpack+custom]
-        runner: [linux.2xlarge]
-        docker-image: [executorch-ubuntu-22.04-clang12]
+        model: [qwen3_4b, phi_4_mini]
+        include:
+          - model: qwen3_4b
+            test_with_runner: true
+          - model: phi_4_mini
+            test_with_runner: false
       fail-fast: false
     with:
-      runner: ${{ matrix.runner }}
-      docker-image: ci-image:${{ matrix.docker-image }}
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -611,8 +614,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
         pip install -U "huggingface_hub[cli]"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh qwen3_4b
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh phi_4_mini
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
 
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
