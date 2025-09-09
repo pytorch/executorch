@@ -182,14 +182,14 @@ public class LlmModule {
     if (startPos == 0) {
       resetContext();
     }
-    int nativeResult = prefillImagesNative(image, width, height, channels);
+    int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  private native int prefillImagesNative(int[] image, int width, int height, int channels);
+  private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
    * Prefill an LLaVA Module with the given text input.
@@ -208,7 +208,7 @@ public class LlmModule {
     if (startPos == 0) {
       resetContext();
     }
-    int nativeResult = prefillPromptNative(prompt, bos, eos);
+    int nativeResult = appendTextInput(prompt, bos, eos);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -216,7 +216,7 @@ public class LlmModule {
   }
 
   // returns a tuple of (status, updated startPos)
-  private native int prefillPromptNative(String prompt, int bos, int eos);
+  private native int appendTextInput(String prompt, int bos, int eos);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.

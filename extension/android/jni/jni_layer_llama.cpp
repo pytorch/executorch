@@ -260,7 +260,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Returns a tuple of (error, start_pos)
   // Contract is valid within an AAR (JNI + corresponding Java code)
   // If the first element is not Error::Ok, the other element is undefined.
-  jint prefill_prompt(
+  jint append_text_input(
       facebook::jni::alias_ref<jstring> prompt,
       jint bos,
       jint eos) {
@@ -268,7 +268,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  jint prefill_images(
+  jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
@@ -349,9 +349,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
+            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
+            "appendTextInput", ExecuTorchLlmJni::append_text_input),
         makeNativeMethod(
             "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
