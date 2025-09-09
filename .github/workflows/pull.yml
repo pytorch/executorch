@@ -971,6 +971,10 @@ jobs:
         ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
         ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
 
+        # "Classic" Operator tests
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
+        ./cmake-out/backends/vulkan/test/op_tests/vulkan_sdpa_test
+
         # Run e2e testing for selected operators. More operators will be tested via this
         # route in the future.
         python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
