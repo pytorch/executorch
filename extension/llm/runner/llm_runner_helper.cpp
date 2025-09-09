@@ -113,6 +113,7 @@ get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module) {
         Error,
         "Required metadata method %s not found in model",
         llm::kMaxSeqLen);
+    return ::executorch::runtime::Error::InvalidArgument;
   }
 
   for (auto& pair : metadata) {
