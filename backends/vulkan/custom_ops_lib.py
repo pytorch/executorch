@@ -293,6 +293,19 @@ def linear_q4gsw(
     return out
 
 
+def linear_dq8ca_q4gsw(
+    x: torch.Tensor,
+    input_scale: torch.Tensor,
+    input_zero_point: torch.Tensor,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    bias: Optional[torch.Tensor] = None,
+):
+    return linear_q4gsw(x, weights, weight_scales, group_size)
+
+
 name = "linear_q4gsw"
 lib.define(
     f"""
@@ -306,6 +319,23 @@ lib.define(
 )
 lib.impl(name, linear_q4gsw, "CompositeExplicitAutograd")
 linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
+
+name = "linear_dq8ca_q4gsw"
+lib.define(
+    f"""
+            {name}(
+                Tensor input,
+                Tensor input_scales,
+                Tensor input_zp,
+                Tensor weights,
+                Tensor weight_sums,
+                Tensor weight_scales,
+                int group_size,
+                Tensor? bias = None) -> Tensor
+            """
+)
+lib.impl(name, linear_dq8ca_q4gsw, "CompositeExplicitAutograd")
+linear_dq8ca_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
 
 ########################
 ## linear_qta8a_qga4w ##

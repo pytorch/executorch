@@ -204,6 +204,7 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
 
 @common.parametrize("test_data", Add.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="'Failed to load VKML extensions' error in ci.")
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),
@@ -221,6 +222,7 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="'Failed to load VKML extensions' error in ci.")
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),

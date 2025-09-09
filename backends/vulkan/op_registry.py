@@ -190,8 +190,8 @@ def register_torchao_choose_qparams_affine():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         outputs_storage=[
-            utils.CONTIGUOUS_BUFFER,  # scales
-            utils.CONTIGUOUS_BUFFER,  # zero_points
+            utils.WIDTH_PACKED_TEXTURE,  # scales
+            utils.WIDTH_PACKED_TEXTURE,  # zero_points
         ],
         supports_resize=True,
     )
@@ -341,7 +341,23 @@ def register_quantized_linear_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
         supports_prepacking=True,
-        supports_resize=False,
+    )
+
+
+@update_features(exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default)
+def register_linear_dqa_qw_ops():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CONTIGUOUS_ANY,  # input
+            utils.WIDTH_PACKED_TEXTURE,  # input_scale
+            utils.WIDTH_PACKED_TEXTURE,  # input_zero_point
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # group_size (scalar)
+            utils.NO_STORAGE,  # bias (prepacked)
+        ],
+        supports_prepacking=True,
     )
 
 

@@ -6,16 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchTextLLMRunner.h"
+#import "ExecuTorchLLMTextRunner.h"
+
+#import "ExecuTorchLLMError.h"
 
 #import <executorch/extension/llm/runner/text_llm_runner.h>
 
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
-NSErrorDomain const ExecuTorchTextLLMRunnerErrorDomain = @"ExecuTorchTextLLMRunnerErrorDomain";
-
-@implementation ExecuTorchTextLLMRunner {
+@implementation ExecuTorchLLMTextRunner {
   NSString *_modelPath;
   NSString *_tokenizerPath;
   std::unique_ptr<std::vector<std::string>> _specialTokens;
@@ -49,7 +49,7 @@ NSErrorDomain const ExecuTorchTextLLMRunnerErrorDomain = @"ExecuTorchTextLLMRunn
     );
     if (!_runner) {
       if (error) {
-        *error = [NSError errorWithDomain:ExecuTorchTextLLMRunnerErrorDomain
+        *error = [NSError errorWithDomain:ExecuTorchLLMErrorDomain
                                      code:-1
                                  userInfo:@{NSLocalizedDescriptionKey: @"Failed to create runner"}];
       }
@@ -59,7 +59,7 @@ NSErrorDomain const ExecuTorchTextLLMRunnerErrorDomain = @"ExecuTorchTextLLMRunn
   auto status = _runner->load();
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchTextLLMRunnerErrorDomain
+      *error = [NSError errorWithDomain:ExecuTorchLLMErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
     }
@@ -79,12 +79,14 @@ withTokenCallback:(nullable void (^)(NSString*))callback
     prompt.UTF8String,
     llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
     [callback](const std::string& token) {
-      if (callback) callback(@(token.c_str()));
+      if (callback) {
+        callback(@(token.c_str()));
+      }
     }
   );
   if (status != Error::Ok) {
     if (error) {
-      *error = [NSError errorWithDomain:ExecuTorchTextLLMRunnerErrorDomain
+      *error = [NSError errorWithDomain:ExecuTorchLLMErrorDomain
                                    code:(NSInteger)status
                                userInfo:nil];
     }
