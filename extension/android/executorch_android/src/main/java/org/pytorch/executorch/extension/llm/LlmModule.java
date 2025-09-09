@@ -231,8 +231,10 @@ public class LlmModule {
    * @return The error code.
    */
   @Deprecated
-  public native int generateFromPos(
-      String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo);
+  public int generateFromPos(
+      String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo) {
+        return generate(prompt, seqLen, callback, echo);
+      }
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
