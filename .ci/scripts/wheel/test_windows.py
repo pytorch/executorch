@@ -27,6 +27,7 @@ def run_tests(model_tests: List[ModelTest]) -> None:
     for model_test in model_tests:
         subprocess.run(
             [
+                "powershell.exe",
                 os.path.join(test_base._repository_root_dir(), ".ci/scripts/test_model.ps1"),
                 "-ModelName",
                 str(model_test.model),
