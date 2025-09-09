@@ -376,7 +376,7 @@ def export_to_et_ir(
             CompileSpec("gno-exp", b""),
             CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
-            CompileSpec("platform-config", platform_b),
+            CompileSpec("platform-config", b"mt6989"),
             CompileSpec("ExtractSharedBlobKey", model_shared_key_name.encode()),
         ]
         method_to_partitioner[f"{model_fname}"] = NeuropilotPartitioner(compile_spec)

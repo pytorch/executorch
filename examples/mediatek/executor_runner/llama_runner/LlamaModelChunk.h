@@ -140,9 +140,14 @@ class LlamaModelChunk : public ModelChunk {
   std::string SelectMethod(
       const std::vector<std::string>& methodNames) const override;
 
- private:
   // Whether shared weights is used
   bool kIsSharedWeightsUsed = false;
+
+  // Input/Output Indexes
+  const size_t kMaskInputIndex;
+  const std::vector<size_t> kRotEmbInputIndexes;
+  const std::vector<size_t> kCacheInputIndexes;
+  const std::vector<size_t> kCacheOutputIndexes;
 
   // Cache
   TensorShape mCacheShape;
