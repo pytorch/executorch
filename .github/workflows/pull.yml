@@ -892,7 +892,7 @@ jobs:
         source .ci/scripts/setup-samsung-linux-deps.sh
 
         # Test models serially
-        models="mv2 ic3 resnet18 resnet50"
+        models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
         for model in $models; do
           python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
         done
