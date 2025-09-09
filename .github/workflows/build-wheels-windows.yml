@@ -55,4 +55,5 @@ jobs:
       package-name: ${{ matrix.package-name }}
       smoke-test-script: ${{ matrix.smoke-test-script }}
       trigger-event: ${{ github.event_name }}
+      wheel-build-params: "--verbose"
       submodules: true
