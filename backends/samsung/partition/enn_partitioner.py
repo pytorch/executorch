@@ -119,5 +119,9 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.max_pool2d.default,
             torch.ops.aten.linear.default,
             torch.ops.aten._safe_softmax.default,
+            torch.ops.aten.upsample_bilinear2d.vec,
+            torch.ops.aten.upsample_nearest2d.vec,
+            torch.ops.aten.prelu.default,
+            torch.ops.aten.layer_norm.default,
         ]
         return (ops_not_to_decompose, None)
