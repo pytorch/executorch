@@ -177,6 +177,8 @@ class TestRefImplementations(unittest.TestCase):
                     0,  # out_zero_point
                     torch.tensor([[-2]], dtype=dtype),  # expected_output
                     per_tensor,
+                    False,
+                    False,
                 )
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
@@ -200,6 +202,8 @@ class TestRefImplementations(unittest.TestCase):
                     0,  # out_zero_point
                     torch.tensor([[-10, -30]], dtype=dtype),  # expected_output
                     per_tensor,
+                    False,
+                    False,
                 )
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
@@ -225,6 +229,8 @@ class TestRefImplementations(unittest.TestCase):
                         [[[-2, -8, -14], [-6, -28, -50]]], dtype=dtype
                     ),  # expected_output
                     per_tensor,
+                    False,
+                    False,
                 )
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
@@ -248,6 +254,8 @@ class TestRefImplementations(unittest.TestCase):
                     1,  # out_zero_point
                     torch.tensor([[-15, 25]], dtype=dtype),  # expected_output
                     per_tensor,
+                    False,
+                    False,
                 )
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
@@ -271,6 +279,8 @@ class TestRefImplementations(unittest.TestCase):
                     1,  # out_zero_point
                     torch.tensor([[-23, 17]], dtype=dtype),  # expected_output
                     False,
+                    False,
+                    False,
                 )
                 for dtype in (torch.int8, torch.uint8)
             ],
@@ -292,8 +302,33 @@ class TestRefImplementations(unittest.TestCase):
                     1,  # out_zero_point
                     torch.tensor([[-7, 13]], dtype=dtype),  # expected_output
                     per_tensor,
+                    False,
+                    False,
                 )
                 for (per_tensor, dtype) in ((False, torch.int8), (True, torch.int8))
+            ],
+            *[
+                (
+                    torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [2, 2]
+                    ),  # weight_shape: 2 output features, 2 input features
+                    2,  # in_zero_point
+                    torch.tensor([1, 1], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [268435456], dtype=torch.int32
+                    ),  # out_multiplier (0.125 * 2^31)
+                    torch.tensor(
+                        [1], dtype=torch.int64
+                    ),  # out_shift (shift=1, doubles the scale)
+                    1,  # out_zero_point
+                    torch.tensor([[-7, 17]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    matmul,
+                    transposed_matmul,
+                )
+                for (matmul, transposed_matmul) in ((True, False), (True, True))
+                for (per_tensor, dtype) in ((True, torch.int8), (True, torch.uint8))
             ],
         ]
     )
@@ -308,7 +343,12 @@ class TestRefImplementations(unittest.TestCase):
         out_zero_point: int,
         expected_output: torch.Tensor,
         per_tensor: bool,
+        matmul: bool,
+        transposed_matmul: bool,
     ) -> None:
+        if not per_tensor and matmul:
+            self.skipTest("Only per_tensor supported for matmul")
+
         src = (
             torch.arange(np.prod(src_shape))
             .reshape(src_shape)
@@ -319,7 +359,9 @@ class TestRefImplementations(unittest.TestCase):
             .reshape(weight_shape)
             .to(expected_output.dtype)
         )
-        bias = torch.arange(weight_shape[0]).to(torch.int32)
+        if matmul and not transposed_matmul:
+            weight = weight.T
+
         if per_tensor:
             weight_zero_point = weight_zero_point[0]
             out_multiplier = out_multiplier[0]
@@ -328,20 +370,34 @@ class TestRefImplementations(unittest.TestCase):
         if per_tensor:
             match expected_output.dtype:
                 case torch.int8:
-                    linear_ops = (
-                        torch.ops.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor,
-                        torch.ops.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
-                    )
+                    if matmul:
+                        linear_ops = (
+                            # Doesn't have per tensor name, but it is per tensor
+                            torch.ops.cadence.quantized_matmul_asym8sxasym8s_asym8s,
+                        )
+                    else:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor,
+                            torch.ops.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
+                        )
                 case torch.uint8:
-                    linear_ops = (
-                        torch.ops.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor,
-                        torch.ops.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
-                    )
+                    if matmul:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_matmul_asym8uxasym8u_asym8u,
+                        )
+                    else:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor,
+                            torch.ops.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
+                        )
                 case _:
-                    linear_ops = (
-                        torch.ops.cadence.quantized_linear.per_tensor,
-                        torch.ops.cadence.quantized_fully_connected.per_tensor,
-                    )
+                    if matmul:
+                        linear_ops = (torch.ops.cadence.quantized_matmul,)
+                    else:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_linear.per_tensor,
+                            torch.ops.cadence.quantized_fully_connected.per_tensor,
+                        )
         else:
             linear_ops = (
                 torch.ops.cadence.quantized_linear,
@@ -349,17 +405,40 @@ class TestRefImplementations(unittest.TestCase):
             )
 
         for linear_op in linear_ops:
-            output = linear_op(
-                src,
-                weight,
-                bias,
-                in_zero_point,
-                weight_zero_point,
-                out_multiplier,
-                out_shift,
-                out_zero_point,
-                typing.cast(torch.Tensor, None),
+            # Get the function name for linear_op for debugging
+            op_name = (
+                linear_op.__name__ if hasattr(linear_op, "__name__") else str(linear_op)
             )
+            if matmul:
+                assert "quantized_matmul" in op_name
+                output = linear_op(
+                    src,
+                    in_zero_point,
+                    weight,
+                    weight_zero_point,
+                    None,
+                    out_multiplier,
+                    out_shift,
+                    out_zero_point,
+                    transposed_matmul,
+                )
+            else:
+                assert (
+                    "quantized_linear" in op_name
+                    or "quantized_fully_connected" in op_name
+                )
+                bias = torch.arange(weight_shape[0]).to(torch.int32)
+                output = linear_op(
+                    src,
+                    weight,
+                    bias,
+                    in_zero_point,
+                    weight_zero_point,
+                    out_multiplier,
+                    out_shift,
+                    out_zero_point,
+                    typing.cast(torch.Tensor, None),
+                )
 
             self.assertTrue(output.dtype == expected_output.dtype, "Dtype mismatch")
 
