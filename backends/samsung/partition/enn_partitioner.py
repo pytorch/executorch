@@ -32,7 +32,12 @@ from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 SUPPORTED_OPS = [
+    # support because preprocess in backend
     exir_ops.edge.aten.addmm.default,
+    exir_ops.edge.aten.add.Scalar,
+    exir_ops.edge.aten.sub.Scalar,
+    exir_ops.edge.aten.mul.Scalar,
+    exir_ops.edge.aten.div.Scalar,
 ]
 
 

@@ -23,10 +23,10 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         super().__init__(*args)
 
     def define_node(
-            self,
-            node: torch.fx.Node,
-            enn_graph: EnnGraph,
-            vals_to_ids: Dict[torch.Tensor, int],
+        self,
+        node: torch.fx.Node,
+        enn_graph: EnnGraph,
+        vals_to_ids: Dict[torch.Tensor, int],
     ) -> None:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
@@ -35,7 +35,7 @@ class UpsampleBilinear2dVisitor(NodeVisitor):
         scale_factor = [
             output_size[0] * 1.0 / in_shape[-2],
             output_size[1] * 1.0 / in_shape[-1],
-            ]
+        ]
 
         align_corners = cast(bool, node.args[2])
         if len(node.args) > 3 and node.args[3]:

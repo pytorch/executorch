@@ -12,6 +12,7 @@ import torch
 from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
 )
+from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
 from executorch.backends.samsung.builders.node_visitor import get_node_visitors
 from executorch.backends.samsung.serialization.compile_options import (
     ENN_COMPILE_OPTION_TITLE,
@@ -54,6 +55,7 @@ class EnnBackend(BackendDetails):
                 ConstantPropPass(edge_program),
                 FuseBatchNormWithConvPass(edge_program),
                 AddmmToLinearTransform(),
+                ReplaceOpsWithScalar(),
                 RemoveGetItemPass(),
             ]
         )

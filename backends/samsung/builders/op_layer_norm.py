@@ -21,10 +21,10 @@ class LayerNormVisitor(NodeVisitor):
     target = ["aten.layer_norm.default"]
 
     def define_node(
-            self,
-            node: torch.fx.Node,
-            enn_graph: EnnGraph,
-            vals_to_ids: Dict[torch.Tensor, int],
+        self,
+        node: torch.fx.Node,
+        enn_graph: EnnGraph,
+        vals_to_ids: Dict[torch.Tensor, int],
     ) -> None:
         all_input_tensors = []
         input_node = node.args[0]

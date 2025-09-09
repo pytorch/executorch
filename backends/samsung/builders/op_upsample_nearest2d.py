@@ -35,7 +35,7 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         scale_factor = [
             output_size[0] * 1.0 / in_shape[-2],
             output_size[1] * 1.0 / in_shape[-1],
-            ]
+        ]
 
         if len(node.args) > 2 and node.args[2]:
             scale_factor = cast(List[float], node.args[2])

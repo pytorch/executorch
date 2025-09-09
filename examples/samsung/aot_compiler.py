@@ -26,7 +26,17 @@ from ..models.model_factory import EagerModelFactory
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SUPPORT_MODEL_NAMES = ["mv2", "ic3", "ic4", "resnet18", "resnet50", "mv3", "edsr"]
+SUPPORT_MODEL_NAMES = [
+    "mv2",
+    "ic3",
+    "ic4",
+    "resnet18",
+    "resnet50",
+    "mv3",
+    "edsr",
+    "dl3",
+    "vit",
+]
 
 
 def save_tensors(tensors, prefix, artifact_dir):
@@ -80,6 +90,8 @@ if __name__ == "__main__":
 
     model = model.eval()
     outputs = model(*example_inputs)
+
+    print("start start ...")
 
     compile_specs = [gen_samsung_backend_compile_spec(args.chipset)]
     edge = to_edge_transform_and_lower_to_enn(
