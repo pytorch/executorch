@@ -195,7 +195,6 @@ _TO_COPY_TEST_DATA_REDUNDANT_CAST = {
 redundant_xfails = {
     "rand_fp16_fp16": "FP16 is not supported",
     "rand_int8_int8": "Tracing graph with quantized input is not supported.",
-    "rand_int16_int16": "Tracing graph with quantized input is not supported.",
 }
 
 
