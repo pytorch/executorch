@@ -70,6 +70,9 @@ std::string LlamaModelChunk::SelectMethod(
   const size_t curTokenSize = GetModelId();
   for (const auto& methodName : methodNames) {
     const auto matches = utils::extract_substr(methodName, "([0-9]+)t[0-9]+c");
+    if (matches.empty()) {
+      continue;
+    }
     ET_CHECK_MSG(
         matches.size() == 2, "Invalid method name: %s", methodName.c_str());
     // Extract the first match group as token size
@@ -89,18 +92,6 @@ std::string LlamaModelChunk::SelectMethod(
       "Unable to find suitable method, fallback to use the first method.");
   return {};
 }
-
-size_t LlamaModelChunk::GetExpectedInputCount() const {
-  const size_t rotEmbInputCount = kRotEmbInputIndexes.size();
-  const size_t cacheInputCount = kCacheInputIndexes.size();
-  return 2 + rotEmbInputCount + cacheInputCount;
-}
-
-size_t LlamaModelChunk::GetExpectedOutputCount() const {
-  const size_t cacheOutputCount = kCacheOutputIndexes.size();
-  return 1 + cacheOutputCount;
-}
-
 
 void LlamaModelChunk::Initialize() {
   LoadModels();

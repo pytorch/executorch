@@ -58,6 +58,9 @@ void LlamaRuntime::Initialize(
       usePromptModel ? modelOptions.prompt_token_batch_size : 1;
   mTokenBatchSize = initBatchSize;
 
+  // Enable SWA if window size is not 0
+  const bool enableSWA = (modelOptions.window_size != 0);
+
   // Get effective prompt and gen model paths
   const auto& [prompt_model_paths, gen_model_paths] = [&] {
     if (useSharedWeights) {
