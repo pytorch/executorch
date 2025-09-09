@@ -24,7 +24,7 @@ import shutil
 import sys
 from typing import Any
 
-import pytorch_sphinx_theme2
+import pytorch_sphinx_theme2  # type: ignore[import-untyped]
 
 # To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
@@ -215,7 +215,6 @@ html_theme_options = {
     ],
     "show_version_warning_banner": True,
     "use_edit_page_button": True,
-    "navbar_center": "navbar-nav",
     "header_links_before_dropdown": 8,
     "navbar_align": "left",
     "navbar_start": ["navbar-logo", "version-switcher"],
@@ -249,9 +248,7 @@ html_context = {
 html_static_path = ["_static"]
 
 # Add custom 404 page for GitHub Pages
-html_additional_pages = {
-    "404": "404.html"
-}
+html_additional_pages = {"404": "404.html"}
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
