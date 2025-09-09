@@ -6,6 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchLLMError.h"
-#import "ExecuTorchLLMMultimodalRunner.h"
-#import "ExecuTorchLLMTextRunner.h"
+#import <Foundation/Foundation.h>
+
+NS_ASSUME_NONNULL_BEGIN
+
+FOUNDATION_EXPORT NSErrorDomain const ExecuTorchLLMErrorDomain NS_SWIFT_NAME(ErrorDomain);
+
+NS_ASSUME_NONNULL_END
