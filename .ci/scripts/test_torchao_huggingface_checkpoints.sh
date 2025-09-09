@@ -45,7 +45,7 @@ MODEL_OUT=model.pte
 case "$MODEL_NAME" in
   qwen3_4b)
     echo "Running Qwen3-4B export..."
-    HF_MODEL_DIR=$(hf download metascroy/Qwen3-4B-INT8-INT4)
+    HF_MODEL_DIR=$(hf download pytorch/Qwen3-4B-INT8-INT4)
     EXPECTED_MODEL_SIZE_UPPER_BOUND=$((3 * 1024 * 1024 * 1024)) # 3GB
     $PYTHON_EXECUTABLE -m executorch.examples.models.qwen3.convert_weights \
       $HF_MODEL_DIR \
@@ -68,7 +68,7 @@ case "$MODEL_NAME" in
 
   phi_4_mini)
     echo "Running Phi-4-mini export..."
-    HF_MODEL_DIR=$(hf download metascroy/Phi-4-mini-instruct-INT8-INT4)
+    HF_MODEL_DIR=$(hf download pytorch/Phi-4-mini-instruct-INT8-INT4)
     EXPECTED_MODEL_SIZE_UPPER_BOUND=$((3 * 1024 * 1024 * 1024)) # 3GB
     $PYTHON_EXECUTABLE -m executorch.examples.models.phi_4_mini.convert_weights \
       $HF_MODEL_DIR \
@@ -106,22 +106,7 @@ fi
 # Install ET with CMake
 if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
   echo "[runner] Building and testing llama_main ..."
-    cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DEXECUTORCH_ENABLE_LOGGING=1 \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
-        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-        -Bcmake-out .
-    cmake --build cmake-out -j16 --config Release --target install
+    cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out
 
     # Install llama runner
     cmake -DPYTHON_EXECUTABLE=python \
