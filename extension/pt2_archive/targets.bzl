@@ -8,6 +8,27 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    runtime.python_binary(
+        name = "export",
+        main_module = "executorch.extension.pt2_archive.test.pt2_archive_export",
+        srcs = ["test/pt2_archive_export.py"],
+        deps = [
+            "//caffe2:torch",
+            "//executorch/exir:lib",
+            "//executorch/exir/_serialize:lib",
+        ],
+        visibility = [],  # Private
+    )
+
+    runtime.genrule(
+        name = "gen_pt2_archive",
+        cmd = "$(exe :export) --outdir $OUT",
+        outs = {
+            "model": ["model.pt2"],
+        },
+        default_outs = ["."],
+    )
+
     runtime.cxx_library(
         name = "pt2_archive_data_map",
         srcs = [
@@ -60,7 +81,7 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
         env = {
-            "TEST_LINEAR_PT2": "$(location :linear)",
+            "TEST_LINEAR_PT2": "$(location :gen_pt2_archive[model])",
             "ET_MODULE_LINEAR_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
         },
         # Not available for mobile with miniz and json dependencies.
