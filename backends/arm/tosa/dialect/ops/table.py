@@ -7,7 +7,7 @@ import torch
 from executorch.backends.arm.tosa.dialect.lib import TosaValueError
 from executorch.backends.arm.tosa.dialect.ops_registration import register_fake_tosa_op
 
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_context_spec,
     TosaSpecification,
 )
@@ -48,6 +48,6 @@ def TABLE(a, table):
             raise TosaValueError(f"Table dtype {table.dtype} is not int32", op="TABLE")
         return_dtype = torch.int32
     else:
-        raise TosaValueError(f"Unsupported dtype for {tosa_spec}", op="TABLE")
+        raise TosaValueError(f"Unsupported dtype {a.dtype} for {tosa_spec}", op="TABLE")
 
     return torch.empty_like(a, dtype=return_dtype)

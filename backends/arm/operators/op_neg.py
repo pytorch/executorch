@@ -21,7 +21,7 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int]:
@@ -82,7 +82,9 @@ class NegVisitor(NodeVisitor):
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().NEGATE,
             [inputs[0].name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],

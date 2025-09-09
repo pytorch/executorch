@@ -19,5 +19,3 @@ buffer_to_nchw:
       - VALUE: int32
   shader_variants:
     - NAME: buffer_to_nchw
-    - NAME: buffer_to_nchw_no_pc
-      USE_PUSH_CONST: False

@@ -46,6 +46,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * part of the model
    * @param text_prefiller Component for handling the prefill phase of text
    * generation
+   * @param io_manager Component for handling I/O operations
    * @param text_token_generator Component for generating tokens during the
    * decode phase
    * @param stats Statistics tracking object for performance monitoring

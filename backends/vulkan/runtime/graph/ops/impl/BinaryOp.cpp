@@ -139,15 +139,11 @@ void add_binary_op_buffer_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in1, in2}, vkapi::kRead}},
       // Shader params buffers
-      {},
+      {graph.buffer_meta_ubo(out),
+       graph.buffer_meta_ubo(in1),
+       graph.buffer_meta_ubo(in2)},
       // Push Constants
       {{
-          graph.sizes_pc_of(in1),
-          graph.sizes_pc_of(in2),
-          graph.strides_pc_of(out),
-          graph.strides_pc_of(in1),
-          graph.strides_pc_of(in2),
-          graph.numel_pc_of(out),
           PushConstantDataInfo(&alpha_val, sizeof(float)),
       }},
       // Specialization Constants

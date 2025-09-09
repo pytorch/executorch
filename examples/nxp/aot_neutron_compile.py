@@ -15,7 +15,6 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
-
 from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
@@ -24,18 +23,18 @@ from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
-
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
+
+from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -87,7 +86,7 @@ def get_model_and_inputs_from_name(model_name: str):
         logging.warning(
             "Using a model from examples/models not all of these are currently supported"
         )
-        model, example_inputs, _ = EagerModelFactory.create_model(
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
     else:
@@ -100,6 +99,7 @@ def get_model_and_inputs_from_name(model_name: str):
 
 models = {
     "cifar10": CifarNet,
+    "mobilenetv2": MobilenetV2,
 }
 
 
@@ -164,7 +164,7 @@ if __name__ == "__main__":  # noqa C901
         "-c",
         "--neutron_converter_flavor",
         required=False,
-        default="SDK_25_03",
+        default="SDK_25_06",
         help="Flavor of installed neutron-converter module. Neutron-converter module named "
         "'neutron_converter_SDK_24_12' has flavor 'SDK_24_12'.",
     )
@@ -224,9 +224,7 @@ if __name__ == "__main__":  # noqa C901
     model = model.eval()
 
     # 2. Export the model to ATEN
-    exported_program = torch.export.export_for_training(
-        model, example_inputs, strict=True
-    )
+    exported_program = torch.export.export(model, example_inputs, strict=True)
 
     module = exported_program.module()
 

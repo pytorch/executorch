@@ -369,7 +369,7 @@ if __name__ == "__main__":
         ),  # fails to lower for CoreML
         "smollm2-135m": ("HuggingFaceTB/SmolLM2-135M", test_text_generation),
         "smollm3-3b": ("HuggingFaceTB/SmolLM3-3B", test_text_generation),
-        "olmo": ("allenai/OLMo-1B-hf", test_text_generation),
+        "olmo-1b": ("allenai/OLMo-1B-hf", test_text_generation),
     }
 
     _mask_fill_mapping = {

@@ -7,8 +7,8 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.quant_utils as tqutils
+import executorch.backends.arm.tosa.utils as tutils
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -19,8 +19,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -53,10 +53,9 @@ class AddVisitor_INT(NodeVisitor):
             [ts.DType.INT8, ts.DType.INT32],
             output.tosa_spec,
         )
-
         scale_back = 1.0
         if inputs[0].dtype == ts.DType.INT8:
-            rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
+            rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32_maxscale(
                 tosa_graph, inputs, node, self.tosa_spec
             )
         else:
@@ -74,7 +73,9 @@ class AddVisitor_INT(NodeVisitor):
         input1, input2 = rescaled_inputs
 
         # Do the INT32 Add
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().ADD,
             [input1.name, input2.name],
             [add_output.name],
@@ -85,7 +86,12 @@ class AddVisitor_INT(NodeVisitor):
             # Scale output back to 8 bit
             # pyre-ignore
             tqutils.insert_rescale_op_to_int8(
-                tosa_graph, add_output, scale_back, node, self.tosa_spec
+                tosa_graph,
+                add_output,
+                scale_back,
+                node,
+                compute_rescale=False,
+                tosa_spec=self.tosa_spec,
             )  # type: ignore[possibly-undefined]
 
 
@@ -123,7 +129,9 @@ class AddVisitor_FP(AddVisitor_INT):
             input1, input2 = inputs
 
             # FP lowering
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().ADD,
                 [input1.name, input2.name],
                 [output.name],

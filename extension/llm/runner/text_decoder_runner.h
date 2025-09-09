@@ -12,9 +12,6 @@
 
 #include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
@@ -68,12 +65,21 @@ class ET_EXPERIMENTAL TextDecoderRunner {
       const executorch::aten::Tensor& logits_tensor,
       const float temperature = 0.0f) {
     int32_t result = 0;
-    ET_SWITCH_THREE_TYPES(
+
+    // Create a minimal context for error handling in ET_SWITCH
+    struct {
+      [[noreturn]] void fail(torch::executor::Error /* error */) {
+        ET_CHECK_MSG(false, "Unsupported dtype in logits_to_token");
+      }
+    } ctx;
+
+    ET_SWITCH_FOUR_TYPES(
         Float,
         Half,
         BFloat16,
+        UInt16,
         logits_tensor.scalar_type(),
-        unused,
+        ctx,
         "logits_to_token",
         CTYPE,
         [&]() {

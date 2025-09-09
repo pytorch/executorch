@@ -475,6 +475,10 @@ class OpenVINOQuantizer(Quantizer):
 
         is_weight = qp.is_weight_quantization_point()
         qconfig = qp.qconfig
+        dtype = torch.int8
+        quant_min = None
+        quant_max = None
+        channel_axis = None
 
         if qconfig.per_channel:
             torch_qscheme = (

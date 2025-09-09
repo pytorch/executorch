@@ -118,6 +118,7 @@ table VkValue {
 table VkBytes {
   offset:ulong;
   length:ulong;
+  named_key:string;
 }
 
 table VkGraph {

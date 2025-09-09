@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -9,6 +9,9 @@ from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfi
 from executorch.backends.nxp.backend.ir.conversion_context import ConversionContext
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
 )
 from torch.export import ExportedProgram
 from torch.export.graph_signature import InputKind
@@ -28,6 +31,7 @@ functions_converters = {
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
+    exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
     exir_ops.edge.aten.constant_pad_nd.default: ConstantPadNDConverter,  # noqa F405
     exir_ops.edge.aten.convolution.default: ConvolutionConverter,  # noqa F405
@@ -38,6 +42,7 @@ functions_converters = {
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
 }
@@ -49,24 +54,30 @@ class EdgeProgramToIRConverter:
     """
 
     _default_conversion_config = ConversionConfig()
+    _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(
         self,
         edge_program: ExportedProgram,
         conversion_config=_default_conversion_config,
+        custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> (bytes, dict):
         """
         Convert ExportedProgram in Edge dialect to IR (TFLite flatbuffers) as bytes.
 
         :param edge_program: Converter ExportedProgram.
         :param conversion_config: ConversionConfig instance.
+        :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
         node_formats = NodeFormatInference(edge_program).identify_node_formats()
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
 
         cc = self.build_conversion_context(
-            parameters_mapping, node_formats, conversion_config
+            parameters_mapping,
+            node_formats,
+            conversion_config,
+            custom_delegation_options,
         )
 
         # Program conversion
@@ -162,6 +173,7 @@ class EdgeProgramToIRConverter:
         parameters_mapping: dict,
         node_formats: dict[Node, NodeFormat],
         conversion_config: ConversionConfig = _default_conversion_config,
+        custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(
             3, "TFLite from EdgeProgram", conversion_config
@@ -171,7 +183,11 @@ class EdgeProgramToIRConverter:
         tflite_builder.build_empty_buffer()
 
         context = ConversionContext(
-            tflite_builder, conversion_config, parameters_mapping, node_formats
+            tflite_builder,
+            conversion_config,
+            parameters_mapping,
+            node_formats,
+            custom_delegation_options,
         )
 
         return context

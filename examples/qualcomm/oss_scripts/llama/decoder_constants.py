@@ -10,12 +10,15 @@ EVAL_MODE = {
     "lookahead": 2,
 }
 
+# The dict's value is mainly for runner to decide what special tokens are required to wrap the prompt.
 DECODER_MODEL_VERSION = {
     "stories260k": "llama2",
     "stories110m": "llama2",
     "llama3_2": "llama3",
-    "qwen2_5": "qwen2_5",
-    "qwen3_0_6b": "qwen2_5",  # TODO: temp workaround, use special token for qwen3 in runner
-    "qwen3_1_7b": "qwen2_5",
+    "qwen2_5-0_5b": "qwen2_5",
+    "qwen2_5-1_5b": "qwen2_5",
+    "qwen3-0_6b": "qwen3",
+    "qwen3-1_7b": "qwen3",
     "phi_4_mini": "phi_4_mini",
+    "smollm2_135m": "smollm2_135m",
 }

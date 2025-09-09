@@ -10,6 +10,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_last_to_channels_first_permutation,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
     Target,
 )
@@ -26,7 +27,10 @@ from torch.nn import Parameter
 class MeanDimConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
-        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         match target:
             case Target.RT700:
@@ -55,7 +59,9 @@ class MeanDimConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if hasattr(node.kwargs, "dtype") and node.kwargs["dtype"] not in [
             torch.float32,

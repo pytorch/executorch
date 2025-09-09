@@ -154,9 +154,6 @@ def test_lt_scalar_u55_INT_not_delegated(test_module):
 @common.parametrize(
     "test_module",
     test_data_tensor,
-    xfails={
-        "lt_tensor_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
-    },
 )
 @common.XfailIfNoCorstone320
 def test_lt_tensor_u85_INT(test_module):
@@ -173,9 +170,6 @@ def test_lt_tensor_u85_INT(test_module):
 @common.parametrize(
     "test_module",
     test_data_scalar,
-    xfails={
-        "lt_scalar_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85",
-    },
 )
 @common.XfailIfNoCorstone320
 def test_lt_scalar_u85_INT(test_module):

@@ -267,11 +267,6 @@ class QnnTool:
         assert os.path.isfile(f"{self.tmp_dir}/{binary_name}.bin"), result.stderr
 
     def qnn_net_run(self, graph_name="forward.serialized"):
-        input_list = ""
-        for idx, _ in enumerate(self.sample_input):
-            input_name = f"input_{idx}_0.raw"
-            input_list += input_name + " "
-        input_list = input_list.strip() + "\n"
 
         self.config["backend_extension_config"]["backend_extensions"][
             "shared_library_path"
@@ -304,7 +299,6 @@ class QnnTool:
         ]
         self.adb.push(
             inputs=self.sample_input,
-            input_list=input_list,
             files=files,
         )
         self.adb.execute(custom_runner_cmd=" ".join(cmds))

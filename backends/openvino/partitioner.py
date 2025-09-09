@@ -27,7 +27,7 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 class PatternNode:
-    op_types = {}
+    op_types: dict[str, Optional[list]] = {}
 
     def __init__(self):
         self.op_types = {}
@@ -114,7 +114,7 @@ class OpenvinoPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(OpenvinoBackend.__name__, compile_spec)
         self._op_types_to_skip = op_types_to_skip
         self._op_names_to_skip = op_names_to_skip
-        self._enabled_ops_by_name = set()
+        self._enabled_ops_by_name: set = set()
 
     def ops_to_not_decompose(
         self,
@@ -138,13 +138,13 @@ class OpenvinoPartitioner(Partitioner):
         return (ops_not_decompose, None)
 
     def check_pattern(
-        self, node: torch.fx.Node, pattern: PatternNode, enabled_ops: list
+        self, node: torch.fx.Node, pattern: type[PatternNode], enabled_ops: list
     ) -> bool:
         if node.op == "call_function":
-            if ("call_function" + ":" + str(node.target.__name__)) in pattern.op_types:
+            if ("call_function" + ":" + str(node.target.__name__)) in pattern.op_types:  # type: ignore[union-attr]
                 pt_input_nodes = node.all_input_nodes
                 pattern_input_ops = pattern.op_types[
-                    "call_function" + ":" + str(node.target.__name__)
+                    "call_function" + ":" + str(node.target.__name__)  # type: ignore[union-attr]
                 ]
                 if pattern_input_ops is None:
                     enabled_ops.append(node)
@@ -193,7 +193,7 @@ class OpenvinoPartitioner(Partitioner):
                 str(node.op) == "call_function"
                 and str(node.target.__name__) == "aten.stack.default"
             ):
-                enabled_ops = []
+                enabled_ops: list = []
                 pattern_match = self.check_pattern(node, stack_node, enabled_ops)
                 if pattern_match:
                     for pattern_op in enabled_ops:
