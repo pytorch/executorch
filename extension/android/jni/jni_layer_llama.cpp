@@ -260,7 +260,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Returns a tuple of (error, start_pos)
   // Contract is valid within an AAR (JNI + corresponding Java code)
   // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
+  facebook::jni::local_ref<jlongArray> add_text_input(
       facebook::jni::alias_ref<jstring> prompt,
       jlong start_pos,
       jint bos,
@@ -276,7 +276,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Contract is valid within an AAR (JNI + corresponding Java code)
   // If the first element is not Error::Ok, the other element is undefined.
 
-  facebook::jni::local_ref<jlongArray> prefill_images(
+  facebook::jni::local_ref<jlongArray> add_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
@@ -301,6 +301,28 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
     tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
     return tuple_result;
+  }
+
+  // Returns the status code
+  jint add_audio_input(
+      facebook::jni::alias_ref<jintArray> audio,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    auto audio_size = audio->size();
+    if (audio_size != 0) {
+      std::vector<jint> audio_data_jint(audio_size);
+      std::vector<uint8_t> audio_data(audio_size);
+      audio->getRegion(0, audio_size, audio_data_jint.data());
+      for (int i = 0; i < audio_size; i++) {
+        audio_data[i] = audio_data_jint[i];
+      }
+      auto&& audio_input = llm::make_audio_input(
+          llm::Audio{audio_data, batch_size, n_bins, n_frames});
+      prefill_inputs_.emplace_back(audio_input);
+    }
+
+    return 0;
   }
 
   jint generate_from_pos(
@@ -359,9 +381,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
+            "addImageInputNative", ExecuTorchLlmJni::add_images_input),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
+            "addTextInputNative", ExecuTorchLlmJni::add_text_input),
+        makeNativeMethod(
+            "addAudioInputNative", ExecuTorchLlmJni::add_audio_input),
         makeNativeMethod(
             "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
     });
