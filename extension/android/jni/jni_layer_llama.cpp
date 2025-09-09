@@ -273,11 +273,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint width,
       jint height,
       jint channels) {
-    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
-    }
-
-    auto image_size = image->size();
     std::vector<llm::Image> images;
     auto image_size = image->size();
     if (image_size != 0) {
