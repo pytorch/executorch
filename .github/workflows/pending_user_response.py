@@ -15,6 +15,7 @@ CLOSE_COMMENT = (
 )
 DAYS_BEFORE_REMINDER = 30
 DAYS_BEFORE_CLOSE = 30
+REMINDER_COOLDOWN_DAYS = 7  # Don't post another reminder within 7 days
 
 def main():
     g = Github(os.environ['GH_TOKEN'])
@@ -27,7 +28,6 @@ def main():
     now = datetime.datetime.utcnow()
 
     for issue in issues:
-        # comments = list(issue.get_comments())
         print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
         comments = []  # Replace with mock comments if needed
         last_comment = comments[-1] if comments else None
@@ -36,33 +36,37 @@ def main():
         auto_comments = [c for c in comments if REMINDER_MARKER in c.body]
         user_comments = [c for c in comments if REMINDER_MARKER not in c.body]
 
-        # Case 1: No automation comment yet, and last comment > 30 days ago
+        # ---- REMINDER LOGIC ----
+        # Only remind if NO reminder in last 7 days
+        recent_auto_reminder = any(
+            (now - c.created_at).days < REMINDER_COOLDOWN_DAYS
+            for c in auto_comments
+        )
+
         if not auto_comments:
             if last_comment and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER:
-                # Tag the issue author or PR author
                 user = issue.user.login
-                # issue.create_comment(REMINDER_COMMENT.format(user))
                 print(f"[VALIDATION] Would remind {user} on issue/PR #{issue.number}")
 
-        # Case 2: Automation comment exists, but no user response after 30 more days
-        elif auto_comments:
+        elif auto_comments and not recent_auto_reminder:
+            # Only post new reminder if last was > REMINDER_COOLDOWN_DAYS ago
             last_auto = auto_comments[-1]
-            # Any user response after automation?
+            user = issue.user.login
+            if (now - last_auto.created_at).days >= REMINDER_COOLDOWN_DAYS:
+                print(f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}")
+
+        # ---- EXISTING CLOSE/REMOVE LABEL LOGIC ----
+        if auto_comments:
+            last_auto = auto_comments[-1]
             user_responded = any(
                 c.created_at > last_auto.created_at and c.user.login == issue.user.login
                 for c in user_comments
             )
-
             if not user_responded:
                 if (now - last_auto.created_at).days >= DAYS_BEFORE_CLOSE:
-                    # issue.create_comment(CLOSE_COMMENT)
-                    # issue.edit(state="closed")
                     print(f"[VALIDATION] Would close issue/PR #{issue.number} due to inactivity.")
-
             else:
-                # Remove label if user responded
                 labels = [l.name for l in issue.labels if l.name != LABEL]
-                # issue.set_labels(*labels)
                 print(f"[VALIDATION] Would remove label from issue/PR #{issue.number} after user response.")
 
 if __name__ == "__main__":
