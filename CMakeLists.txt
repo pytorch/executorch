@@ -107,6 +107,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_SKIP_BUILD_RPATH OFF)
 # Don't use the install-rpath during the build phase
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+
 # Automatically add all linked folders that are NOT in the build directory to
 # the rpath (per library?)
 #
@@ -983,6 +984,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   set(_executor_runner_libs executorch extension_evalue_util
                             extension_runner_util gflags executorch_backends
   )
+
+  # Add flat tensor extension if it's built
+  if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+    list(APPEND _executor_runner_libs extension_flat_tensor)
+  endif()
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)

@@ -141,6 +141,8 @@ build_runtime() {
               -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
               -DEXECUTORCH_LOG_LEVEL=Debug \
               -DCMAKE_BUILD_TYPE=Debug \
+              -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
               ..
     else
         echo "Building with release configuration..."
@@ -149,6 +151,8 @@ build_runtime() {
               -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
               -DEXECUTORCH_LOG_LEVEL=Info \
               -DCMAKE_BUILD_TYPE=Release \
+              -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
               ..
     fi
 
@@ -158,7 +162,7 @@ build_runtime() {
 
 run_inference() {
     echo "Running executor_runner with debug logging enabled..."
-    ./cmake-out/executor_runner --model_path aoti_model.pte
+    ./cmake-out/executor_runner --model_path aoti_model.pte --data_path aoti_cuda_blob.ptd
 }
 
 compare_outputs() {

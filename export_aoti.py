@@ -29,10 +29,11 @@ from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower
 from torch import nn
 from torch.export import export
+from torch.nn.attention import SDPBackend
 from torchvision import models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from torchvision.models.resnet import ResNet18_Weights
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, WhisperModel
 
 
 # for maintaing precision of 32-bit float as much as possible
@@ -190,6 +191,74 @@ class Llama31(torch.nn.Module):
         return outputs.logits
 
 
+class Whisper(torch.nn.Module):
+    def __init__(self, model_name="openai/whisper-tiny"):
+        super(Whisper, self).__init__()
+        # 1. Load pre-trained Whisper model (tiny version is lightweight)
+        self.model = WhisperModel.from_pretrained(model_name)
+        self.model.eval()
+
+    def forward(self, input_features: torch.Tensor):
+        outputs = self.model.encoder(input_features=input_features)
+
+        # Return both encoder and decoder hidden states for compatibility
+        return outputs.last_hidden_state
+
+
+class MockConv1d(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv1d(
+            in_channels=80,
+            out_channels=384,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            dilation=1,
+            groups=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, embed_dim=256, num_heads=8, ff_dim=1024, dropout=0.1):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+
+        # Multi-head self-attention
+        self.self_attn = nn.MultiheadAttention(
+            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
+        )
+
+        # Layer normalization layers
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+
+        # Feed-forward network
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, ff_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(ff_dim, embed_dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        # Self-attention block with residual connection
+        attn_output, _ = self.self_attn(x, x, x)
+        x = self.norm1(x + attn_output)
+
+        # Feed-forward block with residual connection
+        ff_output = self.ffn(x)
+        x = self.norm2(x + ff_output)
+
+        return x
+
+
 # Model registry mapping model names to their configurations
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "mv2": {
@@ -246,6 +315,24 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "device": "cuda",
         "description": "Llama 3.1 model with KV cache disabled",
     },
+    "whisper": {
+        "model_class": Whisper,
+        "input_shapes": [(1, 80, 3000)],
+        "device": "cuda",
+        "description": "OpenAI Whisper ASR model. now is encoder only",
+    },
+    "conv1d": {
+        "model_class": MockConv1d,
+        "input_shapes": [(1, 80, 3000)],
+        "device": "cuda",
+        "description": "Conv1d layer with 80 input channels, 384 output channels",
+    },
+    "transformer_block": {
+        "model_class": TransformerBlock,
+        "input_shapes": [(4, 32, 256)],  # batch_size=4, seq_len=32, embed_dim=256
+        "device": "cuda",
+        "description": "Single transformer block with multi-head attention and feed-forward network",
+    },
 }
 
 
@@ -253,7 +340,7 @@ def get_model_and_inputs(
     model_name: str,
 ) -> Tuple[torch.nn.Module, Tuple[torch.Tensor, ...]]:
     """Get model and example inputs based on model name."""
-
+    #
     if model_name not in MODEL_REGISTRY:
         available_models = ", ".join(MODEL_REGISTRY.keys())
         raise ValueError(
@@ -281,7 +368,9 @@ def get_model_and_inputs(
     return model, example_inputs
 
 
-def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.pte"):
+def export_model_to_et_aoti(
+    model, example_inputs, output_pte_path="aoti_model.pte", output_data_dir=None
+):
     """Export model through the AOTI pipeline."""
     all_one_input = tuple(
         torch.ones_like(example_input) for example_input in example_inputs
@@ -309,23 +398,24 @@ def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.p
 
     print(f"Starting export process...")
 
-    # 1. torch.export: Defines the program with the ATen operator set.
     print("Step 1: Converting to ATen dialect...")
-    with torch.no_grad():
-        # from torch.export._trace import _export
+    with torch.nn.attention.sdpa_kernel(
+        [SDPBackend.MATH]  # pyre-fixme[16]
+    ), torch.no_grad():
+        # 1. torch.export: Defines the program with the ATen operator set.
         aten_dialect = export(model, example_inputs, strict=False)
 
-    # print(aten_dialect)
-    # exit(0)
+        # print(aten_dialect)
+        # exit(0)
 
-    # 2. to_edge: Make optimizations for Edge devices
-    # aoti part should be decomposed by the internal torch._inductor.aot_compile
-    # we should preserve the lowerable part and waiting for aoti backend handle that
-    # Q: maybe need to turn on fallback_random?
+        # 2. to_edge: Make optimizations for Edge devices
+        # aoti part should be decomposed by the internal torch._inductor.aot_compile
+        # we should preserve the lowerable part and waiting for aoti backend handle that
+        # Q: maybe need to turn on fallback_random?
 
-    edge_program = to_edge_transform_and_lower(
-        aten_dialect, partitioner=[AotiPartitioner([])]
-    )
+        edge_program = to_edge_transform_and_lower(
+            aten_dialect, partitioner=[AotiPartitioner([])]
+        )
 
     # edge_program = to_edge(aten_dialect)
 
@@ -337,11 +427,20 @@ def export_model_to_et_aoti(model, example_inputs, output_filename="aoti_model.p
     print("To executorch done.")
 
     # 4. Save the compiled .pte program
-    print(f"Step 5: Saving to {output_filename}...")
-    with open(output_filename, "wb") as file:
+    if output_data_dir is None:
+        output_data_dir = os.getcwd()
+
+    print(f"Step 5: Saving pte to {output_pte_path} and ptd to {output_data_dir}")
+    with open(output_pte_path, "wb") as file:
         file.write(executorch_program.buffer)
 
-    print(f"Export completed successfully! Output saved to {output_filename}")
+    print(f"size of Named Data: {len(executorch_program._tensor_data)}")
+
+    executorch_program.write_tensor_data_to_file(output_data_dir)
+
+    print(
+        f"Export completed successfully! PTE saved to {output_pte_path} and ptd saved to {output_data_dir}"
+    )
 
 
 def export_model_to_pure_aoti(model, example_inputs):

@@ -7,13 +7,13 @@
 import contextlib
 import copy
 import os
-import shutil
 import typing
 
 from subprocess import check_call
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -72,6 +72,7 @@ class AotiBackend(BackendDetails):
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
         print("entering  the lowerable parts in AotiBackend.preprocess....")
+        named_data_store = NamedDataStore()
 
         # print("here", edge_program.example_inputs)
         copy_edge_program = copy.deepcopy(edge_program)
@@ -88,6 +89,7 @@ class AotiBackend(BackendDetails):
         options: dict[str, typing.Any] = {
             "aot_inductor.package_constants_in_so": True,
             "aot_inductor.output_path": output_path,
+            "aot_inductor.force_mmap_weights": False,
             "max_autotune": True,
             "max_autotune_gemm_backends": "TRITON",
             "max_autotune_conv_backends": "TRITON",
@@ -111,4 +113,13 @@ class AotiBackend(BackendDetails):
 
         print("so_path", so_path)
 
-        return PreprocessResult(so_path.encode("utf-8"))
+        with open(so_path, "rb") as f:
+            so_data = f.read()
+
+        named_data_store.add_named_data("so_blob", so_data, 1, "aoti_cuda_blob")
+
+        return PreprocessResult(
+            processed_bytes=b"",
+            debug_handle_map={},
+            data_store_output=named_data_store.get_named_data_store_output(),
+        )

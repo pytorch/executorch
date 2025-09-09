@@ -26,6 +26,7 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
@@ -50,6 +51,10 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_string(
+    data_path,
+    "",
+    "Path to external tensor data file (.ptd format). Optional.");
 DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(etdump_path, "model.etdump", "Write ETDump data to this path.");
@@ -60,6 +65,7 @@ DEFINE_int32(
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
 using executorch::extension::FileDataLoader;
+using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
@@ -242,8 +248,43 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   EventTraceManager tracer;
+
+  // Handle optional external tensor data loading
+  std::unique_ptr<FileDataLoader> data_loader;
+  std::unique_ptr<FlatTensorDataMap> data_map;
+
+  if (!FLAGS_data_path.empty()) {
+    ET_LOG(
+        Info, "Loading external tensor data from %s", FLAGS_data_path.c_str());
+
+    // Create FileDataLoader for the PTD file
+    Result<FileDataLoader> data_loader_result =
+        FileDataLoader::from(FLAGS_data_path.c_str());
+    ET_CHECK_MSG(
+        data_loader_result.ok(),
+        "Failed to create FileDataLoader for data path %s: 0x%" PRIx32,
+        FLAGS_data_path.c_str(),
+        (uint32_t)data_loader_result.error());
+
+    data_loader =
+        std::make_unique<FileDataLoader>(std::move(data_loader_result.get()));
+
+    // Create FlatTensorDataMap from the loaded blob
+    Result<FlatTensorDataMap> data_map_result =
+        FlatTensorDataMap::load(data_loader.get());
+    ET_CHECK_MSG(
+        data_map_result.ok(),
+        "Failed to load FlatTensorDataMap from %s: 0x%" PRIx32,
+        FLAGS_data_path.c_str(),
+        (uint32_t)data_map_result.error());
+
+    data_map =
+        std::make_unique<FlatTensorDataMap>(std::move(data_map_result.get()));
+    ET_LOG(Info, "External tensor data loaded successfully");
+  }
+
   Result<Method> method = program->load_method(
-      method_name, &memory_manager, tracer.get_event_tracer());
+      method_name, &memory_manager, tracer.get_event_tracer(), data_map.get());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
