@@ -106,15 +106,29 @@ fi
 # Install ET with CMake
 if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
   echo "[runner] Building and testing llama_main ..."
-    cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out
-    cmake --build cmake-out -j16 --target install --config Release
+    cmake -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DEXECUTORCH_ENABLE_LOGGING=1 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
+        -Bcmake-out .
+    cmake --build cmake-out -j16 --config Release --target install
+
 
     # Install llama runner
-    cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-      -DBUILD_TESTING=OFF \
-      -DCMAKE_BUILD_TYPE=Release \
-      -Bcmake-out/examples/models/llama \
-      examples/models/llama
+    cmake -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_BUILD_TYPE=Release \
+        -Bcmake-out/examples/models/llama \
+        examples/models/llama
     cmake --build cmake-out/examples/models/llama -j16 --config Release
 
     # Run the model
