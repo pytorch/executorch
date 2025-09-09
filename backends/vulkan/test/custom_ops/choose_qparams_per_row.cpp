@@ -71,7 +71,7 @@ TestCase create_test_case_from_config(
   ValueSpec scale_out(
       {config.num_channels},
       vkapi::kFloat,
-      utils::kBuffer, // Always buffer as per requirement
+      utils::kTexture3D, // Always buffer as per requirement
       utils::kWidthPacked,
       DataGenType::ZEROS);
 
@@ -79,7 +79,7 @@ TestCase create_test_case_from_config(
   ValueSpec zero_point_out(
       {config.num_channels},
       vkapi::kChar, // int8 for quantized zero point
-      utils::kBuffer, // Always buffer as per requirement
+      utils::kTexture3D, // Always buffer as per requirement
       utils::kWidthPacked,
       DataGenType::ZEROS);
 
