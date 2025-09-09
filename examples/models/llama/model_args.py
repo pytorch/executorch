@@ -131,6 +131,7 @@ class ModelArgs:
     attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
     # Hybrid models can have layer types different from attention
     layer_types: Optional[list] = None
+    model_architecture: Optional[str] = None
 
     def __post_init__(self):
         if self.n_kv_heads is None:
