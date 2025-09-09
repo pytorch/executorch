@@ -67,11 +67,6 @@ extensions = [
     "sphinxcontrib.mermaid",
 ]
 
-if not FBCODE:
-    extensions += [
-        "executorch_custom_versions",
-    ]
-
 this_file_dir = os.path.abspath(os.path.dirname(__file__))
 doxygen_xml_dir = os.path.join(
     os.path.dirname(this_file_dir),  # {repo_root}/docs/
