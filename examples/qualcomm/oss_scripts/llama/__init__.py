@@ -29,6 +29,8 @@ from executorch.examples.models.codegen import (
 
 from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
+
+from executorch.examples.models.glm import convert_weights as convert_glm_weights
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
 )
@@ -382,6 +384,32 @@ class Gemma3(LLMModelConfig):
     custom_annotation = (
         annotate_kv_8bit,
         partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_16a8w),
+    )
+
+
+@register_llm_model("glm-1_5b")
+@dataclass(init=False, frozen=True)
+class GLM_1_5B(LLMModelConfig):
+    repo_id: str = "THUDM/glm-edge-1.5b-chat"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/glm/config/1_5b_config.json"
+    )
+    convert_weights = convert_glm_weights
+    transform_weight = True
+    instruct_model = True
+
+    num_sharding = 1
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 32
+    masked_softmax = False
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    custom_annotation = (
+        annotate_kv_8bit,
+        annotate_output_16a8w,
     )
 
 

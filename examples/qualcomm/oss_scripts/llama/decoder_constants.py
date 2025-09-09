@@ -26,4 +26,5 @@ DECODER_MODEL_VERSION = {
     "smollm2_135m": "smollm2_135m",
     "smollm3-3b": "smollm3",
     "codegen2_1b": "codegen",
+    "glm-1_5b": "glm",
 }
