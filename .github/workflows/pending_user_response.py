@@ -26,9 +26,6 @@ def main():
 
     now = datetime.datetime.utcnow()
 
-    # Simulate issues for validation workflow
-    issues = []  # Replace with mock issues if needed
-
     for issue in issues:
         # comments = list(issue.get_comments())
         print(f"[VALIDATION] Would fetch comments for issue/PR #{issue.number}.")
