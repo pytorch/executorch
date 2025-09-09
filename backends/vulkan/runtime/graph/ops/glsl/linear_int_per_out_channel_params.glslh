@@ -6,11 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-/*
- * Defines common functions and structs to be used across matrix multiplication
- * operators.
- */
-
 #ifndef LINEAR_INT_PER_OUT_CHANNEL_PARAMS_GLSLH
 #define LINEAR_INT_PER_OUT_CHANNEL_PARAMS_GLSLH
 
@@ -19,7 +14,7 @@
 #extension GL_EXT_control_flow_attributes : require
 
 // Represents floating point parameter tensors where each element is associated
-// with an output channel, such as weight scales, biases, etc.
+// with an output channel, such as weight sums
 struct IntPerOutChannelParams {
   ivec4 data[TILE_N4];
 };

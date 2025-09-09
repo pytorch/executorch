@@ -653,6 +653,14 @@ void compute_weight_sums(
     int64_t out_features,
     int64_t elements_per_output_feature);
 
+// Compute weight sums for 4-bit group symmetric quantized weights
+void compute_weight_sums_4bit_grouped(
+    ValueSpec& weight_sums,
+    const ValueSpec& quantized_weight,
+    int64_t num_groups,
+    int64_t out_features,
+    int64_t group_size);
+
 // Setup compute graph based on TestCase and operation name
 ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name);
 
