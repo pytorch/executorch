@@ -200,14 +200,8 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-# TODO/MLETORCH-1282: remove once inputs are not hard coded to ones
-skip_keys = {"5d_float", "1d_ones", "1d_randn"}
-filtered_test_data = {k: v for k, v in Add.test_data.items() if k not in skip_keys}
-
-
-@common.parametrize("test_data", filtered_test_data)
+@common.parametrize("test_data", Add.test_data)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="'Failed to load VKML extensions' error in ci.")
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),
@@ -223,9 +217,8 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
         pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
 
 
-@common.parametrize("test_data", filtered_test_data)
+@common.parametrize("test_data", Add.test_data)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="'Failed to load VKML extensions' error in ci.")
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),
