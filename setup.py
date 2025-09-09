@@ -466,82 +466,62 @@ class InstallerBuildExt(build_ext):
 
         try:
             # Following code is for building the Qualcomm backend.
-            from backends.qualcomm.scripts.download_qnn_sdk import (
-                _download_qnn_sdk,
-                SDK_DIR,
-            )
+            from backends.qualcomm.scripts.download_qnn_sdk import _download_qnn_sdk
 
             os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
 
-            # qnn sdk setup
-            _download_qnn_sdk()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir)
+                sdk_path = _download_qnn_sdk(dst_folder=tmp_path)
 
-            sdk_path = Path(SDK_DIR).resolve()  # full absolute path
-            print("sdk_path: ", sdk_path)
-            if not sdk_path:
-                raise RuntimeError("Qualcomm SDK not found, cannot build backend")
+                print("sdk_path: ", sdk_path)
+                if not sdk_path:
+                    raise RuntimeError("Qualcomm SDK not found, cannot build backend")
 
-            # Determine paths
-            prj_root = Path(__file__).parent.resolve()
-            print("prj_root: ", prj_root)
-            # TODO: stop using script but add cmake configuration properly
-            build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
-            build_root = prj_root / "build-x86"
+                # Determine paths
+                prj_root = Path(__file__).parent.resolve()
+                print("prj_root: ", prj_root)
+                build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
+                build_root = prj_root / "build-x86"
 
-            if not build_sh.exists():
-                raise FileNotFoundError(f"{build_sh} not found")
+                if not build_sh.exists():
+                    raise FileNotFoundError(f"{build_sh} not found")
 
-            # Run build.sh with SDK path exported
-            env = dict(**os.environ)
-            print("str(sdk_path): ", str(sdk_path))
-            env["QNN_SDK_ROOT"] = str(sdk_path)
-            subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
+                # Run build.sh with SDK path exported
+                env = dict(**os.environ)
+                print("str(sdk_path): ", str(sdk_path))
+                env["QNN_SDK_ROOT"] = str(sdk_path)
+                subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
 
-            # Copy the main .so into the wheel package
-            so_src = build_root / "backends/qualcomm/libqnn_executorch_backend.so"
-            so_dst = Path(
-                self.get_ext_fullpath("executorch.backends.qualcomm.qnn_backend")
-            )
-            self.mkpath(so_dst.parent)  # ensure destination exists
-            self.copy_file(str(so_src), str(so_dst))
-            print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
-
-            # --- CLEANUP SECTION ---
-            # 1. Remove Qualcomm SDK staging folder so it doesn’t get packaged
-            if os.path.exists(SDK_DIR):
-                try:
-                    shutil.rmtree(SDK_DIR)
-                    print(f"Removed Qualcomm SDK folder: {SDK_DIR}")
-                except Exception as e:
-                    print(f"Failed to remove SDK_DIR {SDK_DIR}: {e}")
-
-            # 2. Also remove the entire packaged SDK tree
-            pkg_sdk_dir = prj_root / "backends/qualcomm/sdk"
-            if pkg_sdk_dir.exists():
-                try:
-                    shutil.rmtree(pkg_sdk_dir)
-                    print(f"Removed packaged Qualcomm SDK: {pkg_sdk_dir}")
-                except Exception as e:
-                    print(f"Failed to remove packaged SDK dir {pkg_sdk_dir}: {e}")
-
-            so_files = [
-                (
-                    "executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
-                    prj_root
-                    / "backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so",
-                ),
-                (
-                    "executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
-                    prj_root
-                    / "backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so",
-                ),
-            ]
-
-            for module_name, so_src in so_files:
-                so_dst = Path(self.get_ext_fullpath(module_name))
-                self.mkpath(str(so_dst.parent))
+                # Copy the main .so into the wheel package
+                so_src = build_root / "backends/qualcomm/libqnn_executorch_backend.so"
+                so_dst = Path(
+                    self.get_ext_fullpath("executorch.backends.qualcomm.qnn_backend")
+                )
+                self.mkpath(so_dst.parent)  # ensure destination exists
                 self.copy_file(str(so_src), str(so_dst))
                 print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+
+                # Copy Python adaptor .so files
+                so_files = [
+                    (
+                        "executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
+                        prj_root
+                        / "backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so",
+                    ),
+                    (
+                        "executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
+                        prj_root
+                        / "backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so",
+                    ),
+                ]
+
+                for module_name, so_src in so_files:
+                    so_dst = Path(self.get_ext_fullpath(module_name))
+                    self.mkpath(str(so_dst.parent))
+                    self.copy_file(str(so_src), str(so_dst))
+                    print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+
         except ImportError:
             print("Fail to build Qualcomm backend")
             print("Import error: ", sys.exc_info()[0])

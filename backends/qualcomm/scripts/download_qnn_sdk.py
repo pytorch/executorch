@@ -38,9 +38,9 @@ def get_qnn_version() -> str:
     return QNN_VERSION
 
 
-def _download_qnn_sdk() -> Optional[pathlib.Path]:
+def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     """
-    Download and extract the Qualcomm SDK into SDK_DIR.
+    Download and extract the Qualcomm SDK into dst_folder.
 
     Notes:
         - Only runs on Linux x86 platforms. Skips otherwise.
@@ -53,8 +53,8 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
         print("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
 
-    SDK_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"SDK_DIR is {SDK_DIR}, exists: {SDK_DIR.exists()}")
+    dst_folder.mkdir(parents=True, exist_ok=True)
+    print(f"dst_folder is {dst_folder}, exists: {dst_folder.exists()}")
     print(f"Current working directory: {os.getcwd()}")
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -95,24 +95,24 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
 
         if QAIRT_URL.endswith(".zip"):
             print("Extracting ZIP archive...")
-            _extract_zip(archive_path, QAIRT_CONTENT_DIR, SDK_DIR)
+            _extract_zip(archive_path, QAIRT_CONTENT_DIR, dst_folder)
         elif QAIRT_URL.endswith((".tar.gz", ".tgz")):
             print("Extracting TAR archive...")
-            _extract_tar(archive_path, QAIRT_CONTENT_DIR, SDK_DIR)
+            _extract_tar(archive_path, QAIRT_CONTENT_DIR, dst_folder)
         else:
             raise ValueError(f"Unsupported archive format: {QAIRT_URL}")
 
-        print(f"Verifying extraction to {SDK_DIR}")
-        if SDK_DIR.exists():
+        print(f"Verifying extraction to {dst_folder}")
+        if dst_folder.exists():
             print(f"SDK directory exists. Contents:")
-            for item in SDK_DIR.iterdir():
+            for item in dst_folder.iterdir():
                 print(f"  {item.name}")
         else:
             print("ERROR: SDK directory was not created!")
 
-        print(f"Qualcomm SDK extracted to {SDK_DIR}")
+        print(f"Qualcomm SDK extracted to {dst_folder}")
 
-    return SDK_DIR
+    return dst_folder
 
 
 def _extract_zip(archive_path, content_dir, target_dir):
@@ -166,8 +166,8 @@ REQUIRED_LIBCXX_LIBS = [
     "libc++.so.1.0",
     "libc++abi.so.1.0",
     "libunwind.so.1",
-    "libm.so.6",
-    "libpython3.10.so.1.0",
+    # "libm.so.6",
+    # "libpython3.10.so.1.0",
 ]
 
 
@@ -189,22 +189,15 @@ def _stage_libcxx(target_dir: pathlib.Path):
     with tarfile.open(temp_tar, "r:xz") as tar:
         tar.extractall(temp_extract.parent)
 
-    lib_src = temp_extract / "lib"
+    lib_src = temp_extract / "lib" / "x86_64-unknown-linux-gnu"
     for fname in REQUIRED_LIBCXX_LIBS:
         src_path = lib_src / fname
         if not src_path.exists():
-            print(f"[libcxx] Warning: {fname} not found in extracted LLVM")
+            print(
+                f"[libcxx] Warning: {fname} not found in extracted LLVM src_path {src_path}"
+            )
             continue
         shutil.copy(src_path, target_dir / fname)
-
-    libcxx = target_dir / "libc++.so.1.0"
-    libcxx_abi = target_dir / "libc++abi.so.1.0"
-    if libcxx.exists():
-        os.symlink("libc++.so.1.0", target_dir / "libc++.so.1")
-        os.symlink("libc++.so.1", target_dir / "libc++.so")
-    if libcxx_abi.exists():
-        os.symlink("libc++abi.so.1.0", target_dir / "libc++abi.so.1")
-        os.symlink("libc++abi.so.1", target_dir / "libc++abi.so")
 
     print(f"[libcxx] Staged libc++ to {target_dir}")
 
@@ -294,13 +287,14 @@ def _ensure_qnn_sdk_lib() -> bool:
 
 
 def _load_libcxx_libs(lib_path):
+    print("running _load_libcxx_libs")
     candidates = list(lib_path.glob("*.so*"))
     priority = ["libc++abi", "libc++"]
     sorted_candidates = [
         f for name in priority for f in candidates if f.name.startswith(name)
     ]
     sorted_candidates += [f for f in candidates if f not in sorted_candidates]
-
+    print("sorted_candidates: ", sorted_candidates)
     for sofile in sorted_candidates:
         try:
             ctypes.CDLL(str(sofile), mode=ctypes.RTLD_GLOBAL)
@@ -357,6 +351,6 @@ def install_qnn_sdk() -> bool:
     Returns:
         True if both steps succeeded (or were already satisfied), else False.
     """
-    ok_qnn = _ensure_qnn_sdk_lib()
     ok_libcxx = _ensure_libcxx_stack()
+    ok_qnn = _ensure_qnn_sdk_lib()
     return bool(ok_qnn and ok_libcxx)
