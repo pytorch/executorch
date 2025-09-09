@@ -88,7 +88,8 @@ EOF
 # ----------------------------
 echo "=== Building Wheel Package ==="
 # pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
-PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+source .ci/scripts/utils.sh
+install_executorch "--use-pt-pinned-commit"
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 unset EXECUTORCH_BUILDING_WHEEL
 
