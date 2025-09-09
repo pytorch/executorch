@@ -5,9 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Set, Type, Union
+from functools import partial
+from operator import attrgetter
+from torch.utils._python_dispatch import _disable_current_modes
+
+from typing import Any, Callable, cast, List, Optional, Set, Type, Union
+
+import executorch.backends.cadence.aot.ops_registrations  # noqa
+import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -16,6 +22,8 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPac
 from executorch.exir.pass_base import PassBase, PassResult
 
 from torch._ops import OpOverloadPacket
+from torch.fx import GraphModule
+from torch.utils._pytree import PyTree
 
 
 # Is an overlap in tensor lifetime and storage allowed at the current opt level?
@@ -113,6 +121,125 @@ def op_counts_match(
         if count_node(graph_module, op) != count:
             return False
     return True
+
+def validate_pass(
+
+) -> Callable[[type[PassBase]], type[PassBase]]:
+    tolerance = 1e-5
+    log_differences = False
+    fail_on_mismatch = True
+
+    def decorator(pass_class: type[PassBase]) -> type[PassBase]:
+        class WrappedPass(pass_class):
+            def call(self, graph_module: GraphModule) -> PassResult:
+                # Ensure we're not in fake tensor mode for actual execution
+                with _disable_current_modes():
+                    # Get inputs for the graph module
+                    original_inputs = self._get_concrete_inputs(graph_module)
+
+                    if original_inputs is None:
+                        raise RuntimeError("Could not extract concrete inputs for {pass_class.__name__}")
+
+                    # Run original graph and collect outputs
+                    with torch.no_grad():
+                        original_outputs = graph_module(*original_inputs)
+
+                    # Apply the transformation
+                    result = super().call(graph_module)
+
+                    # Run transformed graph and collect outputs
+                    with torch.no_grad():
+                        transformed_outputs = result.graph_module(*original_inputs)
+
+                    # Compare outputs
+                    self._compare_outputs(
+                        original_outputs,
+                        transformed_outputs,
+                        pass_class.__name__,
+                        tolerance,
+                        log_differences,
+                        fail_on_mismatch
+                    )
+
+                    return result
+
+            def _get_concrete_inputs(self, graph_module: GraphModule) -> Optional[List[torch.Tensor]]:
+                """Extract concrete tensor inputs from the graph module metadata."""
+                inputs = []
+                for node in graph_module.graph.nodes:
+                    if node.op == "placeholder":
+                        if "val" in node.meta:
+                            val = node.meta["val"]
+                            if hasattr(val, "constant") and val.constant is not None:
+                                inputs.append(val.constant.detach().clone())
+                            elif isinstance(val, torch.Tensor):
+                                # Create a concrete tensor with the same properties
+                                concrete_tensor = torch.testing.make_tensor(val.shape, dtype=val.dtype, device='cpu')
+                                # concrete_tensor = torch.randn(val.shape, dtype=val.dtype)
+                                if hasattr(val, 'device'):
+                                    concrete_tensor = concrete_tensor.to(val.device)
+                                inputs.append(concrete_tensor)
+                            else:
+                                raise ValueError(f"Unsupported type for {node.name}: {type(val)}")
+                        else:
+                            raise ValueError(f"Missing 'val' in node metadata for {node.name}")
+                return inputs
+
+            def _compare_outputs(
+                self,
+                original: Any,
+                transformed: Any,
+                pass_name: str,
+                tolerance: float,
+                log_differences: bool,
+                fail_on_mismatch: bool
+            ) -> None:
+                """Compare outputs and optionally log/fail on differences."""
+                if isinstance(original, torch.Tensor) and isinstance(transformed, torch.Tensor):
+                    if not torch.allclose(original, transformed, atol=tolerance, rtol=tolerance):
+                        max_diff = torch.max(torch.abs(original - transformed)).item()
+                        message = f"{pass_name}: Output mismatch detected. Max difference: {max_diff}"
+
+                        if log_differences:
+                            pass
+                            # logging.warning(message)
+                            # logging.warning(f"Original shape: {original.shape}, Transformed shape: {transformed.shape}")
+
+                        if fail_on_mismatch:
+                            raise ValueError(message)
+                    else:
+                        if log_differences:
+                            pass
+                            # logging.info(f"{pass_name}: Outputs match within tolerance {tolerance}")
+
+                elif isinstance(original, (list, tuple)) and isinstance(transformed, (list, tuple)):
+                    if len(original) != len(transformed):
+                        message = f"{pass_name}: Output count mismatch. Original: {len(original)}, Transformed: {len(transformed)}"
+                        if log_differences:
+                            # logging.warning(message)
+                            pass
+                        if fail_on_mismatch:
+                            raise ValueError(message)
+                    else:
+                        for i, (orig_item, trans_item) in enumerate(zip(original, transformed)):
+                            self._compare_outputs(
+                                orig_item, trans_item, f"{pass_name}[{i}]",
+                                tolerance, log_differences, fail_on_mismatch
+                            )
+                else:
+                    if log_differences:
+                        pass
+                        # logging.info(f"{pass_name}: Non-tensor outputs, skipping numerical comparison")
+
+        # Preserve the original class name and documentation
+        WrappedPass.__name__ = pass_class.__name__
+        WrappedPass.__qualname__ = pass_class.__qualname__
+        WrappedPass.__doc__ = pass_class.__doc__
+
+        return cast(type[PassBase], WrappedPass) # type: ignore[return-value]
+
+    return decorator
+
 
 
 # Testing utils

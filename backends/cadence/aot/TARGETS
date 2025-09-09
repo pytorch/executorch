@@ -82,6 +82,8 @@ python_library(
     ],
     deps = [
         ":utils",
+        ":ops_registrations",
+        ":ref_implementations",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
@@ -614,6 +616,7 @@ python_unittest(
     typing = True,
     deps = [
         ":typing_stubs",
+        "//executorch/backends/cadence/aot:ops_registrations",
         "//executorch/backends/cadence/aot:ref_implementations",
         "//caffe2:torch",
     ]
