@@ -10,7 +10,7 @@
 
 #import <ExecuTorch/ExecuTorchLog.h>
 #if BUILD_WITH_XCODE
-#import "ExecuTorchTextLLMRunner.h"
+#import "ExecuTorchLLMTextRunner.h"
 #else
 #import <ExecuTorchLLM/ExecuTorchLLM.h>
 #endif
@@ -20,7 +20,7 @@
 @end
 
 @implementation LLaMARunner {
-  ExecuTorchTextLLMRunner *_runner;
+  ExecuTorchLLMTextRunner *_runner;
 }
 
 - (instancetype)initWithModelPath:(NSString *)modelPath
@@ -33,7 +33,7 @@
     for (const auto &token : *tokens) {
       [specialTokens addObject:(NSString *)@(token.c_str())];
     }
-    _runner = [[ExecuTorchTextLLMRunner alloc] initWithModelPath:modelPath
+    _runner = [[ExecuTorchLLMTextRunner alloc] initWithModelPath:modelPath
                                                    tokenizerPath:tokenizerPath
                                                    specialTokens:specialTokens];
   }

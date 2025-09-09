@@ -35,7 +35,7 @@ struct SpecialTokens {
   }
 }
 
-class TextLLMRunnerTest: XCTestCase {
+class TextRunnerTest: XCTestCase {
   func test() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "llama3_2-1B", ofType: "pte"),
@@ -43,7 +43,7 @@ class TextLLMRunnerTest: XCTestCase {
       XCTFail("Couldn't find model or tokenizer files")
       return
     }
-    let runner = TextLLMRunner(modelPath: modelPath, tokenizerPath: tokenizerPath, specialTokens: SpecialTokens.defaultSpecialTokens())
+    let runner = TextRunner(modelPath: modelPath, tokenizerPath: tokenizerPath, specialTokens: SpecialTokens.defaultSpecialTokens())
     var text = ""
 
     do {

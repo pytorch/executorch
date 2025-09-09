@@ -21,6 +21,7 @@ examples
 |   └── mps                           # Contains end-to-end demos of MPS backend
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
+�├── samsung                          # Contains demos of Samsung Exynos backend
 ├── cadence                           # Contains demos of exporting and running a simple model on Xtensa DSPs
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
@@ -68,6 +69,10 @@ The [`arm`](arm) directory contains scripts to help you run a PyTorch model on a
 ### QNN Backend
 
 You will find demos of [ExecuTorch QNN Backend](qualcomm) in the [`qualcomm`](qualcomm) directory.
+
+###  Exynos Backend
+
+You will find demos of [ExecuTorch Exynos Backend](samsung) in the [`samsung`](samsung) directory.
 
 ### Cadence HiFi4 DSP
 

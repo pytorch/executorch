@@ -11,6 +11,7 @@
 
 #include "linear_common.glslh"
 #include "linear_fp_weight_tile.glslh"
+#include "linear_int8_weight_tile.glslh"
 
 /*
  * Defines the Int4WeightTile struct, which is used to represent a tile of the
@@ -26,64 +27,6 @@
 struct Int4WeightTile {
   ivec4 data[TILE_K4][TILE_N8];
 };
-
-void unpack_int4_weight_tile(
-    out FPWeightTile int8_tile,
-    const Int4WeightTile int4_tile) {
-#if TILE_K4 == 1 && TILE_N8 == 1
-  for (int k = 0; k < TILE_K; ++k) {
-    const int col_idx_1 = 2 * k;
-    const int col_idx_2 = 2 * k + 1;
-    int8_tile.data[k][0][0] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][0], col_idx_1));
-    int8_tile.data[k][0][1] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][1], col_idx_1));
-    int8_tile.data[k][0][2] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][2], col_idx_1));
-    int8_tile.data[k][0][3] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][3], col_idx_1));
-
-    // n4 = 1
-    int8_tile.data[k][1][0] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][0], col_idx_2));
-    int8_tile.data[k][1][1] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][1], col_idx_2));
-    int8_tile.data[k][1][2] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][2], col_idx_2));
-    int8_tile.data[k][1][3] =
-        T(extract_4bit_from_packed_int_le(int4_tile.data[0][0][3], col_idx_2));
-  }
-
-#else
-  for (int k = 0; k < TILE_K; ++k) {
-    const int k4 = div_4(k);
-    const int k4i = mod_4(k);
-    for (int n8 = 0; n8 < TILE_N8; ++n8) {
-      const int n4 = mul_2(n8);
-      const int col_idx_1 = 2 * k4i;
-      const int col_idx_2 = 2 * k4i + 1;
-      int8_tile.data[k][n4][0] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][0], col_idx_1));
-      int8_tile.data[k][n4][1] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][1], col_idx_1));
-      int8_tile.data[k][n4][2] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][2], col_idx_1));
-      int8_tile.data[k][n4][3] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][3], col_idx_1));
-
-      int8_tile.data[k][n4 + 1][0] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][0], col_idx_2));
-      int8_tile.data[k][n4 + 1][1] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][1], col_idx_2));
-      int8_tile.data[k][n4 + 1][2] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][2], col_idx_2));
-      int8_tile.data[k][n4 + 1][3] = T(extract_4bit_from_packed_int_le(
-          int4_tile.data[k4][n8][3], col_idx_2));
-    }
-  }
-
-#endif
-}
 
 #ifdef DEBUG_MODE
 

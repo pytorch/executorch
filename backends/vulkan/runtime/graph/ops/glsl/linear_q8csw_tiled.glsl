@@ -99,10 +99,10 @@ void main() {
     FPPerOutChannelParams bias_tile;
     load_bias_tile(bias_tile, n4);
 
-    apply_scales_and_biases(out_tile, weight_scales_tile, bias_tile);
+    apply_weight_scales_and_biases(out_tile, weight_scales_tile, bias_tile);
   }
   else {
-    apply_scales(out_tile, weight_scales_tile);
+    apply_weight_scales(out_tile, weight_scales_tile);
   }
 
   if (dont_check_bounds) {

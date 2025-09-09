@@ -87,7 +87,7 @@
       for (NSUInteger index = 2; specialTokens.count < 256; ++index) {
         [specialTokens addObject:[NSString stringWithFormat:@"<|reserved_special_token_%zu|>", index]];
       }
-      auto __block runner = [[ExecuTorchTextLLMRunner alloc] initWithModelPath:modelPath
+      auto __block runner = [[ExecuTorchLLMTextRunner alloc] initWithModelPath:modelPath
                                                                  tokenizerPath:tokenizerPath
                                                                  specialTokens:specialTokens];
       NSError *error;

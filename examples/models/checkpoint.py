@@ -7,6 +7,8 @@
 
 # pyre-unsafe
 
+import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -74,3 +76,39 @@ def get_checkpoint_dtype(checkpoint: Dict[str, Any]) -> Optional[torch.dtype]:
                 f"Mixed dtype model. Dtype of {first_key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
             )
     return dtype
+
+
+def load_checkpoint_from_pytorch_model(input_dir: str) -> Dict:
+    index_path = os.path.join(input_dir, "pytorch_model.bin.index.json")
+    if os.path.exists(index_path):
+        # Sharded checkpoint.
+        with open(index_path, "r") as f:
+            index = json.load(f)
+        weight_map = index["weight_map"]
+        checkpoint_shards = sorted(set(weight_map.values()))
+
+        # Load all the shards into memory
+        shard_to_weights = {}
+        for shard in checkpoint_shards:
+            shard_to_weights[shard] = torch.load(
+                os.path.join(input_dir, shard),
+                weights_only=True,
+                map_location=torch.device("cpu"),
+            )
+
+        # Merge tensors into consolidated state dict.
+        merged_state_dict = {}
+        for weight_name, shard in weight_map.items():
+            tensor = shard_to_weights[shard][weight_name]
+            merged_state_dict[weight_name] = tensor
+        return merged_state_dict
+
+    # Single checkpoint
+    model_path = os.path.join(input_dir, "pytorch_model.bin")
+    if os.path.exists(model_path):
+        state_dict = torch.load(
+            model_path, weights_only=True, map_location=torch.device("cpu")
+        )
+        return state_dict
+
+    raise FileNotFoundError(f"Could not find pytorch_model checkpoint in {input_dir}")

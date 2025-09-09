@@ -95,7 +95,6 @@ Tensor& requantize_out(
     out_data[i] =                                                           \
         kernels::quantize<dtype>(dequant, 1 / out_scale, out_zero_point);   \
   };
-
 #define typed_requantize_in(ctype)               \
   switch (out_dtype) {                           \
     case ScalarType::Byte: {                     \

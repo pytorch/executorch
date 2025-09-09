@@ -6,11 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-/*
- * Defines common functions and structs to be used across matrix multiplication
- * operators.
- */
-
 #ifndef LINEAR_FP_PER_OUT_CHANNEL_PARAMS_GLSLH
 #define LINEAR_FP_PER_OUT_CHANNEL_PARAMS_GLSLH
 

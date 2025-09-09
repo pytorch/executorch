@@ -1,0 +1,27 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_INT8_INPUT_SCALES_ZPS_LOAD_GLSLH
+#define LINEAR_INT8_INPUT_SCALES_ZPS_LOAD_GLSLH
+
+#include "linear_int8_input_scales_zps.glslh"
+
+#extension GL_EXT_control_flow_attributes : require
+
+void load_int8_input_scales_and_zps(
+    out Int8InputScales scales,
+    out Int8InputZeroPoints zps,
+    const int m4_start) {
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; m4++) {
+    scales.data[m4] =
+        VEC4_T(texelFetch(t_int8_input_scales, ivec3(m4_start + m4, 0, 0), 0));
+    zps.data[m4] = texelFetch(t_int8_input_zps, ivec3(m4_start + m4, 0, 0), 0);
+  }
+}
+
+#endif // LINEAR_INT8_INPUT_SCALES_ZPS_LOAD_GLSLH

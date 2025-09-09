@@ -22,15 +22,9 @@ VEC4_T load_scale_x4(const int n4, const int quant_group_idx, const int N4) {
 void load_weight_scales_tile(
     out FPPerOutChannelParams scales,
     const int n4_start) {
-#if TILE_N4 == 1
-  scales.data[0] = load_weight_scale_x4(n4_start);
-
-#else
   [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
     scales.data[n4] = load_weight_scale_x4(n4_start + n4);
   }
-
-#endif
 }
 
 void load_weight_scales_tile_for_group(
@@ -38,15 +32,9 @@ void load_weight_scales_tile_for_group(
     const int n4_start,
     const int quant_group_idx,
     const int N4) {
-#if TILE_N4 == 1
-  scales.data[0] = load_scale_x4(n4_start, quant_group_idx, N4);
-
-#else
   [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
     scales.data[n4] = load_scale_x4(n4_start + n4, quant_group_idx, N4);
   }
-
-#endif
 }
 
 #endif // LINEAR_FP_WEIGHT_SCALES_LOAD_GLSLH

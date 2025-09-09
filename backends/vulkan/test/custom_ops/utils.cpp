@@ -213,6 +213,9 @@ void ValueSpec::generate_tensor_data() {
         generate_random_2xint4_data(uint8_data);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(uint8_data.begin(), uint8_data.end(), 1);
+      } else if (data_gen_type == DataGenType::ONES_INT4) {
+        uint8_t packed_data = (9 << 4) | 9;
+        std::fill(uint8_data.begin(), uint8_data.end(), packed_data);
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(uint8_data.begin(), uint8_data.end(), 0);
       } else {
@@ -1709,6 +1712,62 @@ void compute_weight_sums(
       sum += static_cast<int32_t>(quantized_weight_data[weight_idx]);
     }
     weight_sums_data[out_f] = sum;
+  }
+}
+
+// Helper function to unpack 4-bit values from uint8 (same as in
+// q4gsw_linear.cpp)
+std::pair<int8_t, int8_t> unpack_4bit_utils(uint8_t packed) {
+  // Extract lower 4 bits and upper 4 bits
+  int8_t lower = packed & 0x0F;
+  int8_t upper = (packed >> 4) & 0x0F;
+
+  // Subtract 8 from unpacked 4-bit values
+  lower -= 8;
+  upper -= 8;
+
+  return std::make_pair(lower, upper);
+}
+
+// Compute weight sums for 4-bit group symmetric quantized weights
+void compute_weight_sums_4bit_grouped(
+    ValueSpec& weight_sums,
+    const ValueSpec& quantized_weight,
+    int64_t num_groups,
+    int64_t out_features,
+    int64_t group_size) {
+  auto& weight_sums_data = weight_sums.get_int32_data();
+  auto& quantized_weight_data = quantized_weight.get_uint8_data();
+
+  // Resize to [num_groups, out_features]
+  weight_sums_data.resize(num_groups * out_features);
+
+  // For each group and each output feature, compute the sum of quantized
+  // weights in that group
+  for (int64_t group_idx = 0; group_idx < num_groups; ++group_idx) {
+    for (int64_t out_f = 0; out_f < out_features; ++out_f) {
+      int32_t sum = 0;
+
+      // Sum weights for this group and output feature
+      for (int64_t in_group = 0; in_group < group_size; ++in_group) {
+        int64_t in_f = group_idx * group_size + in_group;
+
+        // Get packed weight value - weight matrix is [N, K/2]
+        int64_t weight_idx =
+            out_f * ((num_groups * group_size) / 2) + (in_f / 2);
+        uint8_t packed_weight = quantized_weight_data[weight_idx];
+
+        // Unpack 4-bit weight
+        auto unpacked = unpack_4bit_utils(packed_weight);
+        int8_t weight_4bit = (in_f % 2 == 0) ? unpacked.first : unpacked.second;
+
+        sum += static_cast<int32_t>(weight_4bit);
+      }
+
+      // Store sum for this group and output feature
+      int64_t sums_idx = group_idx * out_features + out_f;
+      weight_sums_data[sums_idx] = sum;
+    }
   }
 }
 

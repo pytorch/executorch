@@ -44,6 +44,7 @@ class LlamaModelChunk : public ModelChunk {
   explicit LlamaModelChunk(
       const ModelPathMap& modelPathMap,
       const LlamaModelOptions& modelOptions,
+      const bool useSharedWeights,
       const size_t initBatchSize,
       const size_t numCache,
       const size_t numRotEmbInputs,
@@ -104,6 +105,17 @@ class LlamaModelChunk : public ModelChunk {
   size_t GetExpectedOutputCount() const;
 
  private:
+  bool AllowModelsCoexist() const override {
+    return kIsSharedWeightsUsed;
+  }
+
+  std::string SelectMethod(
+      const std::vector<std::string>& methodNames) const override;
+
+ private:
+  // Whether shared weights is used
+  bool kIsSharedWeightsUsed = false;
+
   // Input/Output Indexes
   const size_t kMaskInputIndex;
   const std::vector<size_t> kRotEmbInputIndexes;

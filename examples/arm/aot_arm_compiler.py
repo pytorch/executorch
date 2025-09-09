@@ -40,7 +40,7 @@ from executorch.backends.arm.util.arm_model_evaluator import (
     MobileNetV2Evaluator,
 )
 
-from executorch.backends.arm.vgf_partitioner import VgfPartitioner
+from executorch.backends.arm.vgf import VgfPartitioner
 
 # To use Cortex-M backend
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (

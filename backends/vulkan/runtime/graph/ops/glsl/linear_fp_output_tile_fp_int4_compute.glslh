@@ -6,10 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-/*
- * Defines functions to compute a FPOutTile using fp input and weight tiles.
- */
-
 #ifndef LINEAR_FP_OUTPUT_TILE_FP_INT4_COMPUTE_GLSLH
 #define LINEAR_FP_OUTPUT_TILE_FP_INT4_COMPUTE_GLSLH
 
@@ -21,8 +17,6 @@
 #include "linear_fp_per_out_channel_params.glslh"
 #include "linear_int4_weight_tile.glslh"
 
-// Unpacks a int containing 4 packed 8-bit integers into a vec4 containing each
-// of the 4 unpacked 8-bit integers.
 VEC4_T unpack_packed_4xint4(const int int8x4, const int n4_group) {
   return VEC4_T(
       extract_4bit_from_packed_int_le(int8x4, n4_group + 0),
@@ -54,39 +48,43 @@ void fp_accumulate_with_int4_weight(
   //    (n, k), (n, k + 1), (n, k + 2), (n, k + 3),
   //    (n + 4, k), (n + 4, k + 1), (n + 4, k + 2), (n + 4, k + 3)
   VEC4_T weight_texels[2];
-#if TILE_K4 == 1 && TILE_N8 == 1
-  [[unroll]] for (int k = 0; k < 4; ++k) {
-    const int base_col_1 = mul_2(k);
-    const int base_col_2 = base_col_1 + 1;
-    weight_texels[0] = VEC4_T(
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_1, 0),
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_1, 1),
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_1, 2),
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_1, 3));
-    weight_texels[1] = VEC4_T(
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_2, 0),
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_2, 1),
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_2, 2),
-        extract_4bit_from_weight_block(w_tile.data[0][0], base_col_2, 3));
+  [[unroll]] for (int n8 = 0; n8 < TILE_N8; ++n8) {
+    const int n4 = mul_2(n8);
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      [[unroll]] for (int k4i = 0; k4i < 4; ++k4i) {
+        const int base_col_1 = mul_2(k4i);
+        const int base_col_2 = base_col_1 + 1;
+        weight_texels[0] = VEC4_T(
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 0),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 1),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 2),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_1, 3));
+        weight_texels[1] = VEC4_T(
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 0),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 1),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 2),
+            extract_4bit_from_weight_block(w_tile.data[k4][n8], base_col_2, 3));
 
-    weight_texels[0] =
-        fma(weight_texels[0], scales_tile.data[0], zeros_tile.data[0]);
-    weight_texels[1] =
-        fma(weight_texels[1], scales_tile.data[1], zeros_tile.data[1]);
+        weight_texels[0] =
+            fma(weight_texels[0], scales_tile.data[n4], zeros_tile.data[n4]);
+        weight_texels[1] =
+            fma(weight_texels[1],
+                scales_tile.data[n4 + 1],
+                zeros_tile.data[n4 + 1]);
 
-    [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-      accum.data[m][0] = fma(
-          VEC4_T(in_tile.data[m][0][k]), weight_texels[0], accum.data[m][0]);
-      accum.data[m][1] = fma(
-          VEC4_T(in_tile.data[m][0][k]), weight_texels[1], accum.data[m][1]);
+        [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+          accum.data[m][n4] =
+              fma(VEC4_T(in_tile.data[m][k4][k4i]),
+                  weight_texels[0],
+                  accum.data[m][n4]);
+          accum.data[m][n4 + 1] =
+              fma(VEC4_T(in_tile.data[m][k4][k4i]),
+                  weight_texels[1],
+                  accum.data[m][n4 + 1]);
+        }
+      }
     }
   }
-
-#else
-  // TODO(ssjia): Implement generic case
-  not implemented
-
-#endif
 }
 
 #endif // LINEAR_FP_OUTPUT_TILE_FP_INT4_COMPUTE_GLSLH

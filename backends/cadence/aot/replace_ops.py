@@ -2242,10 +2242,26 @@ class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass(ExportPass):
+    """
+    Replace aten linalg svd op with cadence custom op.
+    """
+
+    def call_operator(self, op, args, kwargs, meta):
+        if op != exir_ops.edge.aten._linalg_svd.default:
+            return super().call_operator(op, args, kwargs, meta)
+
+        return super().call_operator(
+            exir_ops.edge.cadence.linalg_svd.default, args, kwargs, meta
+        )
+
+
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
     passes = [
+        ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
         ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
         ReplacePermuteWithTransposePass,

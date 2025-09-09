@@ -80,3 +80,8 @@ function setup_toolchain() {
     rm -rf "${toolchain_dir}"
     tar xf "${toolchain_dir}.tar.xz"
 }
+
+function setup_path_toolchain() {
+    toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
+    append_env_in_setup_path PATH ${toolchain_bin_path}
+}

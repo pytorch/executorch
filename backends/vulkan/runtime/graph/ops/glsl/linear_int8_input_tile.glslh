@@ -7,12 +7,9 @@
  */
 
 /*
- * Defines the Int8InputTile struct, which is used to represent a tile of the
- * quantized int8 input matrix of a quantized matrix multiplication operation.
- *
- * Settings:
- * - TILE_M4: number of (groups of 4) rows in the tile
- * - TILE_K4: number of (groups of 4) columns in the tile
+ * Macro Settings:
+ * - TILE_M4
+ * - TILE_K4
  */
 
 #ifndef LINEAR_INT8_INPUT_TILE_GLSLH

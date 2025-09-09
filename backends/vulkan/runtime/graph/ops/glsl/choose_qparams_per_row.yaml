@@ -8,8 +8,6 @@ choose_qparams_per_row:
   parameter_names_with_default_values:
     DTYPE: float
     STORAGE: texture3d
-    NUM_OUTPUTS_PER_WG: 1
-    NUM_WORKERS_PER_OUTPUT: 64
   generate_variant_forall:
     STORAGE:
       - VALUE: texture3d
@@ -17,7 +15,4 @@ choose_qparams_per_row:
     DTYPE:
       - VALUE: float
   shader_variants:
-    - NAME: choose_qparams_per_row_o1w64
-    - NAME: choose_qparams_per_row_o4w16
-      NUM_OUTPUTS_PER_WG: 4
-      NUM_WORKERS_PER_OUTPUT: 16
+    - NAME: choose_qparams_per_row

@@ -10,12 +10,9 @@
 #define LINEAR_FP_INPUT_TILE_GLSLH
 
 /*
- * Defines the FPInputTile struct, which is used to represent a tile of the
- * input matrix of a matrix multiplication operation.
- *
- * Settings:
- * - TILE_M: number of rows in the tile
- * - TILE_K4: number of (groups of 4) columns in the tile
+ * Macro Settings:
+ * - TILE_M
+ * - TILE_K4
  */
 
 #extension GL_EXT_control_flow_attributes : require

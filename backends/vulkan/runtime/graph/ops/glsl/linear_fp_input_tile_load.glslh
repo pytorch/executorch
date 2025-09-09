@@ -7,14 +7,11 @@
  */
 
 /*
- * Defines functions to load a FPInputTile from input buffer/texture.
+ * Assume the following variables are defined in the shader layout:
+ * - t_input
  *
- * Requires:
- * - t_input to be declared in the shader layout (input buffer/texture)
- *
- * Settings:
- * - INPUT_BUFFER to indicate input resource is a buffer, otherwise texture is
- *   assumed.
+ * Macro Settings:
+ * - INPUT_BUFFER
  */
 
 #ifndef LINEAR_FP_INPUT_TILE_LOAD_GLSLH
@@ -24,58 +21,33 @@
 
 #include "linear_fp_input_tile.glslh"
 
+VEC4_T load_input_x4(const int k4, const int m, const int ntexels_k) {
 #ifdef INPUT_BUFFER
-
-VEC4_T load_input_x4(const int k4, const int m, const int ntexels_k) {
   return t_input[(m * ntexels_k) + k4];
-}
-
 #else
-
-VEC4_T load_input_x4(const int k4, const int m, const int ntexels_k) {
   return texelFetch(t_input, ivec3(k4, m, 0), 0);
+#endif
 }
 
-#endif // INPUT_BUFFER
-
-// To be used if (M - m_start >= TILE_M) || (K4 - k4_start >= TILE_K4)
 void load_input_tile_no_checks(
     out FPInputTile in_tile,
     const int k4_start,
     const int m_start,
     const int K4,
     const int M) {
-#if TILE_K4 == 1
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    in_tile.data[m][0] = load_input_x4(k4_start, m_start + m, K4);
-  }
-
-#else
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
       in_tile.data[m][k4] = load_input_x4(k4_start + k4, m_start + m, K4);
     }
   }
-#endif
 }
 
-// To be used if near tensor boundaries
 void load_input_tile_with_checks(
     out FPInputTile in_tile,
     const int k4_start,
     const int m_start,
     const int K4,
     const int M) {
-#if TILE_K4 == 1
-  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    if (m_start + m < M) {
-      in_tile.data[m][0] = load_input_x4(k4_start, m_start + m, K4);
-    } else {
-      in_tile.data[m][0] = VEC4_T(0.0);
-    }
-  }
-
-#else
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
     [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
       if (m_start + m < M && k4_start + k4 < K4) {
@@ -85,7 +57,6 @@ void load_input_tile_with_checks(
       }
     }
   }
-#endif
 }
 
 #endif // LINEAR_FP_INPUT_TILE_LOAD_GLSLH

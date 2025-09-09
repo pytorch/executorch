@@ -10,20 +10,12 @@
 #define LINEAR_INT4_WEIGHT_BLOCK_GLSLH
 
 /*
- * This file defines utilties to perform weight prepacking of quantized int4
- * matrix multiplation weights. It also defines utilities to load source
- * weight data from inputbuffer, and write out a packed weight block to output
- * texture/buffer.
+ * Assumes the following variables are defined in shader layout
+ * - t_packed_int4_weight
+ * - t_int4_weight
  *
- * Note: 2 4-bit values are packed into each 8-bit value in the source data.
- *
- * Requires:
- * - t_packed_int4_weight to be defined in shader layout (output texture/buffer)
- * - t_int4_weight to be defined in shader layout (input buffer)
- *
- * Settings:
- * - USING_BUFFER to indicate if output resource is a buffer. Otherwise texture
- *   is assumed.
+ * Macro Settings:
+ * - USING_BUFFER
  */
 
 #extension GL_EXT_control_flow_attributes : require
@@ -67,6 +59,8 @@ void load_block_source_data_with_checks(
     if (n_start + n < N) {
       src_data.data[n] = t_int4_weight[(n_start + n) * ntexels_K + k8];
     } else {
+      // Equivalent to a row of zeros since int4 weights have an implicit zero
+      // point of -8.
       src_data.data[n] = 0x88888888;
     }
   }
@@ -116,27 +110,17 @@ void create_packed_blocks(
   }
 }
 
+void write_packed_block(
+    const Int4WeightBlockPacked block,
+    const int k4,
+    const int n8,
+    const int nblocks_K) {
 #ifdef USING_BUFFER
-
-void write_packed_block(
-    const Int4WeightBlockPacked block,
-    const int k4,
-    const int n8,
-    const int nblocks_K) {
   t_packed_int4_weight[n8 * nblocks_K + k4] = block.data;
-}
-
-#else // USING_TEXTURE
-
-void write_packed_block(
-    const Int4WeightBlockPacked block,
-    const int k4,
-    const int n8,
-    const int nblocks_K) {
+#else
   imageStore(t_packed_int4_weight, ivec2(k4, n8), block.data);
-}
-
 #endif // USING_BUFFER
+}
 
 #ifdef DEBUG_MODE
 
