@@ -51,6 +51,7 @@ using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
+using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
@@ -69,15 +70,34 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
   // Once per loaded binary blob
   Result<DelegateHandle*> init(
       BackendInitContext& context,
-      FreeableBuffer* processed, // This will be the buffer from aoti_backend
+      FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
-    const char* so_path = static_cast<const char*>(processed->data());
+    // const char* so_path = static_cast<const char*>(processed->data());
 
-    printf("so path: %s\n", so_path);
+    // printf("so path: %s\n", so_path);
+
+    const NamedDataMap* named_data_map = context.get_named_data_map();
+
+    std::string so_path = "/tmp/test.so";
+    std::string so_blob_key = "so_blob";
+
+    Result<FreeableBuffer> aoti_cuda_buffer =
+        named_data_map->get_data(aoti_cuda_blob_name.c_str());
+
+    // Create a temporary file
+    std::ofstream outfile(so_path.c_str(), std::ios::binary);
+
+    // Write the ELF buffer to the temporary file
+    outfile.write(
+        (char*)aoti_cuda_buffer->data(),
+        sizeof(void*) * aoti_cuda_buffer->size());
+
+    // Finish writing the file to disk
+    outfile.close();
 
     // Load the ELF using dlopen
-    void* so_handle = dlopen(so_path, RTLD_LAZY | RTLD_LOCAL);
+    void* so_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
     if (so_handle == nullptr) {
       std::cout << dlerror() << std::endl;
       return Error::AccessFailed;
