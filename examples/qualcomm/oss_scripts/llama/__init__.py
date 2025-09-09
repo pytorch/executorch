@@ -211,8 +211,8 @@ class Qwen2_5_0_5B(LLMModelConfig):
 
     num_sharding = 1
     # quant config
-    ptq = QuantDtype.use_16a8w
-    group_size = None
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 16
     masked_softmax = True
     r1 = False
     r2 = False
@@ -233,13 +233,13 @@ class Qwen2_5_1_5B(LLMModelConfig):
 
     num_sharding = 1
     # quant config
-    ptq = QuantDtype.use_16a8w
-    group_size = None
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 16
     masked_softmax = True
     r1 = False
     r2 = False
     r3 = True
-    custom_annotation = ()
+    custom_annotation = (annotate_output_16a8w,)
 
 
 @register_llm_model("qwen3-0_6b")
