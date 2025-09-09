@@ -128,5 +128,6 @@ class EnnPartitioner(Partitioner):
             torch.ops.aten.upsample_nearest2d.vec,
             torch.ops.aten.prelu.default,
             torch.ops.aten.layer_norm.default,
+            torch.ops.aten.pixel_shuffle.default,
         ]
         return (ops_not_to_decompose, None)
