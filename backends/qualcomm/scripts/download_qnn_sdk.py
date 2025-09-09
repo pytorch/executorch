@@ -31,6 +31,13 @@ def is_linux_x86() -> bool:
     )
 
 
+QNN_VERSION = "2.37.0.250724"
+
+
+def get_qnn_version() -> str:
+    return QNN_VERSION
+
+
 def _download_qnn_sdk() -> Optional[pathlib.Path]:
     """
     Download and extract the Qualcomm SDK into SDK_DIR.
@@ -39,7 +46,6 @@ def _download_qnn_sdk() -> Optional[pathlib.Path]:
         - Only runs on Linux x86 platforms. Skips otherwise.
     """
     print("Downloading Qualcomm SDK...")
-    QNN_VERSION = "2.37.0.250724"
     QAIRT_URL = f"https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
@@ -156,7 +162,7 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 LLVM_VERSION = "14.0.0"
 LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
 LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
-REQUIRED_LIBC_LIBS = [
+REQUIRED_LIBCXX_LIBS = [
     "libc++.so.1.0",
     "libc++abi.so.1.0",
     "libunwind.so.1",
@@ -168,7 +174,7 @@ REQUIRED_LIBC_LIBS = [
 def _stage_libcxx(target_dir: pathlib.Path):
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    if all((target_dir / libname).exists() for libname in REQUIRED_LIBC_LIBS):
+    if all((target_dir / libname).exists() for libname in REQUIRED_LIBCXX_LIBS):
         print(f"[libcxx] Already staged at {target_dir}, skipping download")
         return
 
@@ -184,7 +190,7 @@ def _stage_libcxx(target_dir: pathlib.Path):
         tar.extractall(temp_extract.parent)
 
     lib_src = temp_extract / "lib"
-    for fname in REQUIRED_LIBC_LIBS:
+    for fname in REQUIRED_LIBCXX_LIBS:
         src_path = lib_src / fname
         if not src_path.exists():
             print(f"[libcxx] Warning: {fname} not found in extracted LLVM")
@@ -203,12 +209,13 @@ def _stage_libcxx(target_dir: pathlib.Path):
     print(f"[libcxx] Staged libc++ to {target_dir}")
 
 
-REQUIRED_LIBS: List[str] = [
+REQUIRED_QNN_LIBS: List[str] = [
     "libQnnHtp.so",
-] + REQUIRED_LIBC_LIBS
+]
 
 
 def _ld_library_paths() -> List[pathlib.Path]:
+    """Split LD_LIBRARY_PATH into ordered directories (skip empties)."""
     raw = os.environ.get("LD_LIBRARY_PATH", "")
     return [pathlib.Path(p) for p in raw.split(":") if p.strip()]
 
@@ -216,22 +223,74 @@ def _ld_library_paths() -> List[pathlib.Path]:
 def _find_lib_in_ld_paths(
     libname: str, ld_dirs: Optional[List[pathlib.Path]] = None
 ) -> Optional[pathlib.Path]:
+    """Return first matching path to `libname` in LD_LIBRARY_PATH, or None."""
     if ld_dirs is None:
         ld_dirs = _ld_library_paths()
     for d in ld_dirs:
         candidate = d / libname
-        if candidate.exists():
-            return candidate.resolve()
+        try:
+            if candidate.exists():
+                return candidate.resolve()
+        except Exception:
+            # Ignore unreadable / permission issues, keep looking.
+            pass
     return None
 
 
-def _check_required_libs_in_ld() -> Tuple[bool, Dict[str, Optional[pathlib.Path]]]:
+def _check_libs_in_ld(
+    libnames: List[str],
+) -> Tuple[bool, Dict[str, Optional[pathlib.Path]]]:
+    """
+    Check if each lib in `libnames` exists in LD_LIBRARY_PATH directories.
+
+    Returns:
+        all_present: True iff every lib was found
+        locations:   mapping lib -> path (or None if missing)
+    """
     ld_dirs = _ld_library_paths()
     locations: Dict[str, Optional[pathlib.Path]] = {}
-    for lib in REQUIRED_LIBS:
+    for lib in libnames:
         locations[lib] = _find_lib_in_ld_paths(lib, ld_dirs)
-    all_present = all(locations[lib] is not None for lib in REQUIRED_LIBS)
+    all_present = all(locations[lib] is not None for lib in libnames)
     return all_present, locations
+
+
+# -----------------------
+# Ensure QNN SDK library
+# -----------------------
+def _ensure_qnn_sdk_lib() -> bool:
+    """
+    Ensure libQnnHtp.so is available.
+      - If found in LD_LIBRARY_PATH: do nothing, return True.
+      - Otherwise: ensure packaged SDK is present, then load libQnnHtp.so from it.
+    """
+    all_present, locs = _check_libs_in_ld(REQUIRED_QNN_LIBS)
+    if all_present:
+        print("[QNN] libQnnHtp.so found in LD_LIBRARY_PATH; skipping SDK install.")
+        for lib, p in locs.items():
+            print(f"      - {lib}: {p}")
+        return True
+
+    # Not found → use packaged SDK
+    qnn_sdk_dir = SDK_DIR
+    print(f"[QNN] libQnnHtp.so not found in LD_LIBRARY_PATH.")
+    if not qnn_sdk_dir.exists():
+        print("[QNN] SDK dir missing; downloading...")
+        _download_qnn_sdk()
+    else:
+        print(f"[QNN] Using existing SDK at {qnn_sdk_dir}")
+
+    os.environ["QNN_SDK_ROOT"] = str(qnn_sdk_dir)
+
+    qnn_lib = qnn_sdk_dir / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
+    print(f"[QNN] Loading {qnn_lib}")
+    try:
+        ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
+        print("[QNN] Loaded libQnnHtp.so from packaged SDK.")
+        return True
+    except OSError as e:
+        print(f"[QNN][ERROR] Failed to load {qnn_lib}: {e}")
+        return False
 
 
 def _load_libcxx_libs(lib_path):
@@ -250,36 +309,54 @@ def _load_libcxx_libs(lib_path):
             print(f"[WARN] Failed to load {sofile.name}: {e}")
 
 
-def install_qnn_sdk(force_download: bool = True) -> bool:
-    all_present, locations = _check_required_libs_in_ld()
-    if all_present and not force_download:
-        print("[INIT] All required libraries already present in LD_LIBRARY_PATH:")
-        for lib, path in locations.items():
-            print(f"        - {lib}: {path}")
+# ---------------------
+# Ensure libc++ family
+# ---------------------
+def _ensure_libcxx_stack() -> bool:
+    """
+    Ensure libc++ stack is available.
+      - If all required libc++ libs are found in LD_LIBRARY_PATH: do nothing.
+      - Otherwise: stage and load the packaged libc++ bundle.
+    """
+    all_present, locs = _check_libs_in_ld(REQUIRED_LIBCXX_LIBS)
+    if all_present:
+        print("[libcxx] All libc++ libs present in LD_LIBRARY_PATH; skipping staging.")
+        for lib, p in locs.items():
+            print(f"         - {lib}: {p}")
         return True
 
-    print(f"[INIT] SDK_DIR: {SDK_DIR}")
-    if not SDK_DIR.exists():
-        print("[INIT] Qualcomm SDK not found. Downloading...")
-        _download_qnn_sdk()
-
-    os.environ["QNN_SDK_ROOT"] = str(SDK_DIR)
-
-    qnn_lib = SDK_DIR / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
-    print(f"[INIT] qnn_lib: {qnn_lib}")
-    try:
-        ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
-        print(f"[INIT] Loaded QNN library from {qnn_lib}")
-    except OSError as e:
-        print(f"[ERROR] Failed to load QNN library at {qnn_lib}: {e}")
-        return False
-
+    print(
+        "[libcxx] Some libc++ libs missing in LD_LIBRARY_PATH; staging packaged libc++..."
+    )
     try:
         libcxx_dir = PKG_ROOT / "sdk" / f"libcxx-{LLVM_VERSION}"
         _stage_libcxx(libcxx_dir)
         _load_libcxx_libs(libcxx_dir)
-        print(f"[INIT] Loaded libc++ from {libcxx_dir}")
+        print(f"[libcxx] Staged and loaded libc++ from {libcxx_dir}")
+        return True
     except Exception as e:
-        print(f"[libcxx] Warning: failed to stage/load libc++: {e}")
+        print(f"[libcxx][ERROR] Failed to stage/load libc++: {e}")
+        return False
 
-    return True
+
+# ---------------
+# Public entrypoint
+# ---------------
+def install_qnn_sdk() -> bool:
+    """
+    Initialize Qualcomm backend with separated logic:
+
+    QNN SDK:
+      - If libQnnHtp.so exists in LD_LIBRARY_PATH: do nothing.
+      - Else: ensure packaged SDK, load libQnnHtp.so.
+
+    libc++ stack:
+      - If required libc++ libs exist in LD_LIBRARY_PATH: do nothing.
+      - Else: stage and load packaged libc++.
+
+    Returns:
+        True if both steps succeeded (or were already satisfied), else False.
+    """
+    ok_qnn = _ensure_qnn_sdk_lib()
+    ok_libcxx = _ensure_libcxx_stack()
+    return bool(ok_qnn and ok_libcxx)

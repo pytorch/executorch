@@ -73,7 +73,7 @@ def main() -> None:
     delegated_program = to_edge_transform_and_lower_to_qnn(m, example_inputs, compile_spec)
     output_graph = format_delegated_graph(delegated_program.exported_program().graph_module)
     # Ensure QnnBackend is in the output graph
-    assert "QnnBackend" in output
+    assert "QnnBackend" in output_graph
     executorch_program = delegated_program.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
@@ -88,7 +88,7 @@ EOF
 # ----------------------------
 echo "=== Building Wheel Package ==="
 # pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
-./install_executorch.sh --minimal
+PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
 unset EXECUTORCH_BUILDING_WHEEL
 
