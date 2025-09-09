@@ -11,6 +11,7 @@ from executorch.exir.pass_base import ProxyValue
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch import Tensor
 from torch._export.verifier import Verifier
+from torch._ops import OpOverload
 from torch.export import ExportedProgram
 from torch.export.exported_program import ModuleCallEntry, ModuleCallSignature
 from torch.export.graph_signature import (
@@ -32,12 +33,19 @@ class IrMode(Enum):
 class ProgramBuilder(GraphBuilder):
     """Utility class to build a program from a graph module."""
 
-    def __init__(self, mode: Optional[IrMode] = None) -> None:
+    def __init__(
+        self,
+        mode: Optional[IrMode] = None,
+        _core_aten_ops_exception_list: Optional[list[OpOverload]] = None,
+    ) -> None:
         self.input_specs: list[InputSpec] = []
         self.output_specs: list[OutputSpec] = []
         self.constants: dict[str, Tensor] = {}
         self.state_dict: dict[str, Tensor] = {}
         self.mode: IrMode = mode or IrMode.EXIR
+        self._core_aten_ops_exception_list: list[OpOverload] = (
+            _core_aten_ops_exception_list or []
+        )
         super().__init__()
 
     def insert_input_spec(
@@ -82,7 +90,11 @@ class ProgramBuilder(GraphBuilder):
             return None
         return [
             EXIREdgeDialectVerifier(
-                edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+                edge_compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False,
+                    _core_aten_ops_exception_list=self._core_aten_ops_exception_list,
+                ),
+                core_aten_ops_exception_list=self._core_aten_ops_exception_list,
                 class_only=True,
             )
         ]
@@ -113,4 +125,7 @@ class ProgramBuilder(GraphBuilder):
         )
 
     def get_edge_program(self) -> EdgeProgramManager:
-        return EdgeProgramManager(self.get_program())
+        return EdgeProgramManager(
+            self.get_program(),
+            core_aten_ops_exception_list=self._core_aten_ops_exception_list,
+        )
