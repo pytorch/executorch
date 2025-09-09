@@ -92,4 +92,7 @@ if(TARGET vulkan_backend)
   # Define operator prototypes
   add_operator_prototype(add)
   add_operator_prototype(q8csw_linear)
+  add_operator_prototype(q8csw_conv2d)
+  add_operator_prototype(q4gsw_linear)
+  add_operator_prototype(choose_qparams_per_row)
 endif()
