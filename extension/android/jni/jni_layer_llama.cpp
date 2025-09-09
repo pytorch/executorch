@@ -257,6 +257,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint width,
       jint height,
       jint channels) {
+    if (image == nullptr) {
+      return Error::InvalidArgument;
+    }
     std::vector<llm::Image> images;
     if (image == nullptr) {
       return static_cast<jint>(Error::EndOfMethod);
@@ -274,6 +277,29 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           llm::MultimodalInput{std::move(image_runner)});
     }
 
+    return 0;
+  }
+
+  jint append_audio_input(
+      facebook::jni::alias_ref<jintArray> audio,
+      jint batch_size,
+      jint n_channels,
+      jint n_samples) {
+    if (audio == nullptr) {
+      return Error::InvalidArgument;
+    }
+    auto audio_size = audio->size();
+    std::vector<uint8_t> audio_data(audio_size);
+    if (audio_size != 0) {
+      std::vector<jint> audio_data_jint(audio_size);
+      audio->getRegion(0, audio_size, audio_data_jint.data());
+      for (int i = 0; i < audio_size; i++) {
+        audio_data[i] = audio_data_jint[i];
+      }
+      llm::RawAudio audio_input{audio_data, batch_size, n_channels, n_samples};
+      prefill_inputs_.emplace_back(
+          llm::MultimodalInput{std::move(audio_input)});
+    }
     return 0;
   }
 
@@ -308,6 +334,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
             "appendTextInput", ExecuTorchLlmJni::append_text_input),
+        makeNativeMethod(
+            "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
