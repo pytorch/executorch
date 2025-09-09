@@ -76,25 +76,20 @@ Error LlavaRunner::load() {
   return Error::Ok;
 }
 
-Error LlavaRunner::prefill_images(
-    std::vector<llm::Image>& images,
-    int64_t& start_pos) {
+Error LlavaRunner::prefill_images(std::vector<llm::Image>& images) {
   for (auto& image : images) {
-    // pos is updated inside image prefill.
-    ET_UNWRAP(image_prefiller_->prefill(image, start_pos));
+    // pos_ is updated inside image prefill.
+    ET_UNWRAP(image_prefiller_->prefill(image, pos_));
   }
   return Error::Ok;
 }
 
-Result<uint64_t> LlavaRunner::prefill_prompt(
-    const std::string& prompt,
-    int64_t& start_pos,
-    int8_t bos,
-    int8_t eos) {
+Result<uint64_t>
+LlavaRunner::prefill_prompt(const std::string& prompt, int8_t bos, int8_t eos) {
   std::vector<uint64_t> prompt_tokens =
       ET_UNWRAP_TOKENIZER(tokenizer_->encode(prompt, bos, eos));
 
-  return text_prefiller_->prefill(prompt_tokens, start_pos);
+  return text_prefiller_->prefill(prompt_tokens, pos_);
 }
 
 Error LlavaRunner::generate_from_pos(
@@ -111,7 +106,7 @@ Error LlavaRunner::generate_from_pos(
   }
 
   uint64_t prefill_next_token =
-      ET_UNWRAP(prefill_prompt(prompt, start_pos, /*bos=*/0, /*eos*/ 0));
+      ET_UNWRAP(prefill_prompt(prompt, /*bos=*/0, /*eos*/ 0));
   stats_.first_token_ms = llm::time_in_ms();
   stats_.prompt_eval_end_ms = llm::time_in_ms();
   stats_.num_prompt_tokens = start_pos;
@@ -159,14 +154,13 @@ Error LlavaRunner::generate(
         }
       };
 
-  int64_t pos = 0;
   stats_.inference_start_ms = llm::time_in_ms();
 
   // prefill preset prompt
-  prefill_prompt(kPresetPrompt, pos, /*bos=*/1, /*eos*/ 0);
+  prefill_prompt(kPresetPrompt, /*bos=*/1, /*eos*/ 0);
 
   // prefill images
-  prefill_images(images, pos);
+  prefill_images(images);
 
   ET_LOG(
       Info,
@@ -175,7 +169,7 @@ Error LlavaRunner::generate(
 
   // Generate tokens
   Error err = generate_from_pos(
-      prompt, seq_len, pos, wrapped_callback, stats_callback, echo);
+      prompt, seq_len, pos_, wrapped_callback, stats_callback, echo);
 
   stats_.inference_end_ms = llm::time_in_ms();
   ::executorch::llm::print_report(stats_);

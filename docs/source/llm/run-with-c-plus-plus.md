@@ -112,6 +112,7 @@ public:
   virtual runtime::Error load() = 0;
   virtual runtime::Error generate(...) = 0;
   virtual runtime::Error generate_from_pos(...) = 0;
+  virtual void reset() = 0;
   virtual void stop() = 0;
 };
 ```
