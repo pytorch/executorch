@@ -17,11 +17,11 @@ DAYS_BEFORE_REMINDER = 30
 DAYS_BEFORE_CLOSE = 30
 
 def main():
-    # g = Github(os.environ['GH_TOKEN'])
-    # repo = g.get_repo(REPO_NAME)
+    g = Github(os.environ['GH_TOKEN'])
+    repo = g.get_repo(REPO_NAME)
 
     print("[VALIDATION] Would connect to Github and fetch repo:", REPO_NAME)
-    # issues = repo.get_issues(state='open', labels=[LABEL])
+    issues = repo.get_issues(state='open', labels=[LABEL])
     print(f"[VALIDATION] Would fetch open issues with label '{LABEL}'.")
 
     now = datetime.datetime.utcnow()
