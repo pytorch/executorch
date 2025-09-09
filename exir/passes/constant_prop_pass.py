@@ -294,9 +294,12 @@ def create_constant_nodes_and_return_specs(
         )
     return name_to_spec_dict
 
+
 # add _skip_dim_order to ensure the introduced correct clone node for different dim order schema
 # TODO(gasoonjia): only relying on _clone_dim_order once we remove _skip_dim_order option in the EdgeCompileConfig
-def _update_output_node_and_specs(exported_program: ExportedProgram, _skip_dim_order: bool) -> None:
+def _update_output_node_and_specs(
+    exported_program: ExportedProgram, _skip_dim_order: bool
+) -> None:
     """
     Update the output node and output specs in the exported program.
     In case a constant node is used as output, we replace it with a clone of the constant node.
@@ -308,7 +311,11 @@ def _update_output_node_and_specs(exported_program: ExportedProgram, _skip_dim_o
     output_specs = exported_program.graph_signature.output_specs
     assert len(output_nodes) == len(output_specs)
 
-    clone_op = exir_ops.edge.aten.clone.default if _skip_dim_order else exir_ops.edge.dim_order_ops._clone_dim_order.default
+    clone_op = (
+        exir_ops.edge.aten.clone.default
+        if _skip_dim_order
+        else exir_ops.edge.dim_order_ops._clone_dim_order.default
+    )
 
     for i in range(len(output_specs)):
         out_node = output_nodes[i]
@@ -316,9 +323,7 @@ def _update_output_node_and_specs(exported_program: ExportedProgram, _skip_dim_o
             continue
 
         with exported_program.graph.inserting_after(out_node):
-            new_node = exported_program.graph.call_function(
-                clone_op, (out_node,)
-            )
+            new_node = exported_program.graph.call_function(clone_op, (out_node,))
         assert "val" in out_node.meta
         new_node.meta["val"] = out_node.meta["val"]
         output_nodes[i] = new_node

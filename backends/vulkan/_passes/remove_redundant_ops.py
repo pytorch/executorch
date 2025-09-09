@@ -30,7 +30,7 @@ class RemoveRedundantOpsTransform(ExportPass):
         exir_ops.edge.aten.alias.default,
         exir_ops.edge.aten.lift_fresh_copy.default,
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-        exir_ops.edge.dim_order_ops._clone_dim_order.default
+        exir_ops.edge.dim_order_ops._clone_dim_order.default,
     }
 
     def __init__(self) -> None:
