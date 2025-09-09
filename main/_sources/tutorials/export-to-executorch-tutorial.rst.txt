@@ -200,13 +200,13 @@ different than the ones we used while tracing, we will run into an error:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1808, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1005, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 83, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 438, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 462, in _check_input_constraints_for_graph
         _check_symint(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 402, in _check_symint
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 426, in _check_symint
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be equal to 3, but got 2. If you meant for this dimension to be dynamic, please re-export and specify dynamic_shapes (e.g. with Dim.DYNAMIC)
 
@@ -244,16 +244,8 @@ To express that some input shapes are dynamic, we can insert dynamic
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[3, s27]", y: "f32[3, s27]"):
-                 # 
-                sym_size_int: "Sym(s27)" = torch.ops.aten.sym_size.int(x, 1)
-                sym_size_int_1: "Sym(s27)" = torch.ops.aten.sym_size.int(y, 1)
-            
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:100 in forward, code: return x + y
                 add: "f32[3, s27]" = torch.ops.aten.add.Tensor(x, y);  x = y = None
-            
-                 # 
-                eq: "Sym(True)" = sym_size_int == sym_size_int_1;  sym_size_int = sym_size_int_1 = None
-                _assert_scalar_default = torch.ops.aten._assert_scalar.default(eq, "Runtime assertion failed for expression Eq(s27, s94) on node 'eq'");  eq = _assert_scalar_default = None
                 return (add,)
             
     Graph signature: 
@@ -332,13 +324,13 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1808, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1005, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 83, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 438, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 462, in _check_input_constraints_for_graph
         _check_symint(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 391, in _check_symint
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 415, in _check_symint
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be <= 10, but got 15
     Traceback (most recent call last):
@@ -356,13 +348,13 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1808, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1005, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 83, in _check_input_constraints_pre_hook
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 438, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 462, in _check_input_constraints_for_graph
         _check_symint(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 350, in _check_symint
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 374, in _check_symint
         raise RuntimeError(
     RuntimeError: Expected input at *args[1].shape[1] to be equal to 3, but got 2
 
@@ -1421,7 +1413,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 12.972 seconds)
+   **Total running time of the script:** (0 minutes 12.847 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
