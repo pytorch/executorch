@@ -8,7 +8,7 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -156,7 +156,7 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 LLVM_VERSION = "14.0.0"
 LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
 LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
-REQUIRED_LIBS = [
+REQUIRED_LIBC_LIBS = [
     "libc++.so.1.0",
     "libc++abi.so.1.0",
     "libunwind.so.1",
@@ -168,7 +168,7 @@ REQUIRED_LIBS = [
 def _stage_libcxx(target_dir: pathlib.Path):
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    if all((target_dir / libname).exists() for libname in REQUIRED_LIBS):
+    if all((target_dir / libname).exists() for libname in REQUIRED_LIBC_LIBS):
         print(f"[libcxx] Already staged at {target_dir}, skipping download")
         return
 
@@ -184,7 +184,7 @@ def _stage_libcxx(target_dir: pathlib.Path):
         tar.extractall(temp_extract.parent)
 
     lib_src = temp_extract / "lib"
-    for fname in REQUIRED_LIBS:
+    for fname in REQUIRED_LIBC_LIBS:
         src_path = lib_src / fname
         if not src_path.exists():
             print(f"[libcxx] Warning: {fname} not found in extracted LLVM")
@@ -201,6 +201,37 @@ def _stage_libcxx(target_dir: pathlib.Path):
         os.symlink("libc++abi.so.1", target_dir / "libc++abi.so")
 
     print(f"[libcxx] Staged libc++ to {target_dir}")
+
+
+REQUIRED_LIBS: List[str] = [
+    "libQnnHtp.so",
+] + REQUIRED_LIBC_LIBS
+
+
+def _ld_library_paths() -> List[pathlib.Path]:
+    raw = os.environ.get("LD_LIBRARY_PATH", "")
+    return [pathlib.Path(p) for p in raw.split(":") if p.strip()]
+
+
+def _find_lib_in_ld_paths(
+    libname: str, ld_dirs: Optional[List[pathlib.Path]] = None
+) -> Optional[pathlib.Path]:
+    if ld_dirs is None:
+        ld_dirs = _ld_library_paths()
+    for d in ld_dirs:
+        candidate = d / libname
+        if candidate.exists():
+            return candidate.resolve()
+    return None
+
+
+def _check_required_libs_in_ld() -> Tuple[bool, Dict[str, Optional[pathlib.Path]]]:
+    ld_dirs = _ld_library_paths()
+    locations: Dict[str, Optional[pathlib.Path]] = {}
+    for lib in REQUIRED_LIBS:
+        locations[lib] = _find_lib_in_ld_paths(lib, ld_dirs)
+    all_present = all(locations[lib] is not None for lib in REQUIRED_LIBS)
+    return all_present, locations
 
 
 def _load_libcxx_libs(lib_path):
@@ -220,6 +251,13 @@ def _load_libcxx_libs(lib_path):
 
 
 def install_qnn_sdk(force_download: bool = True) -> bool:
+    all_present, locations = _check_required_libs_in_ld()
+    if all_present and not force_download:
+        print("[INIT] All required libraries already present in LD_LIBRARY_PATH:")
+        for lib, path in locations.items():
+            print(f"        - {lib}: {path}")
+        return True
+
     print(f"[INIT] SDK_DIR: {SDK_DIR}")
     if not SDK_DIR.exists():
         print("[INIT] Qualcomm SDK not found. Downloading...")
