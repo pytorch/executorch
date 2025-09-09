@@ -11,7 +11,7 @@ set -ex
 
 download_ai_lite_core() {
   API_BASE="https://soc-developer.semiconductor.samsung.com/api/v1/resource/ai-litecore/download"
-  API_KEY=${SAMSUNG_AI_LITECORE_KEY}
+  API_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
 
   VERSION="0.5"
   OS_NAME="Ubuntu 22.04"
