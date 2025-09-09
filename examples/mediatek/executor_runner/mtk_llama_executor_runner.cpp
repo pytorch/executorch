@@ -70,17 +70,11 @@ DEFINE_string(
     token_embedding_path,
     "embedding.bin",
     "Input token embedding lookup table path.");
-DEFINE_string(
-    prompt_model_paths,
-    "model_128t.pte",
-    "Comma-separated prompt model paths.");
-DEFINE_string(
-    gen_model_paths,
-    "model_1t.pte",
-    "Comma-separated generative model paths.");
+DEFINE_string(prompt_model_paths, "", "Comma-separated prompt model paths.");
+DEFINE_string(gen_model_paths, "", "Comma-separated generative model paths.");
 DEFINE_string(
     model_package_paths,
-    "model_package.pte",
+    "",
     "Comma-separated weight-shared model package paths.");
 
 // Tokenizer
