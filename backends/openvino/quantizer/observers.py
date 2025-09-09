@@ -58,7 +58,7 @@ class WeightObserverBase(ObserverBase, ABC):
         super().__init__(dtype=dtype, is_dynamic=False)
         self._wc_param = wc_param
 
-    def _calculate_qparams(  # type: ignore[override]
+    def calculate_qparams(  # type: ignore[override]
         self,
         weight: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
@@ -94,7 +94,7 @@ class WeightObserverBase(ObserverBase, ABC):
         """
         weight_node = observer_node.args[0]
         original_weight = get_tensor_constant_from_node(weight_node, model)
-        q_weight, scale, zero_point = self._calculate_qparams(original_weight)
+        q_weight, scale, zero_point = self.calculate_qparams(original_weight)
 
         decompressor = self._create_decompressor(
             scale, zero_point, q_weight, original_weight
