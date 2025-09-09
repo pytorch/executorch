@@ -36,6 +36,7 @@ SUPPORT_MODEL_NAMES = [
     "edsr",
     "dl3",
     "vit",
+    "w2l",
 ]
 
 

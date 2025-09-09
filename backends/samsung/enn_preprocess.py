@@ -9,6 +9,7 @@ from typing import Dict, final, List
 
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 import torch
+from executorch.backends.samsung._passes.conv1d_to_conv2d import Conv1dToConv2d
 from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
 )
@@ -53,6 +54,7 @@ class EnnBackend(BackendDetails):
         enn_preprocess_passes = PassManager(
             passes=[
                 ConstantPropPass(edge_program),
+                Conv1dToConv2d(edge_program),
                 FuseBatchNormWithConvPass(edge_program),
                 AddmmToLinearTransform(),
                 ReplaceOpsWithScalar(),
