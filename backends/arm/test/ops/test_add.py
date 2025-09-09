@@ -209,7 +209,6 @@ filtered_test_data = {k: v for k, v in Add.test_data.items() if k not in skip_ke
 
 @common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="'Failed to load VKML extensions' error in ci.")
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),
@@ -227,7 +226,6 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
 
 @common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="'Failed to load VKML extensions' error in ci.")
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Add(),
