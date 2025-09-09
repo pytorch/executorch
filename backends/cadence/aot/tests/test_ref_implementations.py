@@ -689,7 +689,9 @@ class TestRefImplementations(unittest.TestCase):
         if len(input_tensor.shape) == 3 and memory_format == torch.channels_last:
             self.fail("Channels last format is not supported for 3D input tensors")
 
-        input_tensor = input_tensor.to(memory_format=memory_format)
+        if memory_format == torch.channels_last:
+            input_tensor = torch.permute(input_tensor, (0, 2, 3, 1)).contiguous()
+            weight = torch.permute(weight, (0, 2, 3, 1)).contiguous()
 
         convs = [
             (
@@ -701,7 +703,7 @@ class TestRefImplementations(unittest.TestCase):
 
         optimized_convs = []
         if input_tensor.dtype == torch.int8 and weight.dtype == torch.int8:
-            if input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+            if memory_format == torch.contiguous_format:
                 optimized_convs = [
                     torch.ops.cadence.quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor,
                     torch.ops.cadence.quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
@@ -715,7 +717,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.ops.cadence.quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
                 ]
         elif input_tensor.dtype == torch.uint8 and weight.dtype == torch.uint8:
-            if input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+            if memory_format == torch.contiguous_format:
                 optimized_convs = [
                     torch.ops.cadence.quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor,
                     torch.ops.cadence.quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,

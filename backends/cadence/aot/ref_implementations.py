@@ -457,9 +457,12 @@ def quantized_conv_nhwc_per_tensor(
         - out_multiplier (int): Unused
         - out_shift (int): Unused
     """
-
-    if not input_tensor.is_contiguous(memory_format=torch.channels_last):
-        raise ValueError("Input tensor must be in NHWC format")
+    assert input_tensor.is_contiguous(memory_format=torch.contiguous_format)
+    assert weight.is_contiguous(memory_format=torch.contiguous_format)
+    input_tensor = torch.permute(input_tensor, (0, -1, 1, 2)).to(
+        memory_format=torch.channels_last
+    )
+    weight = torch.permute(weight, (0, -1, 1, 2))
 
     return quantized_conv_per_tensor(
         input_tensor,
