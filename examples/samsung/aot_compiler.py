@@ -5,11 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import collections
 import logging
-import os
-
-import torch
 
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
@@ -17,6 +13,7 @@ from executorch.backends.samsung.serialization.compile_options import (
 from executorch.backends.samsung.utils.export_utils import (
     to_edge_transform_and_lower_to_enn,
 )
+from executorch.examples.samsung.utils import save_tensors
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
 
@@ -38,21 +35,6 @@ SUPPORT_MODEL_NAMES = [
     "vit",
     "w2l",
 ]
-
-
-def save_tensors(tensors, prefix, artifact_dir):
-    if isinstance(tensors, tuple):
-        for index, output in enumerate(tensors):
-            save_path = prefix + "_" + str(index) + ".bin"
-            output.detach().numpy().tofile(os.path.join(artifact_dir, save_path))
-    elif isinstance(tensors, torch.Tensor):
-        tensors.detach().numpy().tofile(os.path.join(artifact_dir, prefix + ".bin"))
-    elif isinstance(tensors, collections.OrderedDict):
-        for index, output in enumerate(tensors.values()):
-            save_path = prefix + "_" + str(index) + ".bin"
-            output.detach().numpy().tofile(os.path.join(artifact_dir, save_path))
-    else:
-        logging.warning("Unsupported type (", type(tensors), ") skip saving tensor. ")
 
 
 if __name__ == "__main__":
