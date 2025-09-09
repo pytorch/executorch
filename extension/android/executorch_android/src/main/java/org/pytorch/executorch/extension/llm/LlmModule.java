@@ -125,9 +125,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
-  }
+  public native int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo);
 
   /**
    * Start generating tokens from the module.
@@ -154,8 +152,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  @DoNotStrip
-  public native int generate(
+  public int generate(
       int[] image,
       int width,
       int height,
@@ -163,7 +160,11 @@ public class LlmModule {
       String prompt,
       int seqLen,
       LlmCallback llmCallback,
-      boolean echo);
+      boolean echo) {
+        prefillPrompt(prompt, 0, 0, 0);
+        prefillImages(image, width, height, channels, 0);
+        generate("", llmCallback, echo);
+      }
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -208,15 +209,15 @@ public class LlmModule {
     if (startPos == 0) {
       resetContext();
     }
-    int nativeResult = appendTextInput(prompt, bos, eos);
+    int nativeResult = appendTextInput(prompt);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
     return 0;
   }
 
-  // returns a tuple of (status, updated startPos)
-  private native int appendTextInput(String prompt, int bos, int eos);
+  // returns status
+  private native int appendTextInput(String prompt);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
