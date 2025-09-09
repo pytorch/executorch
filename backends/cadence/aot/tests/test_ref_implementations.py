@@ -877,73 +877,124 @@ class TestRefImplementations(unittest.TestCase):
     @expand(
         [
             # Test case 1: Basic int8 case with negative scale
-            (
-                "basic_int8",
-                torch.tensor([-1, 0, 1, 3], dtype=torch.int8),  # input
-                torch.tensor([0], dtype=torch.int8),  # X_zero_point (scalar broadcast)
-                0,  # out_zero_point
-                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0]),  # out_shift
-                torch.int8,  # dtype
-                torch.tensor(
-                    [0, 0, 0, -2], dtype=torch.int8
-                ),  # expected: relu(-1,0,1,3) = (0,0,1,3) * (-0.5) + 0 = (0,0,-0.5,-1.5) -> (0,0,0,-2)
-            ),
+            *[
+                (
+                    "basic_int8",
+                    torch.tensor([-1, 0, 1, 3], dtype=dtype),  # input
+                    0,  # X_zero_point (scalar broadcast)
+                    0,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [0, 0, 0, -2], dtype=dtype
+                    ),  # expected: relu(-1,0,1,3) = (0,0,1,3) * (-0.5) + 0 = (0,0,-0.5,-1.5) -> (0,0,0,-2)
+                )
+                for dtype in [torch.int8]
+            ],
             # Test case 2: uint8 with non-zero zero point
-            (
-                "uint8_with_zp",
-                torch.tensor([126, 128, 130, 132], dtype=torch.uint8),  # input
-                torch.tensor([128], dtype=torch.uint8),  # X_zero_point
-                64,  # out_zero_point
-                torch.tensor([536870912]),  # out_multiplier (0.25 * 2^31)
-                torch.tensor([0]),  # out_shift
-                torch.uint8,  # dtype
-                torch.tensor(
-                    [64, 64, 64, 63], dtype=torch.uint8
-                ),  # expected: relu(-2,0,2,4) = (0,0,2,4) * (-0.25) + 64 = (64,64,63.5,63) -> (64,64,64,63)
-            ),
+            *[
+                (
+                    "uint8_with_zp",
+                    torch.tensor([126, 128, 130, 132], dtype=dtype),  # input
+                    128,  # X_zero_point
+                    64,  # out_zero_point
+                    536870912,  # out_multiplier (0.25 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [64, 64, 64, 63], dtype=dtype
+                    ),  # expected: relu(-2,0,2,4) = (0,0,2,4) * (-0.25) + 64 = (64,64,63.5,63) -> (64,64,64,63)
+                )
+                for dtype in [torch.uint8]
+            ],
             # Test case 3: All negative values (should all become zero after ReLU)
-            (
-                "all_negative_int8",
-                torch.tensor([-5, -3, -1], dtype=torch.int8),  # input
-                torch.tensor([0], dtype=torch.int8),  # X_zero_point
-                10,  # out_zero_point
-                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0]),  # out_shift
-                torch.int8,  # dtype
-                torch.tensor(
-                    [10, 10, 10], dtype=torch.int8
-                ),  # expected: relu(-5,-3,-1) = (0,0,0) * (-0.5) + 10 = (10,10,10)
-            ),
+            *[
+                (
+                    "all_negative_int8",
+                    torch.tensor([-5, -3, -1], dtype=dtype),  # input
+                    0,  # X_zero_point
+                    10,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [10, 10, 10], dtype=dtype
+                    ),  # expected: relu(-5,-3,-1) = (0,0,0) * (-0.5) + 10 = (10,10,10)
+                )
+                for dtype in [torch.int8]
+            ],
             # Test case 4: All positive values with shift (scale becomes -0.25)
-            (
-                "positive_with_shift",
-                torch.tensor([2, 4, 6, 8], dtype=torch.int8),  # input
-                torch.tensor([1], dtype=torch.int8),  # X_zero_point
-                5,  # out_zero_point
-                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
-                torch.int8,  # dtype
-                torch.tensor(
-                    [4, 2, 0, -2], dtype=torch.int8
-                ),  # expected: relu(1,3,5,7) = (1,3,5,7) * (-1.0) + 5 = (4,2,0,-2)
-            ),
+            *[
+                (
+                    "positive_with_shift",
+                    torch.tensor([2, 4, 6, 8], dtype=dtype),  # input
+                    1,  # X_zero_point
+                    5,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    1,  # out_shift (multiply by 2^1 = 2)
+                    dtype,  # dtype
+                    torch.tensor(
+                        [4, 2, 0, -2], dtype=dtype
+                    ),  # expected: relu(1,3,5,7) = (1,3,5,7) * (-1.0) + 5 = (4,2,0,-2)
+                )
+                for dtype in [torch.int8, torch.uint8]
+            ],
+            # Test case 4: Non-per-tensor
+            *[
+                (
+                    "non_per_tensor",
+                    torch.tensor([-1, -2, -3, 1, 2, 3], dtype=dtype),  # input
+                    torch.tensor([0, 0, 0, 1, 1, 1]),  # X_zero_point
+                    5,  # out_zero_point
+                    torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
+                    torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
+                    dtype,  # dtype
+                    torch.tensor([5, 5, 5, 5, 4, 3], dtype=dtype),
+                )
+                for dtype in [torch.int8]
+            ],
         ]
     )
     def test_quantized_relu(
         self,
         name: str,
         X: torch.Tensor,
-        X_zero_point: torch.Tensor,
+        X_zero_point: torch.Tensor | int,
         out_zero_point: int,
-        out_multiplier: torch.Tensor,
-        out_shift: torch.Tensor,
+        out_multiplier: torch.Tensor | int,
+        out_shift: torch.Tensor | int,
         dtype: torch.dtype,
         expected_output: torch.Tensor,
     ) -> None:
-        output = torch.ops.cadence.quantized_relu(
-            X, X_zero_point, out_zero_point, out_multiplier, out_shift
-        )
+
+        if isinstance(X_zero_point, int):
+            assert isinstance(out_multiplier, int)
+            assert isinstance(out_shift, int)
+
+            match dtype:
+                case torch.int8:
+                    quantized_relu = (
+                        torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
+                    )
+                case torch.uint8:
+                    quantized_relu = (
+                        torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
+                    )
+                case _:
+                    quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
+
+            output = quantized_relu(
+                X,
+                X_zero_point,
+                out_zero_point,
+                out_multiplier,
+                out_shift,
+            )
+        else:
+            output = torch.ops.cadence.quantized_relu(
+                X, X_zero_point, out_zero_point, out_multiplier, out_shift
+            )
 
         # Verify output properties
         self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
