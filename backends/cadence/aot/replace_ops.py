@@ -34,6 +34,7 @@ from executorch.backends.cadence.aot.pass_utils import (
     CadencePassAttribute,
     none_throws,
     register_cadence_pass,
+    validate_pass
 )
 from executorch.backends.cadence.aot.remove_ops import RemoveNopSelectOpPass
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
@@ -947,7 +948,7 @@ class ExportPassWithTransposeHelper(ExportPass):
             exir_ops.edge.aten.transpose_copy.int, (proxy, dim0, dim1), {}, meta
         )
 
-
+@validate_pass()
 @register_cadence_pass(CadencePassAttribute(opt_level=3))
 class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
     def change_nchw_to_nhwc(self, proxy: ProxyValue, meta: NodeMetadata) -> ProxyValue:
@@ -979,18 +980,18 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
     ) -> ProxyValue:
         if op not in {
             exir_ops.edge.cadence.convolution.default,
-            exir_ops.edge.cadence.quantized_conv_nchw.default,
+            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.default
+        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
 
         if not quantized_op and len(args) == 8 and args[-1] is True:
             # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
 
         new_op = (
-            exir_ops.edge.cadence.quantized_conv_nhwc.default
+            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor
             if quantized_op
             else exir_ops.edge.cadence.convolution.default
         )

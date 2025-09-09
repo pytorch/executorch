@@ -15,7 +15,11 @@ from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
     single_op_builder,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
+from executorch.backends.cadence.aot.pass_utils import (
+    count_node,
+    op_counts_match,
+    validate_pass
+)
 from executorch.backends.cadence.aot.replace_ops import (
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
@@ -1612,7 +1616,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
 
     def create_quantized_convolution_graph_module(
         self, channels_last: Optional[bool] = None
-    ) -> torch.fx.GraphModule:
+    ) -> tuple[torch.fx.GraphModule, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """Helper to create a quantized conv node.
 
         quantized_conv(
@@ -1622,23 +1626,32 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             Tensor out_shift, bool channel_last=False) -> (Tensor Z)"
         """
         if channels_last:
-            x = torch.randn(1, 224, 56, 3)
-            w = torch.randn(16, 16, 16, 3)
+            x = torch.randint(
+                low=-128, high=127, size=(1, 224, 56, 3), dtype=torch.int8
+            )
+            w = torch.randint(
+                low=-128, high=127, size=(16, 16, 16, 3), dtype=torch.int8
+            )
         else:
-            x = torch.randn(1, 3, 224, 56)
-            w = torch.randn(16, 3, 16, 16)
-        b = torch.randn(16)
+            x = torch.randint(
+                low=-128, high=127, size=(1, 3, 224, 56), dtype=torch.int8
+            )
+            w = torch.randint(
+                low=-128, high=127, size=(16, 3, 16, 16), dtype=torch.int8
+            )
+
+        b = torch.randint(low=-128, high=127, size=(16,), dtype=torch.int32)
         stride = (2, 2)
         padding = (0, 0)
         dilation = (1, 1)
         groups = 1
         input_zero_point = 0
-        w_zero_point = torch.randn(1)
-        b_scale = torch.randn(1)
+        w_zero_point = 1
+        b_scale = 0.8
         out_scale = 1
         out_zero_point = 0
-        out_multiplier = torch.randn(1)
-        out_shift = torch.randn(1)
+        out_multiplier = 0
+        out_shift = 0
         args = (
             x,
             w,
@@ -1661,36 +1674,30 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     x,
                     w,
                     b,
-                    w_zero_point,
-                    b_scale,
-                    out_multiplier,
-                    out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nhwc.default,
+                op=exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
                 args=args,
-            )
+            ), (x, w, b)
         else:
             return single_op_builder(
                 placeholders=(
                     x,
                     w,
                     b,
-                    w_zero_point,
-                    b_scale,
-                    out_multiplier,
-                    out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nchw.default,
+                op=exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
                 args=args,
-            )
+            ), (x, w, b)
 
     def test_quantized_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
-        gm = self.create_quantized_convolution_graph_module()
+        gm, (x, w, b) = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.per_tensor), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+
+        # self.assertTrue(numerically_equivalent(gm, (x, w, b), True))
 
         # Apply replacement pass.
         p = ReplaceConvWithChannelLastConvPass()
@@ -1698,7 +1705,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
             ),
             1,
         )
@@ -1708,14 +1716,19 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             3,
         )
 
+        # self.assertTrue(numerically_equivalent(gm_after_replacement, (x, w, b), True))
+
     def test_no_transpose_if_already_quantized_conv_channel_last(self) -> None:
         # Create a graph with a single im2row node.
-        gm = self.create_quantized_convolution_graph_module(channels_last=True)
+        gm, (x, w, b) = self.create_quantized_convolution_graph_module(
+            channels_last=True
+        )
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor), 1
         )
+        # self.assertTrue(numerically_equivalent(gm, (x, w, b), True))
 
         # Apply replacement pass.
         p = ReplaceConvWithChannelLastConvPass()
@@ -1723,11 +1736,13 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
             ),
             1,
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        # self.assertTrue(numerically_equivalent(gm_after_replacement, (x, w, b), True))
 
 
 class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
