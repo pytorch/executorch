@@ -7,14 +7,14 @@
 import copy
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from collections import defaultdict
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
-from executorch.exir.program._program import _transform
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
 from torch import nn
@@ -107,10 +107,12 @@ class TorchExportStage(Stage):
 
     def __init__(
         self,
-        pre_edge_transform_passes: Optional[List[PassType]] = None,
+        aten_transform_passes: Optional[
+            List[Callable[[str, ExportedProgram], ExportedProgram]]
+        ] = None,
     ) -> None:
         super().__init__()
-        self._pre_edge_transform_passes = pre_edge_transform_passes
+        self._aten_transform_passes = aten_transform_passes
 
     @property
     def stage_type(self) -> str:
@@ -149,9 +151,13 @@ class TorchExportStage(Stage):
                 )
 
                 # Apply pre-edge transform passes if available
-                for pass_ in self._pre_edge_transform_passes or []:
-                    exported_programs[method_name] = _transform(
-                        exported_programs[method_name], pass_
+                for pass_ in self._aten_transform_passes or []:
+                    if not callable(pass_):
+                        raise ValueError(
+                            "Aten transform passes must be a callable that can transform and return an exported program"
+                        )
+                    exported_programs[method_name] = pass_(
+                        method_name, exported_programs[method_name]
                     )
 
         self._artifact = artifact.copy_with_new_data(exported_programs)
@@ -165,7 +171,9 @@ class EdgeTransformAndLowerStage(Stage):
     def __init__(
         self,
         partitioners: Optional[List[Any]] = None,
-        transform_passes: Optional[Sequence[Callable[[Any], Optional[Any]]]] = None,
+        transform_passes: (
+            None | List[Callable[[str, ExportedProgram], List[PassType]]]
+        ) = None,
         compile_config: Optional[Any] = None,
     ) -> None:
         self._partitioners = partitioners
@@ -205,11 +213,28 @@ class EdgeTransformAndLowerStage(Stage):
         constant_methods = artifact.get_context("constant_methods")
         generate_etrecord = artifact.get_context("generate_etrecord", False)
 
+        # per method transform passes
+        transform_passes = defaultdict(list)
+        for method_name, ep in exported_programs.items():
+            # Resolve transform passes from callable
+            for pass_ in self._transform_passes or []:
+                if not callable(pass_):
+                    raise ValueError(
+                        "Transform passes must be a callable that resolves to a list of passes"
+                    )
+                passes = pass_(method_name, ep)
+                if isinstance(passes, list):
+                    transform_passes[method_name].extend(passes)
+                else:
+                    raise ValueError(
+                        "Transform passes must be a callable that resolves to a list of passes"
+                    )
+
         with validation_disabled():
             edge_program_manager = to_edge_transform_and_lower(
                 exported_programs,
                 partitioner=self._partitioners,
-                transform_passes=self._transform_passes,
+                transform_passes=transform_passes,
                 constant_methods=constant_methods,
                 compile_config=self._compile_config,
                 generate_etrecord=generate_etrecord,
@@ -396,7 +421,7 @@ class QuantizeStage(Stage):
             captured_graph = torch.export.export(model, inputs, strict=True).module()
 
             quantizer = self._get_quantizer_for_prepare_pt2e(
-                self._quantization_recipe.quantizers
+                self._quantization_recipe.quantizers  # pyre-ignore
             )
             prepared_model = prepare_pt2e(captured_graph, quantizer)
 
@@ -471,7 +496,9 @@ class ToBackendStage(Stage):
     def __init__(
         self,
         partitioners: Optional[List[Any]] = None,
-        transform_passes: Optional[Sequence[Callable[[Any], Optional[Any]]]] = None,
+        transform_passes: (
+            None | List[Callable[[str, ExportedProgram], List[PassType]]]
+        ) = None,
     ) -> None:
         super().__init__()
         self._partitioners = partitioners
@@ -513,11 +540,26 @@ class ToBackendStage(Stage):
         if edge_program_manager is None:
             raise RuntimeError("Edge program manager is not set.")
 
-        # Apply transform passes if available
-        if self._transform_passes:
-            edge_program_manager = edge_program_manager.transform(
-                self._transform_passes
-            )
+        # per method transform passes
+        transform_passes = defaultdict(list)
+        for method_name in edge_program_manager.methods:
+            # Resolve transform passes if it's a callable
+            ep = edge_program_manager.exported_program(method_name)
+            for pass_ in self._transform_passes or []:
+                if not callable(pass_):
+                    raise ValueError(
+                        "Transform passes must be a callable that resolves to a list of passes"
+                    )
+                passes = pass_(method_name, ep)
+                if isinstance(passes, list):
+                    transform_passes[method_name].extend(passes)
+                else:
+                    raise ValueError(
+                        "Transform passes must return list of passes"
+                    )
+
+        # Apply transform passes
+        edge_program_manager = edge_program_manager.transform(transform_passes)
 
         # Apply partitioners if available
         if self._partitioners is not None and len(self._partitioners) > 0:
