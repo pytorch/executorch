@@ -44,6 +44,7 @@ class Model(str, Enum):
 
 
 class Backend(str, Enum):
+    Xnnpack = ("xnnpack",)
     XnnpackQuantizationDelegation = "xnnpack-quantization-delegation"
     CoreMlExportOnly = "coreml"
     CoreMlExportAndTest = "coreml-test"  # AOT export + test with runner
