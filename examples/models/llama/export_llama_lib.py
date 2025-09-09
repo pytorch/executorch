@@ -43,10 +43,10 @@ from executorch.extension.llm.export.partitioner_lib import (
 )
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
+    get_ov_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
-    get_ov_quantizer,
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -897,7 +897,9 @@ def _to_edge_and_lower_llama_openvino(
     for partitioner in partitioners:
         logging.info(f"--> {partitioner.__class__.__name__}")
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(partitioners)
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
 
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)

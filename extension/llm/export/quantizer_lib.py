@@ -220,20 +220,22 @@ def get_ov_quantizer(
     group_size: int = 32,
 ):
     try:
-        from executorch.backends.openvino.quantizer import OpenVINOQuantizer, QuantizationMode
-        import nncf
-    except ImportError:
-        raise ImportError(
-            "Please install nncf via backends/openvino/requirements.txt"
+        from executorch.backends.openvino.quantizer import (
+            OpenVINOQuantizer,
+            QuantizationMode,
         )
-    
+    except ImportError:
+        raise ImportError("Please install nncf via backends/openvino/requirements.txt")
+
     backend, quant_config = pt2e_quantize.split("_")
     assert (
         backend == "openvino"
     ), f"The quantization config is for backend {backend} instead of openvino."
-    assert group_size != None, "Group Size None is Not Supported. It should be set to -1 for per-channel."
+    assert (
+        group_size
+    ), "Group Size None is Not Supported. It should be set to -1 for per-channel."
 
-    # (TODO) Manually ignore MP layers. This is done manually for now till we use the dynamic allocation MP 
+    # (TODO) Manually ignore MP layers. This is done manually for now till we use the dynamic allocation MP
     fp_node_names = [
         "linear_13",
         "linear_14",
@@ -258,7 +260,8 @@ def get_ov_quantizer(
         "linear_106",
         "linear_109",
         "linear_110",
-        "linear_111",]
+        "linear_111",
+    ]
 
     if quant_config == "4wo":
         mode = QuantizationMode.INT4WO_ASYM

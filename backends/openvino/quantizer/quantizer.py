@@ -12,7 +12,6 @@ from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Type
 
 import nncf  # type: ignore[import-untyped]
 import nncf.common.quantization as quantization  # type: ignore[import-untyped]
-from nncf.common.scopes import should_consider_scope  # type: ignore[import-untyped]
 import nncf.experimental.torch.fx as nncf_fx  # type: ignore[import-untyped]
 
 import torch.fx
@@ -21,11 +20,11 @@ from executorch.backends.openvino.quantizer.observers import (
     INT8WeightObserver,
 )
 from nncf.common.graph.graph import NNCFGraph  # type: ignore[import-untyped]
-from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
-    get_weight_compression_configuration,
-)
 from nncf.quantization.algorithms.weight_compression.config import (  # type: ignore[import-untyped]
     WeightCompressionParameters,
+)
+from nncf.quantization.quantize_model import (  # type: ignore[import-untyped]
+    get_weight_compression_configuration,
 )
 from torchao.quantization.pt2e import (
     HistogramObserver,
@@ -118,7 +117,7 @@ class OpenVINOQuantizer(Quantizer):
                 ),  # Mode value has to match NNCF CompressWeightsMode
                 **kwargs,
             )
-            subset_size = 1 # Doesn't really matter in this case since it is data-free. Should just be +ve
+            subset_size = 1  # Doesn't really matter in this case since it is data-free. Should just be +ve
             self._algo = nncf.quantization.algorithms.weight_compression.algorithm.WeightCompression(
                 subset_size=subset_size, **weight_compression_configuration
             )
@@ -178,7 +177,9 @@ class OpenVINOQuantizer(Quantizer):
         :return: Updated mapping of FX nodes with weight compression annotations.
         """
         self._algo.set_backend_entity(model)
-        all_wc_params, _ = self._algo.get_weight_compression_parameters(model, nncf_graph)
+        all_wc_params, _ = self._algo.get_weight_compression_parameters(
+            model, nncf_graph
+        )
 
         for wc_param in all_wc_params:
             node_with_weight = wc_param.node_with_weight
@@ -187,9 +188,7 @@ class OpenVINOQuantizer(Quantizer):
             )
             annotation = node_vs_torch_annotation[target_node]
             edge_or_node = self._get_weight_edge(target_node, nncf_graph)
-            qspec = self._get_torch_ao_qspec_from_nncf_config_for_wc(
-                wc_param=wc_param
-            )
+            qspec = self._get_torch_ao_qspec_from_nncf_config_for_wc(wc_param=wc_param)
             self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
         return node_vs_torch_annotation
@@ -216,7 +215,9 @@ class OpenVINOQuantizer(Quantizer):
             edge_or_node, annotation = self._get_edge_or_node_and_annotation(
                 graph, nncf_graph, qp, node_vs_torch_annotation
             )
-            qspec: QuantizationSpecBase = self._get_torch_ao_qspec_from_nncf_config_for_ptq(qp)
+            qspec: QuantizationSpecBase = (
+                self._get_torch_ao_qspec_from_nncf_config_for_ptq(qp)
+            )
             self._fill_torch_ao_annotation(edge_or_node, qspec, annotation)
 
         for quantizer_ids in quantization_setup.unified_scale_groups.values():
@@ -426,8 +427,11 @@ class OpenVINOQuantizer(Quantizer):
         qmode = wc_param.compression_config.mode
         extra_args["wc_param"] = wc_param
         is_asym_mode = wc_param.compression_config.is_asym_mode
-        if qmode in [nncf.CompressWeightsMode.INT4_ASYM, nncf.CompressWeightsMode.INT4_SYM]:
-            observer = INT4WeightObserver
+        if qmode in [
+            nncf.CompressWeightsMode.INT4_ASYM,
+            nncf.CompressWeightsMode.INT4_SYM,
+        ]:
+            observer = INT4WeightObserver  # type: ignore[type-abstract]
             quant_min = -8 if not is_asym_mode else 0
             quant_max = 7 if not is_asym_mode else 15
             dtype = torch.int8
@@ -438,7 +442,7 @@ class OpenVINOQuantizer(Quantizer):
                 else torch.per_channel_affine
             )
         else:
-            observer = INT8WeightObserver
+            observer = INT8WeightObserver  # type: ignore[type-abstract]
             quant_min = -128 if not is_asym_mode else 0
             quant_max = 127 if not is_asym_mode else 255
             dtype = torch.int8

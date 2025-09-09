@@ -84,7 +84,7 @@ class WeightObserverBase(ObserverBase, ABC):
         self, model: torch.fx.GraphModule, observer_node: torch.fx.Node
     ) -> None:
         """
-        Replaces the given observer node from the given model with a quantized 
+        Replaces the given observer node from the given model with a quantized
         weight and a OpenVINO specific decompression module.
 
         :param model: A `torch.fx.GraphModule` representing the statically traced model
@@ -94,9 +94,7 @@ class WeightObserverBase(ObserverBase, ABC):
         """
         weight_node = observer_node.args[0]
         original_weight = get_tensor_constant_from_node(weight_node, model)
-        q_weight, scale, zero_point = self._calculate_qparams(
-            original_weight
-        )
+        q_weight, scale, zero_point = self._calculate_qparams(original_weight)
 
         decompressor = self._create_decompressor(
             scale, zero_point, q_weight, original_weight
@@ -182,10 +180,7 @@ class INT8WeightObserver(WeightObserverBase):
         original_weight: torch.Tensor,
     ) -> BaseWeightsDecompressor:
         if zero_point is None:
-            return INT8SymmetricWeightsDecompressor(
-                scale, original_weight.dtype
-            )
+            return INT8SymmetricWeightsDecompressor(scale, original_weight.dtype)
         return INT8AsymmetricWeightsDecompressor(
             scale, zero_point, original_weight.dtype
         )
-
