@@ -11,7 +11,7 @@ from executorch.backends.arm.quantizer import (
     TOSAQuantizer,
 )
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.export import export
 from torchao.quantization.pt2e import (
     move_exported_model_to_eval,
