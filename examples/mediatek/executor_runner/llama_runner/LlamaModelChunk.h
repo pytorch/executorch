@@ -89,8 +89,6 @@ class LlamaModelChunk : public ModelChunk {
 
   void InitMaskBuilder();
 
-  void InitSWAMaskBuilder();
-
   void InitCache();
 
   void PrepareCacheIOs();
@@ -134,10 +132,6 @@ class LlamaModelChunk : public ModelChunk {
 
   void CheckIoCount();
 
-  size_t GetExpectedInputCount() const;
-
-  size_t GetExpectedOutputCount() const;
-
  private:
   bool AllowModelsCoexist() const override {
     return kIsSharedWeightsUsed;
@@ -149,12 +143,6 @@ class LlamaModelChunk : public ModelChunk {
  private:
   // Whether shared weights is used
   bool kIsSharedWeightsUsed = false;
-
-  // Input/Output Indexes
-  const size_t kMaskInputIndex;
-  const std::vector<size_t> kRotEmbInputIndexes;
-  const std::vector<size_t> kCacheInputIndexes;
-  const std::vector<size_t> kCacheOutputIndexes;
 
   // Cache
   TensorShape mCacheShape;

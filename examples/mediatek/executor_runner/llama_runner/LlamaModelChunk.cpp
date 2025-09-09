@@ -63,11 +63,16 @@ LlamaModelChunk::LlamaModelChunk(
       enableSWA(enableSWA),
       kCacheTypeSize(llm_helper::getLLMTypeSize(kCacheType)) {}
 
+LlamaModelChunk::~LlamaModelChunk() {}
+
 std::string LlamaModelChunk::SelectMethod(
     const std::vector<std::string>& methodNames) const {
   const size_t curTokenSize = GetModelId();
   for (const auto& methodName : methodNames) {
     const auto matches = utils::extract_substr(methodName, "([0-9]+)t[0-9]+c");
+    if (matches.empty()) {
+      continue;
+    }
     ET_CHECK_MSG(
         matches.size() == 2, "Invalid method name: %s", methodName.c_str());
     // Extract the first match group as token size
@@ -87,8 +92,6 @@ std::string LlamaModelChunk::SelectMethod(
       "Unable to find suitable method, fallback to use the first method.");
   return {};
 }
-
-LlamaModelChunk::~LlamaModelChunk() {}
 
 void LlamaModelChunk::Initialize() {
   LoadModels();
@@ -367,8 +370,9 @@ void LlamaModelChunk::UpdatePosEmbAndMask(const size_t numInputToken) {
     const auto swaMaskSizeBytes = swaMaskBufferInfo.nbytesUsed;
     mMaskBuilder->setMaskBuffer(swaMaskBuffer, swaMaskSizeBytes);
     mMaskBuilder->enableSlidingWindow(kWindowSize);
-    mMaskBuilder->updateMask(
-        mTokenBatchSize, mCurrentTokenIndex, numInputToken);
+    // mMaskBuilder->updateMask(mTokenBatchSize, mCurrentTokenIndex,
+    // numInputToken);
+    mMaskBuilder->buildMask(mTokenBatchSize, mCurrentTokenIndex);
   }
   // Pass same isMaskUpdatable to both mask
   mMaskBuilder->setIsMaskUpdatable(isMaskUpdatable);

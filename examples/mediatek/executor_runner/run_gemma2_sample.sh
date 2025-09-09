@@ -37,16 +37,9 @@ TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer_gemma2.json"
 TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_gemma2_2b_it_fp32.bin"
 
 # Comma-Separated Paths
-PROMPT_MODEL_PATHS="\
-/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_2_chunks_128t512c/gemma2_2b_it_A16W4_2_chunks_128t512c_0.pte,\
-/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_2_chunks_128t512c/gemma2_2b_it_A16W4_2_chunks_128t512c_1.pte,"
-
-# # Comma-Separated Paths
-GEN_MODEL_PATHS="\
-/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_2_chunks_1t512c/gemma2_2b_it_A16W4_2_chunks_1t512c_0.pte,\
-/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_2_chunks_1t512c/gemma2_2b_it_A16W4_2_chunks_1t512c_1.pte,"
-
-
+WEIGHT_SHARED_MODEL_PACKAGE_PATHS="\
+/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_2_chunks/gemma2_2b_it_A16W4_2_chunks_0.pte,\
+/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_2_chunks/gemma2_2b_it_A16W4_2_chunks_1.pte,"
 
 PROMPT_FILE=/data/local/tmp/et_mtk/prompt_gemma.txt
 
@@ -75,6 +68,5 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
     --tokenizer_type=$TOKENIZER_TYPE \
     --tokenizer_path=$TOKENIZER_PATH \
     --token_embedding_path=$TOKEN_EMBEDDING_PATH \
-    --prompt_model_paths=$PROMPT_MODEL_PATHS \
-    --gen_model_paths=$GEN_MODEL_PATHS \
+    --model_package_paths=$WEIGHT_SHARED_MODEL_PACKAGE_PATHS \
     --prompt_file=$PROMPT_FILE

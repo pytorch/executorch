@@ -315,7 +315,7 @@ def prepare_model_inputs(
         if window_size is not None:
             local_mask = generate_mask(
                 max_cache_size,
-                0,
+                seq_length,
                 input_length,
                 input_length,
                 sliding_window=True,

@@ -36,20 +36,11 @@ TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer_qwen3.json"
 TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_Qwen2-7B-Instruct_fp32.bin"
 
 # Comma-Separated Paths
-PROMPT_MODEL_PATHS="\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_0.pte,\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_1.pte,\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_2.pte,\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c/Qwen2-7B-Instruct_A16W4_4_chunks_128t512c_3.pte,"
-
-# # Comma-Separated Paths
-GEN_MODEL_PATHS="\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_0.pte,\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_1.pte,\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_2.pte,\
-/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c/Qwen2-7B-Instruct_A16W4_4_chunks_1t512c_3.pte,"
-
-
+WEIGHT_SHARED_MODEL_PACKAGE_PATHS="\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks/Qwen2-7B-Instruct_A16W4_4_chunks_0.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks/Qwen2-7B-Instruct_A16W4_4_chunks_1.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks/Qwen2-7B-Instruct_A16W4_4_chunks_2.pte,\
+/data/local/tmp/et_mtk/Qwen2-7B-Instruct_A16W4_4_chunks/Qwen2-7B-Instruct_A16W4_4_chunks_3.pte,"
 
 PROMPT_FILE=/data/local/tmp/et_mtk/prompt.txt
 
@@ -77,6 +68,5 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
     --tokenizer_type=$TOKENIZER_TYPE \
     --tokenizer_path=$TOKENIZER_PATH \
     --token_embedding_path=$TOKEN_EMBEDDING_PATH \
-    --prompt_model_paths=$PROMPT_MODEL_PATHS \
-    --gen_model_paths=$GEN_MODEL_PATHS \
+    --model_package_paths=$WEIGHT_SHARED_MODEL_PACKAGE_PATHS \
     --prompt_file=$PROMPT_FILE
