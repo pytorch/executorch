@@ -29,34 +29,8 @@ class SqueezeVisitor(NodeVisitor):
     ) -> None:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-        vals_to_ids[input] = input_id
 
         # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-        vals_to_ids[node] = output_id
-
-        enn_graph.define_op(node.name, "RESHAPE", [input_id], [output_id])
-
-
-@register_node_visitor
-class UnsqueezeVisitor(NodeVisitor):
-    target = "aten.unsqueeze_copy.default"
-
-    def __init__(self, *args) -> None:
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        enn_graph: EnnGraph,
-        vals_to_ids: Dict[torch.Tensor, int],
-    ) -> None:
-        input = node.args[0]
-        input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-        vals_to_ids[input] = input_id
-
-        # output
-        output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-        vals_to_ids[node] = output_id
 
         enn_graph.define_op(node.name, "RESHAPE", [input_id], [output_id])

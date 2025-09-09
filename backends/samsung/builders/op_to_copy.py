@@ -11,8 +11,6 @@ from executorch.backends.samsung.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-
-from executorch.backends.samsung.builders.utils import get_map_dtype, get_tensor
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
@@ -37,8 +35,5 @@ class ToCopyVisitor(NodeVisitor):
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-        params = {}
-        out_tensor = get_tensor(self.exported_program, node)
-        params["out_dtype"] = get_map_dtype(out_tensor.dtype)
 
-        enn_graph.define_op(node.name, "CAST", [input_id], [output_id], params)
+        enn_graph.define_op(node.name, "CAST", [input_id], [output_id])

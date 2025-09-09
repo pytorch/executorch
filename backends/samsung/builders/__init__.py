@@ -13,8 +13,9 @@ from . import (
     op_cat,
     op_clamp,
     op_conv2d,
-    op_getitem,
     op_div,
+    op_getitem,
+    op_hardswish,
     op_hardtanh,
     op_linear,
     op_max_pool2d,
@@ -26,18 +27,13 @@ from . import (
     op_relu,
     op_reshape,
     op_rsqrt,
-
     op_select,
-    op_unsqueeze,
     op_slice_copy,
     op_sqrt,
     op_squeeze,
     op_sub,
-
     op_to_copy,
-
-
-
+    op_unsqueeze,
 )
 
 __all__ = [
@@ -49,9 +45,9 @@ __all__ = [
     op_cat,
     op_clamp,
     op_conv2d,
-    op_getitem,
     op_div,
-
+    op_getitem,
+    op_hardswish,
     op_hardtanh,
     op_linear,
     op_max_pool2d,
@@ -63,14 +59,11 @@ __all__ = [
     op_relu,
     op_reshape,
     op_rsqrt,
-
     op_select,
-    op_unsqueeze,
     op_slice_copy,
     op_sqrt,
     op_squeeze,
     op_sub,
     op_to_copy,
-
-
+    op_unsqueeze,
 ]

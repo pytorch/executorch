@@ -29,9 +29,7 @@ class LinearVisitor(NodeVisitor):
     ) -> None:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-        vals_to_ids[input] = input_id
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-        vals_to_ids[node] = output_id
 
         enn_graph.define_op(node.name, "RSQRT", [input_id], [output_id])

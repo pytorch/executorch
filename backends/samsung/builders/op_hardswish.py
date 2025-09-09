@@ -15,8 +15,8 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
-class SqrtVisitor(NodeVisitor):
-    target = "aten.sqrt.default"
+class HardSwishVisitor(NodeVisitor):
+    target = "aten.hardswish.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,4 +32,4 @@ class SqrtVisitor(NodeVisitor):
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "SQRT", [input_id], [output_id])
+        enn_graph.define_op(node.name, "HARDSWISH", [input_id], [output_id])

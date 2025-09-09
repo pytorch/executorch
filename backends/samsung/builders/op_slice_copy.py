@@ -30,11 +30,9 @@ class SliceCopyVisitor(NodeVisitor):
     ):
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-        vals_to_ids[input] = input_id
 
         # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-        vals_to_ids[node] = output_id
 
         in_shape = get_shape(input)
         dim = cast(int, node.args[1])
@@ -56,9 +54,6 @@ class SliceCopyVisitor(NodeVisitor):
         strides = [1] * len(in_shape)
         strides[dim] = step
 
-        params = {}
-        params["begin"] = begin
-        params["end"] = end
-        params["strides"] = strides
+        params = {"begin": begin, "end": end, "strides": strides}
 
         enn_graph.define_op(node.name, "STRIDEDSLICE", [input_id], [output_id], params)

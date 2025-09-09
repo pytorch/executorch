@@ -26,7 +26,7 @@ from ..models.model_factory import EagerModelFactory
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-SUPPORT_MODEL_NAMES = ["mv2", "ic3", "resnet18", "resnet50"]
+SUPPORT_MODEL_NAMES = ["mv2", "ic3", "ic4", "resnet18", "resnet50", "mv3", "edsr"]
 
 
 def save_tensors(tensors, prefix, artifact_dir):

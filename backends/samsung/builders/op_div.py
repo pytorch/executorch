@@ -27,18 +27,13 @@ class DivVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> None:
-        # input1
+        # inputs
         input1 = node.args[0]
         input_id_1 = self.define_tensor(input1, enn_graph, vals_to_ids)
-
-        # input2
         input2 = node.args[1]
         input_id_2 = self.define_tensor(input2, enn_graph, vals_to_ids)
-        params = {}
-        self._update_params_qdtype(node, params)
+
         # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(
-            node.name, "ELTDIV", [input_id_1, input_id_2], [output_id], params
-        )
+        enn_graph.define_op(node.name, "ELTDIV", [input_id_1, input_id_2], [output_id])
