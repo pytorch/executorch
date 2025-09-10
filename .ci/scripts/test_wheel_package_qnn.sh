@@ -17,7 +17,6 @@ cat > "/tmp/script_qnn_wheel_test.py" << 'EOF'
 import argparse
 
 import torch
-from executorch.backends.qualcomm import install_qnn_sdk
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
 from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
@@ -32,7 +31,6 @@ from executorch.extension.export_util.utils import save_pte_program
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e, prepare_qat_pt2e
 
 def main() -> None:
-    install_qnn_sdk()
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--output_folder", type=str, default="", help="The folder to store the exported program")
     parser.add_argument("--soc", type=str, default="SM8650", help="Specify the SoC model.")
