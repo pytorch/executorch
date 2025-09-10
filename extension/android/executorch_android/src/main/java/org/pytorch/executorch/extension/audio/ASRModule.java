@@ -14,13 +14,12 @@ import org.pytorch.executorch.ExecuTorchRuntime;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
- * WhisperModule is a wrapper around the Executorch LLM. It provides a simple interface to generate text
- * from the model.
+ * ASRModule is a wrapper around the Executorch ASR runners like Whisper runner.
  *
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public class WhisperModule {
+public class ASRModule {
 
   @DoNotStrip private final HybridData mHybridData;
 
@@ -28,7 +27,7 @@ public class WhisperModule {
   private static native HybridData initHybrid(
       String modulePath, String tokenizerPath);
 
-  public WhisperModule(
+  public ASRModule(
       String modulePath, String tokenizerPath) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
 
@@ -51,7 +50,7 @@ public class WhisperModule {
   public native int transcribe(
       int seqLen,
       byte[][] inputs,
-      WhisperCallback callback);
+      ASRCallback callback);
 
 
   /** Force loading the module. Otherwise the model is loaded during first generate(). */

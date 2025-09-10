@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <executorch/examples/qualcomm/oss_scripts/whisper/runner/runner.h>
+#include <executorch/extension/llm/runner/asr_runner.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -21,6 +21,10 @@
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
+#endif
+
+#if defined(EXECUTORCH_BUILD_QNN)
+#include <executorch/examples/qualcomm/oss_scripts/whisper/runner/runner.h>
 #endif
 
 #include <fbjni/ByteBuffer.h>
@@ -67,14 +71,14 @@ std::string token_buffer;
 
 namespace executorch_jni {
 
-class ExecuTorchWhisperCallbackJni
-    : public facebook::jni::JavaClass<ExecuTorchWhisperCallbackJni> {
+class ExecuTorchASRCallbackJni
+    : public facebook::jni::JavaClass<ExecuTorchASRCallbackJni> {
  public:
   constexpr static const char* kJavaDescriptor =
-      "Lorg/pytorch/executorch/extension/audio/WhisperCallback;";
+      "Lorg/pytorch/executorch/extension/audio/ASRCallback;";
 
   void onResult(std::string result) const {
-    static auto cls = ExecuTorchWhisperCallbackJni::javaClassStatic();
+    static auto cls = ExecuTorchASRCallbackJni::javaClassStatic();
     static const auto method =
         cls->getMethod<void(facebook::jni::local_ref<jstring>)>("onResult");
 
@@ -91,15 +95,14 @@ class ExecuTorchWhisperCallbackJni
   }
 };
 
-class ExecuTorchWhisperJni
-    : public facebook::jni::HybridClass<ExecuTorchWhisperJni> {
+class ExecuTorchASRJni : public facebook::jni::HybridClass<ExecuTorchASRJni> {
  private:
   friend HybridBase;
-  std::unique_ptr<example::WhisperRunner> runner_;
+  std::unique_ptr<::executorch::extension::llm::ASRRunner> runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
-      "Lorg/pytorch/executorch/extension/audio/WhisperModule;";
+      "Lorg/pytorch/executorch/extension/audio/ASRModule;";
 
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
@@ -108,7 +111,7 @@ class ExecuTorchWhisperJni
     return makeCxxInstance(model_path, tokenizer_path);
   }
 
-  ExecuTorchWhisperJni(
+  ExecuTorchASRJni(
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path) {
 #if defined(ET_USE_THREADPOOL)
@@ -121,17 +124,18 @@ class ExecuTorchWhisperJni
           ->_unsafe_reset_threadpool(num_performant_cores);
     }
 #endif
-
+#if defined(EXECUTORCH_BUILD_QNN)
     // create runner
     runner_ = std::make_unique<example::WhisperRunner>(
         model_path->toStdString(), tokenizer_path->toStdString());
+#endif
   }
 
   jint transcribe(
       jint seq_len,
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<jbyteArray>::javaobject> inputs,
-      facebook::jni::alias_ref<ExecuTorchWhisperCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchASRCallbackJni> callback) {
     // Convert Java byte[][] to C++ vector<vector<char>>
     std::vector<std::vector<char>> cppData;
     auto input_size = inputs->size();
@@ -162,15 +166,15 @@ class ExecuTorchWhisperJni
 
   static void registerNatives() {
     registerHybrid({
-        makeNativeMethod("initHybrid", ExecuTorchWhisperJni::initHybrid),
-        makeNativeMethod("transcribe", ExecuTorchWhisperJni::transcribe),
-        makeNativeMethod("load", ExecuTorchWhisperJni::load),
+        makeNativeMethod("initHybrid", ExecuTorchASRJni::initHybrid),
+        makeNativeMethod("transcribe", ExecuTorchASRJni::transcribe),
+        makeNativeMethod("load", ExecuTorchASRJni::load),
     });
   }
 };
 
 } // namespace executorch_jni
 
-void register_natives_for_whisper() {
-  executorch_jni::ExecuTorchWhisperJni::registerNatives();
+void register_natives_for_asr() {
+  executorch_jni::ExecuTorchASRJni::registerNatives();
 }

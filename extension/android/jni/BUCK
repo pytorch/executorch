@@ -101,7 +101,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
     srcs = ["jni_layer.cpp", "jni_layer_llama.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS + [
-        "-DEXECUTORCH_BUILD_LLAMA_JNI",
+        "-DEXECUTORCH_BUILD_EXTENSION_LLM",
     ],
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
@@ -122,15 +122,15 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 )
 
 non_fbcode_target(_kind = fb_android_cxx_library,
-    name = "executorch_whisper_jni",
+    name = "executorch_asr_jni",
     srcs = [
         "jni_layer.cpp",
-        "jni_layer_whisper.cpp",
+        "jni_layer_asr.cpp",
         "jni_layer_runtime.cpp",
     ],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS + [
-        "-DEXECUTORCH_BUILD_WHISPER_JNI",
+        "-DEXECUTORCH_BUILD_EXTENSION_AUDIO",
     ],
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
