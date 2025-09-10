@@ -34,10 +34,6 @@ def is_linux_x86() -> bool:
 QNN_VERSION = "2.37.0.250724"
 
 
-def get_qnn_version() -> str:
-    return QNN_VERSION
-
-
 def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     """
     Download and extract the Qualcomm SDK into dst_folder.
