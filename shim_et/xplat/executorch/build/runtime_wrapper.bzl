@@ -290,6 +290,7 @@ def _cxx_test(*args, **kwargs):
 
 def _cxx_python_extension(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     kwargs["srcs"] = _patch_executorch_references(kwargs["srcs"])
     if "types" in kwargs:
         kwargs["types"] = _patch_executorch_references(kwargs["types"])
@@ -324,8 +325,17 @@ def _genrule(*args, **kwargs):
         kwargs["name"] += "_static"
         env.genrule(*args, **kwargs)
 
+def _remove_caffe2_deps(kwargs):
+    # We don't have Buckified PyTorch in OSS. At least let buck query work.
+    MISSING_BUCK_DIRS = ("//caffe2", "//pytorch", "fbsource//third-party")
+    for dep_type in ('deps', 'exported_deps'):
+        if dep_type not in kwargs:
+            continue
+        kwargs[dep_type] = [x for x in kwargs[dep_type] if not any([x.startswith(y) for y in MISSING_BUCK_DIRS])]
+
 def _python_library(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     env.python_library(*args, **kwargs)
 
 def _python_binary(*args, **kwargs):
