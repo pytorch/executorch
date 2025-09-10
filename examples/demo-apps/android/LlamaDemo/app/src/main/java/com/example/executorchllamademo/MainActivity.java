@@ -81,7 +81,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
   private Runnable memoryUpdater;
   private boolean mThinkMode = false;
   private int promptID = 0;
-  private long startPos = 0;
   private static final int CONVERSATION_HISTORY_MESSAGE_LOOKBACK = 2;
   private Executor executor;
 
@@ -178,7 +177,8 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
 
       if (mCurrentSettingsFields.getModelType() == ModelType.LLAVA_1_5) {
         ETLogging.getInstance().log("Llava start prefill prompt");
-        startPos = mModule.prefillPrompt(PromptFormat.getLlavaPresetPrompt(), 0, 1, 0);
+        mModule.resetContext();
+        mModule.prefillPrompt(PromptFormat.getLlavaPresetPrompt());
         ETLogging.getInstance().log("Llava completes prefill prompt");
       }
     }
@@ -645,13 +645,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
               ETLogging.getInstance().log("Starting runnable prefill image");
               ETImage img = processedImageList.get(0);
               ETLogging.getInstance().log("Llava start prefill image");
-              startPos =
-                  mModule.prefillImages(
+              mModule.prefillImages(
                       img.getInts(),
                       img.getWidth(),
                       img.getHeight(),
-                      ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
-                      startPos);
+                      ModelUtils.VISION_MODEL_IMAGE_CHANNELS);
             };
         executor.execute(runnable);
       }
