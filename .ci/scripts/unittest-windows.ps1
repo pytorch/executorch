@@ -6,13 +6,6 @@ Set-PSDebug -Trace 1
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-# Run pytest
-pytest -v -c pytest-windows.ini
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Pytest invocation was unsuccessful. Exit code: $LASTEXITCODE."
-    exit $LASTEXITCODE
-}
-
 # Run native unit tests (via ctest)
 New-Item -Path "test-build" -ItemType Directory
 cd "test-build"
@@ -29,8 +22,17 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-ctest -j8
+ctest -j8 . --build-config $buildMode --output-on-failure -E "method_test|tensor_parser_test"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "CTest run was unsuccessful. Exit code: $LASTEXITCODE."
+    exit $LASTEXITCODE
+}
+
+cd ..
+
+# Run pytest
+pytest -v -c pytest-windows.ini
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Pytest invocation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
 }
