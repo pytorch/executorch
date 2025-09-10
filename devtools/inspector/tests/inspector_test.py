@@ -662,7 +662,6 @@ class TestInspector(unittest.TestCase):
         ), patch.object(
             _inspector, "gen_graphs_from_etrecord"
         ):
-
             # Call the constructor of Inspector
             inspector_instance = Inspector(
                 etdump_path=ETDUMP_PATH,
@@ -724,7 +723,7 @@ class TestInspector(unittest.TestCase):
 
     @unittest.skip("ci config values are not propagated")
     def test_intermediate_tensor_comparison_with_torch_export(self):
-        """Test intermediate tensor comparison using torch.export.export_for_training and to_edge_transform_and_lower."""
+        """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower."""
 
         class SimpleTestModel(torch.nn.Module):
             """A simple test model for demonstration purposes."""
@@ -759,8 +758,8 @@ class TestInspector(unittest.TestCase):
             model_path = os.path.join(tmp_dir, "model.pte")
             etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
 
-            # Step 1: Export using torch.export.export_for_training
-            exported_program = torch.export.export_for_training(model, example_inputs)
+            # Step 1: Export using torch.export.export
+            exported_program = torch.export.export(model, example_inputs)
             self.assertIsNotNone(exported_program)
 
             # Step 2: Lower to XNNPACK with generate_etrecord=True
