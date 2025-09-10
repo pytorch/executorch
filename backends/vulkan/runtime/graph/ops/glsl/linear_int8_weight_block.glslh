@@ -10,18 +10,12 @@
 #define LINEAR_INT8_WEIGHT_BLOCK_GLSLH
 
 /*
- * This file defines utilties to perform weight prepacking of quantized int8
- * matrix multiplation weights. It also defines utilities to load source
- * weight data from inputbuffer, and write out a packed weight block to output
- * texture/buffer.
+ * Assumes the following variables are defined in the shader layout
+ * - t_packed_int8_weight
+ * - t_int8_weight
  *
- * Requires:
- * - t_packed_int8_weight to be defined in shader layout (output texture/buffer)
- * - t_int8_weight to be defined in shader layout (input buffer)
- *
- * Settings:
- * - USING_BUFFER to indicate if output resource is a buffer. Otherwise texture
- *   is assumed.
+ * Macro Settings:
+ * - USING_BUFFER
  */
 
 #extension GL_EXT_control_flow_attributes : require
@@ -60,27 +54,17 @@ void load_block_data_with_checks(
   }
 }
 
+void write_weight_block(
+    const Int8WeightBlock block,
+    const int n4,
+    const int k4,
+    const int ntexels_N) {
 #ifdef USING_BUFFER
-
-void write_weight_block(
-    const Int8WeightBlock block,
-    const int n4,
-    const int k4,
-    const int ntexels_N) {
   t_packed_int8_weight[k4 * ntexels_N + n4] = block.data;
-}
-
-#else // USING_TEXTURE
-
-void write_weight_block(
-    const Int8WeightBlock block,
-    const int n4,
-    const int k4,
-    const int ntexels_N) {
+#else
   imageStore(t_packed_int8_weight, ivec2(n4, k4), block.data);
+#endif
 }
-
-#endif // USING_BUFFER
 
 #ifdef DEBUG_MODE
 

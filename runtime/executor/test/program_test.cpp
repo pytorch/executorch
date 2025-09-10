@@ -588,7 +588,7 @@ TEST_F(ProgramTest, LoadAndCheckPTESize) {
       0, 200, DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(truncated_file.error(), Error::Ok);
 
-  Result<BufferDataLoader> truncated_loader =
+  BufferDataLoader truncated_loader =
       BufferDataLoader(truncated_file->data(), 200);
   Result<Program> truncated_program = Program::load(&truncated_loader.get());
   ASSERT_EQ(truncated_program.error(), Error::InvalidProgram);

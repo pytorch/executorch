@@ -85,11 +85,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       segment_base_offset = eh->segment_base_offset;
       segment_data_size = eh->segment_data_size;
 
-      // Check the expected file size in two cases:
-      // 1. segment_base_offset == 0 && segment_data_size == 0: this indicates
-      // there are no segments.
-      // 2. segment_data_size > 0; a 0 value may indicate that the field was
-      // not set, e.g. on older PTE files.
+      // segment_data_size was added in ET 1.0 release. For BC, only check the
+      // expected file size when there are no segments or when segment_data_size
+      // is positive (0-value may indicate no segments)
       if ((segment_data_size == 0 && segment_base_offset == 0) ||
           segment_data_size > 0) {
         size_t expected =
