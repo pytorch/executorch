@@ -101,7 +101,28 @@ ET_EXPERIMENTAL std::unordered_set<uint64_t> get_eos_ids(
 ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path = std::nullopt,
+    std::optional<const std::string> data_path,
+    float temperature = -1.0f);
+
+/**
+ * @brief Creates a TextLLMRunner instance with dependency injection
+ *
+ * This factory function creates and initializes a TextLLMRunner with all
+ * necessary components for text generation using the specified model and
+ * tokenizer.
+ *
+ * @param model_path Path to the model file
+ * @param tokenizer Initialized tokenizer instance
+ * @param data_files Set of paths to additional data required by the model
+ * @param temperature Optional temperature parameter for controlling randomness
+ * (deprecated)
+ * @return std::unique_ptr<TextLLMRunner> Initialized TextLLMRunner instance, or
+ * nullptr on failure
+ */
+ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::unordered_set<std::string> data_files = {},
     float temperature = -1.0f);
 
 /**

@@ -37,6 +37,24 @@ std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     const std::string& tokenizer_path,
     std::optional<const std::string> data_path,
     float temperature) {
+  if (data_path.has_value()) {
+    std::unordered_set<std::string> data_files;
+    data_files.insert(data_path.value());
+    return create_llama_runner(
+        model_path, tokenizer_path, std::move(data_files), temperature);
+  }
+  return create_llama_runner(
+      model_path,
+      tokenizer_path,
+      std::unordered_set<std::string>(),
+      temperature);
+}
+
+std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    std::unordered_set<std::string> data_files,
+    float temperature) {
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
@@ -55,7 +73,7 @@ std::unique_ptr<llm::TextLLMRunner> create_llama_runner(
     return nullptr;
   }
   return llm::create_text_llm_runner(
-      model_path, std::move(tokenizer), data_path);
+      model_path, std::move(tokenizer), data_files);
 }
 
 } // namespace example
