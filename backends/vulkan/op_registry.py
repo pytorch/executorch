@@ -389,40 +389,6 @@ def register_linear_dqa_qw_ops():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.linear_weight_int4.default,
-    ]
-)
-def register_int4_mm_op():
-    return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_ANY,
-        supports_resize=True,
-        supports_prepacking=True,
-    )
-
-
-@update_features(
-    [
-        exir_ops.edge.et_vk.linear_qta8a_qga4w.default,
-    ]
-)
-def register_dqlinear_op():
-    return OpFeatures(
-        inputs_storage=[
-            utils.CONTIGUOUS_ANY,  # input
-            utils.CONTIGUOUS_BUFFER,  # mat1 scales
-            utils.CONTIGUOUS_BUFFER,  # mat1 zeros
-            utils.NO_STORAGE,  # weight (prepacked)
-            utils.NO_STORAGE,  # group size (non tensor)
-            utils.CONTIGUOUS_BUFFER,  # mat2 scales
-            utils.CONTIGUOUS_BUFFER,  # mat2 zeros
-        ],
-        supports_resize=True,
-        supports_prepacking=True,
-    )
-
-
-@update_features(
-    [
         exir_ops.edge.aten._log_softmax.default,
         exir_ops.edge.aten._softmax.default,
     ]

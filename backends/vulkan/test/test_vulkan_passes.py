@@ -17,7 +17,6 @@ from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
-from torchao.quantization.linear_quant_modules import Int8DynActInt4WeightQuantizer
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
@@ -155,62 +154,6 @@ class TestVulkanPasses(unittest.TestCase):
 
         self.assertEqual(op_node_count(gm, "linear_qcs4w.default"), 1)
         self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
-
-    @unittest.skip(
-        "linear_qta8a_qga4w currently does not support E2E dynamic quantization"
-    )
-    def test_fuse_linear_qta8a_qga4w(self):
-        """Test fusion of dynamic activation + grouped weight quantized linear (QTA8A_QGA4W)."""
-        K = 256
-        N = 256
-        model = SingleLinearModule(K, N)
-        sample_inputs = model.get_sample_inputs()
-
-        # Use source transform quantizer for dynamic activation + grouped weight quantization
-        quantizer = Int8DynActInt4WeightQuantizer(
-            groupsize=128,  # Group size for 4-bit weights
-            padding_allowed=False,
-            precision=torch.float32,
-            scales_precision=torch.float32,
-            device=torch.device("cpu"),
-        )
-
-        # Apply source transform quantization
-        quantized_model = quantizer.quantize(model)
-
-        # Export the quantized model
-        edge_compile_config = EdgeCompileConfig(
-            _skip_dim_order=False,
-            _check_ir_validity=False,
-        )
-
-        program = torch.export.export_for_training(
-            quantized_model, sample_inputs, strict=True
-        ).module()
-
-        program = torch.export.export(program, sample_inputs)
-
-        edge_manager = to_edge(
-            program,
-            compile_config=edge_compile_config,
-        )
-
-        ep = edge_manager._edge_programs["forward"]
-        edge_manager.transform(
-            [
-                AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(ep),
-            ]
-        )
-
-        gm = ep.graph_module
-
-        # Check that the linear_qta8a_qga4w operator was created
-        self.assertEqual(op_node_count(gm, "linear_qta8a_qga4w.default"), 1)
-        # Check that the original quantization/dequantization nodes were removed
-        self.assertEqual(op_node_count(gm, "quantize_per_token.default"), 0)
-        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
-        self.assertEqual(op_node_count(gm, "linear.default"), 0)
 
     def test_fuse_rotary_emb(self):
         """Test conversion of rotary embedding pattern to et_vk.apply_rotary_emb custom op."""
