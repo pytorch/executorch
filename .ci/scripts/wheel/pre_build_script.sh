@@ -17,6 +17,15 @@ pushd extension/llm/tokenizers
 git submodule update --init
 popd
 
+# On Windows, enable symlinks and re-checkout the current revision to create
+# the symlinked src/ directory. This is needed to build the wheel.
+UNAME_S=$(uname -s)
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; do
+    echo "Enabling symlinks on Windows"
+    git config core.symlinks true
+    git checkout -f HEAD
+fi
+
 # Manually install build requirements because `python setup.py bdist_wheel` does
 # not install them. TODO(dbort): Switch to using `python -m build --wheel`,
 # which does install them. Though we'd need to disable build isolation to be
