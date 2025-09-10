@@ -889,6 +889,7 @@ jobs:
         # Setup python
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
+        SAMSUNG_AI_LITECORE_KEY="${SECRET_SAMSUNG_AI_LITECORE_KEY}"
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         source .ci/scripts/setup-samsung-linux-deps.sh
 
