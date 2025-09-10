@@ -35,7 +35,7 @@ class Model(str, Enum):
     ResNet50 = "resnet50"
     Llava = "llava"
     EfficientSam = "efficient_sam"
-    Qwen25 = "qwen2_5"
+    Qwen25 = "qwen2_5_1_5b"
     Phi4Mini = "phi_4_mini"
     SmolLM2 = "smollm2"
 

@@ -14,7 +14,7 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -200,7 +200,7 @@ def test_dump_tosa_debug_json(test_data: input_t1):
             aten_op=[],
             exir_op=[],
             custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpecBuilder.DebugMode.JSON,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.JSON,
         )
 
         pipeline.pop_stage("run_method_and_compare_outputs")
@@ -220,6 +220,27 @@ def test_dump_tosa_debug_json(test_data: input_t1):
                 assert data
             except json.JSONDecodeError:
                 pytest.fail("Failed to load debug JSON file")
+
+
+@common.parametrize("test_data", Linear.inputs)
+def test_dump_tosa_debug_tosa(test_data: input_t1):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pipeline = TosaPipelineINT[input_t1](
+            module=Linear(),
+            test_data=test_data,
+            aten_op=[],
+            exir_op=[],
+            custom_path=tmpdir,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
+        )
+
+        pipeline.pop_stage("run_method_and_compare_outputs")
+        pipeline.run()
+
+        json_output_path = Path(tmpdir) / "debug.json"
+
+        # A JSON file should not be created when TOSA mode used
+        assert not json_output_path.exists()
 
 
 @common.parametrize("test_data", Linear.inputs)

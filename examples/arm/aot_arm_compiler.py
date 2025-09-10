@@ -18,28 +18,23 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
-from executorch.backends.arm.arm_backend import (
-    ArmCompileSpecBuilder,
-    is_ethosu,
-    is_tosa,
-    is_vgf,
-)
-from executorch.backends.arm.ethosu import EthosUPartitioner
+from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
     VgfQuantizer,
 )
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
     MobileNetV2Evaluator,
 )
 
-from executorch.backends.arm.vgf_partitioner import VgfPartitioner
+from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
 # To use Cortex-M backend
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
@@ -59,7 +54,6 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 from torch.utils.data import DataLoader
@@ -148,7 +142,7 @@ def get_model_and_inputs_from_name(
 def quantize(
     model: torch.nn.Module,
     model_name: str,
-    compile_specs: list[CompileSpec],
+    compile_specs: EthosUCompileSpec | VgfCompileSpec | TosaCompileSpec,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
@@ -157,11 +151,11 @@ def quantize(
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
     quantizer = None
-    if is_ethosu(compile_specs):
+    if isinstance(compile_specs, EthosUCompileSpec):
         quantizer = EthosUQuantizer(compile_specs)
-    elif is_tosa(compile_specs):
-        quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
-    elif is_vgf(compile_specs):
+    elif isinstance(compile_specs, TosaCompileSpec):
+        quantizer = TOSAQuantizer(compile_specs)
+    elif isinstance(compile_specs, VgfCompileSpec):
         quantizer = VgfQuantizer(compile_specs)
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
@@ -392,20 +386,20 @@ def get_compile_spec(
     memory_mode: Optional[str] = None,
     quantize: bool = False,
     config: Optional[str] = None,
-) -> list[CompileSpec]:
-    spec_builder = None
+) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
+    compile_spec = None
     if target.startswith("TOSA"):
         try:
             tosa_spec = TosaSpecification.create_from_string(target)
-        except:
+        except Exception:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
-        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
+        compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
-        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
+        compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags="--verbose-operators --verbose-cycle-estimate",
+            extra_flags=["--verbose-operators", "--verbose-cycle-estimate"],
             config_ini=config,
         )
     elif "vgf" in target:
@@ -413,12 +407,14 @@ def get_compile_spec(
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         else:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
-        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
+        compile_spec = VgfCompileSpec(tosa_spec)
+    else:
+        raise RuntimeError(f"Unkown target {target}")
 
     if intermediates is not None:
-        spec_builder.dump_intermediate_artifacts_to(intermediates)
+        compile_spec.dump_intermediate_artifacts_to(intermediates)
 
-    return spec_builder.build()
+    return compile_spec
 
 
 def evaluate_model(
@@ -748,11 +744,11 @@ def to_edge_TOSA_delegate(
         )
         model = model_int8
 
-    if is_ethosu(compile_spec):
+    if isinstance(compile_spec, EthosUCompileSpec):
         partitioner = EthosUPartitioner(compile_spec)
-    elif is_tosa(compile_spec):
+    elif isinstance(compile_spec, TosaCompileSpec):
         partitioner = TOSAPartitioner(compile_spec)
-    elif is_vgf(compile_spec):
+    elif isinstance(compile_spec, VgfCompileSpec):
         partitioner = VgfPartitioner(compile_spec)
     else:
         raise RuntimeError(f"Unhandled compile spec: {compile_spec}")

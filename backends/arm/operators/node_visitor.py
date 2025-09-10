@@ -5,13 +5,15 @@
 
 # pyre-unsafe
 
+import json
 from typing import Any, Dict, List, Optional
 
 import torch
 
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.export import ExportedProgram
 
 
@@ -49,19 +51,24 @@ class NodeVisitor:
         outputs: List[str],
         attributes: Optional[Any] = None,
     ) -> None:
+        op_location = ""
+        if self.debug_hook:
+            debug_info = self.debug_hook.add(
+                node,
+                tosa_op=outputs[0],
+                tosa_op_id=tosa_op,
+            )
+
+            if self.debug_hook.mode == ArmCompileSpec.DebugMode.TOSA:
+                op_location = json.dumps(debug_info.to_dict())
+
         tosa_graph.addOperator(
             tosa_op,
             inputs=inputs,
             outputs=outputs,
             attributes=attributes,
+            location=op_location,
         )
-
-        if self.debug_hook:
-            self.debug_hook.add(
-                node,
-                tosa_op=outputs[0],
-                tosa_op_id=tosa_op,
-            )
 
     def define_node(
         self,

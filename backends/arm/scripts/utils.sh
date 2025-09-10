@@ -4,6 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Important to check for unset variables since this script is always sourced from setup.sh
+set -u
+
+# Check if the script is being sourced
+(return 0 2>/dev/null)
+if [[ $? -ne 0 ]]; then
+    echo "Error: This script must be sourced."
+    exit 1
+fi
+
 function verify_md5() {
     # Compare the md5 of a file with a provided expected value.
 
@@ -84,9 +94,25 @@ function check_os_support() {
     # Linux on arm64/aarch64
     # Darwin on arm64/aarch64
     if [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
-        if [[ "${OS}" != "Darwin" ]] || [[ "${OS}" != "Linux" ]]; then
+        if [[ "${OS}" != "Darwin" ]] && [[ "${OS}" != "Linux" ]]; then
             echo "Error: Only Linux and Darwin are supported on arm64"
             exit 1
         fi
     fi
+}
+
+function prepend_env_in_setup_path() {
+    echo "export $1=$2:\${$1-}" >> ${setup_path_script}.sh
+    echo "set --path -pgx $1 $2" >> ${setup_path_script}.fish
+}
+
+function append_env_in_setup_path() {
+    echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
+    echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
+}
+
+function clear_setup_path() {
+    # Clear setup_path_script
+    echo "" > "${setup_path_script}.sh"
+    echo "" > "${setup_path_script}.fish"
 }

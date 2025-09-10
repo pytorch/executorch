@@ -6,7 +6,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes.remove_clone_pass import RemoveClonePass
+from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
 
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
@@ -15,7 +15,7 @@ input_t = Tuple[torch.Tensor]  # Input x
 
 class Clone(torch.nn.Module):
     """
-    Basic remove layer model to test RemoveClonePass
+    Basic remove layer model to test RemoveNoopePass
     """
 
     def __init__(self):
@@ -35,9 +35,11 @@ def test_remove_clone_tosa_INT():
         module.get_inputs(),
         quantize=True,
         ops_before_pass={
-            "executorch_exir_dialects_edge__ops_aten_clone_default": 1,
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
         },
-        ops_not_after_pass=["executorch_exir_dialects_edge__ops_aten_clone_default"],
-        pass_list=[RemoveClonePass],
+        ops_not_after_pass=[
+            "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
+        ],
+        pass_list=[RemoveNoopPass],
     )
     pipeline.run()
