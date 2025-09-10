@@ -501,7 +501,7 @@ class TestCoreMLRecipes(unittest.TestCase):
             (CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),
             (
                 CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
-                ct.target.iOS18,
+                ct.target.iOS16,
                 {},
             ),
             (CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),
