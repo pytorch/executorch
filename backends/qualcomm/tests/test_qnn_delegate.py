@@ -4638,6 +4638,77 @@ class TestQNNQuantizedUtils(TestQNN):
 
 
 class TestExampleLLMScript(TestQNN):
+    def test_static_gemma3_1b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--ptq",
+            "16a4w_block",
+            "--temperature",
+            "0",
+            "--decoder_model",
+            "gemma3-1b",
+            "--model_mode",
+            "kv",
+            "--max_seq_len",
+            "1024",
+            "--eval_perplexity",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
+            "--enable_masked_softmax",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                if not self.compile_only:
+                    self.assertLessEqual(msg["wiki_ppl"], 23)
+                if not self.enable_x86_64:
+                    pte_size = msg["pte_size"]
+                    self.assertLessEqual(pte_size, 1_200_000_000)  # 1.2GB
+                inference_speed_ref = {"SM8650": 70, "SM8750": 100}
+                if (
+                    not self.compile_only
+                    and not self.enable_x86_64
+                    and self.model in inference_speed_ref
+                ):
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
+                    )
+
     def test_llama3_2_1b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -4708,7 +4779,7 @@ class TestExampleLLMScript(TestQNN):
                 # Inference speed on x86 is slow, so we only check when running on Android
                 if not self.enable_x86_64:
                     pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 1300000000)
+                    self.assertLessEqual(pte_size, 1_300_000_000)  # 1.3GB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 66)  # Lanai
 
@@ -4784,7 +4855,7 @@ class TestExampleLLMScript(TestQNN):
                 # x86 does not allow weight sharing, so we don't check pte size
                 if not self.enable_x86_64:
                     pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 2020000)
+                    self.assertLessEqual(pte_size, 2_020_000)  # 2MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 1600)  # Lanai
 
@@ -4859,7 +4930,7 @@ class TestExampleLLMScript(TestQNN):
                 # x86 does not allow weight sharing, so we don't check pte size
                 if not self.enable_x86_64:
                     pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 130000000)
+                    self.assertLessEqual(pte_size, 130_000_000)  # 130MB
                 if not self.compile_only and not self.enable_x86_64:
                     self.assertGreaterEqual(msg["inference_speed"], 220)  # Lanai
 
@@ -4922,7 +4993,7 @@ class TestExampleLLMScript(TestQNN):
             else:
                 inference_speed_ref = {"SM8650": 14, "SM8750": 19}
                 self.assertLessEqual(msg["wiki_ppl"], 12)
-                self.assertLessEqual(msg["pte_size"], 4000000000)  # 4gb
+                self.assertLessEqual(msg["pte_size"], 4_000_000_000)  # 4GB
                 if self.model in inference_speed_ref:
                     self.assertGreaterEqual(
                         msg["inference_speed"], inference_speed_ref[self.model]
@@ -4979,9 +5050,9 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                inference_speed_ref = {"SM8650": 110, "SM8750": 130}
+                inference_speed_ref = {"SM8650": 115, "SM8750": 155}
                 self.assertLessEqual(msg["wiki_ppl"], 15)
-                self.assertLessEqual(msg["pte_size"], 800000000)  # 800mb
+                self.assertLessEqual(msg["pte_size"], 600_000_000)  # 600MB
                 if self.model in inference_speed_ref:
                     self.assertGreaterEqual(
                         msg["inference_speed"], inference_speed_ref[self.model]
@@ -5040,7 +5111,7 @@ class TestExampleLLMScript(TestQNN):
             else:
                 inference_speed_ref = {"SM8650": 38, "SM8750": 56}
                 self.assertLessEqual(msg["wiki_ppl"], 18)
-                self.assertLessEqual(msg["pte_size"], 950_000_000)  # 950mb
+                self.assertLessEqual(msg["pte_size"], 950_000_000)  # 950MB
                 if self.model in inference_speed_ref:
                     self.assertGreaterEqual(
                         msg["inference_speed"], inference_speed_ref[self.model]

@@ -44,6 +44,7 @@ python_library(
         "//executorch/backends/arm:ethosu_partitioner",
         "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm:vgf_partitioner",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",

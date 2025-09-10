@@ -299,7 +299,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   void reset_context() {
-    runner_->reset();
+    if (runner_ != nullptr) {
+      runner_->reset();
+    }
+    if (multi_modal_runner_ != nullptr) {
+      multi_modal_runner_->reset();
+    }
   }
 
   jint load() {

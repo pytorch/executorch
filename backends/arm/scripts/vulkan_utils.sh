@@ -64,3 +64,9 @@ function setup_vulkan_sdk() {
         exit 1
     fi
 }
+
+function setup_path_vulkan() {
+    cd "${root_dir}"
+    vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
+    append_env_in_setup_path PATH ${vulkan_sdk_bin_path}
+}
