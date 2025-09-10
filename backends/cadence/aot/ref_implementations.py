@@ -64,9 +64,9 @@ def quantize_per_tensor(
             f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_quant_types}"
         )
 
-    dequantized = torch.round(input_tensor * scale + zero_point).to(dtype)
+    quantized = torch.round(input_tensor * scale + zero_point).to(dtype)
     return torch.max(
-        torch.min(dequantized, torch.tensor(quant_max)),
+        torch.min(quantized, torch.tensor(quant_max)),
         torch.tensor(quant_min),
     )
 
@@ -247,12 +247,12 @@ def quantized_linear(
     ).reshape(*leading_dims, N)
 
 
-@impl(m, "quantized_layer_norm_per_tensor")
+@impl(m, "quantized_layer_norm.per_tensor")
 def quantized_layer_norm_per_tensor(
     input_tensor: torch.Tensor,
     X_scale: float,
     X_zero_point: int,
-    normalized_shape: int,
+    normalized_shape: list[int],
     weight: torch.Tensor,
     bias: torch.Tensor,
     eps: float,
@@ -283,7 +283,7 @@ def quantized_layer_norm_per_tensor(
         input_tensor, X_scale, X_zero_point, -128, 127, torch.float32
     )
     out = torch.nn.functional.layer_norm(
-        float_input_tensor, (normalized_shape,), weight, bias, eps=eps
+        float_input_tensor, normalized_shape, weight, bias, eps=eps
     )
 
     return quantize_per_tensor(
@@ -365,7 +365,7 @@ def quantized_conv_per_tensor(
     )
 
 
-@impl(m, "quantized_conv_nchw_per_tensor")
+@impl(m, "quantized_conv_nchw.per_tensor")
 def quantized_conv_nchw_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -421,7 +421,7 @@ def quantized_conv_nchw_per_tensor(
     )
 
 
-@impl(m, "quantized_conv_nhwc_per_tensor")
+@impl(m, "quantized_conv_nhwc.per_tensor")
 def quantized_conv_nhwc_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -558,62 +558,62 @@ def quantized_conv_variant(
     return decorator
 
 
-@impl(m, "quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor")
+@impl(m, "quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
 def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor")
+@impl(m, "quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
 def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor")
+@impl(m, "quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
 def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor")
+@impl(m, "quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor")
+@impl(m, "quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
 def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor")
+@impl(m, "quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
 def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor")
+@impl(m, "quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
 def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor")
+@impl(m, "quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor")
+@impl(m, "quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
 def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor")
+@impl(m, "quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
 def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor")
+@impl(m, "quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
 def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor")
+@impl(m, "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
