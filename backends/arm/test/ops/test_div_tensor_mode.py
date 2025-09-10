@@ -4,7 +4,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -17,13 +16,6 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 input_tt = Tuple[torch.Tensor, torch.Tensor]
-
-
-def make_float_div_inputs(B: int = 4, T: int = 64) -> input_tt:
-    x = torch.randn(B, T)
-    # guard against zero in denominator
-    y = torch.randn(B, T).abs() + 1e-3
-    return x, y
 
 
 class DivTensorModeFloat(torch.nn.Module):
@@ -44,11 +36,24 @@ class DivTensorModeFloat(torch.nn.Module):
         return torch.div(x, y, rounding_mode=self.mode)
 
 
-@pytest.mark.parametrize("mode", [None, "floor", "trunc"])
-def test_div_tensor_mode_tosa_FP(mode):
+test_data = {
+    "mode_none": lambda: (None, (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3)),
+    "mode_floor": lambda: (
+        "floor",
+        (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3),
+    ),
+    "mode_trunc": lambda: (
+        "trunc",
+        (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3),
+    ),
+    "int_denominator": lambda: (None, (torch.randn(4, 8), 2)),
+}
 
+
+@common.parametrize("data", test_data)
+def test_div_tensor_mode_tosa_FP(data):
+    mode, inputs = data()
     model = DivTensorModeFloat(mode)
-    inputs = make_float_div_inputs()
 
     pipeline = TosaPipelineFP[input_tt](
         model,
@@ -61,11 +66,10 @@ def test_div_tensor_mode_tosa_FP(mode):
     pipeline.run()
 
 
-@pytest.mark.parametrize("mode", [None, "floor", "trunc"])
-def test_div_tensor_mode_tosa_INT(mode):
-
+@common.parametrize("data", test_data)
+def test_div_tensor_mode_tosa_INT(data):
+    mode, inputs = data()
     model = DivTensorModeFloat(mode)
-    inputs = make_float_div_inputs()
 
     pipeline = TosaPipelineINT[input_tt](
         model,
@@ -79,11 +83,12 @@ def test_div_tensor_mode_tosa_INT(mode):
 
 
 @common.XfailIfNoCorstone300
-@pytest.mark.parametrize("mode", [None, "floor"])
-def test_div_tensor_mode_u55_INT(mode):
-
+@common.parametrize(
+    "data", test_data, xfails={"mode_trunc": "CPU op missing in unittests"}
+)
+def test_div_tensor_mode_u55_INT(data):
+    mode, inputs = data()
     model = DivTensorModeFloat(mode)
-    inputs = make_float_div_inputs()
 
     pipeline = EthosU55PipelineINT[input_tt](
         model,
@@ -97,11 +102,10 @@ def test_div_tensor_mode_u55_INT(mode):
 
 
 @common.XfailIfNoCorstone320
-@pytest.mark.parametrize("mode", [None, "floor", "trunc"])
-def test_div_tensor_mode_u85_INT(mode):
-
+@common.parametrize("data", test_data)
+def test_div_tensor_mode_u85_INT(data):
+    mode, inputs = data()
     model = DivTensorModeFloat(mode)
-    inputs = make_float_div_inputs()
 
     pipeline = EthosU85PipelineINT[input_tt](
         model,
@@ -115,11 +119,10 @@ def test_div_tensor_mode_u85_INT(mode):
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.parametrize("mode", [None, "floor", "trunc"])
-def test_div_tensor_mode_vgf_INT(mode):
-
+@common.parametrize("data", test_data)
+def test_div_tensor_mode_vgf_INT(data):
+    mode, inputs = data()
     model = DivTensorModeFloat(mode)
-    inputs = make_float_div_inputs()
 
     pipeline = VgfPipeline[input_tt](
         model,
@@ -134,11 +137,10 @@ def test_div_tensor_mode_vgf_INT(mode):
 
 
 @common.SkipIfNoModelConverter
-@pytest.mark.parametrize("mode", [None, "floor", "trunc"])
-def test_div_tensor_mode_vgf_FP(mode):
-
+@common.parametrize("data", test_data)
+def test_div_tensor_mode_vgf_FP(data):
+    mode, inputs = data()
     model = DivTensorModeFloat(mode)
-    inputs = make_float_div_inputs()
 
     pipeline = VgfPipeline[input_tt](
         model,
