@@ -85,7 +85,6 @@ EOF
 # Wheel build and .so checks
 # ----------------------------
 echo "=== Building Wheel Package ==="
-# pip install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
 source .ci/scripts/utils.sh
 install_executorch
 EXECUTORCH_BUILDING_WHEEL=1 python setup.py bdist_wheel
@@ -140,7 +139,7 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  "$PIPBIN" install torch=="2.9.0.dev20250801" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  "$PIPBIN" install torch=="2.9.0.dev20250906" --index-url "https://download.pytorch.org/whl/nightly/cpu"
   "$PIPBIN" install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
 
   echo "=== [$LABEL] Import smoke tests ==="
