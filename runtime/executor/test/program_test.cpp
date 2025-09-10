@@ -590,6 +590,6 @@ TEST_F(ProgramTest, LoadAndCheckPTESize) {
 
   BufferDataLoader truncated_loader =
       BufferDataLoader(truncated_file->data(), 200);
-  Result<Program> truncated_program = Program::load(&truncated_loader.get());
+  Result<Program> truncated_program = Program::load(&truncated_loader);
   ASSERT_EQ(truncated_program.error(), Error::InvalidProgram);
 }
