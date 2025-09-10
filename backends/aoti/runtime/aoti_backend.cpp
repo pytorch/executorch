@@ -83,7 +83,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     std::string so_blob_key = "so_blob";
 
     Result<FreeableBuffer> aoti_cuda_buffer =
-        named_data_map->get_data(aoti_cuda_blob_name.c_str());
+        named_data_map->get_data(so_blob_key.c_str());
 
     // Create a temporary file
     std::ofstream outfile(so_path.c_str(), std::ios::binary);
