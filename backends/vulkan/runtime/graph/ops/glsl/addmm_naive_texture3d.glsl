@@ -136,6 +136,9 @@ vec4 matmul_naive_k_dim_packed_row_dim_packed(const ivec3 out_lpos) {
     const vec4 mat1_tex = texelFetch(mat1_tensor, mat1_pos, 0);
 
     for (int r = 0; r < 4; ++r) {
+      if (4 * i + r >= mat2_sizes.y) {
+        continue;
+      }
       // On-demand construction of mat2_pos appears to provide the lowest
       // latency. Surprisingly, this doesn't translate to mat1_pos.
       ivec3 mat2_pos = ivec3(0);
