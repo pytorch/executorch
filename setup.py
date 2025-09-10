@@ -61,6 +61,7 @@ import os
 import platform
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import tempfile
 import urllib.request
@@ -503,16 +504,18 @@ class InstallerBuildExt(build_ext):
                 print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
 
                 # Copy Python adaptor .so files
+                ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
+
                 so_files = [
                     (
                         "executorch.backends.qualcomm.python.PyQnnManagerAdaptor",
                         prj_root
-                        / "backends/qualcomm/python/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so",
+                        / f"backends/qualcomm/python/PyQnnManagerAdaptor{ext_suffix}",
                     ),
                     (
                         "executorch.backends.qualcomm.python.PyQnnWrapperAdaptor",
                         prj_root
-                        / "backends/qualcomm/python/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so",
+                        / f"backends/qualcomm/python/PyQnnWrapperAdaptor{ext_suffix}",
                     ),
                 ]
 
