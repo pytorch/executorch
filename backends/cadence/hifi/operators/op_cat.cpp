@@ -126,29 +126,25 @@ Tensor& cat_out(
   const size_t outer = getLeadingDims(out, dim);
   const size_t dim_stride = getTrailingDims(out, dim);
   const size_t ninputs = tensors.size();
+  const size_t element_size = out.element_size();
+  char* out_ptr = static_cast<char*>(out.mutable_data_ptr());
 
-  const auto out_type = out.scalar_type();
-  ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
-    CTYPE_OUT* out_ptr = out.mutable_data_ptr<CTYPE_OUT>();
-    for (size_t i = 0; i < outer; ++i) {
-      for (size_t j = 0; j < ninputs; ++j) {
-        const auto in_type = tensors[j].scalar_type();
-        ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-          if (tensors[j].numel() == 0) {
-            return;
-          }
-          size_t inner = tensors[j].size(dim) * dim_stride;
-          const CTYPE_IN* const in_ptr =
-              tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
-
-          for (size_t k = 0; k < inner; ++k) {
-            out_ptr[k] = static_cast<CTYPE_OUT>(in_ptr[k]);
-          }
-          out_ptr += inner;
-        });
+  for (size_t i = 0; i < outer; ++i) {
+    for (size_t j = 0; j < ninputs; ++j) {
+      if (tensors[j].numel() == 0) {
+        continue;
       }
+      size_t inner_elements = tensors[j].size(dim) * dim_stride;
+      size_t contiguous_bytes = inner_elements * element_size;
+
+      const char* const in_ptr =
+          static_cast<const char*>(tensors[j].const_data_ptr()) +
+          i * contiguous_bytes;
+
+      std::memcpy(out_ptr, in_ptr, contiguous_bytes);
+      out_ptr += contiguous_bytes;
     }
-  });
+  }
 
   return out;
 }

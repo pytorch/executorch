@@ -41,7 +41,10 @@ Tensor& fill_scalar_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "fill.Scalar_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, op_name, CTYPE_A, [&] {
     auto opt_b_casted = utils::internal::check_overflow_scalar_cast<CTYPE_A>(b);
     ET_KERNEL_CHECK(ctx, opt_b_casted.has_value(), InvalidArgument, );
     auto b_casted = opt_b_casted.value();
@@ -83,9 +86,12 @@ Tensor& fill_tensor_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "fill.Tensor_out", CTYPE_A, [&] {
-    CTYPE_A b_casted;
-    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "fill.Tensor_out", CTYPE_B, [&] {
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "fill.Tensor_out";
+
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, op_name, CTYPE_A, [&] {
+    CTYPE_A b_casted{};
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, op_name, CTYPE_B, [&] {
       CTYPE_B b_val;
       ET_EXTRACT_SCALAR_TENSOR(b, b_val);
       b_casted = static_cast<CTYPE_A>(b_val);

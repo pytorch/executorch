@@ -1,3 +1,8 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 # @noautodeps
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
@@ -13,15 +18,48 @@ python_library(
     ]
 )
 python_library(
+    name = "vgf_partitioner",
+    srcs = [
+        "vgf/__init__.py",
+        "vgf/backend.py",
+        "vgf/partitioner.py"
+    ],
+    deps = [
+        ":arm_partitioner",
+    ]
+)
+python_library(
+    name = "constants",
+    srcs = [
+        "constants.py",
+    ],
+    deps = [
+        "//executorch/exir/dialects:lib",
+    ],
+)
+python_library(
+    name = "common",
+    srcs = [
+        "common/__init__.py",
+        "common/debug.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+python_library(
     name = "arm_partitioner",
     srcs = [
-        "tosa_backend.py",
-        "tosa_partitioner.py",
-        "vgf_backend.py",
-        "vgf_partitioner.py",
+        "tosa/backend.py",
+        "tosa/partitioner.py",
     ],
     deps = [
         ":arm_backend",
+        ":constants",
+        "//executorch/backends/arm/debug:schema",
         "//executorch/backends/arm/operator_support:operator_support",
         "//executorch/backends/arm/_passes:passes",
         "//executorch/exir:lib",
@@ -53,9 +91,9 @@ python_library(
         "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         "//executorch/backends/arm/operators:node_visitor",
-        "//executorch/backends/arm:tosa_mapping",
-        "//executorch/backends/arm:tosa_quant_utils",
-        "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/arm/tosa:mapping",
+        "//executorch/backends/arm/tosa:quant_utils",
+        "//executorch/backends/arm/tosa:utils",
         "//executorch/exir:lib",
     ],
 )
@@ -66,53 +104,6 @@ python_library(
     ],
     deps = [
         "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
-    ],
-)
-python_library(
-    name = "tosa_mapping",
-    srcs = [
-        "tosa_mapping.py",
-    ],
-    deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "//caffe2:torch",
-    ],
-)
-python_library(
-    name = "tosa_quant_utils",
-    srcs = [
-        "tosa_quant_utils.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
-        ":tosa_mapping",
-        "//executorch/exir/dialects:lib",
-    ],
-)
-python_library(
-    name = "tosa_specification",
-    srcs = [
-        "tosa_specification.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/packaging:packaging",
-        "//executorch/exir/backend:compile_spec_schema",
-    ],
-)
-python_library(
-    name = "tosa_utils",
-    srcs = [
-        "tosa_utils.py",
-    ],
-    deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        ":tosa_quant_utils",
-        "//executorch/backends/arm/operators:node_visitor",
     ],
 )
 python_library(

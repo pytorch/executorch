@@ -97,7 +97,7 @@ test_model() {
     bash examples/models/llava/install_requirements.sh
     STRICT="--no-strict"
   fi
-  if [[ "${MODEL_NAME}" == "qwen2_5" ]]; then
+  if [[ "${MODEL_NAME}" == "qwen2_5_1_5b" ]]; then
       # Install requirements for export_llama
       bash examples/models/llama/install_requirements.sh
       # Test export_llm script: python3 -m extension.llm.export.export_llm.
@@ -199,6 +199,8 @@ test_model_with_qnn() {
     EXPORT_SCRIPT=albert
   elif [[ "${MODEL_NAME}" == "bert" ]]; then
     EXPORT_SCRIPT=bert
+  elif [[ "${MODEL_NAME}" == "conv_former" ]]; then
+    EXPORT_SCRIPT=conv_former
   elif [[ "${MODEL_NAME}" == "cvt" ]]; then
     EXPORT_SCRIPT=cvt
   elif [[ "${MODEL_NAME}" == "distilbert" ]]; then
@@ -238,7 +240,7 @@ test_model_with_qnn() {
     "cvt"|"dit"|"focalnet"|"mobilevit_v2"|"pvt"|"swin")
         SCRIPT_FOLDER=oss_scripts
         ;;
-    "albert"|"bert"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
+    "albert"|"bert"|"conv_former"|"distilbert"|"roberta"|"efficientnet"|"mobilevit_v1")
         pip install evaluate
         SCRIPT_FOLDER=oss_scripts
         # 16bit models will encounter op validation fail on some operations,

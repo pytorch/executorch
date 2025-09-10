@@ -2,6 +2,16 @@
 
 Instead of needing to manually write code to call torch.export(), use ExecuTorch's assortment of lowering APIs, or even interact with TorchAO quantize_ APIs for quantization, we have provided an out of box experience which performantly exports a selection of supported models to ExecuTorch.
 
+## Prerequisites
+
+The LLM export functionality requires the `pytorch_tokenizers` package. If you encounter a `ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install it from the ExecutorTorch source code:
+
+```bash
+pip install -e ./extension/llm/tokenizers/
+```
+
+## Supported Models
+
 As of this doc, the list of supported LLMs include the following:
 - Llama 2/3/3.1/3.2
 - Qwen 2.5/3

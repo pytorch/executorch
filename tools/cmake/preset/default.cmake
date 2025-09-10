@@ -152,6 +152,13 @@ define_overridable_option(
   EXECUTORCH_COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." BOOL
   OFF
 )
+define_overridable_option(
+  EXECUTORCH_BUILD_WASM "Build the ExecuTorch JavaScript API" BOOL OFF
+)
+define_overridable_option(
+  EXECUTORCH_BUILD_TOKENIZERS_WASM "Build the JavaScript Tokenizers API" BOOL
+  OFF
+)
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -273,6 +280,10 @@ check_required_options_on(
 )
 
 check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_PYBIND REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
+)
+
+check_required_options_on(
   IF_ON EXECUTORCH_BUILD_KERNELS_LLM REQUIRES
   EXECUTORCH_BUILD_KERNELS_OPTIMIZED
 )
@@ -319,6 +330,16 @@ check_conflicting_options_on(
 
 check_conflicting_options_on(
   IF_ON EXECUTORCH_SELECT_OPS_LIST CONFLICTS_WITH EXECUTORCH_SELECT_OPS_MODEL
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_WASM REQUIRES EXECUTORCH_BUILD_EXTENSION_MODULE
+  EXECUTORCH_BUILD_EXTENSION_TENSOR
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_TOKENIZERS_WASM REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_LLM
 )
 
 if(NOT EXISTS ${EXECUTORCH_PAL_DEFAULT_FILE_PATH})

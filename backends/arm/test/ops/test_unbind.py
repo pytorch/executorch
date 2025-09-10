@@ -11,6 +11,7 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineFP,
     TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -51,5 +52,31 @@ def test_unbind_int_tosa_INT(test_data: test_data_t):
         Unbind(*init_data),
         input_data(),
         Unbind.aten_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unbind.test_data)
+@common.SkipIfNoModelConverter
+def test_unbind_int_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        Unbind(*init_data),
+        input_data(),
+        Unbind.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Unbind.test_data)
+@common.SkipIfNoModelConverter
+def test_unbind_int_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        Unbind(*init_data),
+        input_data(),
+        Unbind.aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

@@ -31,7 +31,7 @@ set(BUILD_TESTING OFF)
 if(NOT TARGET extension_llm_runner)
   message(
     FATAL_ERROR
-    "ExecuTorch must be installed with EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER enabled."
+      "ExecuTorch must be installed with EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER enabled."
   )
 endif()
 

@@ -51,9 +51,9 @@ def register_tosa_dialect_op(op_schema, func) -> Callable:
 
 
 class TosaValueError(ValueError):
-    def __init__(self, message="A TOSA value error occurred", *args, **kwargs):
-        super().__init__(message, *args, **kwargs)
-        self.op = kwargs.get("op", None)
+    def __init__(self, message="A TOSA value error occurred", *args, op=None):
+        super().__init__(message, *args)
+        self.op = op
 
     def __str__(self):
         base_message = super().__str__()

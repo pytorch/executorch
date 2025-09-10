@@ -6,8 +6,8 @@
 # pyre-unsafe
 
 import torch
+from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import Q_OPS
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node

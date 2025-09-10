@@ -18,6 +18,7 @@ _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly ins
 
 
 elf_file=""
+data_file=""
 target="ethos-u55-128"
 timeout="600"
 
@@ -25,6 +26,7 @@ help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
     echo "  --elf=<ELF_FILE>         elf file to run"
+    echo "  --data=<FILE>@<ADDRESS>  Place a file in memory at this address, useful to emulate a PTE flashed into memory instead as part of the code."
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
     exit 0
@@ -34,6 +36,7 @@ for arg in "$@"; do
     case $arg in
       -h|--help) help ;;
       --elf=*) elf_file="${arg#*=}";;
+      --data=*) data_file="--data ${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --timeout=*) timeout="${arg#*=}";;
       *)
@@ -80,32 +83,47 @@ fi
 
 log_file=$(mktemp)
 
-
-
 if [[ ${target} == *"ethos-u55"*  ]]; then
-    ${nobuf} ${fvp_model}                                            \
+    ${nobuf} ${fvp_model}                                   \
         -C ethosu.num_macs=${num_macs}                      \
         -C mps3_board.visualisation.disable-visualisation=1 \
         -C mps3_board.telnetterminal0.start_telnet=0        \
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
-        -a "${elf_file}"                                         \
-        --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
+        -a "${elf_file}"                                    \
+        ${data_file}                                        \
+        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 elif [[ ${target} == *"ethos-u85"*  ]]; then
-    ${nobuf} ${fvp_model}                                            \
+    ${nobuf} ${fvp_model}                                   \
         -C mps4_board.subsystem.ethosu.num_macs=${num_macs} \
         -C mps4_board.visualisation.disable-visualisation=1 \
         -C vis_hdlcd.disable_visualisation=1                \
         -C mps4_board.telnetterminal0.start_telnet=0        \
         -C mps4_board.uart0.out_file='-'                    \
         -C mps4_board.uart0.shutdown_on_eot=1               \
-        -a "${elf_file}"                                         \
-        --timelimit ${timeout} 2>&1 | tee ${log_file} || true # seconds
+        -a "${elf_file}"                                    \
+        ${data_file}                                        \
+        --timelimit ${timeout} 2>&1 | sed 's/\r$//' | tee ${log_file} || true # seconds
     echo "[${BASH_SOURCE[0]}] Simulation complete, $?"
 else
     echo "Running ${elf_file} for ${target} is not supported"
     exit 1
+fi
+
+echo "Checking for a etdump in log"
+! grep "#\[RUN THIS\]" ${log_file} >/dev/null
+if [ $? != 0 ]; then
+    echo "Found ETDump in log!"
+    echo "#!/bin/sh" > etdump_script.sh
+    sed -n '/^#\[RUN THIS\]$/,/^#\[END\]$/p' ${log_file} >> etdump_script.sh
+    # You can run etdump_script.sh if you do
+    # $ chmod a+x etdump_script.sh
+    # $ ./etdump_script.sh
+    # But lets not trust the script as a bad patch would run bad code on your machine
+    grep ">etdump.bin" etdump_script.sh | cut -d\" -f2- | cut -d\" -f1 >etdump.base64
+    base64 -d etdump.base64 >etdump.bin
+    python3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles
 fi
 
 echo "Checking for problems in log:"

@@ -4,18 +4,18 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from copy import copy
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineFP,
     TosaPipelineINT,
     VgfPipeline,
 )
-
 
 input_t2 = Tuple[torch.Tensor, torch.Tensor]  # Input x, y
 
@@ -56,6 +56,9 @@ class BitwiseBinary(torch.nn.Module):
         ),
     }
 
+    test_data_u85 = copy(test_data)
+    del test_data_u85["zeros"]
+
 
 class BitwiseBinaryScalar(torch.nn.Module):
     test_data = {
@@ -76,6 +79,9 @@ class BitwiseBinaryScalar(torch.nn.Module):
             -7,
         ),
     }
+
+    test_data_u85 = copy(test_data)
+    del test_data_u85["zeros"]
 
 
 class And(BitwiseBinary):
@@ -106,6 +112,7 @@ class AndScalar(BitwiseBinaryScalar):
     aten_op = "torch.ops.aten.bitwise_and.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_and_Tensor"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_and_Scalar"
 
     def forward(self, tensor: torch.Tensor, scalar: int):
         return tensor.bitwise_and(scalar)
@@ -115,6 +122,7 @@ class XorScalar(BitwiseBinaryScalar):
     aten_op = "torch.ops.aten.bitwise_xor.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_xor_Tensor"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_xor_Scalar"
 
     def forward(self, tensor: torch.Tensor, scalar: int):
         return tensor.bitwise_xor(scalar)
@@ -124,6 +132,7 @@ class OrScalar(BitwiseBinaryScalar):
     aten_op = "torch.ops.aten.bitwise_or.Scalar"
     # Tensor because it gets converted from Scalar -> Tensor in lowering
     exir_op = "executorch_exir_dialects_edge__ops_aten_bitwise_or_Tensor"
+    exir_op_scalar = "executorch_exir_dialects_edge__ops_aten_bitwise_or_Scalar"
 
     def forward(self, tensor: torch.Tensor, scalar: int):
         return tensor.bitwise_or(scalar)
@@ -136,28 +145,20 @@ class OrScalar(BitwiseBinaryScalar):
 
 @common.parametrize("test_data", And().test_data)
 def test_bitwise_and_tensor_tosa_FP(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         And(),
         test_data(),
-        And().aten_op,
-        And().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
+        {And.exir_op: 1},
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", AndScalar.test_data)
 def test_bitwise_and_scalar_tosa_FP(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         AndScalar(),
         test_data(),
-        AndScalar.aten_op,
-        AndScalar.exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
+        {AndScalar.exir_op_scalar: 1},
     )
     pipeline.run()
 
@@ -200,7 +201,7 @@ def test_bitwise_and_tensor_u55_INT(test_data: input_t2):
     pipeline = OpNotSupportedPipeline[input_t2](
         And(),
         test_data(),
-        {And().exir_op: 1},
+        {And.exir_op: 1},
         quantize=True,
         u55_subset=True,
     )
@@ -226,7 +227,7 @@ def test_bitwise_and_scalar_u55_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", AndScalar.test_data)
+@common.parametrize("test_data", AndScalar.test_data_u85)
 @common.XfailIfNoCorstone320
 def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -244,7 +245,7 @@ def test_bitwise_and_scalar_u85_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", And().test_data)
+@common.parametrize("test_data", And().test_data_u85)
 @common.XfailIfNoCorstone320
 def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -265,15 +266,10 @@ def test_bitwise_and_tensor_u85_INT(test_data: input_t2):
 @common.parametrize("test_data", And().test_data)
 @common.SkipIfNoModelConverter
 def test_bitwise_and_tensor_vgf_FP(test_data: input_t2):
-    pipeline = VgfPipeline[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         And(),
         test_data(),
-        And().aten_op,
-        And().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        {And.exir_op: 1},
     )
     pipeline.run()
 
@@ -281,15 +277,10 @@ def test_bitwise_and_tensor_vgf_FP(test_data: input_t2):
 @common.parametrize("test_data", AndScalar().test_data)
 @common.SkipIfNoModelConverter
 def test_bitwise_and_scalar_vgf_FP(test_data: input_t2):
-    pipeline = VgfPipeline[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         AndScalar(),
         test_data(),
-        AndScalar().aten_op,
-        AndScalar().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        {AndScalar.exir_op_scalar: 1},
     )
     pipeline.run()
 
@@ -337,28 +328,20 @@ def test_bitwise_and_scalar_vgf_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Xor().test_data)
 def test_bitwise_xor_tensor_tosa_FP(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
         test_data(),
-        Xor().aten_op,
-        Xor().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
+        {Xor.exir_op: 1},
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", XorScalar.test_data)
 def test_bitwise_xor_scalar_tosa_FP(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         XorScalar(),
         test_data(),
-        XorScalar.aten_op,
-        XorScalar.exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
+        {XorScalar.exir_op_scalar: 1},
     )
     pipeline.run()
 
@@ -427,7 +410,7 @@ def test_bitwise_xor_scalar_u55_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Xor().test_data)
+@common.parametrize("test_data", Xor().test_data_u85)
 @common.XfailIfNoCorstone320
 def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -445,7 +428,7 @@ def test_bitwise_xor_tensor_u85_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", XorScalar.test_data)
+@common.parametrize("test_data", XorScalar.test_data_u85)
 @common.XfailIfNoCorstone320
 def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -466,15 +449,10 @@ def test_bitwise_xor_scalar_u85_INT(test_data: input_t2):
 @common.parametrize("test_data", Xor().test_data)
 @common.SkipIfNoModelConverter
 def test_bitwise_xor_tensor_vgf_FP(test_data: input_t2):
-    pipeline = VgfPipeline[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         Xor(),
         test_data(),
-        Xor().aten_op,
-        Xor().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        {Xor.exir_op: 1},
     )
     pipeline.run()
 
@@ -482,15 +460,10 @@ def test_bitwise_xor_tensor_vgf_FP(test_data: input_t2):
 @common.parametrize("test_data", XorScalar().test_data)
 @common.SkipIfNoModelConverter
 def test_bitwise_xor_scalar_vgf_FP(test_data: input_t2):
-    pipeline = VgfPipeline[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         XorScalar(),
         test_data(),
-        XorScalar().aten_op,
-        XorScalar().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        {XorScalar.exir_op_scalar: 1},
     )
     pipeline.run()
 
@@ -538,28 +511,20 @@ def test_bitwise_xor_scalar_vgf_INT(test_data: input_t2):
 
 @common.parametrize("test_data", Or().test_data)
 def test_bitwise_or_tensor_tosa_FP(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
         test_data(),
-        Or().aten_op,
-        Or().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
+        {Or.exir_op: 1},
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", OrScalar.test_data)
 def test_bitwise_or_scalar_tosa_FP(test_data: input_t2):
-    pipeline = TosaPipelineFP[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         OrScalar(),
         test_data(),
-        OrScalar.aten_op,
-        OrScalar.exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
+        {OrScalar.exir_op_scalar: 1},
     )
     pipeline.run()
 
@@ -628,7 +593,7 @@ def test_bitwise_or_scalar_u55_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Or().test_data)
+@common.parametrize("test_data", Or().test_data_u85)
 @common.XfailIfNoCorstone320
 def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -646,7 +611,7 @@ def test_bitwise_or_tensor_u85_INT(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", OrScalar.test_data)
+@common.parametrize("test_data", OrScalar.test_data_u85)
 @common.XfailIfNoCorstone320
 def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
@@ -667,15 +632,10 @@ def test_bitwise_or_scalar_u85_INT(test_data: input_t2):
 @common.parametrize("test_data", Or().test_data)
 @common.SkipIfNoModelConverter
 def test_bitwise_or_tensor_vgf_FP(test_data: input_t2):
-    pipeline = VgfPipeline[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         Or(),
         test_data(),
-        Or().aten_op,
-        Or().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        {Or.exir_op: 1},
     )
     pipeline.run()
 
@@ -683,15 +643,10 @@ def test_bitwise_or_tensor_vgf_FP(test_data: input_t2):
 @common.parametrize("test_data", OrScalar().test_data)
 @common.SkipIfNoModelConverter
 def test_bitwise_or_scalar_vgf_FP(test_data: input_t2):
-    pipeline = VgfPipeline[input_t2](
+    pipeline = OpNotSupportedPipeline[input_t2](
         OrScalar(),
         test_data(),
-        OrScalar().aten_op,
-        OrScalar().exir_op,
-        atol=0,
-        rtol=0,
-        qtol=0,
-        tosa_version="TOSA-1.0+FP",
+        {OrScalar.exir_op_scalar: 1},
     )
     pipeline.run()
 
@@ -730,3 +685,30 @@ def test_bitwise_or_scalar_vgf_INT(test_data: input_t2):
     pipeline.pop_stage("quantize")
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
+
+
+@pytest.mark.xfail(
+    reason="MLBEDSW-11029: Fatal Python floating point error in Vela for rank 4 bitwse ops with int32 dtype."
+)
+def test_bitwise_or_tensor_u85_INT_zeros():
+    raise RuntimeError(
+        "Dummy test to xfail mark u85 zeros test case since running the actual test causes a fatal crash."
+    )
+
+
+@pytest.mark.xfail(
+    reason="MLBEDSW-11029: Fatal Python floating point error in Vela for rank 4 bitwse ops with int32 dtype."
+)
+def test_bitwise_and_tensor_u85_INT_zeros():
+    raise RuntimeError(
+        "Dummy test to xfail mark u85 zeros test case since running the actual test causes a fatal crash."
+    )
+
+
+@pytest.mark.xfail(
+    reason="MLBEDSW-11029: Fatal Python floating point error in Vela for rank 4 bitwse ops with int32 dtype."
+)
+def test_bitwise_xor_tensor_u85_INT_zeros():
+    raise RuntimeError(
+        "Dummy test to xfail mark u85 zeros test case since running the actual test causes a fatal crash."
+    )

@@ -18,9 +18,8 @@ namespace vkcompute {
 
 vkapi::ShaderInfo get_noop_shader(ComputeGraph& graph, const ValueRef packed) {
   std::string noop_shader_name("no_op");
-  vTensorPtr t_packed = graph.get_tensor(packed);
-  add_dtype_suffix(noop_shader_name, *t_packed);
-  add_storage_type_suffix(noop_shader_name, *t_packed);
+  add_dtype_suffix(noop_shader_name, graph.dtype_of(packed));
+  add_storage_type_suffix(noop_shader_name, graph.storage_type_of(packed));
   return VK_KERNEL_FROM_STR(noop_shader_name);
 }
 
@@ -48,13 +47,13 @@ PrepackNode::PrepackNode(
 }
 
 api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
-  vTensorPtr packed = graph->get_tensor(packed_);
-
-  // If no TensorRef is provided, create a staging buffer of zeros according to
-  // the vkapi::vTensor metadata.
+  // If no TensorRef is provided, create a staging buffer of zeros based on the
+  // Tensor metadata.
   if (graph->val_is_none(tref_)) {
-    size_t numel = utils::multiply_integers(packed->sizes());
-    api::StagingBuffer staging(graph->context(), packed->dtype(), numel);
+    const std::vector<int64_t> packed_sizes = graph->sizes_of(packed_);
+    size_t numel = utils::multiply_integers(packed_sizes);
+    api::StagingBuffer staging(
+        graph->context(), graph->dtype_of(packed_), numel);
     staging.set_staging_zeros();
     return staging;
   }
@@ -65,6 +64,9 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   graph->update_staging_nbytes_in_cmd(staging.buffer().mem_size_as_size_t());
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   staging.copy_from(tref->data, nbytes);
+  // Once the staging buffer is copied, if the TensorRef owns a FreeableBuffer,
+  // it can be freed.
+  tref->free_buffer();
   return staging;
 }
 
@@ -80,7 +82,6 @@ void PrepackNode::encode(ComputeGraph* graph) {
 
   context->check_device_capabilities(shader_);
 
-  vTensorPtr packed = graph->get_tensor(packed_);
   api::StagingBuffer staging = create_staging_buffer(graph);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
@@ -96,13 +97,17 @@ void PrepackNode::encode(ComputeGraph* graph) {
   }
 
   {
+    // If the vTensor is not yet bound to a memory allocation, create a new one
+    // and aquire it.
+    graph->create_dedicated_allocation_for(packed_);
+
     vkapi::PipelineBarrier pipeline_barrier{};
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
         shader_, local_workgroup_size_, spec_vars_, push_constants_offset);
 
     uint32_t idx = 0;
-    bind_tensor_to_descriptor_set(
-        *packed,
+    graph->bind_tensor_to_descriptor_set(
+        packed_,
         pipeline_barrier,
         vkapi::MemoryAccessType::WRITE,
         descriptor_set,
@@ -128,8 +133,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
     vkapi::DescriptorSet descriptor_set = context->get_descriptor_set(
         noop_shader_, utils::WorkgroupSize(1, 1, 1));
 
-    bind_tensor_to_descriptor_set(
-        *packed,
+    graph->bind_tensor_to_descriptor_set(
+        packed_,
         pipeline_barrier,
         vkapi::MemoryAccessType::READ,
         descriptor_set,

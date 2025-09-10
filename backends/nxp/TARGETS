@@ -20,6 +20,19 @@ python_library(
 )
 
 python_library(
+    name = "edge_passes",
+    srcs = glob([
+        "edge_passes/*.py",
+    ]),
+    deps = [
+        ":neutron_backend",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+    ],
+)
+
+python_library(
     name = "quantizer",
     srcs = [
         "quantizer/neutron_quantizer.py",
@@ -37,7 +50,7 @@ python_library(
     name = "neutron_sdk",
     srcs = glob(["backend/**/*.py"]),
     deps = [
-       "fbsource//third-party/pypi/neutron_convertor_SDK_25_03:neutron_convertor_SDK_25_03",
+       "fbsource//third-party/pypi/neutron_converter:neutron_converter",
     ],
 )
 

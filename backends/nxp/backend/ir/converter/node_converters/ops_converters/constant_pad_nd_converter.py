@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -15,6 +15,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     tf_lite_type_to_numpy,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
     Target,
 )
@@ -31,11 +32,31 @@ from torch.nn import Parameter
 
 
 class ConstantPadNDConverter(NodeConverter):
-    supported_targets = [Target.RT700]
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        match target:
+            case Target.RT700:
+                # TODO: Consider different tensor formats (dim-order)
+                paddings = node.args[1]
+                if len(paddings) > 4 and paddings[4:6] != [0, 0]:
+                    # Attempt to Pad channels dimension, which is not supported on Neutron.
+                    return False
+
+                return True
+
+            case _:
+                return False
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         paddings = node.args[1]
 

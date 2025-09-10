@@ -1,9 +1,11 @@
-# Copyright 2025 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import itertools
 
+import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 import torch
 from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
@@ -57,12 +59,12 @@ def test_remove_io_quant_ops_pass__cifarnet():
     )
 
     nodes = list(exec_prog.exported_program().graph.nodes)
-    assert len(nodes) == 17
+    assert len(nodes) == 11
     assert (
         nodes[0].meta["val"].dtype == torch.int8
     ), "Input tensor doesn't have type INT8."
     assert (
-        nodes[16].meta["val"][0].dtype == torch.int8
+        nodes[10].meta["val"][0].dtype == torch.int8
     ), "Output tensor doesn't have type INT8."
 
     assert (

@@ -9,13 +9,18 @@ from typing import Tuple
 import pytest
 
 import torch
-import torch.library
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
     TosaPipelineINT,
 )
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
+from executorch.exir.dialects._ops import ops as exir_ops
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # Input x
 
@@ -45,8 +50,19 @@ def test_rescale_op():
             127,
         ),
     ]
-    for sample_input in sample_inputs[1:2]:
-        torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        for sample_input in sample_inputs:
+            exir_ops.backend.tosa.RESCALE.default(
+                *tuple(
+                    [
+                        mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
+                        for i in sample_input
+                    ]
+                )
+            )
 
 
 def test_nonzero_zp_for_int32():
@@ -67,9 +83,22 @@ def test_nonzero_zp_for_int32():
             1,  # Should be 0, expect error
         ),
     ]
-    for sample_input in sample_inputs:
-        with pytest.raises(Exception, match="opcheck"):
-            torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        for sample_input in sample_inputs:
+            with pytest.raises(
+                ValueError, match="TOSA requires (output|input)_zp to be zero"
+            ):
+                exir_ops.backend.tosa.RESCALE.default(
+                    *tuple(
+                        [
+                            mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
+                            for i in sample_input
+                        ]
+                    )
+                )
 
 
 def test_zp_outside_range():
@@ -90,9 +119,21 @@ def test_zp_outside_range():
             -129,  # Should be >-129m expect error
         ),
     ]
-    for sample_input in sample_inputs:
-        with pytest.raises(Exception, match="opcheck"):
-            torch.library.opcheck(torch.ops.tosa._rescale, sample_input)
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT")
+    ), FakeTensorMode() as mode:
+        for sample_input in sample_inputs:
+            with pytest.raises(
+                Exception, match="(in_zp|out_zp)=-?[0-9]* outside valid range"
+            ):
+                exir_ops.backend.tosa.RESCALE.default(
+                    *tuple(
+                        [
+                            mode.from_tensor(i) if isinstance(i, torch.Tensor) else i
+                            for i in sample_input
+                        ]
+                    )
+                )
 
 
 class RescaleNetwork(torch.nn.Module):
@@ -131,7 +172,14 @@ def test_quantized_rescale_tosa_bi(test_data: tuple[torch.Tensor, torch.Tensor])
     pipeline.run()
 
 
-@common.parametrize("test_data", RescaleNetwork.test_data)
+u55_xfails = {
+    "ones": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
+    "randn_ones": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
+    "randn_large": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55.",
+}
+
+
+@common.parametrize("test_data", RescaleNetwork.test_data, xfails=u55_xfails)
 @common.XfailIfNoCorstone300
 def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
     """Tests a model with many ops that requires rescales. As more ops are quantized to int32 and

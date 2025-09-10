@@ -5,14 +5,10 @@
 
 # pyre-unsafe
 
-from typing import final, List, Optional, Sequence
+from typing import final, Optional, Sequence
 
-from executorch.backends.arm.arm_backend import (
-    is_ethosu,
-)  # usort: skip
-from executorch.backends.arm.ethosu import EthosUBackend
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.backends.arm.ethosu import EthosUBackend, EthosUCompileSpec
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.exir.backend.partitioner import DelegationSpec
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -21,12 +17,12 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 class EthosUPartitioner(TOSAPartitioner):
     def __init__(
         self,
-        compile_spec: List[CompileSpec],
+        compile_spec: EthosUCompileSpec,
         additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     ) -> None:
-        if not is_ethosu(compile_spec):
-            raise RuntimeError("compile spec is not targeting Ethos-U")
-
         # Override the delegation spec for Ethos-U
-        self.delegation_spec = DelegationSpec(EthosUBackend.__name__, compile_spec)
+        self.delegation_spec = DelegationSpec(
+            EthosUBackend.__name__, compile_spec.to_list()
+        )
         self.additional_checks = additional_checks
+        self.tosa_spec = compile_spec.tosa_spec

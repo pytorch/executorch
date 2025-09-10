@@ -7,6 +7,7 @@
 from typing import List, Optional, Tuple, Union
 
 import torch
+
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
@@ -16,6 +17,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
     AddTensorPattern,
     AvgPoolPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     DropoutPattern,
@@ -34,6 +36,8 @@ from executorch.backends.nxp.quantizer.patterns import (
     SharedSpecPattern,
     SigmoidPattern,
     SoftMaxPattern,
+    TanhInPlacePattern,
+    TanhPattern,
     ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
@@ -205,6 +209,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
                 NeutronAtenQuantizer(AddmmPattern(), static_fc_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
+                NeutronAtenQuantizer(CatPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
                 NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
@@ -221,6 +226,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
                 NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )
@@ -236,8 +243,13 @@ class NeutronQuantizer(ComposableQuantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        pass_runner = NeutronAtenPassManager()
-        return pass_runner(model).graph_module
+        model.graph.eliminate_dead_code()  # Remove dead code to simplify the graph for the passes.
+
+        model = NeutronAtenPassManager()(model).graph_module
+
+        model.graph.eliminate_dead_code()  # Remove dead code again, in case it was created by the passes.
+
+        return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         self._annotate_inputs(model)

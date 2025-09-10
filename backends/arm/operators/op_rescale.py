@@ -15,16 +15,16 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
 from torch.fx import Node
 
 
 @register_node_visitor
-class RescaleVisitor_INT(NodeVisitor):
-    target = "_rescale.default"
+class RescaleVisitor(NodeVisitor):
+    target = "tosa.RESCALE.default"
 
     tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
 

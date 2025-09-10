@@ -158,7 +158,8 @@ utils::uvec3 linear_qga4w_local_wg_size(
   if (use_coop_algorithm) {
     return {64, 1, 1};
   } else {
-    return graph->create_local_wg_size(global_workgroup_size);
+    return pick_hw_square_wg_size(
+        graph, shader, global_workgroup_size, args, resize_args);
   }
 }
 

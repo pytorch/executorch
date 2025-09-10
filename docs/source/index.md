@@ -41,8 +41,8 @@ ExecuTorch provides support for:
 - [Quantization](quantization-overview)
 - [FAQs](using-executorch-faqs)
 #### Examples
-- [Android Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
-- [iOS Demo Apps](https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
+- [Android Demo Apps](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app)
+- [iOS Demo Apps](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
 - [Hugging Face Models](https://github.com/huggingface/optimum-executorch/blob/main/README.md)
 #### Backends
 - [Overview](backends-overview)
@@ -71,7 +71,7 @@ ExecuTorch provides support for:
 - [Overview](runtime-overview)
 - [Extension Module](extension-module)
 - [Extension Tensor](extension-tensor)
-- [Running a Model (C++ Tutorial)](running-a-model-cpp-tutorial)
+- [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial)
 - [Backend Delegate Implementation and Linking](runtime-backend-delegate-implementation-and-linking)
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming
@@ -147,8 +147,8 @@ using-executorch-faqs
 :hidden:
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
-Building an ExecuTorch iOS Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
-tutorial-arm-ethos-u.md
+Building an ExecuTorch iOS Demo App <https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
+tutorial-arm.md
 ```
 
 ```{toctree}

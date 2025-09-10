@@ -21,9 +21,11 @@ python_library(
     ],
     deps = [
         "//executorch/exir:lib",
+        "//executorch/extension/export_util:export_util",
         "//pytorch/ao:torchao",  
         "//executorch/backends/nxp:quantizer",
         "//executorch/backends/nxp:neutron_backend",
+        "//executorch/backends/nxp:edge_passes",
     ]
 )
 

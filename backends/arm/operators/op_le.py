@@ -7,7 +7,7 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
+import executorch.backends.arm.tosa.quant_utils as tqutils
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -18,8 +18,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 from torch.fx import Node
 
@@ -67,7 +67,9 @@ class LessEqualVisitor(NodeVisitor):
             # Update IO
             input_nodes = rescaled_inputs
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().GREATER_EQUAL,
             [input_nodes[1].name, input_nodes[0].name],
             [output.name],

@@ -17,13 +17,14 @@ from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
-from executorch.backends.arm.arm_backend import get_tosa_spec, is_tosa
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import Tosa_1_00, TosaSpecification
-
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.vgf import VgfCompileSpec
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
 
@@ -53,6 +54,8 @@ _torch_to_numpy_dtype_dict = {
     torch.complex64: np.complex64,
     torch.complex128: np.complex128,
 }
+
+VALID_TARGET = {"corstone-300", "corstone-320", "vkml_emulation_layer"}
 
 
 class QuantizationParams:
@@ -125,28 +128,8 @@ def get_input_quantization_params(
     return quant_params
 
 
-def get_output_nodes(program: ExportedProgram) -> list[Node]:
-    """
-    Get output node to this model.
-
-    Args:
-        program (ExportedProgram): The program to get the output nodes from.
-    Returns:
-        The nodes that are the outputs of the 'program'.
-    """
-    output_nodes = []
-    for node in program.graph.nodes:
-        if node.op == "output":
-            for output in node.args[0]:
-                output_nodes.append(output)
-    if len(output_nodes) == 0:
-        raise RuntimeError("No output nodes found.")
-    else:
-        return output_nodes
-
-
 def get_output_quantization_params(
-    output_nodes: list[Node],
+    output_node: Node,
 ) -> dict[Node, QuantizationParams | None]:
     """
     Get output QuantizationParams from a program.
@@ -159,7 +142,7 @@ def get_output_quantization_params(
         RuntimeError if no output quantization parameters are found.
     """
     quant_params = {}
-    for node in output_nodes:
+    for node in output_node.args[0]:
         if node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
             quant_params[node] = QuantizationParams(
                 node_name=node.args[0].name,
@@ -183,14 +166,9 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_specs = lowered_backend_module.compile_specs
-        if not is_tosa(compile_specs):
-            raise RuntimeError(
-                "Model needs to be compiled to tosa to run reference model."
-            )
-        tosa_spec = get_tosa_spec(compile_specs)
+        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
 
-        return run_tosa_graph(tosa_buffer, tosa_spec, inputs)
+        return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
@@ -215,6 +193,117 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         return func(*args, **kwargs)
 
 
+def run_target(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor],
+    intermediate_path: str | Path,
+    target_board: Literal["corestone-300", "corestone-320", "vkml_emulation_layer"],
+    elf_path: str | Path,
+    timeout: int = 120,  # s
+):
+    if target_board not in VALID_TARGET:
+        raise ValueError(f"Unsupported target: {target_board}")
+
+    if target_board in ("corstone-300", "corstone-320"):
+        return run_corstone(
+            executorch_program_manager,
+            inputs,
+            intermediate_path,
+            target_board,
+            elf_path,
+            timeout,
+        )
+    elif target_board == "vkml_emulation_layer":
+        return run_vkml_emulation_layer(
+            executorch_program_manager,
+            inputs,
+            intermediate_path,
+            elf_path,
+        )
+
+
+def save_inputs_to_file(
+    exported_program: ExportedProgram,
+    inputs: Tuple[torch.Tensor],
+    intermediate_path: str | Path,
+):
+    input_file_paths = []
+    input_names = get_input_names(exported_program)
+    for input_name, input_ in zip(input_names, inputs):
+        input_path = save_bytes(intermediate_path, input_, input_name)
+        input_file_paths.append(input_path)
+
+    return input_file_paths
+
+
+def get_output_from_file(
+    exported_program: ExportedProgram,
+    intermediate_path: str | Path,
+    output_base_name: str,
+):
+    output_np = []
+    output_node = exported_program.graph_module.graph.output_node()
+    for i, node in enumerate(output_node.args[0]):
+        output_shape = node.meta["val"].shape
+        output_dtype = node.meta["val"].dtype
+        tosa_ref_output = np.fromfile(
+            os.path.join(intermediate_path, f"{output_base_name}-{i}.bin"),
+            _torch_to_numpy_dtype_dict[output_dtype],
+        )
+
+        output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
+    return tuple(output_np)
+
+
+def run_vkml_emulation_layer(
+    executorch_program_manager: ExecutorchProgramManager,
+    inputs: Tuple[torch.Tensor],
+    intermediate_path: str | Path,
+    elf_path: str | Path,
+):
+    """Executes an inference of the exported_program on ML Emulation Layer for Vulkan
+    Args:
+        `executorch_program_manager`: The executorch program to run.
+        `intermediate_path`: Directory to save the .pte and capture outputs.
+        `elf_path`: Path to the Vulkan-capable executor_runner binary.
+    """
+    exported_program = executorch_program_manager.exported_program()
+    intermediate_path = Path(intermediate_path)
+    intermediate_path.mkdir(exist_ok=True)
+    elf_path = Path(elf_path)
+    if not elf_path.exists():
+        raise FileNotFoundError(f"Did not find elf file {elf_path}")
+
+    # Save pte to file
+    pte_path = os.path.join(intermediate_path, "program.pte")
+    with open(pte_path, "wb") as f:
+        f.write(executorch_program_manager.buffer)
+
+    output_base_name = "out"
+    out_path = os.path.join(intermediate_path, output_base_name)
+
+    cmd_line = f"{elf_path} -model_path {pte_path} -output_file {out_path}"
+
+    input_string = None
+    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    for input_path in input_paths:
+        if input_string is None:
+            input_string = f" -inputs={input_path}"
+        else:
+            input_string += f",{input_path}"
+    if input_string is not None:
+        cmd_line += input_string
+    cmd_line = cmd_line.split()
+
+    result = _run_cmd(cmd_line)
+
+    # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
+    # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
+    result_stdout = result.stdout.decode()  # noqa: F841
+
+    return get_output_from_file(exported_program, intermediate_path, output_base_name)
+
+
 def run_corstone(
     executorch_program_manager: ExecutorchProgramManager,
     inputs: Tuple[torch.Tensor],
@@ -226,7 +315,7 @@ def run_corstone(
     """Executes an inference of the exported_program on FVP.
     Returns a list of tensors with the output.
     Args:
-        `executorch_program_manager`: the executorch program to run.
+        `executorch_program_manager`: The executorch program to run.
         The output of a EdgeProgramManager.to_executorch() call.
         `inputs`: A list of tensors with the inputs of the inference.
         `dump_path`: A directory where the .pte and inputs are saved to file.
@@ -254,14 +343,10 @@ def run_corstone(
     with open(pte_path, "wb") as f:
         f.write(executorch_program_manager.buffer)
 
-    # Save inputs to file
-    input_names = get_input_names(exported_program)
-    input_paths = []
-    for input_name, input_ in zip(input_names, inputs):
-        input_path = save_bytes(intermediate_path, input_, input_name)
-        input_paths.append(input_path)
+    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
 
-    out_path = os.path.join(intermediate_path, "out")
+    output_base_name = "out"
+    out_path = os.path.join(intermediate_path, output_base_name)
 
     cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
     for input_path in input_paths:
@@ -343,18 +428,7 @@ def run_corstone(
             f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
         )
 
-    output_nodes = get_output_nodes(exported_program)
-    output_np = []
-    for i, node in enumerate(output_nodes):
-        output_shape = node.meta["val"].shape
-        output_dtype = node.meta["val"].dtype
-        tosa_ref_output = np.fromfile(
-            os.path.join(intermediate_path, f"out-{i}.bin"),
-            _torch_to_numpy_dtype_dict[output_dtype],
-        )
-
-        output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
-    return tuple(output_np)
+    return get_output_from_file(exported_program, intermediate_path, output_base_name)
 
 
 def prep_data_for_save(
@@ -555,18 +629,53 @@ def model_converter_installed() -> bool:
     return True
 
 
-def get_elf_path(target_board):
-    elf_path = os.path.join(
-        "arm_test",
-        f"arm_semihosting_executor_runner_{target_board}",
-        "arm_executor_runner",
-    )
+def vkml_emulation_layer_installed() -> bool:
+    # Check VK_INSTANCE_LAYERS
+    vk_instance_layers = os.environ.get("VK_INSTANCE_LAYERS", "")
+    required_layers = {
+        "VK_LAYER_ML_Graph_Emulation",
+        "VK_LAYER_ML_Tensor_Emulation",
+    }
+    existing_layers = set(vk_instance_layers.split(":"))
+    layers_exists = required_layers.issubset(existing_layers)
+
+    # Check LD_LIBRARY_PATH for "emulation-layer/deploy"
+    ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
+    deploy_exists = False
+    for path in ld_library_path.split(os.path.pathsep):
+        if "emulation-layer/deploy" in path and os.path.isdir(path):
+            deploy_exists = True
+
+    return layers_exists and deploy_exists
+
+
+def assert_elf_path_exists(elf_path):
     if not os.path.exists(elf_path):
         raise FileNotFoundError(
-            f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
+            f"Did not find build arm_executor_runner or executor_runner in path {elf_path}, \
+            run setup_testing.sh or setup_testing_vkml.sh?"
         )
-    else:
-        return elf_path
+
+
+def get_elf_path(target_board):
+    if target_board not in VALID_TARGET:
+        raise ValueError(f"Unsupported target: {target_board}")
+
+    if target_board in ("corstone-300", "corstone-320"):
+        elf_path = os.path.join(
+            "arm_test",
+            f"arm_semihosting_executor_runner_{target_board}",
+            "arm_executor_runner",
+        )
+        assert_elf_path_exists(elf_path)
+    elif target_board == "vkml_emulation_layer":
+        elf_path = os.path.join(
+            "arm_test/arm_executor_runner_vkml",
+            "executor_runner",
+        )
+        assert_elf_path_exists(elf_path)
+
+    return elf_path
 
 
 def arm_executor_runner_exists(target_board):
@@ -585,7 +694,6 @@ def run_tosa_graph(
 ) -> list[torch.Tensor]:
     """Runs the TOSA reference model with inputs and returns the result."""
     inputs_np = [input.numpy() for input in inputs]
-    transpose_data_format(inputs_np, to="NHWC")
 
     if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model
@@ -607,30 +715,15 @@ def run_tosa_graph(
         status == reference_model.GraphStatus.TOSA_VALID
     ), "Non-valid TOSA given to reference model."
 
-    transpose_data_format(outputs_np, to="NCHW")
     return [torch.from_numpy(output) for output in outputs_np]
 
 
-def transpose_data_format(data: list[np.ndarray], to: Literal["NHWC", "NCHW"]):
-    for i in range(len(data)):
-        if hasattr(data[i], "shape") and data[i].ndim in (4, 5):
-            match to:
-                case "NCHW":
-                    dim_order = (0, 3, 1, 2) if data[i].ndim == 4 else (0, 1, 4, 2, 3)
-                case "NHWC":
-                    dim_order = (0, 2, 3, 1) if data[i].ndim == 4 else (0, 1, 3, 4, 2)
-                case _:
-                    raise NotImplementedError(f"Cant transpose to dim order {to}")
-            # Copy is needed to force actual data conversion, not setting stride.
-            data[i] = np.transpose(data[i], dim_order).copy()
-
-
-def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
-    for spec in compile_spec:
-        if spec.key == "compile_flags":
-            flags = spec.value.decode()
-            if "u55" in flags:
-                return "corstone-300"
-            elif "u85" in flags:
-                return "corstone-320"
+def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
+    if isinstance(compile_spec, VgfCompileSpec):
+        return "vkml_emulation_layer"
+    if isinstance(compile_spec, EthosUCompileSpec):
+        if "u55" in compile_spec.target:
+            return "corstone-300"
+        if "u85" in compile_spec.target:
+            return "corstone-320"
     return None

@@ -45,7 +45,10 @@ class DecomposeAvgPool2d(ExportPass):
         x = args[0]
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
-        stride_h, stride_w = args[2]
+        if len(args) > 2 and args[2] is not None:
+            stride_h, stride_w = args[2]
+        else:
+            stride_h, stride_w = kernel_h, kernel_w
         pad_h, pad_w = new_pad_h, new_pad_w = args[3] if len(args) > 3 else (0, 0)
         ceil_mode = args[4] if len(args) > 4 else False
         count_include_pad = args[5] if len(args) > 5 else True
@@ -108,7 +111,14 @@ class DecomposeAvgPool2d(ExportPass):
             x = super().call_operator(cat_op, (cat_nodes, 2), kwargs, meta)
             new_pad_h = 0
 
-        avgpool_args = (x, args[1], args[2], [new_pad_h, new_pad_w], ceil_mode, False)
+        avgpool_args = (
+            x,
+            args[1],
+            [stride_h, stride_w],
+            [new_pad_h, new_pad_w],
+            ceil_mode,
+            False,
+        )
         x = super().call_operator(avgpool_op, avgpool_args, kwargs, meta)
 
         # Multiply by factor (kernel_size / divisor_override) if divisor_override

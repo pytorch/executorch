@@ -27,6 +27,9 @@ class TestFilter:
     backends: set[str] | None
     """ The set of backends to include. If None, all backends are included. """
 
+    flows: set[str] | None
+    """ The set of test flows to include. If None, all backends are included. """
+
     name_regex: Pattern[str] | None
     """ A regular expression to filter test names. If None, all tests are included. """
 
@@ -84,6 +87,9 @@ def _is_test_enabled(test_case: unittest.TestCase, test_filter: TestFilter) -> b
     flow: TestFlow = test_method._flow
 
     if test_filter.backends is not None and flow.backend not in test_filter.backends:
+        return False
+
+    if test_filter.flows is not None and flow.name not in test_filter.flows:
         return False
 
     if test_filter.name_regex is not None and not test_filter.name_regex.search(

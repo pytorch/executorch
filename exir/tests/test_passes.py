@@ -159,6 +159,7 @@ class TestPasses(unittest.TestCase):
             return Module
 
         Add = make_module(lambda x, y: (x + y) + x)
+        Sub = make_module(lambda x, y: (x - y) - x)
         Mult = make_module(lambda x, y: x * y)
         Minimum = make_module(torch.minimum)
         DivWithoutMode = make_module(torch.div)
@@ -174,6 +175,12 @@ class TestPasses(unittest.TestCase):
             (
                 Add,
                 exir_ops.edge.aten.add.Tensor,
+                2,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                Sub,
+                exir_ops.edge.aten.sub.Tensor,
                 2,
                 ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             ),
@@ -1185,7 +1192,7 @@ class TestPasses(unittest.TestCase):
         )
 
         edge._edge_programs["forward"] = constant_prop_pass(
-            edge.exported_program("forward")
+            edge.exported_program("forward"), _skip_dim_order=False
         )
 
         # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.

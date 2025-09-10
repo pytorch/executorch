@@ -11,18 +11,22 @@
 #define PRECISION ${PRECISION}
 
 #define IN_T ${buffer_scalar_type(IN_DTYPE)}
+#define SCALE_OUT_T ${buffer_scalar_type(SCALE_OUT_DTYPE)}
+#define ZP_OUT_T ${buffer_scalar_type(ZP_OUT_DTYPE)}
 
 #define ${MODE}
 
 ${define_active_storage_type("buffer")}
 ${define_required_extensions(IN_DTYPE)}
+${define_required_extensions(SCALE_OUT_DTYPE)}
+${define_required_extensions(ZP_OUT_DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_scale", "float", "buffer")}
-${layout_declare_tensor(B, "w", "t_zero_point", "int", "buffer")}
+${layout_declare_tensor(B, "w", "t_scale", SCALE_OUT_DTYPE, "buffer")}
+${layout_declare_tensor(B, "w", "t_zero_point", ZP_OUT_DTYPE, "buffer")}
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "buffer")}
 
 $if MODE == "per_tensor":
@@ -254,8 +258,8 @@ void choose_qparams_per_tensor() {
     // Use default values: mapping_type=0 (ASYMMETRIC), eps from push constant
     calc_scale_zp(global_min, global_max, quant_min, quant_max, 0, eps, scale_val, zero_point_val);
 
-    t_scale[0] = scale_val;
-    t_zero_point[0] = zero_point_val;
+    t_scale[0] = SCALE_OUT_T(scale_val);
+    t_zero_point[0] = ZP_OUT_T(zero_point_val);
   }
 }
 
@@ -306,8 +310,8 @@ void choose_qparams_per_token() {
     calc_scale_zp(lo, hi, quant_min, quant_max, 0, 1e-5, scale_val, zero_point_val);
 
     // Write results
-    t_scale[token_id] = scale_val;
-    t_zero_point[token_id] = zero_point_val;
+    t_scale[token_id] = SCALE_OUT_T(scale_val);
+    t_zero_point[token_id] = ZP_OUT_T(zero_point_val);
   }
 }
 
@@ -380,12 +384,12 @@ void choose_qparams_block_wise() {
       hi = 0.0;
     }
 
-    float scale;
-    int zp;
-    calc_scale_zp(lo, hi, quant_min, quant_max, mapping_type, eps, scale, zp);
+    float scale_val;
+    int zero_point_val;
+    calc_scale_zp(lo, hi, quant_min, quant_max, mapping_type, eps, scale_val, zero_point_val);
 
-    t_zero_point[block_id] = zp;
-    t_scale[block_id] = scale;
+    t_scale[block_id] = SCALE_OUT_T(scale_val);
+    t_zero_point[block_id] = ZP_OUT_T(zero_point_val);
   }
 }
 

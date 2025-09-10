@@ -10,6 +10,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
+    OpNotSupportedPipeline,
     TosaPipelineFP,
     TosaPipelineINT,
 )
@@ -460,3 +461,18 @@ def test_index_tensor_tosa_INT_none(test_data: input_params):
                 IndexTensorTestCommon.exir_op,
             ).run()
         )
+
+
+@common.parametrize("test_data", IndexTensor.test_data)
+@common.XfailIfNoCorstone300
+def test_index_tensor_u55_INT_not_delegated(test_data: input_params):
+    """Ethos-U55 backend BI pipeline test for index.Tensor"""
+    test_input = test_data
+    with torch.no_grad():
+        OpNotSupportedPipeline[input_params](
+            IndexTensor(),
+            test_input,
+            {IndexTensorTestCommon.exir_op: 1},
+            quantize=True,
+            u55_subset=True,
+        ).run()

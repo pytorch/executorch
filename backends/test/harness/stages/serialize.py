@@ -13,6 +13,7 @@ logger.setLevel(logging.INFO)
 try:
     from executorch.extension.pybindings.portable_lib import (  # @manual
         _load_for_executorch_from_buffer,
+        Verification,
     )
 except ImportError as e:
     logger.warning(f"{e=}")
@@ -39,7 +40,9 @@ class Serialize(Stage):
 
     def run_artifact(self, inputs):
         inputs_flattened, _ = tree_flatten(inputs)
-        executorch_module = _load_for_executorch_from_buffer(self.buffer)
+        executorch_module = _load_for_executorch_from_buffer(
+            self.buffer, program_verification=Verification.Minimal
+        )
         executorch_output = copy.deepcopy(
             executorch_module.run_method("forward", tuple(inputs_flattened))
         )

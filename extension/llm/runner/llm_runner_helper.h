@@ -19,12 +19,11 @@
 
 #include <executorch/extension/llm/runner/constants.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
-namespace executorch {
-namespace extension {
-namespace llm {
+namespace executorch::extension::llm {
 
 // Forward declarations
 class TextLLMRunner;
@@ -61,11 +60,13 @@ ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
  *
  * @param tokenizer Initialized tokenizer instance
  * @param module The model module
- * @return std::unordered_map<std::string, int64_t> Metadata key-value pairs
+ * @return Result<std::unordered_map<std::string, int64_t>> Metadata key-value
+ * pairs on success, or Error::InvalidArgument if required metadata (e.g.,
+ * kMaxSeqLen) is missing from the model
  */
-ET_EXPERIMENTAL std::unordered_map<std::string, int64_t> get_llm_metadata(
-    tokenizers::Tokenizer* tokenizer,
-    Module* module);
+ET_EXPERIMENTAL ::executorch::runtime::Result<
+    std::unordered_map<std::string, int64_t>>
+get_llm_metadata(tokenizers::Tokenizer* tokenizer, Module* module);
 
 /**
  * @brief Gets EOS token IDs from the model and tokenizer
@@ -103,6 +104,21 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     std::optional<const std::string> data_path = std::nullopt,
     float temperature = -1.0f);
 
-} // namespace llm
-} // namespace extension
-} // namespace executorch
+/**
+ * @brief Creates a MultimodalRunner instance with dependency injection
+ *
+ * This factory function creates and initializes a MultimodalRunner with all
+ * necessary components for multimodal text generation.
+ *
+ * @param model_path Path to the model file
+ * @param tokenizer Initialized tokenizer instance
+ * @param data_path Optional path to additional .ptd required by the model
+ * @return std::unique_ptr<MultimodalRunner> Initialized MultimodalRunner
+ * instance, or nullptr on failure
+ */
+ET_EXPERIMENTAL std::unique_ptr<MultimodalRunner> create_multimodal_runner(
+    const std::string& model_path,
+    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
+    std::optional<const std::string> data_path = std::nullopt);
+
+} // namespace executorch::extension::llm

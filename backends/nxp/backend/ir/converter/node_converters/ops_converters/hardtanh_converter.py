@@ -1,12 +1,11 @@
-# Copyright (c) 2025 NXP
-# All rights reserved.
+# Copyright 2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
@@ -16,7 +15,6 @@ from torch.nn import Parameter
 
 
 class HardTanhConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     # Maps possible input parameters of HardTanh to equivalent ReLU-based operators supported by TFLite.
     supported_modes_map = {
@@ -28,7 +26,9 @@ class HardTanhConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         _, min_value, max_value = node.args
         return (min_value, max_value) in HardTanhConverter.supported_modes_map.keys()

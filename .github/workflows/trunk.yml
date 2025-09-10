@@ -8,9 +8,6 @@ on:
     tags:
       - ciflow/trunk/*
   pull_request:
-    paths:
-      - .ci/docker/ci_commit_pins/pytorch.txt
-      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:
@@ -55,48 +52,102 @@ jobs:
         # Build and test executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
-  test-models-arm-zephyr:
-    name: test-models-arm-zephyr
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    strategy:
-      matrix:
-        model: [add]
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 120
-      script: |
-        MODEL_NAME=${{ matrix.model }}
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        source .ci/scripts/utils.sh
-        source .ci/scripts/zephyr-utils.sh
-        mkdir -p zephyr_scratch/
-        cd zephyr_scratch
-        export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
-
-        download_arm_zephyr_sdk
-        ./zephyr-sdk-0.16.0/setup.sh -c -t arm-zephyr-eabi
-
-        cd $ZEPHYR_PROJ_ROOT
-        setup_zephyr_et_module
-
-        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
-        install_executorch "--use-pt-pinned-commit"
-        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
-        source examples/arm/ethos-u-scratch/setup_path.sh
-        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
-        cd $ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm/hello_world
-        west build -p always -b mps3/corstone300/fvp
-        FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf -C mps3_board.visualisation.disable-visualisation=1 -C mps3_board.telnetterminal0.start_telnet=0 -C mps3_board.uart0.out_file='sim.out'  -C cpu0.CFGITCMSZ=15 -C cpu0.CFGDTCMSZ=15 --simlimit 120
-
-        grep -qF "Output[0][0]: (float) 2.000000" sim.out
-        exit_status=$? #store 0 if found (success), 1 if not (failure)
-        exit $exit_status
+#  test-models-arm-zephyr:
+#    name: test-models-arm-zephyr
+#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+#    strategy:
+#      matrix:
+#        model: [add, softmax, mv2]
+#      fail-fast: false
+#    with:
+#      runner: linux.2xlarge
+#      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
+#      submodules: 'recursive'
+#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+#      timeout: 120
+#      script: |
+#        MODEL_NAME=${{ matrix.model }}
+#        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+#        conda activate "${CONDA_ENV}"
+#        if [[ ${{ matrix.model}} == "add" ]]; then
+#          SIM_LIMIT_SEC=60
+#        elif [[ ${{ matrix.model}} == "softmax" ]]; then
+#          SIM_LIMIT_SEC=60
+#        elif [[ ${{ matrix.model}} == "mv2" ]]; then
+#          SIM_LIMIT_SEC=5000
+#        else
+#          echo "Failed unsupported model selection ${{ matrix.model }}"
+#          exit 1
+#        fi
+#
+#        source .ci/scripts/utils.sh
+#        source .ci/scripts/zephyr-utils.sh
+#        mkdir -p zephyr_scratch/
+#        cd zephyr_scratch
+#        export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
+#        export ARM_FVP_TUTORIALS_ROOT=$ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials
+#
+#        # TODO @Bujji: Should see if this can be moved into the docker image itself
+#        download_arm_zephyr_sdk
+#        ./zephyr-sdk-0.17.2/setup.sh -c -t arm-zephyr-eabi
+#        cd $ZEPHYR_PROJ_ROOT
+#        setup_zephyr_et_module
+#
+#        # Run setup scripts for Arm FVP and Arm AOT Compilation
+#        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
+#        install_executorch
+#        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
+#        source examples/arm/ethos-u-scratch/setup_path.sh
+#        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
+#
+#        # Get the model as PTE
+#        python -m examples.arm.aot_arm_compiler \
+#            --model_name="${MODEL_NAME}" \
+#            --output="${MODEL_NAME}.pte"
+#
+#        # Generate the C-style header
+#        cd $ARM_FVP_TUTORIALS_ROOT
+#        python build_model.py \
+#            --executorch-root $ZEPHYR_PROJ_ROOT/modules/lib/executorch \
+#            --pte-file $ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte \
+#            --output-path $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/src/
+#
+#        cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
+#
+#        # Build the zephyr elf
+#        west build -p always -b mps3/corstone300/fvp -- \
+#            -DET_PTE_FILE_PATH_FOR_SELECTIVE_BUILD=$ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte
+#
+#        # Run the simulation
+#        FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf \
+#            -C mps3_board.visualisation.disable-visualisation=1 \
+#            -C mps3_board.telnetterminal0.start_telnet=0 \
+#            -C mps3_board.uart0.out_file='sim.out'  \
+#            -C cpu0.CFGITCMSZ=15 \
+#            -C cpu0.CFGDTCMSZ=15 \
+#            --simlimit ${SIM_LIMIT_SEC}
+#
+#        # Disable exit on error
+#        set +e
+#        # Report failure if any of the ouptut verification checks fail
+#        grep -qF "ERROR" sim.out
+#        exit_status=$? #store 0 if found (failure), 1 if not (success)
+#        if [[ "$exit_status" -eq "0" ]]; then
+#            cat sim.out
+#            set -e
+#            exit 1
+#        fi
+#
+#        # Report fail if simulation does not complete successfully
+#        grep -qF "SUCCESS: Program complete, exiting." sim.out
+#        exit_status=$? #store 0 if found (success), 1 if not (failure)
+#        if [[ "$exit_status" -eq "1" ]]; then
+#            cat sim.out
+#            set -e
+#            exit 1
+#        fi
+#        # Re-enable exit on error
+#        set -e
 
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
@@ -122,7 +173,7 @@ jobs:
           - model: phi_4_mini
             backend: portable
             runner: linux.arm64.m7g.4xlarge
-          - model: qwen2_5
+          - model: qwen2_5_1_5b
             backend: portable
             runner: linux.arm64.2xlarge
           - model: llama3_2_vision_encoder
@@ -234,6 +285,7 @@ jobs:
           - test_arm_baremetal: test_models_tosa
           - test_arm_baremetal: test_models_ethos-u55
           - test_arm_baremetal: test_models_ethos-u85
+          - test_arm_baremetal: test_smaller_stories_llama
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -380,7 +432,7 @@ jobs:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -430,7 +482,7 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Install requirements
-        ${CONDA_RUN} EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
+        ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Run test
@@ -530,6 +582,37 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
+  test-torchao-huggingface-checkpoints:
+    name: test-torchao-huggingface-checkpoints
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [qwen3_4b, phi_4_mini]
+        include:
+          - model: qwen3_4b
+            test_with_runner: true
+          - model: phi_4_mini
+            test_with_runner: false
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        pip install -U "huggingface_hub[cli]"
+
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
+
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
   #   name: test-llava-runner-macos
@@ -568,7 +651,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l]
+        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l, conv_former]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -677,10 +760,10 @@ jobs:
           echo "::endgroup::"
         done
 
-  test-huggingface-transformers:
+  test-huggingface-transformers-xnnpack:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-transformers
+    name: test-huggingface-transformers-xnnpack
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -688,12 +771,15 @@ jobs:
     secrets: inherit
     strategy:
       matrix:
-        hf_model_id: [
-          google/gemma-3-1b-it,
-          Qwen/Qwen3-0.6B,
-          HuggingFaceTB/SmolLM2-135M,
-          meta-llama/Llama-3.2-1B,
-          allenai/OLMo-1B-hf,
+        config: [
+          # XNNPack.
+          llama3.2-1b|xnnpack|--quantize,
+          qwen3-0.6b|xnnpack|--quantize,
+          qwen3-1.7b|xnnpack|--quantize,
+          gemma3-1b|xnnpack|--quantize,
+          phi4-mini|xnnpack|--quantize,
+          smollm2-135m|xnnpack|--quantize,
+          smollm3-3b|xnnpack|--quantize
         ]
       fail-fast: false
     with:
@@ -705,6 +791,12 @@ jobs:
       timeout: 90
       upload-artifact: profiling-artifacts-${{ strategy.job-index }}
       script: |
+        set -eux
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"
+        echo "Recipe: $RECIPE"
+        echo "Quantize: $QUANTIZE"
+
         echo "::group::Set up ExecuTorch"
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -742,79 +834,52 @@ jobs:
         pip list
         echo "::endgroup::"
 
-        echo "::group::Export to ExecuTorch"
-        # Pass matrix variable as environment variable
-        export MODEL_ID="${{ matrix.hf_model_id }}"
-        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_custom_sdpa_kv_cache_8da4w"
-        pushd optimum-executorch
-
-        ARGS=(
-          "--model" "${MODEL_ID}"
-          "--task" "text-generation"
-          "--recipe" "xnnpack"
-          "--use_custom_sdpa"
-          "--use_custom_kv_cache"
-          "--qlinear" "8da4w"
-          "--qembedding" "8w"
-          "--output_dir" "${OUTPUT_DIR}"
-        )
-
-        optimum-cli export executorch "${ARGS[@]}"
-
-        ls -FlAGhp ${OUTPUT_DIR}
-        popd
+        echo "::group::Run tests"
+        export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE} --model_dir ${OUTPUT_DIR}
         echo "::endgroup::"
 
-        echo "::group::Inference using python API"
-        pushd optimum-executorch
-        python -c "
-        import os
-        from optimum.executorch import ExecuTorchModelForCausalLM
-        from transformers import AutoTokenizer
-
-        model_id = os.getenv('MODEL_ID')
-        pte_dir = os.getenv('OUTPUT_DIR')
-        print(f'Loading model {model_id} from {pte_dir}.')
-        model = ExecuTorchModelForCausalLM.from_pretrained(pte_dir)
-        generated_text = model.text_generation(
-          tokenizer=AutoTokenizer.from_pretrained(model_id),
-          prompt='Simply put, the theory of relativity states that',
-          max_seq_len=64
-        )
-        print(generated_text)
-        "
-        popd
-        echo "::endgroup::"
-
-        echo "::group::Inference using executor_runner with ETDump"
+        echo "::group::Generate artifacts for performance profiling"
         ./cmake-out/executor_runner \
           --model_path ${OUTPUT_DIR}/model.pte \
           --etdump_path ${OUTPUT_DIR}/etdump.etdp
 
-        export TSV_PATH=artifacts-to-be-uploaded/${MODEL_ID}_op_prof.tsv
+        export TSV_PATH=artifacts-to-be-uploaded/${MODEL}_op_prof.tsv
         mkdir -p $(dirname "$TSV_PATH")
         python3 -m devtools.inspector.inspector_cli \
           --etdump_path ${OUTPUT_DIR}/etdump.etdp \
           --tsv_path ${TSV_PATH}
-
         echo "::endgroup::"
 
-  test-huggingface-optimum-coreml:
+  test-huggingface-transformers-macos:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-optimum-coreml
+    name: test-huggingface-transformers-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
       contents: read
     secrets: inherit
+    # Models below selected based on https://huggingface.co/models?pipeline_tag=text-generation&num_parameters=min:0,max:3B&sort=trending.
     strategy:
       matrix:
         config: [
-          qwen3|coreml_fp32_gpu|--quantize,
-          smollm|coreml_fp32_gpu|--quantize,
-          llama3|coreml_fp32_gpu|--quantize,
-          olmo|coreml_fp32_gpu|--quantize,
+          # # XNNPack. (Skipping for now due to intermittent segmentation faults, see https://github.com/huggingface/optimum-executorch/issues/122.)
+          # llama3.2-1b|xnnpack|--quantize,
+          # qwen3-0.6b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
+          # gemma3-1b|xnnpack|--quantize,
+          # phi4-mini|xnnpack|--quantize,
+          # smollm2-135m|xnnpack|--quantize,
+          # smollm3-3b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
+          # CoreML.
+          llama3.2-1b|coreml_fp32_gpu|--quantize,
+          qwen3-0.6b|coreml_fp32_gpu|--quantize,
+          smollm2-135m|coreml_fp32_gpu|--quantize,
+          olmo-1b|coreml_fp32_gpu|--quantize,
+          bert|coreml_fp32_gpu|--quantize,
+          distilbert|coreml_fp32_gpu|--quantize
         ]
       fail-fast: false
     with:
@@ -903,3 +968,66 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  test-mcu-models:
+    name: test-mcu-models
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=${{ matrix.build-tool }}
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Try to mirror these as closely as possible
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # Run selective Build
+        chmod +x examples/selective_build/test_selective_build.sh
+        examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
+
+        # Run MCU models
+        chmod +x examples/arm/run_mcu_models_fvp.sh
+        examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
+
+  test-models-windows:
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
+        backend: [portable, xnnpack-f32, xnnpack-q8]
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        conda init powershell
+
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1
+
+          powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+        }"

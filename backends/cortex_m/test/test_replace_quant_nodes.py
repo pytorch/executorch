@@ -1,106 +1,30 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import unittest
-from dataclasses import dataclass
-from typing import Optional
 
-import executorch
 import executorch.backends.cortex_m.ops.operators  # noqa
+
+import executorch.exir
 
 import torch
 from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
     ReplaceQuantNodesPass,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
-from torch.export import export, export_for_training
-from torch.fx import GraphModule
-from torchao.quantization.pt2e.observer import HistogramObserver
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torchao.quantization.pt2e.quantizer import (
-    QuantizationAnnotation,
-    QuantizationSpec,
-    Quantizer,
+from executorch.backends.cortex_m.test.test_helpers_passes_utils import (
+    AddQuantizer,
+    check_count,
 )
-from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.program._program import _transform
 
+from torch.export import export
 
-@dataclass(eq=True, frozen=True)
-class QuantizationConfig:
-    input_activation: Optional[QuantizationSpec]
-    output_activation: Optional[QuantizationSpec]
-
-
-class AddQuantizer(Quantizer):
-    def __init__(self):
-        super().__init__()
-
-    @staticmethod
-    def _get_qspec():
-        return QuantizationSpec(
-            dtype=torch.int8,
-            quant_min=-128,
-            quant_max=127,
-            qscheme=torch.per_tensor_symmetric,
-            is_dynamic=False,
-            observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
-        )
-
-    @staticmethod
-    def _get_qconfig():
-        qspec = AddQuantizer._get_qspec()
-        return QuantizationConfig(
-            input_activation=qspec,
-            output_activation=qspec,
-        )
-
-    def annotate(self, model: GraphModule):
-        config = self._get_qconfig()
-        annotated_partitions = []
-
-        for node in model.graph.nodes:
-            if node.op != "call_function" or node.target not in [
-                torch.ops.aten.add.Tensor,
-                torch.ops.aten.add_.Tensor,
-            ]:
-                continue
-
-            if Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated:
-                continue
-
-            input_qspec_map = {
-                node.args[0]: config.input_activation,
-                node.args[1]: config.input_activation,
-            }
-
-            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-                input_qspec_map=input_qspec_map,
-                output_qspec=config.output_activation,
-                _annotated=True,
-            )
-            annotated_partitions.append([node])
-
-        return annotated_partitions
-
-    def validate(self, model: GraphModule) -> None:
-        pass
-
-
-def check_count(
-    graph_module: GraphModule, op: torch.fx.node.Target, expected_count: int
-):
-    actual_count = sum(
-        1
-        for node in graph_module.graph.nodes
-        if node.op == "call_function" and node.target == op
-    )
-
-    assert (
-        actual_count == expected_count
-    ), f"Expected {expected_count} {op} nodes, got {actual_count}"
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestReplaceQuantOps(unittest.TestCase):
@@ -125,14 +49,19 @@ class TestReplaceQuantOps(unittest.TestCase):
         example_inputs = (torch.randn(10, 11, 12),)
 
         # Step 1: Export and quantize the model
-        exported_model = export_for_training(
-            model.eval(), example_inputs, strict=True
-        ).module()
+        exported_model = export(model.eval(), example_inputs, strict=True).module()
         prepared_model = prepare_pt2e(exported_model, AddQuantizer())
+        prepared_model(*example_inputs)
         quantized_model = convert_pt2e(prepared_model)
 
         # Step 2: Export to EXIR
         exported = export(quantized_model, example_inputs, strict=True)
+
+        # The pass should raise an Exception if ran before to_edge.
+        with self.assertRaisesRegex(
+            Exception, "An error occurred when running the 'ReplaceQuantNodesPass' pass"
+        ):
+            _transform(exported, ReplaceQuantNodesPass())
 
         # Step 3: Convert to Edge
         edge_program = executorch.exir.to_edge(
@@ -199,3 +128,7 @@ class TestReplaceQuantOps(unittest.TestCase):
                     "cortex_m::quantize_per_tensor",
                     "cortex_m::dequantize_per_tensor",
                 ], f"Unexpected op {op.name}"
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -196,6 +196,12 @@ class ComputeGraph final {
   // List of command buffers deferred for submission
   std::vector<vkapi::CommandBuffer> deferred_cmd_list_;
 
+  // Set to track which ValueRefs were updated during inference
+  std::unordered_set<ValueRef> updated_values_;
+
+  // Flag to indicate if re-encoding is required
+  bool requires_reencode_ = false;
+
  protected:
   size_t values_in_use_ = 0;
   size_t execute_count_ = 0;
@@ -206,6 +212,18 @@ class ComputeGraph final {
   // Represents the amount of staging buffer data that will be copied if the
   // current Context's command buffer is submitted now.
   size_t staging_nbytes_in_cmd_ = 0;
+
+  // Represents the nodes to wait before submitting commands.
+  // If command buffers created with config.execute_threshold_node_count exceeds
+  // config.execute_max_cmds, then execute_threshold_node_count will be
+  // increased to fit command buffers within the limit. Otherwise,
+  // execute_threshold_node_count will be set to
+  // config.execute_threshold_node_count.
+  size_t execute_threshold_node_count_ = 0;
+
+  // Whether the underlying GPU support accelerated integer dot product
+  // extensions
+  bool can_use_int8_dot_product_ = false;
 
  public:
   //
@@ -236,6 +254,9 @@ class ComputeGraph final {
     return config_;
   }
 
+  // Check if the ComputeGraph has a value at the specified index
+  bool is_valid_value_idx(const ValueRef idx) const noexcept;
+
   //
   // Value Extraction
   //
@@ -248,7 +269,16 @@ class ComputeGraph final {
     return values_.at(idx).is##type_name();                                \
   }
 
-  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+ protected:
+  inline vTensorPtr get_tensor(const ValueRef idx) {
+    return vTensorPtr(this, idx);
+  }
+
+ public:
+  inline bool val_is_tensor(const ValueRef idx) const {
+    return values_.at(idx).isTensor();
+  }
+
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(TensorRefPtr, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
@@ -276,6 +306,10 @@ class ComputeGraph final {
 
   inline bool val_is_none(const ValueRef idx) {
     return idx == kDummyValueRef ? true : values_.at(idx).isNone();
+  }
+
+  inline bool val_is_not_none(const ValueRef idx) {
+    return !val_is_none(idx);
   }
 
   inline TypeTag get_val_type(const ValueRef idx) {
@@ -319,12 +353,20 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().numel();
   }
 
+  inline size_t staging_buffer_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().staging_buffer_numel();
+  }
+
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().storage_type();
   }
 
   inline bool is_buffer_storage(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().has_buffer_storage();
+  }
+
+  inline bool is_texture_storage(const ValueRef idx) const {
+    return !is_buffer_storage(idx);
   }
 
   /*
@@ -340,18 +382,40 @@ class ComputeGraph final {
    * 1. The value at `idx` is a tensor
    * 2. The tensor at `idx` has texture storage
    * 3. The texture backed tensor at `idx` has a standard axis mapping
-   * 4. The texture backed tensor at `idx` is channels packed
+   * 4. The texture backed tensor at `idx` is width packed
    */
-  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+  bool is_contiguous_texture_tensor(const ValueRef idx) const;
 
   /*
    * Checks that the following is true:
    * 1. The value at `idx` is a tensor
    * 2. The tensor at `idx` has texture storage
    * 3. The texture backed tensor at `idx` has a standard axis mapping
-   * 4. The texture backed tensor at `idx` is width packed
+   * 4. The texture backed tensor at `idx` is channels packed
    */
-  bool is_standard_width_packed_texture_tensor(const ValueRef idx) const;
+  bool is_standard_channels_packed_texture_tensor(const ValueRef idx) const;
+
+  /*
+   * Checks that the value at `idx` is either a 2D tensor, or if the tensor has
+   * more than 2 dims, the outermost dims have size of 1, i.e. can be squeezed
+   * to be a 2D tensor.
+   */
+  bool is_2d_matrix(const ValueRef idx) const;
+
+  /*
+   * Same as the above, but also requires that the tensor is a contiguous
+   * buffer with a width divisible by 4 or a standard width packed texture.
+   */
+  bool is_vectorizable_contiguous_2d_matrix(const ValueRef idx) const;
+
+  /*
+   * Checks that the following is true:
+   * 1. The value at `idx` is a tensor
+   * 2. The tensor at `idx` is width packed
+   * 3. The tensor at `idx` has a standard axis mapping or is a contiguous
+   * buffer
+   */
+  bool is_vectorizable_width_packed_tensor(const ValueRef idx) const;
 
   inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
       const {
@@ -381,6 +445,10 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().sizes_ubo();
   }
 
+  inline vkapi::BufferBindInfo buffer_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().buffer_meta_ubo();
+  }
+
   inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().strides_ubo();
   }
@@ -406,31 +474,41 @@ class ComputeGraph final {
   }
 
   inline PushConstantDataInfo sizes_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorSizes);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo dim_order_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorDimOrder);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo strides_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorStrides);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo logical_limits_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(),
         api::kTensorLogicalLimits);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   inline PushConstantDataInfo numel_pc_of(const ValueRef idx) const {
-    return PushConstantDataInfo(
+    PushConstantDataInfo pc_data = PushConstantDataInfo(
         values_.at(idx).toConstTensor().get_uniform_data(), api::kTensorNumel);
+    pc_data.set_value(idx);
+    return pc_data;
   }
 
   //
@@ -654,6 +732,16 @@ class ComputeGraph final {
       const void* const data);
 
   /*
+   * Add a `TensorRef` value to the graph with the specific properties. A
+   * `TensorRef` is a reference to a `api::vTensor` whose data is stored in a
+   * FreeableBuffer. The TensorRef will take ownership of the FreeableBuffer.
+   */
+  ValueRef add_tensorref(
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      executorch::runtime::FreeableBuffer&& buffer);
+
+  /*
    * Add a staging buffer to the graph. Staging buffers are data buffers that
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
@@ -777,6 +865,13 @@ class ComputeGraph final {
 
   SharedObject& get_shared_object(const int64_t idx);
 
+  /*
+   * Creates a dedicated memory allocation for a vTensor value, and have the
+   * tensor acquire the allocation object. If the tensor is already bound to a
+   * memory allocation, this function will be a no-op.
+   */
+  void create_dedicated_allocation_for(const ValueRef idx);
+
   //
   // Graph Preparation
   //
@@ -831,6 +926,20 @@ class ComputeGraph final {
    * texel element of the output tensor.
    */
   utils::uvec3 create_local_wg_size(const ValueRef idx);
+
+  void bind_tensor_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags accessType,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
+
+  void bind_value_to_descriptor_set(
+      const ValueRef ref,
+      vkapi::PipelineBarrier& pipeline_barrier,
+      const vkapi::MemoryAccessFlags access_type,
+      vkapi::DescriptorSet& descriptor_set,
+      const uint32_t idx);
 
   //
   // Input/Output
@@ -891,14 +1000,36 @@ class ComputeGraph final {
   void execute();
 
   //
+  // Tensor View
+  //
+
+  void virtual_clone(const ValueRef dst, const ValueRef src);
+
+  void virtual_transpose(
+      const ValueRef tensor,
+      const int64_t dim0,
+      const int64_t dim1);
+
+  //
   // Dynamic Shape support
   //
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+
   void virtual_resize(
       const ValueRef idx,
       const std::vector<int64_t>& new_sizes);
+
   void propagate_resize();
+
+  // Check if a specific ValueRef (or ValueList) was updated, with recursive
+  // handling
+  bool was_value_updated(const ValueRef idx) const noexcept;
+
+  // Set the flag to indicate that re-encoding is required
+  inline void set_requires_reencode() noexcept {
+    requires_reencode_ = true;
+  }
 
   //
   // Miscellaneous Utilities
@@ -910,6 +1041,10 @@ class ComputeGraph final {
 
   inline size_t execute_count() const {
     return execute_count_;
+  }
+
+  inline bool can_use_int8_dot_product() const {
+    return can_use_int8_dot_product_;
   }
 
   /*
@@ -939,6 +1074,8 @@ class ComputeGraph final {
   friend class SymIntPtr;
 
   friend struct TmpTensor;
+  friend struct SharedObject;
+  friend class BlitNode;
 };
 
 template <typename T>

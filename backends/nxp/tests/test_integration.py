@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -43,8 +43,8 @@ def test_cifarnet():
 
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
-    assert delegation_info.num_non_delegated_nodes == 17
-    assert delegation_info.num_delegated_nodes == 42
+    assert delegation_info.num_non_delegated_nodes == 11
+    assert delegation_info.num_delegated_nodes == 45
 
     nodes = list(exec_prog.exported_program().graph.nodes)
     assert nodes[2].name == "quantized_decomposed_quantize_per_tensor_default"

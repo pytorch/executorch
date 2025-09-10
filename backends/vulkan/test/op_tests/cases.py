@@ -55,16 +55,28 @@ def get_binary_elementwise_inputs():
             ((3, 64, 1), (1, 64, 1)),
         ]
     )
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
-    ]
     test_suite.storage_types = [
         "utils::kBuffer",
         "utils::kTexture3D",
     ]
 
-    return test_suite
+    highdim_test_suite = VkTestSuite(
+        [
+            ((4, 5, 8, 1, 2, 1), (4, 5, 8, 1, 1, 1)),
+        ]
+    )
+    highdim_test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    highdim_test_suite.test_name_suffix = "highdim"
+
+    for suite in [test_suite, highdim_test_suite]:
+        suite.layouts = [
+            "utils::kWidthPacked",
+            "utils::kChannelsPacked",
+        ]
+
+    return [test_suite, highdim_test_suite]
 
 
 # Eq requires a different test generator so it was split from the other test case.
@@ -258,11 +270,13 @@ def get_avg_pool2d_inputs():
     return test_suite
 
 
-@register_test_suite("aten.max_pool2d_with_indices.default")
+@register_test_suite(
+    ["aten.max_pool2d_with_indices.default", "aten.max_pool2d.default"]
+)
 def get_max_pool2d_inputs():
     test_suite = VkTestSuite(
         [
-            ((S, M1, M2), [2, 2], [1, 1], [0, 0], [1, 1]),
+            ((1, 7, 89, 77), [2, 2], [1, 1], [0, 0], [1, 1]),
         ]
     )
     return test_suite
@@ -297,6 +311,28 @@ def get_conv_inputs():
     )
 
     test_cases = [
+        Test(
+            self=(1, 64, 256, 256),
+            weight=(64, 32, 3, 3),
+            bias=None,
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=2,
+        ),
+        Test(
+            self=(1, 16, 3, 3),
+            weight=(16, 8, 3, 3),
+            bias=None,
+            stride=[1, 1],
+            padding=[1, 1],
+            dilation=[1, 1],
+            transposed=False,
+            output_padding=[0, 0],
+            groups=2,
+        ),
         Test(
             self=(1, 6, 40, 50),
             weight=(8, 6, 3, 3),
@@ -877,7 +913,28 @@ def get_view_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    return test_suite
+
+    highdim_test_suite = VkTestSuite(
+        [
+            ((1, 1, 3, 3, 3), (9, 3)),
+            ((2, 3, 4, 6, 5, 4), (6, 4, 6, 5, 4)),
+            ((2, 3, 3, 7, 8), (2, 3, 3, 8 * 7)),
+        ]
+    )
+    highdim_test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    highdim_test_suite.test_name_suffix = "highdim"
+    highdim_test_suite.data_gen = "make_seq_tensor"
+
+    for suite in [test_suite, highdim_test_suite]:
+        suite.layouts = [
+            # "utils::kWidthPacked",
+            "utils::kHeightPacked",
+            "utils::kChannelsPacked",
+        ]
+
+    return [test_suite, highdim_test_suite]
 
 
 @register_test_suite("aten.slice_copy.Tensor")
@@ -1090,12 +1147,34 @@ def get_unsqueeze_inputs():
             ((1, 10), -1),
         ]
     )
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-        "utils::kChannelsPacked",
+
+    highdim_test_suite = VkTestSuite(
+        [
+            ((2, 3, 4, 5, 6), 0),
+            ((2, 3, 4, 5, 6), 1),
+            ((2, 3, 4, 5, 6), 5),
+            ((2, 3, 4, 5, 6), -1),
+            ((2, 3, 4, 5, 6), -2),
+            ((1, 2, 3, 4, 5), 0),
+            ((1, 2, 3, 4, 5), 3),
+            ((1, 2, 3, 4, 5), -1),
+            ((2, 3, 4, 5), 0),
+            ((1, 2, 3, 4), 1),
+        ]
+    )
+    highdim_test_suite.storage_types = [
+        "utils::kBuffer",
     ]
-    test_suite.data_gen = "make_seq_tensor"
-    return test_suite
+    highdim_test_suite.test_name_suffix = "highdim"
+
+    for suite in [test_suite, highdim_test_suite]:
+        suite.layouts = [
+            "utils::kWidthPacked",
+            "utils::kChannelsPacked",
+        ]
+        suite.data_gen = "make_seq_tensor"
+
+    return [test_suite, highdim_test_suite]
 
 
 @register_test_suite("aten.clone.default")
@@ -1115,11 +1194,28 @@ def get_clone_inputs():
             ((XS,),),
         ]
     )
-    test_suite.layouts = [
-        "utils::kChannelsPacked",
+
+    highdim_test_suite = VkTestSuite(
+        [
+            ((2, 3, 4, 5, 6),),
+            ((2, 3, 4, 5, 1),),
+            ((1, 1, 3, 4, 5),),
+            ((2, 3, 4, 5, 6, 7),),
+            ((1, 2, 3, 4, 5, 6),),
+        ]
+    )
+    highdim_test_suite.storage_types = [
+        "utils::kBuffer",
     ]
-    test_suite.data_gen = "make_seq_tensor"
-    return test_suite
+    highdim_test_suite.test_name_suffix = "highdim"
+
+    for suite in [test_suite, highdim_test_suite]:
+        suite.layouts = [
+            "utils::kChannelsPacked",
+        ]
+        suite.data_gen = "make_seq_tensor"
+
+    return [test_suite, highdim_test_suite]
 
 
 @register_test_suite("aten.repeat.default")
@@ -1137,7 +1233,7 @@ def get_repeat_inputs():
         "utils::kHeightPacked",
         "utils::kChannelsPacked",
     ]
-    test_suite_2d.storage_types = ["utils::kTexture2D"]
+    test_suite_2d.storage_types = ["utils::kTexture3D"]
     test_suite_2d.data_gen = "make_seq_tensor"
     test_suite_2d.dtypes = ["at::kFloat"]
     test_suite_2d.test_name_suffix = "2d"
@@ -1233,66 +1329,81 @@ def get_repeat_interleave_inputs():
 @register_test_suite("aten.cat.default")
 def get_cat_inputs():
     # TensorList must be specified as list of tuples
-    test_suite = VkTestSuite(
-        [
-            # Cat on Height
-            ([(M, M, 3, 5), (M, M, 0, 5)], 2),
-            ([(S1, S1, 3, 5), (S1, S1, 0, 5)], 2),
-            ([(M, M, 3, 5), (M, M, 4, 5)], 2),
-            ([(S1, S1, 3, 5), (S1, S1, 4, 5)], 2),
-            ([(M2, 3, 5), (M2, 4, 5)], 1),
-            ([(S1, 3, 5), (S1, 4, 5)], 1),
-            ([(3, 5), (4, 5)], 0),
-            ([(3, 5), (4, 5), (1, 5)], 0),
-            (
-                [(3, 5)],
-                0,
-            ),
-            # Cat on Width
-            ([(M, M, 5, 3), (M, M, 5, 4)], 3),
-            ([(S1, S1, 5, 3), (S1, S1, 5, 4)], 3),
-            ([(M, 5, 3), (M, 5, 4)], 2),
-            ([(S1, 5, 3), (S1, 5, 4)], 2),
-            ([(5, 0), (5, 4)], 1),
-            ([(5, 3), (5, 4)], 1),
-            ([(5, 3), (5, 4), (5, 1)], 1),
-            (
-                [(5, 4)],
-                1,
-            ),
-            ([(5,), (6,)], 0),
-            # Cat on Batch
-            ([(M, S1, 5, 4), (M1, S1, 5, 4)], 0),
-            ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
-            ([(S, M, 5, 4), (S1, M, 5, 4)], 0),
-            ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
-            ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
-            (
-                [
-                    (3, 1, 2, 5),
-                    (3, 1, 2, 5),
-                    (3, 1, 2, 5),
-                ],
-                0,
-            ),
-            # Cat on Channel
-            ([(M, 5, 4), (0, 5, 4), (M1, 5, 4)], 0),
-            ([(S, 5, 4), (0, 5, 4), (S2, 5, 4)], 0),
-            ([(M, 5, 4), (M1, 5, 4), (M2, 5, 4)], 0),
-            ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
-            ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
-            ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
-            ([(XS, XS, 5, 4), (XS, XS, 5, 4), (XS, S2, 5, 4)], 1),
-            (
-                [
-                    (XS, 1, 2, 5),
-                    (XS, 1, 2, 5),
-                    (XS, 1, 2, 5),
-                ],
-                1,
-            ),
-        ]
-    )
+    suite_inputs = [
+        # Cat on Height
+        ([(M, M, 3, 5), (M, M, 0, 5)], 2),
+        ([(S1, S1, 3, 5), (S1, S1, 0, 5)], 2),
+        ([(M, M, 3, 5), (M, M, 4, 5)], 2),
+        ([(S1, S1, 3, 5), (S1, S1, 4, 5)], 2),
+        ([(M2, 3, 5), (M2, 4, 5)], 1),
+        ([(S1, 3, 5), (S1, 4, 5)], 1),
+        ([(3, 5), (4, 5)], 0),
+        ([(3, 5), (4, 5), (1, 5)], 0),
+        (
+            [(3, 5)],
+            0,
+        ),
+        # Cat on Width
+        ([(M, M, 5, 3), (M, M, 5, 4)], 3),
+        ([(S1, S1, 5, 3), (S1, S1, 5, 4)], 3),
+        ([(M, 5, 3), (M, 5, 4)], 2),
+        ([(S1, 5, 3), (S1, 5, 4)], 2),
+        ([(5, 0), (5, 4)], 1),
+        ([(5, 3), (5, 4)], 1),
+        ([(5, 3), (5, 4), (5, 1)], 1),
+        (
+            [(5, 4)],
+            1,
+        ),
+        ([(5,), (6,)], 0),
+        # Cat on Batch
+        ([(M, S1, 5, 4), (M1, S1, 5, 4)], 0),
+        ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
+        ([(S, M, 5, 4), (S1, M, 5, 4)], 0),
+        ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
+        ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
+        (
+            [
+                (3, 1, 2, 5),
+                (3, 1, 2, 5),
+                (3, 1, 2, 5),
+            ],
+            0,
+        ),
+        # Cat on Channel
+        ([(M, 5, 4), (0, 5, 4), (M1, 5, 4)], 0),
+        ([(S, 5, 4), (0, 5, 4), (S2, 5, 4)], 0),
+        ([(M, 5, 4), (M1, 5, 4), (M2, 5, 4)], 0),
+        ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
+        ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
+        ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
+        ([(XS, XS, 5, 4), (XS, XS, 5, 4), (XS, S2, 5, 4)], 1),
+        (
+            [
+                (XS, 1, 2, 5),
+                (XS, 1, 2, 5),
+                (XS, 1, 2, 5),
+            ],
+            1,
+        ),
+    ]
+
+    high_number_cat_inputs = []
+    for num_input in [6, 9]:
+        odd_size = (3, 7, 29, 31)
+        even_size = (3, 8, 29, 32)
+        ones = (3, 1, 1, 1)
+
+        for input_size in [odd_size, even_size, ones]:
+            input_sizes = [input_size] * num_input
+            # Test cat on height, width, and batch dim
+            high_number_cat_inputs.append((input_sizes, 3))
+            high_number_cat_inputs.append((input_sizes, 2))
+            high_number_cat_inputs.append((input_sizes, 1))
+            high_number_cat_inputs.append((input_sizes, 0))
+
+    test_suite = VkTestSuite(suite_inputs + high_number_cat_inputs)
+
     test_suite.layouts = [
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
@@ -1724,7 +1835,31 @@ def get_squeeze_copy_dim_inputs():
             ([1, M1, M1], 0),
         ]
     )
-    return test_suite
+
+    highdim_test_suite = VkTestSuite(
+        [
+            ([1, 2, 3, 4, 5, 1], 0),
+            ([1, 2, 3, 4, 5, 1], 5),
+            ([1, 2, 3, 4, 5, 1], [0, 5]),
+            ([2, 1, 3, 1, 5, 6], 1),
+            ([2, 1, 3, 1, 5, 6], 3),
+            ([2, 1, 3, 1, 5, 6], [1, 3]),
+            ([1, 1, 3, 4, 5, 6], [0, 1]),
+            ([2, 3, 4, 1, 1, 6], [3, 4]),
+        ]
+    )
+    highdim_test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    highdim_test_suite.test_name_suffix = "highdim"
+
+    for suite in [test_suite, highdim_test_suite]:
+        suite.layouts = [
+            "utils::kWidthPacked",
+            "utils::kChannelsPacked",
+        ]
+
+    return [test_suite, highdim_test_suite]
 
 
 @register_test_suite("aten.flip.default")
@@ -1744,6 +1879,48 @@ def get_flip_inputs():
     ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    return test_suite
+
+
+@register_test_suite("aten.expand_copy.default")
+def get_expand_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Basic expansion cases
+            ((1,), [5]),
+            ((1, 1), [3, 4]),
+            ((1, 3), [2, 3]),
+            ((3, 1), [3, 4]),
+            ((1, 1, 1), [2, 3, 4]),
+            # Expand with same size (no-op)
+            ((3, 4), [3, 4]),
+            ((2, 3, 4), [2, 3, 4]),
+            # Expand with additional dimensions
+            ((3,), [2, 3]),
+            ((3, 4), [2, 3, 4]),
+            ((2, 3), [1, 2, 3]),
+            # Mixed expansion cases
+            ((1, 3, 1, 4), [2, 3, 5, 4]),
+            ((1, 1, 3, 1), [2, 4, 3, 5]),
+            # Larger tensor cases
+            ((1, S1), [M, S1]),
+            ((S2, 1), [S2, M1]),
+            ((1, 1, S), [S1, S2, S]),
+            ((1, S1, 1, S2), [M, S1, M1, S2]),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+        "at::kHalf",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 

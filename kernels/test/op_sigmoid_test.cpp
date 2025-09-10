@@ -35,7 +35,6 @@ class OpSigmoidOutTest : public OperatorTest {
 
     const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the sigmoid operator.
     Tensor out = tf_out.zeros(sizes);
 
     op_sigmoid_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), out);
@@ -48,6 +47,30 @@ class OpSigmoidOutTest : public OperatorTest {
     out = tf_out.zeros({18});
     op_sigmoid_out(tf.full({18}, 2), out);
     EXPECT_TENSOR_CLOSE(out, tf_out.full({18}, 0.880797));
+  }
+
+  // Test boolean tensor support
+  template <ScalarType OUTPUT_DTYPE>
+  void test_boolean_sigmoid_out() {
+    TensorFactory<ScalarType::Bool> tf;
+    TensorFactory<OUTPUT_DTYPE> tf_out;
+
+    const std::vector<int32_t> sizes = {2, 2};
+
+    Tensor out = tf_out.zeros(sizes);
+
+    op_sigmoid_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
+
+    EXPECT_TENSOR_CLOSE(
+        out, tf_out.make(sizes, /*data=*/{0.731059, 0.5, 0.731059, 0.5}));
+
+    out = tf_out.zeros({3});
+    op_sigmoid_out(tf.make({3}, /*data=*/{true, true, true}), out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.full({3}, 0.731059));
+
+    out = tf_out.zeros({3});
+    op_sigmoid_out(tf.make({3}, /*data=*/{false, false, false}), out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.full({3}, 0.5));
   }
 
   // Unhandled output dtypes.
@@ -87,6 +110,16 @@ TEST_F(OpSigmoidOutTest, AllRealInputDoubleOutputSupport) {
   test_integer_sigmoid_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
+}
+
+// Test boolean tensor support with float output
+TEST_F(OpSigmoidOutTest, BooleanInputFloatOutputSupport) {
+  test_boolean_sigmoid_out<ScalarType::Float>();
+}
+
+// Test boolean tensor support with double output
+TEST_F(OpSigmoidOutTest, BooleanInputDoubleOutputSupport) {
+  test_boolean_sigmoid_out<ScalarType::Double>();
 }
 
 // Mismatched shape tests.
