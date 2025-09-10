@@ -6,11 +6,12 @@
 
 import unittest
 
+import pytest
 import torch
 from executorch.backends.arm._passes import (
     ConvertInt64ConstOpsToInt32Pass,
     ConvertInt64OutputOpsToInt32Pass,
-    InsertCastForOpsWithInt64InputPass,
+    InsertInt32CastsAfterInt64PlaceholdersPass,
 )
 
 from executorch.backends.arm.test import common
@@ -32,10 +33,8 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
     # for that is some assert ops are removed by passes in the
     # .to_executorch step, i.e. after Arm partitioner.
     ops_after_partitioner = {
-        "executorch_exir_dialects_edge__ops_aten__to_copy_default": 4,
         "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
-        "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
-        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
@@ -71,9 +70,9 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
                     example_inputs=text_encoder_model_inputs,
                     compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+FP"),
                     transform_passes=[
-                        InsertCastForOpsWithInt64InputPass(),
                         ConvertInt64ConstOpsToInt32Pass(),
                         ConvertInt64OutputOpsToInt32Pass(),
+                        InsertInt32CastsAfterInt64PlaceholdersPass(),
                     ],
                 )
                 .export()
@@ -86,9 +85,7 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
                 )
             )
 
-    # MLETORCH-867, MLETORCH-1059
-    # Failures: "Fatal Python error: Aborted, Dependency cycles, KeyError in CastInt64BuffersToInt32Pass")
-    @unittest.expectedFailure
+    @pytest.mark.xfail(raises=AssertionError, reason="Output difference.")
     def test_CLIPTextModelWithProjection_tosa_INT(self):
         text_encoder_model, text_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():

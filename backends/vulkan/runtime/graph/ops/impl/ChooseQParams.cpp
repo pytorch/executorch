@@ -186,16 +186,7 @@ vkapi::ShaderInfo pick_choose_qparams_per_row_shader(
 
   const ValueRef input = args.at(1).refs.at(0);
 
-  // number of output channels
-  const int64_t width = graph->size_at<int64_t>(-1, input);
-  const int64_t height = graph->size_at<int64_t>(-2, input);
-
   std::string kernel_name = "choose_qparams_per_row";
-  if (width > 256 || height == 1) {
-    kernel_name += "_o1w64";
-  } else {
-    kernel_name += "_o4w16";
-  }
   add_storage_type_suffix(kernel_name, graph->storage_type_of(input));
   add_dtype_suffix(kernel_name, graph->dtype_of(input));
 
@@ -212,7 +203,7 @@ utils::uvec3 pick_choose_qparams_per_row_global_wg_size(
 
   const ValueRef input = args.at(1).refs.at(0);
   const uint32_t height = graph->size_at<uint32_t>(-2, input);
-  return {1u, height, 1u};
+  return {1u, utils::div_up_4(height), 1u};
 }
 
 utils::uvec3 pick_choose_qparams_per_row_local_wg_size(
@@ -227,11 +218,6 @@ utils::uvec3 pick_choose_qparams_per_row_local_wg_size(
 
   uint32_t outputs_per_wg = 1u;
   uint32_t workers_per_output = 64u;
-
-  if (shader.kernel_name.find("o4w16") != std::string::npos) {
-    outputs_per_wg = 4u;
-    workers_per_output = 16u;
-  }
 
   return {workers_per_output, outputs_per_wg, 1u};
 }
