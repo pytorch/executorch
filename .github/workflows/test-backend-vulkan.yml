@@ -22,7 +22,6 @@ jobs:
     with:
       backend: vulkan
       flows: '["vulkan", "vulkan_static_int8_per_channel"]'
-      runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
+      run-linux: true

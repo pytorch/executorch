@@ -11,18 +11,6 @@ on:
         description: 'JSON array of flows to test'
         required: true
         type: string
-      runner:
-        description: 'Runner to use'
-        required: true
-        type: string
-      docker-image:
-        description: 'Docker image to use (Linux only)'
-        required: false
-        type: string
-      python-version:
-        description: 'Python version to use (macOS only)'
-        required: false
-        type: string
       ref:
         description: 'Git ref to checkout'
         required: false
@@ -33,31 +21,65 @@ on:
         required: false
         type: number
         default: 120
+      run-linux:
+        description: 'Whether to run Linux tests'
+        required: false
+        type: boolean
+        default: false
+      run-macos:
+        description: 'Whether to run macOS tests'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  test-backend:
+  test-backend-linux:
+    if: ${{ inputs.run-linux }}
     strategy:
       fail-fast: false
       matrix:
         flow: ${{ fromJSON(inputs.flows) }}
         suite: [models, operators]
 
-    uses: ${{ contains(inputs.runner, 'macos') && 'pytorch/test-infra/.github/workflows/macos_job.yml@main' || 'pytorch/test-infra/.github/workflows/linux_job_v2.yml@main' }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     with:
       ref: ${{ inputs.ref }}
-      runner: ${{ inputs.runner }}
-      docker-image: ${{ inputs.docker-image }}
-      python-version: ${{ inputs.python-version }}
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: ${{ inputs.timeout }}
       upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
       script: |
         set -eux
 
-        ${{ contains(inputs.runner, 'macos') && '# This is needed to get the prebuilt PyTorch wheel from S3
+        source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
+
+  test-backend-macos:
+    if: ${{ inputs.run-macos }}
+    strategy:
+      fail-fast: false
+      matrix:
+        flow: ${{ fromJSON(inputs.flows) }}
+        suite: [models, operators]
+
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      ref: ${{ inputs.ref }}
+      runner: macos-m1-stable
+      python-version: "3.12"
+      submodules: recursive
+      timeout: ${{ inputs.timeout }}
+      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      script: |
+        set -eux
+
+        # This is needed to get the prebuilt PyTorch wheel from S3
         ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
 
-        source .ci/scripts/test_backend_macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"' || 'source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"' }}
+        source .ci/scripts/test_backend_macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"

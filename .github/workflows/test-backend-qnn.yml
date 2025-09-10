@@ -22,7 +22,6 @@ jobs:
     with:
       backend: qnn
       flows: '["qnn", "qnn_16a16w", "qnn_16a8w", "qnn_16a4w", "qnn_16a4w_block", "qnn_8a8w"]'
-      runner: linux.4xlarge.memory
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
+      run-linux: true
