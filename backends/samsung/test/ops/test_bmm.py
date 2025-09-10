@@ -44,6 +44,5 @@ class TestBatchMatmul(unittest.TestCase):
             .to_executorch()
         )
 
-    @unittest.skip("Temporarily disable it because TOT codes not well prepared.")
     def test_fp32_bmm(self):
         self._test(BatchMatmul())
