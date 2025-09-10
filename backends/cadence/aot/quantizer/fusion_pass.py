@@ -390,7 +390,7 @@ class QuantFusion(ExportPass):
                 pattern.partition_types(),
             )
             for fused_partition in fused_partitions:
-                anchors = pattern.get_anchors(graph_module, fused_partition)
+                anchors, op_node = pattern.get_anchors(graph_module, fused_partition)
                 if not anchors or anchors.empty:
                     continue
                 if any(self.is_fused(p.nodes) for p in fused_partition):
@@ -431,11 +431,17 @@ class QuantFusion(ExportPass):
                 bias_inputs = [node.args[0] for node in dequants_biases]
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
-                # The node is the first index of the list and first of the tuple
-                op_node = anchors.output[0][0]
+                # Check if there's a quantization node after the operation
+                quant_node = None
+                has_quant_node = False
 
-                assert len(op_node.users) == 1
-                quant_node = list(op_node.users.keys())[0]
+                if len(op_node.users) == 1:
+                    potential_quant = list(op_node.users.keys())[0]
+                    # Check if it's actually a quantization node
+                    if (hasattr(potential_quant, 'target') and
+                        potential_quant.target == torch.ops.quantized_decomposed.quantize_per_tensor.default):
+                        quant_node = potential_quant
+                        has_quant_node = True
 
                 with graph_module.graph.inserting_after(op_node):
                     args = tuple(
@@ -516,8 +522,16 @@ class QuantFusion(ExportPass):
                         args,
                         kwargs,
                     )
-                    fused.meta = quant_node.meta
-                    quant_node.replace_all_uses_with(fused)
+                    if has_quant_node:
+                        fused.meta = quant_node.meta
+                        quant_node.replace_all_uses_with(fused)
+                        if quant_node.op == "output":
+                            _ = graph_module.graph.output((fused,))
+                    else:
+                        fused.meta = op_node.meta
+                        op_node.replace_all_uses_with(fused)
+                        if op_node.op == "output":
+                            _ = graph_module.graph.output((fused,))
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
