@@ -10,7 +10,7 @@ runtime.python_library(
     resources = {
         "//executorch/exir/dialects/edge:edge_yaml": "edge.yaml",
     },
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//caffe2/torchgen:torchgen",
