@@ -65,26 +65,4 @@ class CloneSupported(SupportedTOSAOperatorCheck):
             )
             return False
 
-        # Check memory format
-        if "memory_format" in node.kwargs:
-            if node.kwargs["memory_format"] in (torch.preserve_format,):
-                self.reporter.report_reject(
-                    node,
-                    f"Argument 'memory_format' is not supported for "
-                    f"{node.target} right now.",
-                )
-                return False
-
-        # Check dim_order
-        if "dim_order" in node.kwargs:
-            dim_order = node.kwargs["dim_order"]
-            # pyre-ignore[6]
-            if dim_order != list(range(len(dim_order))):  # type: ignore[arg-type]
-                self.reporter.report_reject(
-                    node,
-                    f"Argument {dim_order=} is not supported for "
-                    f"{node.target} right now.",
-                )
-                return False
-
         return True

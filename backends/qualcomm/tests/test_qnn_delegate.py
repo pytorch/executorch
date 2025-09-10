@@ -4979,9 +4979,9 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                inference_speed_ref = {"SM8650": 110, "SM8750": 130}
+                inference_speed_ref = {"SM8650": 115, "SM8750": 155}
                 self.assertLessEqual(msg["wiki_ppl"], 15)
-                self.assertLessEqual(msg["pte_size"], 800000000)  # 800mb
+                self.assertLessEqual(msg["pte_size"], 600000000)  # 600mb
                 if self.model in inference_speed_ref:
                     self.assertGreaterEqual(
                         msg["inference_speed"], inference_speed_ref[self.model]
