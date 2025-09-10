@@ -873,6 +873,11 @@ def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -917,6 +922,11 @@ def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -961,6 +971,11 @@ def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1005,6 +1020,11 @@ def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1049,6 +1069,11 @@ def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1093,6 +1118,11 @@ def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1137,6 +1167,11 @@ def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1181,6 +1216,11 @@ def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1225,6 +1265,11 @@ def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1269,6 +1314,11 @@ def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1313,6 +1363,11 @@ def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1357,6 +1412,11 @@ def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1389,7 +1449,7 @@ def quantized_layer_norm_meta(
     input: torch.Tensor,
     X_scale: torch.Tensor,
     X_zero_point: torch.Tensor,
-    normalized_shape: int,
+    normalized_shape: list[int],
     weight: torch.Tensor,
     bias: torch.Tensor,
     eps: float,
@@ -1404,7 +1464,7 @@ def quantized_layer_norm_per_tensor_meta(
     input: torch.Tensor,
     X_scale: float,
     X_zero_point: int,
-    normalized_shape: int,
+    normalized_shape: list[int],
     weight: torch.Tensor,
     bias: torch.Tensor,
     eps: float,

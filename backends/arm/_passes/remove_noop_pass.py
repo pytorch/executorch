@@ -14,21 +14,20 @@ from executorch.exir.pass_base import ExportPass
 logger = logging.getLogger(__name__)
 
 
-class RemoveClonePass(ExportPass):
-    """Remove all clones from graph_module"""
+class RemoveNoopPass(ExportPass):
+    """Remove no-ops from graph_module"""
 
     def call_operator(self, op, args, kwargs, meta):
-        if op != exir_ops.edge.dim_order_ops._clone_dim_order.default:
+        if op not in (
+            exir_ops.edge.dim_order_ops._clone_dim_order.default,
+            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
-        if len(args) != 1:
-            raise ValueError(
-                f"clone operator expects exactly one argument, got {len(args)}"
-            )
+        input_dtype = args[0].data.dtype
+        output_dtype = kwargs.get("dtype", input_dtype)
 
-        if "memory_format" in kwargs:
-            logger.warning(
-                f"Removing clone with memory_format '{kwargs['memory_format']}'."
-            )
+        if input_dtype != output_dtype:
+            return super().call_operator(op, args, kwargs, meta)
 
         return args[0]
