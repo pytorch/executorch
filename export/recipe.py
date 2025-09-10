@@ -7,9 +7,10 @@ import copy
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, EnumMeta
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, List, Optional
 
 import torch
+from executorch.exir import ExportedProgram
 
 from executorch.exir._warnings import experimental
 
@@ -117,12 +118,15 @@ class LoweringRecipe:
 
     Attributes:
         partitioners: Optional list of partitioners for model partitioning
-        edge_transform_passes: Optional sequence of transformation passes to apply
+        edge_transform_passes: Optional list of callables that take (method_name: str, exported_program: ExportedProgram) as arguments
+                               and return a list of passes (PassType) to be executed during lowering stages.
         edge_compile_config: Optional edge compilation configuration
     """
 
     partitioners: Optional[List[Partitioner]] = None
-    edge_transform_passes: Optional[Sequence[PassType]] = None
+    edge_transform_passes: (
+        None | List[Callable[[str, ExportedProgram], List[PassType]]]
+    ) = None
     # pyre-ignore[11]: Type not defined
     edge_compile_config: Optional[EdgeCompileConfig] = None
 
@@ -141,8 +145,8 @@ class ExportRecipe:
     Attributes:
         name: Optional name for the recipe
         quantization_recipe: Optional quantization recipe for model quantization
-        pre_edge_transform_passes: Optional function to apply transformation passes
-                                  before edge lowering
+        aten_transform_passes: Optional list of functions to apply transformation passes to the program before edge lowering.
+                               These callables are invoked to modify and return the transformed program.
         lowering_recipe: Optional lowering recipe for model lowering and partitioning
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
@@ -151,7 +155,9 @@ class ExportRecipe:
 
     name: Optional[str] = None
     quantization_recipe: Optional[QuantizationRecipe] = None
-    pre_edge_transform_passes: Optional[Sequence[PassType]] = None
+    aten_transform_passes: Optional[
+        List[Callable[[str, ExportedProgram], ExportedProgram]]
+    ] = None
     lowering_recipe: Optional[LoweringRecipe] = None
     # pyre-ignore[11]: Type not defined
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None
@@ -240,8 +246,8 @@ class ExportRecipe:
 
         for recipe in backend_recipes:
             # Collect pre-edge transform passes
-            if recipe.pre_edge_transform_passes:
-                all_pre_edge_passes.extend(recipe.pre_edge_transform_passes)
+            if recipe.aten_transform_passes:
+                all_pre_edge_passes.extend(recipe.aten_transform_passes)
 
             # Collect partitioners from lowering recipes
             if recipe.lowering_recipe and recipe.lowering_recipe.partitioners:
@@ -307,7 +313,7 @@ class ExportRecipe:
         return cls(
             name=recipe_name,
             quantization_recipe=combined_quantization_recipe,
-            pre_edge_transform_passes=all_pre_edge_passes,
+            aten_transform_passes=all_pre_edge_passes,
             lowering_recipe=combined_lowering_recipe,
             executorch_backend_config=combined_backend_config,
         )
