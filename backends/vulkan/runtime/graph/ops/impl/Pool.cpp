@@ -76,8 +76,19 @@ void add_max_pool2d_node(
     const ValueRef dilation,
     const ValueRef ceil_mode,
     const ValueRef out) {
-  const auto out_val = graph.get_value_list(out);
-  const ValueRef out_tensor = out_val->at(0);
+  ValueRef out_tensor = out;
+  // Placeholder tensor to fill binding slot for indices tensor in case we are
+  // computing max_pool2d instead of max_pool2d_with_indices.
+  TmpTensor tmp_indices_tensor =
+      TmpTensor(&graph, {}, graph.dtype_of(in), graph.storage_type_of(in));
+  ValueRef indices_tensor = tmp_indices_tensor.vref;
+  int32_t write_indices = 0;
+  if (graph.val_is_value_list(out)) {
+    const auto out_val = graph.get_value_list(out);
+    out_tensor = out_val->at(0);
+    indices_tensor = out_val->at(1);
+    write_indices = 1;
+  }
 
   check_pool2d_args(graph, in, out_tensor);
 
@@ -98,7 +109,7 @@ void add_max_pool2d_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      {{{out_val->at(0), out_val->at(1)}, vkapi::kWrite}, {in, vkapi::kRead}},
+      {{{out_tensor, indices_tensor}, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
       {
           graph.logical_limits_ubo(out_tensor),
@@ -108,7 +119,7 @@ void add_max_pool2d_node(
       // Push Constants
       {},
       // Specialization Constants
-      {},
+      {write_indices},
       // Resize Args
       {kernel_size, stride, padding, dilation, ceil_mode},
       // Resizing Logic
@@ -203,6 +214,7 @@ void avg_pool2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.avg_pool2d.default, avg_pool2d);
   VK_REGISTER_OP(aten.max_pool2d_with_indices.default, max_pool2d);
+  VK_REGISTER_OP(aten.max_pool2d.default, max_pool2d);
 }
 
 } // namespace vkcompute

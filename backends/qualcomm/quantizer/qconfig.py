@@ -396,7 +396,7 @@ def get_ptq_per_block_quant_config(
     )
 
 
-# TODO merge qat and ptq to a fucntion, and use a bool flag to control it
+# TODO merge qat and ptq to a function, and use a bool flag to control it
 def get_8a8w_qnn_qat_config(
     act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
 ) -> QuantizationConfig:
@@ -598,21 +598,7 @@ def get_qat_per_channel_quant_config(
         observer_or_fake_quant_ctr=weight_fake_quant_ctr,
     )
 
-    bias_fake_quant_ctr = FakeQuantize.with_args(
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
-        qscheme=torch.per_tensor_symmetric,
-        reduce_range=True,
-        observer=MovingAverageMinMaxObserver,
-    )
-    bias_quantization_spec = QuantizationSpec(
-        dtype=torch.int32,
-        quant_min=torch.iinfo(torch.int32).min,
-        quant_max=torch.iinfo(torch.int32).max,
-        qscheme=torch.per_tensor_symmetric,
-        observer_or_fake_quant_ctr=bias_fake_quant_ctr,
-    )
+    bias_quantization_spec = _derived_bias_quant_spec
 
     quantization_config = QuantizationConfig(
         input_activation=act_quantization_spec,
