@@ -57,6 +57,7 @@ import sys
 # imports.
 import setuptools  # noqa: F401 # usort: skip
 import importlib.machinery
+import logging
 import os
 import platform
 import subprocess
@@ -77,6 +78,11 @@ from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
 from setuptools.command.install import install
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
 try:
     from tools.cmake.cmake_cache import CMakeCache
@@ -475,13 +481,13 @@ class InstallerBuildExt(build_ext):
                 tmp_path = Path(tmpdir)
                 sdk_path = _download_qnn_sdk(dst_folder=tmp_path)
 
-                print("sdk_path: ", sdk_path)
+                logging.info("sdk_path: ", sdk_path)
                 if not sdk_path:
                     raise RuntimeError("Qualcomm SDK not found, cannot build backend")
 
                 # Determine paths
                 prj_root = Path(__file__).parent.resolve()
-                print("prj_root: ", prj_root)
+                logging.info("prj_root: ", prj_root)
                 build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
                 build_root = prj_root / "build-x86"
 
@@ -490,7 +496,6 @@ class InstallerBuildExt(build_ext):
 
                 # Run build.sh with SDK path exported
                 env = dict(**os.environ)
-                print("str(sdk_path): ", str(sdk_path))
                 env["QNN_SDK_ROOT"] = str(sdk_path)
                 subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
 
@@ -499,9 +504,9 @@ class InstallerBuildExt(build_ext):
                 so_dst = Path(
                     self.get_ext_fullpath("executorch.backends.qualcomm.qnn_backend")
                 )
-                self.mkpath(so_dst.parent)  # ensure destination exists
+                self.mkpath(str(so_dst.parent))  # ensure destination exists
                 self.copy_file(str(so_src), str(so_dst))
-                print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+                logging.info(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
 
                 # Copy Python adaptor .so files
                 ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
@@ -523,11 +528,11 @@ class InstallerBuildExt(build_ext):
                     so_dst = Path(self.get_ext_fullpath(module_name))
                     self.mkpath(str(so_dst.parent))
                     self.copy_file(str(so_src), str(so_dst))
-                    print(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
+                    logging.info(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
 
         except ImportError:
-            print("Fail to build Qualcomm backend")
-            print("Import error: ", sys.exc_info()[0])
+            logging.error("Fail to build Qualcomm backend")
+            logging.exception("Import error")
 
         if self.editable_mode:
             self._ran_build = True

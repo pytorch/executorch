@@ -659,33 +659,33 @@ jobs:
         # run eval_llama wikitext task
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_wikitext.sh
 
-  TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
-  test-eval_llama-mmlu-linux:
-    name: test-eval_llama-mmlu-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    with:
-      runner: linux.24xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
+  # test-eval_llama-mmlu-linux:
+  #   name: test-eval_llama-mmlu-linux
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #   with:
+  #     runner: linux.24xlarge
+  #     docker-image: ci-image:executorch-ubuntu-22.04-clang12
+  #     submodules: 'recursive'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     timeout: 90
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        # install llama requirements
-        bash examples/models/llama/install_requirements.sh
+  #       # install llama requirements
+  #       bash examples/models/llama/install_requirements.sh
 
-        # run eval_llama mmlu task
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_mmlu.sh
+  #       # run eval_llama mmlu task
+  #       PYTHON_EXECUTABLE=python bash .ci/scripts/test_eval_llama_mmlu.sh
 
   test-llama_runner_eager-linux:
     name: test-llama_runner_eager-linux
@@ -881,14 +881,14 @@ jobs:
         CMAKE_ARGS="-DEXECUTORCH_BUILD_NXP_NEUTRON=ON" \
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
-        Install test requirements
+        # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
         pip install -r backends/nxp/requirements-tests-eiq.txt
 
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
-        Run aot examples:
+        # Run aot examples:
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
         PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
