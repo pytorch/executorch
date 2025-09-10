@@ -21,6 +21,7 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
+from torch.export.passes import move_to_device_pass
 
 
 # exist fallback operators in et namespace;
@@ -71,14 +72,33 @@ class AotiBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+
         print("entering  the lowerable parts in AotiBackend.preprocess....")
         named_data_store = NamedDataStore()
 
         # print("here", edge_program.example_inputs)
         copy_edge_program = copy.deepcopy(edge_program)
+
+        # Move the edge_program from CPU to CUDA using move_to_device_pass
+        copy_edge_program = move_to_device_pass(copy_edge_program, "cuda")
         # graph_module = copy_edge_program.graph_module
         edge_program_module = copy_edge_program.module()
         args, kwargs = copy_edge_program.example_inputs
+
+        # Deep copy args and move tensors to CUDA for aot_compile
+        def move_to_cuda(obj):
+            if isinstance(obj, torch.Tensor):
+                return obj.cuda()
+            elif isinstance(obj, (list, tuple)):
+                return type(obj)(move_to_cuda(item) for item in obj)
+            elif isinstance(obj, dict):
+                return {key: move_to_cuda(value) for key, value in obj.items()}
+            else:
+                return obj
+
+        args = move_to_cuda(copy.deepcopy(args))
+        kwargs = move_to_cuda(copy.deepcopy(kwargs))
+
         # print("args, kwargs", args, kwargs)
         print("len(args)", len(args))
         print("args[0].shape", args[0].shape)

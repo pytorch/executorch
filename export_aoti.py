@@ -264,73 +264,61 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "mv2": {
         "model_class": MV2,
         "input_shapes": [(1, 3, 224, 224)],
-        "device": "cuda",
         "description": "MobileNetV2 model",
     },
     "resnet18": {
         "model_class": ResNet18,
         "input_shapes": [(1, 3, 224, 224)],
-        "device": "cuda",
         "description": "ResNet18 model",
     },
     "linear": {
         "model_class": Linear,
         "input_shapes": [(127, 7)],
-        "device": "cuda",
         "description": "Simple linear layer model",
     },
     "conv2d": {
         "model_class": SingleConv2d,
         "input_shapes": [(4, 3, 8, 8)],
-        "device": "cuda",
         "description": "Single Conv2d layer model",
     },
     "depthwise_conv": {
         "model_class": DepthwiseConv,
         "input_shapes": [(1, 32, 112, 112)],
-        "device": "cuda",
         "description": "Single Depthwise Conv2d layer model",
     },
     "add": {
         "model_class": Add,
         "input_shapes": [(10,), (10,)],
-        "device": "cuda",
         "description": "Simple tensor addition model",
     },
     "batchnorm": {
         "model_class": BatchNorm,
         "input_shapes": [(1, 16, 32, 32)],
-        "device": "cuda",
         "description": "Single BatchNorm2d layer model",
     },
     "single_resnet_block": {
         "model_class": SingleResNetBlock,
         "input_shapes": [(1, 64, 8, 8)],
-        "device": "cuda",
         "description": "Single ResNet block with skip connection",
     },
     "llama31": {
         "model_class": Llama31,
         "input_shapes": [(1, 32)],  # batch_size=1, sequence_length=128
-        "device": "cuda",
         "description": "Llama 3.1 model with KV cache disabled",
     },
     "whisper": {
         "model_class": Whisper,
         "input_shapes": [(1, 80, 3000)],
-        "device": "cuda",
         "description": "OpenAI Whisper ASR model. now is encoder only",
     },
     "conv1d": {
         "model_class": MockConv1d,
         "input_shapes": [(1, 80, 3000)],
-        "device": "cuda",
         "description": "Conv1d layer with 80 input channels, 384 output channels",
     },
     "transformer_block": {
         "model_class": TransformerBlock,
         "input_shapes": [(4, 32, 256)],  # batch_size=4, seq_len=32, embed_dim=256
-        "device": "cuda",
         "description": "Single transformer block with multi-head attention and feed-forward network",
     },
 }
@@ -350,7 +338,7 @@ def get_model_and_inputs(
     model_config = MODEL_REGISTRY[model_name]
     model_class = model_config["model_class"]
     input_shapes = model_config["input_shapes"]
-    device = model_config["device"]
+    device = "cpu"
 
     # Create model instance
     model = model_class().to(device).eval()
