@@ -243,6 +243,13 @@ public class LlmModule {
    */
   public native void resetContext();
 
+  /**
+   * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
+   *
+   * <p>The startPos will be reset to 0.
+   */
+  public native void resetContext();
+
   /** Stop current generate() before it finishes. */
   @DoNotStrip
   public native void stop();

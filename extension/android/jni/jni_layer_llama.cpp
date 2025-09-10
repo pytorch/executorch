@@ -299,7 +299,16 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   void reset_context() {
+<<<<<<< HEAD
     runner_->reset();
+=======
+    if (runner_ != nullptr) {
+      runner_->reset();
+    }
+    if (multi_modal_runner_ != nullptr) {
+      multi_modal_runner_->reset();
+    }
+>>>>>>> origin/main
   }
 
   jint load() {
@@ -321,6 +330,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
             "appendTextInput", ExecuTorchLlmJni::append_text_input),
+<<<<<<< HEAD
+=======
+        makeNativeMethod(
+            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+>>>>>>> origin/main
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
