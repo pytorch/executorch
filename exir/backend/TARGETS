@@ -1,7 +1,7 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbsource//xplat/executorch/backends:backends.bzl", "get_all_cpu_aot_and_backend_targets")
+load("@fbsource//xplat/executorch/backends:backends.bzl", "get_all_cpu_aot_targets")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
@@ -103,7 +103,7 @@ runtime.python_library(
         ":backend_details",
         ":utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
-    ] + get_all_cpu_aot_and_backend_targets(),
+    ] + get_all_cpu_aot_targets(),
 )
 
 runtime.python_library(
