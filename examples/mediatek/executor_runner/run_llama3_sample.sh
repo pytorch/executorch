@@ -36,18 +36,12 @@ TOKENIZER_PATH="/data/local/tmp/llama3/tokenizer.model"
 TOKEN_EMBEDDING_PATH="/data/local/tmp/llama3/embedding_llama3_8b_instruct_fp32.bin"
 
 # Comma-Separated Paths
-PROMPT_MODEL_PATHS="\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_0.pte,\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_1.pte,\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_2.pte,\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_3.pte,"
-
-# Comma-Separated Paths
-GEN_MODEL_PATHS="\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_0.pte,\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_1.pte,\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_2.pte,\
-/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_3.pte,"
+WEIGHT_SHARED_MODEL_PACKAGE_PATHS="\
+/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_0.pte,\
+/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1.pte,\
+/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_2.pte,\
+/data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_3.pte,\
+"
 
 PROMPT_FILE=/data/local/tmp/llama3/sample_prompt.txt
 
@@ -75,6 +69,5 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
     --tokenizer_type=$TOKENIZER_TYPE \
     --tokenizer_path=$TOKENIZER_PATH \
     --token_embedding_path=$TOKEN_EMBEDDING_PATH \
-    --prompt_model_paths=$PROMPT_MODEL_PATHS \
-    --gen_model_paths=$GEN_MODEL_PATHS \
+    --model_package_paths=$WEIGHT_SHARED_MODEL_PACKAGE_PATHS \
     --prompt_file=$PROMPT_FILE
