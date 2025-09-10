@@ -115,8 +115,14 @@ class FuseBatchNormPass(XNNPACKPass):
             return False
 
         # Check the rank of the convolutution input - only Conv1d and 2d are supported.
-        if is_conv and len(input_node.args[0].meta["val"].shape) not in (3, 4):
-            return False
+        if is_conv:
+            conv_input = input_node.args[0]
+            if (
+                not isinstance(conv_input, torch.fx.Node)
+                or "val" not in conv_input.meta
+                or len(conv_input.meta["val"].shape) not in (3, 4)
+            ):
+                return False
 
         return True
 

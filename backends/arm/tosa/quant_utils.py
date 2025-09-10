@@ -12,8 +12,6 @@ import math
 from typing import Any, Tuple
 
 import serializer.tosa_serializer as ts  # type: ignore
-import torch.fx
-import torch.fx.node
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -350,39 +348,4 @@ def build_rescale_from_int32(
         rounding_mode=RoundingMode.SINGLE_ROUND,
     )  # type: ignore[call-arg]
 
-    return
-
-
-""" Creates a TOSA rescale op based on conv2d parameters. """
-
-
-def build_rescale_conv_output(
-    tosa_fb: Any,
-    op: Any,
-    output_name: str,
-    output_type: Any,
-    input_scale: list[float],
-    weight_scale: list[float],
-    output_scale: list[float],
-    output_zp: list[int],
-    tosa_spec=None,
-):
-    # TODO add check to verify if this is a Per-channel quantization.
-    post_conv2d_scale = [
-        (inp * w) / out for inp, w, out in zip(input_scale, weight_scale, output_scale)
-    ]
-
-    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
-    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
-    build_rescale(
-        tosa_fb=tosa_fb,
-        scale=post_conv2d_scale,
-        input_node=op,
-        output_name=output_name,
-        output_type=output_type,
-        input_zp=[0],
-        output_zp=output_zp,
-        rounding_mode=RoundingMode.SINGLE_ROUND,
-        per_channel=isinstance(weight_scale, torch.Tensor),
-    )  # type: ignore[call-arg]
     return

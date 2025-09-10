@@ -1,0 +1,57 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_attn_weights
+ *
+ * Macro Settings:
+ * - OUTPUT_BUFFER
+ */
+
+#ifndef SDPA_FP_OUT_TILE_LOAD_GLSLH
+#define SDPA_FP_OUT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_output_tile.glslh"
+
+void store_out_d4(
+    const VEC4_T out_texel,
+    const int d4,
+    const int q_h,
+    const int s,
+    const int D4,
+    const int Q_H,
+    const int S) {
+#ifdef OUTPUT_BUFFER
+  t_output[(s * Q_H * D4) + (q_h * D4) + d4] = out_texel;
+#else
+  imageStore(t_output, ivec3(d4, q_h, s), out_texel);
+#endif
+}
+
+void store_sdpa_out_tile_with_checks(
+    const FPOutTile tile,
+    const int d4_start,
+    const int s_start,
+    const int q_h,
+    const int D4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int d4 = 0; d4 < TILE_N4; ++d4) {
+      if (d4_start + d4 < D4 && s_start + s < S) {
+        store_out_d4(
+            tile.data[s][d4], d4_start + d4, q_h, s_start + s, D4, Q_H, S);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_OUT_TILE_LOAD_GLSLH

@@ -9,7 +9,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
 )
 from executorch.backends.xnnpack.utils.utils import get_param_tensor
 from executorch.exir import to_edge_transform_and_lower
-from torch.export import export_for_training
+from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -52,7 +52,7 @@ class TestCheckQuantParams(unittest.TestCase):
         torch._dynamo.reset()
         mod = torch.nn.Linear(10, 10)
         quantizer = XNNPACKQuantizer()
-        captured = export_for_training(mod, (torch.randn(1, 10),), strict=True).module()
+        captured = export(mod, (torch.randn(1, 10),), strict=True).module()
         quantizer.set_global(get_symmetric_quantization_config(is_per_channel=True))
         prepared = prepare_pt2e(captured, quantizer)
 

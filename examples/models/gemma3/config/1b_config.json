@@ -1,0 +1,23 @@
+{
+  "dim": 1152,
+  "ffn_dim_multiplier": 1,
+  "hidden_dim": 6912,
+  "n_heads": 4,
+  "head_dim": 256,
+  "n_kv_heads": 1,
+  "n_layers": 26,
+  "act_fn": "gelu_approx",
+  "norm_type": "gemma3",
+  "norm_eps": 1e-06,
+  "post_attention_norm": true,
+  "post_ffn_norm": true,
+  "rope_theta": 1000000.0,
+  "use_scaled_rope": false,
+  "apply_embedding": true,
+  "embedding_scale_factor": 33.941125497,
+  "vocab_size": 262144,
+  "use_hf_rope": true,
+  "attention_qkv_bias": false,
+  "use_qk_norm": true,
+  "qk_norm_before_rope": true
+}

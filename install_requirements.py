@@ -155,6 +155,9 @@ def install_optional_example_requirements(use_pytorch_nightly):
             else "torchvision"
         ),
         f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+        # We probably don't need explicit torchcodec, see comment here
+        # https://github.com/pytorch/audio/pull/4039#issuecomment-3274648824
+        f"torchcodec==0.7.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchcodec",
     ]
     # Then install domain libraries
     subprocess.run(

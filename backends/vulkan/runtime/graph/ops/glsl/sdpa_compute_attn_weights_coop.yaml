@@ -4,12 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-flash_attention_buffer:
+sdpa_compute_attn_weights_coop:
   parameter_names_with_default_values:
     DTYPE: float
-    STORAGE: buffer
+    IO_STORAGE: texture3d
+    K_CACHE_STORAGE: texture3d
+    TILE_K4: 1
+    TILE_N4: 1
   generate_variant_forall:
     DTYPE:
       - VALUE: float
+      - VALUE: half
   shader_variants:
-    - NAME: flash_attention_buffer
+    - NAME: sdpa_compute_attn_weights_coop_texture3d_texture3d
+    - NAME: sdpa_compute_attn_weights_coop_buffer_texture3d
+      IO_STORAGE: buffer

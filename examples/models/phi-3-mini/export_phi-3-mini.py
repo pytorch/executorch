@@ -23,7 +23,7 @@ from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from torch.export import export_for_training
+from torch.export import export as torch_export
 from torch.nn.attention import SDPBackend
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -108,7 +108,7 @@ def export(args) -> None:
         gm(*example_inputs)
         gm = convert_pt2e(gm)
         DuplicateDynamicQuantChainPass()(gm)
-        exported_program = export_for_training(
+        exported_program = torch_export(
             gm, example_inputs, dynamic_shapes=dynamic_shapes, strict=False
         )
 

@@ -571,7 +571,7 @@ def register_sdpa_with_kv_cache_op():
 )
 def register_sdpa_ops():
     return OpFeatures(
-        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_resize=True,
     )
 

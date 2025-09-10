@@ -108,7 +108,7 @@ def visualize(
     **kwargs,
 ):
     """Wraps the visualize_from_config call from model_explorer.
-    For convenicence, figures out how to find the exported_program
+    For convenience, figures out how to find the exported_program
     from EdgeProgramManager and ExecutorchProgramManager for you.
 
     See https://github.com/google-ai-edge/model-explorer/wiki/4.-API-Guide#visualize-pytorch-models
@@ -123,9 +123,18 @@ def visualize(
     )
     if reuse_server:
         cur_config.set_reuse_server()
-    visualize_from_config(
-        cur_config,
+    visualize_model_explorer(
+        config=kwargs.pop("config", cur_config),
         no_open_in_browser=no_open_in_browser,
+        **kwargs,
+    )
+
+
+def visualize_model_explorer(
+    **kwargs,
+):
+    """Wraps the visualize_from_config call from model_explorer."""
+    visualize_from_config(
         **kwargs,
     )
 

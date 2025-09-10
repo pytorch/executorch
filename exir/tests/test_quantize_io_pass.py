@@ -38,15 +38,13 @@ class TestQuantIOPass(unittest.TestCase):
         quantizer = XNNPACKQuantizer()
         operator_config = get_symmetric_quantization_config()
         quantizer.set_global(operator_config)
-        m = torch.export.export_for_training(
+        m = torch.export.export(
             mod, copy.deepcopy(example_inputs), strict=True
         ).module()
         m = prepare_pt2e(m, quantizer)
         _ = m(*example_inputs)
         m = convert_pt2e(m)
-        exported_program = torch.export.export_for_training(
-            m, example_inputs, strict=True
-        )
+        exported_program = torch.export.export(m, example_inputs, strict=True)
         return exported_program
 
     def _check_count(self, op, count, epm):

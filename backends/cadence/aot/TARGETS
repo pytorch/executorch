@@ -614,6 +614,7 @@ python_unittest(
     typing = True,
     deps = [
         ":typing_stubs",
+        "//executorch/backends/cadence/aot:ops_registrations",
         "//executorch/backends/cadence/aot:ref_implementations",
         "//caffe2:torch",
     ]

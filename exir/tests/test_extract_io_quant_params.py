@@ -41,7 +41,7 @@ class TestExtractIOQuantParamsPT2E(unittest.TestCase):
         operator_config = get_symmetric_quantization_config()
         self.quantizer.set_global(operator_config)
 
-        exported = torch.export.export_for_training(
+        exported = torch.export.export(
             self.mod,
             copy.deepcopy(self.example_inputs),
             strict=True,
@@ -54,7 +54,7 @@ class TestExtractIOQuantParamsPT2E(unittest.TestCase):
         converted = convert_pt2e(prepared)
 
         # Export again with quant parameters
-        final_export = torch.export.export_for_training(
+        final_export = torch.export.export(
             converted,
             self.example_inputs,
             strict=True,

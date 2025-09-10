@@ -141,6 +141,8 @@ build_core_libraries() {
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM_AOT=ON \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
     -DEXECUTORCH_BUILD_VULKAN=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -152,39 +154,45 @@ build_core_libraries() {
 build_operator_tests() {
   echo "Building Vulkan operator tests..."
 
-  # Check if TORCH_OPS_YAML_PATH is set, if not use default
-  if [[ -z "${TORCH_OPS_YAML_PATH:-}" ]]; then
-    TORCH_OPS_YAML_PATH="$HOME/Github/pytorch/aten/src/ATen/native"
-    echo "Using default TORCH_OPS_YAML_PATH: $TORCH_OPS_YAML_PATH"
-  fi
+  # Prepare CMAKE arguments
+  CMAKE_ARGS=(
+    "backends/vulkan/test/op_tests"
+    "-DCMAKE_INSTALL_PREFIX=cmake-out"
+    "-DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE"
+    "-DCMAKE_CXX_STANDARD=17"
+  )
 
-  # Verify that TORCH_OPS_YAML_PATH exists
-  if [[ ! -d "$TORCH_OPS_YAML_PATH" ]]; then
-    echo "Error: TORCH_OPS_YAML_PATH directory does not exist: $TORCH_OPS_YAML_PATH"
-    echo "Please set TORCH_OPS_YAML_PATH to a valid PyTorch native operations directory"
+  # Check if TORCH_OPS_YAML_PATH is set
+  if [[ -n "${TORCH_OPS_YAML_PATH:-}" ]]; then
+    # Verify that TORCH_OPS_YAML_PATH exists
+    if [[ ! -d "$TORCH_OPS_YAML_PATH" ]]; then
+      echo "Error: TORCH_OPS_YAML_PATH directory does not exist: $TORCH_OPS_YAML_PATH"
+      echo "Please set TORCH_OPS_YAML_PATH to a valid PyTorch native operations directory"
+      echo "Example: export TORCH_OPS_YAML_PATH=/path/to/pytorch/aten/src/ATen/native"
+      exit 1
+    fi
+
+    # Verify required YAML files exist
+    if [[ ! -f "$TORCH_OPS_YAML_PATH/native_functions.yaml" ]]; then
+      echo "Error: Required file not found: $TORCH_OPS_YAML_PATH/native_functions.yaml"
+      exit 1
+    fi
+
+    if [[ ! -f "$TORCH_OPS_YAML_PATH/tags.yaml" ]]; then
+      echo "Error: Required file not found: $TORCH_OPS_YAML_PATH/tags.yaml"
+      exit 1
+    fi
+
+    echo "Using TORCH_OPS_YAML_PATH: $TORCH_OPS_YAML_PATH"
+    CMAKE_ARGS+=("-DTORCH_OPS_YAML_PATH=$TORCH_OPS_YAML_PATH")
+  else
+    echo "WARNING: TORCH_OPS_YAML_PATH is not set. Building without PyTorch operator definitions."
+    echo "Some functionality may be limited. To enable full functionality, set TORCH_OPS_YAML_PATH to point to PyTorch's native operations directory."
     echo "Example: export TORCH_OPS_YAML_PATH=/path/to/pytorch/aten/src/ATen/native"
-    exit 1
   fi
-
-  # Verify required YAML files exist
-  if [[ ! -f "$TORCH_OPS_YAML_PATH/native_functions.yaml" ]]; then
-    echo "Error: Required file not found: $TORCH_OPS_YAML_PATH/native_functions.yaml"
-    exit 1
-  fi
-
-  if [[ ! -f "$TORCH_OPS_YAML_PATH/tags.yaml" ]]; then
-    echo "Error: Required file not found: $TORCH_OPS_YAML_PATH/tags.yaml"
-    exit 1
-  fi
-
-  echo "Using TORCH_OPS_YAML_PATH: $TORCH_OPS_YAML_PATH"
 
   # Build operator tests
-  cmake backends/vulkan/test/op_tests \
-    -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-    -DTORCH_OPS_YAML_PATH="$TORCH_OPS_YAML_PATH" \
-    -DCMAKE_CXX_STANDARD=17 \
+  cmake "${CMAKE_ARGS[@]}" \
     -Bcmake-out/backends/vulkan/test/op_tests && \
   cmake --build cmake-out/backends/vulkan/test/op_tests -j16
 }

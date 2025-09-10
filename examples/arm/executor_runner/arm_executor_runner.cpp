@@ -930,7 +930,7 @@ void run_model(RunnerContext& ctx, const void* model_pte) {
 
   int n = 0;
   StartMeasurements();
-  for (n = 1; n <= num_inferences; n++) {
+  for (n = 0; n < num_inferences; n++) {
     // Run the model.
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {

@@ -28,6 +28,7 @@ class LhdTokenGenerator : public TokenGenerator<T> {
     int32_t ngram;
     int32_t window;
     int32_t gcap;
+    int sliding_window;
   };
   LhdTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
@@ -49,7 +50,8 @@ class LhdTokenGenerator : public TokenGenerator<T> {
                 metadata.num_layers,
                 metadata.ar_len,
                 metadata.vocab_size,
-                metadata.use_int64_token},
+                metadata.use_int64_token,
+                metadata.sliding_window},
             stats),
         metadata_(metadata),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),

@@ -60,7 +60,7 @@ class TestBatchNormFusion(unittest.TestCase):
             self,
             in_features: int,
             out_features: int,
-            kernel_size: Tuple[int, int],
+            kernel_size: Tuple[int, int, int],
         ):
             super().__init__()
             op = torch.nn.Conv3d

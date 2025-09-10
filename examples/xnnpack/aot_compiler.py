@@ -86,14 +86,14 @@ if __name__ == "__main__":
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    ep = torch.export.export_for_training(model, example_inputs, strict=False)
+    ep = torch.export.export(model, example_inputs, strict=False)
     model = ep.module()
 
     if args.quantize:
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
         model = quantize(model, example_inputs, quant_type)
-        ep = torch.export.export_for_training(model, example_inputs, strict=False)
+        ep = torch.export.export(model, example_inputs, strict=False)
 
     edge = to_edge_transform_and_lower(
         ep,

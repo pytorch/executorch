@@ -260,28 +260,19 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Returns a tuple of (error, start_pos)
   // Contract is valid within an AAR (JNI + corresponding Java code)
   // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
+  jint append_text_input(
       facebook::jni::alias_ref<jstring> prompt,
-      jlong start_pos,
       jint bos,
       jint eos) {
     prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    return tuple_result;
+    return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-
-  facebook::jni::local_ref<jlongArray> prefill_images(
+  jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
-      jint channels,
-      jlong start_pos) {
+      jint channels) {
     std::vector<llm::Image> images;
     auto image_size = image->size();
     if (image_size != 0) {
@@ -296,43 +287,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           llm::MultimodalInput{std::move(image_runner)});
     }
 
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    return tuple_result;
-  }
-
-  jint generate_from_pos(
-      facebook::jni::alias_ref<jstring> prompt,
-      jint seq_len,
-      jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
-      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      return static_cast<jint>(multi_modal_runner_->generate(
-          inputs,
-          llm::GenerationConfig{
-              .echo = static_cast<bool>(echo), .seq_len = seq_len},
-          [callback](const std::string& result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = temperature_,
-      };
-      return static_cast<jint>(runner_->generate_from_pos(
-          prompt->toStdString(),
-          start_pos,
-          config,
-          [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
-    }
-    return static_cast<jint>(executorch::runtime::Error::InvalidArgument);
+    return 0;
   }
 
   void stop() {
@@ -340,6 +295,15 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       multi_modal_runner_->stop();
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->stop();
+    }
+  }
+
+  void reset_context() {
+    if (runner_ != nullptr) {
+      runner_->reset();
+    }
+    if (multi_modal_runner_ != nullptr) {
+      multi_modal_runner_->reset();
     }
   }
 
@@ -359,11 +323,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
+            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
-        makeNativeMethod(
-            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+            "appendTextInput", ExecuTorchLlmJni::append_text_input),
+        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
 };

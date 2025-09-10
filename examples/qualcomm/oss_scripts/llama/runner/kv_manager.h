@@ -79,6 +79,31 @@ class KVManager {
       int32_t n_past);
 
   /**
+   * @brief Initialize attention mask based on kv manager mode, and attention
+   * map.
+   * For example,
+   * ar_len = 4, CL = 6, n_past = 0,
+   * attention map: {-1, 0, 1, 2} and SMART_MASK.
+   * Attention_mask will be:
+   * [     0     0 65535     0     0     0 ]
+   * [     0     0 65535 65535     0     0 ]
+   * [     0     0 65535 65535 65535     0 ]
+   * [     0     0 65535 65535 65535 65535 ]
+   * @param attention_mask Pointer to the attention mask array to be
+   * initialized.
+   * @param attention_map Vector containing the attention map values. The shape
+   * of attention map should be [ar_len].
+   * @param ar_len Length of input tokens.
+   * @param n_past Number of past elements in the cache.
+   */
+  void init_attention_mask(
+      uint16_t* attention_mask,
+      const std::vector<int32_t>& attention_map,
+      int32_t ar_len,
+      int32_t n_past,
+      int32_t sliding_window);
+
+  /**
    * @brief Update attention mask based on kv manager mode, and n_update.
    * @param attention_mask Pointer to the attention mask array to be
    * initialized.
@@ -91,6 +116,23 @@ class KVManager {
       int32_t ar_len,
       int32_t n_past,
       int32_t n_update);
+
+  /**
+   * @brief Update attention mask based on kv manager mode, and n_update.
+   * @param attention_mask Pointer to the attention mask array to be
+   * initialized.
+   * @param ar_len Length of input tokens.
+   * @param n_past Number of past elements in the cache.
+   * @param n_update Number of elements to be updated.
+   * @param sliding_window Length of sliding window for sliding window attention
+   * mask
+   */
+  void update_attention_mask(
+      uint16_t* attention_mask,
+      int32_t ar_len,
+      int32_t n_past,
+      int32_t n_update,
+      int32_t sliding_window);
 
   /**
    * @brief Reset the data pointer of the I/O cache tensor based on number of

@@ -13,11 +13,12 @@ import numpy as np
 
 import torch
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
-
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
     EVAL_MODE,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.masking_utils import AttentionMask
+
 from executorch.examples.qualcomm.utils import make_output_dir, SimpleADB
 from executorch.exir._serialize._program import deserialize_pte_binary
 from pytorch_tokenizers.hf_tokenizer import HuggingFaceTokenizer
@@ -30,6 +31,16 @@ except ImportError:
     raise ImportError(
         "Please install the llm eval dependency via examples/models/llama/install_requirements.sh"
     )
+
+
+INFERENCE_REGISTRY = {}
+
+
+def register_inference(use_kv_cache: bool):
+    def decorator(func):
+        INFERENCE_REGISTRY[use_kv_cache] = func
+
+    return decorator
 
 
 class GraphModuleCalibrationWrapper(EagerEvalWrapper):
@@ -65,28 +76,20 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
 
     def _model_call(self, inps):
         all_logits = None
+        kwargs = {}
         if self._use_kv_cache:
-            all_logits = kv_inference(
-                self.get_example_inputs,
-                inps,
-                self._model,
-                self._tokenizer,
-                self.ar_len,
-                self.max_seq_length,
-                kv_updater=self.kv_updater,
-                use_i64_token=self.use_i64_token,
-                collect_logits=True,
-            )
-        else:
-            all_logits = prefill_inference(
-                self.get_example_inputs,
-                inps,
-                self._model,
-                self._tokenizer,
-                self.max_seq_length,
-                use_i64_token=self.use_i64_token,
-                collect_logits=True,
-            )
+            kwargs["ar_len"] = self.ar_len
+            kwargs["kv_updater"] = self.kv_updater
+        all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
+            self.get_example_inputs,
+            inps,
+            self._model,
+            self._tokenizer,
+            max_seq_len=self.max_seq_length,
+            use_i64_token=self.use_i64_token,
+            collect_logits=True,
+            **kwargs,
+        )
         return all_logits
 
 
@@ -231,7 +234,13 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
 
 
 def smart_mask_updater(
-    _, n_updates, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+    n_updates: int,
+    atten_mask: AttentionMask,
+    pos,
+    k_caches,
+    v_caches,
+    new_k_caches,
+    new_v_caches,
 ):
     # ar_len is unused in smart mask
     max_cache_len = k_caches[0].size(-1)
@@ -241,14 +250,20 @@ def smart_mask_updater(
 
         for i, v_cache in enumerate(v_caches):
             v_cache[:, pos : pos + n_updates, :] = new_v_caches[i][:, :n_updates, :]
-        atten_mask[:, :, pos : pos + n_updates] = 0
+        atten_mask.smart_mask_update(pos, n_updates)
     pos += n_updates
 
-    return (atten_mask, pos, k_caches, v_caches)
+    return pos, k_caches, v_caches
 
 
 def shift_pointer_updater(
-    ar_len, n_updates, atten_mask, pos, k_caches, v_caches, new_k_caches, new_v_caches
+    n_updates: int,
+    atten_mask: AttentionMask,
+    pos,
+    k_caches,
+    v_caches,
+    new_k_caches,
+    new_v_caches,
 ):
     max_cache_len = k_caches[0].size(-1)
     if pos + n_updates <= max_cache_len:
@@ -264,12 +279,13 @@ def shift_pointer_updater(
             )
             for i, v_cache in enumerate(v_caches)
         ]
-        atten_mask[:, :, -pos - n_updates - ar_len : -pos - ar_len] = 0
+        atten_mask.shift_pointer_update(pos, n_updates)
     pos += n_updates
 
-    return (atten_mask, pos, k_caches, v_caches)
+    return pos, k_caches, v_caches
 
 
+@register_inference(use_kv_cache=True)
 def kv_inference(
     get_example_inputs,
     prompt: Union[str, list],
@@ -331,7 +347,7 @@ def kv_inference(
             # Run inference.
             logits, new_k_caches, new_v_caches = module(
                 tmp_token_list,
-                atten_mask,
+                *atten_mask,
                 tmp_pos,
                 *k_caches,
                 *v_caches,
@@ -340,8 +356,7 @@ def kv_inference(
                 result_logits.append(logits[:, :num_tokens_in_chunk])
 
             # Update the pos, KV cache and attention mask.
-            atten_mask, pos, k_caches, v_caches = kv_updater(
-                ar_len,
+            pos, k_caches, v_caches = kv_updater(
                 num_tokens_in_chunk,
                 atten_mask,
                 pos,
@@ -378,7 +393,7 @@ def kv_inference(
 
             logits, new_k_caches, new_v_caches = module(
                 tmp_token_list,
-                atten_mask,
+                *atten_mask,
                 tmp_pos,
                 *k_caches,
                 *v_caches,
@@ -386,8 +401,7 @@ def kv_inference(
             if collect_logits:
                 result_logits.append(logits[:, :num_tokens_in_chunk])
 
-            atten_mask, pos, k_caches, v_caches = kv_updater(
-                ar_len,
+            pos, k_caches, v_caches = kv_updater(
                 1,
                 atten_mask,
                 pos,
@@ -406,6 +420,7 @@ def kv_inference(
     return result_logits
 
 
+@register_inference(use_kv_cache=False)
 def prefill_inference(
     get_example_inputs,
     prompt: Union[str, list],
@@ -449,12 +464,9 @@ def prefill_inference(
                     ],
                     dim=1,
                 )
-            results = module(
-                tmp_token_list,
-                atten_mask,
-            )
+            results = module(tmp_token_list, *atten_mask)
             if len(results) == 3:
-                logits, new_k_caches, new_v_caches = results
+                logits, _, _ = results
             elif len(results) == 1:
                 logits = results
             token = torch.argmax(logits[:, pos - 1], dim=-1).item()
@@ -492,28 +504,20 @@ def graph_module_inference(
         prompt is None
     ), "Please provide either tasks or prompt - not both or neither"
     if tasks is None:
+        kwargs = {}
         if use_kv_cache:
-            kv_inference(
-                get_example_inputs,
-                prompt,
-                module,
-                tokenizer,
-                ar_len,
-                max_seq_len,
-                kv_updater=kv_updater,
-                use_i64_token=use_i64_token,
-                collect_logits=False,
-            )
-        else:
-            prefill_inference(
-                get_example_inputs,
-                prompt,
-                module,
-                tokenizer,
-                max_seq_len,
-                use_i64_token,
-                collect_logits=False,
-            )
+            kwargs["ar_len"] = ar_len
+            kwargs["kv_updater"] = kv_updater
+        INFERENCE_REGISTRY[use_kv_cache](
+            get_example_inputs,
+            prompt,
+            module,
+            tokenizer,
+            max_seq_len=max_seq_len,
+            use_i64_token=use_i64_token,
+            collect_logits=False,
+            **kwargs,
+        )
     else:
         calibration_wrapper = GraphModuleCalibrationWrapper(
             model=module,

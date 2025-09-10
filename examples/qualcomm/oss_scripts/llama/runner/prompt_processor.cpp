@@ -35,19 +35,35 @@ PromptProcessor<T>::PromptProcessor(
     input_pos_.size = 0;
   else
     input_pos_.size = metadata_.ar_len * sizeof(int32_t);
-  attention_mask_.size =
-      metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+
+  switch (metadata_.cache_mode) {
+    case CacheMode::StaticCahce:
+      attention_mask_.size =
+          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+      window_attention_mask_.size = 0;
+      break;
+    case CacheMode::HybridCache:
+      attention_mask_.size =
+          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+      window_attention_mask_.size =
+          metadata_.ar_len * metadata_.context_len * sizeof(uint16_t);
+      break;
+    default:
+      ET_CHECK_MSG(false, "Unsupported llama cache mode");
+      break;
+  }
+
   logits_.size = metadata_.ar_len * metadata_.vocab_size * sizeof(uint16_t);
 };
-
 template <typename T>
 void PromptProcessor<T>::init_io(
     IMemAlloc* buffer_manager,
     Result<MethodMeta> method_meta) {
+  size_t idx = 0;
   input_tensors_.reserve(method_meta->num_inputs());
   output_tensors_.reserve(method_meta->num_outputs());
   // [I]: input_tokens
-  Result<TensorInfo> input_toks = method_meta->input_tensor_meta(0);
+  Result<TensorInfo> input_toks = method_meta->input_tensor_meta(idx++);
   input_toks_.data =
       reinterpret_cast<int64_t*>(buffer_manager->allocate(input_toks_.size));
   input_toks_.tensor = std::make_unique<TensorImpl>(
@@ -61,7 +77,7 @@ void PromptProcessor<T>::init_io(
       input_toks_.data, input_toks_.size, input_toks.get());
 
   // [I]: attention_mask
-  Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(1);
+  Result<TensorInfo> attention_mask = method_meta->input_tensor_meta(idx++);
   attention_mask_.data = reinterpret_cast<uint16_t*>(
       buffer_manager->allocate(attention_mask_.size));
   attention_mask_.tensor = std::make_unique<TensorImpl>(
@@ -75,9 +91,30 @@ void PromptProcessor<T>::init_io(
   buffer_manager->add_memory_info(
       attention_mask_.data, attention_mask_.size, attention_mask.get());
 
+  // [I]: sliding window attention_mask
+  if (metadata_.cache_mode == CacheMode::HybridCache) {
+    Result<TensorInfo> window_attention_mask =
+        method_meta->input_tensor_meta(idx++);
+    window_attention_mask_.data = reinterpret_cast<uint16_t*>(
+        buffer_manager->allocate(window_attention_mask_.size));
+    window_attention_mask_.tensor = std::make_unique<TensorImpl>(
+        window_attention_mask->scalar_type(),
+        window_attention_mask->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(
+            window_attention_mask->sizes().data()),
+        window_attention_mask_.data,
+        const_cast<TensorImpl::DimOrderType*>(
+            window_attention_mask->dim_order().data()));
+    input_tensors_.emplace_back(window_attention_mask_.tensor.get());
+    buffer_manager->add_memory_info(
+        window_attention_mask_.data,
+        window_attention_mask_.size,
+        window_attention_mask.get());
+  }
+
   if (!is_bert()) {
     // [I]: input_pos
-    Result<TensorInfo> input_pos = method_meta->input_tensor_meta(2);
+    Result<TensorInfo> input_pos = method_meta->input_tensor_meta(idx++);
     input_pos_.data =
         reinterpret_cast<int32_t*>(buffer_manager->allocate(input_pos_.size));
     input_pos_.tensor = std::make_unique<TensorImpl>(
@@ -91,7 +128,7 @@ void PromptProcessor<T>::init_io(
         input_pos_.data, input_pos_.size, input_pos.get());
 
     // [I] kv_cache
-    int index = 3; // bypass input_tokens, atten_mask, input_pos
+    size_t index = idx; // bypass input_tokens, atten_mask, input_pos
     for (int cache_group = 0; cache_group < 2; ++cache_group) {
       std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
           (cache_group == 0 ? k_cache_in_ : v_cache_in_);
@@ -133,7 +170,7 @@ void PromptProcessor<T>::init_io(
   buffer_manager->add_memory_info(logits_.data, logits_.size, logits.get());
 
   // [O] kv_cache
-  int index = 1;
+  size_t index = 1;
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
     std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
@@ -234,6 +271,16 @@ Result<uint64_t> PromptProcessor<T>::prefill(
   // Initialize attention mask with current position
   kv_manager_->init_attention_mask(
       attention_mask_.data, attention_map, metadata_.ar_len, pos);
+  // Initialize window attention mask with current position
+  if (metadata_.cache_mode == CacheMode::HybridCache) {
+    kv_manager_->init_attention_mask(
+        window_attention_mask_.data,
+        attention_map,
+        metadata_.ar_len,
+        pos,
+        metadata_.sliding_window);
+  }
+
   // Initialize the output of the module
   ET_CHECK_MSG(
       decoder_runner_->set_outputs(method_name_, output_tensors_) ==
@@ -275,9 +322,18 @@ Result<uint64_t> PromptProcessor<T>::prefill(
     }
     // Update KV Cache with the output results
     kv_manager_->update_cache(metadata_.ar_len, pos, n_update, {});
+
     // Update attention mask with current position
     kv_manager_->update_attention_mask(
         attention_mask_.data, metadata_.ar_len, pos, n_update);
+    if (metadata_.cache_mode == CacheMode::HybridCache) {
+      kv_manager_->update_attention_mask(
+          window_attention_mask_.data,
+          metadata_.ar_len,
+          pos,
+          n_update,
+          metadata_.sliding_window);
+    }
     prompt_pos += metadata_.ar_len;
     pos += metadata_.ar_len;
   }

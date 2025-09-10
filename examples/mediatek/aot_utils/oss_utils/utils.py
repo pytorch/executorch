@@ -33,9 +33,7 @@ def build_executorch_binary(
         if quant_dtype not in Precision:
             raise AssertionError(f"No support for Precision {quant_dtype}.")
 
-        captured_model = torch.export.export_for_training(
-            model, inputs, strict=True
-        ).module()
+        captured_model = torch.export.export(model, inputs, strict=True).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration

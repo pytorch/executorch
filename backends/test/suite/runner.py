@@ -5,7 +5,6 @@ import random
 import re
 import time
 import unittest
-import warnings
 
 from datetime import timedelta
 from typing import Any
@@ -282,10 +281,6 @@ def build_test_filter(args: argparse.Namespace) -> TestFilter:
 
 def runner_main():
     args = parse_args()
-
-    # Suppress deprecation warnings for export_for_training, as it generates a
-    # lot of log spam. We don't really need the warning here.
-    warnings.simplefilter("ignore", category=FutureWarning)
 
     seed = args.seed or random.randint(0, 100_000_000)
     print(f"Running with seed {seed}.")
