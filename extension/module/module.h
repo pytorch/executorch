@@ -598,8 +598,7 @@ class Module {
     return event_tracer_.get();
   }
 
-  ET_NODISCARD
-  runtime::Span<uint8_t> debug_buffer() {
+  ET_DEPRECATED ET_NODISCARD runtime::Span<uint8_t> debug_buffer() {
     return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
   }
 
@@ -622,7 +621,7 @@ class Module {
   std::unique_ptr<runtime::EventTracer> event_tracer_;
   std::unique_ptr<runtime::DataLoader> data_map_loader_;
   std::unique_ptr<NamedDataMap> data_map_;
-  std::vector<uint8_t> debug_buffer_;
+  ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
