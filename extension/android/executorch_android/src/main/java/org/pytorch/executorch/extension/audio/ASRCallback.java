@@ -18,7 +18,7 @@ import org.pytorch.executorch.annotations.Experimental;
  * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @Experimental
-public interface WhisperCallback {
+public interface ASRCallback {
   /**
    * Called when a new result is available from JNI. Users will keep getting onResult() invocations
    * until generate() finishes.
