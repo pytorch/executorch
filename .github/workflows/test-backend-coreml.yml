@@ -1,0 +1,28 @@
+name: Test CoreML Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/test-backend-coreml.yml
+      - .github/workflows/_test_backend.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-coreml:
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: coreml
+      flows: '["coreml", "coreml_static_int8"]'
+      runner: macos-m1-stable
+      python-version: "3.12"
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120

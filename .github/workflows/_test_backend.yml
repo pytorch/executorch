@@ -1,0 +1,63 @@
+name: Test Backend
+
+on:
+  workflow_call:
+    inputs:
+      backend:
+        description: 'Backend to test (xnnpack, coreml, vulkan, qnn)'
+        required: true
+        type: string
+      flows:
+        description: 'JSON array of flows to test'
+        required: true
+        type: string
+      runner:
+        description: 'Runner to use'
+        required: true
+        type: string
+      docker-image:
+        description: 'Docker image to use (Linux only)'
+        required: false
+        type: string
+      python-version:
+        description: 'Python version to use (macOS only)'
+        required: false
+        type: string
+      ref:
+        description: 'Git ref to checkout'
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      timeout:
+        description: 'Job timeout in minutes'
+        required: false
+        type: number
+        default: 120
+
+jobs:
+  test-backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        flow: ${{ fromJSON(inputs.flows) }}
+        suite: [models, operators]
+
+    uses: ${{ contains(inputs.runner, 'macos') && 'pytorch/test-infra/.github/workflows/macos_job.yml@main' || 'pytorch/test-infra/.github/workflows/linux_job_v2.yml@main' }}
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      ref: ${{ inputs.ref }}
+      runner: ${{ inputs.runner }}
+      docker-image: ${{ inputs.docker-image }}
+      python-version: ${{ inputs.python-version }}
+      submodules: recursive
+      timeout: ${{ inputs.timeout }}
+      upload-artifact: test-report-${{ matrix.flow }}-${{ matrix.suite }}
+      script: |
+        set -eux
+
+        ${{ contains(inputs.runner, 'macos') && '# This is needed to get the prebuilt PyTorch wheel from S3
+        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
+
+        source .ci/scripts/test_backend_macos.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"' || 'source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"' }}

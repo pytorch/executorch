@@ -1,0 +1,28 @@
+name: Test XNNPACK Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/test-backend-xnnpack.yml
+      - .github/workflows/_test_backend.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-xnnpack:
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: xnnpack
+      flows: '["xnnpack", "xnnpack_dynamic_int8_per_channel", "xnnpack_static_int8_per_channel", "xnnpack_static_int8_per_tensor"]'
+      runner: linux.4xlarge.memory
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
