@@ -161,10 +161,31 @@ void setup_output_storage(
 inline std::unique_ptr<Module> load_module_from_buffer(
     const void* ptr,
     size_t ptr_len,
+    std::optional<const std::string>& data_map_path,
     std::unique_ptr<runtime::EventTracer> event_tracer,
     Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_buffer");
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
+
+  if (data_map_path.has_value()) {
+    Result<MmapDataLoader> data_map_loader_res = MmapDataLoader::from(
+        data_map_path->c_str(),
+        MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
+    THROW_IF_ERROR(
+        data_map_loader_res.error(),
+        "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+        data_map_path->c_str(),
+        static_cast<uint32_t>(data_map_loader_res.error()));
+    auto data_map_loader =
+        std::make_unique<MmapDataLoader>(std::move(data_map_loader_res.get()));
+    return std::make_unique<Module>(
+        std::move(loader),
+        nullptr, // memory_allocator
+        nullptr, // temp_allocator
+        std::move(event_tracer), // event_tracer
+        std::move(data_map_loader)); // data_map_loader
+  }
+
   return std::make_unique<Module>(
       std::move(loader),
       nullptr, // memory_allocator
@@ -504,6 +525,7 @@ struct PyMethodMeta final {
 struct PyModule final {
   explicit PyModule(
       const py::bytes& buffer,
+      std::optional<const std::string>& data_path,
       bool enable_etdump,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
@@ -512,12 +534,14 @@ struct PyModule final {
         module_(load_module_from_buffer(
             buffer.cast<std::string_view>().data(),
             py::len(buffer),
+            data_path,
             setup_event_tracer(enable_etdump, debug_buffer_size),
             program_verification)) {}
 
   explicit PyModule(
       const void* ptr,
       size_t ptr_len,
+      std::optional<const std::string>& data_path,
       bool enable_etdump,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
@@ -526,6 +550,7 @@ struct PyModule final {
         module_(load_module_from_buffer(
             ptr,
             ptr_len,
+            data_path,
             setup_event_tracer(enable_etdump, debug_buffer_size),
             program_verification)) {}
 
@@ -551,12 +576,13 @@ struct PyModule final {
   // Module is only valid as long as the python buffer is alive.
   static std::unique_ptr<PyModule> load_from_buffer(
       const py::bytes& buffer,
+      std::optional<const std::string>& data_path,
       bool enable_etdump,
       size_t debug_buffer_size = 0,
       Program::Verification program_verification =
           Program::Verification::InternalConsistency) {
     return std::make_unique<PyModule>(
-        buffer, enable_etdump, debug_buffer_size, program_verification);
+        buffer, data_path, enable_etdump, debug_buffer_size, program_verification);
   }
 
   static std::unique_ptr<PyModule> load_from_file(
@@ -576,11 +602,13 @@ struct PyModule final {
 
   static std::unique_ptr<PyModule> load_from_bundled_program(
       PyBundledModule& m,
+      std::optional<const std::string>& data_path,
       bool enable_etdump,
       size_t debug_buffer_size = 0) {
     return std::make_unique<PyModule>(
         m.get_program_ptr(),
         m.get_program_len(),
+        data_path,
         enable_etdump,
         debug_buffer_size);
   }
@@ -1390,6 +1418,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       "_load_for_executorch_from_buffer",
       &PyModule::load_from_buffer,
       py::arg("buffer"),
+      py::arg("data_path") = std::nullopt,
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       py::arg("program_verification") =
@@ -1399,6 +1428,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       "_load_for_executorch_from_bundled_program",
       &PyModule::load_from_bundled_program,
       py::arg("ptr"),
+      py::arg("data_path") = std::nullopt,
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       call_guard);

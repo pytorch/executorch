@@ -651,8 +651,65 @@ class PybindingsTest(unittest.TestCase):
                 )
                 ptd.write(tensor_data)
 
-            executorch_program = self.runtime._load_for_executorch(pte_file, ptd_file)
-
             expected = eager_module(inputs[0])
-            executorch_output = executorch_program.forward(inputs)[0]
-            self.assertTrue(torch.allclose(expected, executorch_output))
+
+            # Test 1: File-based loading with external data file
+            executorch_module_file = self.runtime._load_for_executorch(pte_file, ptd_file)
+            executorch_output_file = executorch_module_file.forward(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output_file))
+
+            # Test 2: Buffer-based loading with external data file
+            with open(pte_file, "rb") as f:
+                program_buffer = f.read()
+            executorch_module_buffer = self.load_fn(program_buffer, ptd_file)
+            executorch_output_buffer = executorch_module_buffer.forward(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output_buffer))
+
+            # Test 3: Buffer-based loading without external data file (should fail or work differently)
+            # This should fail because the program expects external data
+            with self.assertRaises(RuntimeError):
+                executorch_module_no_data = self.load_fn(program_buffer)
+                executorch_module_no_data.forward(inputs)
+
+            # Test 4: Test with invalid data file path (should fail)
+            invalid_ptd_file = os.path.join(tmpdir, "nonexistent.ptd")
+            with self.assertRaises(RuntimeError):
+                self.load_fn(program_buffer, invalid_ptd_file)
+
+            # Test 5: Test bundled program loading with external data
+            # First create a bundled program with external constants
+            from executorch.devtools.bundled_program.core import BundledProgram
+            from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+            from executorch.devtools.bundled_program.serialize import (
+                serialize_from_bundled_program_to_flatbuffer,
+            )
+
+            method_test_suites = [
+                MethodTestSuite(
+                    method_name="forward",
+                    test_cases=[
+                        MethodTestCase(
+                            inputs=input,
+                            expected_outputs=expected,
+                        )
+                        for input in inputs
+                    ],
+                ),
+            ]
+            bundled_program = BundledProgram(exec_program, method_test_suites)
+            bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+            bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
+
+            # Load module from bundled program with external data
+            executorch_module_bundled = self.runtime._load_for_executorch_from_bundled_program(
+                bundled_module, ptd_file
+            )
+            executorch_output_bundled = executorch_module_bundled.forward(inputs)[0]
+            self.assertTrue(torch.allclose(expected, executorch_output_bundled))
+
+            # Test 6: Bundled program without external data should fail
+            with self.assertRaises(RuntimeError):
+                executorch_module_bundled_no_data = self.runtime._load_for_executorch_from_bundled_program(
+                    bundled_module
+                )
+                executorch_module_bundled_no_data.forward(inputs)
