@@ -290,37 +290,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  jint generate_from_pos(
-      facebook::jni::alias_ref<jstring> prompt,
-      jint seq_len,
-      jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
-      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      return static_cast<jint>(multi_modal_runner_->generate(
-          inputs,
-          llm::GenerationConfig{
-              .echo = static_cast<bool>(echo), .seq_len = seq_len},
-          [callback](const std::string& result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = temperature_,
-      };
-      return static_cast<jint>(runner_->generate(
-          prompt->toStdString(),
-          config,
-          [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
-    }
-    return static_cast<jint>(executorch::runtime::Error::InvalidArgument);
-  }
-
   void stop() {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_->stop();
@@ -357,8 +326,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
             "appendTextInput", ExecuTorchLlmJni::append_text_input),
-        makeNativeMethod(
-            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
