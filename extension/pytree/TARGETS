@@ -38,7 +38,7 @@ runtime.python_library(
         "__init__.py",
     ],
     base_module = "executorch.extension.pytree",
-    visibility = ["@EXECUTORCH_CLIENTS"],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":pybindings",
         "//caffe2:torch",
