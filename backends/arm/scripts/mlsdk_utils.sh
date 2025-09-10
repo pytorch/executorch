@@ -124,5 +124,29 @@ function setup_model_converter() {
     popd
 }
 
+function setup_path_model_converter() {
+    cd "${root_dir}"
+    model_converter_bin_path="$(cd ${mlsdk_manifest_dir}/sw/model-converter/build && pwd)"
+    append_env_in_setup_path PATH ${model_converter_bin_path}
+}
+
+function setup_path_vgf_lib() {
+    cd "${root_dir}"
+    model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
+    append_env_in_setup_path PATH ${model_vgf_path}/bin
+    append_env_in_setup_path LD_LIBRARY_PATH "${model_vgf_path}/lib"
+    append_env_in_setup_path DYLD_LIBRARY_PATH "${model_vgf_path}/lib"
+}
+
+function setup_path_emulation_layer() {
+    cd "${root_dir}"
+    model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
+    prepend_env_in_setup_path LD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
+    prepend_env_in_setup_path DYLD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
+    prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Tensor_Emulation
+    prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
+    prepend_env_in_setup_path VK_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
+}
+
 #setup_model_converter() $1
 # `"$manifest_dir"'

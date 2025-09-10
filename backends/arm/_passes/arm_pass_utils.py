@@ -235,3 +235,8 @@ def set_node_arg(node: torch.fx.Node, i: int | str, value):
         node.kwargs = kwargs
     else:
         raise RuntimeError("Invalid type")
+
+
+def get_output_dim_orders(graph_module):
+    output_node = graph_module.graph.output_node()
+    return [get_first_fake_tensor(node).dim_order() for node in output_node.args[0]]
