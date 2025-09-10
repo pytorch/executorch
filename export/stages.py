@@ -554,9 +554,7 @@ class ToBackendStage(Stage):
                 if isinstance(passes, list):
                     transform_passes[method_name].extend(passes)
                 else:
-                    raise ValueError(
-                        "Transform passes must return list of passes"
-                    )
+                    raise ValueError("Transform passes must return list of passes")
 
         # Apply transform passes
         edge_program_manager = edge_program_manager.transform(transform_passes)
