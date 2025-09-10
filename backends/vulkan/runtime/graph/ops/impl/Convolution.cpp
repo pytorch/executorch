@@ -364,6 +364,10 @@ utils::uvec3 conv2d_global_wg_size(
 
   if (method == Conv2dMethod::Depthwise || method == Conv2dMethod::Pointwise) {
     wg_size = {wg_size[0] * wg_size[1], wg_size[2], 1};
+
+    if (shader.kernel_name.find("s1p0") != std::string::npos) {
+      wg_size[0] *= 4;
+    }
   }
 
   return wg_size;
