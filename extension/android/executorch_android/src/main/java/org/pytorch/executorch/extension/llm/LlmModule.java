@@ -173,20 +173,23 @@ public class LlmModule {
    * @param height Input image height
    * @param channels Input image number of channels
    * @param startPos The starting position in KV cache of the input in the LLM.
-   * @return The updated starting position in KV cache of the input in the LLM.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
+  @Deprecated
   public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
-    long[] nativeResult = prefillImagesNative(image, width, height, channels, startPos);
-    if (nativeResult[0] != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+    if (startPos == 0) {
+      resetContext();
     }
-    return nativeResult[1];
+    int nativeResult = appendImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
   }
 
-  // returns a tuple of (status, updated startPos)
-  private native long[] prefillImagesNative(
-      int[] image, int width, int height, int channels, long startPos);
+  private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
    * Prefill an LLaVA Module with the given text input.
@@ -196,22 +199,29 @@ public class LlmModule {
    *     reference and will be updated inside this function.
    * @param bos The number of BOS (begin of sequence) token.
    * @param eos The number of EOS (end of sequence) token.
-   * @return The updated starting position in KV cache of the input in the LLM.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
+  @Deprecated
   public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
-    long[] nativeResult = prefillPromptNative(prompt, startPos, bos, eos);
-    if (nativeResult[0] != 0) {
-      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+    if (startPos == 0) {
+      resetContext();
     }
-    return nativeResult[1];
+    int nativeResult = appendTextInput(prompt, bos, eos);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
   }
 
   // returns a tuple of (status, updated startPos)
-  private native long[] prefillPromptNative(String prompt, long startPos, int bos, int eos);
+  private native int appendTextInput(String prompt, int bos, int eos);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.
+   *
+   * <p>This is a deprecated API. Please use {@link #generate(String, int, LlmCallback, boolean)}
    *
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
@@ -220,8 +230,16 @@ public class LlmModule {
    * @param echo indicate whether to echo the input prompt or not.
    * @return The error code.
    */
+  @Deprecated
   public native int generateFromPos(
       String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo);
+
+  /**
+   * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
+   *
+   * <p>The startPos will be reset to 0.
+   */
+  public native void resetContext();
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
