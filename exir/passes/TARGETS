@@ -7,7 +7,6 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         ":const_prop_pass",
         ":debug_handle_generator_pass",
@@ -106,7 +105,6 @@ runtime.python_library(
     srcs = [
         "const_prop_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
@@ -119,7 +117,6 @@ runtime.python_library(
     srcs = [
         "scalar_to_tensor_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
@@ -131,7 +128,6 @@ runtime.python_library(
     srcs = [
         "constant_prop_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir/dialects:lib",
@@ -146,7 +142,6 @@ runtime.python_library(
     srcs = [
         "remove_graph_asserts_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
     ],
@@ -169,7 +164,6 @@ runtime.python_library(
         "_quant_patterns_and_replacements.py",
         "quant_fusion_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         ":replace_aten_with_edge_pass",
         "//caffe2:torch",
@@ -185,7 +179,6 @@ runtime.python_library(
     srcs = [
         "quantize_io_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
         "//caffe2:torch",
@@ -239,7 +232,6 @@ runtime.python_library(
     srcs = [
         "remove_mixed_type_operators.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
@@ -251,7 +243,6 @@ runtime.python_library(
     srcs = [
         "spec_prop_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:delegate",
@@ -265,7 +256,6 @@ runtime.python_library(
     srcs = [
         "init_mutable_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//executorch/exir:delegate",
     ],
@@ -276,7 +266,6 @@ runtime.python_library(
     srcs = [
         "sym_shape_eval_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:_warnings",
@@ -351,7 +340,6 @@ runtime.python_library(
     srcs = [
         "debug_handle_generator_pass.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:debug_handle_utils",
