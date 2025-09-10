@@ -66,7 +66,6 @@ def main():
                 if (now - last_auto.created_at).days >= DAYS_BEFORE_CLOSE:
                     print(f"[VALIDATION] Would close issue/PR #{issue.number} due to inactivity.")
             else:
-                labels = [l.name for l in issue.labels if l.name != LABEL]
                 print(f"[VALIDATION] Would remove label from issue/PR #{issue.number} after user response.")
 
 if __name__ == "__main__":
