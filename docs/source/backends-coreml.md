@@ -188,7 +188,7 @@ Quantization with the Core ML backend requires exporting the model for iOS 17 or
 To perform 8-bit quantization with the PT2E flow, follow these steps:
 
 1) Create a [`coremltools.optimize.torch.quantization.LinearQuantizerConfig`](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use to to create an instance of a `CoreMLQuantizer`.
-2) Use `torch.export.export_for_training` to export a graph module that will be prepared for quantization.
+2) Use `torch.export.export` to export a graph module that will be prepared for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
 4) Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
 5) Call `convert_pt2e` to quantize the model.
@@ -224,7 +224,7 @@ static_8bit_config = ct.optimize.torch.quantization.LinearQuantizerConfig(
 quantizer = CoreMLQuantizer(static_8bit_config)
 
 # Step 2: Export the model for training
-training_gm = torch.export.export_for_training(mobilenet_v2, sample_inputs).module()
+training_gm = torch.export.export(mobilenet_v2, sample_inputs).module()
 
 # Step 3: Prepare the model for quantization
 prepared_model = prepare_pt2e(training_gm, quantizer)
