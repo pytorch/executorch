@@ -34,18 +34,82 @@ def is_linux_x86() -> bool:
     )
 
 
-QNN_VERSION = "2.37.0.250724"
+def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
+    """Download archive from URL with progress reporting."""
+    logger.debug("Archive will be saved to: %s", archive_path)
+
+    try:
+        urllib.request.urlretrieve(url, archive_path, _make_report_progress())
+        logger.info("Download completed!")
+    except Exception as e:
+        logger.exception("Error during download: %s", e)
+        return False
+
+    if archive_path.exists() and archive_path.stat().st_size == 0:
+        logger.warning("Downloaded file is empty!")
+        return False
+    elif not archive_path.exists():
+        logger.error("File was not downloaded!")
+        return False
+    return True
+
+
+def _make_report_progress():
+    """Return a callback to report download progress."""
+    last_reported = 0
+
+    def report_progress(block_num, block_size, total_size):
+        nonlocal last_reported
+        try:
+            downloaded = block_num * block_size
+            percent = downloaded / total_size * 100 if total_size else 100.0
+        except Exception:
+            percent, downloaded, total_size = 0.0, block_num * block_size, 0
+        if percent - last_reported >= 20 or percent >= 100:
+            logger.info(
+                "Downloaded: %d/%d bytes (%.2f%%)", downloaded, total_size, percent
+            )
+            last_reported = percent
+
+    return report_progress
+
+
+def _extract_archive(
+    url: str, archive_path: pathlib.Path, content_dir: str, dst_folder: pathlib.Path
+):
+    """Extract archive based on type (zip or tar)."""
+    if url.endswith(".zip"):
+        logger.info("Extracting ZIP archive...")
+        _extract_zip(archive_path, content_dir, dst_folder)
+    elif url.endswith((".tar.gz", ".tgz")):
+        logger.info("Extracting TAR archive...")
+        _extract_tar(archive_path, content_dir, dst_folder)
+    else:
+        raise ValueError(f"Unsupported archive format: {url}")
+
+
+def _verify_extraction(dst_folder: pathlib.Path):
+    """Check if extraction succeeded and log contents."""
+    logger.info("Verifying extraction to %s", dst_folder)
+    if dst_folder.exists():
+        logger.debug("SDK directory exists. Contents:")
+        for item in dst_folder.iterdir():
+            logger.debug("  %s", item.name)
+    else:
+        logger.error("SDK directory was not created!")
 
 
 def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     """
     Download and extract the Qualcomm SDK into dst_folder.
-
-    Notes:
-        - Only runs on Linux x86 platforms. Skips otherwise.
+    Only runs on Linux x86 platforms.
     """
+    QNN_VERSION = "2.37.0.250724"
     logger.info("Downloading Qualcomm SDK...")
-    QAIRT_URL = f"https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
+    QAIRT_URL = (
+        f"https://softwarecenter.qualcomm.com/api/download/software/sdks/"
+        f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
+    )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
     if not is_linux_x86():
@@ -56,66 +120,11 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         archive_path = pathlib.Path(tmpdir) / pathlib.Path(QAIRT_URL).name
-        logger.debug("Temporary directory: %s", tmpdir)
-        logger.debug("Archive will be saved to: %s", archive_path)
-
-        logger.info("Downloading Qualcomm SDK from %s ...", QAIRT_URL)
-        try:
-
-            def make_report_progress():
-                last_reported = 0
-
-                def report_progress(block_num, block_size, total_size):
-                    nonlocal last_reported
-                    try:
-                        downloaded = block_num * block_size
-                        percent = downloaded / total_size * 100 if total_size else 100.0
-                    except Exception:
-                        percent = 0.0
-                        downloaded = block_num * block_size
-                        total_size = 0
-                    if percent - last_reported >= 20 or percent >= 100:
-                        logger.info(
-                            "Downloaded: %d/%d bytes (%.2f%%)",
-                            downloaded,
-                            total_size,
-                            percent,
-                        )
-                        last_reported = percent
-
-                return report_progress
-
-            urllib.request.urlretrieve(QAIRT_URL, archive_path, make_report_progress())
-            logger.info("Download completed!")
-
-            if archive_path.exists() and archive_path.stat().st_size == 0:
-                logger.warning("Downloaded file is empty!")
-            elif not archive_path.exists():
-                logger.error("File was not downloaded!")
-                return None
-
-        except Exception as e:
-            logger.exception("Error during download: %s", e)
+        if not _download_archive(QAIRT_URL, archive_path):
             return None
 
-        if QAIRT_URL.endswith(".zip"):
-            logger.info("Extracting ZIP archive...")
-            _extract_zip(archive_path, QAIRT_CONTENT_DIR, dst_folder)
-        elif QAIRT_URL.endswith((".tar.gz", ".tgz")):
-            logger.info("Extracting TAR archive...")
-            _extract_tar(archive_path, QAIRT_CONTENT_DIR, dst_folder)
-        else:
-            raise ValueError(f"Unsupported archive format: {QAIRT_URL}")
-
-        logger.info("Verifying extraction to %s", dst_folder)
-        if dst_folder.exists():
-            logger.debug("SDK directory exists. Contents:")
-            for item in dst_folder.iterdir():
-                logger.debug("  %s", item.name)
-        else:
-            logger.error("SDK directory was not created!")
-
-        logger.info("Qualcomm SDK extracted to %s", dst_folder)
+        _extract_archive(QAIRT_URL, archive_path, QAIRT_CONTENT_DIR, dst_folder)
+        _verify_extraction(dst_folder)
 
     return dst_folder
 

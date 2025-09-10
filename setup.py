@@ -47,37 +47,28 @@
 # derivative works thereof, in binary and source code form.
 
 import contextlib
+
+# Import this before distutils so that setuptools can intercept the distuils
+# imports.
+import logging
 import os
 import re
 import shutil
 import site
-import sys
-
-# Import this before distutils so that setuptools can intercept the distuils
-# imports.
-import setuptools  # noqa: F401 # usort: skip
-import importlib.machinery
-import logging
-import os
-import platform
 import subprocess
 import sys
 import sysconfig
-import tarfile
 import tempfile
-import urllib.request
-import zipfile
 
 from distutils import log  # type: ignore[import-not-found]
 from distutils.sysconfig import get_python_lib  # type: ignore[import-not-found]
 from pathlib import Path
 from typing import List, Optional
 
-from setuptools import Extension, find_packages, setup
+from setuptools import Extension, setup
 from setuptools.command.build import build
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py
-from setuptools.command.install import install
 
 logging.basicConfig(
     level=logging.INFO,
