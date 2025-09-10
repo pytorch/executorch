@@ -646,10 +646,10 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
               ETImage img = processedImageList.get(0);
               ETLogging.getInstance().log("Llava start prefill image");
               mModule.prefillImages(
-                      img.getInts(),
-                      img.getWidth(),
-                      img.getHeight(),
-                      ModelUtils.VISION_MODEL_IMAGE_CHANNELS);
+                  img.getInts(),
+                  img.getWidth(),
+                  img.getHeight(),
+                  ModelUtils.VISION_MODEL_IMAGE_CHANNELS);
             };
         executor.execute(runnable);
       }

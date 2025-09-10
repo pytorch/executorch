@@ -161,10 +161,10 @@ public class LlmModule {
       int seqLen,
       LlmCallback llmCallback,
       boolean echo) {
-        prefillPrompt(prompt, 0, 0, 0);
-        prefillImages(image, width, height, channels, 0);
-        return generate("", llmCallback, echo);
-      }
+    prefillPrompt(prompt, 0, 0, 0);
+    prefillImages(image, width, height, channels, 0);
+    return generate("", llmCallback, echo);
+  }
 
   /**
    * Prefill an LLaVA Module with the given images input.
