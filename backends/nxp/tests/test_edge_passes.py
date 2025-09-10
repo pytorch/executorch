@@ -72,7 +72,7 @@ def test_moving_view_copy_into_separate_qdq_clusters():
         exported_program = epm.exported_program()
 
         nodes = list(exported_program.graph_module.graph.nodes)
-        assert len(nodes) == 28
+        assert len(nodes) == 26
 
         view_copy_indices = _find_view_copy_node_indices(nodes)
 

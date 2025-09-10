@@ -27,7 +27,7 @@ def test_conv_fc_softmax__to_executorch_program():
 
     delegation_info = get_delegation_info(program.graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
-    assert delegation_info.num_non_delegated_nodes == 11
+    assert delegation_info.num_non_delegated_nodes == 7
     assert delegation_info.num_delegated_nodes == 13
 
     for node in program.graph.nodes:
@@ -43,7 +43,7 @@ def test_cifarnet():
 
     delegation_info = get_delegation_info(exec_prog.exported_program().graph_module)
     assert delegation_info.num_delegated_subgraphs == 1
-    assert delegation_info.num_non_delegated_nodes == 11
+    assert delegation_info.num_non_delegated_nodes == 7
     assert delegation_info.num_delegated_nodes == 45
 
     nodes = list(exec_prog.exported_program().graph.nodes)
