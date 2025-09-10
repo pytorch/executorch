@@ -119,8 +119,7 @@ class MobileBertFinetune:
 
         # sentiment classification
         train_url = (
-            "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/"
-            "refs/heads/master/data/SST2/train.tsv"
+            "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/train.tsv"
         )
         content = requests.get(train_url, allow_redirects=True).content
         train_data = pd.read_csv(
@@ -133,8 +132,7 @@ class MobileBertFinetune:
         )
 
         val_url = (
-            "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/"
-            "refs/heads/master/data/SST2/test.tsv"
+            "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/test.tsv"
         )
         content = requests.get(val_url, allow_redirects=True).content
         val_data = pd.read_csv(
@@ -224,7 +222,7 @@ if __name__ == "__main__":
         "-c",
         "--chipset",
         required=True,
-        help="Samsung chipset, i.e. E9945, E9955, etc",
+        help="Samsung chipset, i.e. E9955, etc",
         type=str,
     )
     parser.add_argument(
