@@ -12,6 +12,8 @@
 
 ${define_active_storage_type("texture3d")}
 
+#extension GL_EXT_debug_printf : enable
+
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", "int", "texture3d")}
