@@ -143,8 +143,6 @@ class Version:
     def write_to_python_file(cls, path: str) -> None:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-
         lines = [
             "from typing import Optional",
             '__all__ = ["__version__", "git_version"]',
