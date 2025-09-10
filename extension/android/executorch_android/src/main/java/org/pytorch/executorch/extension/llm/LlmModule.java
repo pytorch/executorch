@@ -59,7 +59,6 @@ public class LlmModule {
     if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
-
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles);
   }
 
