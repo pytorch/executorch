@@ -166,8 +166,6 @@ REQUIRED_LIBCXX_LIBS = [
     "libc++.so.1.0",
     "libc++abi.so.1.0",
     "libunwind.so.1",
-    # "libm.so.6",
-    # "libpython3.10.so.1.0",
 ]
 
 

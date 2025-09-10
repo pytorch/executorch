@@ -534,6 +534,7 @@ class InstallerBuildExt(build_ext):
     def copy_extensions_to_source(self) -> None:
         """For each extension in `ext_modules`, we need to copy the extension
         file from the build directory to the correct location in the local
+        file from the build directory to the correct location in the local
         directory.
 
         This should only be triggered when inplace mode (editable mode) is enabled.
