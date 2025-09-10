@@ -23,7 +23,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
 
 input_t1 = Tuple[torch.Tensor]  # Input x
