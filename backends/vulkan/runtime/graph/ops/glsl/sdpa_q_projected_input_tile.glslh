@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef SDPA_FP_Q_PROJECTED_TILE_GLSLH
+#define SDPA_FP_Q_PROJECTED_TILE_GLSLH
+
+/*
+ * Macro Settings:
+ * - TILE_S
+ * - TILE_D4
+ */
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct FPQProjectedTile {
+  VEC4_T data[TILE_S][TILE_D4];
+};
+
+#ifdef DEBUG_MODE
+
+void printFPQProjectedTile(const FPQProjectedTile in_tile) {
+  debugPrintfEXT("input_tile: \\n");
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      debugPrintfEXT(
+          "  %f, %f, %f, %f, \\n",
+          in_tile.data[m][k4].x,
+          in_tile.data[m][k4].y,
+          in_tile.data[m][k4].z,
+          in_tile.data[m][k4].w);
+    }
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // SDPA_FP_Q_PROJECTED_TILE_GLSLH
