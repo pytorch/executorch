@@ -235,34 +235,6 @@ def get_ov_quantizer(
         group_size
     ), "Group Size None is Not Supported. It should be set to -1 for per-channel."
 
-    # (TODO) Manually ignore MP layers. This is done manually for now till we use the dynamic allocation MP
-    fp_node_names = [
-        "linear_13",
-        "linear_14",
-        "linear_35",
-        "linear_56",
-        "linear_70",
-        "linear_71",
-        "linear_77",
-        "linear_78",
-        "linear_84",
-        "linear_85",
-        "linear_88",
-        "linear_91",
-        "linear_92",
-        "linear_95",
-        "linear_96",
-        "linear_98",
-        "linear_99",
-        "linear_102",
-        "linear_103",
-        "linear_105",
-        "linear_106",
-        "linear_109",
-        "linear_110",
-        "linear_111",
-    ]
-
     if quant_config == "4wo":
         mode = QuantizationMode.INT4WO_ASYM
 
@@ -274,7 +246,6 @@ def get_ov_quantizer(
             f"No support for quant type {quant_config}. Support 8a4w, 8a8w only."
         )
     ov_quantizer = OpenVINOQuantizer(mode=mode, group_size=group_size)
-    ov_quantizer.set_ignored_scope(names=fp_node_names)
 
     return ov_quantizer
 
