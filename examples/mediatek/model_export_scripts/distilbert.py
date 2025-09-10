@@ -11,10 +11,6 @@ import sys
 if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 
-import torch
-
-from executorch.backends.mediatek import Precision
-
 from aot_utils.oss_utils.utils import build_executorch_binary, get_masked_language_model_dataset
 from transformers import AutoModelForMaskedLM, AutoTokenizer
 

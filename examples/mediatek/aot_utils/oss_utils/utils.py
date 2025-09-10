@@ -131,4 +131,3 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
         targets.append(target)
 
     return inputs, targets
-
