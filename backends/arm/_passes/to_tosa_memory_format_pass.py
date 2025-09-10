@@ -6,15 +6,21 @@
 # pyre-unsafe
 
 
+import logging
+
 import torch
+from executorch.backends.arm._passes import AnnotateOutputDimOrderPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
+    get_output_dim_orders,
     is_param_node,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+
+logger = logging.getLogger(__name__)
 
 
 def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
@@ -250,10 +256,27 @@ class ToTosaMemoryFormatPass(ExportPass):
                             node, input_node, graph_module
                         )
 
+    def remove_dim_order_kwargs(
+        self, graph_module: torch.fx.GraphModule, node: torch.fx.Node
+    ):
+        if node.op != "call_function":
+            return
+
+        kwargs = dict(node.kwargs)
+
+        if "dim_order" in kwargs:
+            logger.warning(
+                f"Ignoring dim_order kwarg '{kwargs['dim_order']}' for '{node.name}'."
+            )
+            del kwargs["dim_order"]
+
+        node.kwargs = kwargs
+
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
             node_data = get_first_fake_tensor(node).data
 
+            self.remove_dim_order_kwargs(graph_module, node)
             # Inputs and outputs are always in (N)NCHW format
             if _is_input(node, self.exported_program) or node.op == "output":
                 dim_order = tuple(range(node_data.dim()))
@@ -269,6 +292,7 @@ class ToTosaMemoryFormatPass(ExportPass):
                 dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
 
             node.meta["tosa_dim_order"] = dim_order
+
         # Insert TOSA transposes to convert between (N)NCHW and (N)NHWC format.
         # See insert_tosa_transposes for insertion conditions.
         self.insert_tosa_transposes(graph_module)
@@ -276,3 +300,32 @@ class ToTosaMemoryFormatPass(ExportPass):
         graph_module = super().call(graph_module).graph_module
 
         return PassResult(graph_module, True)
+
+    def requires(self, graph_module) -> None:
+        """
+        This is the only pass which handles dim_orders, so verify that the output dim_orders has not changed since the beginning of the lowering pipeline.
+        """
+
+        dim_orders = get_output_dim_orders(graph_module)
+        original_dim_orders = graph_module.graph.output_node().meta.get(
+            "original_dim_orders"
+        )
+        output_node = graph_module.graph.output_node()
+
+        if original_dim_orders is None:
+            raise RuntimeError(
+                f"{AnnotateOutputDimOrderPass.__name__} must be run in the beginning of the pass pipeline to verify that the dim order has not changed unexpectedly during its run."
+            )
+
+        if len(dim_orders) != len(original_dim_orders):
+            raise RuntimeError(
+                f"The number of outputs has changed since {AnnotateOutputDimOrderPass.__name__} was run."
+            )
+
+        for node, dim_order, original_dim_order in zip(
+            output_node.args[0], dim_orders, original_dim_orders
+        ):
+            if dim_order != original_dim_order:
+                raise RuntimeError(
+                    f"The dim order of output {node.name} has changed from {original_dim_order} to {dim_order} since {AnnotateOutputDimOrderPass.__name__} was run."
+                )
