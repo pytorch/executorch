@@ -4,16 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-kv_cache_update:
+sdpa_compute_out_tiled:
   parameter_names_with_default_values:
     DTYPE: float
-    STORAGE: buffer
+    IO_STORAGE: texture3d
+    V_CACHE_STORAGE: texture3d
+    TILE_M4: 1
+    TILE_K4: 1
+    TILE_N4: 1
   generate_variant_forall:
-    STORAGE:
-      - VALUE: buffer
-      - VALUE: texture3d
     DTYPE:
-      - VALUE: half
       - VALUE: float
+      - VALUE: half
   shader_variants:
-    - NAME: kv_cache_update
+    - NAME: sdpa_compute_out_tiled_texture3d_texture3d
+    - NAME: sdpa_compute_out_tiled_buffer_texture3d
+      IO_STORAGE: buffer
