@@ -24,9 +24,6 @@ void LlamaRuntime::Initialize(
     const LlamaModelOptions& modelOptions,
     const LlamaModelPaths& modelPaths) {
   mModelOptions = modelOptions;
-  const size_t numChunk = modelPaths.gen_model_paths.size();
-  const size_t numCache = 2 * modelOptions.num_layer / numChunk;
-  ET_CHECK_MSG(numChunk > 0, "No model to initialize");
 
   // Initialize rotary embedding master lookup table
   const size_t rotEmbDim = modelOptions.hidden_size / modelOptions.num_head;
@@ -37,11 +34,35 @@ void LlamaRuntime::Initialize(
       modelOptions.rot_emb_base);
   mRotEmbMasterLut->generate();
 
+  const bool useSharedWeights = !modelPaths.model_package_paths.empty();
+
+  ET_CHECK_MSG(
+      !useSharedWeights ||
+          modelPaths.prompt_model_paths.empty() &&
+              modelPaths.gen_model_paths.empty(),
+      "The paths for both prompt and gen model paths should be empty when shared weights is used.");
+
+  const size_t numChunk = useSharedWeights
+      ? modelPaths.model_package_paths.size()
+      : modelPaths.gen_model_paths.size();
+  ET_CHECK_MSG(numChunk > 0, "No model to initialize");
+  const size_t numCache = 2 * modelOptions.num_layer / numChunk;
+
   constexpr size_t numRotEmbInputs = 1;
-  const bool usePromptModel = !modelPaths.prompt_model_paths.empty();
+  const bool usePromptModel = !modelPaths.prompt_model_paths.empty() ||
+      !modelPaths.model_package_paths.empty();
   const size_t initBatchSize =
       usePromptModel ? modelOptions.prompt_token_batch_size : 1;
   mTokenBatchSize = initBatchSize;
+
+  // Get effective prompt and gen model paths
+  const auto& [prompt_model_paths, gen_model_paths] = [&] {
+    if (useSharedWeights) {
+      return std::pair{
+          modelPaths.model_package_paths, modelPaths.model_package_paths};
+    }
+    return std::pair{modelPaths.prompt_model_paths, modelPaths.gen_model_paths};
+  }();
 
   for (size_t chunkIdx = 0; chunkIdx < numChunk; chunkIdx++) {
     ModelPathMap modelPathMap;
@@ -50,12 +71,12 @@ void LlamaRuntime::Initialize(
         return;
       modelPathMap[batchSize] = modelPaths[chunkIdx];
     };
-    addModelPath(
-        modelPaths.prompt_model_paths, modelOptions.prompt_token_batch_size);
-    addModelPath(modelPaths.gen_model_paths, 1);
+    addModelPath(prompt_model_paths, modelOptions.prompt_token_batch_size);
+    addModelPath(gen_model_paths, 1);
     auto llamaChunk = std::make_unique<LlamaModelChunk>(
         modelPathMap,
         modelOptions,
+        useSharedWeights,
         initBatchSize,
         numCache,
         numRotEmbInputs,
