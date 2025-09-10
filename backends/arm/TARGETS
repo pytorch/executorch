@@ -14,7 +14,8 @@ runtime.python_library(
         "ethosu/partitioner.py"
     ],
     deps = [
-        ":arm_partitioner",
+        ":arm_vela",
+        "//executorch/backends/arm/tosa:arm_partitioner",
     ]
 )
 runtime.python_library(
@@ -25,7 +26,7 @@ runtime.python_library(
         "vgf/partitioner.py"
     ],
     deps = [
-        ":arm_partitioner",
+        "//executorch/backends/arm/tosa:arm_partitioner",
     ]
 )
 runtime.python_library(
@@ -50,25 +51,11 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
+
 runtime.python_library(
-    name = "arm_partitioner",
+    name = "arm_compile_spec",
     srcs = [
-        "tosa/backend.py",
-        "tosa/partitioner.py",
-    ],
-    deps = [
-        ":arm_backend",
-        ":constants",
-        "//executorch/backends/arm/debug:schema",
-        "//executorch/backends/arm/operator_support:operator_support",
-        "//executorch/backends/arm/_passes:passes",
-        "//executorch/exir:lib",
-    ],
-)
-runtime.python_library(
-    name = "arm_backend",
-    srcs = [
-        "arm_backend.py",
+        "common/arm_compile_spec.py",
     ],
     deps = [
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
@@ -77,7 +64,6 @@ runtime.python_library(
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
         "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
-        ":arm_vela",
         ":process_node",
         "//executorch/backends/arm/operators:lib",
         "//executorch/backends/arm/operators:node_visitor",
