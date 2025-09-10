@@ -90,8 +90,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
       // is positive (0-value may indicate no segments)
       if ((segment_data_size == 0 && segment_base_offset == 0) ||
           segment_data_size > 0) {
-        size_t expected =
-            ExtendedHeader::kHeaderOffset + program_size + segment_data_size;
+        size_t expected = segment_base_offset == 0
+            ? program_size
+            : segment_base_offset + segment_data_size;
         size_t actual = loader->size().get();
         ET_CHECK_OR_RETURN_ERROR(
             expected <= actual,
