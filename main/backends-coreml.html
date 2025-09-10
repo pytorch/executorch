@@ -516,7 +516,7 @@
               
   <div class="section" id="core-ml-backend">
 <h1>Core ML Backend<a class="headerlink" href="#core-ml-backend" title="Permalink to this heading">¶</a></h1>
-<p>Core ML delegate is the ExecuTorch solution to take advantage of Apple’s <a class="reference external" href="https://developer.apple.com/documentation/coreml">CoreML framework</a> for on-device ML.  With CoreML, a model can run on CPU, GPU, and the Apple Neural Engine (ANE).</p>
+<p>Core ML delegate is the ExecuTorch solution to take advantage of Apple’s <a class="reference external" href="https://developer.apple.com/documentation/coreml">Core ML framework</a> for on-device ML.  With Core ML, a model can run on CPU, GPU, and the Apple Neural Engine (ANE).</p>
 <div class="section" id="features">
 <h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
@@ -526,7 +526,7 @@
 </div>
 <div class="section" id="target-requirements">
 <h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Permalink to this heading">¶</a></h2>
-<p>Below are the minimum OS requirements on various hardware for running a CoreML-delegated ExecuTorch model:</p>
+<p>Below are the minimum OS requirements on various hardware for running a Core ML-delegated ExecuTorch model:</p>
 <ul class="simple">
 <li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0</p></li>
 <li><p><a class="reference external" href="https://developer.apple.com/ios/">iOS</a> &gt;= 16.0</p></li>
@@ -547,9 +547,9 @@
 </div>
 </div>
 <hr class="docutils" />
-<div class="section" id="using-the-coreml-backend">
-<h2>Using the CoreML Backend<a class="headerlink" href="#using-the-coreml-backend" title="Permalink to this heading">¶</a></h2>
-<p>To target the CoreML backend during the export and lowering process, pass an instance of the <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. The example below demonstrates this process using the MobileNet V2 model from torchvision.</p>
+<div class="section" id="using-the-core-ml-backend">
+<h2>Using the Core ML Backend<a class="headerlink" href="#using-the-core-ml-backend" title="Permalink to this heading">¶</a></h2>
+<p>To target the Core ML backend during the export and lowering process, pass an instance of the <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. The example below demonstrates this process using the MobileNet V2 model from torchvision.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
@@ -570,17 +570,19 @@
 </div>
 <div class="section" id="partitioner-api">
 <h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
-<p>The CoreML partitioner API allows for configuration of the model delegation to CoreML. Passing a <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the CoreML backend with default settings. This is the most common use case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
+<p>The Core ML partitioner API allows for configuration of the model delegation to Core ML. Passing a <code class="docutils literal notranslate"><span class="pre">CoreMLPartitioner</span></code> instance with no additional parameters will run as much of the model as possible on the Core ML backend with default settings. This is the most common use case. For advanced use cases, the partitioner exposes the following options via the <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/partition/coreml_partitioner.py#L60">constructor</a>:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">skip_ops_for_coreml_delegation</span></code>: Allows you to skip ops for delegation by CoreML.  By default, all ops that CoreML supports will be delegated.  See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42">here</a> for an example of skipping an op for delegation.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">compile_specs</span></code>: A list of <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code>s for the CoreML backend.  These control low-level details of CoreML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code>: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to <a class="reference external" href="https://developer.apple.com/documentation/coreml/mlstate">CoreML <code class="docutils literal notranslate"><span class="pre">MLState</span></code></a>.  If set to <code class="docutils literal notranslate"><span class="pre">False</span></code>, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the CoreML lowered module under the hood.  Generally, setting <code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code> to true will result in better performance, but using <code class="docutils literal notranslate"><span class="pre">MLState</span></code> requires iOS &gt;= 18.0, macOS &gt;= 15.0, and Xcode &gt;= 16.0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">skip_ops_for_coreml_delegation</span></code>: Allows you to skip ops for delegation by Core ML.  By default, all ops that Core ML supports will be delegated.  See <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42">here</a> for an example of skipping an op for delegation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compile_specs</span></code>: A list of <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code>s for the Core ML backend.  These control low-level details of Core ML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code>: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to <a class="reference external" href="https://developer.apple.com/documentation/coreml/mlstate">Core ML <code class="docutils literal notranslate"><span class="pre">MLState</span></code></a>.  If set to <code class="docutils literal notranslate"><span class="pre">False</span></code>, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the Core ML lowered module under the hood.  Generally, setting <code class="docutils literal notranslate"><span class="pre">take_over_mutable_buffer</span></code> to true will result in better performance, but using <code class="docutils literal notranslate"><span class="pre">MLState</span></code> requires iOS &gt;= 18.0, macOS &gt;= 15.0, and Xcode &gt;= 16.0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">take_over_constant_data</span></code>: A boolean that indicates whether PyTorch constant data like model weights should be consumed by the Core ML delegate.  If set to False, constant data is passed to the Core ML delegate as inputs.  By deafault, take_over_constant_data=True.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lower_full_graph</span></code>: A boolean that indicates whether the entire graph must be lowered to Core ML.  If set to True and Core ML does not support an op, an error is raised during lowering.  If set to False and Core ML does not support an op, the op is executed on the CPU by ExecuTorch.  Although setting <code class="docutils literal notranslate"><span class="pre">lower_full_graph</span></code>=False can allow a model to lower where it would otherwise fail, it can introduce performance overhead in the model when there are unsupported ops.  You will see warnings about unsupported ops during lowering if there are any.  By default, <code class="docutils literal notranslate"><span class="pre">lower_full_graph</span></code>=False.</p></li>
 </ul>
-<div class="section" id="coreml-compilespec">
-<h4>CoreML CompileSpec<a class="headerlink" href="#coreml-compilespec" title="Permalink to this heading">¶</a></h4>
+<div class="section" id="core-ml-compilespec">
+<h4>Core ML CompileSpec<a class="headerlink" href="#core-ml-compilespec" title="Permalink to this heading">¶</a></h4>
 <p>A list of <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code>s is constructed with <a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L210"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.generate_compile_specs</span></code></a>.  Below are the available options:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">compute_unit</span></code>: this controls the compute units (CPU, GPU, ANE) that are used by CoreML.  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.ALL</span></code>.  The available options from coremltools are:</p>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_unit</span></code>: this controls the compute units (CPU, GPU, ANE) that are used by Core ML.  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.ALL</span></code>.  The available options from coremltools are:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.ALL</span></code> (uses the CPU, GPU, and ANE)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.CPU_ONLY</span></code> (uses the CPU only)</p></li>
@@ -588,24 +590,116 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">coremltools.ComputeUnit.CPU_AND_NE</span></code> (uses both the CPU and ANE, but not the GPU)</p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code>: The minimum iOS deployment target (e.g., <code class="docutils literal notranslate"><span class="pre">coremltools.target.iOS18</span></code>).  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.target.iOS15</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">compute_precision</span></code>: The compute precision used by CoreML (<code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT16</span></code> or <code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT32</span></code>).  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT16</span></code>.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the CoreML backend by default.  Also note that the ANE only supports FP16 precision.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the CoreML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</span></code></a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.MODEL</span></code></a>).  Using <code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</span></code> and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code>: The minimum iOS deployment target (e.g., <code class="docutils literal notranslate"><span class="pre">coremltools.target.iOS18</span></code>).  By default, the smallest deployment target needed to deploy the model is selected.  During export, you will see a warning about the “Core ML specification version” that was used for the model, which maps onto a deployment target as discussed <a class="reference external" href="https://apple.github.io/coremltools/mlmodel/Format/Model.html#model">here</a>.  If you need to control the deployment target, please specify it explicitly.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_precision</span></code>: The compute precision used by Core ML (<code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT16</span></code> or <code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT32</span></code>).  The default value is <code class="docutils literal notranslate"><span class="pre">coremltools.precision.FLOAT16</span></code>.  Note that the compute precision is applied no matter what dtype is specified in the exported PyTorch model.  For example, an FP32 PyTorch model will be converted to FP16 when delegating to the Core ML backend by default.  Also note that the ANE only supports FP16 precision.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">model_type</span></code>: Whether the model should be compiled to the Core ML <a class="reference external" href="https://developer.apple.com/documentation/coreml/downloading-and-compiling-a-model-on-the-user-s-device">mlmodelc format</a> during .pte creation (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L71"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</span></code></a>), or whether it should be compiled to mlmodelc on device (<a class="reference external" href="https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/compiler/coreml_preprocess.py#L70"><code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.MODEL</span></code></a>).  Using <code class="docutils literal notranslate"><span class="pre">CoreMLBackend.MODEL_TYPE.COMPILED_MODEL</span></code> and doing compilation ahead of time should improve the first time on-device model load time.</p></li>
 </ul>
 </div>
 </div>
+<div class="section" id="dynamic-and-enumerated-shapes-in-core-ml-export">
+<h3>Dynamic and Enumerated Shapes in Core ML Export<a class="headerlink" href="#dynamic-and-enumerated-shapes-in-core-ml-export" title="Permalink to this heading">¶</a></h3>
+<p>When exporting an <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> to Core ML, <strong>dynamic shapes</strong> are mapped to <a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/flexible-inputs.html#set-the-range-for-each-dimension"><code class="docutils literal notranslate"><span class="pre">RangeDim</span></code></a>.
+This enables Core ML <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files to accept inputs with varying dimensions at runtime.</p>
+<p>⚠️ <strong>Note:</strong> The Apple Neural Engine (ANE) does not support true dynamic shapes.    If a model relies on <code class="docutils literal notranslate"><span class="pre">RangeDim</span></code>, Core ML will fall back to scheduling the model on the CPU or GPU instead of the ANE.</p>
+<hr class="docutils" />
+<div class="section" id="enumerated-shapes">
+<h4>Enumerated Shapes<a class="headerlink" href="#enumerated-shapes" title="Permalink to this heading">¶</a></h4>
+<p>To enable limited flexibility on the ANE—and often achieve better performance overall—you can export models using <strong><a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/flexible-inputs.html#select-from-predetermined-shapes">enumerated shapes</a></strong>.</p>
+<ul class="simple">
+<li><p>Enumerated shapes are <em>not fully dynamic</em>.</p></li>
+<li><p>Instead, they define a <strong>finite set of valid input shapes</strong> that Core ML can select from at runtime.</p></li>
+<li><p>This approach allows some adaptability while still preserving ANE compatibility.</p></li>
+</ul>
+</div>
+<hr class="docutils" />
+<div class="section" id="specifying-enumerated-shapes">
+<h4>Specifying Enumerated Shapes<a class="headerlink" href="#specifying-enumerated-shapes" title="Permalink to this heading">¶</a></h4>
+<p>Unlike <code class="docutils literal notranslate"><span class="pre">RangeDim</span></code>, <strong>enumerated shapes are not part of the <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> itself.</strong>
+They must be provided through a compile spec.</p>
+<p>For reference on how to do this, see:</p>
+<ul class="simple">
+<li><p>The annotated code snippet below, and</p></li>
+<li><p>The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/apple/coreml/test/test_enumerated_shapes.py">end-to-end test in ExecuTorch</a>, which demonstrates how to specify enumerated shapes during export.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+                <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">linear1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">linear2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">11</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear2</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">)),</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">((</span><span class="mi">5</span><span class="p">,</span> <span class="mi">11</span><span class="p">)),</span>
+<span class="p">)</span>
+
+<span class="c1"># Specify the enumerated shapes.  Below we specify that:</span>
+<span class="c1">#</span>
+<span class="c1"># * x can take shape [1, 5, 10] and y can take shape [3, 11], or</span>
+<span class="c1"># * x can take shape [4, 6, 10] and y can take shape [5, 11]</span>
+<span class="c1">#</span>
+<span class="c1"># Any other input shapes will result in a runtime error.</span>
+<span class="c1">#</span>
+<span class="c1"># Note that we must export x and y with dynamic shapes in the ExportedProgram</span>
+<span class="c1"># because some of their dimensions are dynamic</span>
+<span class="n">enumerated_shapes</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">10</span><span class="p">]],</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="p">[[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">11</span><span class="p">],</span> <span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">11</span><span class="p">]]}</span>
+<span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span>
+        <span class="mi">0</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="o">.</span><span class="n">AUTO</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">4</span><span class="p">),</span>
+        <span class="mi">1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="o">.</span><span class="n">AUTO</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">6</span><span class="p">),</span>
+    <span class="p">},</span>
+    <span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="o">.</span><span class="n">AUTO</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">5</span><span class="p">)},</span>
+<span class="p">]</span>
+<span class="n">ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">(),</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span>
+<span class="p">)</span>
+
+<span class="c1"># If enumerated shapes are specified for multiple inputs, we must export</span>
+<span class="c1"># for iOS18+</span>
+<span class="n">compile_specs</span> <span class="o">=</span> <span class="n">CoreMLBackend</span><span class="o">.</span><span class="n">generate_compile_specs</span><span class="p">(</span>
+    <span class="n">minimum_deployment_target</span><span class="o">=</span><span class="n">ct</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">iOS18</span>
+<span class="p">)</span>
+<span class="n">compile_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+    <span class="n">CoreMLBackend</span><span class="o">.</span><span class="n">generate_enumerated_shapes_compile_spec</span><span class="p">(</span>
+        <span class="n">ep</span><span class="p">,</span>
+        <span class="n">enumerated_shapes</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="c1"># When using an enumerated shape compile spec, you must specify lower_full_graph=True</span>
+<span class="c1"># in the CoreMLPartitioner.  We do not support using enumerated shapes</span>
+<span class="c1"># for partially exported models</span>
+<span class="n">partitioner</span> <span class="o">=</span> <span class="n">CoreMLPartitioner</span><span class="p">(</span>
+    <span class="n">compile_specs</span><span class="o">=</span><span class="n">compile_specs</span><span class="p">,</span> <span class="n">lower_full_graph</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span>
+<span class="n">delegated_program</span> <span class="o">=</span> <span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">ep</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
+<span class="p">)</span>
+<span class="n">et_prog</span> <span class="o">=</span> <span class="n">delegated_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="backward-compatibility">
+<h3>Backward compatibility<a class="headerlink" href="#backward-compatibility" title="Permalink to this heading">¶</a></h3>
+<p>Core ML supports backward compatibility via the <code class="docutils literal notranslate"><span class="pre">minimum_deployment_target</span></code> option.  A model exported with a specific deployment target is guaranteed to work on all deployment targets &gt;= the specified deployment target.  For example, a model exported with <code class="docutils literal notranslate"><span class="pre">coremltools.target.iOS17</span></code> will work on iOS 17 or higher.</p>
+</div>
 <div class="section" id="testing-the-model">
 <h3>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h3>
-<p>After generating the CoreML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime Python bindings. This can be used to quickly check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
+<p>After generating the Core ML-delegated .pte, the model can be tested from Python using the ExecuTorch runtime Python bindings. This can be used to quickly check the model and evaluate numerical accuracy. See <a class="reference internal" href="using-executorch-export.html#testing-the-model"><span class="std std-doc">Testing the Model</span></a> for more information.</p>
 </div>
 <hr class="docutils" />
 <div class="section" id="quantization">
 <h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
-<p>To quantize a PyTorch model for the CoreML backend, use the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p>
+<p>To quantize a PyTorch model for the Core ML backend, use the <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p>
 </div>
 <div class="section" id="bit-quantization-using-the-pt2e-flow">
 <h3>8-bit Quantization using the PT2E Flow<a class="headerlink" href="#bit-quantization-using-the-pt2e-flow" title="Permalink to this heading">¶</a></h3>
-<p>Quantization with the CoreML backend requires exporting the model for iOS 17 or later.
+<p>Quantization with the Core ML backend requires exporting the model for iOS 17 or later.
 To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <ol class="arabic simple">
 <li><p>Create a <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig"><code class="docutils literal notranslate"><span class="pre">coremltools.optimize.torch.quantization.LinearQuantizerConfig</span></code></a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
@@ -656,7 +750,7 @@ To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <span class="c1"># Step 5: Convert the calibrated model to a quantized model</span>
 <span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
 
-<span class="c1"># Step 6: Export the quantized model to CoreML</span>
+<span class="c1"># Step 6: Export the quantized model to Core ML</span>
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
     <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
     <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span>
@@ -686,12 +780,70 @@ To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <p>Quantizing activations requires calibrating the model on representative data.  Also note that PT2E currently requires passing at least 1 calibration sample before calling <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>, even for data-free weight-only quantization.</p>
 <p>See <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">PyTorch 2 Export Post Training Quantization</a> for more information.</p>
 </div>
+<div class="section" id="llm-quantization-with-quantize">
+<h3>LLM quantization with quantize_<a class="headerlink" href="#llm-quantization-with-quantize" title="Permalink to this heading">¶</a></h3>
+<p>The Core ML backend also supports quantizing models with the <a class="reference external" href="https://github.com/pytorch/ao">torchao</a> quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with Core ML:</p>
+<ul class="simple">
+<li><p>Quantize embedding/linear layers with IntxWeightOnlyConfig (with weight_dtype torch.int4 or torch.int8, using PerGroup or PerAxis granularity).  Using 4-bit or PerGroup quantization requires exporting with minimum_deployment_target &gt;= ct.target.iOS18.  Using 8-bit quantization with per-axis granularity is supported on ct.target.IOS16+.  See <span class="xref myst">Core ML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span> for more information on setting the deployment target.</p></li>
+<li><p>Quantize embedding/linear layers with CodebookWeightOnlyConfig (with dtype torch.uint1 through torch.uint8, using various block sizes).  Quantizing with CodebookWeightOnlyConfig requires exporting with minimum_deployment_target &gt;= ct.target.iOS18, see <span class="xref myst">Core ML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span> for more information on setting the deployment target.</p></li>
+</ul>
+<p>Below is an example that quantizes embeddings to 8-bits per-axis and linear layers to 4-bits using group_size=32 with affine quantization:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.granularity</span><span class="w"> </span><span class="kn">import</span> <span class="n">PerGroup</span><span class="p">,</span> <span class="n">PerAxis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">IntxWeightOnlyConfig</span><span class="p">,</span>
+    <span class="n">quantize_</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Quantize embeddings with 8-bits, per channel</span>
+<span class="n">embedding_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int8</span><span class="p">,</span>
+    <span class="n">granularity</span><span class="o">=</span><span class="n">PerAxis</span><span class="p">(</span><span class="mi">0</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">quantize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="n">embedding_config</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">),</span>
+<span class="p">)</span>
+
+<span class="c1"># Quantize linear layers with 4-bits, per-group</span>
+<span class="n">linear_config</span> <span class="o">=</span> <span class="n">IntxWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">weight_dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int4</span><span class="p">,</span>
+    <span class="n">granularity</span><span class="o">=</span><span class="n">PerGroup</span><span class="p">(</span><span class="mi">32</span><span class="p">),</span>
+<span class="p">)</span>
+<span class="n">quantize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="n">linear_config</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Below is another example that uses codebook quantization to quantize both embeddings and linear layers to 3-bits.
+In the coremltools documentation, this is called <a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/opt-palettization-overview.html">palettization</a>:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.quant_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">quantize_</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.prototype.quantization.codebook_coreml</span><span class="w"> </span><span class="kn">import</span> <span class="n">CodebookWeightOnlyConfig</span>
+
+<span class="n">quant_config</span> <span class="o">=</span> <span class="n">CodebookWeightOnlyConfig</span><span class="p">(</span>
+    <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">uint3</span><span class="p">,</span>
+    <span class="c1"># There is one LUT per 16 rows</span>
+    <span class="n">block_size</span><span class="o">=</span><span class="p">[</span><span class="mi">16</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">],</span>
+<span class="p">)</span>
+
+<span class="n">quantize_</span><span class="p">(</span>
+    <span class="n">eager_model</span><span class="p">,</span>
+    <span class="n">quant_config</span><span class="p">,</span>
+    <span class="k">lambda</span> <span class="n">m</span><span class="p">,</span> <span class="n">fqn</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Embedding</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>Both of the above examples will export and lower to Core ML with the to_edge_transform_and_lower API.</p>
+</div>
 </div>
 <hr class="docutils" />
 <div class="section" id="runtime-integration">
 <h2>Runtime integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
 <p>To run the model on device, use the standard ExecuTorch runtime APIs. See <a class="reference internal" href="getting-started.html#running-on-device"><span class="std std-doc">Running on Device</span></a> for more information, including building the iOS frameworks.</p>
-<p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_COREML=ON</span></code> when configuring the CMake build to compile the CoreML backend.</p>
+<p>When building from source, pass <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_COREML=ON</span></code> when configuring the CMake build to compile the Core ML backend.</p>
 <p>Due to the use of static initializers for registration, it may be necessary to use whole-archive to link against the <code class="docutils literal notranslate"><span class="pre">coremldelegate</span></code> target. This can typically be done by passing <code class="docutils literal notranslate"><span class="pre">&quot;$&lt;LINK_LIBRARY:WHOLE_ARCHIVE,coremldelegate&gt;&quot;</span></code> to <code class="docutils literal notranslate"><span class="pre">target_link_libraries</span></code>.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># CMakeLists.txt
 add_subdirectory(&quot;executorch&quot;)
@@ -705,14 +857,14 @@ target_link_libraries(
     $&lt;LINK_LIBRARY:WHOLE_ARHIVE,coremldelegate&gt;)
 </pre></div>
 </div>
-<p>No additional steps are necessary to use the backend beyond linking the target. A CoreML-delegated .pte file will automatically run on the registered backend.</p>
+<p>No additional steps are necessary to use the backend beyond linking the target. A Core ML-delegated .pte file will automatically run on the registered backend.</p>
 </div>
 <hr class="docutils" />
 <div class="section" id="advanced">
 <h2>Advanced<a class="headerlink" href="#advanced" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="extracting-the-mlpackage">
 <h3>Extracting the mlpackage<a class="headerlink" href="#extracting-the-mlpackage" title="Permalink to this heading">¶</a></h3>
-<p><a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/convert-to-ml-program.html#save-ml-programs-as-model-packages">CoreML *.mlpackage files</a> can be extracted from a CoreML-delegated *.pte file.  This can help with debugging and profiling for users who are more familiar with *.mlpackage files:</p>
+<p><a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/convert-to-ml-program.html#save-ml-programs-as-model-packages">Core ML *.mlpackage files</a> can be extracted from a Core ML-delegated *.pte file.  This can help with debugging and profiling for users who are more familiar with *.mlpackage files:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>examples/apple/coreml/scripts/extract_coreml_models.py<span class="w"> </span>-m<span class="w"> </span>/path/to/model.pte
 </pre></div>
 </div>
@@ -726,7 +878,7 @@ target_link_libraries(
 <ol class="arabic simple">
 <li><p>“ValueError: In op, of type [X], named [Y], the named input [Z] must have the same data type as the named input x. However, [Z] has dtype fp32 whereas x has dtype fp16.”</p></li>
 </ol>
-<p>This happens because the model is in FP16, but CoreML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to CoreML unless specified otherwise in the compute_precision <a class="reference internal" href="#coreml-compilespec"><span class="std std-doc">CoreML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span></a>.  Also see the <a class="reference external" href="https://github.com/apple/coremltools/issues/2480">related issue in coremltools</a>.</p>
+<p>This happens because the model is in FP16, but Core ML interprets some of the arguments as FP32, which leads to a type mismatch.  The solution is to keep the PyTorch model in FP32.  Note that the model will be still be converted to FP16 during lowering to Core ML unless specified otherwise in the compute_precision <span class="xref myst">Core ML <code class="docutils literal notranslate"><span class="pre">CompileSpec</span></code></span>.  Also see the <a class="reference external" href="https://github.com/apple/coremltools/issues/2480">related issue in coremltools</a>.</p>
 <ol class="arabic simple" start="2">
 <li><p>coremltools/converters/mil/backend/mil/load.py”, line 499, in export
 raise RuntimeError(“BlobWriter not loaded”)</p></li>
@@ -738,7 +890,7 @@ raise RuntimeError(“BlobWriter not loaded”)</p></li>
 <ol class="arabic simple">
 <li><p>[ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 “Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset ‘CoreML7’.” UserInfo={NSLocalizedDescription=Failed to par$</p></li>
 </ol>
-<p>This means the model requires the the CoreML opset ‘CoreML7’, which requires running the model on iOS &gt;= 17 or macOS &gt;= 14.</p>
+<p>This means the model requires the the Core ML opset ‘CoreML7’, which requires running the model on iOS &gt;= 17 or macOS &gt;= 14.</p>
 </div>
 </div>
 </div>
@@ -792,14 +944,21 @@ raise RuntimeError(“BlobWriter not loaded”)</p></li>
 <li><a class="reference internal" href="#features">Features</a></li>
 <li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
 <li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
-<li><a class="reference internal" href="#using-the-coreml-backend">Using the CoreML Backend</a><ul>
+<li><a class="reference internal" href="#using-the-core-ml-backend">Using the Core ML Backend</a><ul>
 <li><a class="reference internal" href="#partitioner-api">Partitioner API</a><ul>
-<li><a class="reference internal" href="#coreml-compilespec">CoreML CompileSpec</a></li>
+<li><a class="reference internal" href="#core-ml-compilespec">Core ML CompileSpec</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#dynamic-and-enumerated-shapes-in-core-ml-export">Dynamic and Enumerated Shapes in Core ML Export</a><ul>
+<li><a class="reference internal" href="#enumerated-shapes">Enumerated Shapes</a></li>
+<li><a class="reference internal" href="#specifying-enumerated-shapes">Specifying Enumerated Shapes</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#backward-compatibility">Backward compatibility</a></li>
 <li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
 <li><a class="reference internal" href="#quantization">Quantization</a></li>
 <li><a class="reference internal" href="#bit-quantization-using-the-pt2e-flow">8-bit Quantization using the PT2E Flow</a></li>
+<li><a class="reference internal" href="#llm-quantization-with-quantize">LLM quantization with quantize_</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#runtime-integration">Runtime integration</a></li>
