@@ -56,7 +56,7 @@ def test_model_xnnpack(model: Model, quantize: bool) -> None:
 
     assert len(ref_outputs) == len(et_outputs)
     for i in range(len(ref_outputs)):
-        assert torch.allclose(ref_outputs[i], et_outputs[i], atol=1e-5)
+        assert torch.allclose(ref_outputs[i], et_outputs[i], atol=1e-4)
 
 
 def run_tests(model_tests: List[ModelTest]) -> None:

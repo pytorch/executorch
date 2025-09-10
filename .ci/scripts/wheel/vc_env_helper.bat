@@ -41,7 +41,6 @@ if "%args%" == "" (
     echo e.g. vc_env_helper.bat cl /c test.cpp
 )
 
-echo "Evaluating symlink status. CWD: %CD%"
 set work_dir=%CD%
 if exist setup.py (
     echo "Creating symlink..."
@@ -58,6 +57,5 @@ if exist setup.py (
     )
     cd executorch
 )
-echo "Post symlink CWD: %CD%"
 
 %args% || exit /b 1

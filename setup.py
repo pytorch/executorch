@@ -143,18 +143,7 @@ class Version:
     def write_to_python_file(cls, path: str) -> None:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
 
-        print(f"Writing version.py to {path}, cwd: {os.getcwd()}", file=sys.stderr)
-
         os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        try:
-            path1 = os.path.dirname(path)
-            path2 = os.path.dirname(path1)
-
-            print(f"Files at {path2}: {list(os.listdir(path2))}", file=sys.stderr)
-            print(f"Files at {path1}: {list(os.listdir(path1))}", file=sys.stderr)
-        finally:
-            pass
 
         lines = [
             "from typing import Optional",
@@ -165,9 +154,6 @@ class Version:
         ]
         with open(path, "w") as fp:
             fp.write("\n".join(lines) + "\n")
-
-        file_dir = os.path.dirname(path)
-        print(f"Files: {list(os.listdir(file_dir))}", file=sys.stderr)
 
 
 # The build type is determined by the DEBUG environment variable. If DEBUG is

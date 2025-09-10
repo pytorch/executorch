@@ -25,11 +25,6 @@ else()
   set(_executorch_external_project_additional_args CMAKE_GENERATOR "Unix Makefiles")
 endif()
 
-# DEBUG
-if(WIN32)
-  set_directory_properties(PROPERTIES EP_BASE "C:\\actions-runner\\_work\\")
-endif()
-
 # We use ExternalProject to build flatc from source to force it target the host.
 # Otherwise, flatc will target the project's toolchain (i.e. iOS, or Android).
 ExternalProject_Add(
