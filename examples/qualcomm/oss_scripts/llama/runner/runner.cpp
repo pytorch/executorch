@@ -122,6 +122,8 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama2;
   } else if (decoder_model_version == "llama3") {
     decoder_model_version_ = DecoderModelVersion::kLlama3;
+  } else if (decoder_model_version == "olmo") {
+    decoder_model_version_ = DecoderModelVersion::kOlmo;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
   } else if (decoder_model_version == "qwen3") {

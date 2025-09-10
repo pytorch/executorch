@@ -22,6 +22,7 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     attention_type: str = "mha"  # Attention type, registered in attention.py
+    norm_type: str = "rmsnorm"  # Normalization type, registered in norm.py
     attention_qkv_bias: bool = False
     use_kv_cache: bool = False  # Use key/value cache
     use_sdpa_with_kv_cache_op: bool = (

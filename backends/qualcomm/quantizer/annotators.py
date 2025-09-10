@@ -1235,9 +1235,12 @@ def annotate_getitem(node: Node, quantization_config: QuantizationConfig) -> Non
 @register_annotator([torch.ops.aten.layer_norm.default])
 def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> None:
     act_node = node.args[0]
-    weight_node = node.args[2]
-    bias_node = None
+    #  OLMo LayerNorm but with no learnable weight and bias.
+    weight_node = None
     if len(node.args) > 2:
+        weight_node = node.args[2]
+    bias_node = None
+    if len(node.args) > 3:
         bias_node = node.args[3]
 
     if _is_annotated([node]):
@@ -1249,19 +1252,21 @@ def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> 
         act_node,
         input_act_qspec,
     )
-    if input_act_qspec.dtype == torch.int32:
-        annotate_input_qspec_map(
-            node,
-            weight_node,
-            get_16a16w_qnn_ptq_config().weight,
-        )
-    else:
-        annotate_input_qspec_map(
-            node,
-            weight_node,
-            input_act_qspec,
-        )
-    nodes_to_mark_annotated = [node, weight_node]
+    nodes_to_mark_annotated = [node]
+    if weight_node:
+        if input_act_qspec.dtype == torch.int32:
+            annotate_input_qspec_map(
+                node,
+                weight_node,
+                get_16a16w_qnn_ptq_config().weight,
+            )
+        else:
+            annotate_input_qspec_map(
+                node,
+                weight_node,
+                input_act_qspec,
+            )
+        nodes_to_mark_annotated.append(weight_node)
     if bias_node:
         annotate_input_qspec_map(
             node,

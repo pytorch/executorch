@@ -5,10 +5,11 @@ This file provides you the instructions to run LLM Decoder model with different 
  1. LLAMA2 Stories 110M
  2. LLAMA3.2 1B
  3. LLAMA3.2 3B
- 4. QWEN2.5 0.5B / 1.5B
- 5. QWEN3 0.6B / 1.7B
- 6. Phi4-mini-instruct
- 7. SMOLLM2 135M
+ 4. OLMo 1B
+ 5. Phi4-mini-instruct
+ 6. QWEN2.5 0.5B / 1.5B
+ 7. QWEN3 0.6B / 1.7B
+ 8. SMOLLM2 135M
 
 We offer the following modes to execute the model:
 
@@ -67,6 +68,12 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 Default example using hybrid mode.
 ```bash
 python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2 --model_mode hybrid --prefill_ar_len 32 --max_seq_len 128 --prompt "what is 1+1"
+```
+
+#### OLMo 1B
+Default example using hybrid mode.
+```bash
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --decoder_model olmo-1b --model_mode hybrid --prefill_ar_len 128 --max_seq_len 1024 --prompt "Simply put, the theory of relativity states that" --tasks wikitext --limit 1
 ```
 
 #### Phi4-mini-instruct

@@ -14,12 +14,14 @@ import torch
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_kv_8bit,
     annotate_output_16a8w,
-    annotate_wv_sha,
+    annotate_qkv_proj_sha,
+    StaticLLMQuantConfig,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     get_ptq_per_channel_quant_config,
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
+from executorch.examples.models.olmo import convert_weights as convert_olmo_weights
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
 )
@@ -37,6 +39,17 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
 from torchao.quantization.pt2e import MinMaxObserver
 
 BASE_DIR = os.path.dirname(__file__)
+
+
+annotate_wqkv_sha = partial(
+    annotate_qkv_proj_sha,
+    qkv_tags={
+        StaticLLMQuantConfig.wq_sha,
+        StaticLLMQuantConfig.wk_sha,
+        StaticLLMQuantConfig.wv_sha,
+    },
+)
+annotate_wv_sha = partial(annotate_qkv_proj_sha, qkv_tags={StaticLLMQuantConfig.wv_sha})
 
 
 @dataclass(init=False, frozen=True)
@@ -195,6 +208,38 @@ class Llama3_2(LLMModelConfig):
     custom_annotation = (
         annotate_kv_8bit,
         partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w),
+    )
+
+
+@register_llm_model("olmo-1b")
+@dataclass(init=False, frozen=True)
+class OLMo_1B(LLMModelConfig):
+    # For transformers versions v4.40.0 or newer, we suggest using OLMo 1B HF instead.
+    repo_id: str = "allenai/OLMo-1B-hf"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/olmo/config/1b_config.json"
+    )
+    convert_weights = convert_olmo_weights
+    transform_weight = False
+    instruct_model = False
+
+    num_sharding = 1
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 1024
+    masked_softmax = True
+    r1 = False
+    r2 = False
+    r3 = False
+    quantization_config_wqkv_sha_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        annotate_kv_8bit,
+        annotate_output_16a8w,
+        partial(
+            annotate_wqkv_sha, quantization_config=quantization_config_wqkv_sha_16a8w
+        ),
     )
 
 
