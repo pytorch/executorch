@@ -163,7 +163,7 @@ public class LlmModule {
       boolean echo) {
         prefillPrompt(prompt, 0, 0, 0);
         prefillImages(image, width, height, channels, 0);
-        generate("", llmCallback, echo);
+        return generate("", llmCallback, echo);
       }
 
   /**
