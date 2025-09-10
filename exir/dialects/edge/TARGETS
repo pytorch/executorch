@@ -11,6 +11,7 @@ runtime.python_library(
     resources = {
         ":edge_yaml": "edge.yaml",
     },
+    visibility = ["@EXECUTORCH_CLIENTS"],
     deps = [
         "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
         "fbsource//third-party/pypi/setuptools:setuptools",
