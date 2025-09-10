@@ -215,8 +215,11 @@ public class LlmModule {
     return 0;
   }
 
-  // returns a tuple of (status, updated startPos)
+  // returns status
   private native int appendTextInput(String prompt, int bos, int eos);
+
+  // returns status
+  private native int appendAudioInput(int[] data, int batchSize, int nChannels, int nSamples);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
