@@ -46,6 +46,8 @@ void generate_random_uint8_data(
     std::vector<uint8_t>& data,
     uint8_t min_val = 0,
     uint8_t max_val = 255);
+void generate_random_2xint4_data(std::vector<uint8_t>& data);
+void generate_random_2xint4_data(std::vector<int8_t>& data);
 void generate_random_int4_data(
     std::vector<int8_t>& data,
     int8_t min_val = -8,
@@ -186,9 +188,12 @@ void ValueSpec::generate_tensor_data() {
       } else if (data_gen_type == DataGenType::RANDINT8) {
         generate_random_int8_data(int8_data, -128, 127);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_int4_data(int8_data);
+        generate_random_2xint4_data(int8_data);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(int8_data.begin(), int8_data.end(), 1);
+      } else if (data_gen_type == DataGenType::ONES_INT4) {
+        int8_t packed_data = (1 << 4) | 1;
+        std::fill(int8_data.begin(), int8_data.end(), packed_data);
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(int8_data.begin(), int8_data.end(), 0);
       } else {
@@ -205,9 +210,12 @@ void ValueSpec::generate_tensor_data() {
       } else if (data_gen_type == DataGenType::RANDINT8) {
         generate_random_uint8_data(uint8_data, 0, 255);
       } else if (data_gen_type == DataGenType::RANDINT4) {
-        generate_random_uint8_data(uint8_data, 0, 15);
+        generate_random_2xint4_data(uint8_data);
       } else if (data_gen_type == DataGenType::ONES) {
         std::fill(uint8_data.begin(), uint8_data.end(), 1);
+      } else if (data_gen_type == DataGenType::ONES_INT4) {
+        uint8_t packed_data = (9 << 4) | 9;
+        std::fill(uint8_data.begin(), uint8_data.end(), packed_data);
       } else if (data_gen_type == DataGenType::ZEROS) {
         std::fill(uint8_data.begin(), uint8_data.end(), 0);
       } else {
@@ -564,6 +572,30 @@ void generate_random_int4_data(
   }
 }
 
+void generate_random_2xint4_data(std::vector<int8_t>& data) {
+  std::mt19937 gen(get_seed());
+  std::uniform_int_distribution<int16_t> dis(-8, 7); // Signed 4-bit range
+  for (auto& val : data) {
+    // Generate two separate 4-bit values
+    int8_t lower_4bits = static_cast<int8_t>(dis(gen)) & 0x0F;
+    int8_t upper_4bits = static_cast<int8_t>(dis(gen)) & 0x0F;
+    // Pack them into a single 8-bit value
+    val = (upper_4bits << 4) | lower_4bits;
+  }
+}
+
+void generate_random_2xint4_data(std::vector<uint8_t>& data) {
+  std::mt19937 gen(get_seed());
+  std::uniform_int_distribution<uint16_t> dis(0, 15); // Unsigned 4-bit range
+  for (auto& val : data) {
+    // Generate two separate 4-bit values
+    uint8_t lower_4bits = static_cast<uint8_t>(dis(gen)) & 0x0F;
+    uint8_t upper_4bits = static_cast<uint8_t>(dis(gen)) & 0x0F;
+    // Pack them into a single 8-bit value
+    val = (upper_4bits << 4) | lower_4bits;
+  }
+}
+
 void generate_zeros_data(std::vector<float>& data) {
   std::fill(data.begin(), data.end(), 0.0f);
 }
@@ -694,7 +726,8 @@ void BenchmarkResult::print_summary(
     int case_number,
     const std::string& size_info,
     float total_gflops) const {
-  static constexpr int KERNEL_NAME_WIDTH = 140;
+  static constexpr int OPERATOR_NAME_WIDTH = 50;
+  static constexpr int KERNEL_NAME_WIDTH = 70;
   static constexpr int SIZE_INFO_WIDTH = 20;
   static constexpr int TIMING_WIDTH = 20;
   static constexpr int GFLOPS_WIDTH = 20;
@@ -713,8 +746,10 @@ void BenchmarkResult::print_summary(
       break;
   }
 
-  std::cout << std::left << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name()
-            << std::right << " " << std::setw(SIZE_INFO_WIDTH) << size_info
+  std::cout << std::left << std::setw(OPERATOR_NAME_WIDTH)
+            << get_operator_name() << " " << std::left
+            << std::setw(KERNEL_NAME_WIDTH) << get_kernel_name() << std::right
+            << " " << std::setw(SIZE_INFO_WIDTH) << size_info
             << std::setw(TIMING_WIDTH) << std::fixed << std::setprecision(3)
             << get_avg_time_us() << " μs " << std::setw(GFLOPS_WIDTH)
             << std::fixed << std::setprecision(3) << total_gflops << " GFLOP/s "
@@ -999,7 +1034,9 @@ ComputeGraph setup_compute_graph(TestCase& test_case, std::string op_name) {
   for (size_t i = 0; i < test_case.num_inputs(); ++i) {
     const ValueSpec& input_spec = test_case.inputs()[i];
 
-    if (input_spec.is_float()) {
+    if (input_spec.is_none()) {
+      input_values.push_back(graph.add_none());
+    } else if (input_spec.is_float()) {
       ValueRef input_value =
           graph.add_scalar(static_cast<double>(input_spec.get_float_value()));
       input_values.push_back(input_value);
@@ -1246,9 +1283,11 @@ TestResult execute_test_cases(
     bool shader_not_supported = false;
     try {
       result = execute_test_case(test_case, warmup_runs, benchmark_runs);
+      result.set_operator_name(test_case.operator_name());
     } catch (const vkcompute::vkapi::ShaderNotSupportedError& e) {
       result = BenchmarkResult(
-          test_case.name().empty() ? "unnamed_test_case" : test_case.name());
+          test_case.name().empty() ? "unnamed_test_case" : test_case.name(),
+          test_case.operator_name());
       shader_not_supported = true;
     }
 
@@ -1435,19 +1474,69 @@ void print_valuespec_data(
     }
     case vkapi::kChar: {
       const auto& data = spec.get_int8_data();
-      for (size_t i = 0; i < print_count; ++i) {
-        std::cout << static_cast<int>(data[i]);
-        if (i < print_count - 1)
-          std::cout << ", ";
+      if (spec.is_int4()) {
+        // Print each 4-bit value individually
+        size_t element_count = 0;
+        for (size_t i = 0; i < data.size() && element_count < print_count;
+             ++i) {
+          // Extract lower 4 bits (signed)
+          int8_t lower_4bits = data[i] & 0x0F;
+          if (lower_4bits > 7)
+            lower_4bits -= 16; // Convert to signed
+          std::cout << static_cast<int>(lower_4bits);
+          element_count++;
+
+          if (element_count < print_count) {
+            std::cout << ", ";
+            // Extract upper 4 bits (signed)
+            int8_t upper_4bits = (data[i] >> 4) & 0x0F;
+            if (upper_4bits > 7)
+              upper_4bits -= 16; // Convert to signed
+            std::cout << static_cast<int>(upper_4bits);
+            element_count++;
+
+            if (element_count < print_count)
+              std::cout << ", ";
+          }
+        }
+      } else {
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << static_cast<int>(data[i]);
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
       }
       break;
     }
     case vkapi::kByte: {
       const auto& data = spec.get_uint8_data();
-      for (size_t i = 0; i < print_count; ++i) {
-        std::cout << static_cast<unsigned int>(data[i]);
-        if (i < print_count - 1)
-          std::cout << ", ";
+      if (spec.is_int4()) {
+        // Print each 4-bit value individually
+        size_t element_count = 0;
+        for (size_t i = 0; i < data.size() && element_count < print_count;
+             ++i) {
+          // Extract lower 4 bits
+          uint8_t lower_4bits = data[i] & 0x0F;
+          std::cout << static_cast<unsigned int>(lower_4bits);
+          element_count++;
+
+          if (element_count < print_count) {
+            std::cout << ", ";
+            // Extract upper 4 bits
+            uint8_t upper_4bits = (data[i] >> 4) & 0x0F;
+            std::cout << static_cast<unsigned int>(upper_4bits);
+            element_count++;
+
+            if (element_count < print_count)
+              std::cout << ", ";
+          }
+        }
+      } else {
+        for (size_t i = 0; i < print_count; ++i) {
+          std::cout << static_cast<unsigned int>(data[i]);
+          if (i < print_count - 1)
+            std::cout << ", ";
+        }
       }
       break;
     }
@@ -1606,22 +1695,79 @@ void compute_weight_sums(
     const ValueSpec& quantized_weight,
     int64_t out_features,
     int64_t elements_per_output_feature) {
-  auto& weight_sums_data = weight_sums.get_float_data();
+  auto& weight_sums_data = weight_sums.get_int32_data();
   auto& quantized_weight_data = quantized_weight.get_int8_data();
 
   weight_sums_data.resize(out_features);
 
   // For each output feature, compute the sum of quantized weights
   for (int64_t out_f = 0; out_f < out_features; ++out_f) {
-    float sum = 0.0f;
+    int32_t sum = 0;
     for (int64_t elem = 0; elem < elements_per_output_feature; ++elem) {
       // Weight indexing depends on the layout:
-      // For linear: [in_features, out_features] -> elem * out_features + out_f
-      // For conv2d: [C_in * K_h * K_w, C_out] -> elem * out_features + out_f
-      int64_t weight_idx = elem * out_features + out_f;
-      sum += static_cast<float>(quantized_weight_data[weight_idx]);
+      // For linear: [out_features, in_features] -> out_f *
+      // elements_per_output_feature + elem For conv2d: [C_out, C_in * K_h *
+      // K_w] -> out_f * elements_per_output_feature + elem
+      int64_t weight_idx = out_f * elements_per_output_feature + elem;
+      sum += static_cast<int32_t>(quantized_weight_data[weight_idx]);
     }
     weight_sums_data[out_f] = sum;
+  }
+}
+
+// Helper function to unpack 4-bit values from uint8 (same as in
+// q4gsw_linear.cpp)
+std::pair<int8_t, int8_t> unpack_4bit_utils(uint8_t packed) {
+  // Extract lower 4 bits and upper 4 bits
+  int8_t lower = packed & 0x0F;
+  int8_t upper = (packed >> 4) & 0x0F;
+
+  // Subtract 8 from unpacked 4-bit values
+  lower -= 8;
+  upper -= 8;
+
+  return std::make_pair(lower, upper);
+}
+
+// Compute weight sums for 4-bit group symmetric quantized weights
+void compute_weight_sums_4bit_grouped(
+    ValueSpec& weight_sums,
+    const ValueSpec& quantized_weight,
+    int64_t num_groups,
+    int64_t out_features,
+    int64_t group_size) {
+  auto& weight_sums_data = weight_sums.get_int32_data();
+  auto& quantized_weight_data = quantized_weight.get_uint8_data();
+
+  // Resize to [num_groups, out_features]
+  weight_sums_data.resize(num_groups * out_features);
+
+  // For each group and each output feature, compute the sum of quantized
+  // weights in that group
+  for (int64_t group_idx = 0; group_idx < num_groups; ++group_idx) {
+    for (int64_t out_f = 0; out_f < out_features; ++out_f) {
+      int32_t sum = 0;
+
+      // Sum weights for this group and output feature
+      for (int64_t in_group = 0; in_group < group_size; ++in_group) {
+        int64_t in_f = group_idx * group_size + in_group;
+
+        // Get packed weight value - weight matrix is [N, K/2]
+        int64_t weight_idx =
+            out_f * ((num_groups * group_size) / 2) + (in_f / 2);
+        uint8_t packed_weight = quantized_weight_data[weight_idx];
+
+        // Unpack 4-bit weight
+        auto unpacked = unpack_4bit_utils(packed_weight);
+        int8_t weight_4bit = (in_f % 2 == 0) ? unpacked.first : unpacked.second;
+
+        sum += static_cast<int32_t>(weight_4bit);
+      }
+
+      // Store sum for this group and output feature
+      int64_t sums_idx = group_idx * out_features + out_f;
+      weight_sums_data[sums_idx] = sum;
+    }
   }
 }
 

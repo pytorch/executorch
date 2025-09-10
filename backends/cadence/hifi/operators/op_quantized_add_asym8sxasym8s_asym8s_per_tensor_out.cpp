@@ -16,6 +16,8 @@ namespace native {
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::reference::kernels::dequantize;
+using ::impl::reference::kernels::quantize;
 
 void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -61,25 +63,19 @@ void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
     }
   } /* if Y is a scalar Tensor */
   else if (Y_numel == 1) {
-    float y =
-        kernels::dequantize<int8_t>(Y_data[0], Y_scale_f, Y_zero_point_i32);
+    float y = dequantize<int8_t>(Y_data[0], Y_scale_f, Y_zero_point_i32);
     for (size_t i = 0; i < X_numel; ++i) {
-      float x =
-          kernels::dequantize<int8_t>(X_data[i], X_scale_f, X_zero_point_i32);
+      float x = dequantize<int8_t>(X_data[i], X_scale_f, X_zero_point_i32);
       float z = x + y;
-      out_data[i] =
-          kernels::quantize<int8_t>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<int8_t>(z, inv_out_scale, out_zero_point_i32);
     }
   } /* if X is a scalar Tensor */
   else if (X_numel == 1) {
-    float x =
-        kernels::dequantize<int8_t>(X_data[0], X_scale_f, X_zero_point_i32);
+    float x = dequantize<int8_t>(X_data[0], X_scale_f, X_zero_point_i32);
     for (size_t i = 0; i < Y_numel; ++i) {
-      float y =
-          kernels::dequantize<int8_t>(Y_data[i], Y_scale_f, Y_zero_point_i32);
+      float y = dequantize<int8_t>(Y_data[i], Y_scale_f, Y_zero_point_i32);
       float z = x + y;
-      out_data[i] =
-          kernels::quantize<int8_t>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<int8_t>(z, inv_out_scale, out_zero_point_i32);
     }
   } /* other broadcasting cases */
   else {
@@ -162,13 +158,10 @@ void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
       }
 
       /* Apply the operation */
-      float x = kernels::dequantize<int8_t>(
-          X_data[X_idx], X_scale_f, X_zero_point_i32);
-      float y = kernels::dequantize<int8_t>(
-          Y_data[Y_idx], Y_scale_f, Y_zero_point_i32);
+      float x = dequantize<int8_t>(X_data[X_idx], X_scale_f, X_zero_point_i32);
+      float y = dequantize<int8_t>(Y_data[Y_idx], Y_scale_f, Y_zero_point_i32);
       float z = x + y;
-      out_data[i] =
-          kernels::quantize<int8_t>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<int8_t>(z, inv_out_scale, out_zero_point_i32);
     }
   }
 }

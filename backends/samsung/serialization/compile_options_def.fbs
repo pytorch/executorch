@@ -1,0 +1,23 @@
+//============================================================================
+//
+// Copyright (c) 2025 Samsung Electronics. All Rights Reserved.
+//
+// This source code is licensed under the BSD-style license found in the
+// LICENSE file in the root directory of this source tree.
+//
+//============================================================================
+
+namespace enn_option;
+
+// Identifier of a valid executor schema.
+file_identifier "EETO";
+// Extension of written files.
+file_extension "eeto";
+
+
+table EnnExecuTorchOptions {
+  // The version of chipset. Specify the soc to compile and execute model.
+  chipset: int;
+}
+
+root_type EnnExecuTorchOptions;
