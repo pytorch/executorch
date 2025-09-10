@@ -89,15 +89,16 @@ class QuantParams:
         # Groupwise quantization for weight
         self.per_channel_group = False
         self.group_size = group_size
-        
+
         tensor = q_input.meta["val"]
-        
+
         if self.group_size > 0:
             assert (
                 self.per_channel is True
             ), "Only per channel quantization supports groupwise quantization"
             assert (
-                self.axis == 0, "Only axis 0 is supported for per channel groupwise quant"
+                self.axis == 0,
+                "Only axis 0 is supported for per channel groupwise quant",
             )
             assert (
                 cast(torch.Tensor, scale).ndim == 2
@@ -106,16 +107,23 @@ class QuantParams:
             input_channels = cast(torch.Tensor, scale).shape[1] * self.group_size
             # 2d weight tensor shape - [out_channels, in_channels]
             assert (
-                tensor.shape[1] == input_channels, "Invalid input channels for groupwise quant"
-            ) 
+                tensor.shape[1] == input_channels,
+                "Invalid input channels for groupwise quant",
+            )
             # Prefer per_channel over per_channel_group when group_size == input_channels for non int4 cases only
             # int4 case need more fixes to map qb4w to qc4w. Incorrect scales being passed down to xnnpack.
-            self.per_channel_group = self.group_size <= input_channels if self.is_qc4w else self.group_size < input_channels
+            self.per_channel_group = (
+                self.group_size <= input_channels
+                if self.is_qc4w
+                else self.group_size < input_channels
+            )
 
             if not self.per_channel_group:
                 if cast(torch.Tensor, scale).ndim == 2:
                     # TODO: don't reshape scale for per_channel cases
-                    assert (cast(torch.Tensor, scale).shape[1] == 1), "Invalid scale shape for per channel quantization"
+                    assert (
+                        cast(torch.Tensor, scale).shape[1] == 1
+                    ), "Invalid scale shape for per channel quantization"
                     scale = cast(torch.Tensor, scale).squeeze(1)
 
         if per_channel and not self.per_channel_group:
@@ -130,10 +138,18 @@ class QuantParams:
     def __str__(self) -> str:
         """String representation of QuantParams for debugging and logging."""
         assert isinstance(self.scale, float) or isinstance(self.scale, torch.Tensor)
-        scale_str = f"{self.scale}" if isinstance(self.scale, float) else f"tensor{tuple(self.scale.shape)}"
+        scale_str = (
+            f"{self.scale}"
+            if isinstance(self.scale, float)
+            else f"tensor{tuple(self.scale.shape)}"
+        )
         assert isinstance(self.zp, float) or isinstance(self.zp, torch.Tensor)
-        zp_str = f"{self.zp}" if isinstance(self.zp, float) else f"tensor{tuple(self.zp.shape)}"
-          
+        zp_str = (
+            f"{self.zp}"
+            if isinstance(self.zp, float)
+            else f"tensor{tuple(self.zp.shape)}"
+        )
+
         return (
             f"QuantParams("
             f"per_channel={self.per_channel}, "
