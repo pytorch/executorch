@@ -13,6 +13,11 @@ conda activate et
 # Install test dependencies
 pip install -r .ci/docker/requirements-ci.txt
 
+# Create a symlink to work around path length issues when building submodules (tokenizers).
+Push-Location
+New-Item -ItemType SymbolicLink -Path "C:\_et" -Target "$CWD"
+cd C:\_et
+
 if ($editable -eq 'true') {
     install_executorch.bat --editable
 } else {
@@ -22,3 +27,5 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Installation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
 }
+
+Pop-Location
