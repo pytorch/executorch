@@ -779,10 +779,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
                           mCurrentSettingsFields.getBackendType())
                       == ModelUtils.VISION_MODEL) {
                     mModule.generate(
-                        finalPrompt,
-                        ModelUtils.VISION_MODEL_SEQ_LEN,
-                        MainActivity.this,
-                        false);
+                        finalPrompt, ModelUtils.VISION_MODEL_SEQ_LEN, MainActivity.this, false);
                   } else if (mCurrentSettingsFields.getModelType() == ModelType.LLAMA_GUARD_3) {
                     String llamaGuardPromptForClassification =
                         PromptFormat.getFormattedLlamaGuardPrompt(rawPrompt);
