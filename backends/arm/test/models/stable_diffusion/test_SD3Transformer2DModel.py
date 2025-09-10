@@ -22,16 +22,20 @@ class TestSD3Transformer2DModel(unittest.TestCase):
     SD3Transformer2DModel is the transformer model used by Stable Diffusion 3.5 Medium
     """
 
-    # Adjust nbr below as we increase op support. Note: most of the delegates
-    # calls are directly consecutive to each other in the .pte. The reason
-    # for that is some assert ops are removed by passes in the
-    # .to_executorch step, i.e. after Arm partitioner.
-    ops_after_partitioner = {
+    # Adjust nbr below as we increase op support.
+    ops_after_partitioner_FP = {
         "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_unsqueeze_copy_default": 1,
         "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 1,
         "torch.ops.higher_order.executorch_call_delegate": 1,
+    }
+
+    ops_after_partitioner_INT = {
+        "executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_view_copy_default": 2,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
+        "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
     def _prepare_inputs(
@@ -102,7 +106,7 @@ class TestSD3Transformer2DModel(unittest.TestCase):
                 )
                 .export()
                 .to_edge_transform_and_lower()
-                .check_count(self.ops_after_partitioner)
+                .check_count(self.ops_after_partitioner_FP)
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=sd35_transformer2D_model_inputs,
@@ -125,7 +129,7 @@ class TestSD3Transformer2DModel(unittest.TestCase):
                 .quantize()
                 .export()
                 .to_edge_transform_and_lower()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .check_count(self.ops_after_partitioner_INT)
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=sd35_transformer2D_model_inputs,
