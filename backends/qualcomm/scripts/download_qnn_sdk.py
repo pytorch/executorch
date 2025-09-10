@@ -53,8 +53,6 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
         return None
 
     dst_folder.mkdir(parents=True, exist_ok=True)
-    logger.debug("dst_folder is %s, exists: %s", dst_folder, dst_folder.exists())
-    logger.debug("Current working directory: %s", os.getcwd())
 
     with tempfile.TemporaryDirectory() as tmpdir:
         archive_path = pathlib.Path(tmpdir) / pathlib.Path(QAIRT_URL).name

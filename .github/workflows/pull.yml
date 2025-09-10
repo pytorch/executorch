@@ -38,7 +38,7 @@ jobs:
         conda create -y -n test_env_${{ matrix.python-version }} python=${{ matrix.python-version }}
         conda activate test_env_${{ matrix.python-version }}
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh "${{ matrix.python-version }}"
 
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
