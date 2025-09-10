@@ -682,7 +682,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.serialize</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 
 
 <span class="c1"># Step 1: ExecuTorch Program Export</span>
@@ -716,7 +716,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 
 <span class="c1"># Export method&#39;s FX Graph.</span>
 <span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
-    <span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">capture_input</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">capture_input</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
     <span class="n">capture_input</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -820,7 +820,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -844,7 +844,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 
 <span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
 <span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
-    <span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
     <span class="n">inputs</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -958,7 +958,7 @@ Raised Error<div class="sd-summary-down docutils">
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">BundledProgram</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.bundled_program.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -982,7 +982,7 @@ Raised Error<div class="sd-summary-down docutils">
 
 <span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
 <span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
-    <span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
+    <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">(),</span>
     <span class="n">inputs</span><span class="p">,</span>
 <span class="p">)</span>
 

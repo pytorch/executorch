@@ -703,7 +703,7 @@ They must be provided through a compile spec.</p>
 To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <ol class="arabic simple">
 <li><p>Create a <a class="reference external" href="https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig"><code class="docutils literal notranslate"><span class="pre">coremltools.optimize.torch.quantization.LinearQuantizerConfig</span></code></a> and use to to create an instance of a <code class="docutils literal notranslate"><span class="pre">CoreMLQuantizer</span></code>.</p></li>
-<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to export a graph module that will be prepared for quantization.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code> to export a graph module that will be prepared for quantization.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
 <li><p>Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
@@ -737,7 +737,7 @@ To perform 8-bit quantization with the PT2E flow, follow these steps:</p>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">CoreMLQuantizer</span><span class="p">(</span><span class="n">static_8bit_config</span><span class="p">)</span>
 
 <span class="c1"># Step 2: Export the model for training</span>
-<span class="n">training_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+<span class="n">training_gm</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 
 <span class="c1"># Step 3: Prepare the model for quantization</span>
 <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_gm</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>

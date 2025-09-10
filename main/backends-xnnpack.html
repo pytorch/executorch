@@ -597,7 +597,7 @@ the core ExecuTorch runtime.</p>
 <p>To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:</p>
 <ol class="arabic simple">
 <li><p>Create an instance of the <code class="docutils literal notranslate"><span class="pre">XnnpackQuantizer</span></code> class. Set quantization parameters.</p></li>
-<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export_for_training</span></code> to prepare for quantization.</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code> to prepare for quantization.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> to prepare the model for quantization.</p></li>
 <li><p>For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.</p></li>
 <li><p>Call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code> to quantize the model.</p></li>
@@ -619,7 +619,7 @@ the core ExecuTorch runtime.</p>
 <span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
 <span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">qparams</span><span class="p">)</span>
 
-<span class="n">training_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># (2)</span>
+<span class="n">training_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span> <span class="c1"># (2)</span>
 <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">training_ep</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span> <span class="c1"># (3)</span>
 
 <span class="k">for</span> <span class="n">cal_sample</span> <span class="ow">in</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">)]:</span> <span class="c1"># Replace with representative model inputs</span>

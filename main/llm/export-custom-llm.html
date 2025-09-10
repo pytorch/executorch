@@ -555,7 +555,7 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPT</span>
 
@@ -580,7 +580,7 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 <span class="c1"># Trace the model, converting it to a portable intermediate representation.</span>
 <span class="c1"># The torch.no_grad() call tells PyTorch to exclude training-specific logic.</span>
 <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">SDPBackend</span><span class="o">.</span><span class="n">MATH</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-    <span class="n">m</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
     <span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span>
 
 <span class="c1"># Convert the model into a runnable ExecuTorch program.</span>
@@ -632,7 +632,7 @@ call <code class="docutils literal notranslate"><span class="pre">to_edge_transf
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">torch.nn.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export_for_training</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">GPT</span>
 
@@ -659,7 +659,7 @@ call <code class="docutils literal notranslate"><span class="pre">to_edge_transf
 <span class="c1"># Trace the model, converting it to a portable intermediate representation.</span>
 <span class="c1"># The torch.no_grad() call tells PyTorch to exclude training-specific logic.</span>
 <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">SDPBackend</span><span class="o">.</span><span class="n">MATH</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
-    <span class="n">m</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
     <span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span>
 
 <span class="c1"># Convert the model into a runnable ExecuTorch program.</span>
@@ -710,7 +710,7 @@ quantized operators where available.</p>
 <span class="n">xnnpack_quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
 <span class="n">xnnpack_quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">xnnpack_quant_config</span><span class="p">)</span>
 
-<span class="n">m</span> <span class="o">=</span> <span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+<span class="n">m</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 
 <span class="c1"># Annotate the model for quantization. This prepares the model for calibration.</span>
 <span class="n">m</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">xnnpack_quantizer</span><span class="p">)</span>
