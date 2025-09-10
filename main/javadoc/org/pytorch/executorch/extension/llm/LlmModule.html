@@ -316,12 +316,20 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         <tr id="i10" class="altColor">
                                             <td class="colFirst"><code>native void</code>
                                             </td>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#resetContext()>resetContext</a>() </code>
+                                            </th>
+                                            <td class="colLast">Reset the context of the LLM.</td>
+                                        </tr>
+                                        
+                                        <tr id="i11" class="rowColor">
+                                            <td class="colFirst"><code>native void</code>
+                                            </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#stop()>stop</a>() </code>
                                             </th>
                                             <td class="colLast">Stop current generate() before it finishes.</td>
                                         </tr>
                                         
-                                        <tr id="i11" class="rowColor">
+                                        <tr id="i12" class="altColor">
                                             <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#load()>load</a>() </code>
@@ -658,7 +666,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>prefillImages</h4>
-                                        <pre class="methodSignature"> long <a href=LlmModule.html#prefillImages(Array,int,int,int,long)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, long startPos)</pre>
+                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() long <a href=LlmModule.html#prefillImages(Array,int,int,int,long)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, long startPos)</pre>
                                         <div class="block"><p>Prefill an LLaVA Module with the given images input.</p></div>
                                         
                                         <dl>
@@ -698,7 +706,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>prefillPrompt</h4>
-                                        <pre class="methodSignature"> long <a href=LlmModule.html#prefillPrompt(String,long,int,int)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, long startPos, int bos, int eos)</pre>
+                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() long <a href=LlmModule.html#prefillPrompt(String,long,int,int)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, long startPos, int bos, int eos)</pre>
                                         <div class="block"><p>Prefill an LLaVA Module with the given text input.</p></div>
                                         
                                         <dl>
@@ -734,8 +742,8 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>generateFromPos</h4>
-                                        <pre class="methodSignature"> native int <a href=LlmModule.html#generateFromPos(String,int,long,LlmCallback,boolean)>generateFromPos</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, long startPos, <a href=LlmCallback.html>LlmCallback</a> callback, boolean echo)</pre>
-                                        <div class="block"><p>Generate tokens from the given prompt, starting from the given position.</p></div>
+                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() native int <a href=LlmModule.html#generateFromPos(String,int,long,LlmCallback,boolean)>generateFromPos</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, long startPos, <a href=LlmCallback.html>LlmCallback</a> callback, boolean echo)</pre>
+                                        <div class="block"><p>Generate tokens from the given prompt, starting from the given position.</p><p>This is a deprecated API. Please use <a href=LlmModule.html#generate(String,int,LlmCallback,boolean)>generate</a></p></div>
                                         
                                         <dl>
                                             <dt><span class="paramLabel">Parameters:</span></dt>
@@ -761,6 +769,21 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             
                                             
                                         </dl>
+                                        
+                                        <!-- TODO missing return annotation -->
+                                    </li>
+                                </ul>
+                                
+                                <a id="resetContext()">
+                                    <!--   -->
+                                </a>
+                                <ul class=
+                                              "blockList"
+                                          >
+                                    <li class="blockList">
+                                        <h4>resetContext</h4>
+                                        <pre class="methodSignature"> native void <a href=LlmModule.html#resetContext()>resetContext</a>()</pre>
+                                        <div class="block"><p>Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.</p><p>The startPos will be reset to 0.</p></div>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>
