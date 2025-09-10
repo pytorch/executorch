@@ -598,6 +598,8 @@ class Module {
     return event_tracer_.get();
   }
 
+  // Note: thie debug_buffer will always be empty. The one being used is in
+  // the event_tracer attached to module. Please use that one.
   ET_DEPRECATED ET_NODISCARD runtime::Span<uint8_t> debug_buffer() {
     return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
   }
