@@ -20,7 +20,7 @@ popd
 # On Windows, enable symlinks and re-checkout the current revision to create
 # the symlinked src/ directory. This is needed to build the wheel.
 UNAME_S=$(uname -s)
-if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; do
+if [[ $UNAME_S == *"MINGW"* || $UNAME_S == *"MSYS"* ]]; then
     echo "Enabling symlinks on Windows"
     git config core.symlinks true
     git checkout -f HEAD
