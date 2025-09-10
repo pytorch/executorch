@@ -235,17 +235,23 @@ def get_ov_quantizer(
         group_size
     ), "Group Size None is Not Supported. It should be set to -1 for per-channel."
 
+    quantization_params = {}
+
     if quant_config == "4wo":
-        mode = QuantizationMode.INT4WO_ASYM
+        quantization_params["mode"] = QuantizationMode.INT4WO_ASYM
+        quantization_params["group_size"] = group_size
+        quantization_params["ratio"] = 0.8
 
     elif quant_config == "8wo":
-        group_size = -1
-        mode = QuantizationMode.INT8WO_SYM
+        quantization_params["mode"] = QuantizationMode.INT8WO_ASYM
+        quantization_params["group_size"] = -1
+        quantization_params["ratio"] = None
+
     else:
         raise AssertionError(
             f"No support for quant type {quant_config}. Support 8a4w, 8a8w only."
         )
-    ov_quantizer = OpenVINOQuantizer(mode=mode, group_size=group_size)
+    ov_quantizer = OpenVINOQuantizer(**quantization_params)
 
     return ov_quantizer
 
