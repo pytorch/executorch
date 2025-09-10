@@ -16,7 +16,6 @@ from executorch.backends.samsung.serialization.compile_options import (
 from executorch.backends.samsung.test.tester import SamsungTester
 
 
-
 class Sqrt(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -28,16 +27,17 @@ class Sqrt(torch.nn.Module):
 class TestSqrt(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
-            module, inputs,
+            module,
+            inputs,
             [gen_samsung_backend_compile_spec("E9955")],
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.sqrt.default": 1})
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten_sqrt_default"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.aten.sqrt.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_sqrt_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_sqrt(self):

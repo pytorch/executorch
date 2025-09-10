@@ -16,7 +16,6 @@ from executorch.backends.samsung.serialization.compile_options import (
 from executorch.backends.samsung.test.tester import SamsungTester
 
 
-
 class MeanDim(torch.nn.Module):
     def __init__(self, keep_dims=True) -> None:
         super().__init__()
@@ -29,16 +28,17 @@ class MeanDim(torch.nn.Module):
 class TestMeanDim(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
-            module, inputs,
+            module,
+            inputs,
             [gen_samsung_backend_compile_spec("E9955")],
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.mean.dim": 1})
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.aten.mean.dim": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_mean_with_keep_dims(self):

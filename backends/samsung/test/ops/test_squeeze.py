@@ -16,7 +16,6 @@ from executorch.backends.samsung.serialization.compile_options import (
 from executorch.backends.samsung.test.tester import SamsungTester
 
 
-
 class Squeeze(torch.nn.Module):
     def __init__(self, dims) -> None:
         super().__init__()
@@ -35,11 +34,11 @@ class TestSqueeze(unittest.TestCase):
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.squeeze.dims": 1})
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten_squeeze_dims"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.aten.squeeze.dims": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_squeeze_dims"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_squeeze(self):

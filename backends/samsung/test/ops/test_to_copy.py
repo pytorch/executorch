@@ -33,14 +33,14 @@ class TestToCopy(unittest.TestCase):
         )
         (
             tester.export()
-                .to_edge_transform_and_lower()
-                .check_not(
+            .to_edge_transform_and_lower()
+            .check_not(
                 [
                     "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
                 ]
             )
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_to_copy(self):

@@ -16,7 +16,6 @@ from executorch.backends.samsung.serialization.compile_options import (
 from executorch.backends.samsung.test.tester import SamsungTester
 
 
-
 class UpsampleNearest2d(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -39,13 +38,13 @@ class TestUpsampleNearest2d(unittest.TestCase):
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.upsample_nearest2d.vec": 1})
-                .to_edge_transform_and_lower()
-                .check_not(
+            .check_count({"torch.ops.aten.upsample_nearest2d.vec": 1})
+            .to_edge_transform_and_lower()
+            .check_not(
                 ["executorch_exir_dialects_edge__ops_aten_upsample_nearest2d_vec"]
             )
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_upsample_nearest2d(self):

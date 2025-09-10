@@ -38,11 +38,11 @@ class TestSqueeze(unittest.TestCase):
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.unsqueeze.default": 1})
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten_unsqueeze_default"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.aten.unsqueeze.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_unsqueeze_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_unsqueeze(self):

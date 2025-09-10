@@ -23,6 +23,7 @@ class Div(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return x / y
 
+
 class TestDiv(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
@@ -32,11 +33,11 @@ class TestDiv(unittest.TestCase):
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.div.Tensor": 1})
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.aten.div.Tensor": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_simple_div(self):

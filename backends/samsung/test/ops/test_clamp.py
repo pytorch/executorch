@@ -26,7 +26,6 @@ class Clamp(torch.nn.Module):
         self.minimum = minimum
         self.maximum = maximum
 
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.clamp(x, self.minimum, self.maximum)
 
@@ -38,13 +37,13 @@ class TestClamp(unittest.TestCase):
         )
         (
             tester.export()
-                .check_count({"torch.ops.aten.clamp.default": 1})
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.aten.clamp.default": 1})
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_clamp(self):
         inputs = (torch.randn(1, 16, 8, 8),)
-        self._test(Clamp(minimum=0, maximum=2.), inputs)
+        self._test(Clamp(minimum=0, maximum=2.0), inputs)

@@ -28,15 +28,16 @@ class LogSoftmax(torch.nn.Module):
 class TestLogSoftmax(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
-            module, inputs,
+            module,
+            inputs,
             [gen_samsung_backend_compile_spec("E9955")],
         )
         (
             tester.export()
-                .to_edge_transform_and_lower()
-                .check_not(["executorch_exir_dialects_edge__ops_aten__log_softmax_default"])
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .to_edge_transform_and_lower()
+            .check_not(["executorch_exir_dialects_edge__ops_aten__log_softmax_default"])
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_log_softmax(self):

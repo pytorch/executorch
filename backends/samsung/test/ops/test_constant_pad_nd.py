@@ -27,15 +27,17 @@ class ConstantPadND(torch.nn.Module):
 
 class TestConstantPadND(unittest.TestCase):
     def _test(self, module: torch.nn.Module, inputs):
-        tester = SamsungTester(module, inputs, [gen_samsung_backend_compile_spec("E9955")])
+        tester = SamsungTester(
+            module, inputs, [gen_samsung_backend_compile_spec("E9955")]
+        )
         (
             tester.export()
-                .to_edge_transform_and_lower()
-                .check_not(
+            .to_edge_transform_and_lower()
+            .check_not(
                 ["executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"]
             )
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .to_executorch()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .to_executorch()
         )
 
     def test_fp32_constant_pad_nd(self):
