@@ -118,9 +118,7 @@ class MobileBertFinetune:
         from transformers import get_linear_schedule_with_warmup
 
         # sentiment classification
-        train_url = (
-            "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/train.tsv"
-        )
+        train_url = "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/train.tsv"
         content = requests.get(train_url, allow_redirects=True).content
         train_data = pd.read_csv(
             BytesIO(content), delimiter="\t", header=None, names=["text", "label"]
@@ -131,9 +129,7 @@ class MobileBertFinetune:
             train_data, batch_size=64, usage="train"
         )
 
-        val_url = (
-            "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/test.tsv"
-        )
+        val_url = "https://raw.githubusercontent.com/clairett/pytorch-sentiment-classification/refs/heads/master/data/SST2/test.tsv"
         content = requests.get(val_url, allow_redirects=True).content
         val_data = pd.read_csv(
             BytesIO(content), delimiter="\t", header=None, names=["text", "label"]
