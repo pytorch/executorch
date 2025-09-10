@@ -10,9 +10,9 @@ exec > >(tee -i build.log) 2>&1
 REPO_ROOT=$(pwd)
 
 # ----------------------------
-# Dynamically create script.py
+# Dynamically create script_qnn_wheel_test.py
 # ----------------------------
-cat > "$REPO_ROOT/script.py" << 'EOF'
+cat > "/tmp/script_qnn_wheel_test.py" << 'EOF'
 # pyre-ignore-all-errors
 import argparse
 
@@ -96,6 +96,7 @@ unset EXECUTORCH_BUILDING_WHEEL
 WHEEL_FILE=$(ls dist/*.whl | head -n 1)
 echo "Found wheel: $WHEEL_FILE"
 
+PYTHON_VERSION=$1
 # ----------------------------
 # Check wheel does NOT contain qualcomm/sdk
 # ----------------------------
@@ -155,7 +156,7 @@ run_core_tests () {
   ls -l "$SO_DIR" || echo "Folder does not exist!"
 
   echo "=== [$LABEL] Run export script to generate linear.pte ==="
-  (cd "$REPO_ROOT" && "$PYBIN" "$REPO_ROOT/script.py")
+  (cd "$REPO_ROOT" && "$PYBIN" "/tmp/script_qnn_wheel_test.py")
 
   if [ -f "$REPO_ROOT/linear.pte" ]; then
       echo "[$LABEL] Model file linear.pte successfully created"
@@ -171,7 +172,7 @@ run_core_tests () {
 echo "=== Testing in Conda env ==="
 TEMP_ENV_DIR=$(mktemp -d)
 echo "Using temporary directory for conda: $TEMP_ENV_DIR"
-conda create -y -p "$TEMP_ENV_DIR/env" python=3.10
+conda create -y -p "$TEMP_ENV_DIR/env" python=$PYTHON_VERSION
 # derive python/pip paths inside the conda env
 CONDA_PY="$TEMP_ENV_DIR/env/bin/python"
 CONDA_PIP="$TEMP_ENV_DIR/env/bin/pip"
