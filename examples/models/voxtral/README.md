@@ -8,7 +8,7 @@ To export the model, we use [Optimum ExecuTorch](https://github.com/huggingface/
 ## Setting up Optimum ExecuTorch
 Install through pip package:
 ```
-pip install optimum-excecutorch
+pip install optimum-executorch
 ```
 
 Or install from source:
@@ -101,5 +101,5 @@ with open("tensor.bin", "wb") as f:
 You can also produce raw audio file as follows (for Option A):
 
 ```
-ffmpeg -i audio.mp3 -f f32le -acodec pcm_f32le audio_input.bin
+ffmpeg -i audio.mp3 -f f32le -acodec pcm_f32le -ar 16000 audio_input.bin
 ```
