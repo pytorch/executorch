@@ -1,5 +1,6 @@
 # Add these imports for additional logging
 import ctypes
+import logging
 import os
 import pathlib
 import platform
@@ -10,6 +11,9 @@ import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
 
+# Module logger (library-friendly)
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 PKG_ROOT = pathlib.Path(__file__).parent.parent
 SDK_DIR = PKG_ROOT / "sdk" / "qnn"
@@ -40,24 +44,24 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     Notes:
         - Only runs on Linux x86 platforms. Skips otherwise.
     """
-    print("Downloading Qualcomm SDK...")
+    logger.info("Downloading Qualcomm SDK...")
     QAIRT_URL = f"https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
     if not is_linux_x86():
-        print("Skipping Qualcomm SDK (only supported on Linux x86).")
+        logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
 
     dst_folder.mkdir(parents=True, exist_ok=True)
-    print(f"dst_folder is {dst_folder}, exists: {dst_folder.exists()}")
-    print(f"Current working directory: {os.getcwd()}")
+    logger.debug("dst_folder is %s, exists: %s", dst_folder, dst_folder.exists())
+    logger.debug("Current working directory: %s", os.getcwd())
 
     with tempfile.TemporaryDirectory() as tmpdir:
         archive_path = pathlib.Path(tmpdir) / pathlib.Path(QAIRT_URL).name
-        print(f"Temporary directory: {tmpdir}")
-        print(f"Archive will be saved to: {archive_path}")
+        logger.debug("Temporary directory: %s", tmpdir)
+        logger.debug("Archive will be saved to: %s", archive_path)
 
-        print(f"Downloading Qualcomm SDK from {QAIRT_URL}...")
+        logger.info("Downloading Qualcomm SDK from %s ...", QAIRT_URL)
         try:
 
             def make_report_progress():
@@ -65,54 +69,62 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
 
                 def report_progress(block_num, block_size, total_size):
                     nonlocal last_reported
-                    downloaded = block_num * block_size
-                    percent = downloaded / total_size * 100
+                    try:
+                        downloaded = block_num * block_size
+                        percent = downloaded / total_size * 100 if total_size else 100.0
+                    except Exception:
+                        percent = 0.0
+                        downloaded = block_num * block_size
+                        total_size = 0
                     if percent - last_reported >= 20 or percent >= 100:
-                        print(
-                            f"Downloaded: {downloaded}/{total_size} bytes ({percent:.2f}%)"
+                        logger.info(
+                            "Downloaded: %d/%d bytes (%.2f%%)",
+                            downloaded,
+                            total_size,
+                            percent,
                         )
                         last_reported = percent
 
                 return report_progress
 
             urllib.request.urlretrieve(QAIRT_URL, archive_path, make_report_progress())
-            print("Download completed!")
+            logger.info("Download completed!")
 
             if archive_path.exists() and archive_path.stat().st_size == 0:
-                print("WARNING: Downloaded file is empty!")
+                logger.warning("Downloaded file is empty!")
             elif not archive_path.exists():
-                print("ERROR: File was not downloaded!")
+                logger.error("File was not downloaded!")
                 return None
 
         except Exception as e:
-            print(f"Error during download: {e}")
+            logger.exception("Error during download: %s", e)
             return None
 
         if QAIRT_URL.endswith(".zip"):
-            print("Extracting ZIP archive...")
+            logger.info("Extracting ZIP archive...")
             _extract_zip(archive_path, QAIRT_CONTENT_DIR, dst_folder)
         elif QAIRT_URL.endswith((".tar.gz", ".tgz")):
-            print("Extracting TAR archive...")
+            logger.info("Extracting TAR archive...")
             _extract_tar(archive_path, QAIRT_CONTENT_DIR, dst_folder)
         else:
             raise ValueError(f"Unsupported archive format: {QAIRT_URL}")
 
-        print(f"Verifying extraction to {dst_folder}")
+        logger.info("Verifying extraction to %s", dst_folder)
         if dst_folder.exists():
-            print(f"SDK directory exists. Contents:")
+            logger.debug("SDK directory exists. Contents:")
             for item in dst_folder.iterdir():
-                print(f"  {item.name}")
+                logger.debug("  %s", item.name)
         else:
-            print("ERROR: SDK directory was not created!")
+            logger.error("SDK directory was not created!")
 
-        print(f"Qualcomm SDK extracted to {dst_folder}")
+        logger.info("Qualcomm SDK extracted to %s", dst_folder)
 
     return dst_folder
 
 
 def _extract_zip(archive_path, content_dir, target_dir):
-    print(f"Extracting {archive_path} to {target_dir}")
-    print(f"Looking for content in subdirectory: {content_dir}")
+    logger.debug("Extracting %s to %s", archive_path, target_dir)
+    logger.debug("Looking for content in subdirectory: %s", content_dir)
 
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -168,17 +180,17 @@ def _stage_libcxx(target_dir: pathlib.Path):
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if all((target_dir / libname).exists() for libname in REQUIRED_LIBCXX_LIBS):
-        print(f"[libcxx] Already staged at {target_dir}, skipping download")
+        logger.info("[libcxx] Already staged at %s, skipping download", target_dir)
         return
 
     temp_tar = pathlib.Path("/tmp") / f"{LIBCXX_BASE_NAME}.tar.xz"
     temp_extract = pathlib.Path("/tmp") / LIBCXX_BASE_NAME
 
     if not temp_tar.exists():
-        print(f"[libcxx] Downloading {LLVM_URL}")
+        logger.info("[libcxx] Downloading %s", LLVM_URL)
         urllib.request.urlretrieve(LLVM_URL, temp_tar)
 
-    print(f"[libcxx] Extracting {temp_tar}")
+    logger.info("[libcxx] Extracting %s", temp_tar)
     with tarfile.open(temp_tar, "r:xz") as tar:
         tar.extractall(temp_extract.parent)
 
@@ -186,13 +198,13 @@ def _stage_libcxx(target_dir: pathlib.Path):
     for fname in REQUIRED_LIBCXX_LIBS:
         src_path = lib_src / fname
         if not src_path.exists():
-            print(
-                f"[libcxx] Warning: {fname} not found in extracted LLVM src_path {src_path}"
+            logger.warning(
+                "[libcxx] %s not found in extracted LLVM src_path %s", fname, src_path
             )
             continue
         shutil.copy(src_path, target_dir / fname)
 
-    print(f"[libcxx] Staged libc++ to {target_dir}")
+    logger.info("[libcxx] Staged libc++ to %s", target_dir)
 
 
 REQUIRED_QNN_LIBS: List[str] = [
@@ -252,49 +264,51 @@ def _ensure_qnn_sdk_lib() -> bool:
     """
     all_present, locs = _check_libs_in_ld(REQUIRED_QNN_LIBS)
     if all_present:
-        print("[QNN] libQnnHtp.so found in LD_LIBRARY_PATH; skipping SDK install.")
+        logger.info(
+            "[QNN] libQnnHtp.so found in LD_LIBRARY_PATH; skipping SDK install."
+        )
         for lib, p in locs.items():
-            print(f"      - {lib}: {p}")
+            logger.info("      - %s: %s", lib, p)
         return True
 
     # Not found → use packaged SDK
     qnn_sdk_dir = SDK_DIR
-    print(f"[QNN] libQnnHtp.so not found in LD_LIBRARY_PATH.")
+    logger.info("[QNN] libQnnHtp.so not found in LD_LIBRARY_PATH.")
     if not qnn_sdk_dir.exists():
-        print("[QNN] SDK dir missing; downloading...")
+        logger.info("[QNN] SDK dir missing; downloading...")
         _download_qnn_sdk()
     else:
-        print(f"[QNN] Using existing SDK at {qnn_sdk_dir}")
+        logger.info("[QNN] Using existing SDK at %s", qnn_sdk_dir)
 
     os.environ["QNN_SDK_ROOT"] = str(qnn_sdk_dir)
 
     qnn_lib = qnn_sdk_dir / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
-    print(f"[QNN] Loading {qnn_lib}")
+    logger.info("[QNN] Loading %s", qnn_lib)
     lib_loaded = False
     try:
         ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
-        print("[QNN] Loaded libQnnHtp.so from packaged SDK.")
+        logger.info("[QNN] Loaded libQnnHtp.so from packaged SDK.")
         lib_loaded = True
     except OSError as e:
-        print(f"[QNN][ERROR] Failed to load {qnn_lib}: {e}")
+        logger.error("[QNN][ERROR] Failed to load %s: %s", qnn_lib, e)
     return lib_loaded
 
 
 def _load_libcxx_libs(lib_path):
-    print("running _load_libcxx_libs")
+    logger.debug("running _load_libcxx_libs")
     candidates = list(lib_path.glob("*.so*"))
     priority = ["libc++abi", "libc++"]
     sorted_candidates = [
         f for name in priority for f in candidates if f.name.startswith(name)
     ]
     sorted_candidates += [f for f in candidates if f not in sorted_candidates]
-    print("sorted_candidates: ", sorted_candidates)
+    logger.debug("sorted_candidates: %s", sorted_candidates)
     for sofile in sorted_candidates:
         try:
             ctypes.CDLL(str(sofile), mode=ctypes.RTLD_GLOBAL)
-            print(f"Loaded {sofile.name}")
+            logger.info("Loaded %s", sofile.name)
         except OSError as e:
-            print(f"[WARN] Failed to load {sofile.name}: {e}")
+            logger.warning("[WARN] Failed to load %s: %s", sofile.name, e)
 
 
 # ---------------------
@@ -308,12 +322,14 @@ def _ensure_libcxx_stack() -> bool:
     """
     all_present, locs = _check_libs_in_ld(REQUIRED_LIBCXX_LIBS)
     if all_present:
-        print("[libcxx] All libc++ libs present in LD_LIBRARY_PATH; skipping staging.")
+        logger.info(
+            "[libcxx] All libc++ libs present in LD_LIBRARY_PATH; skipping staging."
+        )
         for lib, p in locs.items():
-            print(f"         - {lib}: {p}")
+            logger.info("         - %s: %s", lib, p)
         return True
 
-    print(
+    logger.info(
         "[libcxx] Some libc++ libs missing in LD_LIBRARY_PATH; staging packaged libc++..."
     )
     lib_loaded = False
@@ -321,10 +337,10 @@ def _ensure_libcxx_stack() -> bool:
         libcxx_dir = PKG_ROOT / "sdk" / f"libcxx-{LLVM_VERSION}"
         _stage_libcxx(libcxx_dir)
         _load_libcxx_libs(libcxx_dir)
-        print(f"[libcxx] Staged and loaded libc++ from {libcxx_dir}")
+        logger.info("[libcxx] Staged and loaded libc++ from %s", libcxx_dir)
         lib_loaded = True
     except Exception as e:
-        print(f"[libcxx][ERROR] Failed to stage/load libc++: {e}")
+        logger.exception("[libcxx][ERROR] Failed to stage/load libc++: %s", e)
     return lib_loaded
 
 
