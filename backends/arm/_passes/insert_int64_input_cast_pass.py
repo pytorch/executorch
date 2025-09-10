@@ -31,10 +31,10 @@ class InsertCastForOpsWithInt64InputPass(ExportPass):
 
     def get_decomposition(self, op):
         if op in self.edge_ops:
-            return exir_ops.edge.aten._to_copy.default
+            return exir_ops.edge.dim_order_ops._to_dim_order_copy.default
 
         if op in self.aten_ops:
-            return torch.ops.aten._to_copy.default
+            return torch.ops.dim_order_ops._to_dim_order_copy.default
 
         raise RuntimeError(
             f"[{self.__class__.__name__}] Can't get decomposition for op {op}"
@@ -56,15 +56,14 @@ class InsertCastForOpsWithInt64InputPass(ExportPass):
         return True
 
     def _insert_int32_cast_before_node(self, graph, node, original_input):
-        to_copy_op = self.get_decomposition(node.target)
+        to_dim_order_copy_op = self.get_decomposition(node.target)
         with graph.inserting_before(node):
             cast_before = create_node(
                 graph,
-                to_copy_op,
+                to_dim_order_copy_op,
                 args=(original_input,),
                 kwargs={
                     "dtype": torch.int32,
-                    "memory_format": torch.preserve_format,
                 },
             )
             node.replace_input_with(original_input, cast_before)
