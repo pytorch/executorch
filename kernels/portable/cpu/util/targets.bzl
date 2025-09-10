@@ -302,6 +302,8 @@ def define_common_targets():
         exported_headers = ["stack_util.h"],
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+        exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "@EXECUTORCH_CLIENTS"],
