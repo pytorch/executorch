@@ -6,7 +6,7 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes import InsertCastForOpsWithInt64InputPass
+from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
 from executorch.backends.arm.test.tester.test_pipeline import PassPipeline
 
@@ -40,7 +40,7 @@ def test_int64_model_tosa_FP():
         module.get_inputs(),
         ops_before_pass=op_checks_before,
         ops_after_pass=op_checks_after,
-        pass_list=[InsertCastForOpsWithInt64InputPass],
+        pass_list=[InsertInt32CastsAfterInt64PlaceholdersPass],
     )
     pipeline.pop_stage(-1)  # Do not compare output
     pipeline.run()
