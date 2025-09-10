@@ -7,7 +7,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 
-from torch.export import export_for_training
+from torch.export import export
 
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
@@ -47,7 +47,7 @@ class Quantize(Stage):
         assert inputs is not None
         if self.is_qat:
             artifact.train()
-        captured_graph = export_for_training(artifact, inputs, strict=True).module()
+        captured_graph = export(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
 

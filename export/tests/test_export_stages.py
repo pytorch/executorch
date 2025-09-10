@@ -7,7 +7,7 @@
 # pyre-strict
 
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, PropertyMock
 
 import torch
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
@@ -99,6 +99,66 @@ class TestTorchExportStage(unittest.TestCase):
             stage.get_artifacts()
         self.assertIn("Stage: TorchExportStage not executed", str(cm.exception))
 
+    @patch("torch.export.export")
+    def test_export_stage_with_aten_transform_passes(
+        self, mock_torch_export: Mock
+    ) -> None:
+        """Test TorchExportStage with aten_transform_passes."""
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_transformed_program = Mock(spec=ExportedProgram)
+        mock_torch_export.return_value = mock_exported_program
+
+        # Create a mock aten transform pass that we can verify
+        mock_aten_transform_pass = Mock()
+        mock_aten_transform_pass.return_value = mock_transformed_program
+        aten_transform_passes = [mock_aten_transform_pass]
+
+        stage = TorchExportStage(aten_transform_passes=aten_transform_passes)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+
+        stage.run(artifact)
+
+        # Verify torch.export.export was called
+        mock_torch_export.assert_called_once_with(
+            self.model,
+            self.example_inputs[0],
+            dynamic_shapes=None,
+            strict=True,
+        )
+
+        # Verify the aten transform pass was called with correct parameters
+        mock_aten_transform_pass.assert_called_once_with(
+            "forward", mock_exported_program
+        )
+
+        # Verify artifacts contain the transformed program
+        result_artifact = stage.get_artifacts()
+        self.assertIn("forward", result_artifact.data)
+        self.assertEqual(result_artifact.data["forward"], mock_transformed_program)
+
+    @patch("torch.export.export")
+    def test_export_stage_invalid_aten_transform_pass(
+        self, mock_torch_export: Mock
+    ) -> None:
+        """Test TorchExportStage with invalid aten_transform_pass (not callable)."""
+        mock_exported_program = Mock(spec=ExportedProgram)
+        mock_torch_export.return_value = mock_exported_program
+
+        # Use a non-callable object as transform pass
+        invalid_transform_pass = "not_callable"
+        aten_transform_passes = [invalid_transform_pass]
+
+        # pyre-ignore
+        stage = TorchExportStage(aten_transform_passes=aten_transform_passes)
+        artifact = PipelineArtifact(data=self.models_dict, context=self.context)
+
+        with self.assertRaises(ValueError) as cm:
+            stage.run(artifact)
+        self.assertIn(
+            "Aten transform passes must be a callable that can transform and return an exported program",
+            str(cm.exception),
+        )
+
 
 class TestEdgeTransformAndLowerStage(unittest.TestCase):
     def setUp(self) -> None:
@@ -106,11 +166,31 @@ class TestEdgeTransformAndLowerStage(unittest.TestCase):
         self.exported_programs = {"forward": self.mock_exported_program}
         self.context = {"constant_methods": None}
 
-    def test_run_with_partitioners_and_config(self) -> None:
+    @patch("executorch.export.stages.to_edge_transform_and_lower")
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_with_partitioners_and_config(
+        self, mock_get_delegation_info: Mock, mock_to_edge_transform_and_lower: Mock
+    ) -> None:
         """Test execution with partitioners and compile config"""
+        mock_delegation_info = {"delegation": "info"}
+        mock_get_delegation_info.return_value = mock_delegation_info
+
         mock_partitioners = [Mock()]
-        mock_transform_passes = [Mock()]
         mock_compile_config = Mock()
+
+        # Create a mock transform pass callable that we can verify
+        mock_transform_pass = Mock()
+        mock_pass1 = Mock()
+        mock_pass2 = Mock()
+        mock_transform_pass.return_value = [mock_pass1, mock_pass2]
+        mock_transform_passes = [mock_transform_pass]
+
+        mock_edge_program_manager = Mock(spec=EdgeProgramManager)
+        mock_exported_program = Mock()
+        mock_graph_module = Mock()
+        mock_exported_program.graph_module = mock_graph_module
+        mock_edge_program_manager.exported_program.return_value = mock_exported_program
+        mock_to_edge_transform_and_lower.return_value = mock_edge_program_manager
 
         stage = EdgeTransformAndLowerStage(
             partitioners=mock_partitioners,
@@ -123,6 +203,33 @@ class TestEdgeTransformAndLowerStage(unittest.TestCase):
         self.assertEqual(stage._partitioners, mock_partitioners)
         self.assertEqual(stage._transform_passes, mock_transform_passes)
         self.assertEqual(stage._compile_config, mock_compile_config)
+
+        # Test the run method
+        artifact = PipelineArtifact(data=self.exported_programs, context=self.context)
+        stage.run(artifact)
+
+        # Verify the transform pass callable was called with correct parameters
+        mock_transform_pass.assert_called_once_with(
+            "forward", self.mock_exported_program
+        )
+
+        # Verify to_edge_transform_and_lower was called with the expected structure
+        expected_transform_passes = {"forward": [mock_pass1, mock_pass2]}
+        mock_to_edge_transform_and_lower.assert_called_once_with(
+            self.exported_programs,
+            partitioner=mock_partitioners,
+            transform_passes=expected_transform_passes,
+            constant_methods=None,
+            compile_config=mock_compile_config,
+            generate_etrecord=False,
+        )
+
+        # Verify artifacts are set correctly
+        result_artifact = stage.get_artifacts()
+        self.assertEqual(result_artifact.data, mock_edge_program_manager)
+        self.assertEqual(
+            result_artifact.get_context("delegation_info"), mock_delegation_info
+        )
 
 
 class TestExecutorchStage(unittest.TestCase):
@@ -380,7 +487,10 @@ class TestToBackendStage(unittest.TestCase):
         mock_exported_program = Mock()
         mock_graph_module = Mock()
         mock_exported_program.graph_module = mock_graph_module
+
+        self.mock_edge_manager.transform.return_value = self.mock_edge_manager
         self.mock_edge_manager.exported_program.return_value = mock_exported_program
+        self.mock_edge_manager.methods = {"forward"}
 
         stage = ToBackendStage()
         artifact = PipelineArtifact(data=self.mock_edge_manager, context=self.context)
@@ -409,9 +519,21 @@ class TestToBackendStage(unittest.TestCase):
         mock_edge_program_manager = Mock(spec=EdgeProgramManager)
         mock_edge_program_manager.transform.return_value = mock_edge_program_manager
         mock_edge_program_manager.to_backend.return_value = mock_edge_program_manager
+        mock_edge_program_manager.exported_program.return_value = mock_exported_program
+
+        # Use PropertyMock for the methods property
+        methods_property_mock = PropertyMock(return_value={"forward"})
+        type(mock_edge_program_manager).methods = methods_property_mock
 
         mock_partitioner = Mock()
-        mock_transform_passes = [Mock(), Mock()]
+
+        # Create a mock transform pass callable that we can verify
+        mock_transform_pass = Mock()
+        mock_pass1 = Mock()
+        mock_pass2 = Mock()
+        mock_transform_pass.return_value = [mock_pass1, mock_pass2]
+        mock_transform_passes = [mock_transform_pass]
+
         stage = ToBackendStage(
             partitioners=[mock_partitioner], transform_passes=mock_transform_passes
         )
@@ -420,10 +542,19 @@ class TestToBackendStage(unittest.TestCase):
         )
         stage.run(artifact)
 
-        # Verify transform and to_backend called correctly
+        # Verify that the methods property was accessed
+        methods_property_mock.assert_called_once()
+
+        # Verify the transform pass callable was called with correct parameters
+        mock_transform_pass.assert_called_once_with("forward", mock_exported_program)
+
+        # Verify transform was called with the expected structure
+        expected_transform_passes = {"forward": [mock_pass1, mock_pass2]}
         mock_edge_program_manager.transform.assert_called_once_with(
-            mock_transform_passes
+            expected_transform_passes
         )
+
+        # Verify to_backend called correctly
         mock_edge_program_manager.to_backend.assert_called_once_with(mock_partitioner)
 
         # Verify artifacts contain the backend manager

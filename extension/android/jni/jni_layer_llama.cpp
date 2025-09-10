@@ -251,7 +251,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   // Returns status_code
-  // Contract is valid within an AAR (JNI + corresponding Java code)
   jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
@@ -286,7 +285,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   void reset_context() {
-    runner_->reset();
+    if (runner_ != nullptr) {
+      runner_->reset();
+    }
+    if (multi_modal_runner_ != nullptr) {
+      multi_modal_runner_->reset();
+    }
   }
 
   jint load() {
