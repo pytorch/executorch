@@ -219,24 +219,6 @@ public class LlmModule {
   private native int appendTextInput(String prompt, int bos, int eos);
 
   /**
-   * Generate tokens from the given prompt, starting from the given position.
-   *
-   * <p>This is a deprecated API. Please use {@link #generate(String, int, LlmCallback, boolean)}
-   *
-   * @param prompt The text prompt to LLaVA.
-   * @param seqLen The total sequence length, including the prompt tokens and new tokens.
-   * @param startPos The starting position in KV cache of the input in the LLM.
-   * @param callback callback object to receive results.
-   * @param echo indicate whether to echo the input prompt or not.
-   * @return The error code.
-   */
-  @Deprecated
-  public int generateFromPos(
-      String prompt, int seqLen, long startPos, LlmCallback callback, boolean echo) {
-    return generate(prompt, seqLen, callback, echo);
-  }
-
-  /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
    *
    * <p>The startPos will be reset to 0.
