@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+
 import re
 from multiprocessing.connection import Client
 
@@ -100,12 +101,6 @@ def main(args):
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
-
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
 
     instance = EdsrModel()
     if args.ci:
@@ -229,6 +224,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:
