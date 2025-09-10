@@ -10,7 +10,6 @@ import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
 
-from tqdm import tqdm
 
 PKG_ROOT = pathlib.Path(__file__).parent.parent
 SDK_DIR = PKG_ROOT / "sdk" / "qnn"
@@ -120,7 +119,7 @@ def _extract_zip(archive_path, content_dir, target_dir):
     with zipfile.ZipFile(archive_path, "r") as zip_ref:
         files_to_extract = [f for f in zip_ref.namelist() if f.startswith(content_dir)]
 
-        for file in tqdm(files_to_extract, desc="Extracting files"):
+        for file in files_to_extract:
             relative_path = pathlib.Path(file).relative_to(content_dir)
             if relative_path == pathlib.Path("."):
                 continue
@@ -271,13 +270,14 @@ def _ensure_qnn_sdk_lib() -> bool:
 
     qnn_lib = qnn_sdk_dir / "lib" / "x86_64-linux-clang" / "libQnnHtp.so"
     print(f"[QNN] Loading {qnn_lib}")
+    lib_loaded = False
     try:
         ctypes.CDLL(str(qnn_lib), mode=ctypes.RTLD_GLOBAL)
         print("[QNN] Loaded libQnnHtp.so from packaged SDK.")
-        return True
+        lib_loaded = True
     except OSError as e:
         print(f"[QNN][ERROR] Failed to load {qnn_lib}: {e}")
-        return False
+    return lib_loaded
 
 
 def _load_libcxx_libs(lib_path):
@@ -316,15 +316,16 @@ def _ensure_libcxx_stack() -> bool:
     print(
         "[libcxx] Some libc++ libs missing in LD_LIBRARY_PATH; staging packaged libc++..."
     )
+    lib_loaded = False
     try:
         libcxx_dir = PKG_ROOT / "sdk" / f"libcxx-{LLVM_VERSION}"
         _stage_libcxx(libcxx_dir)
         _load_libcxx_libs(libcxx_dir)
         print(f"[libcxx] Staged and loaded libc++ from {libcxx_dir}")
-        return True
+        lib_loaded = True
     except Exception as e:
         print(f"[libcxx][ERROR] Failed to stage/load libc++: {e}")
-        return False
+    return lib_loaded
 
 
 # ---------------
