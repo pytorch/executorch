@@ -123,7 +123,9 @@ if(${ANDROID})
   )
   set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/re2)
   set(THIRD_PARTY_JSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/json)
-  set(THIRD_PARTY_UNICODE_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/llama.cpp-unicode)
+  set(THIRD_PARTY_UNICODE_DIR
+      ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/llama.cpp-unicode
+  )
   set(THIRD_PARTY_PCRE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/pcre2)
   set(ABSL_ENABLE_INSTALL ON)
   set(ABSL_PROPAGATE_CXX_STD ON)
@@ -138,13 +140,16 @@ if(${ANDROID})
     ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/re2
   )
   add_subdirectory(
-    ${THIRD_PARTY_JSON_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/json
+    ${THIRD_PARTY_JSON_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/json
   )
   add_subdirectory(
-    ${THIRD_PARTY_UNICODE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/llama.cpp-unicode
+    ${THIRD_PARTY_UNICODE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/llama.cpp-unicode
   )
   add_subdirectory(
-    ${THIRD_PARTY_PCRE2_DIR} ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
+    ${THIRD_PARTY_PCRE2_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
@@ -153,15 +158,18 @@ if(${ANDROID})
   set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizers)
   add_library(tokenizer STATIC)
   target_include_directories(
-    tokenizer PUBLIC ${_common_include_directories} ${THIRD_PARTY_ABSL_DIR}
-                     ${THIRD_PARTY_RE2_DIR} ${LLAMA2_TOKENIZER_DIR}/include
-                     ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
-                     ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
-                     ${THIRD_PARTY_JSON_DIR} ${THIRD_PARTY_UNICODE_DIR}/include
-                     ${THIRD_PARTY_PCRE2_DIR}
+    tokenizer
+    PUBLIC ${_common_include_directories}
+           ${THIRD_PARTY_ABSL_DIR}
+           ${THIRD_PARTY_RE2_DIR}
+           ${LLAMA2_TOKENIZER_DIR}/include
+           ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
+           ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+           ${THIRD_PARTY_JSON_DIR}
+           ${THIRD_PARTY_UNICODE_DIR}/include
+           ${THIRD_PARTY_PCRE2_DIR}
   )
   target_link_libraries(tokenizer PRIVATE re2::re2)
-
 
   target_sources(
     tokenizer
@@ -213,13 +221,12 @@ if(${ANDROID})
   )
   target_link_libraries(tokenizer PUBLIC regex_lookahead)
   install(
-  TARGETS regex_lookahead pcre2-8-static
-  EXPORT tokenizers-targets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    TARGETS regex_lookahead pcre2-8-static
+    EXPORT tokenizers-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
-  
 
   # Include directory for neuron headers
   include_directories(
@@ -234,15 +241,13 @@ if(${ANDROID})
   add_executable(mtk_llama_executor_runner ${_mtk_llama_executor_runner__srcs})
 
   target_link_libraries(
-    mtk_llama_executor_runner
-    ${_executor_runner_libs}
-    neuron_backend
-    gflags
+    mtk_llama_executor_runner ${_executor_runner_libs} neuron_backend gflags
     mtk_llama_executor_lib
   )
   target_link_libraries(
-    mtk_llama_executor_runner 
-    tokenizer $<LINK_LIBRARY:WHOLE_ARCHIVE,regex_lookahead>)
+    mtk_llama_executor_runner tokenizer
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,regex_lookahead>
+  )
   target_compile_options(
     mtk_llama_executor_runner PUBLIC ${_common_compile_options}
   )
