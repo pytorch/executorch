@@ -540,7 +540,7 @@ TODO: Just handle conversion of bool mask to float
  attention (-1 for all)
  */
 template <typename scalar_t, int64_t q_split_size, int64_t kv_split_size>
-void cpu_flash_attention(
+[[nodiscard]] bool cpu_flash_attention(
     Tensor& output,
     const Tensor& query,
     const Tensor& key,
@@ -1070,7 +1070,7 @@ void cpu_flash_attention(
       data_index_step(i, batchSize, j, num_head, k, qSlice);
     }
   };
-  torch::executor::parallel_for(
+  return torch::executor::parallel_for(
       0, batchSize * num_head * qSlice, 1, compute_lambda);
 }
 } // namespace sdpa::impl
