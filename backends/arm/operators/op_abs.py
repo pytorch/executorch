@@ -73,9 +73,7 @@ class AbsVisitor_INT(NodeVisitor):
             abs_output = output
 
         # Do the INT32 Abs
-        self._serialize_operator(
-            node,
-            tosa_graph,
+        tosa_graph.addOperator(
             ts.TosaOp.Op().ABS,
             [
                 rescaled_inputs[0].name,
