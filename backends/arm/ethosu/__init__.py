@@ -6,7 +6,9 @@
 # pyre-unsafe
 
 from .backend import EthosUBackend  # noqa: F401
-from .compile_spec import EthosUCompileSpec  # noqa: F401
 from .partitioner import EthosUPartitioner  # noqa: F401
 
-__all__ = ["EthosUBackend", "EthosUPartitioner", "EthosUCompileSpec"]
+__all__ = [
+    "EthosUBackend",
+    "EthosUPartitioner",
+]
