@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Any, Callable, Dict, List, Optional
 
 import torch
@@ -25,6 +26,7 @@ from executorch.backends.arm.common.arm_compile_spec import (
     ArmCompileSpec,
 )  # isort: skip
 from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -54,6 +56,9 @@ __all__ = [
     "VgfQuantizer",
     "get_symmetric_quantization_config",
 ]
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 @functools.lru_cache
@@ -299,7 +304,10 @@ def _get_not_module_type_or_name_filter(
 class TOSAQuantizer(Quantizer):
 
     def __init__(
-        self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
+        self,
+        compile_spec_or_tosa_spec: (
+            TosaSpecification | ArmCompileSpec | list[CompileSpec]
+        ),
     ) -> None:
 
         super().__init__()
@@ -309,6 +317,11 @@ class TOSAQuantizer(Quantizer):
         elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
             self.compile_spec = compile_spec_or_tosa_spec
             self.tosa_spec = self.compile_spec.tosa_spec
+        elif isinstance(compile_spec_or_tosa_spec, list):
+            logger.warning(
+                "Initializing TosaQuantizer with a CompileSpec list is deprecated."
+            )
+            self.compile_spec = ArmCompileSpec.from_list(compile_spec_or_tosa_spec)
         else:
             raise TypeError(
                 f"TOSAQuantizer constructor expects "
@@ -454,10 +467,20 @@ class TOSAQuantizer(Quantizer):
 
 
 class EthosUQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: EthosUCompileSpec) -> None:
+    def __init__(self, compile_spec: EthosUCompileSpec | list[CompileSpec]) -> None:
+        if isinstance(compile_spec, list):
+            logger.warning(
+                "Initializing EthosUQuantizer with a CompileSpec list is deprecated."
+            )
+            compile_spec = EthosUCompileSpec.from_list(compile_spec)
         super().__init__(compile_spec)
 
 
 class VgfQuantizer(TOSAQuantizer):
     def __init__(self, compile_spec: VgfCompileSpec) -> None:
+        if isinstance(compile_spec, list):
+            logger.warning(
+                "Initializing VgfQuantizer with a CompileSpec list is deprecated."
+            )
+            compile_spec = VgfCompileSpec.from_list(compile_spec)
         super().__init__(compile_spec)

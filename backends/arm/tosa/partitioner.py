@@ -13,12 +13,15 @@ from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.convert_expand_copy_to_repeat import (
     calculate_multiples,
 )
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import get_tosa_spec
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -29,6 +32,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
+
 
 logger = logging.getLogger(__name__)
 
@@ -57,21 +61,34 @@ def is_noop_expand(node: torch.fx.node.Node) -> bool:
 
 
 class TOSAPartitioner(Partitioner):
+
     def __init__(
         self,
-        compile_spec: TosaCompileSpec,
+        compile_spec: TosaCompileSpec | list[CompileSpec],
         additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     ) -> None:
-        self.delegation_spec = DelegationSpec(
-            TOSABackend.__name__, compile_spec.to_list()
-        )
+        self._init_partitioner(TOSABackend.__name__, compile_spec, additional_checks)
+
+    def _init_partitioner(
+        self, name, compile_spec: ArmCompileSpec | list[CompileSpec], additional_checks
+    ):
+        if isinstance(compile_spec, ArmCompileSpec):
+            compile_specs = compile_spec.to_list()
+            self.tosa_spec = compile_spec.tosa_spec
+        else:
+            logger.warning(
+                f"Not using a CompileSpec object matching the backend for initializing {self.__class__.__name__} is deprecated."
+            )
+            compile_specs = compile_spec
+            self.tosa_spec = get_tosa_spec(compile_specs)
+
+        self.delegation_spec = DelegationSpec(name, compile_specs)
+
         self.additional_checks = additional_checks
-        self.tosa_spec = compile_spec.tosa_spec
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:  # noqa
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
-
         logger.info("TOSAPartitioner::partition")
         partition_tags: dict[str, DelegationSpec] = {}
 

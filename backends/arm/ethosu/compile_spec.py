@@ -85,6 +85,12 @@ class EthosUCompileSpec(ArmCompileSpec):
     @classmethod
     def from_list_hook(cls, compile_spec, specs: dict[str, str]):
         compile_spec.target = specs.get(cls._TARGET_KEY, None)
+        if compile_spec.target is None:
+            print(compile_spec.compiler_flags)
+            for flag in compile_spec.compiler_flags:
+                pair = flag.split("=")
+                if pair[0] == "--accelerator-config":
+                    compile_spec.target = pair[1]
 
     def validate(self):
         if len(self.compiler_flags) == 0:
