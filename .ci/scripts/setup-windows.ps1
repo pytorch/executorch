@@ -15,7 +15,7 @@ pip install -r .ci/docker/requirements-ci.txt
 
 # Create a symlink to work around path length issues when building submodules (tokenizers).
 Push-Location
-New-Item -ItemType SymbolicLink -Path "C:\_et" -Target "$CWD"
+New-Item -ItemType SymbolicLink -Path "C:\_et" -Target "$($pwd.Path)"
 cd C:\_et
 
 if ($editable -eq 'true') {
