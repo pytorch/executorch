@@ -1,0 +1,51 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Macro Settings:
+ * - TILE_M
+ * - TILE_N4
+ */
+
+#ifndef LINEAR_FP_OUTPUT_TILE_GLSLH
+#define LINEAR_FP_OUTPUT_TILE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct FPOutTile {
+  VEC4_T data[TILE_M][TILE_N4];
+};
+
+void initialize(out FPOutTile out_tile) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      out_tile.data[m][n4] = VEC4_T(0);
+    }
+  }
+}
+
+#ifdef DEBUG_MODE
+
+void printFPOutTile(const FPOutTile tile) {
+  debugPrintfEXT("output_tile: \\n");
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      debugPrintfEXT(
+          "  %f, %f, %f, %f,",
+          tile.data[m][n4].x,
+          tile.data[m][n4].y,
+          tile.data[m][n4].z,
+          tile.data[m][n4].w);
+    }
+    debugPrintfEXT("\\n");
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_FP_OUTPUT_TILE_GLSLH

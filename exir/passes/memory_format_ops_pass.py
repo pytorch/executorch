@@ -19,9 +19,6 @@ from executorch.exir.passes.dim_order_ops_registry import (
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
 
-# TODO - these passes are too specialized on a single to_copy op.
-# We should be able to replace (or revert) any of the dim_order ops in the future.
-
 
 class MemoryFormatOpsPass(ExportPass):
     """
@@ -43,7 +40,7 @@ class MemoryFormatOpsPass(ExportPass):
         # new kwargs with dim_order, and no memory_format for the new op
         nkwargs = dict(copy.deepcopy(kwargs))  # orig kwargs are immutable
 
-        # get the "to" memory format for the EdgeOp
+        # get the target memory format for the EdgeOp
         mem_format = nkwargs.pop("memory_format", torch.contiguous_format)
 
         # can always get the shape, assuming rank is specialized
