@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Tuple
+from typing import Tuple
 
 import pytest
 import torch
@@ -23,6 +23,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     VgfPipeline,
 )
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -102,13 +103,14 @@ def test_add_tensor_tosa_INT(test_data: input_t1):
 @common.parametrize("test_data", Add.test_data)
 def test_add_tensor_tosa_INT_i32(test_data: input_t1):
     pipeline = TosaPipelineINT[input_t1](Add(), test_data(), aten_op, exir_op)
-    tosa_version = cast(str, conftest.get_option("tosa_version"))
+    tosa_version = conftest.get_option("tosa_version")
     tosa_profiles = {
         "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
     }
     # Create a  quantizer with int8 quantization on the input and output but int32 on everything else.
-    quantizer = arm_quantizer.TOSAQuantizer(tosa_profiles[tosa_version])
-
+    quantizer = arm_quantizer.TOSAQuantizer(
+        get_tosa_spec(common.get_tosa_compile_spec(tosa_profiles[tosa_version]))
+    )
     quantizer.set_io(arm_quantizer.get_symmetric_quantization_config())
     observer_options = {"eps": 2**-16}
     observer = HistogramObserver.with_args(**observer_options)
@@ -200,7 +202,12 @@ def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline.run()
 
 
-@common.parametrize("test_data", Add.test_data)
+# TODO/MLETORCH-1282: remove once inputs are not hard coded to ones
+skip_keys = {"5d_float", "1d_ones", "1d_randn"}
+filtered_test_data = {k: v for k, v in Add.test_data.items() if k not in skip_keys}
+
+
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
@@ -217,7 +224,7 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
         pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
 
 
-@common.parametrize("test_data", Add.test_data)
+@common.parametrize("test_data", filtered_test_data)
 @common.SkipIfNoModelConverter
 def test_add_tensor_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

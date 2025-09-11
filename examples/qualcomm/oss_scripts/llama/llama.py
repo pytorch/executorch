@@ -62,6 +62,7 @@ from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
 from executorch.examples.qualcomm.oss_scripts.llama import (
+    LLM_VARIANT_ARCHS,
     LLMModelConfig,
     SUPPORTED_LLM_MODELS,
 )
@@ -137,14 +138,14 @@ class SingleLlama:
         self.llama_meta = self.decoder_model.get_metadata()
         self.has_quant_io = False
         self.pte_filename = pte_filename
-        if self.llama_meta["get_use_kv_cache"]:
-            tokens, atten_mask, pos_ids, k_caches, v_caches = self.get_example_inputs(
-                use_kv_cache=True
-            )
-            self.inputs = (tokens, atten_mask, pos_ids, *k_caches, *v_caches)
-        else:
-            tokens, atten_mask = self.get_example_inputs(use_kv_cache=False)
-            self.inputs = (tokens, atten_mask)
+        inputs = self.get_example_inputs(self.llama_meta["get_use_kv_cache"])
+        self.inputs = (
+            inputs[0],  # tokens
+            *inputs[1],  # attn_mask
+            *(inputs[2] if self.llama_meta["get_use_kv_cache"] else []),  # pos_ids
+            *(inputs[3] if self.llama_meta["get_use_kv_cache"] else []),  # k_caches
+            *(inputs[4] if self.llama_meta["get_use_kv_cache"] else []),  # v_caches
+        )
         self.llama_graph_module = decoder_model
         self.io_shape = {
             # logit output
@@ -227,7 +228,6 @@ class SingleLlama:
         quantizer = make_custom_quantizer(
             quant_dtype, args.range_setting, custom_annotations
         )
-
         self.has_quant_io = True
         fx_graph_module = None
         with torch.no_grad():
@@ -451,39 +451,60 @@ def compile(
 
     llama_instance_list = []
     use_i64_token = args.embedding_quantize is not None
+    extra_kwargs = {}
+    if args.decoder_model == "gemma3-1b":
+        from transformers import Gemma3Config
+
+        hf_config = Gemma3Config.from_pretrained(decoder_model_config.repo_id)
+        extra_kwargs["layer_types"] = hf_config.text_config.layer_types
+        extra_kwargs["rope_local_base_freq"] = (
+            hf_config.text_config.rope_local_base_freq
+        )
+        extra_kwargs["sliding_window"] = hf_config.sliding_window
+
     with torch.device("meta"):
         if args.model_mode == "kv":
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
                     ar_len=1,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
         elif args.model_mode == "hybrid":
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
                     ar_len=1,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     prefill_config,
                     ar_len=args.prefill_ar_len,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
         elif args.model_mode == "lookahead":
+            # TODO: Lookahead decoding is not yet supported for gemma3-1b.
+            # This will be implemented once the model architecture and KV update logic are adapted.
+            if args.decoder_model == "gemma3-1b":
+                raise NotImplementedError(
+                    "gemma3-1b does not currently support lookahead decoding."
+                )
+
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
                     # To get better performance, we round up to the nearest power of 2.
                     ar_len=next_power_of_two(
@@ -492,15 +513,17 @@ def compile(
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
             llama_instance_list.append(
-                LlamaModel(
+                LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     prefill_config,
                     ar_len=args.prefill_ar_len,
                     output_new_cache_only=True,
                     output_cache=True,
                     use_i64_token=use_i64_token,
+                    **extra_kwargs,
                 )
             )
         else:
@@ -514,6 +537,14 @@ def compile(
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
+        if args.decoder_model == "gemma3-1b":
+            for k, v in state_dict.items():
+                if "norm" not in k:
+                    continue
+                # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
+                # See https://github.com/huggingface/transformers/pull/29402
+                state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
+
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -591,9 +622,13 @@ def compile(
             model.to(torch.float)
             ar_len, model.ar_len = model.ar_len, model.max_seq_len
             tokens, atten_mask = model.get_example_inputs(use_kv_cache=False)
-            atten_mask.to(torch.float)
+            atten_mask.mask.to(torch.float)
             wrapped_model = WrappedLlamaModel(
-                model, atten_mask, model.use_kv_cache, args.max_seq_len, args.device
+                model,
+                atten_mask.mask,
+                model.use_kv_cache,
+                args.max_seq_len,
+                args.device,
             )
             act_bits, weight_bits = {
                 QuantDtype.use_8a8w: (8, 8),
@@ -659,7 +694,6 @@ def compile(
     if decoder_model_config.ptq:
         start_quantize_ts = time.time()
         custom_annotations = decoder_model_config.custom_annotation
-        logging.info(f"Custom annotations applied: {custom_annotations}")
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
             llama_instance.quantize(
@@ -1155,6 +1189,7 @@ def export_llama(args) -> None:
         args.decoder_model in SUPPORTED_LLM_MODELS
     ), f"Unknown decoder_model: {args.decoder_model}."
     decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
+    logging.info(f"*** {args.decoder_model} ***\n%s", str(decoder_model_config))
 
     if args.model_mode == "kv":
         pte_filename = "kv_llama_qnn"
