@@ -782,7 +782,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w", "4w"]
+    choices = ["int8", "8da4w", "8da4w-gptq", "4w"]
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:

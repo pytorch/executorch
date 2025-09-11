@@ -116,7 +116,6 @@ def quantize(  # noqa C901
         assert len(matches) == 1, f"Expected 1 match for pattern but got {len(matches)}"
         bitwidth = int(matches[0][0])
 
-        from torchao.dtypes import PackedLinearInt8DynamicActivationIntxWeightLayout
         from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.quantization.quant_api import (
             Int8DynamicActivationIntxWeightConfig,
@@ -136,7 +135,7 @@ def quantize(  # noqa C901
                         PerAxis(0) if group_size == 0 else PerGroup(group_size)
                     ),
                     weight_mapping_type=MappingType.SYMMETRIC,
-                    layout=PackedLinearInt8DynamicActivationIntxWeightLayout(),
+                    intx_packing_format="opaque_torchao_auto",
                 ),
             )
             model = unwrap_tensor_subclass(model)
@@ -148,23 +147,27 @@ def quantize(  # noqa C901
             # TODO: Default value for group size for 8da4w. Need this here for refactor, will clean this up.
             group_size = 128
 
-        from torchao.quantization import int8_dynamic_activation_int4_weight, quantize_
+        from torchao.quantization import (
+            Int8DynamicActivationIntxWeightConfig,
+            quantize_,
+        )
+        from torchao.quantization.granularity import PerGroup
         from torchao.utils import unwrap_tensor_subclass
 
-        quantize_(model, int8_dynamic_activation_int4_weight(group_size=group_size))
+        quantize_(
+            model,
+            Int8DynamicActivationIntxWeightConfig(
+                weight_dtype=torch.int4,
+                weight_granularity=PerGroup(group_size),
+            ),
+        )
+
         model = unwrap_tensor_subclass(model)
 
         # TODO: deal with checkpoint / computation dtype decoupling.
 
         if verbose:
             print("quantized model:", model)
-        return model
-    elif qmode == "vulkan_4w":
-        from executorch.backends.vulkan._passes import VkInt4WeightOnlyQuantizer
-
-        q_group_size = 256 if group_size is None else group_size
-        model = VkInt4WeightOnlyQuantizer(groupsize=q_group_size).quantize(model)
-
         return model
     elif qmode == "4w":
         from torchao.quantization.granularity import PerGroup
@@ -751,9 +754,9 @@ def get_quant_embedding_transform(
     dtype_override: Optional[DType] = None,
 ):
     if embedding_quantize.startswith("torchao:"):
-        from torchao.experimental.quant_api import (
+        from torchao.prototype.quantization.embedding.api import (
             EmbeddingQuantizer,
-            SharedEmbeddingQuantizer,
+            TiedEmbeddingQuantizer,
         )
         from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.quantization.quant_api import MappingType
@@ -787,7 +790,7 @@ def get_quant_embedding_transform(
                         use_fallback=False,
                     ).quantize(model)
                 else:
-                    SharedEmbeddingQuantizer(
+                    TiedEmbeddingQuantizer(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
                         mapping_type=mapping_type,
