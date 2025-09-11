@@ -217,7 +217,7 @@ def get_qnn_quantizer(
 
 def get_ov_quantizer(
     pt2e_quantize: str,
-    group_size: int = 32,
+    group_size: int = 128,
 ):
     try:
         from executorch.backends.openvino.quantizer import (
