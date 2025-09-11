@@ -97,19 +97,14 @@ class QuantParams:
                 self.per_channel is True
             ), "Only per channel quantization supports groupwise quantization"
             assert (
-                self.axis == 0,
-                "Only axis 0 is supported for per channel groupwise quant",
-            )
-            assert (
                 cast(torch.Tensor, scale).ndim == 2
             ), "Scale must be 2D for per channel groupwise quant"
             # Assumed scale shape - [out_channels, in_channels/group_size]
             input_channels = cast(torch.Tensor, scale).shape[1] * self.group_size
             # 2d weight tensor shape - [out_channels, in_channels]
             assert (
-                tensor.shape[1] == input_channels,
-                "Invalid input channels for groupwise quant",
-            )
+                tensor.shape[1] == input_channels
+            ), "Invalid input channels for groupwise quant"
             # Prefer per_channel over per_channel_group when group_size == input_channels for non int4 cases only
             # int4 case need more fixes to map qb4w to qc4w. Incorrect scales being passed down to xnnpack.
             self.per_channel_group = (
