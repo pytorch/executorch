@@ -20,7 +20,6 @@ runtime.python_library(
     srcs = [
         "models.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
