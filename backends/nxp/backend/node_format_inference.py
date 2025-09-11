@@ -4,30 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from enum import Enum
+import operator
 
+from executorch.backends.nxp.backend.edge_program_converter import functions_converters
+from executorch.backends.nxp.backend.node_format import NodeFormat, NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 
-from torch import Node
 from torch.export import ExportedProgram
+from torch.fx import Node
 
 logger = logging.getLogger(__name__)
-
-NXP_NODE_FORMAT = "nxp_node_format"  # Key into the `meta` attribute of nodes, which is mapped to the inferred format.
-
-
-class NodeFormat(Enum):
-    # Node's output in NCHW format
-    CHANNELS_FIRST = 0
-
-    # Node's output format has no meaning
-    FORMATLESS = 1
-
-    # Format has not been identified
-    NONE = 2
-
-    def is_channels_first(self) -> bool:
-        return self == NodeFormat.CHANNELS_FIRST
 
 
 class NodeFormatInference:
@@ -53,6 +40,9 @@ class NodeFormatInference:
     # Mapping between Node and its children (outputs)
     _node_outputs: dict[Node, list[Node]]
 
+    # List of all edge operations, which are supported by the converter.
+    _known_targets: list[EdgeOpOverload]
+
     def __init__(self, edge_program: ExportedProgram):
         self._edge_program = edge_program
 
@@ -65,6 +55,12 @@ class NodeFormatInference:
         }
 
         self._type_changed_during_last_run = False
+
+        self._known_targets = list(functions_converters) + [
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            operator.getitem,
+        ]
 
     def identify_node_formats(self):
         self._type_changed_during_last_run = True
@@ -100,8 +96,18 @@ class NodeFormatInference:
                 logger.error(
                     f"Node format inference for node type: {op_type} not found!"
                 )
-        else:
+        elif node.op != "call_function" or (
+            hasattr(node, "target") and node.target in self._known_targets
+        ):
+            # Generic node, or tensor.
             self._handle_node_which_can_use_any_node_format(node)
+
+        else:
+            # Don't infer the format for unknown nodes. These nodes will never be delegated, so they will divide
+            #  delegated partitions. Propagating the format here could unnecessarily enforce the format in one of these
+            #  partitions, which would require extra transpositions.
+            for processed_node in self._node_inputs[node] + [node]:
+                self._assign_format_to_node(processed_node, NodeFormat.NONE)
 
     def _infer_format_based_on_io_ranks(self, node: Node):
         """Determine the format of the output tensor of given "reshape style operator" based on the ranks of its input
@@ -153,6 +159,10 @@ class NodeFormatInference:
 
         if old_node_format is NodeFormat.CHANNELS_FIRST:
             # Once CHANNEL_FIRST was assigned, we don't want to reassign
+            return
+
+        if node_format is NodeFormat.NONE and old_node_format is not NodeFormat.NONE:
+            # A format has already been assigned to the node before. Don't replace it with `NONE`.
             return
 
         if old_node_format != node_format:
