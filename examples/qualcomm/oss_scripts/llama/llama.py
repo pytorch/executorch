@@ -291,7 +291,6 @@ class SingleLlama:
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
         )
-
         if scales_state_dict:
             set_scales(
                 fx_graph_module, scales_state_dict, self.llama_graph_module.head_dim
