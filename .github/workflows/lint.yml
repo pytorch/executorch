@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lintrunner:
+  lintrunner-mypy:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -50,9 +50,53 @@ jobs:
 
         RC=0
         # Run lintrunner on all files
-        if ! lintrunner --force-color --all-files --tee-json=lint.json 2> /dev/null; then
+        if ! lintrunner --force-color --all-files --take MYPY --tee-json=lint.json 2> /dev/null; then
           echo ""
-          echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
+          echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --take MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
+          echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
+          RC=1
+        fi
+
+        # Use jq to massage the JSON lint output into GitHub Actions workflow commands.
+        jq --raw-output \
+          '"::\(if .severity == "advice" or .severity == "disabled" then "warning" else .severity end) file=\(.path),line=\(.line),col=\(.char),title=\(.code) \(.name)::" + (.description | gsub("\\n"; "%0A"))' \
+          lint.json || true
+
+        exit $RC
+
+  lintrunner:
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-linter
+      submodules: 'recursive'
+      fetch-depth: 0
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        CACHE_DIRECTORY="/tmp/.lintbin"
+        # Try to recover the cached binaries
+        if [[ -d "${CACHE_DIRECTORY}" ]]; then
+          # It's ok to fail this as lintrunner init would download these binaries
+          # again if they do not exist
+          cp -r "${CACHE_DIRECTORY}" . || true
+        fi
+
+        # This has already been cached in the docker image
+        lintrunner init
+
+        RC=0
+        # Run lintrunner on all files
+        if ! lintrunner --force-color --all-files --skip MYPY --tee-json=lint.json 2> /dev/null; then
+          echo ""
+          echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --skip MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
           echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
           RC=1
         fi
