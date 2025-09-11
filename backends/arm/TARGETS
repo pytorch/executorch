@@ -124,3 +124,13 @@ python_library(
         "//caffe2:torch",
     ]
 )
+python_library(
+    name = "arm_backend",
+    srcs = [
+        "arm_backend.py",
+    ],
+    deps = [
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/backends/arm/tosa:specification",
+    ],
+)
