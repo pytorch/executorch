@@ -21,7 +21,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concate
     Concatenation,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
-from executorch.backends.nxp.backend.node_format_inference import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
