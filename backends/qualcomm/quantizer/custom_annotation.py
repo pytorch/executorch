@@ -31,6 +31,25 @@ from torchao.quantization.pt2e.quantizer import (
 )
 
 
+def annotate_down_proj(
+    gm: torch.fx.GraphModule, quantization_config: QuantizationConfig
+):
+    for node in gm.graph.nodes:
+        if (
+            node.target == torch.ops.aten.conv2d.default
+            and any(s in node.meta["stack_trace"] for s in ["forward_feedfoward_conv"])
+            and node.args[0].target == torch.ops.aten.mul.Tensor
+        ):
+            input_qspec_map = {}
+            input_qspec_map[node.args[0]] = quantization_config.input_activation
+            input_qspec_map[node.args[1]] = quantization_config.weight
+            node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config.output_activation,
+                _annotated=True,
+            )
+
+
 def annotate_eurobert(gm: torch.fx.GraphModule):
     """
     QNN does not support int32 -> signed 16bit quant
