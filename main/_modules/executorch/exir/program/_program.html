@@ -532,6 +532,7 @@
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize._serialize</span><span class="w"> </span><span class="kn">import</span> <span class="n">serialize_for_executorch</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._serialize.data_serializer</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataSerializer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir._warnings</span><span class="w"> </span><span class="kn">import</span> <span class="n">experimental</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.backend_api</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">MethodProgramsPartitionerSpec</span><span class="p">,</span>
     <span class="n">to_backend</span><span class="p">,</span>
@@ -1135,6 +1136,24 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">())</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
+
+    <span class="nd">@property</span>
+    <span class="nd">@experimental</span><span class="p">(</span><span class="s2">&quot;This API is experimental and subject to change without notice.&quot;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">data_files</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the data files as a dictionary of filename to byte data.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Dict[str, bytes]: Dictionary mapping data filenames (e.g., .ptd files) to</span>
+<span class="sd">                their serialized byte content.</span>
+<span class="sd">            Returns empty dict if no data files are available.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">()</span>  <span class="c1"># This populates _tensor_data</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+
+        <span class="k">return</span> <span class="p">{</span><span class="n">filename</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">(</span><span class="n">cord</span><span class="p">)</span> <span class="k">for</span> <span class="n">filename</span><span class="p">,</span> <span class="n">cord</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tensor_data</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
