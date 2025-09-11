@@ -41,10 +41,15 @@ if [[ "$FLOW" == *qnn* ]]; then
 fi
 
 if [[ "$FLOW" == *vulkan* ]]; then
-    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+    # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate.
     source .ci/scripts/setup-vulkan-linux-deps.sh
 
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
+fi
+
+if [[ "$FLOW" == *tosa* ]]; then
+    # Setup ARM deps.
+    .ci/scripts/setup-arm-baremetal-tools.sh
 fi
 
 # We need the runner to test the built library.
