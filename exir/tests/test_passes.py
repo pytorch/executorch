@@ -1340,9 +1340,7 @@ class TestPasses(unittest.TestCase):
         value = torch.randn(32, 32, 32, 32)
 
         # Capture the model
-        m = torch.export.export_for_training(
-            M(32), (query, key, value), strict=True
-        ).module()
+        m = torch.export.export(M(32), (query, key, value), strict=True).module()
 
         # 8w16a quantization
         from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
@@ -1615,9 +1613,7 @@ class TestPasses(unittest.TestCase):
             m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
-            m = torch.export.export_for_training(
-                m_eager, example_inputs, strict=True
-            ).module()
+            m = torch.export.export(m_eager, example_inputs, strict=True).module()
 
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()
