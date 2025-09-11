@@ -266,7 +266,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         </tr>
                                         
                                         <tr id="i4" class="altColor">
-                                            <td class="colFirst"><code>int</code>
+                                            <td class="colFirst"><code>native int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#generate(String,int,LlmCallback,boolean)>generate</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo) </code>
                                             </th>
@@ -282,7 +282,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         </tr>
                                         
                                         <tr id="i6" class="altColor">
-                                            <td class="colFirst"><code>native int</code>
+                                            <td class="colFirst"><code>int</code>
                                             </td>
                                             <th class="colSecond" scope="row"><code><a href=LlmModule.html#generate(Array,int,int,int,String,int,LlmCallback,boolean)>generate</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo) </code>
                                             </th>
@@ -292,7 +292,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         <tr id="i7" class="rowColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillImages(Array,int,int,int,long)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, long startPos) </code>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillImages(Array,int,int,int)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels) </code>
                                             </th>
                                             <td class="colLast">Prefill an LLaVA Module with the given images input.</td>
                                         </tr>
@@ -300,7 +300,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                         <tr id="i8" class="altColor">
                                             <td class="colFirst"><code>long</code>
                                             </td>
-                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillPrompt(String,long,int,int)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, long startPos, int bos, int eos) </code>
+                                            <th class="colSecond" scope="row"><code><a href=LlmModule.html#prefillPrompt(String)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt) </code>
                                             </th>
                                             <td class="colLast">Prefill an LLaVA Module with the given text input.</td>
                                         </tr>
@@ -538,7 +538,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>generate</h4>
-                                        <pre class="methodSignature"> int <a href=LlmModule.html#generate(String,int,LlmCallback,boolean)>generate</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo)</pre>
+                                        <pre class="methodSignature"> native int <a href=LlmModule.html#generate(String,int,LlmCallback,boolean)>generate</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo)</pre>
                                         <div class="block"><p>Start generating tokens from the module.</p></div>
                                         
                                         <dl>
@@ -606,7 +606,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>generate</h4>
-                                        <pre class="methodSignature"> native int <a href=LlmModule.html#generate(Array,int,int,int,String,int,LlmCallback,boolean)>generate</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo)</pre>
+                                        <pre class="methodSignature"> int <a href=LlmModule.html#generate(Array,int,int,int,String,int,LlmCallback,boolean)>generate</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, <a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, int seqLen, <a href=LlmCallback.html>LlmCallback</a> llmCallback, boolean echo)</pre>
                                         <div class="block"><p>Start generating tokens from the module.</p></div>
                                         
                                         <dl>
@@ -650,7 +650,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                     </li>
                                 </ul>
                                 
-                                <a id="prefillImages(Array,int,int,int,long)">
+                                <a id="prefillImages(Array,int,int,int)">
                                     <!--   -->
                                 </a>
                                 <ul class=
@@ -658,7 +658,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>prefillImages</h4>
-                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() long <a href=LlmModule.html#prefillImages(Array,int,int,int,long)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels, long startPos)</pre>
+                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() long <a href=LlmModule.html#prefillImages(Array,int,int,int)>prefillImages</a>(<a href=https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-array/index.html>Array</a>&lt;int&gt; image, int width, int height, int channels)</pre>
                                         <div class="block"><p>Prefill an LLaVA Module with the given images input.</p></div>
                                         
                                         <dl>
@@ -680,17 +680,13 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             <dd><code>channels</code> - Input image number of channels</dd>
                                             
                                             
-                                            
-                                            <dd><code>startPos</code> - The starting position in KV cache of the input in the LLM.</dd>
-                                            
-                                            
                                         </dl>
                                         
                                         <!-- TODO missing return annotation -->
                                     </li>
                                 </ul>
                                 
-                                <a id="prefillPrompt(String,long,int,int)">
+                                <a id="prefillPrompt(String)">
                                     <!--   -->
                                 </a>
                                 <ul class=
@@ -698,7 +694,7 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                           >
                                     <li class="blockList">
                                         <h4>prefillPrompt</h4>
-                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() long <a href=LlmModule.html#prefillPrompt(String,long,int,int)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt, long startPos, int bos, int eos)</pre>
+                                        <pre class="methodSignature">@<a href=https://developer.android.com/reference/kotlin/java/lang/Deprecated.html>Deprecated</a>() long <a href=LlmModule.html#prefillPrompt(String)>prefillPrompt</a>(<a href=https://developer.android.com/reference/kotlin/java/lang/String.html>String</a> prompt)</pre>
                                         <div class="block"><p>Prefill an LLaVA Module with the given text input.</p></div>
                                         
                                         <dl>
@@ -706,18 +702,6 @@ public class <span class="typeNameLabel"><a href=LlmModule.html>LlmModule</a></s
                                             
                                             
                                             <dd><code>prompt</code> - The text prompt to LLaVA.</dd>
-                                            
-                                            
-                                            
-                                            <dd><code>startPos</code> - The starting position in KV cache of the input in the LLM.</dd>
-                                            
-                                            
-                                            
-                                            <dd><code>bos</code> - The number of BOS (begin of sequence) token.</dd>
-                                            
-                                            
-                                            
-                                            <dd><code>eos</code> - The number of EOS (end of sequence) token.</dd>
                                             
                                             
                                         </dl>
