@@ -58,11 +58,12 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
-from executorch.backends.arm.tosa_mapping import extract_tensor_meta
-from executorch.backends.arm.tosa_partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import extract_tensor_meta
+from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 
-from executorch.backends.arm.vgf_partitioner import VgfPartitioner
+from executorch.backends.arm.vgf import VgfPartitioner
 
 from executorch.backends.test.harness.stages import Stage, StageType
 from executorch.backends.xnnpack.test.tester import Tester

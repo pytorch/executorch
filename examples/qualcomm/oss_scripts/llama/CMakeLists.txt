@@ -28,6 +28,7 @@ list(
   ${CMAKE_CURRENT_LIST_DIR}/qnn_llama_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.h
+  ${CMAKE_CURRENT_LIST_DIR}/runner/cache_utils.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/decoder_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/decoder_runner.h
   ${CMAKE_CURRENT_LIST_DIR}/runner/prompt_processor.cpp

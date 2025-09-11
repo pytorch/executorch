@@ -10,7 +10,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
 not_supported_operator = [
-    exir_ops.edge.aten.clone.default,
+    exir_ops.edge.dim_order_ops._clone_dim_order.default,
     exir_ops.edge.quantized_decomposed.embedding_4bit.dtype,
 ]
 
@@ -19,11 +19,9 @@ to_be_implemented_operator = [
     exir_ops.edge.aten.adaptive_max_pool2d.default,
     exir_ops.edge.aten.avg_pool3d.default,
     exir_ops.edge.aten.div.Tensor_mode,
-    exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.log10.default,
     exir_ops.edge.aten.log1p.default,
     exir_ops.edge.aten.log2.default,
-    exir_ops.edge.aten.flip.default,
     exir_ops.edge.aten.max_pool3d_with_indices.default,
     exir_ops.edge.aten.median.default,
     exir_ops.edge.aten.median.dim,

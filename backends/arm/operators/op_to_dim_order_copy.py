@@ -15,7 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -44,4 +44,6 @@ class ToDimOrderCopyVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 1)
 
-        tosa_graph.addOperator(ts.TosaOp.Op().CAST, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().CAST, [inputs[0].name], [output.name]
+        )

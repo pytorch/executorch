@@ -1,0 +1,14 @@
+# @noautodeps
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "schema",
+    srcs = [
+        "__init__.py",
+        "schema.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+    ],
+)

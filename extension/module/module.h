@@ -206,6 +206,8 @@ class Module {
   }
 
   /**
+   * DEPRECATED: Module manages each Method exclusively.
+   *
    * Get a method by it's name. Not recommended to use this method directly as
    * an end user. It's exposed to allow for composability of module in apis that
    * operate on method.
@@ -215,7 +217,8 @@ class Module {
    * @returns A Result object containing either a pointer to the requested
    *          method or an error to indicate failure.
    */
-  ET_NODISCARD runtime::Result<Method*> method(const std::string& method_name);
+  ET_DEPRECATED ET_NODISCARD runtime::Result<Method*> method(
+      const std::string& method_name);
 
   /**
    * Load the 'forward' method from the program and set up memory management if
@@ -595,8 +598,9 @@ class Module {
     return event_tracer_.get();
   }
 
-  ET_NODISCARD
-  runtime::Span<uint8_t> debug_buffer() {
+  // Note: this debug_buffer will always be empty. The one being used is in
+  // the event_tracer attached to module. Please use that one.
+  ET_DEPRECATED ET_NODISCARD runtime::Span<uint8_t> debug_buffer() {
     return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
   }
 
@@ -619,7 +623,7 @@ class Module {
   std::unique_ptr<runtime::EventTracer> event_tracer_;
   std::unique_ptr<runtime::DataLoader> data_map_loader_;
   std::unique_ptr<NamedDataMap> data_map_;
-  std::vector<uint8_t> debug_buffer_;
+  ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;

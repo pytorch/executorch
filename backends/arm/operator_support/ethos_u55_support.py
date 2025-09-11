@@ -14,7 +14,7 @@ import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.operators.op_permute import transform_permutation_vector
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa.utils import tosa_shape
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase

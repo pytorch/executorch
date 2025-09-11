@@ -20,7 +20,7 @@ import torch
 
 from executorch.backends.arm.arm_backend import is_tosa, is_vgf
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa_specification import (
+from executorch.backends.arm.tosa.specification import (
     get_tosa_spec,
     Tosa_1_00,
     TosaSpecification,
@@ -251,7 +251,7 @@ def run_vkml_emulation_layer(
     with open(pte_path, "wb") as f:
         f.write(executorch_program_manager.buffer)
 
-    cmd_line = [elf_path, "-model_path", pte_path]
+    cmd_line = [str(elf_path), "-model_path", pte_path]
     result = _run_cmd(cmd_line)
 
     result_stdout = result.stdout.decode()  # noqa: F841

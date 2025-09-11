@@ -852,7 +852,7 @@ void write_etdump(RunnerContext& ctx) {
       encoded_buf[encoded_len] = 0x00; // Ensure null termination
       ET_LOG(Info, "Writing etdump.bin [base64]");
       printf(
-          "#---\necho \"%s\" | base64 -d >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#---\n",
+          "#[RUN THIS]\necho \"%s\" | base64 -d >etdump.bin\npython3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles\n#[END]\n",
           encoded_buf);
     } else {
       ET_LOG(
@@ -930,7 +930,7 @@ void run_model(RunnerContext& ctx, const void* model_pte) {
 
   int n = 0;
   StartMeasurements();
-  for (n = 1; n <= num_inferences; n++) {
+  for (n = 0; n < num_inferences; n++) {
     // Run the model.
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {

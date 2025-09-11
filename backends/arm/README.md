@@ -34,7 +34,7 @@ For more information on TOSA see https://www.mlplatform.org/tosa/tosa_spec.html
 ## Layout of key components
 
 Export:
-* `tosa_backend.py` - The TOSA conversion flow all other backends rely on.
+* `tosa/backend.py` - The TOSA conversion flow all other backends rely on.
 * `ethosu/backend.py` - Main entrypoint for the EthosUBackend.
 * `vgf_backend.py` - Main entrypoint for VgfBackend.
   * For more information see the section on [Arm Backend Architecture](#arm-backend-architecture).
@@ -206,14 +206,6 @@ The current TOSA version does not support int64. However, int64 is commonly used
 - For quantized models, these transformations will be automatically handled during annotation before the export stage.
 
 List of model specific and optional passes:
-- InsertCastForOpsWithInt64InputPass
-    - Functionality:
-        - For LLMs such as LLama, some opeartors like aten.embedding have int64 input. In order to lower these operators to TOSA, this pass will insert a casting node that converts the input from int64 to int32.
-    - Supported Ops:
-        - aten.embedding.default, aten.slice_copy.Tensor
-    - Example usage:
-        - backends/arm/test/models/test_llama.py
-
 - ConvertInt64ConstOpsToInt32Pass
     - Functionalities:
       - Rewrites constant-producing ops that output int64 to instead output int32, when values are within int32 bounds.
@@ -244,3 +236,16 @@ List of model specific and optional passes:
     - Example usage:
       - (Functionality 1) backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py
       - (Functionality 2) backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+
+- InsertInt32CastsAfterInt64PlaceholdersPass
+    - Functionalities:
+      - Inserts an int64 -> int32 cast immediately after each int64 placeholder (graph input).
+      - Redirects all uses of each int64 placeholder to its int32 cast output.
+      - Inserts local int32 -> int64 casts at call sites where an operator requires int64 inputs, e.g. `torch.nn.functional.one_hot`
+    - Pass ordering:
+      - When used with `ConvertInt64ConstOpsToInt32Pass` and `ConvertInt64OutputOpsToInt32Pass`, run this pass last.
+      - Rationale: Those passes may cause retracing to re-infer some int64 placeholders as int32. Running this pass last casts only inputs that remain int64, minimizing inserted casts.
+    - Example usage:
+      - backends/arm/test/models/test_llama.py
+      - backends/arm/test/models/stable_diffusion/test_CLIPTextModelWithProjection.py
+      - backends/arm/test/models/stable_diffusion/test_T5EncoderModel.py

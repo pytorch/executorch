@@ -142,6 +142,7 @@ class Version:
     @classmethod
     def write_to_python_file(cls, path: str) -> None:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
+
         lines = [
             "from typing import Optional",
             '__all__ = ["__version__", "git_version"]',
@@ -672,6 +673,10 @@ class CustomBuild(build):
             f"-DCMAKE_BUILD_TYPE={cmake_build_type}",
         ]
 
+        # Use ClangCL on Windows.
+        if _is_windows():
+            cmake_configuration_args += ["-T ClangCL"]
+
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
         # package.
@@ -769,7 +774,7 @@ setup(
     # platform-specific files using InstallerBuildExt.
     ext_modules=[
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/third-party/flatbuffers_external_project/bin/",
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatc_ep/bin/",
             src_name="flatc",
             dst="executorch/data/bin/",
             is_executable=True,
@@ -795,7 +800,8 @@ setup(
             dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_TRAINING"],
         ),
         BuiltExtension(
-            src="codegen/tools/selective_build.*",
+            src_dir="%CMAKE_CACHE_DIR%/codegen/tools/%BUILD_TYPE%/",
+            src="selective_build.cp*" if _is_windows() else "selective_build.*",
             modpath="executorch.codegen.tools.selective_build",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),

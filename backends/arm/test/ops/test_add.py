@@ -10,6 +10,10 @@ from typing import Tuple
 import pytest
 import torch
 from executorch.backends.arm.quantizer import arm_quantizer
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -18,7 +22,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -234,3 +239,105 @@ def test_add_tensor_vgf_INT(test_data: input_t1):
         pipeline.run()
     except FileNotFoundError as e:
         pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+
+
+def get_symmetric_a16w8_add_quantizer(per_channel_quantization=False):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+    quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+
+    return Quantize(
+        quantizer,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+
+@common.parametrize("test_data", Add.test_data)
+@pytest.mark.xfail(
+    reason="missing int16 add ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13730"
+)
+def test_add_tensor_16a8w_tosa_INT(test_data: input_t1):
+    """Test add operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = TosaPipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_add_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone300
+@pytest.mark.xfail(
+    reason="Vela compilation fails with 'Invalid arguments' for int16 add operations. See: https://github.com/pytorch/executorch/issues/13730"
+)
+def test_add_tensor_16a8w_u55_INT16(test_data: input_t1):
+    """Test add operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU55PipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_add_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Add.test_data)
+@common.XfailIfNoCorstone320
+@pytest.mark.xfail(
+    reason="Vela compilation fails with 'Invalid arguments' for int16 add operations. See: https://github.com/pytorch/executorch/issues/13730"
+)
+def test_add_tensor_16a8w_u85_INT16(test_data: input_t1):
+    """Test add operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    per_channel_quantization = False
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_add_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()

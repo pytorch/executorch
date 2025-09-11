@@ -304,7 +304,13 @@ lib.define(
 # Post memory planning, we check that outputs/inputs for the load/store are in
 # DTCM and replace idma_load/idma_store with idma_copy.
 lib.define("idma_load(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_load.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
 lib.define("idma_store(Tensor src, int task_num=0, int channel=0) -> Tensor")
+lib.define(
+    "idma_store.out(Tensor src, int task_num=0, int channel=0, *, Tensor(a!) out) -> Tensor(a!)"
+)
 
 # Non-blocking iDMA copy.
 lib.define("idma_copy(Tensor src, int task_num=0, int channel=0) -> Tensor")
@@ -447,6 +453,12 @@ lib.define(
 lib.define(
     "roi_align_box_processor(Tensor rois, int output_size_h, int output_size_w, "
     "int sampling_ratio, bool aligned) -> (Tensor out)"
+)
+lib.define(
+    "_softmax_f32_f32(Tensor self, int dim, bool? half_to_float) -> (Tensor out)"
+)
+lib.define(
+    "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
@@ -861,6 +873,11 @@ def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -905,6 +922,11 @@ def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -949,6 +971,11 @@ def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -993,6 +1020,11 @@ def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1037,6 +1069,11 @@ def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1081,6 +1118,11 @@ def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1125,6 +1167,11 @@ def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1169,6 +1216,11 @@ def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1213,6 +1265,11 @@ def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1257,6 +1314,11 @@ def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, _, *kernel_size = weight.shape
 
     in_size = input.shape
@@ -1301,6 +1363,11 @@ def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.int8
+        and weight.dtype == torch.int8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1345,6 +1412,11 @@ def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     out_multiplier: int,
     out_shift: int,
 ) -> torch.Tensor:
+    assert (
+        input.dtype == torch.uint8
+        and weight.dtype == torch.uint8
+        and bias.dtype == torch.int32
+    )
     out_channels, *kernel_size, _ = weight.shape
 
     in_size = input.shape
@@ -1377,7 +1449,7 @@ def quantized_layer_norm_meta(
     input: torch.Tensor,
     X_scale: torch.Tensor,
     X_zero_point: torch.Tensor,
-    normalized_shape: int,
+    normalized_shape: list[int],
     weight: torch.Tensor,
     bias: torch.Tensor,
     eps: float,
@@ -1392,7 +1464,7 @@ def quantized_layer_norm_per_tensor_meta(
     input: torch.Tensor,
     X_scale: float,
     X_zero_point: int,
-    normalized_shape: int,
+    normalized_shape: list[int],
     weight: torch.Tensor,
     bias: torch.Tensor,
     eps: float,
@@ -1699,6 +1771,7 @@ def quantized_fully_connected_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -1721,6 +1794,7 @@ def quantized_fully_connected_per_tensor_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -1743,6 +1817,7 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -1765,6 +1840,7 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -2075,3 +2151,13 @@ def roi_align_box_processor_meta(
     aligned: bool,
 ) -> torch.Tensor:
     return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)
+
+
+@register_fake("cadence::_softmax_f32_f32")
+def softmax_f32_f32_meta(
+    self: torch.Tensor,
+    dim: int,
+    dtype: torch.dtype,
+    half_to_float: Optional[bool] = None,
+) -> torch.Tensor:
+    return self.new_empty(self.size(), dtype=self.dtype)

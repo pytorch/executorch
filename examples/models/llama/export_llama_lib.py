@@ -93,21 +93,29 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_1",
     "llama3_2",
     "static_llama",
-    "qwen2_5",
+    "qwen2_5_0_5b",
+    "qwen2_5_1_5b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
     "phi_4_mini",
     "smollm2",
+    "lfm2_350m",  # hybrid
+    "lfm2_700m",  # hybrid
+    "lfm2_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
-    "qwen2_5": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
+    "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "lfm2_350m": "LiquidAI/LFM2-350M",
+    "lfm2_700m": "LiquidAI/LFM2-700M",
+    "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
 }
 
 
@@ -595,7 +603,7 @@ def export_llama(
     model_name = llm_config.base.model_class.value
     if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
-        if model_name == "qwen2_5":
+        if model_name.startswith("qwen2_5"):
             from executorch.examples.models.qwen2_5 import convert_weights
         elif model_name.startswith("qwen3"):
             from executorch.examples.models.qwen3 import convert_weights
@@ -603,6 +611,8 @@ def export_llama(
             from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
             from executorch.examples.models.smollm2 import convert_weights
+        elif model_name.startswith("lfm2"):
+            from executorch.examples.models.lfm2 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
@@ -772,7 +782,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w", "4w"]
+    choices = ["int8", "8da4w", "8da4w-gptq", "4w"]
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:

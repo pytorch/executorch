@@ -1,0 +1,61 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "mapping",
+    srcs = [
+        "mapping.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+        ":specification",
+    ],
+)
+runtime.python_library(
+    name = "quant_utils",
+    srcs = [
+        "quant_utils.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        "//executorch/backends/arm:constants",
+        ":mapping",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+runtime.python_library(
+    name = "specification",
+    srcs = [
+        "specification.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/packaging:packaging",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+)
+runtime.python_library(
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
+        ":quant_utils",
+        "//executorch/backends/arm/operators:node_visitor",
+    ],
+)
+
+runtime.python_library(
+    name = "tosa",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+       ":specification",
+    ],
+)
