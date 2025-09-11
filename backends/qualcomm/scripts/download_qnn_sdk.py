@@ -19,14 +19,6 @@ PKG_ROOT = pathlib.Path(__file__).parent.parent
 SDK_DIR = PKG_ROOT / "sdk" / "qnn"
 
 
-def is_wsl() -> bool:
-    try:
-        with open("/proc/version", "r") as f:
-            return "microsoft" in f.read().lower()
-    except FileNotFoundError:
-        return False
-
-
 def is_linux_x86() -> bool:
     """
     Check if the current platform is Linux x86_64.
@@ -37,7 +29,6 @@ def is_linux_x86() -> bool:
     print("platform.system().lower(): ", platform.system().lower())
     print("platform.machine().lower(): ", platform.machine().lower())
     print("os.name: ", os.name)
-    print("Running on WSL" if is_wsl() else "Not WSL")
 
     return platform.system().lower() == "linux" and platform.machine().lower() in (
         "x86_64",
@@ -128,6 +119,8 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     if not is_linux_x86():
         logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
+    else:
+        logger.info("Downloading Qualcomm SDK for Linux x86!!!!")
 
     dst_folder.mkdir(parents=True, exist_ok=True)
 
