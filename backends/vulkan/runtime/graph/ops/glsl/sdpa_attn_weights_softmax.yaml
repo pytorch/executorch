@@ -14,5 +14,6 @@ sdpa_attn_weights_softmax:
       - VALUE: buffer
     DTYPE:
       - VALUE: float
+      - VALUE: half
   shader_variants:
     - NAME: sdpa_attn_weights_softmax
