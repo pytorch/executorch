@@ -103,6 +103,11 @@ class Conv2dPatternPerChannel(QuantizationPattern):
 class TestPerChannelConversion(unittest.TestCase):
     __test__ = False  # Prevent interfering with PyTest tests
 
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(25)
+        np.random.seed(25)
+
     def test_per_channel_convolution(self):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
@@ -146,8 +151,3 @@ class TestPerChannelConversion(unittest.TestCase):
                 "quantized_decomposed.dequantize_per_channel.default"
             )
             assert nodes[10].name == "aten_convolution_default"
-
-    @classmethod
-    def setUpClass(cls):
-        torch.manual_seed(25)
-        np.random.seed(25)
