@@ -445,13 +445,6 @@ def compile(
         else:
             kv_config.enable_masked_softmax = True
 
-    if args.decoder_model == "smollm3-3b":
-        from transformers import AutoConfig
-
-        kv_config.apply_rope_layers = AutoConfig.from_pretrained(
-            decoder_model_config.repo_id
-        ).no_rope_layers
-
     prefill_config = copy.copy(kv_config)
     prefill_config.use_kv_cache = (
         False if args.max_seq_len == args.prefill_ar_len else True

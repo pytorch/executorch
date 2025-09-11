@@ -10,5 +10,6 @@
     "use_scaled_rope": false,
     "vocab_size": 128256,
     "use_hf_rope": false,
+    "no_rope_layer_interval": 4,
     "attention_qkv_bias": false
   }
