@@ -60,8 +60,6 @@ shared FPOutTile partial_sums[NUM_WORKERS_PER_OUT];
  * the entire work group co-operates to compute one reduction output.
  */
 
-#extension GL_EXT_debug_printf : enable
-
 void main() {
   const int worker_id = int(gl_LocalInvocationID.y);
 
