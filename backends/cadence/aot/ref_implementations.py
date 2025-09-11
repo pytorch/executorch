@@ -7,7 +7,7 @@
 # pyre-strict
 
 
-from typing import Callable, Optional
+from typing import Callable
 
 import torch
 
@@ -193,17 +193,15 @@ def quantized_add(
     )
 
 
-@impl(m, "quantized_linear")
-def quantized_linear(
+def quantized_linear_common(
     src: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
     in_zero_point: int,
-    weight_zero_point: torch.Tensor,
-    out_multiplier: torch.Tensor,
-    out_shift: torch.Tensor,
+    weight_zero_point: torch.Tensor | int,
+    out_multiplier: torch.Tensor | int,
+    out_shift: int,
     out_zero_point: int,
-    offset: Optional[torch.Tensor],
 ) -> torch.Tensor:
     """
     Quantized linear (transposed matmul) operation.
@@ -219,7 +217,7 @@ def quantized_linear(
         - out_zero_point (int): The quantized mapping of zero for the output
         - offset (Tensor): Unused
     """
-    out_scale = -out_multiplier * (1 / (1 << 31)) * (2 ** out_shift[0])
+    out_scale = -out_multiplier * (1 / (1 << 31)) * (2**out_shift)
     out_scale_inv = 1 / out_scale
 
     N, K = weight.shape
@@ -235,7 +233,9 @@ def quantized_linear(
         )
 
     out = torch.nn.functional.linear(
-        src - in_zero_point, weight - weight_zero_point, bias
+        (src - in_zero_point).float(),
+        (weight - weight_zero_point).float(),
+        bias.float(),
     )
     return quantize_per_tensor(
         out,
@@ -245,6 +245,95 @@ def quantized_linear(
         torch.iinfo(dtype).max,
         dtype,
     ).reshape(*leading_dims, N)
+
+
+def quantized_linear_variant(
+    per_tensor: bool,
+    src_dtype: torch.dtype | None = None,
+    weight_dtype: torch.dtype | None = None,
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+
+    def decorator(_: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
+        def variant(
+            src: torch.Tensor,
+            weight: torch.Tensor,
+            bias: torch.Tensor,
+            in_zero_point: int,
+            weight_zero_point: torch.Tensor | int,
+            out_multiplier: torch.Tensor | int,
+            out_shift: torch.Tensor | int,
+            out_zero_point: int,
+            offset: torch.Tensor | None = None,
+        ) -> torch.Tensor:
+            if src_dtype and src.dtype != src_dtype:
+                raise ValueError(
+                    f"src dtype must be {src_dtype}. Got {src.dtype} instead"
+                )
+            if weight_dtype and weight.dtype != weight_dtype:
+                raise ValueError(
+                    f"weight dtype must be {weight_dtype}. Got {weight.dtype} instead"
+                )
+            if bias.dtype != torch.int32:
+                raise ValueError(
+                    f"bias dtype must be torch.int32. Got {bias.dtype} instead"
+                )
+
+            if per_tensor:
+                assert isinstance(weight_zero_point, int)
+                assert isinstance(out_multiplier, int)
+                assert isinstance(out_shift, int)
+                return quantized_linear_common(
+                    src,
+                    weight,
+                    bias,
+                    in_zero_point,
+                    weight_zero_point,
+                    out_multiplier,
+                    out_shift,
+                    out_zero_point,
+                )
+            else:
+                assert isinstance(out_shift, torch.Tensor)
+                if out_shift.numel() != 1:
+                    raise ValueError("out_shift must be a scalar")
+
+                if out_shift.dtype != torch.int64:
+                    raise ValueError("out_shift must be an int64")
+
+                return quantized_linear_common(
+                    src,
+                    weight,
+                    bias,
+                    in_zero_point,
+                    weight_zero_point,
+                    out_multiplier,
+                    int(out_shift.item()),
+                    out_zero_point,
+                )
+
+        return variant
+
+    return decorator
+
+
+@impl(m, "quantized_linear")
+@quantized_linear_variant(False)
+def quantized_linear() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_linear.per_tensor")
+@quantized_linear_variant(True)
+def quantized_linear_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_linear_asym8sxasym8s_asym8s.per_tensor")
+@quantized_linear_variant(True, torch.int8, torch.int8)
+def quantized_linear_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_linear_asym8uxasym8u_asym8u.per_tensor")
+@quantized_linear_variant(True, torch.uint8, torch.uint8)
+def quantized_linear_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
 @impl(m, "quantized_layer_norm.per_tensor")
