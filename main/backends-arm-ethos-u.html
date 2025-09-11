@@ -584,18 +584,164 @@
     <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
+<div class="section" id="ethos-u-memory-modes">
+<h3>Ethos-U memory modes<a class="headerlink" href="#ethos-u-memory-modes" title="Permalink to this heading">¶</a></h3>
+<p>The Ethos-U NPU provides two distinct memory interfaces:</p>
+<ul class="simple">
+<li><p>One interface for <strong>low-latency, high-bandwidth memory</strong>
+Typically on-chip memory such as <strong>SRAM</strong>.</p></li>
+<li><p>One interface for <strong>higher-latency, lower-bandwidth memory</strong>
+Typically external (off-chip) memory such as <strong>Flash</strong> or <strong>DRAM</strong>.</p></li>
+</ul>
+<p>On all Ethos-U NPUs(Ethos-U55, Ethos-U65, Ethos-U85), the low-latency interface is usually the SRAM of the SoC.
+The external memory type depends on the SoC:</p>
+<ul class="simple">
+<li><p>On a low-power microcontorller, the external memory is usually Flash.</p></li>
+<li><p>On systems with Cortex-A and rich operating system, the external memory is typically DRAM.</p></li>
+</ul>
+<p>When running an inference, the Ethos-U compiler and Ethos-U driver make use of three logical memory regions:</p>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer - a contiguous block of memory used by the NPU to store the intermediate tensors produced and consumed during inference.</p></li>
+<li><p>Neural Network - a contiguous block of memory holding constant data such as weights, biases, quantization parameters required to run an inference.</p></li>
+<li><p>Ethos-U fast scratch buffer - a contiguous block of memory, assumed to reside in on-chip memory in order to hide the higher latency/lower bandwidth of external memory. Only applicable for Ethos-U65 and Ethos-U85 on systems
+with Cortex-A and the external memory is assumed to be DRAM.</p></li>
+</ul>
+<p>The placement of the scratch buffer and the Neural Network determine the memory mode to be used in the Ethos-U
+compile specificiation. We support three different placements of the scratch buffer and the ML model.</p>
+<div class="section" id="sram-only-memory-mode">
+<h4>1. Sram-Only Memory Mode<a class="headerlink" href="#sram-only-memory-mode" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the SRAM.</p></li>
+<li><p>Neural Network resides in the SRAM.</p></li>
+<li><p>Ethos-U fast scratch buffer is not used.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Provides the best performance since all the memory traffic passes via the low-latency/high-bandwidth memory.</p></li>
+<li><p>The performance uplift is especially noticeable on memory-bound workloads on the external interface.</p></li>
+<li><p>Available on Ethos-U55, Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>Embedded SoCs often have limited SRAM and NNs are becoming larger. This memory mode may be unsuitable for a system running a big model relative to the amount of SRAM available on the SoC.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Sram Only configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="_images/backend-arm-ethos-u-sram_only.png" /></p>
+</div>
+<div class="section" id="shared-sram-memory-mode">
+<h4>2. Shared-Sram Memory Mode<a class="headerlink" href="#shared-sram-memory-mode" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the SRAM.</p></li>
+<li><p>Neural Network resides in the External memory.</p></li>
+<li><p>Ethos-U fast scratch buffer is not used.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Intermediate tensors are stored in the SRAM, leveraging its low-latency and high-bandwidth.</p></li>
+<li><p>The Ethos-U compiler can prefetch weights from the external memory to the SRAM ahead of time so that when the NPU needs the data, it will already be avaialbe in the on-chip memory.</p></li>
+<li><p>In this mode, the external interface is Read-Only, the on-chip memory interface is Read/Write</p></li>
+<li><p>Shared-Sram offers great balance between performance and low SRAM usage.</p></li>
+<li><p>Available on Ethos-U55, Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>You need to have enough space in the SRAM to hold the peak intermediate tensor.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="_images/backend-arm-ethos-u-shared_sram.png" /></p>
+</div>
+<div class="section" id="dedicated-sram-memory-mode">
+<h4>3. Dedicated-Sram Memory Mode<a class="headerlink" href="#dedicated-sram-memory-mode" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the External memory.</p></li>
+<li><p>Neural Network resides in the External memory.</p></li>
+<li><p>Ethos-U fast scratch buffer resides in the on-chip memory.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Used when the peak intermediate tensor is too big to fit into the on-chip memory.</p></li>
+<li><p>Enables silicon acceleration of large models.</p></li>
+<li><p>The NPU stores the results from the intermediate computations in the external memory.</p></li>
+<li><p>The dedicated SRAM acts as a software managed cache, improving performance by pre-fetching frequently accessed tensors to the on-chip memory.</p></li>
+<li><p>Available on Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>The SRAM space must be dedicated exculisely to the Ethos-U(the host processor should not access it).</p></li>
+<li><p>Not available on Ethos-U55.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="_images/backend-arm-ethos-u-dedicated_sram.png" /></p>
+<p>Here is a table comparing the three memory modes:</p>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Memory Mode</p></th>
+<th class="head"><p>Ethos-U Scratch Buffer Placement</p></th>
+<th class="head"><p>Neural Network Placement</p></th>
+<th class="head"><p>When to Use</p></th>
+<th class="head"><p>Trade-off</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>SRAM-Only</strong></p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC</p></td>
+<td><p>Limited by SRAM size; often not feasible for larger NNs</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Shared-SRAM</strong></p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>External memory (Flash/DRAM)</p></td>
+<td><p>Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage</p></td>
+<td><p>Requires enough SRAM to hold the largest intermediate tensor</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Dedicated-SRAM</strong></p></td>
+<td><p>External memory</p></td>
+<td><p>External memory (Flash/DRAM)</p></td>
+<td><p>Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM</p></td>
+<td><p>Need high-bandwidth external memory to deliver good performance</p></td>
+</tr>
+</tbody>
+</table>
+<p>The memory modes are defined within the <a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/ethosu/config_files/Arm/vela.ini?ref_type=heads">vela.ini file</a>. When you install
+ExecuTorch for the Ethos-U backend, you automatically install the compiler containing the vela.ini file so you can directly create a compile specification with these memory modes.</p>
+</div>
+<div class="section" id="interpreting-the-output-from-the-ethos-u-compiler-regarding-the-memory-footprint">
+<h4>Interpreting the output from the Ethos-U compiler regarding the memory footprint<a class="headerlink" href="#interpreting-the-output-from-the-ethos-u-compiler-regarding-the-memory-footprint" title="Permalink to this heading">¶</a></h4>
+<p>As part of the <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code> step, you will see a memory footprint information presented as:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span> <span class="n">SRAM</span> <span class="n">used</span>                               <span class="mf">2467.27</span> <span class="n">KiB</span>
+<span class="n">Total</span> <span class="n">Off</span><span class="o">-</span><span class="n">chip</span> <span class="n">Flash</span> <span class="n">used</span>                       <span class="mf">12.20</span> <span class="n">KiB</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">Total</span> <span class="pre">SRAM</span> <span class="pre">used</span></code> indicates the peak SRAM utilization needed by the NPU in order to perform an inference. In the snippet above, the Ethos-U compiler requires 2467.27 KiB of SRAM in order to schedule the inference.
+Therefore, from an application standpoint, you need to ensure you have at least 2467.27 KiB of SRAM on the SoC to run this model. The Ethos-U compiler provides a scheduling algorithm allowing to
+lower the peak SRAM usage within reasonable limits, you need to add the <code class="docutils literal notranslate"><span class="pre">--optimise</span> <span class="pre">Size</span></code> or <code class="docutils literal notranslate"><span class="pre">--arena-cache-size</span></code> CLI options for to the compile spec. You can read more about the options of the
+Ethos-U compiler in the documentation <a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md#optimise">here</a>. If the peak SRAM usage remains too high in
+Shared Sram memory mode, you would need to us the Dedicated Sram mode in order to store the Neural Network and the Ethos-U scratch buffer in the external memory.
+The main advantage of the Dedicated_Sram memory mode is that you can run large models and still benefit from the low-latency/high-bandwidth of the SRAM, used as a cache.</p>
+<p>It is important to highlight that when you specify a memory mode in the compile spec, in the runtime, the user is expected to place the scratch buffer and NN in the correct memory location.
+In other words, when you specify for ex. Shared Sram memory mode, the runtime application logic should place the ethos-U scratch buffer in the on-chip memory and the NN in the external memory for optimal performance.</p>
+<p>You can see how we are doing this coupling between the memory mode and runtime application the <span class="xref myst">Ethos-U porting guide</span>.</p>
+</div>
+</div>
 <div class="section" id="partitioner-api">
 <h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">EthosUPartitioner</span></code> tries to partition as much of the model as possible. It will never delegate unsupported operators, but a user can pass additional checks to the constructor to avoid partitioning additional operators. To do this, subclass <code class="docutils literal notranslate"><span class="pre">OperatorSupportBase</span></code> and implement the function <code class="docutils literal notranslate"><span class="pre">is_node_supported</span></code>. A few such checks exist in <code class="docutils literal notranslate"><span class="pre">executorch.exir.backend.operator_support</span></code>:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">DontPartition</span></code>: Don’t partition operators based on operator type.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">DontPartitionModule</span></code>: Don’t partition operators based on which python module the operator comes from.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">DontPartitionName</span></code>: Don’t partition opertors based on the operator name.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DontPartitionName</span></code>: Don’t partition operators based on the operator name.</p></li>
 </ul>
 </div>
 <div class="section" id="quantization">
 <h3>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h3>
-<p>A fully integer model is required for using the Arm Ethos-U backend. As discussed above, you can quantize floating point models with the the <code class="docutils literal notranslate"><span class="pre">EthosUQuantizer</span></code>. Quantizers are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">EthosUQuantizer</span></code> is configured to quantize models correctly for the target.</p>
+<p>A fully integer model is required for using the Arm Ethos-U backend. As discussed above, you can quantize floating point models with the <code class="docutils literal notranslate"><span class="pre">EthosUQuantizer</span></code>. Quantizers are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">EthosUQuantizer</span></code> is configured to quantize models correctly for the target.</p>
 </div>
 </div>
 <div class="section" id="runtime-integration">
@@ -665,6 +811,13 @@ Then build the arm executorch runtime using the script
 <li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
 <li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
 <li><a class="reference internal" href="#using-the-arm-ethos-u-backend">Using the Arm Ethos-U backend</a><ul>
+<li><a class="reference internal" href="#ethos-u-memory-modes">Ethos-U memory modes</a><ul>
+<li><a class="reference internal" href="#sram-only-memory-mode">1. Sram-Only Memory Mode</a></li>
+<li><a class="reference internal" href="#shared-sram-memory-mode">2. Shared-Sram Memory Mode</a></li>
+<li><a class="reference internal" href="#dedicated-sram-memory-mode">3. Dedicated-Sram Memory Mode</a></li>
+<li><a class="reference internal" href="#interpreting-the-output-from-the-ethos-u-compiler-regarding-the-memory-footprint">Interpreting the output from the Ethos-U compiler regarding the memory footprint</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#partitioner-api">Partitioner API</a></li>
 <li><a class="reference internal" href="#quantization">Quantization</a></li>
 </ul>
