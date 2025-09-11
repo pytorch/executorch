@@ -263,7 +263,7 @@ class ConvolutionConverter(NodeConverter):
                 )
 
             b = self.builder.create_zeros_tensor(
-                [output_channels], "zero_bias", bias_type, True
+                [output_channels], "zero_bias", bias_type, False
             )
 
             # Compute scale and zero point for bias tensor

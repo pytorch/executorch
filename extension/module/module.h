@@ -91,7 +91,7 @@ class Module {
    */
   explicit Module(
       const std::string& file_path,
-      std::unordered_set<std::string>& data_files,
+      std::vector<std::string> data_files,
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
@@ -628,7 +628,7 @@ class Module {
   };
 
   std::string file_path_;
-  std::unordered_set<std::string> data_files_;
+  std::vector<std::string> data_files_;
   LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
