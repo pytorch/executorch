@@ -13,6 +13,7 @@ from typing import Callable, Dict, Tuple, Type
 
 import torch
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    annotate_down_proj,
     annotate_kv_8bit,
     annotate_output_16a8w,
     annotate_wv_sha,
@@ -70,6 +71,8 @@ class LLMModelConfig(ABC):
     masked_softmax: The MaskedSoftmax feature is designed to optimize the LLMs accuracy and performance executed on HTP backend.
                     MaskedSoftmax is used to replace the Softmax(Add(In, Mask)) structure in attention block in LLMs during backend optimization.
                     For more details, please refer to QNN documents. Note that it is only supported starting from QNN 2.35.
+    seq_mse_candidates: Number of steps to sequentially search for optimum scales for quantized parameters which will minimize
+                        the MSE of activation value between floating point golden & fake quantization.
     r1: Enable SpinQuant R1 quantization optimization.
     r2: Enable SpinQuant R2 quantization optimization.
     r3: Enable SpinQuant R3 quantization optimization.
@@ -87,6 +90,7 @@ class LLMModelConfig(ABC):
     ptq: QuantDtype
     group_size: int
     masked_softmax: bool
+    seq_mse_candidates: int
     r1: bool
     r2: bool
     r3: bool
@@ -179,6 +183,7 @@ class LlamaStories260K(LLMModelConfig):
     ptq = QuantDtype.use_16a4w
     group_size = None
     masked_softmax = False
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
@@ -209,6 +214,7 @@ class LlamaStories110M(LLMModelConfig):
     ptq = QuantDtype.use_16a4w
     group_size = None
     masked_softmax = False
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
@@ -225,9 +231,40 @@ class LlamaStories110M(LLMModelConfig):
     )
 
 
-@register_llm_model("llama3_2")
+@register_llm_model("llama3_2-1b_instruct")
 @dataclass(init=False, frozen=True)
-class Llama3_2(LLMModelConfig):
+class Llama3_2_1B_Instruct(LLMModelConfig):
+    repo_id = None
+    params_path = None
+    convert_weights = None
+    transform_weight = True
+    # The Llama3_2 enabled should be instruct, however, Llama's tokenizer does not provide utility to apply chat template.
+    instruct_model = False
+
+    num_sharding = 1
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 32
+    masked_softmax = False
+    seq_mse_candidates = 1000
+    r1 = False
+    r2 = False
+    r3 = False
+    quantization_config_down_proj_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        annotate_kv_8bit,
+        annotate_output_16a8w,
+        partial(
+            annotate_down_proj, quantization_config=quantization_config_down_proj_16a8w
+        ),
+    )
+
+
+@register_llm_model("llama3_2-3b_instruct")
+@dataclass(init=False, frozen=True)
+class Llama3_2_3B_Instruct(LLMModelConfig):
     repo_id = None
     params_path = None
     convert_weights = None
@@ -237,21 +274,16 @@ class Llama3_2(LLMModelConfig):
 
     num_sharding = 4
     # quant config
-    ptq = QuantDtype.use_16a4w
-    group_size = None
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 32
     masked_softmax = False
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
-        act_dtype=torch.uint8,
-        weight_dtype=torch.int4,
-        act_observer=MinMaxObserver,
-        act_symmetric=True,
-    )
     custom_annotation = (
         annotate_kv_8bit,
-        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w),
+        annotate_output_16a8w,
     )
 
 
@@ -271,6 +303,7 @@ class Gemma3(LLMModelConfig):
     ptq = QuantDtype.use_16a4w_block
     group_size = 64
     masked_softmax = True
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
@@ -299,6 +332,7 @@ class Phi4Mini(LLMModelConfig):
     ptq = QuantDtype.use_16a4w_block
     group_size = 16
     masked_softmax = False
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
@@ -331,6 +365,7 @@ class Qwen2_5_0_5B(LLMModelConfig):
     ptq = QuantDtype.use_16a4w_block
     group_size = 16
     masked_softmax = True
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = True
@@ -353,6 +388,7 @@ class Qwen2_5_1_5B(LLMModelConfig):
     ptq = QuantDtype.use_16a4w_block
     group_size = 16
     masked_softmax = True
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = True
@@ -372,13 +408,21 @@ class Qwen3_0_6B(LLMModelConfig):
 
     num_sharding = 1
     # quant config
-    ptq = QuantDtype.use_16a8w
-    group_size = None
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 32
     masked_softmax = True
+    seq_mse_candidates = 1000
     r1 = False
     r2 = False
-    r3 = True
-    custom_annotation = ()
+    r3 = False
+    quantization_config_down_proj_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        partial(
+            annotate_down_proj, quantization_config=quantization_config_down_proj_16a8w
+        ),
+    )
 
 
 @register_llm_model("qwen3-1_7b")
@@ -397,6 +441,7 @@ class Qwen3_1_7B(LLMModelConfig):
     ptq = QuantDtype.use_16a4w_block
     group_size = 16
     masked_softmax = True
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = True
@@ -422,6 +467,7 @@ class Smollm2_135M(LLMModelConfig):
     ptq = QuantDtype.use_16a8w
     group_size = None
     masked_softmax = False
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
