@@ -307,36 +307,45 @@ class TestRefImplementations(unittest.TestCase):
         if per_tensor:
             match expected_output.dtype:
                 case torch.int8:
-                    linear_op = (
-                        torch.ops.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor
+                    linear_ops = (
+                        torch.ops.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor,
+                        torch.ops.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
                     )
                 case torch.uint8:
-                    linear_op = (
-                        torch.ops.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor
+                    linear_ops = (
+                        torch.ops.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor,
+                        torch.ops.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
                     )
                 case _:
-                    linear_op = torch.ops.cadence.quantized_linear.per_tensor
+                    linear_ops = (
+                        torch.ops.cadence.quantized_linear.per_tensor,
+                        torch.ops.cadence.quantized_fully_connected.per_tensor,
+                    )
         else:
-            linear_op = torch.ops.cadence.quantized_linear
+            linear_ops = (
+                torch.ops.cadence.quantized_linear,
+                torch.ops.cadence.quantized_fully_connected,
+            )
 
-        output = linear_op(
-            src,
-            weight,
-            bias,
-            in_zero_point,
-            weight_zero_point,
-            out_multiplier,
-            out_shift,
-            out_zero_point,
-            typing.cast(torch.Tensor, None),
-        )
+        for linear_op in linear_ops:
+            output = linear_op(
+                src,
+                weight,
+                bias,
+                in_zero_point,
+                weight_zero_point,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+                typing.cast(torch.Tensor, None),
+            )
 
-        self.assertTrue(output.dtype == expected_output.dtype, "Dtype mismatch")
+            self.assertTrue(output.dtype == expected_output.dtype, "Dtype mismatch")
 
-        self.assertTrue(
-            torch.equal(output, expected_output),
-            f"Values don't match: got {output}, expected {expected_output}",
-        )
+            self.assertTrue(
+                torch.equal(output, expected_output),
+                f"Values don't match: got {output}, expected {expected_output}",
+            )
 
     @expand(
         [
