@@ -95,8 +95,7 @@ class BMMVisitor(NodeVisitor):
         if output.dtype == ts.DType.INT8:
             output_qparams = get_output_qparams(node)[0]
             final_output_scale = (
-                input_qparams[0].get_scale_per_tensor()
-                * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
             ) / output_qparams.get_scale_per_tensor()
 
             build_rescale(
