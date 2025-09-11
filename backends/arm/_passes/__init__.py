@@ -75,8 +75,8 @@ from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
-from .insert_int64_input_cast_pass import (  # noqa  # noqa
-    InsertCastForOpsWithInt64InputPass,
+from .insert_int32_casts_after_int64_placeholders import (  # noqa
+    InsertInt32CastsAfterInt64PlaceholdersPass,
 )
 from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa

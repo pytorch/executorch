@@ -20,7 +20,7 @@ from torch.fx.passes.infra.pass_base import PassResult
 class TestTypeDispatchPasses(unittest.TestCase):
     def test_int8_dispatch_quantized_fully_connected(self) -> None:
         """Test int8 x int8 inputs should dispatch to asym8sxasym8s_asym8s variant"""
-        x = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
+        x = torch.randint(-128, 127, (1, 3), dtype=torch.int8)
         w = torch.randint(-128, 127, (4, 3), dtype=torch.int8)
         b = torch.randint(-2147483648, 2147483647, (4,), dtype=torch.int32)
         gm = single_op_builder(
@@ -46,7 +46,7 @@ class TestTypeDispatchPasses(unittest.TestCase):
 
     def test_uint8_dispatch_quantized_fully_connected(self) -> None:
         """Test uint8 x uint8 inputs should dispatch to asym8uxasym8u_asym8u variant"""
-        x = torch.randint(0, 255, (2, 3), dtype=torch.uint8)
+        x = torch.randint(0, 255, (1, 3), dtype=torch.uint8)
         w = torch.randint(0, 255, (4, 3), dtype=torch.uint8)
         b = torch.randint(-2147483648, 2147483647, (4,), dtype=torch.int32)
         gm = single_op_builder(
@@ -124,7 +124,7 @@ class TestTypeDispatchPasses(unittest.TestCase):
 
     def test_mixed_types_error(self) -> None:
         """Test mixed int8/uint8 inputs should raise RuntimeError"""
-        x = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
+        x = torch.randint(-128, 127, (1, 3), dtype=torch.int8)
         w = torch.randint(0, 255, (4, 3), dtype=torch.uint8)
         b = torch.randint(-2147483648, 2147483647, (4,), dtype=torch.int32)
         gm = single_op_builder(
