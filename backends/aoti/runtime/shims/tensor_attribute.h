@@ -8,9 +8,10 @@
 
 #pragma once
 
-#include "types.h"
+#include <cuda_runtime.h>
 #include <unordered_map>
 #include <vector>
+#include "types.h"
 
 namespace executorch {
 namespace backends {

@@ -24,6 +24,12 @@ extern "C" {
 // Cleanup function for tensor output file (called during backend destruction)
 void cleanup_aoti_tensor_output();
 
+// Dtype validation utility function
+AOTITorchError validate_dtype(int32_t dtype);
+
+// Storage offset validation utility function
+AOTITorchError validate_storage_offset(int64_t storage_offset);
+
 } // extern "C"
 
 } // namespace aoti

@@ -29,14 +29,6 @@ using AOTITensorHandle = Tensor*;
 using AOTIRuntimeError = Error;
 using AOTITorchError = Error;
 
-// CUDA-specific types
-struct CUDAStreamGuardOpaque {
-  cudaStream_t original_stream;
-  int device_index;
-  cudaEvent_t sync_event;
-};
-using CUDAStreamGuardHandle = CUDAStreamGuardOpaque*;
-
 } // extern "C"
 
 } // namespace aoti
