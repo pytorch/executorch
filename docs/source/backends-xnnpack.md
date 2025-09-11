@@ -79,7 +79,7 @@ Weight-only quantization is not currently supported on XNNPACK.
 To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:
 
 1) Create an instance of the `XnnpackQuantizer` class. Set quantization parameters.
-2) Use `torch.export.export_for_training` to prepare for quantization.
+2) Use `torch.export.export` to prepare for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
 4) For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
 5) Call `convert_pt2e` to quantize the model.
@@ -103,7 +103,7 @@ qparams = get_symmetric_quantization_config(is_per_channel=True) # (1)
 quantizer = XNNPACKQuantizer()
 quantizer.set_global(qparams)
 
-training_ep = torch.export.export_for_training(model, sample_inputs).module() # (2)
+training_ep = torch.export.export(model, sample_inputs).module() # (2)
 prepared_model = prepare_pt2e(training_ep, quantizer) # (3)
 
 for cal_sample in [torch.randn(1, 3, 224, 224)]: # Replace with representative model inputs

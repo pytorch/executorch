@@ -874,7 +874,7 @@ jobs:
       contents: read
     with:
       runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -892,7 +892,7 @@ jobs:
         source .ci/scripts/setup-samsung-linux-deps.sh
 
         # Test models serially
-        models="mv2 ic3 resnet18 resnet50"
+        models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
         for model in $models; do
           python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
         done
@@ -970,6 +970,13 @@ jobs:
         ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
         ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
         ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
+
+        # "Classic" Operator tests
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
+        # TODO(ssjia): figure out how to run custom op tests in CI. Currently, they are
+        # failing due to to the libstdc++.so.6 installed with conda not supporting
+        # GLIBCXX_3.4.30. These tests are still run in Meta internal CI.
+        # ./cmake-out/backends/vulkan/test/op_tests/vulkan_sdpa_test
 
         # Run e2e testing for selected operators. More operators will be tested via this
         # route in the future.

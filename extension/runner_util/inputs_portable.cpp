@@ -1,7 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -57,8 +56,7 @@ Error fill_and_set_input(
     Method& method,
     TensorInfo& tensor_meta,
     size_t input_index,
-    void* data_ptr,
-    bool fill_tensor) {
+    void* data_ptr) {
   TensorImpl impl = TensorImpl(
       tensor_meta.scalar_type(),
       /*dim=*/tensor_meta.sizes().size(),
@@ -70,11 +68,7 @@ Error fill_and_set_input(
       data_ptr,
       const_cast<TensorImpl::DimOrderType*>(tensor_meta.dim_order().data()));
   Tensor t(&impl);
-
-  if (fill_tensor) {
-    ET_CHECK_OK_OR_RETURN_ERROR(fill_ones(t));
-  }
-
+  ET_CHECK_OK_OR_RETURN_ERROR(fill_ones(t));
   return method.set_input(t, input_index);
 }
 

@@ -15,7 +15,7 @@ from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_c
 from executorch.exir import to_edge
 
 from model import GPT
-from torch.export import export, export_for_training
+from torch.export import export
 from torch.nn.attention import sdpa_kernel, SDPBackend
 
 model = GPT.from_pretrained("gpt2")  # use gpt2 weight as pretrained weight
@@ -27,7 +27,7 @@ dynamic_shape = ({1: torch.export.Dim("token_dim", max=model.config.block_size)}
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = export_for_training(
+    m = export(
         model, example_inputs, dynamic_shapes=dynamic_shape, strict=True
     ).module()
     traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape, strict=True)
