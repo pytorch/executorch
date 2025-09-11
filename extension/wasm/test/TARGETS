@@ -1,0 +1,44 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+export_genrule_cmd = [
+    "$(exe //executorch/examples/portable/scripts:export)",
+    "--model_name={model_name}",
+    "--output_dir=$OUT",
+]
+
+runtime.python_binary(
+    name = "test_model",
+    srcs = [
+        "test_model.py",
+    ],
+    main_module = "executorch.extension.wasm.test.test_model",
+    deps = [
+        "//executorch/extension/export_util:export_util",
+    ],
+)
+
+test_pte_genrule_cmd = [
+    "$(exe :test_model)",
+    "$OUT/test.pte",
+]
+
+models_genrule_cmd = [
+    "mkdir -p $OUT &&",
+    " ".join(export_genrule_cmd).format(model_name="add_mul"),
+    "&&",
+    " ".join(export_genrule_cmd).format(model_name="add"),
+    "&&",
+    " ".join(test_pte_genrule_cmd),
+]
+
+runtime.genrule(
+    name = "models",
+    outs = {
+        "add.pte": ["add.pte"],
+        "add_mul.pte": ["add_mul.pte"],
+        "test.pte": ["test.pte"],
+    },
+    cmd = " ".join(models_genrule_cmd),
+)
