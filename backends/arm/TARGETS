@@ -51,11 +51,10 @@ runtime.python_library(
         "//executorch/exir:lib",
     ],
 )
-
 runtime.python_library(
-    name = "arm_compile_spec",
+    name = "arm_backend",
     srcs = [
-        "common/arm_compile_spec.py",
+        "arm_backend.py",
     ],
     deps = [
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
