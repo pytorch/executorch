@@ -6,7 +6,7 @@
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.debug.schema import DebugHook, DebugSchema
 from executorch.backends.arm.test import common
 
@@ -158,7 +158,7 @@ TESTCASES = {
 
 @common.parametrize("test_data", TESTCASES)
 def test_debug_hook_add_json(test_data: DebugHookTestCase):
-    hook = DebugHook(ArmCompileSpec.DebugMode.JSON)
+    hook = DebugHook(ArmCompileSpecBuilder.DebugMode.JSON)
     hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
@@ -171,7 +171,7 @@ def test_debug_hook_add_json(test_data: DebugHookTestCase):
 
 @common.parametrize("test_data", TESTCASES)
 def test_debug_hook_add_tosa(test_data: DebugHookTestCase):
-    hook = DebugHook(ArmCompileSpec.DebugMode.TOSA)
+    hook = DebugHook(ArmCompileSpecBuilder.DebugMode.TOSA)
     hook.add(test_data.mock_node, test_data.tosa_op, test_data.op_id)
 
     debug_events = hook._debug_events
