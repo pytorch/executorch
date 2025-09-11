@@ -12,8 +12,8 @@
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
 #define T ${texel_load_component_type(DTYPE, STORAGE)}
 
-#define NUM_OUTPUTS_PER_WG ${NUM_OUTPUTS_PER_WG}
-#define NUM_WORKERS_PER_OUTPUT ${NUM_WORKERS_PER_OUTPUT}
+#define NUM_OUTPUTS_PER_WG 1
+#define NUM_WORKERS_PER_OUTPUT 64
 
 // Maximum total threads in a work group
 #define MAX_THREADS 256
@@ -27,8 +27,8 @@ layout(std430) buffer;
 
 #include "common.glslh"
 
-${layout_declare_tensor(B, "w", "t_scales", "float", "buffer")}
-${layout_declare_tensor(B, "w", "t_zps", "int", "buffer")}
+${layout_declare_tensor(B, "w", "t_scales", DTYPE, "texture3d")}
+${layout_declare_tensor(B, "w", "t_zps", "int8", "texture3d")}
 ${layout_declare_tensor(B, "r", "t_input", DTYPE, STORAGE, is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
@@ -52,7 +52,7 @@ void calculate_scale_and_zero_point(
     int qmin,
     int qmax,
     out float scale,
-    out int8_t zero_point) {
+    out int zero_point) {
 
   // Extend the [min, max] interval to ensure it contains 0
   min_val = min(min_val, 0.0);
@@ -102,28 +102,20 @@ void calculate_scale_and_zero_point(
     nudged_zero_point = int(round(initial_zero_point));
   }
 
-  zero_point = int8_t(nudged_zero_point);
+  zero_point = nudged_zero_point;
 }
 
+VEC4_T load_input_x4(const int x4, const int y, const int ntexels_x) {
 #ifdef USING_BUFFER
-
-VEC4_T load_input_x4(const int x4, const int y, const int ntexels_x) {
   return t_input[(y * ntexels_x) + x4];
-}
-
-#else // USING_TEXTURE
-
-VEC4_T load_input_x4(const int x4, const int y, const int ntexels_x) {
+#else
   return texelFetch(t_input, ivec3(x4, y, 0), 0);
+#endif
 }
 
-#endif // USING_BUFFER
-
-void main() {
+void find_min_max_for_row(const int output_y) {
   const int worker_id = int(gl_LocalInvocationID.x);
   const int output_id = int(gl_LocalInvocationID.y);
-
-  const int output_y = int(gl_GlobalInvocationID.y);
 
   if (output_y >= input_sizes.y) {
     return;
@@ -167,18 +159,42 @@ void main() {
     memoryBarrierShared();
     barrier();
   }
+}
 
-  // Only first thread will write out result
-  if (worker_id == 0) {
-    local_min = shared_min[output_id][0];
-    local_max = shared_max[output_id][0];
+void main() {
+  const int worker_id = int(gl_LocalInvocationID.x);
+  const int output_id = int(gl_LocalInvocationID.y);
 
-    float scale;
-    int8_t zero_point;
-    calculate_scale_and_zero_point(
-        local_min, local_max, quant_min, quant_max, scale, zero_point);
+  const int output_y4 = int(gl_GlobalInvocationID.y);
+  const int output_y = mul_4(output_y4);
 
-    t_scales[output_y] = scale;
-    t_zps[output_y] = zero_point;
+
+  VEC4_T scales_out = VEC4_T(0.0);
+  ivec4 zps_out = ivec4(0);
+
+  int limit = min(input_sizes.y - output_y, 4);
+  for (int i = 0; i < limit; i++) {
+    find_min_max_for_row(output_y + i);
+
+    // Only the first thread in the work group will compute the result
+    if (worker_id == 0) {
+      float local_min = shared_min[output_id][0];
+      float local_max = shared_max[output_id][0];
+
+      float scale;
+      int zero_point;
+
+      calculate_scale_and_zero_point(
+          local_min, local_max, quant_min, quant_max, scale, zero_point);
+
+      scales_out[i] = scale;
+      zps_out[i] = zero_point;
+    }
   }
+
+  if (worker_id == 0) {
+    imageStore(t_scales, ivec3(output_y4, 0, 0), scales_out);
+    imageStore(t_zps, ivec3(output_y4, 0, 0), zps_out);
+  }
+
 }

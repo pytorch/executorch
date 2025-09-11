@@ -14,8 +14,10 @@ namespace impl {
 namespace reference {
 namespace native {
 
-using executorch::aten::Tensor;
-using executorch::runtime::KernelRuntimeContext;
+using ::executorch::aten::Tensor;
+using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::reference::kernels::dequantize;
+using ::impl::reference::kernels::quantize;
 
 template <typename T>
 void quantized_add_per_tensor_impl(
@@ -48,28 +50,28 @@ void quantized_add_per_tensor_impl(
   // Simple case: tensors have the same shape, no broadcasting
   if (X_numel == Y_numel && Y_numel == out_numel) {
     for (size_t i = 0; i < X_numel; ++i) {
-      float x = kernels::dequantize<T>(X_data[i], X_scale_f, X_zero_point_i32);
-      float y = kernels::dequantize<T>(Y_data[i], Y_scale_f, Y_zero_point_i32);
+      float x = dequantize<T>(X_data[i], X_scale_f, X_zero_point_i32);
+      float y = dequantize<T>(Y_data[i], Y_scale_f, Y_zero_point_i32);
       float z = x + y;
-      out_data[i] = kernels::quantize<T>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<T>(z, inv_out_scale, out_zero_point_i32);
     }
   }
   // Y is a scalar tensor
   else if (Y_numel == 1) {
-    float y = kernels::dequantize<T>(Y_data[0], Y_scale_f, Y_zero_point_i32);
+    float y = dequantize<T>(Y_data[0], Y_scale_f, Y_zero_point_i32);
     for (size_t i = 0; i < X_numel; ++i) {
-      float x = kernels::dequantize<T>(X_data[i], X_scale_f, X_zero_point_i32);
+      float x = dequantize<T>(X_data[i], X_scale_f, X_zero_point_i32);
       float z = x + y;
-      out_data[i] = kernels::quantize<T>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<T>(z, inv_out_scale, out_zero_point_i32);
     }
   }
   // X is a scalar tensor
   else if (X_numel == 1) {
-    float x = kernels::dequantize<T>(X_data[0], X_scale_f, X_zero_point_i32);
+    float x = dequantize<T>(X_data[0], X_scale_f, X_zero_point_i32);
     for (size_t i = 0; i < Y_numel; ++i) {
-      float y = kernels::dequantize<T>(Y_data[i], Y_scale_f, Y_zero_point_i32);
+      float y = dequantize<T>(Y_data[i], Y_scale_f, Y_zero_point_i32);
       float z = x + y;
-      out_data[i] = kernels::quantize<T>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<T>(z, inv_out_scale, out_zero_point_i32);
     }
   }
   // General broadcasting case - simplified implementation
@@ -79,12 +81,10 @@ void quantized_add_per_tensor_impl(
       size_t x_idx = (X_numel == 1) ? 0 : i % X_numel;
       size_t y_idx = (Y_numel == 1) ? 0 : i % Y_numel;
 
-      float x =
-          kernels::dequantize<T>(X_data[x_idx], X_scale_f, X_zero_point_i32);
-      float y =
-          kernels::dequantize<T>(Y_data[y_idx], Y_scale_f, Y_zero_point_i32);
+      float x = dequantize<T>(X_data[x_idx], X_scale_f, X_zero_point_i32);
+      float y = dequantize<T>(Y_data[y_idx], Y_scale_f, Y_zero_point_i32);
       float z = x + y;
-      out_data[i] = kernels::quantize<T>(z, inv_out_scale, out_zero_point_i32);
+      out_data[i] = quantize<T>(z, inv_out_scale, out_zero_point_i32);
     }
   }
 }

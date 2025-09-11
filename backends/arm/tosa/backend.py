@@ -11,7 +11,9 @@
 # JIT compiler flows.
 #
 import logging
-from typing import cast, final, List
+from collections import deque
+from itertools import count
+from typing import cast, Dict, final, List, Set
 
 import serializer.tosa_serializer as ts  # type: ignore
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
@@ -26,10 +28,36 @@ from executorch.backends.arm.tosa.specification import get_tosa_spec
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
-from torch.fx import Node
+from torch.fx import Graph, Node
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
+
+
+def _annotate_external_ids(ep_graph: Graph) -> Dict[str, int]:
+    """
+    Returns dictionary: node name -> external ids
+
+    Assign id to an output node of the model so we can trace it.
+    """
+    node2external_id = {}
+
+    def bfs_mark(start_nodes: List[Node], idx: int, seen: Set[Node]):
+        q = deque(start_nodes)
+        while q:
+            n = q.popleft()
+            if n in seen:
+                continue
+            seen.add(n)
+            node2external_id[n.name] = idx
+            # Walk backwards so we touch every producer
+            q.extend(n.all_input_nodes)
+
+    out = next(n for n in ep_graph.nodes if n.op == "output")
+    seen: Set[Node] = set()
+    for idx, val in enumerate(out.args[0]):
+        bfs_mark([val], idx, seen)
+    return node2external_id
 
 
 def arm_get_first_delegation_tag(graph_module) -> str:
@@ -75,6 +103,9 @@ class TOSABackend(BackendDetails):
         if output_format != "tosa":
             raise ValueError(f'Invalid output format {output_format}, must be "tosa"')
 
+        # Assign to every node external id
+        node_2_id = _annotate_external_ids(edge_program.graph)
+
         tosa_spec = get_tosa_spec(compile_spec)
         if tosa_spec is None:
             raise ValueError(
@@ -107,6 +138,29 @@ class TOSABackend(BackendDetails):
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
 
         node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
+
+        # Re-shuffle output nodes to preserve author's order
+        def _external_id(n: Node, node_2_id, fallback: int) -> int:
+            return node_2_id.get(n.name, fallback)
+
+        out_node = next(n for n in graph_module.graph.nodes if n.op == "output")
+        _counter = count()
+
+        # sort nodes by the key that is id
+        def _sort_key(t: Node) -> int:
+            return _external_id(t, node_2_id, next(_counter))
+
+        orig_ord = tuple(sorted(out_node.args[0], key=_sort_key))
+
+        current_order = tuple(out_node.args[0])
+        if orig_ord != current_order:
+            replacement = (
+                list(orig_ord) if isinstance(out_node.args[0], list) else orig_ord
+            )
+            out_node.args = (replacement,)
+            graph_module.graph.lint()
+            graph_module.recompile()
+
         input_count = 0
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
