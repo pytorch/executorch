@@ -1,15 +1,12 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 #pragma once
-
-#include <vector>
 
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/method.h>
@@ -87,20 +84,18 @@ struct PrepareInputTensorsOptions {
  */
 executorch::runtime::Result<BufferCleanup> prepare_input_tensors(
     Method& method,
-    PrepareInputTensorsOptions options = {},
-    const std::vector<std::pair<char*, size_t>>& input_buffers = {});
+    PrepareInputTensorsOptions options = {});
 
 namespace internal {
 /**
  * INTERNAL-ONLY: Creates a Tensor using the provided shape and buffer,
- * fills it with ones by default, and sets the input at `input_index`.
+ * fills it with ones, and sets the input at `input_index`.
  */
 executorch::runtime::Error fill_and_set_input(
     Method& method,
     TensorInfo& tensor_meta,
     size_t input_index,
-    void* data_ptr,
-    bool fill_tensor = true);
+    void* data_ptr);
 } // namespace internal
 
 } // namespace extension

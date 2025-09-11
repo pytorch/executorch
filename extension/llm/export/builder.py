@@ -34,7 +34,7 @@ from executorch.extension.export_util.utils import export_to_edge, save_pte_prog
 
 from executorch.extension.llm.export.export_passes import RemoveRedundantTransposes
 from pytorch_tokenizers import get_tokenizer
-from torch.export import export_for_training, ExportedProgram
+from torch.export import export, ExportedProgram
 from torch.nn.attention import SDPBackend
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
@@ -234,7 +234,7 @@ class LLMEdgeManager:
             logging.info(f"inputs: {self.example_inputs}")
             logging.info(f"kwargs: {self.example_kwarg_inputs}")
             logging.info(f"dynamic shapes: {dynamic_shape}")
-            exported_module = export_for_training(
+            exported_module = export(
                 self.model if not module else module,
                 self.example_inputs,
                 kwargs=self.example_kwarg_inputs,
@@ -246,7 +246,7 @@ class LLMEdgeManager:
     def export(self) -> "LLMEdgeManager":
         """
         Exports the model pre-autograd. This is not a full export, since it uses
-        torch.export_for_training() to keep autograd-safe ops from getting decomposed.
+        torch.export.export() to keep autograd-safe ops from getting decomposed.
         The full torch.export() if called later on during to_edge() or
         to_edge_transform_and_lower().
         """
@@ -257,9 +257,7 @@ class LLMEdgeManager:
         self.pre_autograd_graph_module = exported_module.module()
         if self.save_exported_program:
             export_output = f"{self.modelname}.pt2"
-            logging.info(
-                f"Saving torch.export()/export_for_training() result to {export_output}"
-            )
+            logging.info(f"Saving torch.export() result to {export_output}")
             torch.export.save(exported_module, export_output)
         return self
 
