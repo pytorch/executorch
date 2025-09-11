@@ -79,8 +79,6 @@ def check_glibc_exist() -> bool:
             """
         )
     print("[QNN] glibc exists: ", exists)
-    print(get_glibc_version())
-
     return exists
 
 
