@@ -84,6 +84,7 @@ struct ContentView: View {
   enum ModelType {
     case llama
     case llava
+    case qwen2
     case qwen3
     case phi4
 
@@ -93,11 +94,14 @@ struct ContentView: View {
         return .llama
       } else if filename.hasPrefix("llava") {
         return .llava
+      } else if filename.hasPrefix("qwen2") {
+        return .qwen2
       } else if filename.hasPrefix("qwen3") {
         return .qwen3
       } else if filename.hasPrefix("phi4") {
         return .phi4
       }
+
       print("Unknown model type in path: \(path). Model filename should start with one of: llama, llava, qwen3, or phi4")
       exit(1)
     }
@@ -345,7 +349,7 @@ struct ContentView: View {
       }
 
       switch modelType {
-      case .llama, .qwen3, .phi4:
+      case .llama, .qwen2, .qwen3, .phi4:
         runnerHolder.textRunner = runnerHolder.textRunner ?? TextRunner(
           modelPath: modelPath,
           tokenizerPath: tokenizerPath,
@@ -372,7 +376,7 @@ struct ContentView: View {
 
       guard !shouldStopGenerating else { return }
       switch modelType {
-      case .llama, .qwen3, .phi4:
+      case .llama, .qwen2, .qwen3, .phi4:
         if let runner = runnerHolder.textRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -482,6 +486,8 @@ struct ContentView: View {
         } else {
           let prompt: String
           switch modelType {
+          case .qwen2:
+              prompt = String(format: Constants.llama3PromptTemplate, text)
           case .qwen3:
             let basePrompt = String(format: Constants.qwen3PromptTemplate, text)
             // If thinking mode is enabled for Qwen, don't skip the <think></think> special tokens
