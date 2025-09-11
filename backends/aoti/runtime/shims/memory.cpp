@@ -61,7 +61,6 @@ bool is_tensor_channels_last(
       (strides[2] == W * C || H <= 1) && (strides[3] == C || W <= 1);
 }
 
-// Version 2: For use with ExecutorTorch tensors (int32_t sizes)
 // Check if tensor is in contiguous memory format (NCHW for 4D tensors)
 bool is_tensor_contiguous(
     int64_t ndim,
