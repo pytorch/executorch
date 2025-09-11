@@ -124,11 +124,11 @@ class TestRefImplementations(unittest.TestCase):
 
         output = torch.ops.cadence.quantized_add(
             X_tensor,
-            torch.tensor(X_scale),
-            torch.tensor(X_zero_point, dtype=dtype),
+            X_scale,
+            X_zero_point,
             Y_tensor,
-            torch.tensor(Y_scale),
-            torch.tensor(Y_zero_point, dtype=dtype),
+            Y_scale,
+            Y_zero_point,
             out_scale,
             out_zero_point,
         )
