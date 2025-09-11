@@ -142,6 +142,7 @@ class Version:
     @classmethod
     def write_to_python_file(cls, path: str) -> None:
         """Creates a file similar to PyTorch core's `torch/version.py`."""
+
         lines = [
             "from typing import Optional",
             '__all__ = ["__version__", "git_version"]',
@@ -773,7 +774,7 @@ setup(
     # platform-specific files using InstallerBuildExt.
     ext_modules=[
         BuiltFile(
-            src_dir="%CMAKE_CACHE_DIR%/third-party/flatc_proj/bin/",
+            src_dir="%CMAKE_CACHE_DIR%/third-party/flatc_ep/bin/",
             src_name="flatc",
             dst="executorch/data/bin/",
             is_executable=True,
