@@ -38,9 +38,13 @@ def is_linux_x86() -> bool:
     )
 
 
-REQUIRED_QNN_LIBS = ["libc.so.6"]
-
 import subprocess
+
+REQUIRED_LIBC_LIBS = [
+    "/lib/x86_64-linux-gnu/libc.so.6",
+    "/lib64/libc.so.6",
+    "/lib/libc.so.6",
+]
 
 
 def check_glibc_exist() -> bool:
@@ -48,9 +52,8 @@ def check_glibc_exist() -> bool:
     Check if users have glibc installed.
     """
     print("[QNN] Checking glibc exist running on Linux x86")
-    paths = ["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/libc.so.6", "/lib/libc.so.6"]
 
-    for path in paths:
+    for path in REQUIRED_LIBC_LIBS:
         try:
             output = subprocess.check_output(
                 [path, "--version"], stderr=subprocess.STDOUT
@@ -59,7 +62,7 @@ def check_glibc_exist() -> bool:
             print(output.decode().split("\n")[0])
         except Exception:
             continue
-    exists = any(os.path.isfile(p) for p in paths)
+    exists = any(os.path.isfile(p) for p in REQUIRED_LIBC_LIBS)
     if not exists:
         logger.error(
             r""""
@@ -79,6 +82,19 @@ def check_glibc_exist() -> bool:
     print(get_glibc_version())
 
     return exists
+
+
+def _load_libc_libs() -> bool:
+    logger.debug("[QNN] running _load_libc_libs")
+    logger.debug("[QNN] REQUIRED_LIBC_LIBS: : %s", REQUIRED_LIBC_LIBS)
+    for sofile in REQUIRED_LIBC_LIBS:
+        try:
+            ctypes.CDLL(str(sofile), mode=ctypes.RTLD_GLOBAL)
+            logger.info("Loaded %s", sofile)
+            return True
+        except OSError as e:
+            logger.warning("[WARN] Failed to load %s: %s", sofile, e)
+    return False
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
@@ -159,7 +175,7 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
-    if not is_linux_x86() or not check_glibc_exist():
+    if not is_linux_x86() or not check_glibc_exist(REQUIRED_LIBC_LIBS):
         logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
     else:
@@ -400,6 +416,23 @@ def _ensure_libcxx_stack() -> bool:
     return lib_loaded
 
 
+# ---------------------
+# Ensure libc family
+# ---------------------
+def _ensure_libc_stack() -> bool:
+    """
+    Ensure libc stack is available.
+    """
+    exist = check_glibc_exist()
+    lib_loaded = False
+    if exist:
+        logger.info("[libc] glibc exists; start loading.")
+        lib_loaded = _load_libc_libs()
+    else:
+        logger.error("[libc] glibc does not exist; skipping loading.")
+    return lib_loaded
+
+
 # ---------------
 # Public entrypoint
 # ---------------
@@ -420,4 +453,5 @@ def install_qnn_sdk() -> bool:
     """
     ok_libcxx = _ensure_libcxx_stack()
     ok_qnn = _ensure_qnn_sdk_lib()
-    return bool(ok_qnn and ok_libcxx)
+    ok_libc = _ensure_libc_stack()
+    return bool(ok_qnn and ok_libcxx and ok_libc)
