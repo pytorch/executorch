@@ -6,11 +6,9 @@ model:
   dtype_override: fp32
   enable_dynamic_shape: False
 
-export:
-  output_dir: "../"
-
 quantization:
   pt2e_quantize: "openvino_4wo"
+  group_size: 128
 
 backend:
   openvino:
