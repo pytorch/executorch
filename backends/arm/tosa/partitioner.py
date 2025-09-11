@@ -35,11 +35,18 @@ logger = logging.getLogger(__name__)
 
 
 def is_noop_clone(node: torch.fx.node.Node) -> bool:
-    return node.target == exir_ops.edge.aten.clone.default
+    return node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
 
 
 def is_noop_alias_copy(node: torch.fx.node.Node) -> bool:
     return node.target == exir_ops.edge.aten.alias_copy.default
+
+
+def is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
+    if node.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+        return False
+    else:
+        return node.meta.get("dtype") == get_first_fake_tensor(node.args[0]).dtype  # type: ignore[arg-type]
 
 
 def is_noop_expand(node: torch.fx.node.Node) -> bool:
@@ -145,6 +152,7 @@ class TOSAPartitioner(Partitioner):
                 is_noop_clone(node)
                 or is_noop_alias_copy(node)
                 or is_noop_expand(node)
+                or is_noop_to_dim_order_copy(node)
                 or node.target in Q_OPS
                 or node.target in DQ_OPS
                 for node in partition.nodes

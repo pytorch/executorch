@@ -1,0 +1,28 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+linear_q8csw_tiled:
+  parameter_names_with_default_values:
+    DTYPE: float
+    IO_STORAGE: texture3d
+    WEIGHT_STORAGE: texture2d
+    TILE_M4: 1
+    TILE_N4: 1
+    TILE_K4: 1
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: linear_q8csw_tiled_texture3d_texture2d
+    - NAME: linear_q8csw_tiled_texture3d_buffer
+      WEIGHT_STORAGE: buffer
+    - NAME: linear_q8csw_tiled_buffer_texture2d
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: texture2d
+    - NAME: linear_q8csw_tiled_buffer_buffer
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: buffer

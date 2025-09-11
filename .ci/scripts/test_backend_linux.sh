@@ -30,10 +30,8 @@ if [[ "$FLOW" == *qnn* ]]; then
     # Qualcomm build. TODO (gjcomer) Clean this up once the QNN pybinding integration is
     # cleaned up.
     PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
-    PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-    PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+    PYTHON_EXECUTABLE=python source .ci/scripts/build-qnn-sdk.sh
     QNN_X86_LIB_DIR=`realpath build-x86/lib/`
-    QNN_SDK_ROOT="/tmp/qnn/2.28.0.241029"
     export LD_LIBRARY_PATH"=$QNN_X86_LIB_DIR:$QNN_SDK_ROOT/lib/x86_64-linux-clang/:${LD_LIBRARY_PATH:-}"
 
     # TODO Get SDK root from install scripts
