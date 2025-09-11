@@ -16,6 +16,8 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::reference::kernels::dequantize;
+using ::impl::reference::kernels::quantize;
 
 namespace impl {
 namespace reference {
@@ -74,10 +76,10 @@ void quantized_layer_norm_per_tensor_(
       // y[j] = (x[j] - mean) / std * kGamma + kBeta;
       // Since X is quantized, we dequantize it, compute fp32 result, and
       // quantize the result to an int8/uint8 value.
-      float val = kernels::dequantize<T>(x[j], input_scale, input_zero_point);
+      float val = dequantize<T>(x[j], input_scale, input_zero_point);
 
       val = (val - mean) * inv_std * weight_data[j] + bias_data[j];
-      y[j] = kernels::quantize<T>(val, output_inv_scale, output_zero_point);
+      y[j] = quantize<T>(val, output_inv_scale, output_zero_point);
     }
   }
 }

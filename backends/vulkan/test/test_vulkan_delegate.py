@@ -10,6 +10,8 @@ import ctypes
 import unittest
 from typing import Tuple
 
+import executorch.backends.vulkan.test.utils as test_utils
+
 import torch
 
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
@@ -18,12 +20,23 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
     ExecutorchProgramManager,
+    to_edge_transform_and_lower,
 )
-from torch.export import Dim, export, export_for_training, ExportedProgram
+from executorch.extension.pybindings.portable_lib import (  # @manual
+    _load_for_executorch_from_buffer,
+)
+from executorch.extension.pytree import tree_flatten
+from torch.export import Dim, export, ExportedProgram
+
 from torchao.quantization.granularity import PerGroup
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -32,14 +45,10 @@ from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
 from torchao.utils import unwrap_tensor_subclass
 
-ctypes.CDLL("libvulkan.so.1")
-
-
-from executorch.exir import to_edge_transform_and_lower
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
-from executorch.extension.pytree import tree_flatten
+try:
+    ctypes.CDLL("libvulkan.so.1")
+except:
+    pass
 
 
 def lower_module(
@@ -83,7 +92,7 @@ def quantize_and_lower_module(
         _skip_dim_order=False,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
-    program = export_for_training(
+    program = export(
         model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()
 
@@ -129,37 +138,47 @@ class TestVulkanBackend(unittest.TestCase):
             # Multiple outputs executor always returns tuple, even if there is one output
             self.assertTrue(len(ref_output) == len(model_output))
             if first_output_only:
-                self.assertTrue(
-                    torch.allclose(
-                        model_output[0],
-                        ref_output[0],
-                        atol=atol,
-                        rtol=rtol,
-                        equal_nan=equal_nan,
-                    )
-                )
-            else:
-                for i in range(len(ref_output)):
-                    self.assertTrue(
-                        torch.allclose(
-                            model_output[i],
-                            ref_output[i],
-                            atol=atol,
-                            rtol=rtol,
-                            equal_nan=equal_nan,
-                        )
-                    )
-        else:
-            # If one output, eager returns tensor while executor tuple of size 1
-            self.assertTrue(
-                torch.allclose(
+                result = torch.allclose(
                     model_output[0],
-                    ref_output,
+                    ref_output[0],
                     atol=atol,
                     rtol=rtol,
                     equal_nan=equal_nan,
                 )
+                if not result:
+                    test_utils.print_tensor_comparison_errors(
+                        model_output[0], ref_output[0], atol, rtol
+                    )
+                self.assertTrue(result)
+            else:
+                for i in range(len(ref_output)):
+                    result = torch.allclose(
+                        model_output[i],
+                        ref_output[i],
+                        atol=atol,
+                        rtol=rtol,
+                        equal_nan=equal_nan,
+                    )
+                    if not result:
+                        print(f"\n=== Output {i} comparison failed ===")
+                        test_utils.print_tensor_comparison_errors(
+                            model_output[i], ref_output[i], atol, rtol
+                        )
+                    self.assertTrue(result)
+        else:
+            # If one output, eager returns tensor while executor tuple of size 1
+            result = torch.allclose(
+                model_output[0],
+                ref_output,
+                atol=atol,
+                rtol=rtol,
+                equal_nan=equal_nan,
             )
+            if not result:
+                test_utils.print_tensor_comparison_errors(
+                    model_output[0], ref_output, atol, rtol
+                )
+            self.assertTrue(result)
 
     def check_no_delegation(self, et_program: ExecutorchProgramManager):
         self.assertEqual(
@@ -2378,6 +2397,332 @@ class TestVulkanBackend(unittest.TestCase):
 
         # Apply quantization
         quantized_linear_module_gemm = quantized_linear_module_gemm.apply_quantization()
+
+        # Test with 3D input (GEMM pattern)
+        sample_inputs_gemm = (
+            torch.randn(size=(1, 248, in_features), dtype=torch.float32),
+        )
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantized_linear_module_gemm, sample_inputs_gemm, atol=1e-2, rtol=1e-2
+        )
+
+    def test_vulkan_backend_xnnpack_pt2e_quantized_linear_sequence(self):
+        """
+        Test a sequence of linear layers quantized with XNNPACK quantization config.
+        This test creates a module with multiple linear layers in sequence and applies
+        XNNPACK symmetric quantization to test the quantized model execution.
+        """
+
+        import executorch.backends.vulkan.test.utils as test_utils
+
+        class LinearSequenceModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(128, 64, bias=False)
+                self.linear2 = torch.nn.Linear(64, 32, bias=False)
+                self.linear3 = torch.nn.Linear(32, 16, bias=False)
+
+                MAX = 0.75
+                MIN = -0.25
+                self.linear1.weight.data = test_utils.random_uniform_tensor(
+                    self.linear1.weight.shape, MIN, MAX
+                )
+                self.linear2.weight.data = test_utils.random_uniform_tensor(
+                    self.linear2.weight.shape, MIN, MAX
+                )
+                self.linear3.weight.data = test_utils.random_uniform_tensor(
+                    self.linear3.weight.shape, MIN, MAX
+                )
+
+            def forward(self, x):
+                x = self.linear1(x)
+                x = self.linear2(x)
+                x = self.linear3(x)
+                return x
+
+        # Create the module
+        linear_sequence_module = LinearSequenceModule()
+
+        M = 32
+        # Create sample inputs
+        sample_inputs = (
+            (
+                test_utils.random_uniform_tensor(
+                    (M, linear_sequence_module.linear1.in_features),
+                    -0.25,
+                    0.75,
+                )
+            ),
+        )
+
+        # Create XNNPACK quantizer with symmetric quantization config
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        # Test the quantized module using the existing quantize_and_lower_module function
+        # Use higher tolerance since quantization introduces some error
+        edge_program = quantize_and_lower_module(
+            linear_sequence_module, sample_inputs, quantizer
+        )
+
+        et_program = edge_program.to_executorch()
+        self.check_vk_delegation(et_program)
+
+        self.run_delegated_model_and_check_output(
+            et_program,
+            linear_sequence_module,
+            sample_inputs,
+            atol=1e-2,
+            rtol=1e-1,
+        )
+
+    def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence(self):
+        """
+        Test a sequence of convolution layers quantized with PT2E quantization.
+        This test creates a module with multiple Conv2d layers in sequence and applies
+        XNNPACK symmetric quantization to test the quantized model execution.
+        Similar to the linear sequence test but using convolution layers.
+        """
+
+        import executorch.backends.vulkan.test.utils as test_utils
+
+        class ConvSequenceModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=16,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+                self.conv2 = torch.nn.Conv2d(
+                    in_channels=16,
+                    out_channels=32,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+                self.conv3 = torch.nn.Conv2d(
+                    in_channels=32,
+                    out_channels=64,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+
+                MAX = 0.75
+                MIN = -0.25
+                self.conv1.weight.data = test_utils.random_uniform_tensor(
+                    self.conv1.weight.shape, MIN, MAX
+                )
+                self.conv2.weight.data = test_utils.random_uniform_tensor(
+                    self.conv2.weight.shape, MIN, MAX
+                )
+                self.conv3.weight.data = test_utils.random_uniform_tensor(
+                    self.conv3.weight.shape, MIN, MAX
+                )
+
+            def forward(self, x):
+                x = self.conv1(x)
+                x = self.conv2(x)
+                x = self.conv3(x)
+                return x
+
+        # Create the module
+        conv_sequence_module = ConvSequenceModule()
+
+        input_tensor = test_utils.random_uniform_tensor(
+            (1, 3, 32, 32),
+            -0.25,
+            0.75,
+        )
+
+        # Create sample inputs
+        sample_inputs = (input_tensor,)
+
+        # Create XNNPACK quantizer with symmetric quantization config
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        # Test the quantized module using the existing quantize_and_lower_module function
+        # Use higher tolerance since quantization introduces some error
+        edge_program = quantize_and_lower_module(
+            conv_sequence_module, sample_inputs, quantizer
+        )
+
+        et_program = edge_program.to_executorch()
+        self.check_vk_delegation(et_program)
+
+        self.run_delegated_model_and_check_output(
+            et_program,
+            conv_sequence_module,
+            sample_inputs,
+            atol=1e-2,
+            rtol=1e-1,
+        )
+
+    def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
+        """
+        Test a sequence of convolution layers quantized with PT2E quantization.
+        This test creates a module with multiple Conv2d layers in sequence and applies
+        XNNPACK symmetric quantization to test the quantized model execution.
+        Similar to the linear sequence test but using convolution layers.
+        """
+
+        import executorch.backends.vulkan.test.utils as test_utils
+
+        class ConvSequenceModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(
+                    in_channels=3,
+                    out_channels=32,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+                self.conv2 = torch.nn.Conv2d(
+                    in_channels=32,
+                    out_channels=1,
+                    kernel_size=3,
+                    padding=1,
+                    bias=False,
+                )
+
+                MAX = 0.75
+                MIN = -0.25
+                self.conv1.weight.data = test_utils.random_uniform_tensor(
+                    self.conv1.weight.shape, MIN, MAX
+                )
+                self.conv2.weight.data = test_utils.random_uniform_tensor(
+                    self.conv2.weight.shape, MIN, MAX
+                )
+
+            def forward(self, x):
+                x = self.conv1(x)
+                x = self.conv2(x)
+                return x
+
+        # Create the module
+        conv_sequence_module = ConvSequenceModule()
+
+        input_tensor = test_utils.random_uniform_tensor(
+            (1, 3, 32, 32),
+            -0.25,
+            0.75,
+        )
+
+        # Create sample inputs
+        sample_inputs = (input_tensor,)
+
+        # Create XNNPACK quantizer with symmetric quantization config
+        quantizer = XNNPACKQuantizer()
+        operator_config = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=False,
+        )
+        quantizer.set_global(operator_config)
+
+        # Test the quantized module using the existing quantize_and_lower_module function
+        # Use higher tolerance since quantization introduces some error
+        edge_program = quantize_and_lower_module(
+            conv_sequence_module, sample_inputs, quantizer
+        )
+
+        et_program = edge_program.to_executorch()
+        self.check_vk_delegation(et_program)
+
+        self.run_delegated_model_and_check_output(
+            et_program,
+            conv_sequence_module,
+            sample_inputs,
+            atol=1e-2,
+            rtol=1e-1,
+        )
+
+    @unittest.skip("Cannot run on swiftshader due to no 8-bit int support")
+    def test_vulkan_backend_torchao_8da4w_quantized_linear(self):
+        """
+        Test TorchAO 8da4w quantization (int8 dynamic activation + int4 weight) with Vulkan backend.
+        This test uses the same quantization approach as the 8da4w qmode in quantize.py.
+        """
+        in_features = 1024
+        out_features = 512
+        bias = False
+        group_size = 128
+
+        class TorchAO8da4wQuantizedLinearModule(torch.nn.Module):
+            def __init__(
+                self,
+                in_features: int,
+                out_features: int,
+                bias: bool = False,
+                group_size: int = 128,
+            ):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_features, out_features, bias=bias)
+                self.group_size = group_size
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.linear(x)
+
+            def apply_8da4w_quantization(self):
+                """Apply TorchAO 8da4w quantization (int8 dynamic activation + int4 weight)."""
+                from torchao.quantization import (
+                    int8_dynamic_activation_int4_weight,
+                    quantize_,
+                )
+                from torchao.utils import unwrap_tensor_subclass
+
+                quantize_(
+                    self,
+                    int8_dynamic_activation_int4_weight(group_size=self.group_size),
+                )
+                unwrap_tensor_subclass(self)
+                return self
+
+        # Test with GEMV pattern (batch_size=1, seq_len=1)
+        quantized_linear_module = TorchAO8da4wQuantizedLinearModule(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            group_size=group_size,
+        )
+
+        # Apply 8da4w quantization
+        quantized_linear_module = quantized_linear_module.apply_8da4w_quantization()
+
+        # Test with 2D input (GEMV pattern)
+        sample_inputs = (torch.randn(size=(1, in_features), dtype=torch.float32),)
+
+        # Use higher tolerance since quantization introduces some error
+        self.lower_module_and_test_output(
+            quantized_linear_module, sample_inputs, atol=1e-2, rtol=1e-2
+        )
+
+        # Test with GEMM pattern (batch_size > 1)
+        quantized_linear_module_gemm = TorchAO8da4wQuantizedLinearModule(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            group_size=group_size,
+        )
+
+        # Apply 8da4w quantization
+        quantized_linear_module_gemm = (
+            quantized_linear_module_gemm.apply_8da4w_quantization()
+        )
 
         # Test with 3D input (GEMM pattern)
         sample_inputs_gemm = (
