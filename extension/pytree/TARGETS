@@ -1,7 +1,6 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extension")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
@@ -9,7 +8,7 @@ oncall("executorch")
 
 define_common_targets()
 
-cpp_python_extension(
+runtime.cxx_python_extension(
     name = "pybindings",
     srcs = [
         "pybindings.cpp",
@@ -21,7 +20,7 @@ cpp_python_extension(
     ],
 )
 
-cpp_python_extension(
+runtime.cxx_python_extension(
     name = "pybindings_debug",
     srcs = [
         "pybindings.cpp",
@@ -39,6 +38,7 @@ runtime.python_library(
         "__init__.py",
     ],
     base_module = "executorch.extension.pytree",
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":pybindings",
         "//caffe2:torch",

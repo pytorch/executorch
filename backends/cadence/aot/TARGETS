@@ -12,7 +12,6 @@ load(
     "CXX",
 )
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
-load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extension")
 
 oncall("odai_jarvis")
 
