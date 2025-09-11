@@ -1,4 +1,4 @@
-name: Test XNNPACK Backend
+name: Test ARM Backend
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
       - ciflow/nightly/*
   pull_request:
     paths:
-      - .github/workflows/test-backend-ethos.yml
+      - .github/workflows/test-backend-arm.yml
       - .github/workflows/_test_backend.yml
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ jobs:
     uses: ./.github/workflows/_test_backend.yml
     with:
       backend: xnnpack
-      flows: '["tosa"]'
+      flows: '["arm-tosa"]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true

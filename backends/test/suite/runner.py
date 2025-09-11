@@ -191,8 +191,11 @@ def run_test(  # noqa: C901
     # Only run the runtime portion if something was delegated (or the flow doesn't delegate)
     if is_delegated or not flow.is_delegated:
         try:
-            tester.to_executorch().serialize()
-            extra_stats["pte_size_bytes"] = len(tester.get_artifact())
+            tester.to_executorch()
+
+            if flow.supports_serialize:
+                tester.serialize()
+                extra_stats["pte_size_bytes"] = len(tester.get_artifact())
         except Exception as e:
             # We could introduce a result value for this, but I'm not sure it's necessary.
             # We can do this if we ever see to_executorch() or serialize() fail due a backend issue.

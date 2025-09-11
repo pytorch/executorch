@@ -47,7 +47,7 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
-if [[ "$FLOW" == *tosa* ]]; then
+if [[ "$FLOW" == *arm* ]]; then
     # Setup ARM deps.
     .ci/scripts/setup-arm-baremetal-tools.sh
 fi
