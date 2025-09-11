@@ -16,6 +16,7 @@
 #include <bitset>
 #include <cctype>
 #include <cstring>
+#include <sstream>
 
 namespace vkcompute {
 namespace vkapi {
