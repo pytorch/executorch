@@ -107,6 +107,8 @@ class AotiBackend(BackendDetails):
         output_path = os.path.join(os.getcwd(), "aoti.so")
 
         options: dict[str, typing.Any] = {
+            "aot_inductor.embed_kernel_binary": True,
+            "aot_inductor.link_libtorch": False, 
             "aot_inductor.package_constants_in_so": True,
             "aot_inductor.output_path": output_path,
             "aot_inductor.force_mmap_weights": False,
@@ -126,10 +128,10 @@ class AotiBackend(BackendDetails):
 
         assert so_path == output_path, f"Expected {output_path} but got {so_path}"
 
-        check_call(
-            f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {output_path}",
-            shell=True,
-        )
+        # check_call(
+        #     f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {output_path}",
+        #     shell=True,
+        # )
 
         print("so_path", so_path)
 

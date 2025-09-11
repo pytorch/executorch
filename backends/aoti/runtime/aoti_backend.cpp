@@ -32,7 +32,7 @@
 #include "shims/utils.h"
 
 // Include CUDA AOTI shims
-#include <torch/csrc/inductor/aoti_torch/generated/c_shim_cuda.h>
+// #include <torch/csrc/inductor/aoti_torch/generated/c_shim_cuda.h>
 
 namespace executorch {
 namespace backends {
