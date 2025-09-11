@@ -223,48 +223,13 @@ def run_target(
     elif target_board == "vkml_emulation_layer":
         return run_vkml_emulation_layer(
             executorch_program_manager,
-            inputs,
             intermediate_path,
             elf_path,
         )
 
 
-def save_inputs_to_file(
-    exported_program: ExportedProgram,
-    inputs: Tuple[torch.Tensor],
-    intermediate_path: str | Path,
-):
-    input_file_paths = []
-    input_names = get_input_names(exported_program)
-    for input_name, input_ in zip(input_names, inputs):
-        input_path = save_bytes(intermediate_path, input_, input_name)
-        input_file_paths.append(input_path)
-
-    return input_file_paths
-
-
-def get_output_from_file(
-    exported_program: ExportedProgram,
-    intermediate_path: str | Path,
-    output_base_name: str,
-):
-    output_np = []
-    output_node = exported_program.graph_module.graph.output_node()
-    for i, node in enumerate(output_node.args[0]):
-        output_shape = node.meta["val"].shape
-        output_dtype = node.meta["val"].dtype
-        tosa_ref_output = np.fromfile(
-            os.path.join(intermediate_path, f"{output_base_name}-{i}.bin"),
-            _torch_to_numpy_dtype_dict[output_dtype],
-        )
-
-        output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
-    return tuple(output_np)
-
-
 def run_vkml_emulation_layer(
     executorch_program_manager: ExecutorchProgramManager,
-    inputs: Tuple[torch.Tensor],
     intermediate_path: str | Path,
     elf_path: str | Path,
 ):
@@ -274,7 +239,7 @@ def run_vkml_emulation_layer(
         `intermediate_path`: Directory to save the .pte and capture outputs.
         `elf_path`: Path to the Vulkan-capable executor_runner binary.
     """
-    exported_program = executorch_program_manager.exported_program()
+
     intermediate_path = Path(intermediate_path)
     intermediate_path.mkdir(exist_ok=True)
     elf_path = Path(elf_path)
@@ -286,29 +251,26 @@ def run_vkml_emulation_layer(
     with open(pte_path, "wb") as f:
         f.write(executorch_program_manager.buffer)
 
-    output_base_name = "out"
-    out_path = os.path.join(intermediate_path, output_base_name)
-
-    cmd_line = f"{elf_path} -model_path {pte_path} -output_file {out_path}"
-
-    input_string = None
-    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
-    for input_path in input_paths:
-        if input_string is None:
-            input_string = f" -inputs={input_path}"
-        else:
-            input_string += f",{input_path}"
-    if input_string is not None:
-        cmd_line += input_string
-    cmd_line = cmd_line.split()
-
+    cmd_line = [str(elf_path), "-model_path", pte_path]
     result = _run_cmd(cmd_line)
 
+    result_stdout = result.stdout.decode()  # noqa: F841
     # TODO: MLETORCH-1234: Support VGF e2e tests in VgfPipeline
     # TODO: Add regex to check for error or fault messages in stdout from Emulation Layer
-    result_stdout = result.stdout.decode()  # noqa: F841
+    # Regex to extract tensor values from stdout
+    output_np = []
+    matches = re.findall(
+        r"Output\s+\d+:\s+tensor\(sizes=\[(.*?)\],\s+\[(.*?)\]\)",
+        result_stdout,
+        re.DOTALL,
+    )
 
-    return get_output_from_file(exported_program, intermediate_path, output_base_name)
+    for shape_str, values_str in matches:
+        shape = list(map(int, shape_str.split(",")))
+        values = list(map(float, re.findall(r"[-+]?\d*\.\d+|\d+", values_str)))
+        output_np.append(torch.tensor(values).reshape(shape))
+
+    return tuple(output_np)
 
 
 def run_corstone(
@@ -350,10 +312,14 @@ def run_corstone(
     with open(pte_path, "wb") as f:
         f.write(executorch_program_manager.buffer)
 
-    input_paths = save_inputs_to_file(exported_program, inputs, intermediate_path)
+    # Save inputs to file
+    input_names = get_input_names(exported_program)
+    input_paths = []
+    for input_name, input_ in zip(input_names, inputs):
+        input_path = save_bytes(intermediate_path, input_, input_name)
+        input_paths.append(input_path)
 
-    output_base_name = "out"
-    out_path = os.path.join(intermediate_path, output_base_name)
+    out_path = os.path.join(intermediate_path, "out")
 
     cmd_line = f"executor_runner -m {pte_path} -o {out_path}"
     for input_path in input_paths:
@@ -435,7 +401,18 @@ def run_corstone(
             f"Corstone simulation failed:\ncmd: {' '.join(command_args)}\nlog: \n {result_stdout}\n{result.stderr.decode()}"
         )
 
-    return get_output_from_file(exported_program, intermediate_path, output_base_name)
+    output_np = []
+    output_node = exported_program.graph_module.graph.output_node()
+    for i, node in enumerate(output_node.args[0]):
+        output_shape = node.meta["val"].shape
+        output_dtype = node.meta["val"].dtype
+        tosa_ref_output = np.fromfile(
+            os.path.join(intermediate_path, f"out-{i}.bin"),
+            _torch_to_numpy_dtype_dict[output_dtype],
+        )
+
+        output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
+    return tuple(output_np)
 
 
 def prep_data_for_save(
