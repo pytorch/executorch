@@ -38,6 +38,34 @@ def is_linux_x86() -> bool:
     )
 
 
+REQUIRED_QNN_LIBS = ["libc.so.6"]
+
+
+def check_glibc_exist() -> bool:
+    """
+    Check if users have glibc installed.
+    """
+    paths = ["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/libc.so.6", "/lib/libc.so.6"]
+
+    exists = any(os.path.isfile(p) for p in paths)
+    if not exists:
+        logger.error(
+            r""""
+            glibc not found. Please install glibc following the commands below.
+            Ubuntu/Debian:
+                sudo apt update
+                sudo apt install libc6
+
+            Fedora/Red Hat:
+                sudo dnf install glibc
+
+            Arch Linux:
+                sudo pacman -S glibc
+            """
+        )
+    return exists
+
+
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     """Download archive from URL with progress reporting."""
     logger.debug("Archive will be saved to: %s", archive_path)

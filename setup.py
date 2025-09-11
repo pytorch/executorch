@@ -467,10 +467,11 @@ class InstallerBuildExt(build_ext):
             # Following code is for building the Qualcomm backend.
             from backends.qualcomm.scripts.download_qnn_sdk import (
                 _download_qnn_sdk,
+                check_glibc_exist,
                 is_linux_x86,
             )
 
-            if is_linux_x86():
+            if is_linux_x86() and check_glibc_exist():
                 os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
 
                 with tempfile.TemporaryDirectory() as tmpdir:
