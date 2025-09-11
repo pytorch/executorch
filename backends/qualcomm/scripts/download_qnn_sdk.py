@@ -51,7 +51,7 @@ def check_glibc_exist() -> bool:
     if not exists:
         logger.error(
             r""""
-            glibc not found. Please install glibc following the commands below.
+            [QNN] glibc not found. Please install glibc following the commands below.
             Ubuntu/Debian:
                 sudo apt update
                 sudo apt install libc6
@@ -144,7 +144,7 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
-    if not is_linux_x86():
+    if not is_linux_x86() and not check_glibc_exist():
         logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
     else:
