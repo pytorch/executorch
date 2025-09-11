@@ -7,6 +7,7 @@ import copy
 
 import pytest
 import torch
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.quantizer import VgfQuantizer
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
@@ -14,9 +15,9 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
 )
 
 from executorch.backends.arm.test.common import SkipIfNoModelConverter
-from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
-from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
+from executorch.backends.arm.vgf import VgfPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.passes.quantize_io_pass import extract_io_quant_params
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -28,11 +29,11 @@ class SimpleAdd(torch.nn.Module):
 
 
 @pytest.mark.parametrize(
-    "compile_spec_cls, quantizer_cls, partitioner_cls",
+    "builder_method, quantizer_cls, partitioner_cls",
     [
-        (TosaCompileSpec, TOSAQuantizer, TOSAPartitioner),
+        ("tosa_compile_spec", TOSAQuantizer, TOSAPartitioner),
         pytest.param(
-            VgfCompileSpec,
+            "vgf_compile_spec",
             VgfQuantizer,
             VgfPartitioner,
             marks=SkipIfNoModelConverter,
@@ -40,11 +41,7 @@ class SimpleAdd(torch.nn.Module):
         ),
     ],
 )
-def test_roundtrip_extracts_io_params(
-    compile_spec_cls: type[TosaCompileSpec] | type[VgfCompileSpec],
-    quantizer_cls,
-    partitioner_cls,
-):
+def test_roundtrip_extracts_io_params(builder_method, quantizer_cls, partitioner_cls):
     """
     Validates that IO quantization parameters round-trip for both flows.
     """
@@ -54,7 +51,10 @@ def test_roundtrip_extracts_io_params(
     )
     mod = SimpleAdd().eval()
 
-    compile_spec = compile_spec_cls("TOSA-1.0+INT")
+    base_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
+    compile_spec = getattr(ArmCompileSpecBuilder(), builder_method)(
+        tosa_spec=base_spec
+    ).build()
 
     quantizer = quantizer_cls(compile_spec)
     operator_config = get_symmetric_quantization_config(is_qat=True)
