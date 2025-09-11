@@ -91,30 +91,38 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   }
 
   // 2. Run decoder model for prefill.
-  // `cache_position` goes from start_pos to start_pos + encoder_output.size(1).
-  // e.g. if start_pos = 2 and encoder_output.size(1) = 5,
-  // cache_position_tensor should be [2, 3, 4, 5, 6].
+
+  // Get expected shape of cache position tensor, which should be the second
+  // argument
   auto method_meta = ET_UNWRAP(module_->method_meta(kTextModelMethod));
-  auto first_input_info = ET_UNWRAP(method_meta.input_tensor_meta(0));
-  auto sizes = first_input_info.sizes();
-  auto numel = sizes[0];
+  auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
+  auto second_input_sizes = second_input_info.sizes();
+  auto numel = second_input_sizes[0];
 
   int64_t seq_len = encoder_output.toTensor().size(1);
   if (seq_len == 0) {
     ET_LOG(Error, "The encoder returned an empty output.");
     return ::executorch::runtime::Error::InvalidState;
   }
-  std::vector<int64_t> cache_positions(seq_len);
-  for (int64_t i = 0; i < seq_len; ++i) {
-    cache_positions[i] = start_pos + i;
+
+  executorch::extension::TensorPtr cache_position_tensor;
+  if (numel > 1) {
+    // `cache_position` goes from start_pos to start_pos +
+    // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1)
+    // = 5, cache_position_tensor should be [2, 3, 4, 5, 6].
+    std::vector<int64_t> cache_positions(seq_len);
+    for (int64_t i = 0; i < seq_len; ++i) {
+      cache_positions[i] = start_pos + i;
+    }
+    cache_position_tensor = ::executorch::extension::from_blob(
+        cache_positions.data(),
+        {static_cast<int>(seq_len)},
+        executorch::aten::ScalarType::Long);
+  } else {
+    // Cache position is size 1.
+    cache_position_tensor = ::executorch::extension::from_blob(
+        &start_pos, {1}, executorch::aten::ScalarType::Long);
   }
-  auto cache_position_tensor = (numel > 1)
-      ? ::executorch::extension::from_blob(
-            cache_positions.data(),
-            {static_cast<int>(seq_len)},
-            executorch::aten::ScalarType::Long)
-      : ::executorch::extension::from_blob(
-            &start_pos, {1}, executorch::aten::ScalarType::Long);
   auto prefill_result = module_->execute(
       kTextModelMethod, {cache_position_tensor, encoder_output});
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
