@@ -249,6 +249,7 @@ def quantized_linear_common(
 
 def quantized_linear_variant(
     per_tensor: bool,
+    fully_connected: bool,
     src_dtype: torch.dtype | None = None,
     weight_dtype: torch.dtype | None = None,
 ) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
@@ -265,6 +266,10 @@ def quantized_linear_variant(
             out_zero_point: int,
             offset: torch.Tensor | None = None,
         ) -> torch.Tensor:
+            if fully_connected and src.shape[0] != 1:
+                raise ValueError(
+                    "Fully connected quantized linear only supports batch size of 1"
+                )
             if src_dtype and src.dtype != src_dtype:
                 raise ValueError(
                     f"src dtype must be {src_dtype}. Got {src.dtype} instead"
@@ -317,23 +322,43 @@ def quantized_linear_variant(
 
 
 @impl(m, "quantized_linear")
-@quantized_linear_variant(False)
+@quantized_linear_variant(False, False)
 def quantized_linear() -> torch.Tensor: ...
 
 
 @impl(m, "quantized_linear.per_tensor")
-@quantized_linear_variant(True)
+@quantized_linear_variant(True, False)
 def quantized_linear_per_tensor() -> torch.Tensor: ...
 
 
 @impl(m, "quantized_linear_asym8sxasym8s_asym8s.per_tensor")
-@quantized_linear_variant(True, torch.int8, torch.int8)
+@quantized_linear_variant(True, False, torch.int8, torch.int8)
 def quantized_linear_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
 @impl(m, "quantized_linear_asym8uxasym8u_asym8u.per_tensor")
-@quantized_linear_variant(True, torch.uint8, torch.uint8)
+@quantized_linear_variant(True, False, torch.uint8, torch.uint8)
 def quantized_linear_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_fully_connected")
+@quantized_linear_variant(False, True)
+def quantized_fully_connected() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_fully_connected.per_tensor")
+@quantized_linear_variant(True, True)
+def quantized_fully_connected_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
+@quantized_linear_variant(True, True, torch.int8, torch.int8)
+def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
+@quantized_linear_variant(True, True, torch.uint8, torch.uint8)
+def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
 @impl(m, "quantized_layer_norm.per_tensor")
