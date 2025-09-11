@@ -449,7 +449,7 @@ class TestRefImplementations(unittest.TestCase):
                     ),  # expected_output: [1+2, 2+3, 3+4] / 0.5 = [6, 10, 14]
                     memory_format,
                 )
-                for memory_format in [torch.contiguous_format]
+                for memory_format in [torch.contiguous_format, torch.channels_last]
             ],
             # Test case 5: Multiple output channels
             *[
@@ -686,10 +686,13 @@ class TestRefImplementations(unittest.TestCase):
     ) -> None:
         assert memory_format in [torch.contiguous_format, torch.channels_last]
 
-        if len(input_tensor.shape) == 3 and memory_format == torch.channels_last:
-            self.fail("Channels last format is not supported for 3D input tensors")
-
-        input_tensor = input_tensor.to(memory_format=memory_format)
+        if memory_format == torch.channels_last:
+            if input_tensor.ndim == 3:
+                input_tensor = input_tensor.movedim(1, -1)
+                weight = weight.movedim(1, -1)
+            else:
+                input_tensor = input_tensor.movedim(-3, -1)
+                weight = weight.movedim(-3, -1)
 
         convs = [
             (
@@ -701,7 +704,7 @@ class TestRefImplementations(unittest.TestCase):
 
         optimized_convs = []
         if input_tensor.dtype == torch.int8 and weight.dtype == torch.int8:
-            if input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+            if memory_format == torch.contiguous_format:
                 optimized_convs = [
                     torch.ops.cadence.quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor,
                     torch.ops.cadence.quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
@@ -715,7 +718,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.ops.cadence.quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
                 ]
         elif input_tensor.dtype == torch.uint8 and weight.dtype == torch.uint8:
-            if input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+            if memory_format == torch.contiguous_format:
                 optimized_convs = [
                     torch.ops.cadence.quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor,
                     torch.ops.cadence.quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
@@ -746,7 +749,13 @@ class TestRefImplementations(unittest.TestCase):
                 output_zero_point,
                 out_multiplier,
                 out_shift,
-            ).to(memory_format=torch.contiguous_format)
+            )
+
+            if memory_format == torch.channels_last:
+                if input_tensor.ndim == 3:
+                    output = output.movedim(-1, 1)
+                else:
+                    output = output.movedim(-1, -3)
 
             # Verify output properties
             self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
