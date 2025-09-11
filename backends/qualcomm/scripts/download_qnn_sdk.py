@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import platform
+import re
 import shutil
 import tarfile
 import tempfile
@@ -11,7 +12,6 @@ import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
 
-# Module logger (library-friendly)
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -40,6 +40,8 @@ def is_linux_x86() -> bool:
 
 import subprocess
 
+MINIMUM_LIBC_VERSION = 2.28
+
 REQUIRED_LIBC_LIBS = [
     "/lib/x86_64-linux-gnu/libc.so.6",
     "/lib64/libc.so.6",
@@ -47,26 +49,40 @@ REQUIRED_LIBC_LIBS = [
 ]
 
 
-def check_glibc_exist() -> bool:
+def check_glibc_exist_and_validate() -> bool:
     """
     Check if users have glibc installed.
     """
-    print("[QNN] Checking glibc exist running on Linux x86")
-
+    logging.debug("[QNN] Checking glibc exist running on Linux x86")
+    exists = False
     for path in REQUIRED_LIBC_LIBS:
         try:
             output = subprocess.check_output(
                 [path, "--version"], stderr=subprocess.STDOUT
             )
-            print("[QNN] glibc version for path is: ", path)
-            print(output.decode().split("\n")[0])
+            output = output.decode().split("\n")[0]
+            logging.debug(f"[QNN] glibc version for path {path} is: {output}")
+            match = re.search(r"version (\d+\.\d+)", output)
+            if match:
+                version = match.group(1)
+                if float(version) >= MINIMUM_LIBC_VERSION:
+                    logging.debug(f"[QNN] glibc version is {version}.")
+                    exists = True
+                    return True
+                else:
+                    logger.error(
+                        f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
+                    )
+            else:
+                logger.error("[QNN] glibc version not found.")
+
         except Exception:
             continue
-    exists = any(os.path.isfile(p) for p in REQUIRED_LIBC_LIBS)
+
     if not exists:
         logger.error(
             r""""
-            [QNN] glibc not found. Please install glibc following the commands below.
+            [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
             Ubuntu/Debian:
                 sudo apt update
                 sudo apt install libc6
@@ -76,23 +92,15 @@ def check_glibc_exist() -> bool:
 
             Arch Linux:
                 sudo pacman -S glibc
+            
+            Also please make sure the glibc version is >= MINIMUM_LIBC_VERSION. You can verify the glibc version by running the following command:
+            Option 1:
+                ldd --version
+            Option 2:
+                /path/to/libc.so.6 --version
             """
         )
-    print("[QNN] glibc exists: ", exists)
     return exists
-
-
-def _load_libc_libs() -> bool:
-    logger.debug("[QNN] running _load_libc_libs")
-    logger.debug("[QNN] REQUIRED_LIBC_LIBS: : %s", REQUIRED_LIBC_LIBS)
-    for sofile in REQUIRED_LIBC_LIBS:
-        try:
-            ctypes.CDLL(str(sofile), mode=ctypes.RTLD_GLOBAL)
-            logger.info("Loaded %s", sofile)
-            return True
-        except OSError as e:
-            logger.warning("[WARN] Failed to load %s: %s", sofile, e)
-    return False
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
@@ -173,7 +181,7 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
-    if not is_linux_x86() or not check_glibc_exist():
+    if not is_linux_x86() or not check_glibc_exist_and_validate():
         logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
     else:
@@ -414,23 +422,6 @@ def _ensure_libcxx_stack() -> bool:
     return lib_loaded
 
 
-# ---------------------
-# Ensure libc family
-# ---------------------
-def _ensure_libc_stack() -> bool:
-    """
-    Ensure libc stack is available.
-    """
-    exist = check_glibc_exist()
-    lib_loaded = False
-    if exist:
-        logger.info("[libc] glibc exists; start loading.")
-        lib_loaded = _load_libc_libs()
-    else:
-        logger.error("[libc] glibc does not exist; skipping loading.")
-    return lib_loaded
-
-
 # ---------------
 # Public entrypoint
 # ---------------
@@ -451,5 +442,4 @@ def install_qnn_sdk() -> bool:
     """
     ok_libcxx = _ensure_libcxx_stack()
     ok_qnn = _ensure_qnn_sdk_lib()
-    ok_libc = _ensure_libc_stack()
-    return bool(ok_qnn and ok_libcxx and ok_libc)
+    return bool(ok_qnn and ok_libcxx)

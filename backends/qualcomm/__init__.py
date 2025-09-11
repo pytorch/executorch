@@ -1,6 +1,10 @@
 import os
 
-from .scripts.download_qnn_sdk import check_glibc_exist, install_qnn_sdk, is_linux_x86
+from .scripts.download_qnn_sdk import (
+    check_glibc_exist_and_validate,
+    install_qnn_sdk,
+    is_linux_x86,
+)
 
 
 env_flag = os.getenv("EXECUTORCH_BUILDING_WHEEL", "0").lower()
@@ -11,7 +15,7 @@ if (
     env_flag not in ("1", "true", "yes")
     and not qnn_sdk_root_flag
     and is_linux_x86()
-    and check_glibc_exist()
+    and check_glibc_exist_and_validate()
 ):
     ok = install_qnn_sdk()
 
