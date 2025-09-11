@@ -44,7 +44,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       ref: ${{ inputs.ref }}
-      runner: linux.4xlarge.memory
+      runner: linux.8xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: ${{ inputs.timeout }}
