@@ -62,7 +62,7 @@ def apply_partial_rotary_emb_single(
 
 
 class LlamaAttention(nn.Module):
-    def __init__(self, config: ModelArgs, output_new_cache_only=False):
+    def __init__(self, layer_idx: int, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
         self.config = config
         self.dim = config.dim
@@ -75,6 +75,10 @@ class LlamaAttention(nn.Module):
         self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
         self.use_qk_norm = config.use_qk_norm
         self.qk_norm_before_rope = config.qk_norm_before_rope
+        self.use_rope = (
+            config.no_rope_layer_interval
+            and (layer_idx + 1) % config.no_rope_layer_interval
+        )
 
         if self.use_qk_norm:
             q_norm_dim = self.head_dim
@@ -226,7 +230,8 @@ class LlamaAttention(nn.Module):
         for i in range(len(q)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
-            q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
+            if self.use_rope:
+                q[i] = self.apply_rope_emb(q[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 q[i] = self.q_norm_fn(q[i])
             if getattr(self.config, "enable_r3", False):
@@ -235,7 +240,8 @@ class LlamaAttention(nn.Module):
         for i in range(len(k)):
             if self.use_qk_norm and self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
-            k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
+            if self.use_rope:
+                k[i] = self.apply_rope_emb(k[i], freqs_cos, freqs_sin)
             if self.use_qk_norm and not self.qk_norm_before_rope:
                 k[i] = self.k_norm_fn(k[i])
             if getattr(self.config, "enable_r3", False):
@@ -301,8 +307,10 @@ class LlamaAttention(nn.Module):
             q = self.q_norm_fn(q)
             k = self.k_norm_fn(k)
 
-        q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
-        k = self.apply_rope_emb(k, freqs_cos, freqs_sin).permute(0, 2, 3, 1)
+        if self.use_rope:
+            q = self.apply_rope_emb(q, freqs_cos, freqs_sin)
+            k = self.apply_rope_emb(k, freqs_cos, freqs_sin)
+        k = k.permute(0, 2, 3, 1)
 
         if self.use_qk_norm and not self.qk_norm_before_rope:
             q = self.q_norm_fn(q)
@@ -394,10 +402,11 @@ class FeedForward(nn.Module):
 
 
 class LlamaDecoderLayer(nn.Module):
-    def __init__(self, config: ModelArgs, output_new_cache_only=False):
+    def __init__(self, layer_idx: int, config: ModelArgs, output_new_cache_only=False):
         super().__init__()
         self.dim = config.dim
         self.attention = LlamaAttention(
+            layer_idx=layer_idx,
             config=config,
             output_new_cache_only=output_new_cache_only,
         )
@@ -472,8 +481,8 @@ class LlamaModel(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                LlamaDecoderLayer(config, self.output_new_cache_only)
-                for _ in range(config.n_layers)
+                LlamaDecoderLayer(i, config, self.output_new_cache_only)
+                for i in range(config.n_layers)
             ]
         )
         self.norm = torch.nn.RMSNorm(config.dim, eps=config.norm_eps)
