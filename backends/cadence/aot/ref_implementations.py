@@ -241,7 +241,7 @@ def quantized_linear_common(
     bias: torch.Tensor,
     in_zero_point: int,
     weight_zero_point: torch.Tensor | int,
-    out_multiplier: torch.Tensor | int,
+    out_multiplier: int,
     out_shift: int,
     out_zero_point: int,
 ) -> torch.Tensor:
@@ -329,34 +329,30 @@ def quantized_linear_variant(
                 assert isinstance(weight_zero_point, int)
                 assert isinstance(out_multiplier, int)
                 assert isinstance(out_shift, int)
-                return quantized_linear_common(
-                    src,
-                    weight,
-                    bias,
-                    in_zero_point,
-                    weight_zero_point,
-                    out_multiplier,
-                    out_shift,
-                    out_zero_point,
-                )
+                _out_shift = out_shift
+                _out_multiplier = out_multiplier
             else:
                 assert isinstance(out_shift, torch.Tensor)
+                assert isinstance(out_multiplier, torch.Tensor)
                 if out_shift.numel() != 1:
                     raise ValueError("out_shift must be a scalar")
 
                 if out_shift.dtype != torch.int64:
                     raise ValueError("out_shift must be an int64")
 
-                return quantized_linear_common(
-                    src,
-                    weight,
-                    bias,
-                    in_zero_point,
-                    weight_zero_point,
-                    out_multiplier,
-                    int(out_shift.item()),
-                    out_zero_point,
-                )
+                _out_shift = int(out_shift.item())
+                _out_multiplier = int(out_multiplier[0].item())
+
+            return quantized_linear_common(
+                src,
+                weight,
+                bias,
+                in_zero_point,
+                weight_zero_point,
+                _out_multiplier,
+                _out_shift,
+                out_zero_point,
+            )
 
         return variant
 
@@ -401,6 +397,112 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor:
 @impl(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, True, torch.uint8, torch.uint8)
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_matmul")
+def quantized_matmul(
+    X: torch.Tensor,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_zero_point: int,
+    bias: torch.Tensor | None,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    transposed: bool = False,
+) -> torch.Tensor:
+    """
+    Quantized matmul operation.
+
+    Args:
+        - X (Tensor): The activations tensor
+        - X_zero_point (int): The quantized mapping of zero for the input
+        - Y (Tensor): The weight tensor
+        - Y_zero_point (int): The quantized mapping of zero for the weight
+        - bias (Tensor): The bias tensor
+        - out_multiplier (int): The multiplier used to scale the output
+        - out_shift (int): The shift used to scale the output
+        - out_zero_point (int): The quantized mapping of zero for the output
+        - transposed (bool): Whether to transpose the weight tensor
+    """
+    if bias is not None and not torch.all(bias == 0):
+        raise ValueError("bias must be None or all zeros since unused in out variant")
+
+    # Looks weird, but quantized linear assumes weights are pre-transposed,
+    # hence we transpose only if `transposed` is False.
+    if not transposed:
+        Y = Y.T
+
+    return quantized_linear_common(
+        X,
+        Y,
+        bias or torch.zeros(1, dtype=torch.int32),
+        X_zero_point,
+        Y_zero_point,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+    )
+
+
+@impl(m, "quantized_matmul_asym8sxasym8s_asym8s")
+def quantized_matmul_asym8sxasym8s_asym8s(
+    X: torch.Tensor,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_zero_point: int,
+    bias: torch.Tensor | None,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    transposed: bool = False,
+) -> torch.Tensor:
+    if X.dtype != torch.int8:
+        raise ValueError("X dtype must be torch.int8")
+    if Y.dtype != torch.int8:
+        raise ValueError("Y dtype must be torch.int8")
+
+    return quantized_matmul(
+        X,
+        X_zero_point,
+        Y,
+        Y_zero_point,
+        bias,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        transposed,
+    )
+
+
+@impl(m, "quantized_matmul_asym8uxasym8u_asym8u")
+def quantized_matmul_asym8uxasym8u_asym8u(
+    X: torch.Tensor,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_zero_point: int,
+    bias: torch.Tensor | None,
+    out_multiplier: int,
+    out_shift: int,
+    out_zero_point: int,
+    transposed: bool = False,
+) -> torch.Tensor:
+    if X.dtype != torch.uint8:
+        raise ValueError("X dtype must be torch.uint8")
+    if Y.dtype != torch.uint8:
+        raise ValueError("Y dtype must be torch.uint8")
+
+    return quantized_matmul(
+        X,
+        X_zero_point,
+        Y,
+        Y_zero_point,
+        bias,
+        out_multiplier,
+        out_shift,
+        out_zero_point,
+        transposed,
+    )
 
 
 @impl(m, "quantized_layer_norm.per_tensor")
