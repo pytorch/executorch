@@ -12,6 +12,7 @@ from typing import Callable, Optional, Union
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm._passes import SeqMSE
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
     DECODER_MODEL_VERSION,
@@ -60,6 +61,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         get_example_inputs: Callable,
         kv_updater: Callable,
         use_i64_token: bool,
+        seq_mse_candidates: int,
     ):
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
         assert max_seq_length is not None, "max_seq_length must be provided"
@@ -73,6 +75,7 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self.max_seq_length = max_seq_length
         self.kv_updater = kv_updater
         self.use_i64_token = use_i64_token
+        self.seq_mse_candidates = seq_mse_candidates
 
     def _model_call(self, inps):
         all_logits = None
@@ -80,6 +83,8 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         if self._use_kv_cache:
             kwargs["ar_len"] = self.ar_len
             kwargs["kv_updater"] = self.kv_updater
+            kwargs["seq_mse_candidates"] = self.seq_mse_candidates
+
         all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
             self.get_example_inputs,
             inps,
@@ -90,6 +95,8 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
             collect_logits=True,
             **kwargs,
         )
+        # one shot is enough for seq mse
+        self.seq_mse_candidates = 0
         return all_logits
 
 
@@ -296,6 +303,7 @@ def kv_inference(
     kv_updater=smart_mask_updater,
     use_i64_token=False,
     collect_logits=False,
+    seq_mse_candidates=0,
 ):
     _, atten_mask, _, k_caches, v_caches = get_example_inputs(use_kv_cache=True)
 
@@ -354,6 +362,17 @@ def kv_inference(
             )
             if collect_logits:
                 result_logits.append(logits[:, :num_tokens_in_chunk])
+
+            # We should have enough calibration data when generating last token if task was specified
+            if seq_mse_candidates != 0 and pos == num_prompt_tokens - 1:
+                with SeqMSE(module, seq_mse_candidates):
+                    module(
+                        tmp_token_list,
+                        *atten_mask,
+                        tmp_pos,
+                        *k_caches,
+                        *v_caches,
+                    )
 
             # Update the pos, KV cache and attention mask.
             pos, k_caches, v_caches = kv_updater(
@@ -414,6 +433,7 @@ def kv_inference(
                 torch.argmax(logits[:, num_tokens_in_chunk - 1], dim=-1).item()
             )
             num_tokens = len(total_token_list)
+
     logging.info(f"kv inference result:\n{tokenizer.decode(total_token_list)}")
     if collect_logits:
         result_logits = torch.cat(result_logits, dim=1)
@@ -493,6 +513,7 @@ def graph_module_inference(
     num_fewshot=None,
     use_i64_token=False,
     event_name: Optional[str] = None,
+    seq_mse_candidates: int = 0,
 ):
     """
     This function supports model execution from static nn.Module decoder model
@@ -528,6 +549,7 @@ def graph_module_inference(
             get_example_inputs=get_example_inputs,
             kv_updater=kv_updater,
             use_i64_token=use_i64_token,
+            seq_mse_candidates=seq_mse_candidates,
         )
         # Evaluate the model
         with torch.no_grad():

@@ -208,10 +208,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   jint generate(
-      facebook::jni::alias_ref<jintArray> image,
-      jint width,
-      jint height,
-      jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
@@ -219,18 +215,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
       prefill_inputs_.clear();
-      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      auto image_size = image->size();
-      std::vector<llm::Image> images;
-      if (image_size != 0) {
-        std::vector<jint> image_data_jint(image_size);
-        std::vector<uint8_t> image_data(image_size);
-        image->getRegion(0, image_size, image_data_jint.data());
-        for (int i = 0; i < image_size; i++) {
-          image_data[i] = image_data_jint[i];
-        }
-        llm::Image image_runner{image_data, width, height, channels};
-        inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+      if (!prompt->toStdString().empty()) {
+        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       }
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
@@ -257,23 +243,23 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
+  // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-  jint append_text_input(
-      facebook::jni::alias_ref<jstring> prompt,
-      jint bos,
-      jint eos) {
+  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
     prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
     return 0;
   }
 
+  // Returns status_code
   jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
       jint channels) {
     std::vector<llm::Image> images;
+    if (image == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
     auto image_size = image->size();
     if (image_size != 0) {
       std::vector<jint> image_data_jint(image_size);

@@ -4636,6 +4636,33 @@ class TestQNNQuantizedUtils(TestQNN):
                         qhas_data = json.load(qhas_file)
                         self.assertIn("data", qhas_data)
 
+    def test_qnn_backend_seq_mse(self):
+        from executorch.backends.qualcomm._passes.seq_mse import SeqMSE
+
+        o_ch, i_ch, kernel, padding = 32, 512, (1, 1), 0
+        module = Conv2dSingle(  # noqa: F405
+            in_channel=i_ch,
+            out_channel=o_ch,
+            kernel_size=kernel,
+            padding=padding,
+        )
+        sample_input = (torch.randn(1, i_ch, 1, o_ch),)
+        # per-channel / per-block
+        quantizers = [
+            make_quantizer(),
+            make_quantizer(quant_dtype=QuantDtype.use_16a4w_block),
+        ]
+        quantizers[-1].set_block_size_map({"conv2d": (1, 32, 1, 1)})
+
+        for i, quantizer in enumerate(quantizers):
+            with self.subTest(i=i):
+                ep = torch.export.export(module, sample_input).module()
+                prepared = prepare_pt2e(ep, quantizer)
+                with SeqMSE(prepared, 100):
+                    prepared(*sample_input)
+                converted = convert_pt2e(prepared)
+                self.lower_module_and_test_output(converted, sample_input)
+
 
 class TestExampleLLMScript(TestQNN):
     def test_static_gemma3_1b(self):
@@ -4709,7 +4736,7 @@ class TestExampleLLMScript(TestQNN):
                         msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
-    def test_llama3_2_1b(self):
+    def test_llama3_2_instruct(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
         assert (
@@ -4741,13 +4768,16 @@ class TestExampleLLMScript(TestQNN):
             "--temperature",
             "0",
             "--decoder_model",
-            "llama3_2",
+            "llama3_2-1b_instruct",
             "--model_mode",
-            "hybrid",
-            "--prefill_ar_len",
-            "32",
+            "kv",
             "--max_seq_len",
-            "512",
+            "1024",
+            "--eval_perplexity",
+            "--tasks",
+            "wikitext",
+            "--limit",
+            "1",
         ]
         if self.compile_only:
             cmds.extend(["--compile_only"])
@@ -4760,7 +4790,6 @@ class TestExampleLLMScript(TestQNN):
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
 
-        golden_start_with = "<|start_header_id|>user<|end_header_id|>"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -4769,19 +4798,17 @@ class TestExampleLLMScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                if not self.compile_only:
-                    model_out = msg["result"][0]
-                    self.assertTrue(
-                        model_out.startswith(golden_start_with),
-                        f"Expected Output: {golden_start_with}. Actual Output: {model_out}",
+                inference_speed_ref = {"SM8650": 37, "SM8750": 49}
+                if (
+                    not self.compile_only
+                    and not self.enable_x86_64
+                    and self.model in inference_speed_ref
+                ):
+                    self.assertLessEqual(msg["pte_size"], 1_500_000_000)
+                    self.assertLessEqual(msg["wiki_ppl"], 15)
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
                     )
-                # x86 does not allow weight sharing, so we don't check pte size.
-                # Inference speed on x86 is slow, so we only check when running on Android
-                if not self.enable_x86_64:
-                    pte_size = msg["pte_size"]
-                    self.assertLessEqual(pte_size, 1_300_000_000)  # 1.3GB
-                if not self.compile_only and not self.enable_x86_64:
-                    self.assertGreaterEqual(msg["inference_speed"], 66)  # Lanai
 
     def test_llama_stories_260k(self):
         if not self.required_envs():
@@ -4976,12 +5003,6 @@ class TestExampleLLMScript(TestQNN):
             cmds.extend(["--enable_x86_64"])
         if self.pre_gen_pte:
             cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-            cmds.extend(
-                [
-                    "--quant_attrs_path",
-                    f"{self.pre_gen_pte}/kv_llama_qnn_quant_attrs.json",
-                ]
-            )
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -5117,62 +5138,6 @@ class TestExampleLLMScript(TestQNN):
                         msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
-    def test_static_smollm2(self):
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        prompt = "My favourite condiment is "
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-            "--prompt",
-            f"{prompt}",
-            "--decoder_model",
-            "smollm2_135m",
-            "--model_mode",
-            "kv",
-            "--temperature",
-            "0",
-            "--prefill_ar_len",
-            "128",
-            "--max_seq_len",
-            "1024",
-            "--eval_perplexity",
-            "--task",
-            "wikitext",
-        ]
-        if self.compile_only:
-            cmds.extend(["--compile_only"])
-        elif self.device:
-            cmds.extend(["--device", self.device])
-        if self.host:
-            cmds.extend(["--host", self.host])
-        elif self.enable_x86_64:
-            cmds.extend(["--enable_x86_64"])
-        if self.pre_gen_pte:
-            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            if "Error" in msg:
-                self.fail(msg["Error"])
-            else:
-                self.assertLessEqual(msg["wiki_ppl"], 25)
-                self.assertGreaterEqual(msg["inference_speed"], 200)
-
     def test_qwen2_5(self):
         if not self.required_envs([]):
             self.skipTest("missing required envs")
@@ -5225,6 +5190,125 @@ class TestExampleLLMScript(TestQNN):
                     self.assertTrue(
                         model_out.startswith(golden_start_with),
                         f"Expected Output: '{golden_start_with}' Actual Output: '{model_out}'",
+                    )
+
+    def test_static_smollm2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--decoder_model",
+            "smollm2_135m",
+            "--model_mode",
+            "kv",
+            "--temperature",
+            "0",
+            "--prefill_ar_len",
+            "128",
+            "--max_seq_len",
+            "1024",
+            "--eval_perplexity",
+            "--task",
+            "wikitext",
+            "--limit",
+            "1",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertLessEqual(msg["wiki_ppl"], 25)
+                self.assertGreaterEqual(msg["inference_speed"], 200)
+
+    def test_static_smollm3(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "My favourite condiment is "
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama/llama.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--decoder_model",
+            "smollm3-3b",
+            "--model_mode",
+            "kv",
+            "--temperature",
+            "0",
+            "--max_seq_len",
+            "1024",
+            "--eval_perplexity",
+            "--task",
+            "wikitext",
+            "--limit",
+            "1",
+        ]
+        if self.compile_only:
+            cmds.extend(["--compile_only"])
+        elif self.device:
+            cmds.extend(["--device", self.device])
+        if self.host:
+            cmds.extend(["--host", self.host])
+        elif self.enable_x86_64:
+            cmds.extend(["--enable_x86_64"])
+        if self.pre_gen_pte:
+            cmds.extend(["--pre_gen_pte", self.pre_gen_pte])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                inference_speed_ref = {"SM8650": 23, "SM8750": 28}
+                self.assertLessEqual(msg["wiki_ppl"], 10)
+                self.assertLessEqual(msg["pte_size"], 2_600_000_000)  # 2.6GB
+                if self.model in inference_speed_ref:
+                    self.assertGreaterEqual(
+                        msg["inference_speed"], inference_speed_ref[self.model]
                     )
 
 
