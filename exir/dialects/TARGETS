@@ -1,8 +1,8 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "_ops.py",
@@ -10,6 +10,7 @@ python_library(
     resources = {
         "//executorch/exir/dialects/edge:edge_yaml": "edge.yaml",
     },
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "//caffe2:torch",
         "//caffe2/torchgen:torchgen",
