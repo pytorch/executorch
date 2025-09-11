@@ -323,7 +323,6 @@ class QuantizationConfig:
         "int8",
         "8da4w",
         "8da4w-gptq",
-        "vulkan_4w",
         "4w",
     ]
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
