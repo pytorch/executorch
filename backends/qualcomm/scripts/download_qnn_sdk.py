@@ -26,10 +26,6 @@ def is_linux_x86() -> bool:
     Returns:
         bool: True if the system is Linux x86_64, False otherwise.
     """
-    print("platform.system().lower(): ", platform.system().lower())
-    print("platform.machine().lower(): ", platform.machine().lower())
-    print("os.name: ", os.name)
-
     return platform.system().lower() == "linux" and platform.machine().lower() in (
         "x86_64",
         "amd64",
@@ -53,7 +49,6 @@ def check_glibc_exist_and_validate() -> bool:
     """
     Check if users have glibc installed.
     """
-    print("[QNN] Checking glibc exist running on Linux x86")
     exists = False
     for path in REQUIRED_LIBC_LIBS:
         try:
@@ -61,26 +56,26 @@ def check_glibc_exist_and_validate() -> bool:
                 [path, "--version"], stderr=subprocess.STDOUT
             )
             output = output.decode().split("\n")[0]
-            print(f"[QNN] glibc version for path {path} is: {output}")
+            logger.debug(f"[QNN] glibc version for path {path} is: {output}")
             match = re.search(r"version (\d+\.\d+)", output)
             if match:
                 version = match.group(1)
                 if float(version) >= MINIMUM_LIBC_VERSION:
-                    print(f"[QNN] glibc version is {version}.")
+                    logger.debug(f"[QNN] glibc version is {version}.")
                     exists = True
                     return True
                 else:
-                    print(
+                    logger.error(
                         f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
                     )
             else:
-                print("[QNN] glibc version not found.")
+                logger.error("[QNN] glibc version not found.")
 
         except Exception:
             continue
 
     if not exists:
-        print(
+        logger.error(
             r""""
             [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
             Ubuntu/Debian:
@@ -180,8 +175,6 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
         f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
-    res = check_glibc_exist_and_validate()
-    print("[QNN] check_glibc_exist_and_validate result: ", res)
     if not is_linux_x86():
         logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
