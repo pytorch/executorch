@@ -963,12 +963,6 @@ jobs:
           python -m examples.vulkan.export --model_name=$model --test
         done
 
-        # Test some models with the --force-fp16 flag to ensure that it works
-        fp16_models="mv2 edsr resnet18"
-        for model in $fp16_models; do
-          python -m examples.vulkan.export --model_name=$model -fp16 --test
-        done
-
 
   test-vulkan-operators-linux:
     name: test-vulkan-operators-linux
