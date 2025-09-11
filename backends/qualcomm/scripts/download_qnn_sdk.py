@@ -53,7 +53,7 @@ def check_glibc_exist_and_validate() -> bool:
     """
     Check if users have glibc installed.
     """
-    logging.debug("[QNN] Checking glibc exist running on Linux x86")
+    print("[QNN] Checking glibc exist running on Linux x86")
     exists = False
     for path in REQUIRED_LIBC_LIBS:
         try:
@@ -61,26 +61,26 @@ def check_glibc_exist_and_validate() -> bool:
                 [path, "--version"], stderr=subprocess.STDOUT
             )
             output = output.decode().split("\n")[0]
-            logging.debug(f"[QNN] glibc version for path {path} is: {output}")
+            print(f"[QNN] glibc version for path {path} is: {output}")
             match = re.search(r"version (\d+\.\d+)", output)
             if match:
                 version = match.group(1)
                 if float(version) >= MINIMUM_LIBC_VERSION:
-                    logging.debug(f"[QNN] glibc version is {version}.")
+                    print(f"[QNN] glibc version is {version}.")
                     exists = True
                     return True
                 else:
-                    logger.error(
+                    print(
                         f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
                     )
             else:
-                logger.error("[QNN] glibc version not found.")
+                print("[QNN] glibc version not found.")
 
         except Exception:
             continue
 
     if not exists:
-        logger.error(
+        print(
             r""""
             [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
             Ubuntu/Debian:
