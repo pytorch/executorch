@@ -173,7 +173,7 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
-    if not is_linux_x86() or not check_glibc_exist(REQUIRED_LIBC_LIBS):
+    if not is_linux_x86() or not check_glibc_exist():
         logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
     else:
