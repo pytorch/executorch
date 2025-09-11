@@ -11,7 +11,6 @@
 #include <cuda_runtime.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
-#include <torch/csrc/inductor/aoti_torch/c/shim.h>
 #include <cstdint>
 
 namespace executorch {

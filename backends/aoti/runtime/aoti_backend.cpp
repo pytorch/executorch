@@ -31,9 +31,6 @@
 #include "shims/tensor_attribute.h"
 #include "shims/utils.h"
 
-// Include CUDA AOTI shims
-#include <torch/csrc/inductor/aoti_torch/generated/c_shim_cuda.h>
-
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -73,10 +70,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
-    // const char* so_path = static_cast<const char*>(processed->data());
-
-    // printf("so path: %s\n", so_path);
-
     const NamedDataMap* named_data_map = context.get_named_data_map();
 
     std::string so_path = "/tmp/test.so";
