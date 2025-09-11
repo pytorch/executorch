@@ -1192,7 +1192,7 @@ class TestPasses(unittest.TestCase):
         )
 
         edge._edge_programs["forward"] = constant_prop_pass(
-            edge.exported_program("forward")
+            edge.exported_program("forward"), _skip_dim_order=False
         )
 
         # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.

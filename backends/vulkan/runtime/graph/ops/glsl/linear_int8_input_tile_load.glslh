@@ -1,0 +1,48 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assumes the following variables are defined in the shader layout:
+ * - t_packed_int8_input
+ *
+ * Macro Settings:
+ * - PACKED_INT8_INPUT_BUFFER
+ */
+
+#ifndef LINEAR_INT8_INPUT_TILE_LOAD_GLSLH
+#define LINEAR_INT8_INPUT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_int8_input_tile.glslh"
+
+ivec4 load_int8_input_block(
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+  return t_packed_int8_input[(block_y * nblocks_x) + block_x];
+#else
+  return texelFetch(t_packed_int8_input, ivec3(block_x, block_y, 0), 0);
+#endif // PACKED_INT8_INPUT_BUFFER
+}
+
+void load_int8_input_tile(
+    out Int8InputTile in_tile,
+    const int block_x,
+    const int block_y,
+    const int nblocks_x) {
+  [[unroll]] for (int y = 0; y < TILE_M4; ++y) {
+    [[unroll]] for (int x = 0; x < TILE_K4; ++x) {
+      in_tile.data[y][x] =
+          load_int8_input_block(block_x + x, block_y + y, nblocks_x);
+    }
+  }
+}
+
+#endif // LINEAR_INT8_INPUT_TILE_LOAD_GLSLH

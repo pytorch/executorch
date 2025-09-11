@@ -11,6 +11,7 @@ import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
     AnnotateDecomposedMatmulPass,
+    AnnotateOutputDimOrderPass,
     BroadcastArgsPass,
     CastBoolToInt8Pass,
     CastInt64BuffersToInt32Pass,
@@ -81,7 +82,7 @@ from executorch.backends.arm._passes import (
     MatchArgDtypePass,
     MatchArgRanksPass,
     QuantizeOperatorArguments,
-    RemoveClonePass,
+    RemoveNoopPass,
     ReplaceInfValues,
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
@@ -119,6 +120,7 @@ class ArmPassManager(PassManager):
             return self(graph_module).graph_module
 
     def _tosa_INT_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(AnnotateOutputDimOrderPass())
         self.add_pass(FuseQuantizedActivationPass())
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
@@ -152,7 +154,6 @@ class ArmPassManager(PassManager):
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(DecomposeGroupedConv())
-        self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
@@ -171,11 +172,13 @@ class ArmPassManager(PassManager):
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
+        self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
+        self.add_pass(AnnotateOutputDimOrderPass())
         self.add_pass(DecomposeExpm1Pass())
         self.add_pass(DecomposeLogitPass())
         self.add_pass(DecomposeMaskedFill())
@@ -235,10 +238,8 @@ class ArmPassManager(PassManager):
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(DecomposeGroupedConv())
-        self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
-        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(DecomposeSumPass())
         self.add_pass(DecomposeCumsumPass(exported_program))
         self.add_pass(Conv1dUnsqueezePass())
@@ -249,10 +250,12 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
+        self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
+        self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
 
         return self._transform(exported_program.graph_module)

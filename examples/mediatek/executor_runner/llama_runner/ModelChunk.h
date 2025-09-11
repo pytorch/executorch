@@ -94,6 +94,11 @@ class ModelChunk : protected MultiTokenSizeModelLoader {
   executorch::runtime::Method& GetModelMethod();
 
  private:
+  virtual std::string SelectMethod(
+      const std::vector<std::string>& methodNames) const {
+    return {}; // Default choose the first available one.
+  }
+
   // Override the virtual functions
   void* CreateModelInstance(const std::string& modelPath) override;
 

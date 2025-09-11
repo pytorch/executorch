@@ -6,9 +6,11 @@
 
 # pyre-strict
 
+
 from typing import Optional
 
 import torch
+
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
@@ -291,6 +293,223 @@ def quantized_layer_norm_per_tensor(
         torch.iinfo(input_tensor.dtype).min,
         torch.iinfo(input_tensor.dtype).max,
         input_tensor.dtype,
+    )
+
+
+def quantized_conv_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized convolution operation.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+    if len(input_tensor.shape) == 3:
+        float_out = torch.nn.functional.conv1d(
+            (input_tensor - in_zero_point).float(),
+            (weight - weight_zero_point).float(),
+            (bias * bias_scale).float(),
+            stride[1],
+            padding[1],
+            dilation[1],
+            groups,
+        )
+
+    elif len(input_tensor.shape) == 4:
+        float_out = torch.nn.functional.conv2d(
+            (input_tensor - in_zero_point).float(),
+            (weight - weight_zero_point).float(),
+            (bias * bias_scale).float(),
+            stride,
+            padding,
+            dilation,
+            groups,
+        )
+    else:
+        raise ValueError("Input tensor must be 3D or 4D")
+
+    return quantize_per_tensor(
+        float_out,
+        1.0 / output_scale,
+        output_zero_point,
+        torch.iinfo(input_tensor.dtype).min,
+        torch.iinfo(input_tensor.dtype).max,
+        input_tensor.dtype,
+    )
+
+
+@impl(m, "quantized_conv_nchw_per_tensor")
+def quantized_conv_nchw_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized convolution operation.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+    if not input_tensor.is_contiguous(memory_format=torch.contiguous_format):
+        raise ValueError("Input tensor must be in NCHW format")
+    return quantized_conv_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+@impl(m, "quantized_conv_nhwc_per_tensor")
+def quantized_conv_nhwc_per_tensor(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    in_zero_point: int,
+    weight_zero_point: int,
+    bias_scale: float,
+    output_scale: float,
+    output_zero_point: int,
+    out_multiplier: int,
+    out_shift: int,
+) -> torch.Tensor:
+    """
+    Quantized convolution operation.
+
+    Args:
+        - input_tensor (Tensor): The activations tensor
+        - weight (Tensor): The weight tensor
+        - bias (Tensor): The bias tensor
+        - stride (Tuple[int]): The stride of the convolution
+        - padding (Tuple[int]): The padding of the convolution
+        - dilation (Tuple[int]): The dilation of the convolution
+        - groups (int): The number of groups
+        - in_zero_point (int): The quantized mapping of zero for the input
+        - weight_zero_point (int): The quantized mapping of zero for the weight
+        - bias_scale (float): The quantized bias scale
+        - output_scale (float): The scale of the output
+        - output_zero_point (int): The zero point of the output
+        - out_multiplier (int): Unused
+        - out_shift (int): Unused
+    """
+
+    if not input_tensor.is_contiguous(memory_format=torch.channels_last):
+        raise ValueError("Input tensor must be in NHWC format")
+
+    return quantized_conv_per_tensor(
+        input_tensor,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        groups,
+        in_zero_point,
+        weight_zero_point,
+        bias_scale,
+        output_scale,
+        output_zero_point,
+        out_multiplier,
+        out_shift,
+    )
+
+
+@impl(m, "quantized_relu")
+def quantized_relu(
+    X: torch.Tensor,
+    X_zero_point: torch.Tensor,
+    out_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Quantized ReLU operation followed by requantization.
+
+    Args:
+        - X (Tensor): The input tensor
+        - X_zero_point (Tensor): The quantized mapping of zero for the input
+        - out_zero_point (int): The quantized mapping of zero for the output
+        - out_multiplier (Tensor): The multiplier used to scale the output
+        - out_shift (Tensor): The shift used to scale the output
+    """
+    supported_dtypes = [torch.int8, torch.int16, torch.uint8, torch.uint16]
+    if X.dtype not in supported_dtypes:
+        raise ValueError(f"X dtype must be one of {supported_dtypes}. Got {X.dtype}")
+
+    out_scale = -out_multiplier * (1 / (1 << 31)) * (2 ** out_shift[0])
+    dequantized_X = torch.where(X > X_zero_point, X - X_zero_point, torch.zeros_like(X))
+    return quantize_per_tensor(
+        dequantized_X,
+        out_scale,
+        out_zero_point,
+        torch.iinfo(X.dtype).min,
+        torch.iinfo(X.dtype).max,
+        X.dtype,
     )
 
 
