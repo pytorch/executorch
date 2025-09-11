@@ -446,6 +446,110 @@ class TestTypeDispatchPasses(unittest.TestCase):
             1,
         )
 
+    def test_int8_dispatch_quantized_conv_nchw_1d(self) -> None:
+        """Test int8 x int8 inputs for 1D conv should dispatch to 1d_asym8sxasym8s_asym8s variant for quantized_conv_nchw"""
+        x = torch.randint(-128, 127, (1, 3, 8), dtype=torch.int8)
+        w = torch.randint(-128, 127, (16, 3, 3), dtype=torch.int8)
+        b = torch.randint(-2147483648, 2147483647, (16,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(x, w, b),
+            op=exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+            args=(x, w, b, [1, 1], [0, 0], [1, 1], 1, 0, 0, 1.0, 1.0, 0, 1, 1),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.per_tensor),
+            0,
+        )
+        # Should be replaced with 1D int8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_conv_nchw_1d_asym8sxsym8s_asym8s.per_tensor,
+            ),
+            1,
+        )
+
+    def test_uint8_dispatch_quantized_conv_nchw_1d(self) -> None:
+        """Test uint8 x uint8 inputs for 1D conv should dispatch to 1d_asym8uxasym8u_asym8u variant for quantized_conv_nchw"""
+        x = torch.randint(0, 255, (1, 3, 8), dtype=torch.uint8)
+        w = torch.randint(0, 255, (16, 3, 3), dtype=torch.uint8)
+        b = torch.randint(-2147483648, 2147483647, (16,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(x, w, b),
+            op=exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+            args=(x, w, b, [1, 1], [0, 0], [1, 1], 1, 0, 0, 1.0, 1.0, 0, 1, 1),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.per_tensor),
+            0,
+        )
+        # Should be replaced with 1D uint8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_conv_nchw_1d_asym8uxsym8u_asym8u.per_tensor,
+            ),
+            1,
+        )
+
+    def test_int8_dispatch_quantized_conv_nhwc_1d(self) -> None:
+        """Test int8 x int8 inputs for 1D conv should dispatch to 1d_asym8sxasym8s_asym8s variant for quantized_conv_nhwc"""
+        x = torch.randint(-128, 127, (1, 8, 3), dtype=torch.int8)
+        w = torch.randint(-128, 127, (16, 3, 3), dtype=torch.int8)
+        b = torch.randint(-2147483648, 2147483647, (16,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(x, w, b),
+            op=exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+            args=(x, w, b, [1, 1], [0, 0], [1, 1], 1, 0, 0, 1.0, 1.0, 0, 1, 1),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor),
+            0,
+        )
+        # Should be replaced with 1D int8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_conv_nhwc_1d_asym8sxsym8s_asym8s.per_tensor,
+            ),
+            1,
+        )
+
+    def test_uint8_dispatch_quantized_conv_nhwc_1d(self) -> None:
+        """Test uint8 x uint8 inputs for 1D conv should dispatch to 1d_asym8uxasym8u_asym8u variant for quantized_conv_nhwc"""
+        x = torch.randint(0, 255, (1, 8, 3), dtype=torch.uint8)
+        w = torch.randint(0, 255, (16, 3, 3), dtype=torch.uint8)
+        b = torch.randint(-2147483648, 2147483647, (16,), dtype=torch.int32)
+        gm = single_op_builder(
+            placeholders=(x, w, b),
+            op=exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+            args=(x, w, b, [1, 1], [0, 0], [1, 1], 1, 0, 0, 1.0, 1.0, 0, 1, 1),
+        )
+        p = CompileTimeTypeDispatchPass()
+        gm = cast(PassResult, p(gm)).graph_module
+        # Original op should be replaced
+        self.assertEqual(
+            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor),
+            0,
+        )
+        # Should be replaced with 1D uint8 specific variant
+        self.assertEqual(
+            count_node(
+                gm,
+                exir_ops.edge.cadence.quantized_conv_nhwc_1d_asym8uxsym8u_asym8u.per_tensor,
+            ),
+            1,
+        )
+
     def test_int8_dispatch_quantized_add(self) -> None:
         """Test int8 x int8 inputs should dispatch to asym8sxasym8s_asym8s variant for quantized_add"""
         x = torch.randint(-128, 127, (2, 3), dtype=torch.int8)

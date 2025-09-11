@@ -140,12 +140,13 @@ class CompileTimeTypeDispatchPass(ExportPass):
                 else args[0].to_tensor().shape[-1]
             )
             is_depthwise = groups == input_channels
-
-            dilation = args[5]
             # pyre-ignore[16]: None has no attribute '__iter__'.
-            is_dilated = any(d > 1 for d in dilation)
+            is_dilated = any(d > 1 for d in args[5])
+            is_1d = len(args[0].to_tensor().shape) == 3
 
-            if is_dilated:
+            if is_1d:
+                type_suffix = f"1d_{type_suffix}"
+            elif is_dilated:
                 type_suffix = f"dilated_{type_suffix}"
             elif is_depthwise:
                 type_suffix = f"depthwise_{type_suffix}"
