@@ -681,7 +681,7 @@ class TestInspector(unittest.TestCase):
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda: (
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
                 aot_intermediate_outputs,
                 aot_debug_handle_to_op_name,
             )
@@ -837,6 +837,122 @@ class TestInspector(unittest.TestCase):
         self,
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
         return [torch.randn(RAW_DATA_SIZE)]
+
+    def test_disable_debug_handle_validation_with_symbolic_shapes(self):
+        """
+        Test that demonstrates the issue with symbolic shape related nodes losing from_node info
+        during dynamic shape based export, and shows how disable_debug_handle_valdiation parameter
+        in propagate_back_debug_handle allows validation to be bypassed.
+        """
+        from executorch.devtools.inspector._inspector_utils import (
+            propagate_back_debug_handle,
+        )
+
+        class SymbolicShapeModel(torch.nn.Module):
+            """Model that will have symbolic shape related operations after export."""
+
+            def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+                # This will create symbolic shape nodes during dynamic export
+                batch_size = x.shape[0]
+                x = x + torch.rand((batch_size, 1))
+                # Masking operation that creates gt/lt nodes
+                valid_mask = mask > 0.5
+                x = torch.where(valid_mask, x, torch.zeros_like(x))
+                return x
+
+        # Create model and dynamic inputs
+        model = SymbolicShapeModel()
+        batch_size = 2
+        seq_len = 4
+        x = torch.randn(batch_size, seq_len)
+        mask = torch.rand(batch_size, seq_len)
+        example_inputs = (x, mask)
+
+        # Export with dynamic shapes to create symbolic shape related nodes
+        dynamic_shapes = {
+            "x": {0: torch.export.Dim("batch_size", min=1, max=10)},
+            "mask": {0: torch.export.Dim("batch_size", min=1, max=10)},
+        }
+
+        exported_program = torch.export.export(
+            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
+        )
+
+        """
+        In this case origina aten graph has sym_size_int_2 node but when we look at
+        nodes metadata in edge_program_manager, its sym_size node's from_node says
+        sym_size_int_3 which is not in the original aten graph.
+        """
+        # Create edge program - this is where from_node info can be lost for symbolic shape nodes
+        edge_program_manager: EdgeProgramManager = to_edge(exported_program)
+        edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+        et_program_manager: ExecutorchProgramManager = (
+            edge_program_manager.to_executorch()
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
+            etrecord_path = tmp_file.name
+
+            # Generate ETRecord with the exported program (aten graph)
+            generate_etrecord(
+                etrecord_path,
+                edge_program_manager_copy,
+                et_program_manager,
+                exported_program=exported_program,
+            )
+
+            # Create Inspector and get etrecord
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(EventBlock, "_gen_from_etdump"):
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+
+                # Extract the necessary values from the inspector's etrecord
+                exported_program_from_etrecord = (
+                    inspector_instance._etrecord.exported_program
+                )
+                export_graph_id = inspector_instance._etrecord.export_graph_id
+                edge_dialect_program = inspector_instance._etrecord.edge_dialect_program
+
+                # Ensure we have all the necessary components
+                self.assertIsNotNone(exported_program_from_etrecord)
+                self.assertIsNotNone(export_graph_id)
+                self.assertIsNotNone(edge_dialect_program)
+
+                # Test propagate_back_debug_handle with validation enabled (should fail or return False)
+                # This demonstrates the issue with symbolic shape nodes losing from_node info
+                validation_enabled_result = propagate_back_debug_handle(
+                    exported_program_from_etrecord,
+                    export_graph_id,
+                    edge_dialect_program,
+                    disable_debug_handle_valdiation=False,
+                )
+
+                # With validation enabled, it should return False when from_node info is lost
+                self.assertFalse(
+                    validation_enabled_result,
+                    "propagate_back_debug_handle should return False when validation is enabled "
+                    "and symbolic shape nodes lose from_node info",
+                )
+
+                # Test propagate_back_debug_handle with validation disabled (should succeed)
+                # This shows how the disable_debug_handle_valdiation flag allows the function to work
+                validation_disabled_result = propagate_back_debug_handle(
+                    exported_program_from_etrecord,
+                    export_graph_id,
+                    edge_dialect_program,
+                    disable_debug_handle_valdiation=True,
+                )
+
+                # With validation disabled, it should return True even when from_node info is lost
+                self.assertTrue(
+                    validation_disabled_result,
+                    "propagate_back_debug_handle should return True when validation is disabled, "
+                    "allowing best effort comparison even when from_node info is lost",
+                )
 
     def _gen_random_events(self) -> List[Event]:
         events = []
