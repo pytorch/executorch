@@ -10,7 +10,7 @@ Commonly used methods in this class include:
 - _source_transform_: execute a series of source transform passes. Some transform passes include
   - weight only quantization, which can be done at source (eager mode) level.
   - replace some torch operators to a custom operator. For example, _replace_sdpa_with_custom_op_.
-- _torch.export_for_training_: get a graph that is ready for pt2 graph-based quantization.
+- _torch.export_: get a graph that is ready for pt2 graph-based quantization.
 - _pt2e_quantize_ with passed in quantizers.
   - util functions in _quantizer_lib.py_ can help to get different quantizers based on the needs.
 - _export_to_edge_: export to edge dialect
