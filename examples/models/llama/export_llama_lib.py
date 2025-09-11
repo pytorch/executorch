@@ -768,7 +768,7 @@ def get_quantizer_and_quant_params(llm_config):
     if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
         assert not quantizers, "Should not enable both xnnpack and openvino"
         group_size = llm_config.quantization.group_size
-        group_size = group_size if group_size else 32
+        group_size = group_size if group_size else 128
         ov_quantizer = get_ov_quantizer(
             llm_config.quantization.pt2e_quantize.value, group_size
         )
