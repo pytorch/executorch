@@ -9,7 +9,10 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 ```
 examples/openvino
 ├── README.md                           # Documentation for examples (this file)
-└── aot_optimize_and_infer.py           # Example script to export and execute models
+├── aot_optimize_and_infer.py           # Example script to export and execute models
+└── llama
+    ├── README.md                       # Documentation for Llama example
+    └── llama3_2_ov_4wo.yaml            # Configuration file for exporting Llama3.2 with OpenVINO backend
 ```
 
 # Build Instructions for Examples
@@ -182,52 +185,4 @@ Run inference with a given model for 10 iterations:
 ./openvino_executor_runner \
     --model_path=model.pte \
     --num_executions=10
-```
-
-# Export Llama with OpenVINO Backend
-
-## Download the Model
-Follow the [instructions](../../examples/models/llama#step-2-prepare-model) to download the required model files. Export Llama with OpenVINO backend is only verified with Llama-3.2-1B variants at this time. 
-
-## Environment Setup
-Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
-
-## Export the model:
-Execute the commands below to export the model. Update the model file paths to match the location where your model is downloaded.
-
-```
-LLAMA_CHECKPOINT=<path/to/model/folder>/consolidated.00.pth
-LLAMA_PARAMS=<path/to/model/folder>/params.json
-LLAMA_TOKENIZER=<path/to/model/folder>/tokenizer.model
-
-python -u -m examples.models.llama.export_llama \
-  --model "llama3_2" \
-  --checkpoint "${LLAMA_CHECKPOINT:?}" \
-  --params "${LLAMA_PARAMS:?}" \
-  -kv \
-  --openvino \
-  -d fp32 \
-  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-  --output_name="llama.pte" \
-  --verbose \
-  --disable_dynamic_shape \
-  --tokenizer_path "${LLAMA_TOKENIZER:?}" \
-  --nncf_compression
-```
-
-## Build OpenVINO C++ Runtime with Llama Runner:
-First, build the backend libraries by executing the script below in `<executorch_root>/backends/openvino/scripts` folder:
-```bash
-./openvino_build.sh
-```
-Then, build the llama runner by executing the script below (with `--llama_runner` argument) also in `<executorch_root>/backends/openvino/scripts` folder:
-```bash
-./openvino_build.sh --llama_runner
-```
-The executable is saved in `<executorch_root>/cmake-out/examples/models/llama/llama_main`
-
-## Execute Inference Using Llama Runner
-Update the model tokenizer file path to match the location where your model is downloaded and replace the prompt.
-```
-./cmake-out/examples/models/llama/llama_main --model_path=llama.pte --tokenizer_path=<path/to/model/folder>/tokenizer.model --prompt="Your custom prompt"
 ```
