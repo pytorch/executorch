@@ -639,49 +639,6 @@ AOTITorchError aoti_torch_copy_(
   return Error::Ok;
 }
 
-AOTITorchError aoti_torch_create_cuda_stream_guard(
-    void* stream,
-    int32_t device_index,
-    CUDAStreamGuardHandle* ret_guard) {
-  std::cout << "Entering stream guard for device " << device_index
-            << " with stream " << stream << std::endl;
-
-  // Set device
-  cudaError_t err = cudaSetDevice(device_index);
-  if (err != cudaSuccess) {
-    std::cerr << "Failed to set device " << device_index << ": "
-              << cudaGetErrorString(err) << std::endl;
-    return Error::Internal;
-  }
-
-  // Create minimal guard structure
-  CUDAStreamGuardOpaque* guard = new CUDAStreamGuardOpaque();
-  guard->device_index = device_index;
-  guard->original_stream = static_cast<cudaStream_t>(stream);
-  guard->sync_event = nullptr;
-
-  std::cout << "Stream guard created successfully for stream " << stream
-            << std::endl;
-
-  *ret_guard = guard;
-  return Error::Ok;
-}
-
-AOTITorchError aoti_torch_delete_cuda_stream_guard(
-    CUDAStreamGuardHandle guard) {
-  std::cout << "Exiting stream guard" << std::endl;
-
-  if (guard == nullptr) {
-    return Error::Ok;
-  }
-
-  // Clean up the guard structure
-  delete guard;
-
-  std::cout << "Stream guard cleanup completed" << std::endl;
-  return Error::Ok;
-}
-
 AOTITorchError aoti_torch__reinterpret_tensor(
     AOTITensorHandle self,
     int64_t ndim,

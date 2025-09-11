@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 
-#include <cuda_runtime.h>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -288,19 +287,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
 
     ET_LOG(Debug, "AOTIBackend output generated");
 
-    // Create a CUDA stream for this execution
-    cudaStream_t cuda_stream;
-    cudaError_t stream_err = cudaStreamCreate(&cuda_stream);
-    if (stream_err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "Failed to create CUDA stream: %s",
-          cudaGetErrorString(stream_err));
-      return Error::Internal;
-    }
-
-    ET_LOG(Debug, "Created CUDA stream: %p", cuda_stream);
-
     // Run AOTI container with GPU tensors
     AOTIRuntimeError error = AOTInductorModelContainerRun(
         handle->container_handle,
@@ -308,7 +294,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
         n_inputs,
         gpu_outputs.data(), // Use GPU output tensors
         n_outputs,
-        cuda_stream, // Pass the actual CUDA stream!
+        nullptr, // Pass the actual CUDA stream!
         nullptr); // proxy_executor_handle can remain nullptr
 
     if (error != Error::Ok) {
@@ -320,18 +306,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     ET_LOG(Debug, "AOTIBackend running done");
-
-    // Synchronize the CUDA stream to ensure kernels complete
-    cudaError_t sync_err = cudaStreamSynchronize(cuda_stream);
-    if (sync_err != cudaSuccess) {
-      ET_LOG(
-          Error,
-          "Failed to synchronize CUDA stream: %s",
-          cudaGetErrorString(sync_err));
-      return Error::Internal;
-    }
-
-    ET_LOG(Debug, "CUDA stream synchronized");
 
     // Copy GPU output results back to CPU output tensors
     for (int i = 0; i < n_outputs; i++) {
@@ -355,10 +329,6 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       // All GPU output tensors were created by us, delete them
       aoti_torch_delete_tensor_object(gpu_outputs[i]);
     }
-
-    // Destroy the CUDA stream
-    cudaStreamDestroy(cuda_stream);
-    ET_LOG(Debug, "CUDA stream destroyed and GPU tensors cleaned up");
 
     ET_LOG(Debug, "AOTIBackend execution completed successfully");
 

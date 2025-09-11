@@ -26,30 +26,30 @@ extern std::unordered_map<Tensor*, bool> is_tensor_own_memory;
 extern std::unordered_set<std::shared_ptr<Tensor>> tensors;
 
 // Memory-related operations
-// AOTITorchError aoti_torch_create_tensor_from_blob_v2(
-//     void* data,
-//     int64_t ndim,
-//     const int64_t* sizes_ptr,
-//     const int64_t* strides_ptr,
-//     int64_t storage_offset,
-//     int32_t dtype,
-//     int32_t device_type,
-//     int32_t device_index,
-//     AOTITensorHandle* ret_new_tensor,
-//     int32_t layout,
-//     const uint8_t* opaque_metadata,
-//     int64_t opaque_metadata_size);
+AOTITorchError aoti_torch_create_tensor_from_blob_v2(
+    void* data,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    AOTITensorHandle* ret_new_tensor,
+    int32_t layout,
+    const uint8_t* opaque_metadata,
+    int64_t opaque_metadata_size);
 
-// AOTITorchError aoti_torch_create_tensor_from_blob(
-//     void* data,
-//     int64_t ndim,
-//     const int64_t* sizes_ptr,
-//     const int64_t* strides_ptr,
-//     int64_t storage_offset,
-//     int32_t dtype,
-//     int32_t device_type,
-//     int32_t device_index,
-//     AOTITensorHandle* ret_new_tensor);
+AOTITorchError aoti_torch_create_tensor_from_blob(
+    void* data,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    int32_t dtype,
+    int32_t device_type,
+    int32_t device_index,
+    AOTITensorHandle* ret_new_tensor);
 
 AOTITorchError aoti_torch_empty_strided(
     int64_t ndim,
@@ -66,13 +66,6 @@ AOTITorchError aoti_torch_copy_(
     AOTITensorHandle self,
     AOTITensorHandle src,
     int32_t non_blocking);
-
-AOTITorchError aoti_torch_create_cuda_stream_guard(
-    void* stream,
-    int32_t device_index,
-    CUDAStreamGuardHandle* ret_guard);
-
-AOTITorchError aoti_torch_delete_cuda_stream_guard(CUDAStreamGuardHandle guard);
 
 AOTITorchError aoti_torch__reinterpret_tensor(
     AOTITensorHandle self,
