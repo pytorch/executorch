@@ -872,6 +872,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    secrets: inherit
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
