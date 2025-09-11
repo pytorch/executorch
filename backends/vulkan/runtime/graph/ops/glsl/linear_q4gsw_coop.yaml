@@ -9,10 +9,12 @@ linear_q4gsw_coop:
     DTYPE: float
     IO_STORAGE: texture3d
     WEIGHT_STORAGE: texture2d
+    PACKED_INPUT_STORAGE: buffer
     TILE_M: 1
     TILE_K4: 1
     TILE_N8: 1
     WGS: 64
+    DYNAMIC_QUANT_VARIANT: false
   generate_variant_forall:
     DTYPE:
       - VALUE: float
@@ -26,3 +28,16 @@ linear_q4gsw_coop:
     - NAME: linear_q4gsw_coop_buffer_buffer
       IO_STORAGE: buffer
       WEIGHT_STORAGE: buffer
+    - NAME: linear_dq8ca_q4gsw_coop_texture3d_texture2d
+      DYNAMIC_QUANT_VARIANT: true
+    - NAME: linear_dq8ca_q4gsw_coop_texture3d_buffer
+      WEIGHT_STORAGE: buffer
+      DYNAMIC_QUANT_VARIANT: true
+    - NAME: linear_dq8ca_q4gsw_coop_buffer_texture2d
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: texture2d
+      DYNAMIC_QUANT_VARIANT: true
+    - NAME: linear_dq8ca_q4gsw_coop_buffer_buffer
+      IO_STORAGE: buffer
+      WEIGHT_STORAGE: buffer
+      DYNAMIC_QUANT_VARIANT: true

@@ -33,11 +33,23 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_packed_int4_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
-${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
+$if DYNAMIC_QUANT_VARIANT:
+  ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_packed_int8_input", "int", PACKED_INPUT_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_int_input_sums", "int", "buffer", is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_input_scale", DTYPE, "texture3d")}
+  ${layout_declare_tensor(B, "r", "t_input_zp", "int", "texture3d")}
+  ${layout_declare_tensor(B, "r", "t_packed_int4_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_weight_sums", "int", "buffer", is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
+$else:
+  ${layout_declare_tensor(B, "w", "t_output", DTYPE, IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_input", DTYPE, IO_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_packed_int4_weight", "int", WEIGHT_STORAGE, is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_weight_scales", DTYPE, "buffer", is_scalar_array=False)}
+  ${layout_declare_tensor(B, "r", "t_bias", DTYPE, "buffer", is_scalar_array=False)}
 
 ${layout_declare_ubo(B, "ivec4", "output_sizes")}
 ${layout_declare_ubo(B, "ivec4", "input_sizes")}
@@ -59,8 +71,8 @@ ${layout_declare_spec_const(C, "int", "K4_per_group", "0")}
 shared FPOutTile partial_sums[WGS];
 
 void main() {
-  const int lid = int(gl_LocalInvocationID.x);
-  const int n8 = int(gl_GlobalInvocationID.y);
+  const int lid = int(gl_LocalInvocationID.z);
+  const int n8 = int(gl_GlobalInvocationID.x);
 
   // The output tensor will have a shape of [n, 1, 1, 1]. Each thread computes
   // 8 output elements, so each thread will write to 8 elements starting at the

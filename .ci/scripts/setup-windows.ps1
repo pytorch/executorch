@@ -1,5 +1,5 @@
 param (
-    [string]$editable = $false
+    [string]$editable = "false"
 )
 
 conda create --yes --quiet -n et python=3.12
@@ -13,10 +13,13 @@ conda activate et
 # Install test dependencies
 pip install -r .ci/docker/requirements-ci.txt
 
-# Create a symlink to work around path length issues when building submodules (tokenizers).
+# Create a symlink to work around path length issues when building submodules (tokenizers, mainly).
 Push-Location
-New-Item -ItemType SymbolicLink -Path "C:\_et" -Target "$($pwd.Path)"
+$repoBase = $pwd.Path
+mkdir C:\_et
 cd C:\_et
+New-Item -ItemType SymbolicLink -Path "executorch" -Target "$repoBase"
+cd executorch
 
 if ($editable -eq 'true') {
     install_executorch.bat --editable
