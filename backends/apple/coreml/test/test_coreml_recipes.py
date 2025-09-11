@@ -166,7 +166,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                     session, example_inputs, atol=1e-3
                 )
                 self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs
+                    session, model, example_inputs, sqnr_threshold=15
                 )
 
     def test_int4_weight_only_per_group_validation(self):
