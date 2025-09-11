@@ -193,6 +193,48 @@ def quantized_add_per_tensor(
     )
 
 
+@impl(m, "quantized_add_asym8sxasym8s_asym8s.per_tensor")
+def quantized_add_asym8sxasym8s_asym8s_per_tensor(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    if X.dtype != torch.int8:
+        raise ValueError("X dtype must be torch.int8")
+    if Y.dtype != torch.int8:
+        raise ValueError("Y dtype must be torch.int8")
+
+    return quantized_add_per_tensor(
+        X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
+    )
+
+
+@impl(m, "quantized_add_asym8uxasym8u_asym8u.per_tensor")
+def quantized_add_asym8uxasym8u_asym8u_per_tensor(
+    X: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
+    Y: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
+) -> torch.Tensor:
+    if X.dtype != torch.uint8:
+        raise ValueError("X dtype must be torch.int8")
+    if Y.dtype != torch.uint8:
+        raise ValueError("Y dtype must be torch.int8")
+
+    return quantized_add_per_tensor(
+        X, X_scale, X_zero_point, Y, Y_scale, Y_zero_point, out_scale, out_zero_point
+    )
+
+
 def quantized_linear_common(
     src: torch.Tensor,
     weight: torch.Tensor,
