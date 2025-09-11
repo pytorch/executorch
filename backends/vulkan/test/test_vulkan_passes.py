@@ -57,7 +57,7 @@ def quantize_and_lower_module(
         _check_ir_validity=False,
     )
 
-    program = torch.export.export_for_training(
+    program = torch.export.export(
         model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()
 
@@ -94,7 +94,6 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
 
 
 class TestVulkanPasses(unittest.TestCase):
-
     def test_fuse_int8pack_mm(self):
         K = 256
         N = 256
