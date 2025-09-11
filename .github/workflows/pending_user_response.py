@@ -25,7 +25,7 @@ def main():
 
     print("[VALIDATION] Would connect to Github and fetch repo:", REPO_NAME)
     
-    issues = repo.get_issues(state='open', labels=[LABEL])
+    issues = repo.get_issues(state="open", labels=[LABEL])
     print(f"[VALIDATION] Would fetch open issues with label '{LABEL}'.")
 
     now = datetime.datetime.utcnow()
@@ -60,9 +60,7 @@ def main():
             last_auto = auto_comments[-1]
             user = issue.user.login
             if (now - last_auto.created_at).days >= REMINDER_COOLDOWN_DAYS:
-                print(
-                    f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}"
-                )
+                print(f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}")
 
         # ---- EXISTING CLOSE/REMOVE LABEL LOGIC ----
         if auto_comments:
@@ -80,6 +78,7 @@ def main():
                 print(
                     f"[VALIDATION] Would remove label from issue/PR #{issue.number} after user response."
                 )
+
 
 if __name__ == "__main__":
     main()
