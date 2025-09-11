@@ -180,15 +180,16 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
         f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
-
+    res = check_glibc_exist_and_validate()
+    print("[QNN] check_glibc_exist_and_validate result: ", res)
     if not is_linux_x86():
-        logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
+        logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
     elif not check_glibc_exist_and_validate():
-        logger.info("Skipping Qualcomm SDK (glibc not found or version too old).")
+        logger.info("[QNN] Skipping Qualcomm SDK (glibc not found or version too old).")
         return None
     else:
-        logger.info("Downloading Qualcomm SDK for Linux x86")
+        logger.info("[QNN] Downloading Qualcomm SDK for Linux x86")
 
     dst_folder.mkdir(parents=True, exist_ok=True)
 
