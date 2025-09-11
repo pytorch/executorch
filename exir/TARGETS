@@ -7,6 +7,7 @@ runtime.python_library(
     srcs = [
         "tracer.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         ":common",
@@ -46,6 +47,7 @@ runtime.python_library(
     srcs = [
         "scalar_type.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
 )
 
 runtime.python_library(
@@ -53,6 +55,7 @@ runtime.python_library(
     srcs = [
         "schema.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":scalar_type",
         "//executorch/exir/backend:compile_spec_schema",
@@ -71,6 +74,7 @@ runtime.python_library(
     srcs = [
         "tensor.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":error",
         ":schema",
@@ -84,6 +88,7 @@ runtime.python_library(
     srcs = [
         "memory.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         ":tensor",
@@ -111,6 +116,7 @@ runtime.python_library(
         "delegate.py",
         "delegate.pyi",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "//caffe2:torch",
     ],
@@ -140,6 +146,7 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":tracer",
         "//caffe2:torch",
@@ -155,6 +162,7 @@ runtime.python_library(
     srcs = [
         "memory_planning.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":control_flow",
         ":delegate",
@@ -213,6 +221,7 @@ runtime.python_library(
     srcs = [
         "print_program.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":error",
         ":schema",
@@ -225,6 +234,7 @@ runtime.python_library(
     srcs = [
         "dynamic_shape.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
 )
 
 runtime.python_library(
@@ -232,6 +242,7 @@ runtime.python_library(
     srcs = [
         "pass_base.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         ":delegate",
         ":error",
@@ -246,6 +257,7 @@ runtime.python_library(
     srcs = [
         "pass_manager.py",
     ],
+    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         ":error",
