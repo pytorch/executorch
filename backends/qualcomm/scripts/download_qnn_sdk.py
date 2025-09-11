@@ -19,6 +19,14 @@ PKG_ROOT = pathlib.Path(__file__).parent.parent
 SDK_DIR = PKG_ROOT / "sdk" / "qnn"
 
 
+def is_wsl() -> bool:
+    try:
+        with open("/proc/version", "r") as f:
+            return "microsoft" in f.read().lower()
+    except FileNotFoundError:
+        return False
+
+
 def is_linux_x86() -> bool:
     """
     Check if the current platform is Linux x86_64.
@@ -26,6 +34,11 @@ def is_linux_x86() -> bool:
     Returns:
         bool: True if the system is Linux x86_64, False otherwise.
     """
+    print("platform.system().lower(): ", platform.system().lower())
+    print("platform.machine().lower(): ", platform.machine().lower())
+    print("os.name: ", os.name)
+    print("Running on WSL" if is_wsl() else "Not WSL")
+
     return platform.system().lower() == "linux" and platform.machine().lower() in (
         "x86_64",
         "amd64",
