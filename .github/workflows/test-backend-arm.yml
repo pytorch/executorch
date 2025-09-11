@@ -17,11 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-xnnpack:
+  test-arm:
     uses: ./.github/workflows/_test_backend.yml
     with:
-      backend: xnnpack
-      flows: '["arm-tosa"]'
+      backend: arm
+      flows: '["arm_tosa"]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
