@@ -40,6 +40,8 @@ def is_linux_x86() -> bool:
 
 REQUIRED_QNN_LIBS = ["libc.so.6"]
 
+import subprocess
+
 
 def check_glibc_exist() -> bool:
     """
@@ -48,6 +50,15 @@ def check_glibc_exist() -> bool:
     print("[QNN] Checking glibc exist running on Linux x86")
     paths = ["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/libc.so.6", "/lib/libc.so.6"]
 
+    for path in paths:
+        try:
+            output = subprocess.check_output(
+                [path, "--version"], stderr=subprocess.STDOUT
+            )
+            print("[QNN] glibc version for path is: ", path)
+            print(output.decode().split("\n")[0])
+        except Exception:
+            continue
     exists = any(os.path.isfile(p) for p in paths)
     if not exists:
         logger.error(
@@ -65,6 +76,8 @@ def check_glibc_exist() -> bool:
             """
         )
     print("[QNN] glibc exists: ", exists)
+    print(get_glibc_version())
+
     return exists
 
 
