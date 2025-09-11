@@ -576,7 +576,7 @@ class TestQNN(unittest.TestCase):
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export_for_training(module, inputs, strict=True).module()
+        m = torch.export.export(module, inputs, strict=True).module()
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,

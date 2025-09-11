@@ -8,6 +8,9 @@ on:
     tags:
       - ciflow/trunk/*
   pull_request:
+    paths:
+      - .ci/docker/ci_commit_pins/pytorch.txt
+      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:

@@ -76,7 +76,7 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
-    InsertCastForOpsWithInt64InputPass,
+    InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescalePass,
     InsertTableOpsPass,
     MatchArgDtypePass,
@@ -277,7 +277,7 @@ class ArmPassManager(PassManager):
         )  # ConvertInt64ConstOpsToInt32Pass requires this pass to remove the assertation in Graph
         self.add_pass(ConvertInt64ConstOpsToInt32Pass())
         self.add_pass(ConvertInt64OutputOpsToInt32Pass())
-        self.add_pass(InsertCastForOpsWithInt64InputPass())
+        self.add_pass(InsertInt32CastsAfterInt64PlaceholdersPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
