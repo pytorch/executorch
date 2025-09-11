@@ -471,6 +471,9 @@ class InstallerBuildExt(build_ext):
                 is_linux_x86,
             )
 
+            print("runnig check_glibc_exist_and_validate")
+            check_glibc_exist_and_validate()
+
             if is_linux_x86() and check_glibc_exist_and_validate():
                 os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
 
