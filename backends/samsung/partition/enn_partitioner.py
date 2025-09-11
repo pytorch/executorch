@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import logging
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.backends.samsung.builders.node_visitor as node_visitor
 
@@ -32,7 +32,12 @@ from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 SUPPORTED_OPS = [
+    # support because preprocess in backend
     exir_ops.edge.aten.addmm.default,
+    exir_ops.edge.aten.add.Scalar,
+    exir_ops.edge.aten.sub.Scalar,
+    exir_ops.edge.aten.mul.Scalar,
+    exir_ops.edge.aten.div.Scalar,
 ]
 
 
@@ -109,3 +114,20 @@ class EnnPartitioner(Partitioner):
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )
+
+    # override
+    def ops_to_not_decompose(
+        self, ep: torch.export.ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_not_to_decompose = [
+            torch.ops.aten.hardswish.default,
+            torch.ops.aten.max_pool2d.default,
+            torch.ops.aten.linear.default,
+            torch.ops.aten._safe_softmax.default,
+            torch.ops.aten.upsample_bilinear2d.vec,
+            torch.ops.aten.upsample_nearest2d.vec,
+            torch.ops.aten.prelu.default,
+            torch.ops.aten.layer_norm.default,
+            torch.ops.aten.pixel_shuffle.default,
+        ]
+        return (ops_not_to_decompose, None)

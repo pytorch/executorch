@@ -1,5 +1,5 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 
 oncall("executorch")
@@ -82,7 +82,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "inspector_test_utils",
     srcs = [
         "inspector_test_utils.py",
