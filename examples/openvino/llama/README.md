@@ -8,7 +8,7 @@ Follow the [instructions](../../examples/models/llama#step-2-prepare-model) to d
 Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
 
 ## Export the model:
-Navigate into `<executorch_root>/examples/openvino/llama` and execute the commands below to export the model. Update the model file paths to match the location where your model is downloaded. The exported model will be generated in the same directory with the filename `llama3_2.pte`.
+Navigate into `<executorch_root>/examples/openvino/llama` and execute the commands below to export the model. Update the model file paths to match the location where your model is downloaded. Replace device with the target hardware you want to compile the model for (`CPU`, `GPU`, or `NPU`). The exported model will be generated in the same directory with the filename `llama3_2.pte`.
 
 ```
 LLAMA_CHECKPOINT=<path/to/model/folder>/consolidated.00.pth
@@ -17,6 +17,7 @@ LLAMA_TOKENIZER=<path/to/model/folder>/tokenizer.model
 
 python -m executorch.extension.llm.export.export_llm \
   --config llama3_2_ov_4wo.yaml \
+  +backend.openvino.device="CPU" \
   +base.model_class="llama3_2" \
   +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}" \
