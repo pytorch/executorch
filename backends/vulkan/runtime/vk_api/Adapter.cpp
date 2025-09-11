@@ -412,6 +412,11 @@ std::string Adapter::stringize() const {
 #endif /* VK_KHR_shader_float16_int8 */
   ss << "    }" << std::endl;
 
+  ss << "    Shader 64bit Features {" << std::endl;
+  PRINT_BOOL(physical_device_.supports_int64_shader_types, shaderInt64)
+  PRINT_BOOL(physical_device_.supports_float64_shader_types, shaderFloat64)
+  ss << "    }" << std::endl;
+
 #ifdef VK_KHR_shader_integer_dot_product
   ss << "    Shader Integer Dot Product Features {" << std::endl;
   PRINT_PROP(

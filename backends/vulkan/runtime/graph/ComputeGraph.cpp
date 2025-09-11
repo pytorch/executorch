@@ -310,6 +310,8 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isStaging()) {
+    return val.toConstStaging().dtype();
   } else if (val.isBool()) {
     return vkapi::ScalarType::Bool;
   } else if (val.isDouble()) {
@@ -587,19 +589,43 @@ ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
 
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
+    vkapi::ScalarType staging_dtype) {
+  // For texture storage, the buffer size needs to account for the zero
+  // padding applied by unused texel elements.
+  size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  add_staging_to_tensor_node(*this, staging_idx, idx);
+  inputs_.push_back({idx, staging_idx});
+  return staging_idx;
+}
+
+ValueRef ComputeGraph::set_input_tensor(
+    const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    // For texture storage, the buffer size needs to account for the zero
-    // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
-    add_staging_to_tensor_node(*this, staging_idx, idx);
-    inputs_.push_back({idx, staging_idx});
-    return staging_idx;
+    return set_input_tensor(idx, dtype);
+  } else {
+    inputs_.push_back({idx, kDummyValueRef});
+    return idx;
   }
-  inputs_.push_back({idx, kDummyValueRef});
-  return idx;
+}
+
+ValueRef ComputeGraph::set_output_tensor(
+    const ValueRef idx,
+    vkapi::ScalarType staging_dtype) {
+  // For texture storage, the buffer size needs to account for the zero
+  // padding applied by unused texel elements.
+  size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  // We only run this when the tensor is non-empty.  When the underlying
+  // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
+  // tensor, we will not be able to bind the node for execution.
+  if (buf_numel > 0) {
+    add_tensor_to_staging_node(*this, idx, staging_idx);
+  }
+  outputs_.push_back({idx, staging_idx});
+  return staging_idx;
 }
 
 ValueRef ComputeGraph::set_output_tensor(
@@ -607,21 +633,11 @@ ValueRef ComputeGraph::set_output_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    // For texture storage, the buffer size needs to account for the zero
-    // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
-    // We only run this when the tensor is non-empty.  When the underlying
-    // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
-    // tensor, we will not be able to bind the node for execution.
-    if (buf_numel > 0) {
-      add_tensor_to_staging_node(*this, idx, staging_idx);
-    }
-    outputs_.push_back({idx, staging_idx});
-    return staging_idx;
+    return set_output_tensor(idx, dtype);
+  } else {
+    outputs_.push_back({idx, kDummyValueRef});
+    return idx;
   }
-  outputs_.push_back({idx, kDummyValueRef});
-  return idx;
 }
 
 ValueRef ComputeGraph::set_output_value(const ValueRef idx) {

@@ -51,6 +51,16 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "-fp16",
+        "--force_fp16",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Force fp32 tensors to be converted to fp16 internally. Input/s outputs "
+        "will be converted to/from fp32 when entering/exiting the delegate. Default is "
+        "False",
+    )
+
+    parser.add_argument(
         "-s",
         "--strict",
         action=argparse.BooleanOptionalAction,
@@ -126,6 +136,8 @@ def main() -> None:
     compile_options = {}
     if args.dynamic or dynamic_shapes is not None:
         compile_options["require_dynamic_shapes"] = True
+    if args.force_fp16:
+        compile_options["force_fp16"] = True
 
     # Configure Edge compilation
     edge_compile_config = EdgeCompileConfig(
@@ -173,12 +185,22 @@ def main() -> None:
     # Save the program
     output_filename = f"{args.model_name}_vulkan"
 
+    atol = 1e-4
+    rtol = 1e-4
+
+    # If forcing fp16, then numerical divergence is expected
+    if args.force_fp16:
+        atol = 2e-2
+        rtol = 1e-1
+
     # Test the model if --test flag is provided
     if args.test:
         test_result = test_utils.run_and_check_output(
             reference_model=model,
             executorch_program=exec_prog,
             sample_inputs=example_inputs,
+            atol=atol,
+            rtol=rtol,
         )
 
         if test_result:

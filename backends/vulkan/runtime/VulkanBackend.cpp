@@ -86,6 +86,8 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kFloat;
     case vkgraph::VkDataType::FLOAT64:
       return vkapi::kDouble;
+    default:
+      VK_THROW("Invalid VkDataType type encountered!");
   }
 }
 
@@ -343,6 +345,15 @@ class GraphBuilder {
     }
   }
 
+  vkapi::ScalarType get_staging_scalar_type_of(const uint32_t fb_id) {
+    VkTensorPtr tensor_fb =
+        flatbuffer_->values()->Get(fb_id)->value_as_VkTensor();
+    if (tensor_fb->staging_datatype() == vkgraph::VkDataType::UNSET) {
+      return get_scalar_type(tensor_fb->datatype());
+    }
+    return get_scalar_type(tensor_fb->staging_datatype());
+  }
+
   void build_graph() {
     // Resize the mapping to the number of values in the flatbuffer
     resize(flatbuffer_->values()->size());
@@ -359,7 +370,8 @@ class GraphBuilder {
     for (const uint32_t fb_id : *flatbuffer_->input_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
       if (compute_graph_->val_is_tensor(ref)) {
-        compute_graph_->set_input_tensor(ref);
+        compute_graph_->set_input_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
       } else {
         compute_graph_->set_val_as_input(ref);
       }
@@ -384,7 +396,12 @@ class GraphBuilder {
     // values as well if the source graph returns parameter nodes.
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      compute_graph_->set_output_value(ref);
+      if (compute_graph_->val_is_tensor(ref)) {
+        compute_graph_->set_output_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
+      } else {
+        compute_graph_->set_output_value(ref);
+      }
     }
 
     if (compute_graph_->graphconfig().enable_querypool) {

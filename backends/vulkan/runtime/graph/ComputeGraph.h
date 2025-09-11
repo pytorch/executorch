@@ -771,7 +771,16 @@ class ComputeGraph final {
    */
   ValueRef get_or_add_value_for_int(const int64_t val);
 
+  ValueRef set_input_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
+
+  ValueRef set_output_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype);
+
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   ValueRef set_output_value(const ValueRef idx);
