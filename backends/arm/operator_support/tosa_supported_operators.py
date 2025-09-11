@@ -26,6 +26,10 @@ from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
+from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
+    TOSA_PRO_FP_SupportList,
+    TOSA_PRO_INT_SupportList,
+)
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
@@ -106,12 +110,16 @@ def tosa_support_factory(
     Additional checks can be supplied to avoid partitioning additional nodes.
     """
     # Postive checks: Add nodes to partitioning
-    positive_checks: list[OperatorSupportBase] = [
-        BaseTOSASupportList(),
-        *[
-            check(tosa_spec, reporter)
-            for check in get_registered_tosa_support_checks(tosa_spec)
-        ],
+    positive_checks: list[OperatorSupportBase] = []
+
+    if tosa_spec.support_integer():
+        positive_checks.append(TOSAProINTSupportList())
+    if tosa_spec.support_float():
+        positive_checks.append(TOSAProFPSupportList())
+    # TODO: Refactor to use TOSAProSupportLists + negtive checks
+    positive_checks += [
+        check(tosa_spec, reporter)
+        for check in get_registered_tosa_support_checks(tosa_spec)
     ]
 
     # Negative checks: Remove nodes from partitioning
@@ -143,129 +151,30 @@ def tosa_support_factory(
     )
 
 
-class BaseTOSASupportList(OperatorSupportBase):
+class TOSAProINTSupportList(OperatorSupportBase):
+    """
+    TOSA_PRO_INT_SupportList:
+        Ops supported in INT profile via native TOSA ops, decomposition/transformation, pre-compute, or TableOps
+    """
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        supported = node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.abs.default,
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.any.default,
-            exir_ops.edge.aten.any.dim,
-            exir_ops.edge.aten.any.dims,
-            exir_ops.edge.aten.logical_and.default,
-            exir_ops.edge.aten.logical_or.default,
-            exir_ops.edge.aten.logical_xor.default,
-            exir_ops.edge.aten.logical_not.default,
-            exir_ops.edge.aten.arange.start_step,
-            exir_ops.edge.aten.bitwise_and.Tensor,
-            exir_ops.edge.aten.bitwise_or.Tensor,
-            exir_ops.edge.aten.bitwise_xor.Tensor,
-            exir_ops.edge.aten.bitwise_and.Scalar,
-            exir_ops.edge.aten.bitwise_or.Scalar,
-            exir_ops.edge.aten.bitwise_xor.Scalar,
-            exir_ops.edge.aten.expand_copy.default,
-            exir_ops.edge.aten.cat.default,
-            exir_ops.edge.aten.ceil.default,
-            exir_ops.edge.aten.clamp.default,
-            exir_ops.edge.aten.cumsum.default,
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.hardsigmoid.default,
-            exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.hardswish.default,
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten.eq.Tensor,
-            exir_ops.edge.aten.eq.Scalar,
-            exir_ops.edge.aten.erf.default,
-            exir_ops.edge.aten.exp.default,
-            exir_ops.edge.aten.expm1.default,
-            exir_ops.edge.aten.log.default,
-            exir_ops.edge.aten.linear.default,
-            exir_ops.edge.aten.split_with_sizes_copy.default,
-            exir_ops.edge.aten.floor.default,
-            exir_ops.edge.aten.full.default,
-            exir_ops.edge.aten.full_like.default,
-            exir_ops.edge.aten.ge.Tensor,
-            exir_ops.edge.aten.ge.Scalar,
-            exir_ops.edge.aten.gt.Tensor,
-            exir_ops.edge.aten.gt.Scalar,
-            exir_ops.edge.aten.le.Tensor,
-            exir_ops.edge.aten.le.Scalar,
-            exir_ops.edge.aten.lt.Tensor,
-            exir_ops.edge.aten.lt.Scalar,
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten.ne.Tensor,
-            exir_ops.edge.aten.ne.Scalar,
-            exir_ops.edge.aten.neg.default,
-            exir_ops.edge.aten.add.Scalar,
-            exir_ops.edge.aten.sub.Scalar,
-            exir_ops.edge.aten.mul.Scalar,
-            exir_ops.edge.aten.div.Scalar,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten.native_group_norm.default,
-            exir_ops.edge.aten.sigmoid.default,
-            exir_ops.edge.aten.mean.dim,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.minimum.default,
-            exir_ops.edge.aten.maximum.default,
-            exir_ops.edge.aten.repeat.default,
-            exir_ops.edge.aten.reciprocal.default,
-            exir_ops.edge.aten.relu.default,
-            exir_ops.edge.aten.leaky_relu.default,
-            exir_ops.edge.aten.sqrt.default,
-            exir_ops.edge.aten.rsqrt.default,
-            exir_ops.edge.aten.round.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten.select_copy.int,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.tanh.default,
-            exir_ops.edge.aten.upsample_bilinear2d.vec,
-            exir_ops.edge.aten.upsample_nearest2d.vec,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.pow.Tensor_Scalar,
-            exir_ops.edge.aten.pow.Tensor_Tensor,
-            exir_ops.edge.aten.where.self,
-            operator.getitem,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-            exir_ops.edge.aten.constant_pad_nd.default,
-            exir_ops.edge.aten.amax.default,
-            exir_ops.edge.aten.amin.default,
-            exir_ops.edge.aten.eye.default,
-            exir_ops.edge.aten.linspace.default,
-            exir_ops.edge.aten.bitwise_left_shift.Tensor,
-            exir_ops.edge.aten.__lshift__.Scalar,
-            torch.ops.aten.scalar_tensor.default,
-            exir_ops.edge.aten.gelu.default,
-            exir_ops.edge.aten.alias_copy.default,
-            exir_ops.edge.aten.sinh.default,
-            exir_ops.edge.aten.atan.default,
-            exir_ops.edge.aten.acosh.default,
-            exir_ops.edge.aten._adaptive_avg_pool2d.default,
-            exir_ops.edge.aten.sign.default,
-            exir_ops.edge.aten.asin.default,
-            exir_ops.edge.aten.atanh.default,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.masked_fill.Scalar,
-            exir_ops.edge.aten.asinh.default,
-            exir_ops.edge.aten.cosh.default,
-            exir_ops.edge.aten.glu.default,
-            exir_ops.edge.aten.logit.default,
-            exir_ops.edge.aten.acos.default,
-            exir_ops.edge.aten.elu.default,
-        ]
 
-        return supported
+        return node.op == "call_function" and node.target in TOSA_PRO_INT_SupportList
+
+
+class TOSAProFPSupportList(OperatorSupportBase):
+    """
+    TOSA_PRO_FP_SupportList:
+        Ops supported in FP profile via native TOSA ops, decomposition/transformation, pre-compute
+    """
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+
+        return node.op == "call_function" and node.target in TOSA_PRO_FP_SupportList
 
 
 class NeedsDecompositionCheck(OperatorSupportBase):
