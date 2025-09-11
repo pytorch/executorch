@@ -541,12 +541,55 @@
 
 <span class="sd">.. code-block:: text</span>
 
-<span class="sd">    Program methods: (&#39;forward&#39;, &#39;forward2&#39;)</span>
+<span class="sd">    Program methods: {&#39;forward&#39;}</span>
 <span class="sd">    Ran forward((tensor([[1., 1.],</span>
 <span class="sd">            [1., 1.]]), tensor([[1., 1.],</span>
 <span class="sd">            [1., 1.]])))</span>
-<span class="sd">      outputs: [tensor([[1., 1.],</span>
-<span class="sd">            [1., 1.]])]</span>
+<span class="sd">      outputs: [tensor([[2., 2.],</span>
+<span class="sd">            [2., 2.]])]</span>
+
+<span class="sd">Example usage with ETDump generation:</span>
+
+<span class="sd">.. code-block:: python</span>
+
+<span class="sd">    from pathlib import Path</span>
+<span class="sd">    import os</span>
+
+<span class="sd">    import torch</span>
+<span class="sd">    from executorch.runtime import Verification, Runtime, Program, Method</span>
+
+<span class="sd">    # Create program with etdump generation enabled</span>
+<span class="sd">    et_runtime: Runtime = Runtime.get()</span>
+<span class="sd">    program: Program = et_runtime.load_program(</span>
+<span class="sd">        Path(&quot;/tmp/program.pte&quot;),</span>
+<span class="sd">        verification=Verification.Minimal,</span>
+<span class="sd">        enable_etdump=True,</span>
+<span class="sd">        debug_buffer_size=1e7, # A large buffer size to ensure that all debug info is captured</span>
+<span class="sd">    )</span>
+
+<span class="sd">    # Load method and execute</span>
+<span class="sd">    forward: Method = program.load_method(&quot;forward&quot;)</span>
+<span class="sd">    inputs = (torch.ones(2, 2), torch.ones(2, 2))</span>
+<span class="sd">    outputs = forward.execute(inputs)</span>
+
+<span class="sd">    # Write etdump result to file</span>
+<span class="sd">    etdump_file = &quot;/tmp/etdump_output.etdp&quot;</span>
+<span class="sd">    debug_file = &quot;/tmp/debug_output.bin&quot;</span>
+<span class="sd">    program.write_etdump_result_to_file(etdump_file, debug_file)</span>
+
+<span class="sd">    # Check that files were created</span>
+<span class="sd">    print(f&quot;ETDump file created: {os.path.exists(etdump_file)}&quot;)</span>
+<span class="sd">    print(f&quot;Debug file created: {os.path.exists(debug_file)}&quot;)</span>
+<span class="sd">    print(&quot;Directory contents:&quot;, os.listdir(&quot;/tmp&quot;))</span>
+
+<span class="sd">Example output:</span>
+
+<span class="sd">.. code-block:: text</span>
+
+<span class="sd">    Program methods: {&#39;forward&#39;}</span>
+<span class="sd">    ETDump file created: True</span>
+<span class="sd">    Debug file created: True</span>
+<span class="sd">    Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;debug_output.bin&#39;]</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
@@ -645,7 +688,18 @@
 <span class="sd">        Returns:</span>
 <span class="sd">            The outputs of the method.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">)</span></div>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_etdump_result_to_file</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">etdump_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">debug_buffer_path</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Writes the etdump and debug result to a file.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            etdump_path: The path to the etdump file.</span>
+<span class="sd">            debug_buffer_path: The path to the debug buffer file.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">write_etdump_result_to_file</span><span class="p">(</span><span class="n">etdump_path</span><span class="p">,</span> <span class="n">debug_buffer_path</span><span class="p">)</span></div>
 
 
 <span class="k">class</span><span class="w"> </span><span class="nc">BackendRegistry</span><span class="p">:</span>
@@ -711,6 +765,8 @@
         <span class="n">data</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
         <span class="o">*</span><span class="p">,</span>
         <span class="n">verification</span><span class="p">:</span> <span class="n">Verification</span> <span class="o">=</span> <span class="n">Verification</span><span class="o">.</span><span class="n">InternalConsistency</span><span class="p">,</span>
+        <span class="n">enable_etdump</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">debug_buffer_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads an ExecuTorch program from a PTE binary.</span>
 
@@ -724,8 +780,8 @@
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program</span><span class="p">(</span>
                 <span class="nb">str</span><span class="p">(</span><span class="n">data</span><span class="p">),</span>
-                <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-                <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">enable_etdump</span><span class="o">=</span><span class="n">enable_etdump</span><span class="p">,</span>
+                <span class="n">debug_buffer_size</span><span class="o">=</span><span class="n">debug_buffer_size</span><span class="p">,</span>
                 <span class="n">program_verification</span><span class="o">=</span><span class="n">verification</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="n">Program</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
