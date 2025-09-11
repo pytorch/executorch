@@ -92,12 +92,12 @@ Result<uint64_t> MultimodalPrefiller::prefill(
 
   // 2. Run decoder model for prefill.
 
-  // Get expected shape of cache position tensor, which should be the second
-  // argument
+  // Get expected shape of cache position tensor, which should be the first (0th
+  // index) argument
   auto method_meta = ET_UNWRAP(module_->method_meta(kTextModelMethod));
-  auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
-  auto second_input_sizes = second_input_info.sizes();
-  auto numel = second_input_sizes[0];
+  auto first_input_info = ET_UNWRAP(method_meta.input_tensor_meta(0));
+  auto first_input_sizes = first_input_info.sizes();
+  auto numel = first_input_sizes[0];
 
   int64_t seq_len = encoder_output.toTensor().size(1);
   if (seq_len == 0) {
