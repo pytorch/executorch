@@ -18,7 +18,7 @@ from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
-from executorch.backends.nxp.backend.node_format_inference import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
