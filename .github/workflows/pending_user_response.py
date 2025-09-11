@@ -47,20 +47,19 @@ def main():
 
         if not auto_comments:
             if (
-                last_comment 
+                last_comment
                 and (now - last_comment.created_at).days >= DAYS_BEFORE_REMINDER
             ):
                 user = issue.user.login
-                print(
-                    f"[VALIDATION] Would remind {user} on issue/PR #{issue.number}"
-                )
-
+                print(f"[VALIDATION] Would remind {user} on issue/PR #{issue.number}")
         elif auto_comments and not recent_auto_reminder:
             # Only post new reminder if last was > REMINDER_COOLDOWN_DAYS ago
             last_auto = auto_comments[-1]
             user = issue.user.login
             if (now - last_auto.created_at).days >= REMINDER_COOLDOWN_DAYS:
-                print(f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}")
+                print(
+                    f"[VALIDATION] Would remind {user} again on issue/PR #{issue.number}"
+                )
 
         # ---- EXISTING CLOSE/REMOVE LABEL LOGIC ----
         if auto_comments:
