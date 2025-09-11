@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
 #include <iomanip>
+#include <sstream>
 
 namespace vkcompute {
 namespace vkapi {
