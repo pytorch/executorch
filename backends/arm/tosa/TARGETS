@@ -59,3 +59,20 @@ runtime.python_library(
        ":specification",
     ],
 )
+
+runtime.python_library(
+    name = "arm_partitioner",
+    srcs = [
+        "backend.py",
+        "partitioner.py",
+    ],
+    deps = [
+        "//executorch/backends/arm:arm_backend",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm:process_node",
+        "//executorch/backends/arm/debug:schema",
+        "//executorch/backends/arm/operator_support:operator_support",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/exir:lib",
+    ],
+)
