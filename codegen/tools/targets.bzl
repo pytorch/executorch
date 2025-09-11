@@ -17,10 +17,10 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//executorch/codegen:gen_lib",
-        ] + ([] if runtime.is_oss else select({
+        ] + select({
             "DEFAULT": [],
-            "ovr_config//os:linux": ["//executorch/codegen/tools:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
-        })),
+            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/codegen/tools:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
+        }),
     )
 
     runtime.python_binary(
