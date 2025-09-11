@@ -1,0 +1,20 @@
+base:
+  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+
+model:
+  use_kv_cache: True
+  dtype_override: fp32
+  enable_dynamic_shape: False
+
+export:
+  output_dir: "../"
+
+quantization:
+  pt2e_quantize: "openvino_4wo"
+
+backend:
+  openvino:
+    enabled: True
+
+debug:
+  verbose: True
