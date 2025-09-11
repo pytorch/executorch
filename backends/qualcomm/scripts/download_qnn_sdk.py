@@ -45,6 +45,7 @@ def check_glibc_exist() -> bool:
     """
     Check if users have glibc installed.
     """
+    print("[QNN] Checking glibc exist running on Linux x86")
     paths = ["/lib/x86_64-linux-gnu/libc.so.6", "/lib64/libc.so.6", "/lib/libc.so.6"]
 
     exists = any(os.path.isfile(p) for p in paths)
@@ -63,6 +64,7 @@ def check_glibc_exist() -> bool:
                 sudo pacman -S glibc
             """
         )
+    print("[QNN] glibc exists: ", exists)
     return exists
 
 
@@ -144,7 +146,7 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
 
-    if not is_linux_x86() and not check_glibc_exist():
+    if not is_linux_x86() or not check_glibc_exist():
         logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
     else:
