@@ -31,12 +31,55 @@ Example output:
 
 .. code-block:: text
 
-    Program methods: ('forward', 'forward2')
+    Program methods: {'forward'}
     Ran forward((tensor([[1., 1.],
             [1., 1.]]), tensor([[1., 1.],
             [1., 1.]])))
-      outputs: [tensor([[1., 1.],
-            [1., 1.]])]
+      outputs: [tensor([[2., 2.],
+            [2., 2.]])]
+
+Example usage with ETDump generation:
+
+.. code-block:: python
+
+    from pathlib import Path
+    import os
+
+    import torch
+    from executorch.runtime import Verification, Runtime, Program, Method
+
+    # Create program with etdump generation enabled
+    et_runtime: Runtime = Runtime.get()
+    program: Program = et_runtime.load_program(
+        Path("/tmp/program.pte"),
+        verification=Verification.Minimal,
+        enable_etdump=True,
+        debug_buffer_size=1e7, # A large buffer size to ensure that all debug info is captured
+    )
+
+    # Load method and execute
+    forward: Method = program.load_method("forward")
+    inputs = (torch.ones(2, 2), torch.ones(2, 2))
+    outputs = forward.execute(inputs)
+
+    # Write etdump result to file
+    etdump_file = "/tmp/etdump_output.etdp"
+    debug_file = "/tmp/debug_output.bin"
+    program.write_etdump_result_to_file(etdump_file, debug_file)
+
+    # Check that files were created
+    print(f"ETDump file created: {os.path.exists(etdump_file)}")
+    print(f"Debug file created: {os.path.exists(debug_file)}")
+    print("Directory contents:", os.listdir("/tmp"))
+
+Example output:
+
+.. code-block:: text
+
+    Program methods: {'forward'}
+    ETDump file created: True
+    Debug file created: True
+    Directory contents: ['program.pte', 'etdump_output.etdp', 'debug_output.bin']
 """
 
 import functools
@@ -137,6 +180,17 @@ class Program:
         """
         return self._program.method_meta(method_name)
 
+    def write_etdump_result_to_file(
+        self, etdump_path: str, debug_buffer_path: str
+    ) -> None:
+        """Writes the etdump and debug result to a file.
+
+        Args:
+            etdump_path: The path to the etdump file.
+            debug_buffer_path: The path to the debug buffer file.
+        """
+        self._program.write_etdump_result_to_file(etdump_path, debug_buffer_path)
+
 
 class BackendRegistry:
     """The registry of backends that are available to the runtime."""
@@ -201,6 +255,8 @@ class Runtime:
         data: Union[bytes, bytearray, BinaryIO, Path, str],
         *,
         verification: Verification = Verification.InternalConsistency,
+        enable_etdump: bool = False,
+        debug_buffer_size: int = 0,
     ) -> Program:
         """Loads an ExecuTorch program from a PTE binary.
 
@@ -214,8 +270,8 @@ class Runtime:
         if isinstance(data, (Path, str)):
             p = self._legacy_module._load_program(
                 str(data),
-                enable_etdump=False,
-                debug_buffer_size=0,
+                enable_etdump=enable_etdump,
+                debug_buffer_size=debug_buffer_size,
                 program_verification=verification,
             )
             return Program(p, data=None)
