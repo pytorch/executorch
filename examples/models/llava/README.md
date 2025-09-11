@@ -86,9 +86,9 @@ to for full instructions on building the Android LLAMA Demo App.
 
 #### iOS
 
-We can run LLAVA using the LLAMA Demo Apps. Please refer to [this
-tutorial](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/apple_ios/LLaMA)
-to for full instructions on building the iOS LLAMA Demo App.
+We can run LLAVA using the etLLM Demo Apps. Please refer to [this
+tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple)
+to for full instructions on building the iOS etLLM Demo App.
 
 ### Running LLaVA
 
