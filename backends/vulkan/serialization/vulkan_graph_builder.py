@@ -240,6 +240,19 @@ class VkGraphBuilder:
         else:
             return dtype
 
+    def get_staging_dtype(self, dtype: torch.dtype) -> torch.dtype:
+        # Since 64 bit types are not guaranteed to be supported on all GPUs,
+        # the conversion between 32 bit and 64 bit types is handled on the CPU
+        # side. The conversion will occur when copying the staging buffer
+        # contents to/from ETensor data pointers, rather than in the shader to
+        # copy between GPU buffer/image to staging buffer.
+        if self.downcast_64_bit and dtype == torch.float64:
+            return torch.float32
+        elif self.downcast_64_bit and dtype == torch.int64:
+            return torch.int32
+        else:
+            return dtype
+
     def create_tensor_value(self, spec: TensorSpec, constant_id: int = -1) -> int:
         # Negative id indicates that this tensor will have its own dedicated memory.
         mem_obj_id = -1
@@ -258,7 +271,9 @@ class VkGraphBuilder:
         # For constant tensors, the datatype of the original tensor will have been
         # converted to the effective dtype. Otherwise, the type of the staging buffer
         # for inputs/outputs should match the original tensor dtype.
-        staging_dtype = effective_dtype if constant_id >= 0 else spec.dtype
+        staging_dtype = (
+            effective_dtype if constant_id >= 0 else self.get_staging_dtype(spec.dtype)
+        )
 
         datatype = self.get_vk_datatype(effective_dtype)
         staging_datatype = self.get_vk_datatype(staging_dtype)

@@ -956,7 +956,20 @@ class ComputeGraph final {
 
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
+
+  void maybe_cast_and_copy_into_staging(
+      const ValueRef idx,
+      const void* data,
+      const size_t numel,
+      const vkapi::ScalarType src_data_dtype);
+
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+  void maybe_cast_and_copy_from_staging(
+      const ValueRef idx,
+      void* data,
+      const size_t numel,
+      const vkapi::ScalarType dst_data_dtype);
 
  protected:
   // Command Buffer Management
