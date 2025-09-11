@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <c10/util/safe_numerics.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -52,43 +53,68 @@ Result<Tag> get_tag(
   }
 }
 
-size_t calculate_nbytes(
+Result<size_t> calculate_nbytes(
     Span<const int32_t> sizes,
     executorch::aten::ScalarType scalar_type) {
   size_t n = 1;
-  size_t prev_n = 1;
   for (size_t i = 0; i < sizes.size(); i++) {
-    prev_n = n;
-    n *= sizes[i];
-    // Check for overflow
-    ET_CHECK(sizes[i] == 0 || n / sizes[i] == prev_n);
+    size_t next_n;
+    bool overflow =
+        c10::mul_overflows(n, static_cast<size_t>(sizes[i]), &next_n);
+    ET_CHECK_OR_RETURN_ERROR(
+        !overflow,
+        InvalidArgument,
+        "Invalid size[%zu]: %d. Potentially overflowed, expect to be 0 or n: %zu",
+        i,
+        sizes[i],
+        n);
+    n = next_n;
   }
 
   size_t elem_size = executorch::runtime::elementSize(scalar_type);
+  size_t total_bytes;
+  bool overflow = c10::mul_overflows(n, elem_size, &total_bytes);
+  ET_CHECK_OR_RETURN_ERROR(
+      !overflow,
+      InvalidArgument,
+      "Invalid elem_size: %zu. Potentially overflowed, expect to be 0 or n: %zu",
+      elem_size,
+      n);
 
-  prev_n = n;
-  n = n * elem_size;
-
-  // Check for overflow
-  ET_CHECK(elem_size == 0 || n / elem_size == prev_n);
-
-  return n;
+  return total_bytes;
 }
 
 } // namespace
+
+/*static*/ Result<TensorInfo> TensorInfo::create(
+    Span<const int32_t> sizes,
+    Span<const uint8_t> dim_order,
+    executorch::aten::ScalarType scalar_type,
+    const bool is_memory_planned,
+    std::string_view name) {
+  auto nbytes = calculate_nbytes(sizes, scalar_type);
+  ET_CHECK_OR_RETURN_ERROR(
+      nbytes.ok(),
+      InvalidArgument,
+      "Failed to calculate nbytes for TensorInfo");
+
+  return TensorInfo(
+      sizes, dim_order, scalar_type, is_memory_planned, name, nbytes.get());
+}
 
 TensorInfo::TensorInfo(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
     executorch::aten::ScalarType scalar_type,
     const bool is_memory_planned,
-    std::string_view name)
+    std::string_view name,
+    size_t nbytes)
     : sizes_(sizes),
       dim_order_(dim_order),
       name_(name),
       scalar_type_(scalar_type),
       is_memory_planned_(is_memory_planned),
-      nbytes_(calculate_nbytes(sizes_, scalar_type_)) {}
+      nbytes_(nbytes) {}
 
 Span<const int32_t> TensorInfo::sizes() const {
   return sizes_;
@@ -160,7 +186,7 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
   auto input_index = s_plan_->inputs()->Get(index);
   // input_index was already validated by input_tag().
   auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
-  return TensorInfo(
+  return TensorInfo::create(
       Span<const int32_t>(
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
@@ -212,7 +238,7 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
   // output_index was already validated by output_tag().
   auto tensor_value = s_plan_->values()->Get(output_index)->val_as_Tensor();
 
-  return TensorInfo(
+  return TensorInfo::create(
       Span<const int32_t>(
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
@@ -255,7 +281,7 @@ Result<TensorInfo> MethodMeta::attribute_tensor_meta(size_t index) const {
           auto t_name =
               tensor_value->extra_tensor_info()->fully_qualified_name();
           // Count constant returns as memory planned
-          return TensorInfo(
+          return TensorInfo::create(
               Span<const int32_t>(
                   tensor_value->sizes()->data(), tensor_value->sizes()->size()),
               Span<const uint8_t>(

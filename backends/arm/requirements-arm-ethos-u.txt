@@ -1,0 +1,6 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+ethos-u-vela @ git+https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela@d37febc1715edf0d236c2ff555739a8a9aadcf9a

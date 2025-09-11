@@ -10,13 +10,13 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 import torch
 import torch.nn as nn
-from executorch.backends.cadence.aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_and_run_model
 
 
 class ATenOpTestCases(unittest.TestCase):
     def run_and_verify(self, model: nn.Module, inputs: Tuple[Any, ...]) -> None:
         model.eval()
-        export_model(
+        export_and_run_model(
             model, inputs, file_name=self._testMethodName, run_and_compare=False
         )
 

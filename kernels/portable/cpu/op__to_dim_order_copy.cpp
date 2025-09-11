@@ -29,29 +29,6 @@ using OptionalArrayRef = executorch::aten::OptionalArrayRef<T>;
 template <typename T>
 using Optional = std::optional<T>;
 
-namespace {
-
-template <typename SELF_CTYPE, typename OUT_CTYPE>
-void _to_dim_order_copy_impl(const Tensor& self, Tensor& out) {
-  auto self_data = self.mutable_data_ptr<SELF_CTYPE>();
-  auto out_data = out.mutable_data_ptr<OUT_CTYPE>();
-
-  // Here we make a slightly off-label use of
-  // BroadcastIndexesRange. It always assumes it doesn't have to care
-  // about different dim_order between input and output, but we can
-  // just force it to respect strides (and thus dim_order) for its
-  // inputs using support_noncontiguous_input_tensors=true, and then pretend
-  // the output is just another input.
-  for (const auto [unused_index, self_data_index, out_data_index] :
-       BroadcastIndexesRange<2, /*support_noncontiguous_input_tensors=*/true>(
-           /*dummy output*/ self, self, out)) {
-    (void)unused_index;
-    out_data[out_data_index] =
-        static_cast<OUT_CTYPE>(self_data[self_data_index]);
-  }
-}
-} // namespace
-
 // _to_dim_order_copy.out(Tensor self, *, bool non_blocking=False, int[]?
 // dim_order=None, Tensor(a!) out) -> Tensor(a!)
 Tensor& _to_dim_order_copy_out(
@@ -77,19 +54,15 @@ Tensor& _to_dim_order_copy_out(
     return out;
   }
 
-  ET_SWITCH_REALHBBF16_TYPES(
-      self.scalar_type(),
-      ctx,
-      "dim_order_ops::_to_dim_order_copy.out",
-      CTYPE_IN,
-      [&] {
-        ET_SWITCH_REALHBBF16_TYPES(
-            out.scalar_type(),
-            ctx,
-            "dim_order_ops::_to_dim_order_copy.out",
-            CTYPE_OUT,
-            [&] { _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out); });
-      });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] =
+      "dim_order_ops::_to_dim_order_copy.out";
+
+  ET_SWITCH_REALHBBF16_TYPES(self.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+      _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out);
+    });
+  });
 
   return out;
 }

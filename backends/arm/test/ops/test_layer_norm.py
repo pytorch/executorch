@@ -8,10 +8,11 @@ from typing import List, Union
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -64,9 +65,9 @@ test_data_suite = {
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_layer_norm_tosa_MI(test_data):
+def test_native_layer_norm_tosa_FP(test_data):
     test_data, model = test_data()
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         model,
         test_data,
         "torch.ops.aten.layer_norm.default",
@@ -75,9 +76,9 @@ def test_native_layer_norm_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_native_layer_norm_tosa_BI(test_data):
+def test_native_layer_norm_tosa_INT(test_data):
     test_data, model = test_data()
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
@@ -88,9 +89,9 @@ def test_native_layer_norm_tosa_BI(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_native_layer_norm_u55_BI(test_data):
+def test_native_layer_norm_u55_INT(test_data):
     test_data, model = test_data()
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
@@ -102,13 +103,39 @@ def test_native_layer_norm_u55_BI(test_data):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_native_layer_norm_u85_BI(test_data):
+def test_native_layer_norm_u85_INT(test_data):
     test_data, model = test_data()
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
         run_on_fvp=True,
         symmetric_io_quantization=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_native_layer_norm_vgf_FP(test_data):
+    test_input, model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        test_input,
+        "torch.ops.aten.layer_norm.default",
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_native_layer_norm_vgf_INT(test_data):
+    test_input, model = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        test_input,
+        "torch.ops.aten.sub.Tensor",
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

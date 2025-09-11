@@ -1,0 +1,26 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "vulkan_patterns",
+    srcs = [
+        "__init__.py",
+        "pattern_registry.py",
+        "rope.py",
+        "quantized_linear.py",
+        "quantized_convolution.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/backends/transforms:utils",
+        "//executorch/backends/vulkan:utils_lib",
+    ],
+    typing = True,
+)

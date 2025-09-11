@@ -68,3 +68,16 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         define_static_targets = True,
     )
+
+    executorch_generated_lib(
+        name = "cortex_m_no_except_generated_lib",
+        deps = [
+            ":ops_lib",
+            ":cortex_m_operators",
+        ],
+        functions_yaml_target = ":operators.yaml",
+        platforms = CXX,
+        visibility = ["PUBLIC"],
+        define_static_targets = True,
+        support_exceptions = False,
+    )

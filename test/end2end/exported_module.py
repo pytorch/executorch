@@ -67,7 +67,6 @@ class ExportedModule:
         ignore_to_out_var_failure: bool = False,
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
         capture_config=None,
-        skip_type_promotion: bool = False,
         export_joint_graph: bool = False,
         external_constants: bool = False,
         export_state_names: bool = False,
@@ -194,7 +193,7 @@ class ExportedModule:
         exec_prog = to_edge(
             exported_methods,
             compile_config=exir.EdgeCompileConfig(
-                _check_ir_validity=False, _skip_type_promotion=skip_type_promotion
+                _check_ir_validity=False,
             ),
         ).to_executorch(
             ExecutorchBackendConfig(

@@ -50,7 +50,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_masked_language_model_dataset(
+        inputs, targets = get_masked_language_model_dataset(
             args.dataset, tokenizer, data_size
         )
     module = AutoModelForMaskedLM.from_pretrained(
@@ -92,7 +92,7 @@ def main(args):
     make_output_dir(output_data_folder)
 
     # accuracy analysis
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
     adb.pull(output_path=args.artifact)
     goldens, predictions = [], []
@@ -139,6 +139,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

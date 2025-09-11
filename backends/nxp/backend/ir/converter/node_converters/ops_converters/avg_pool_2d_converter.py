@@ -1,17 +1,21 @@
-# Copyright (c) 2025 NXP
-# All rights reserved.
+# Copyright 2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+import numpy as np
 
 from executorch.backends.nxp.backend.ir.converter.conversion import (
     aten_translator,
     common,
 )
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
+from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
+    tf_lite_type_to_numpy,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
@@ -22,11 +26,12 @@ from torch.nn import Parameter
 
 
 class AvgPool2dConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         n_args = len(node.args)
 
@@ -62,9 +67,20 @@ class AvgPool2dConverter(NodeConverter):
         )
 
         if explicit_padding is not None:
-            # Need to prepend a 'Pad' operator, which adds 0s. But these will be included in the computation!
+            # Need to prepend a 'Pad' operator, which adds 0s (or `zero_point` for the quantized case). But these will
+            #  be included in the computation!
+            input_quantization = t_op.tmp_inputs[0].quantization
+            pad_value = (
+                None
+                if input_quantization is None
+                else np.array(input_quantization.zero_point[0]).astype(
+                    tf_lite_type_to_numpy(t_op.tmp_inputs[0].type)
+                )
+            )
             ops.add_pre(
-                self.builder.create_pad_operator_before(t_op, 0, explicit_padding)
+                self.builder.create_pad_operator_before(
+                    t_op, 0, explicit_padding, pad_value
+                )
             )
 
         return ops.flatten()

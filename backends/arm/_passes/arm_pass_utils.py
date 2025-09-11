@@ -13,7 +13,7 @@ from typing import Optional, Sequence
 
 import torch
 import torch.fx
-from executorch.backends.arm.tosa_utils import get_node_debug_info
+from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -235,3 +235,8 @@ def set_node_arg(node: torch.fx.Node, i: int | str, value):
         node.kwargs = kwargs
     else:
         raise RuntimeError("Invalid type")
+
+
+def get_output_dim_orders(graph_module):
+    output_node = graph_module.graph.output_node()
+    return [get_first_fake_tensor(node).dim_order() for node in output_node.args[0]]

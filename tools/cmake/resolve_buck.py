@@ -101,8 +101,7 @@ def parse_args() -> argparse.Namespace:
 def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
     # Find buck2, in order of priority:
     #  1) Explicit buck2 argument.
-    #  2) System buck2 (if correct version).
-    #  3) Cached buck2 (previously downloaded).
+    #  2) Cached buck2 (previously downloaded).
     #  3) Download buck2.
 
     # Read the target version (build date) from the CI pin file. Note that
@@ -160,26 +159,19 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
             # such as a failed import, which exits with 1.
             return 2
     else:
-        # Look for system buck2 and check version. Note that this can return
-        # None.
-        ver = buck_util.get_buck2_version("buck2")
-        if ver == BUCK_TARGET_VERSION:
-            # Use system buck2.
-            return "buck2"
-        else:
-            # Download buck2 or used previously cached download.
-            cache_dir = Path(args.cache_dir)
-            os.makedirs(cache_dir, exist_ok=True)
+        # Download buck2 or used previously cached download.
+        cache_dir = Path(args.cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
 
-            buck2_local_path = (
-                (cache_dir / f"buck2-{BUCK_TARGET_VERSION}").absolute().as_posix()
-            )
+        buck2_local_path = (
+            (cache_dir / f"buck2-{BUCK_TARGET_VERSION}").absolute().as_posix()
+        )
 
-            # Check for a previously cached buck2 binary. The filename includes
-            # the version hash, so we don't have to worry about using an
-            # outdated binary, in the event that the target version is updated.
-            if os.path.isfile(buck2_local_path):
-                return buck2_local_path
+        # Check for a previously cached buck2 binary. The filename includes
+        # the version hash, so we don't have to worry about using an
+        # outdated binary, in the event that the target version is updated.
+        if os.path.isfile(buck2_local_path):
+            return buck2_local_path
 
         buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
 

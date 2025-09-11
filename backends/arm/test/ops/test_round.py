@@ -10,10 +10,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -38,8 +39,8 @@ class Round(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_round_tosa_MI(test_data: torch.Tensor):
-    pipeline = TosaPipelineMI[input_t1](
+def test_round_tosa_FP(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
         Round(),
         (test_data(),),
         aten_op,
@@ -49,8 +50,8 @@ def test_round_tosa_MI(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_round_tosa_BI(test_data: torch.Tensor):
-    pipeline = TosaPipelineBI[input_t1](
+def test_round_tosa_INT(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
         Round(),
         (test_data(),),
         [],
@@ -62,8 +63,8 @@ def test_round_tosa_BI(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(reason="where.self not supported on U55")
-def test_round_u55_BI(test_data: torch.Tensor):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_round_u55_INT(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
         Round(),
         (test_data(),),
         [],
@@ -74,11 +75,37 @@ def test_round_u55_BI(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_round_u85_BI(test_data: torch.Tensor):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_round_u85_INT(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
         Round(),
         (test_data(),),
         [],
         exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_round_vgf_FP(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Round(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_round_vgf_INT(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Round(),
+        (test_data(),),
+        [],
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

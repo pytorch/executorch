@@ -46,7 +46,7 @@ Before you begin, ensure you have openvino installed and configured on your syst
 
 ```bash
 git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino && git checkout releases/2025/1
+cd openvino && git checkout b16b776ac119dafda51f69a80f1e6b7376d02c3b
 git submodule update --init --recursive
 sudo ./install_build_dependencies.sh
 mkdir build && cd build

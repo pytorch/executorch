@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_FP_WEIGHT_SUMS_LOAD_GLSLH
+#define LINEAR_FP_WEIGHT_SUMS_LOAD_GLSLH
+
+#include "linear_int_per_out_channel_params.glslh"
+
+ivec4 load_weight_sum_x4(const int n4) {
+  return ivec4(t_weight_sums[n4]);
+}
+
+ivec4 load_weight_sum_x4(
+    const int n4,
+    const int quant_group_idx,
+    const int N4) {
+  return t_weight_sums[quant_group_idx * N4 + n4];
+}
+
+void load_weight_sums_tile(
+    out IntPerOutChannelParams sums,
+    const int n4_start) {
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    sums.data[n4] = load_weight_sum_x4(n4_start + n4);
+  }
+}
+
+void load_weight_sums_tile_for_group(
+    out IntPerOutChannelParams sums,
+    const int n4_start,
+    const int quant_group_idx,
+    const int N4) {
+  [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+    sums.data[n4] = load_weight_sum_x4(n4_start + n4, quant_group_idx, N4);
+  }
+}
+
+#endif // LINEAR_FP_WEIGHT_SUMS_LOAD_GLSLH

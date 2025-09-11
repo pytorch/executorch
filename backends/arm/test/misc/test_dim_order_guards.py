@@ -12,8 +12,8 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -22,7 +22,7 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 
 class Conv2D(torch.nn.Module):
     inputs: dict[str, input_t1] = {
-        "randn": (torch.randn(1, 2, 20, 20),),
+        "randn": (torch.randn(1, 2, 20, 20).to(memory_format=torch.channels_last),),
     }
 
     def __init__(self):
@@ -30,13 +30,13 @@ class Conv2D(torch.nn.Module):
         self.conv2d = torch.nn.Conv2d(in_channels=2, out_channels=3, kernel_size=(3, 3))
 
     def forward(self, x):
-        return self.conv2d(x.to(memory_format=torch.channels_last))
+        return self.conv2d(x)
 
 
 @common.parametrize("test_data", Conv2D.inputs)
-def test_tosa_MI_pipeline(test_data: input_t1):
+def test_tosa_FP_pipeline(test_data: input_t1):
     module = Conv2D()
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         module,
         test_data,
         [],
@@ -51,9 +51,9 @@ def test_tosa_MI_pipeline(test_data: input_t1):
 
 
 @common.parametrize("test_data", Conv2D.inputs)
-def test_tosa_BI_pipeline(test_data: input_t1):
+def test_tosa_INT_pipeline(test_data: input_t1):
     module = Conv2D()
-    pipeline = TosaPipelineBI[input_t1](
+    pipeline = TosaPipelineINT[input_t1](
         module,
         test_data,
         [],

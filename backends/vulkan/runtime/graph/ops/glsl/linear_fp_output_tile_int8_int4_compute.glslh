@@ -1,0 +1,86 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef LINEAR_FP_OUTPUT_TILE_INT8_INT4_COMPUTE_GLSLH
+#define LINEAR_FP_OUTPUT_TILE_INT8_INT4_COMPUTE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+#extension GL_EXT_integer_dot_product : require
+
+#include "linear_int4_weight_tile.glslh"
+#include "linear_int8_input_tile.glslh"
+#include "linear_int_accumulator.glslh"
+
+void int_accumulate_with_int4_weight(
+    inout Int32Accum accum,
+    Int8InputTile in_tile,
+    Int4WeightTile w_tile) {
+  // Accum tile is indexed as accum[m][n4][n4i]
+  //   -> gives integer accumulator for output tile element at (x = n, y = m)
+  // Input tile is indexed as in_tile.data[m4][k4][m4i]
+  //   -> gives packed integer containing the 4x 8-bit quantized values at index
+  //      (k, m), (k + 1, m), (k + 2, m), (k + 3, m)
+  // Weight tile is indexed as w_tile.data[k4][n8][n4i]
+  //   -> gives packed integer containing the 8x 4-bit quantized values
+  [[unroll]] for (int n8 = 0; n8 < TILE_N8; ++n8) {
+    const int n4_base = mul_2(n8);
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      ivec4 unpacked_block_1 = w_tile.data[k4][n8] & 0x0F0F0F0F;
+      ivec4 unpacked_block_2 = (w_tile.data[k4][n8] >> 4) & 0x0F0F0F0F;
+
+      [[unroll]] for (int n4i = 0; n4i < 4; ++n4i) {
+        // Accumulate unpacked_block_1[n4i] and unpacked_block_2[n4i] with
+        // each row of the input tile
+        [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+          const int m4 = div_4(m);
+          const int m4i = mod_4(m);
+          accum.data[m][n4_base][n4i] = dotPacked4x8AccSatEXT(
+              in_tile.data[m4][k4][m4i],
+              unpacked_block_1[n4i],
+              accum.data[m][n4_base][n4i]);
+          accum.data[m][n4_base + 1][n4i] = dotPacked4x8AccSatEXT(
+              in_tile.data[m4][k4][m4i],
+              unpacked_block_2[n4i],
+              accum.data[m][n4_base + 1][n4i]);
+        }
+      }
+    }
+  }
+}
+
+void accumulate_out_tile_with_int_accum_from_int4_weights(
+    inout FPOutTile out_tile,
+    const Int32Accum accum,
+    const IntPerInChannelParams input_sums,
+    const Int8InputScales input_scales,
+    const Int8InputZeroPoints input_zps,
+    const IntPerOutChannelParams weight_sums,
+    const FPPerOutChannelParams weight_scales,
+    const int group_size) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    const int m4 = div_4(m);
+    const int m4i = mod_4(m);
+
+    float input_scale_m = input_scales.data[m4][m4i];
+    int input_zp_m = input_zps.data[m4][m4i];
+    int input_sum_m = input_sums.data[m4][m4i];
+
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      ivec4 accum_adjusted = accum.data[m][n4] -
+          (weight_sums.data[n4] + 8 * group_size) * input_zp_m +
+          mul_8(group_size * input_zp_m - input_sum_m);
+
+      out_tile.data[m][n4] =
+          fma(VEC4_T(accum_adjusted),
+              input_scale_m * weight_scales.data[n4],
+              out_tile.data[m][n4]);
+    }
+  }
+}
+
+#endif // LINEAR_FP_OUTPUT_TILE_INT8_INT4_COMPUTE_GLSLH

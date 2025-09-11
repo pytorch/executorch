@@ -14,6 +14,10 @@
 namespace vkcompute {
 namespace api {
 
+/*
+ * Used to infer the sizes of a tensor that would correspond to a given
+ * VulkanImage.
+ */
 std::vector<int64_t> calculate_sizes(
     const vkapi::VulkanImage& image,
     const utils::GPUMemoryLayout memory_layout) {
@@ -143,58 +147,19 @@ bool dim_order_is_valid(const std::vector<int64_t>& dim_order) {
   return sum == n * (n + 1) / 2;
 }
 
-/*
- * Applies the following transformations to a tensor's dim_order vector:
- *   1. Reverse the order of elements so that the fastest moving dimensions are
- *      first.
- *   2. Convert NCHW dimension indices to WHCN indices, so that 0 represents the
- *      width dimension, 1 represents the height dimension, and 2 represents the
- *      channels dimension.
- *   3. Unsqueeze the dim_order vector to the next multiple of 4.
-
- * These transformations make it easier to use the dim order in a compute shader
- */
-std::vector<int64_t> create_whcn_dim_order(
-    const std::vector<int64_t>& dim_order) {
-  size_t ndim = dim_order.size();
-  std::vector<int64_t> whcn_order(ndim);
-
-  // Convert from NCHW to WHCN index, and flip the dim order so that the fastest
-  // moving dimension is first.
-  // example: {     1,     2,        0} -> {       2,     0,      1}
-  //          {height, width, channels} -> {channels, width, height}
-  for (size_t whcn_i = 0, nchw_i = (ndim - 1); whcn_i < ndim;
-       ++whcn_i, --nchw_i) {
-    whcn_order.at(whcn_i) = ndim - 1 - dim_order.at(nchw_i);
-  }
-
-  // Unsqueeze to the next multiple of 4
-  size_t ndim_up4 = utils::align_up_4(ndim);
-  whcn_order.resize(ndim_up4);
-
-  // Append unsqueezed dimensions
-  for (size_t i = ndim; i < ndim_up4; ++i) {
-    whcn_order.at(i) = i;
-  }
-
-  return whcn_order;
-}
-
-std::vector<int64_t> unsqueeze_strides(
-    const std::vector<int64_t>& strides,
-    const int64_t numel) {
-  const size_t ndim = strides.size();
-  const size_t ndim_up4 = utils::align_up_4(strides.size());
-  std::vector<int64_t> unsqueezed_strides(ndim_up4);
-  for (int32_t i = 1; i <= ndim; ++i) {
-    int64_t dim_stride = strides.at(ndim - i);
-    unsqueezed_strides.at(ndim_up4 - i) = dim_stride;
-  }
-
-  for (int32_t i = ndim + 1; i <= ndim_up4; ++i) {
-    unsqueezed_strides.at(ndim_up4 - i) = numel;
-  }
-  return unsqueezed_strides;
+utils::ivec4 flip_and_unsqueeze_ivec4(
+    const std::vector<int64_t>& tensor_metadata,
+    const vTensor::Attribute metadata_type,
+    const size_t numel) {
+  VK_CHECK_COND(tensor_metadata.size() <= 4);
+  std::vector<int32_t> flipped_metadata =
+      flip_and_unsqueeze<int32_t>(tensor_metadata, metadata_type, numel);
+  return {
+      flipped_metadata.at(0),
+      flipped_metadata.at(1),
+      flipped_metadata.at(2),
+      flipped_metadata.at(3),
+  };
 }
 
 std::vector<int64_t> calculate_padded_sizes(
@@ -224,10 +189,14 @@ utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
     const std::vector<int64_t>& axis_map,
     const int32_t packed_dim) {
-  VK_CHECK_COND(padded_sizes.size() == 4);
-  VK_CHECK_COND(axis_map.size() == 4);
-
   utils::uvec3 extents({1, 1, 1});
+
+  // For high dimensional tensors, buffer storage must be used. No need to
+  // compute image extents in this case.
+  if (padded_sizes.size() > 4) {
+    return extents;
+  }
+
   // First three elements of axis_map indicate which (X,Y,Z) image axis the
   // width, height, and channels dim of the tensor maps to.
   for (int whcn_dim = 0; whcn_dim < 3; ++whcn_dim) {
@@ -309,7 +278,8 @@ int64_t calculate_gpu_buffer_numel(
   return numel;
 }
 
-int32_t pack_into_int32(const std::vector<int64_t>& vec, const int32_t extra) {
+template <typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
+int32_t pack_into_int32(const std::vector<T>& vec, const int32_t extra) {
   int32_t packed = static_cast<int32_t>(
       vec.at(0) + (vec.at(1) << 4) + (vec.at(2) << 8) + (vec.at(3) << 12) +
       (extra << 16));
@@ -322,22 +292,24 @@ int32_t create_hashed_layout(
     const int32_t packed_dim,
     const utils::StorageType storage_type) {
   if (storage_type == utils::kBuffer) {
-    return pack_into_int32(create_whcn_dim_order(dim_order), 0);
+    return pack_into_int32(
+        flip_and_unsqueeze<int64_t>(dim_order, kTensorDimOrder, 0), 0);
   }
   return pack_into_int32(axis_map, packed_dim);
 }
 
 size_t calculate_max_ubo_nbytes(
-    const size_t nbytes_per_ubo,
+    const size_t min_nbytes_per_ubo,
     const utils::StorageType storage_type) {
-  // For texture backed tensors, the metadata fields needed are:
-  // sizes, logical limits
-  size_t max_metadata_field_count = 2u;
+  size_t ivec4_ubo_nbytes = utils::align_up(size_t(16), min_nbytes_per_ubo);
+  size_t uvec3_ubo_nbytes = utils::align_up(size_t(12), min_nbytes_per_ubo);
+  size_t int32_ubo_nbytes = utils::align_up(size_t(4), min_nbytes_per_ubo);
   if (storage_type == utils::kBuffer) {
     // sizes, strides, dim order, numel
-    max_metadata_field_count = 4u;
+    return 3 * ivec4_ubo_nbytes + int32_ubo_nbytes;
   }
-  return max_metadata_field_count * nbytes_per_ubo;
+  // sizes, logical limits
+  return ivec4_ubo_nbytes + uvec3_ubo_nbytes;
 }
 
 //
@@ -517,6 +489,7 @@ void vTensorStorage::transition(
   vkapi::MemoryAccessFlags prev_access = last_access_.access;
 
   const bool prev_written = (prev_access & vkapi::MemoryAccessType::WRITE) != 0;
+  const bool cur_written = (cur_access & vkapi::MemoryAccessType::WRITE) != 0;
 
   VkImageLayout cur_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -528,7 +501,13 @@ void vTensorStorage::transition(
     layout_changed = cur_layout != new_layout;
   }
 
-  if (prev_written || layout_changed) {
+  // RAW: need to make sure current read sees previous writes
+  // WAW: need to make sure the current write occurs after previous write so
+  //      the final value is correct.
+  // WAR: need to make sure previous read does not read the value from the
+  //      current write.
+  // RAR: no need for synchronization
+  if (prev_written || cur_written || layout_changed) {
     VkPipelineStageFlags src_stage = vkapi::vk_stage(prev_stage);
     if (0u == src_stage) {
       src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -588,9 +567,11 @@ vTensor::vTensor(
           packed_dim_,
           storage_type)),
       // Related to tensor metadata UBOs
-      nbytes_per_ubo_{context->adapter_ptr()->min_ubo_alignment()},
-      max_ubo_nbytes_{calculate_max_ubo_nbytes(nbytes_per_ubo_, storage_type)},
+      min_nbytes_per_ubo_{context->adapter_ptr()->min_ubo_alignment()},
+      max_ubo_nbytes_{
+          calculate_max_ubo_nbytes(min_nbytes_per_ubo_, storage_type)},
       uniforms_(),
+      buffer_meta_(),
       // Construct Tensor storage
       storage_(std::make_shared<vTensorStorage>(
           context,
@@ -600,23 +581,16 @@ vTensor::vTensor(
           sizes,
           dtype_,
           allocate_memory)) {
-  // Derived metadata
-  std::vector<int64_t> whcn_dim_order(4, 0);
-  std::vector<int64_t> unsqueezed_strides(4, 0);
-  // Only calculate derived metadata if needed for the desired storage type.
-  // Note that logical limits may be used by buffer storage as well in order to
-  // set global work group sizes for some compute shaders.
-  if (storage_type == utils::kBuffer) {
-    whcn_dim_order = create_whcn_dim_order(dim_order_);
-    unsqueezed_strides = unsqueeze_strides(strides_, numel_);
+  // uniform_data_ only valid for low dim tensors
+  if (sizes.size() <= 4) {
+    uniform_data_ = std::make_shared<UniformData>(UniformData{
+        numel_,
+        sizes_,
+        dim_order_,
+        strides_,
+        calculate_logical_limits(storage_->image_extents_, axis_map_)});
   }
 
-  uniform_data_ = std::make_shared<UniformData>(UniformData{
-      sizes_,
-      whcn_dim_order,
-      unsqueezed_strides,
-      calculate_logical_limits(storage_->image_extents_, axis_map_),
-      numel_});
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "computed dim order is invalid");
 }
@@ -641,18 +615,19 @@ vTensor::vTensor(
           packed_dim_,
           utils::kTexture3D)),
       // Related to tensor metadata UBOs
-      nbytes_per_ubo_{context->adapter_ptr()->min_ubo_alignment()},
+      min_nbytes_per_ubo_{context->adapter_ptr()->min_ubo_alignment()},
       max_ubo_nbytes_{
-          calculate_max_ubo_nbytes(nbytes_per_ubo_, utils::kTexture3D)},
+          calculate_max_ubo_nbytes(min_nbytes_per_ubo_, utils::kTexture3D)},
       uniforms_(),
+      buffer_meta_(),
       // Construct Tensor storage
       storage_(std::make_shared<vTensorStorage>(context, image)) {
   uniform_data_ = std::make_shared<UniformData>(UniformData{
+      numel_,
       sizes_,
       {0, 0, 0, 0},
       {0, 0, 0, 0},
-      calculate_logical_limits(storage_->image_extents_, axis_map_),
-      numel_});
+      calculate_logical_limits(storage_->image_extents_, axis_map_)});
 }
 
 vTensor::vTensor(vTensor& other)
@@ -665,9 +640,10 @@ vTensor::vTensor(vTensor& other)
       strides_(other.strides_.begin(), other.strides_.end()),
       numel_(other.numel_),
       hashed_layout_(other.hashed_layout_),
-      nbytes_per_ubo_{other.nbytes_per_ubo_},
+      min_nbytes_per_ubo_{other.min_nbytes_per_ubo_},
       max_ubo_nbytes_{other.max_ubo_nbytes_},
       uniforms_(),
+      buffer_meta_(),
       // Copy Tensor storage
       storage_(other.storage_) {
   uniform_data_ = std::make_shared<UniformData>(*other.get_uniform_data());
@@ -690,21 +666,35 @@ vTensor::vTensor(
           axis_map_,
           packed_dim_,
           other.storage_type())),
-      nbytes_per_ubo_{other.nbytes_per_ubo_},
+      min_nbytes_per_ubo_{other.min_nbytes_per_ubo_},
       max_ubo_nbytes_{other.max_ubo_nbytes_},
       uniforms_(),
+      buffer_meta_(),
       // Copy Tensor storage
       storage_(other.storage_) {
   uniform_data_ = std::make_shared<UniformData>(UniformData{
+      static_cast<size_t>(utils::multiply_integers(sizes_)),
       sizes_,
-      create_whcn_dim_order(dim_order_),
-      unsqueeze_strides(strides_, numel_),
-      other.logical_limits(),
-      static_cast<size_t>(utils::multiply_integers(sizes_))});
+      dim_order_,
+      strides_,
+      other.logical_limits()});
 
   VK_CHECK_COND(
       dim_order_is_valid(dim_order_), "new dim order provided is invalid");
 }
+
+vTensor::UniformData::UniformData(
+    const size_t numel_ll,
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& dim_order,
+    const std::vector<int64_t>& strides,
+    const utils::uvec3& limits)
+    : numel(utils::safe_downcast<int32_t>(numel_ll)),
+      sizes_v(flip_and_unsqueeze_ivec4(sizes, kTensorSizes, numel_ll)),
+      dim_order_v(
+          flip_and_unsqueeze_ivec4(dim_order, kTensorDimOrder, numel_ll)),
+      strides_v(flip_and_unsqueeze_ivec4(strides, kTensorStrides, numel_ll)),
+      logical_limits(limits) {}
 
 uint32_t vTensor::UniformData::write_attribute(
     void* dst,
@@ -720,16 +710,48 @@ uint32_t vTensor::UniformData::write_attribute(
     return sizeof(member_name);                                            \
   }
   switch (attr) {
+    WRITE_ATTRIBUTE_CASE(NUMEL, numel);
     WRITE_ATTRIBUTE_CASE(SIZES, sizes_v);
-    WRITE_ATTRIBUTE_CASE(WHCN_DIM_ORDER, whcn_dim_order_v);
+    WRITE_ATTRIBUTE_CASE(WHCN_DIM_ORDER, dim_order_v);
     WRITE_ATTRIBUTE_CASE(STRIDES, strides_v);
     WRITE_ATTRIBUTE_CASE(LOGICAL_LIMITS, logical_limits);
-    WRITE_ATTRIBUTE_CASE(NUMEL, numel);
     default:
       VK_THROW("Invalid Attribute");
   }
 #undef WRITE_ATTRIBUTE_CASE
   return 0;
+}
+
+vTensor::BufferMetadata::BufferMetadata(
+    std::vector<int64_t>& src_sizes,
+    std::vector<int64_t>& src_dim_order,
+    std::vector<int64_t>& src_strides,
+    size_t src_numel) {
+  update(src_sizes, src_dim_order, src_strides, src_numel);
+}
+
+void vTensor::BufferMetadata::update(
+    std::vector<int64_t>& src_sizes,
+    std::vector<int64_t>& src_dim_order,
+    std::vector<int64_t>& src_strides,
+    size_t src_numel) {
+  int32_t fixed_ndim = utils::safe_downcast<int32_t>(kTensorDimLimit);
+
+  std::vector<uint32_t> fu_sizes = flip_and_unsqueeze<uint32_t>(
+      src_sizes, kTensorSizes, src_numel, fixed_ndim);
+  std::vector<uint32_t> fu_dim_order = flip_and_unsqueeze<uint32_t>(
+      src_dim_order, kTensorDimOrder, src_numel, fixed_ndim);
+  std::vector<uint32_t> fu_strides = flip_and_unsqueeze<uint32_t>(
+      src_strides, kTensorStrides, src_numel, fixed_ndim);
+
+  for (int i = 0; i < fixed_ndim; ++i) {
+    sizes[i] = fu_sizes.at(i);
+    dim_order[i] = fu_dim_order.at(i);
+    strides[i] = fu_strides.at(i);
+  }
+
+  ndim = utils::safe_downcast<uint32_t>(src_sizes.size());
+  numel = utils::safe_downcast<uint32_t>(src_numel);
 }
 
 vkapi::VulkanImage& vTensor::image(
@@ -799,84 +821,39 @@ size_t vTensor::get_max_ubo_nbytes(const size_t nbytes_per_ubo) const {
 }
 
 const vkapi::BufferBindInfo vTensor::sizes_ubo() {
-  if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
-  }
-  if (sizes_uniform_offset_ == kUniformOffsetUnset) {
-    VK_CHECK_COND(
-        (uniforms_size_ + nbytes_per_ubo_) <= max_ubo_nbytes_,
-        "Uniform data allocation has exceeded Tensor uniform buffer size");
-    sizes_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += nbytes_per_ubo_;
-    uniforms_.update(utils::make_whcn_ivec4(sizes_), sizes_uniform_offset_);
-  }
-  return vkapi::BufferBindInfo(
-      uniforms_.buffer(), sizes_uniform_offset_, nbytes_per_ubo_);
+  VK_CHECK_COND(sizes_.size() <= 4);
+  return metadata_ubo_impl(&sizes_uniform_offset_, uniform_data_->sizes_v);
 }
 
 const vkapi::BufferBindInfo vTensor::dim_order_ubo() {
-  if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
-  }
-  if (dim_order_uniform_offset_ == kUniformOffsetUnset) {
-    VK_CHECK_COND(
-        (uniforms_size_ + nbytes_per_ubo_) <= max_ubo_nbytes_,
-        "Uniform data allocation has exceeded Tensor uniform buffer size");
-    dim_order_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += nbytes_per_ubo_;
-    uniforms_.update(
-        uniform_data_->whcn_dim_order_v, dim_order_uniform_offset_);
-  }
-  return vkapi::BufferBindInfo(
-      uniforms_.buffer(), dim_order_uniform_offset_, nbytes_per_ubo_);
+  VK_CHECK_COND(sizes_.size() <= 4);
+  return metadata_ubo_impl(
+      &dim_order_uniform_offset_, uniform_data_->dim_order_v);
 }
 
 const vkapi::BufferBindInfo vTensor::strides_ubo() {
-  if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
-  }
-  if (strides_uniform_offset == kUniformOffsetUnset) {
-    VK_CHECK_COND(
-        (uniforms_size_ + nbytes_per_ubo_) <= max_ubo_nbytes_,
-        "Uniform data allocation has exceeded Tensor uniform buffer size");
-    strides_uniform_offset = uniforms_size_;
-    uniforms_size_ += nbytes_per_ubo_;
-    uniforms_.update(uniform_data_->strides_v, strides_uniform_offset);
-  }
-  return vkapi::BufferBindInfo(
-      uniforms_.buffer(), strides_uniform_offset, nbytes_per_ubo_);
+  VK_CHECK_COND(sizes_.size() <= 4);
+  return metadata_ubo_impl(&strides_uniform_offset, uniform_data_->strides_v);
 }
 
 const vkapi::BufferBindInfo vTensor::logical_limits_ubo() {
-  if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
-  }
-  if (logical_limits_uniform_offset_ == kUniformOffsetUnset) {
-    VK_CHECK_COND(
-        (uniforms_size_ + nbytes_per_ubo_) <= max_ubo_nbytes_,
-        "Uniform data allocation has exceeded Tensor uniform buffer size");
-    logical_limits_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += nbytes_per_ubo_;
-    uniforms_.update(logical_limits(), logical_limits_uniform_offset_);
-  }
-  return vkapi::BufferBindInfo(
-      uniforms_.buffer(), logical_limits_uniform_offset_, nbytes_per_ubo_);
+  VK_CHECK_COND(sizes_.size() <= 4);
+  return metadata_ubo_impl(
+      &logical_limits_uniform_offset_, uniform_data_->logical_limits);
 }
 
 const vkapi::BufferBindInfo vTensor::numel_ubo() {
-  if (!uniforms_.buffer()) {
-    uniforms_ = ParamsBuffer(storage_->context_, max_ubo_nbytes_, true);
+  VK_CHECK_COND(sizes_.size() <= 4);
+  return metadata_ubo_impl(&numel_uniform_offset_, uniform_data_->numel);
+}
+
+const vkapi::BufferBindInfo vTensor::buffer_meta_ubo() {
+  size_t ubo_nbytes = sizeof(BufferMetadata);
+  if (!buffer_meta_.buffer()) {
+    BufferMetadata data(sizes_, dim_order_, strides_, numel_);
+    buffer_meta_ = ParamsBuffer(storage_->context_, data);
   }
-  if (numel_uniform_offset_ == kUniformOffsetUnset) {
-    VK_CHECK_COND(
-        (uniforms_size_ + nbytes_per_ubo_) <= max_ubo_nbytes_,
-        "Uniform data allocation has exceeded Tensor uniform buffer size");
-    numel_uniform_offset_ = uniforms_size_;
-    uniforms_size_ += nbytes_per_ubo_;
-    uniforms_.update(numel(), numel_uniform_offset_);
-  }
-  return vkapi::BufferBindInfo(
-      uniforms_.buffer(), numel_uniform_offset_, nbytes_per_ubo_);
+  return vkapi::BufferBindInfo(buffer_meta_.buffer(), 0, ubo_nbytes);
 }
 
 VkMemoryRequirements vTensor::get_memory_requirements() const {
@@ -888,6 +865,16 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
       return storage_->image_.get_memory_requirements();
   }
   return {};
+}
+
+bool vTensor::memory_is_bound() const {
+  switch (storage_type()) {
+    case utils::kBuffer:
+      return storage_->buffer_.has_memory();
+    case utils::kTexture2D:
+    case utils::kTexture3D:
+      return storage_->image_.has_memory();
+  }
 }
 
 void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
@@ -902,37 +889,55 @@ void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
   }
 }
 
+void vTensor::acquire_allocation(vkapi::Allocation&& allocation) {
+  switch (storage_type()) {
+    case utils::kBuffer:
+      storage_->buffer_.acquire_allocation(std::move(allocation));
+      break;
+    case utils::kTexture2D:
+    case utils::kTexture3D:
+      storage_->image_.acquire_allocation(std::move(allocation));
+      break;
+  }
+}
+
 void vTensor::update_metadata() {
   numel_ = utils::multiply_integers(sizes_);
   strides_ = calculate_strides(sizes_, dim_order_);
 
   // Update uniform data if it has been modified
-  uniform_data_->numel = numel_;
-  uniform_data_->sizes_v = utils::make_whcn_ivec4(sizes_);
-  uniform_data_->whcn_dim_order_v =
-      utils::make_ivec4(create_whcn_dim_order(dim_order_));
-  uniform_data_->strides_v =
-      utils::make_whcn_ivec4(unsqueeze_strides(strides_, numel_));
-  uniform_data_->numel = utils::safe_downcast<int32_t>(numel_);
-  uniform_data_->logical_limits.limits =
-      calculate_logical_limits(sizes_, axis_map_, packed_dim_);
+  if (sizes_.size() <= 4) {
+    uniform_data_->numel = utils::safe_downcast<int32_t>(numel_);
+    uniform_data_->sizes_v =
+        flip_and_unsqueeze_ivec4(sizes_, kTensorSizes, numel_);
+    uniform_data_->dim_order_v =
+        flip_and_unsqueeze_ivec4(dim_order_, kTensorDimOrder, numel_);
+    uniform_data_->strides_v =
+        flip_and_unsqueeze_ivec4(strides_, kTensorStrides, numel_);
+    uniform_data_->logical_limits.limits =
+        calculate_logical_limits(sizes_, axis_map_, packed_dim_);
 
-  if (sizes_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(uniform_data_->sizes_v, sizes_uniform_offset_);
+    if (sizes_uniform_offset_ != kUniformOffsetUnset) {
+      uniforms_.update(uniform_data_->sizes_v, sizes_uniform_offset_);
+    }
+    if (dim_order_uniform_offset_ != kUniformOffsetUnset) {
+      uniforms_.update(uniform_data_->dim_order_v, dim_order_uniform_offset_);
+    }
+    if (strides_uniform_offset != kUniformOffsetUnset) {
+      uniforms_.update(uniform_data_->strides_v, strides_uniform_offset);
+    }
+    if (numel_uniform_offset_ != kUniformOffsetUnset) {
+      uniforms_.update(numel_, numel_uniform_offset_);
+    }
+    if (logical_limits_uniform_offset_ != kUniformOffsetUnset) {
+      uniforms_.update(
+          uniform_data_->logical_limits.limits, logical_limits_uniform_offset_);
+    }
   }
-  if (dim_order_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(
-        uniform_data_->whcn_dim_order_v, dim_order_uniform_offset_);
-  }
-  if (strides_uniform_offset != kUniformOffsetUnset) {
-    uniforms_.update(uniform_data_->strides_v, strides_uniform_offset);
-  }
-  if (numel_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(numel_, numel_uniform_offset_);
-  }
-  if (logical_limits_uniform_offset_ != kUniformOffsetUnset) {
-    uniforms_.update(
-        uniform_data_->logical_limits.limits, logical_limits_uniform_offset_);
+
+  if (buffer_meta_.buffer()) {
+    BufferMetadata data(sizes_, dim_order_, strides_, numel_);
+    buffer_meta_.update(data);
   }
 }
 

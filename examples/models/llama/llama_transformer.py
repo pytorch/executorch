@@ -17,24 +17,11 @@ from executorch.examples.models.llama.attention import (
     ATTENTION_REGISTRY,
     ForwardOptions,
 )
-
+from executorch.examples.models.llama.feed_forward import FeedForward
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
 from torch import nn
-
-
-class FeedForward(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-        assert args.hidden_dim is not None
-        hidden_dim: int = args.hidden_dim
-        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
-        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
-
-    def forward(self, x):
-        return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class ConditionalFeedForward(nn.Module):
@@ -99,10 +86,15 @@ class TransformerBlock(nn.Module):
         self.dim = args.dim
         self.head_dim = args.head_dim
         self.attention = attention
+
+        assert (
+            args.hidden_dim is not None
+        ), "`hidden_dim` must be set in ModelArgs to construct a TransformerBlock."
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
-            self.feed_forward = FeedForward(args)
+            self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
+
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -121,7 +113,7 @@ class TransformerBlock(nn.Module):
                 f"Available: {list(ATTENTION_REGISTRY.keys())}"
             )
         cls = ATTENTION_REGISTRY[args.attention_type]
-        attention = cls(args, layer_id, rope)
+        attention = cls(args, layer_id, rope, **args.attention_kwargs)
         return TransformerBlock(args, attention)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
@@ -204,7 +196,8 @@ class Transformer(nn.Module):
 
         if not self.generate_full_logits:
             # Only the last logit is used for the new generated token
-            h = h[:, -1, :]
+            pos = attn_options.get("last_valid_token_pos", -1)
+            h = h[:, pos, :]
 
         h = self.norm(h)
 
@@ -254,8 +247,25 @@ def construct_transformer(model_args: ModelArgs) -> Transformer:
     layers = torch.nn.ModuleList()
     cls = ATTENTION_REGISTRY[model_args.attention_type]
     for layer_id in range(model_args.n_layers):
-        attention = cls(model_args, layer_id, rope)
-        transformer_block = TransformerBlock(model_args, attention)
-        layers.append(transformer_block)
+        # hybrid models define layer_types
+        if model_args.layer_types and model_args.layer_types[layer_id] == "conv":
+            from executorch.examples.models.lfm2.short_conv import ShortConvBlock
+
+            assert (
+                model_args.hidden_dim is not None
+            ), "`hidden_dim` must be set in ModelArgs to construct a TransformerBlock."
+            layers.append(
+                ShortConvBlock(
+                    dim=model_args.dim,
+                    hidden_dim=model_args.hidden_dim,
+                    norm_eps=model_args.norm_eps,
+                )
+            )
+        else:
+            attention = cls(
+                model_args, layer_id, rope, **model_args.attention_kwargs
+            )  # pyre-ignore[45]
+            transformer_block = TransformerBlock(model_args, attention)
+            layers.append(transformer_block)
 
     return Transformer(model_args, layers, rope)

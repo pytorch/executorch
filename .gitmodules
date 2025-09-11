@@ -1,9 +1,6 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
 	url = https://git.gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-core-driver.git
-[submodule "backends/arm/third-party/serialization_lib"]
-	path = backends/arm/third-party/serialization_lib
-	url = https://git.gitlab.arm.com/tosa/tosa-serialization.git
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
@@ -27,10 +24,10 @@
 	url = https://github.com/pytorch/cpuinfo.git
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
-	url = https://github.com/Maratyszcza/pthreadpool.git
+	url = https://github.com/google/pthreadpool.git
 [submodule "extension/llm/tokenizers"]
 	path = extension/llm/tokenizers
-	url = https://github.com/pytorch-labs/tokenizers.git
+	url = https://github.com/meta-pytorch/tokenizers.git
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
 	url = https://gitlab.com/libeigen/eigen.git

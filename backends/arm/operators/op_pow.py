@@ -16,49 +16,9 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
-
-
-@register_node_visitor
-class PowVisitor_080_MI(NodeVisitor):
-    target = "aten.pow.Tensor_Tensor"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target,
-            [*inputs, output],
-            [ts.DType.FP16, ts.DType.FP32],
-            output.tosa_spec,
-        )
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().POW,
-            [
-                inputs[0].name,
-                inputs[1].name,
-            ],
-            [output.name],
-            None,
-        )
 
 
 @register_node_visitor
@@ -90,7 +50,9 @@ class PowVisitor(NodeVisitor):
             output.tosa_spec,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().POW,
             [
                 inputs[0].name,

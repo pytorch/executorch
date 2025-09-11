@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 import argparse
+import collections
 import copy
 
 import pathlib
@@ -23,8 +24,7 @@ from executorch.devtools.etrecord import generate_etrecord
 from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend
-
-from torch.export import export
+from executorch.extension.export_util.utils import save_pte_program
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -41,7 +41,16 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 )
 
 
-def parse_args() -> argparse.ArgumentParser:
+def is_fbcode():
+    return not hasattr(torch.version, "git_version")
+
+
+_CAN_RUN_WITH_PYBINDINGS = (sys.platform == "darwin") and not is_fbcode()
+if _CAN_RUN_WITH_PYBINDINGS:
+    from executorch.runtime import Runtime
+
+
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -82,9 +91,12 @@ def parse_args() -> argparse.ArgumentParser:
         required=False,
         default=False,
     )
+    parser.add_argument(
+        "--run_with_pybindings",
+        action=argparse.BooleanOptionalAction,
+    )
 
     args = parser.parse_args()
-    # pyre-fixme[7]: Expected `ArgumentParser` but got `Namespace`.
     return args
 
 
@@ -95,7 +107,8 @@ def partition_module_to_coreml(module):
 def lower_module_to_coreml(module, compile_specs, example_inputs):
     module = module.eval()
     edge = to_edge(
-        export(module, example_inputs, strict=True), compile_config=_EDGE_COMPILE_CONFIG
+        torch.export.export(module, example_inputs, strict=True),
+        compile_config=_EDGE_COMPILE_CONFIG,
     )
     # All of the subsequent calls on the edge_dialect_graph generated above (such as delegation or
     # to_executorch()) are done in place and the graph is also modified in place. For debugging purposes
@@ -115,24 +128,23 @@ def lower_module_to_coreml(module, compile_specs, example_inputs):
 def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     lowered_module(*example_inputs)
     exec_prog = to_edge(
-        export(lowered_module, example_inputs, strict=True),
+        torch.export.export(lowered_module, example_inputs, strict=True),
         compile_config=_EDGE_COMPILE_CONFIG,
     ).to_executorch(config=exir.ExecutorchBackendConfig(extract_delegate_segments=True))
 
     return exec_prog
 
 
-def save_executorch_program(exec_prog, model_name, compute_unit):
-    buffer = exec_prog.buffer
-    filename = f"{model_name}_coreml_{compute_unit}.pte"
-    print(f"Saving exported program to {filename}")
-    with open(filename, "wb") as file:
-        file.write(buffer)
-    return
+def get_pte_base_name(args: argparse.Namespace) -> str:
+    pte_name = args.model_name
+    if args.compile:
+        pte_name += "_compiled"
+    pte_name = f"{pte_name}_coreml_{args.compute_unit}"
+    return pte_name
 
 
-def save_processed_bytes(processed_bytes, model_name, compute_unit):
-    filename = f"{model_name}_coreml_{compute_unit}.bin"
+def save_processed_bytes(processed_bytes, base_name: str):
+    filename = f"{base_name}.bin"
     print(f"Saving processed bytes to {filename}")
     with open(filename, "wb") as file:
         file.write(processed_bytes)
@@ -154,6 +166,37 @@ def generate_compile_specs_from_args(args):
     )
 
 
+def run_with_pybindings(executorch_program, eager_reference, example_inputs, precision):
+    if not _CAN_RUN_WITH_PYBINDINGS:
+        raise RuntimeError("Cannot run with pybindings on this platform.")
+
+    dtype = {
+        "float32": torch.float32,
+        "float16": torch.float16,
+    }[precision]
+
+    runtime = Runtime.get()
+    program = runtime.load_program(executorch_program.buffer)
+    method = program.load_method("forward")
+    et_outputs = method.execute(*example_inputs)[0]
+    eager_outputs = eager_reference(*example_inputs)
+    if isinstance(eager_outputs, collections.OrderedDict):
+        eager_outputs = eager_outputs["out"]
+    if isinstance(eager_outputs, list | tuple):
+        eager_outputs = eager_outputs[0]
+
+    mse = ((et_outputs - eager_outputs) ** 2).mean().sqrt()
+    print(f"Mean square error: {mse}")
+    assert mse < 0.1, "Mean square error is too high."
+
+    if dtype == torch.float32:
+        assert torch.allclose(
+            et_outputs, eager_outputs, atol=1e-02, rtol=1e-02
+        ), f"""Outputs do not match eager reference:
+        \tet_outputs (first 5)={et_outputs.reshape(-1)[0:5]}
+        \teager_outputs (first 5)={eager_outputs.reshape(-1)[0:5]}"""
+
+
 def main():
     args = parse_args()
 
@@ -170,49 +213,67 @@ def main():
             f"Valid compute units are {valid_compute_units}."
         )
 
-    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
-        *MODEL_NAME_TO_MODEL[args.model_name]
+    model, example_args, example_kwargs, dynamic_shapes = (
+        EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[args.model_name])
     )
     if not args.dynamic_shapes:
         dynamic_shapes = None
 
     compile_specs = generate_compile_specs_from_args(args)
-    lowered_module = None
-
+    pte_base_name = get_pte_base_name(args)
     if args.use_partitioner:
-        model.eval()
-        exir_program_aten = torch.export.export(
-            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
+        model = model.eval()
+        ep = torch.export.export(
+            model,
+            args=example_args,
+            kwargs=example_kwargs,
+            dynamic_shapes=dynamic_shapes,
         )
-
-        edge_program_manager = exir.to_edge(exir_program_aten)
-        edge_copy = copy.deepcopy(edge_program_manager)
-        partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        print(ep)
+        delegated_program = exir.to_edge_transform_and_lower(
+            ep,
+            partitioner=[CoreMLPartitioner(compile_specs=compile_specs)],
+            generate_etrecord=args.generate_etrecord,
         )
-        delegated_program_manager = edge_program_manager.to_backend(partitioner)
-        exec_program = delegated_program_manager.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_delegate_segments=True)
-        )
+        exec_program = delegated_program.to_executorch()
+        save_pte_program(exec_program, pte_base_name)
+        if args.generate_etrecord:
+            exec_program.get_etrecord().save(f"{pte_base_name}_coreml_etrecord.bin")
+        if args.run_with_pybindings:
+            run_with_pybindings(
+                executorch_program=exec_program,
+                eager_reference=model,
+                example_inputs=example_args,
+                precision=args.compute_precision,
+            )
     else:
         lowered_module, edge_copy = lower_module_to_coreml(
             module=model,
-            example_inputs=example_inputs,
+            example_inputs=example_args,
             compile_specs=compile_specs,
         )
         exec_program = export_lowered_module_to_executorch_program(
             lowered_module,
-            example_inputs,
+            example_args,
         )
+        save_pte_program(exec_program, pte_base_name)
+        if args.generate_etrecord:
+            generate_etrecord(
+                f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program
+            )
 
-    model_name = f"{args.model_name}_compiled" if args.compile else args.model_name
-    save_executorch_program(exec_program, model_name, args.compute_unit)
-    generate_etrecord(f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program)
-
-    if args.save_processed_bytes and lowered_module is not None:
-        save_processed_bytes(
-            lowered_module.processed_bytes, args.model_name, args.compute_unit
-        )
+        if args.save_processed_bytes:
+            save_processed_bytes(
+                lowered_module.processed_bytes,
+                pte_base_name,
+            )
+        if args.run_with_pybindings:
+            run_with_pybindings(
+                executorch_program=exec_program,
+                eager_reference=model,
+                example_inputs=example_args,
+                precision=args.compute_precision,
+            )
 
 
 if __name__ == "__main__":

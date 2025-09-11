@@ -22,6 +22,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     max_pool_2d_options,
     transpose_conv_options,
 )
+from torch.fx import Node
 
 
 def exactly_one_is_none(obj1: Optional, obj2: Optional) -> bool:
@@ -69,29 +70,22 @@ def try_get_input(t_op: tflite_model.Operator, idx: int) -> tflite_model.Tensor 
     return tensor
 
 
-def extend_1d_pads_to_2d(onnx_1d_pads: MutableSequence):
-    """Extend the onnx 'pads' operator attribute that represents padding for a 1D kernel to 2D, by adding '0's."""
-    if onnx_1d_pads is not None:
-        onnx_1d_pads.insert(1, 0)
-        onnx_1d_pads.append(0)
+def extend_1d_padding_to_2d(tflite_1d_padding: MutableSequence):
+    """Extend the PyTorch 'padding' operator attribute that represents padding for a 1D kernel to 2D, by adding '0's."""
+    if tflite_1d_padding is not None:
+        tflite_1d_padding.append(0)
 
 
-def extend_1d_strides_to_2d(onnx_1d_strides: MutableSequence):
-    """Extend the onnx 'strides' operator attribute that represents strides for a 1D kernel to 2D, by adding '1'."""
-    if onnx_1d_strides is not None:
-        onnx_1d_strides.append(1)
+def extend_1d_stride_to_2d(tflite_1d_stride: MutableSequence):
+    """Extend the PyTorch 'stride' operator attribute that represents stride for a 1D kernel to 2D, by adding '1'."""
+    if tflite_1d_stride is not None:
+        tflite_1d_stride.append(1)
 
 
-def extend_1d_dilations_to_2d(onnx_1d_dilations: MutableSequence):
-    """Extend the onnx 'dilations' operator attribute that represents dilations for a 1D kernel to 2D, by adding '1'."""
-    if onnx_1d_dilations is not None:
-        onnx_1d_dilations.append(1)
-
-
-def extend_1d_kernel_shape_to_2d(onnx_1d_kernel_shape: MutableSequence):
-    """Extend the onnx 1D 'kernel_shape' operator attribute to 2D, by adding '1'."""
-    if onnx_1d_kernel_shape is not None:
-        onnx_1d_kernel_shape.append(1)
+def extend_1d_dilation_to_2d(tflite_1d_dilation: MutableSequence):
+    """Extend the PyTorch 'dilation' operator attribute that represents dilation for a 1D kernel to 2D, by adding '1'."""
+    if tflite_1d_dilation is not None:
+        tflite_1d_dilation.append(1)
 
 
 StridedOptions = (
@@ -163,6 +157,34 @@ def uses_shape_broadcasting(t_op: tflite_model.Operator) -> bool:
 
     return any(
         input_tensor.shape != first_input_shape for input_tensor in t_op.tmp_inputs[1:]
+    )
+
+
+def node_uses_shape_broadcasting(node: Node) -> bool:
+    """Determine if given PyTorch fx Node uses shape broadcasting for it's input nodes or not.
+
+    :param node: PyTorch fx Node with 'all_input_nodes' initialized.
+    :return: True, if the node uses shape broadcasting for it's input nodes.
+             False otherwise.
+    """
+
+    if node.all_input_nodes is None:
+        logger.e(
+            logger.Code.INTERNAL_ERROR,
+            "common.node_uses_shape_broadcasting(): 'all_input_nodes' are None!",
+        )
+
+    if len(node.all_input_nodes) == 0:
+        logger.e(
+            logger.Code.INTERNAL_ERROR,
+            "common.node_uses_shape_broadcasting(): Operator has no inputs!",
+        )
+
+    first_input_shape = node.all_input_nodes[0].meta["val"].shape
+
+    return any(
+        input_tensor.meta["val"].shape != first_input_shape
+        for input_tensor in node.all_input_nodes[1:]
     )
 
 

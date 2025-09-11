@@ -138,4 +138,5 @@ class BackendWithCompilerDemo(BackendDetails):
                 encoding="utf8",
             ),
             debug_handle_map=debug_handle_map,
+            _delegate_info_meta="test",
         )

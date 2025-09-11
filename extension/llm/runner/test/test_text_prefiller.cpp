@@ -21,14 +21,15 @@ using executorch::runtime::Error;
 using executorch::runtime::Result;
 using executorch::runtime::testing::TensorFactory;
 
+namespace {
 // Mock class for TextDecoderRunner
 class MockTextDecoderRunner : public TextDecoderRunner {
  public:
-  MockTextDecoderRunner() : TextDecoderRunner(nullptr, false) {}
+  MockTextDecoderRunner() : TextDecoderRunner(nullptr, nullptr) {}
   MOCK_METHOD(
       Result<executorch::aten::Tensor>,
       step,
-      (executorch::extension::TensorPtr&, executorch::extension::TensorPtr&),
+      (executorch::extension::TensorPtr&, int64_t),
       ());
   MOCK_METHOD(bool, is_method_loaded, (), ());
   MOCK_METHOD(Result<uint64_t>, prefill, (std::vector<uint64_t>&, int64_t), ());
@@ -44,8 +45,7 @@ class TextPrefillerTest : public Test {
     ON_CALL(text_decoder_runner_, is_method_loaded())
         .WillByDefault(Return(true));
     ON_CALL(text_decoder_runner_, step)
-        .WillByDefault([&](executorch::extension::TensorPtr&,
-                           executorch::extension::TensorPtr&) {
+        .WillByDefault([&](executorch::extension::TensorPtr&, int64_t) {
           return Result<executorch::aten::Tensor>(tensor);
         });
   }
@@ -287,9 +287,10 @@ TEST_F(TextPrefillerTest, PrefillChunkWorksWithParallelPrefill) {
   auto prefiller = createTextPrefiller(10, true, true);
 
   // Set up expectations for the text decoder runner
-  EXPECT_CALL(text_decoder_runner_, step(_, _))
-      .Times(1)
-      .WillOnce(Return(Result<executorch::aten::Tensor>(tensor)));
+  ON_CALL(text_decoder_runner_, step(_, _))
+      .WillByDefault([&](executorch::extension::TensorPtr&, int64_t) {
+        return Result<executorch::aten::Tensor>(tensor);
+      });
 
   // Create prompt tokens
   std::vector<uint64_t> prompt_tokens = {1, 2, 3};
@@ -304,3 +305,4 @@ TEST_F(TextPrefillerTest, PrefillChunkWorksWithParallelPrefill) {
   // Verify that start_pos has been updated correctly
   EXPECT_EQ(start_pos, prompt_tokens.size());
 }
+} // namespace

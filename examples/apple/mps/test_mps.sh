@@ -15,10 +15,12 @@ cmake_install_executorch_devtools_lib() {
   echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-out
 
-  retry cmake -DBUCK2="$BUCK" \
+  retry cmake \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
           -DEXECUTORCH_BUILD_MPS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
@@ -53,12 +55,6 @@ if [[ -z $PYTHON_EXECUTABLE ]];
 then
   PYTHON_EXECUTABLE=python3
 fi
-
-if [[ -z $BUCK ]];
-then
-  BUCK=buck2
-fi
-
 
 cmake_install_executorch_devtools_lib
 test_cmake_mps

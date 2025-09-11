@@ -186,7 +186,7 @@ def export_token_embedding(llava, prompt):
             packed=False,
         ).quantized_model()
 
-    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    quantized_token_embed = quant_embedding(llava.model_.model.language_model)
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -226,11 +226,11 @@ def export_all(llava_model: LlavaModel):
         {
             "image_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
-            "text_model": text_model_ep,
+            "text_decoder": text_model_ep,
         },
         partitioner={
             "image_encoder": [XnnpackPartitioner()],
-            "text_model": [
+            "text_decoder": [
                 # First partition the DQLinear nodes, then partition the rest of the nodes,
                 # to avoid multiple DQLinear nodes in the same partition,
                 # to avoid holding multiple unpacked and packed weight buffers in memory,
@@ -254,7 +254,7 @@ def export_all(llava_model: LlavaModel):
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
                 "image_encoder": ConstraintBasedSymShapeEvalPass(),
-                "text_model": ConstraintBasedSymShapeEvalPass(),
+                "text_decoder": ConstraintBasedSymShapeEvalPass(),
                 "token_embedding": HintBasedSymShapeEvalPass(),
             },
         )

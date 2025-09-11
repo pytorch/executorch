@@ -8,8 +8,8 @@ import torch.nn as nn
 
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -32,18 +32,18 @@ input_t = tuple[torch.Tensor]
 
 
 @parametrize("test_data", test_input)
-def test_non_persistent_buffer_MI(test_data: input_t):
+def test_non_persistent_buffer_FP(test_data: input_t):
     """
     Test validates Arm backend handling of non-persistent buffers
     and ensures that there are no asserts or errors when they are used.
     """
-    TosaPipelineMI[input_t](NonPersistentBuffer(), test_data, "").run()
+    TosaPipelineFP[input_t](NonPersistentBuffer(), test_data, "").run()
 
 
 @parametrize("test_data", test_input)
-def test_non_persistent_buffer_BI(test_data: input_t):
+def test_non_persistent_buffer_INT(test_data: input_t):
     """
     Test validates Arm backend handling of non-persistent buffers
     and ensures that there are no asserts or errors when they are used.
     """
-    TosaPipelineBI[input_t](NonPersistentBuffer(), test_data, "").run()
+    TosaPipelineINT[input_t](NonPersistentBuffer(), test_data, "").run()

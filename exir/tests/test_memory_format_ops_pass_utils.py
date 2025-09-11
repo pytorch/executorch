@@ -38,6 +38,10 @@ MemoryFormatOps2Str: Dict[torch._ops.OpOverload, List[str]] = {
         "torch.ops.aten.empty.memory_format",
         "executorch_exir_dialects_edge__ops_dim_order_ops__empty_dim_order_default",
     ),
+    torch.ops.aten.clone.default: (
+        "torch.ops.aten.clone.default",
+        "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default",
+    ),
 }
 
 
@@ -70,6 +74,22 @@ class SimpleToCopyChannelsLastModule(torch.nn.Module):
         return x.to(dtype=torch.double, memory_format=torch.channels_last)
 
 
+class SimpleCloneContiguousModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.clone(memory_format=torch.contiguous_format)
+
+
+class SimpleCloneChannelsLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.clone(memory_format=torch.channels_last)
+
+
 class SimpleEmptyContiguoustModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -98,6 +118,16 @@ class PropagateToCopyChannalsLastModule(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
+        t2 = t1 + t1
+        return t1 * t2
+
+
+class PropagateToCloneChannelsLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        t1 = x.clone(memory_format=torch.channels_last)
         t2 = t1 + t1
         return t1 * t2
 

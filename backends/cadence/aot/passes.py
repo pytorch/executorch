@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Any, List, Optional
+from typing import Any, Callable, cast, List, Optional, Type
 
 import torch
 import torch.fx
@@ -28,13 +28,19 @@ from executorch.backends.cadence.aot.remove_ops import (
     RemoveRedundantOps,
 )
 from executorch.backends.cadence.aot.reorder_ops import CadenceReorderOpsInGraph
-from executorch.backends.cadence.aot.replace_ops import CadenceReplaceOpsInGraph
+from executorch.backends.cadence.aot.replace_ops import (
+    CadenceReplaceOpsInGraph,
+    ReplaceMulTensorWithMulAndFullOpsPass,
+)
 from executorch.backends.cadence.aot.simplify_ops import CadenceSimplifyOpsInGraph
+from executorch.backends.cadence.aot.type_dispatch import CompileTimeTypeDispatchPass
+from executorch.exir import EdgeProgramManager
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from torch.export.exported_program import ExportedProgram
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
@@ -71,7 +77,7 @@ class FinalizePipeline(ExportPass):
 Argument = Any  # pyre-ignore
 
 
-def get_passes_in_default_order() -> List[ExportPass]:
+def get_passes_in_default_order() -> list[Type[ExportPass]]:
     passes = [
         InitializePipeline,
         RemoveRedundantOps.passes,
@@ -85,18 +91,42 @@ def get_passes_in_default_order() -> List[ExportPass]:
         FuseFullThenReshapePass,
         FuseTransposeOrPermuteOpPairsPass,
         RemoveNopSliceOrViewOpPass,
+        CompileTimeTypeDispatchPass,
     ]
     return pytree.tree_flatten(passes)[0]
 
 
-def get_cadence_passes(
+def apply_exir_ops_passes(
     opt_level: int,
-) -> List[Optional[PassResult]]:
+    edge_prog_manager: EdgeProgramManager,
+) -> EdgeProgramManager:
     passes = get_passes_in_default_order()
     pass_filter = create_cadence_pass_filter(opt_level)
-    filtered_passes = [
-        # pyre-ignore[20]: Expect argument graph_module
-        filtered_pass()
+    cadence_passes = [
+        (
+            lambda graph_module, filtered_pass=filtered_pass: filtered_pass()(
+                graph_module
+            )
+        )
         for filtered_pass in list(filter(pass_filter, passes))
     ]
-    return filtered_passes
+    cadence_prog_manager = edge_prog_manager.transform(
+        cast(
+            list[Callable[[torch.fx.GraphModule], Optional[PassResult]]], cadence_passes
+        )
+    )
+    return cadence_prog_manager
+
+
+def apply_torch_ops_passes(expo_program: ExportedProgram) -> ExportedProgram:
+    """
+    Applies compiler passes on torch.ops IR, including torch.ops.aten, torch.ops.cadence, etc.
+    expo_program is expected to be the output of the torch.export.export().
+    """
+
+    aten_passes: List[Callable[[torch.fx.GraphModule], Optional[PassResult]]] = [
+        ReplaceMulTensorWithMulAndFullOpsPass()
+    ]
+    # TODO(T230417247): Use PassResult which is currently ignored.
+    PassManager(aten_passes)(expo_program.graph_module)
+    return expo_program

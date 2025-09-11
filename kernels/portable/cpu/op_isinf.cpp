@@ -14,12 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& isinf_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  // Lambda is syntactic sugar needed to workaround compilation on some older
-  // non-compatible distros where isnan is returning int rather than bool
-  return internal::unary_ufunc_realhb_to_bool(
-      [](double x) -> bool { return std::isinf(x); }, ctx, in, out);
-}
+DEFINE_UNARY_UFUNC_REALHBBF16_TO_BOOL(isinf_out, std::isinf)
 
 } // namespace native
 } // namespace executor

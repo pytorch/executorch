@@ -12,10 +12,10 @@
 
 namespace torch::executor::native {
 
-Tensor::SizesType
+executorch::aten::SizesType
 compute_arange_out_size(double start, double end, double step);
 
-inline Tensor::SizesType compute_arange_out_size(double end) {
+inline executorch::aten::SizesType compute_arange_out_size(double end) {
   return compute_arange_out_size(0.0, end, 1.0);
 }
 

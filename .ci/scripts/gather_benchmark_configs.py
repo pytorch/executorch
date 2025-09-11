@@ -16,16 +16,65 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 from examples.models import MODEL_NAME_TO_MODEL
 
 
-# Device pools for AWS Device Farm
+DEVICE_POOLS_REGEX = re.compile(r"(?P<device_name>[^\+]+)\+(?P<variant>[^\+]+)")
+# Device pools for AWS Device Farm. Initially, I choose to distribute models to these pool
+# round-robin for simplicity. For public pool, only one per device type is needed because
+# AWS will scale the number of devices there for us. However, for private pool, we need to
+# manually maintain multiple pools of the same device to evenly distribute models there.
+# The pool ARNs are extracted from the output of the following command:
+#   aws devicefarm list-device-pools \
+#    --arn arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6 \
+#    --region us-west-2
 DEVICE_POOLS = {
-    "apple_iphone_15": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/3b5acd2e-92e2-4778-b651-7726bafe129d",
-    "apple_iphone_15+ios_18": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/12c8b15c-8d03-4e07-950d-0a627e7595b4",
-    "samsung_galaxy_s22": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa",
-    "samsung_galaxy_s22_private": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/ea6b049d-1508-4233-9a56-5d9eacbe1078",
-    "samsung_galaxy_s24": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db",
-    "google_pixel_8_pro": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/d65096ab-900b-4521-be8b-a3619b69236a",
-    "google_pixel_3_private_rooted": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98d23ca8-ea9e-4fb7-b725-d402017b198d",
-    "apple_iphone_15_private": "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/55929353-2f28-4ee5-bdff-d1a95f58cb28",
+    "apple_iphone_15": {
+        "public": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/3b5acd2e-92e2-4778-b651-7726bafe129d",
+        ],
+        "ios_18_public": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/12c8b15c-8d03-4e07-950d-0a627e7595b4",
+        ],
+        "private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/55929353-2f28-4ee5-bdff-d1a95f58cb28",
+        ],
+        "plus_private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/767bfb3e-a00e-4d92-998b-4eafdcf7213b",
+        ],
+        "pro_private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/1394f34c-2981-4c55-aaa2-246871ac713b",
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/099e8def-4609-4383-8787-76b88e500c1d",
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/d6707270-b009-479e-a83a-7bdb255f9de5",
+        ],
+    },
+    "samsung_galaxy_s22": {
+        "public": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa",
+        ],
+        "private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/ea6b049d-1508-4233-9a56-5d9eacbe1078",
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/1fa924a1-5aff-475b-8f4d-f7c6d8de4fe9",
+        ],
+        "ultra_private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/5f79d72e-e229-4f9c-962f-5d37196fcfe7",
+        ],
+    },
+    "samsung_galaxy_s24": {
+        "public": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98f8788c-2e25-4a3c-8bb2-0d1e8897c0db",
+        ],
+        "ultra_private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/5f79d72e-e229-4f9c-962f-5d37196fcfe7",
+        ],
+    },
+    "google_pixel_8": {
+        "pro_public": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/d65096ab-900b-4521-be8b-a3619b69236a",
+        ],
+    },
+    "google_pixel_3": {
+        "rooted_private": [
+            "arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/98d23ca8-ea9e-4fb7-b725-d402017b198d",
+        ],
+    },
 }
 
 # Predefined benchmark configurations
@@ -318,24 +367,55 @@ def get_benchmark_configs() -> Dict[str, Dict]:  # noqa: C901
 
         # Add configurations for each valid device
         for device in devices:
-            for config in configs:
-                if config == "llama3_coreml_ane" and not device.endswith("+ios_18"):
-                    device = f"{device}+ios_18"
-                    logging.info(
-                        f"Benchmark config '{config}' only works on iOS 18+, auto-upgraded device pool to '{device}'"
-                    )
+            # Parse the device name
+            m = re.match(DEVICE_POOLS_REGEX, device)
+            if not m:
+                logging.warning(
+                    f"Invalid device name: {device} is not in DEVICE_NAME+VARIANT format. Skipping."
+                )
+                continue
 
-                if device not in DEVICE_POOLS:
-                    logging.warning(f"Unsupported device '{device}'. Skipping.")
-                    continue
+            device_name = m.group("device_name")
+            variant = m.group("variant")
+
+            if device_name not in DEVICE_POOLS:
+                logging.warning(f"Unsupported device '{device}'. Skipping.")
+                continue
+
+            if variant not in DEVICE_POOLS[device_name]:
+                logging.warning(
+                    f"Unsupported {device}'s variant '{variant}'. Skipping."
+                )
+                continue
+
+            device_pool_count = len(DEVICE_POOLS[device_name][variant])
+            if not device_pool_count:
+                logging.warning(
+                    f"No device pool defined for {device}'s variant '{variant}'. Skipping."
+                )
+                continue
+
+            device_pool_index = 0
+            for config in configs:
+                if config == "llama3_coreml_ane" and "ios_18" not in variant:
+                    variant = "ios_18_public"
+                    logging.info(
+                        f"Benchmark config '{config}' only works on iOS 18+, auto-upgraded device variant to '{variant}'"
+                    )
 
                 record = {
                     "model": model_name,
                     "config": config,
-                    "device_name": device,
-                    "device_arn": DEVICE_POOLS[device],
+                    "device_name": device_name,
+                    "variant": variant,
+                    "device_arn": DEVICE_POOLS[device_name][variant][
+                        device_pool_index % device_pool_count
+                    ],
                 }
                 benchmark_configs["include"].append(record)
+
+                # Distribute configs to pools of the same device round-robin
+                device_pool_index += 1
 
     set_output("benchmark_configs", json.dumps(benchmark_configs))
 

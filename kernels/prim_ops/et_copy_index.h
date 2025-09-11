@@ -9,13 +9,14 @@
 #pragma once
 
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 
 namespace torch {
 namespace executor {
 namespace function {
 
-void et_copy_index(KernelRuntimeContext& context, EValue** stack);
+void et_copy_index(KernelRuntimeContext& context, Span<EValue*> stack);
 
 } // namespace function
 } // namespace executor

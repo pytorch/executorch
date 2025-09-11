@@ -253,6 +253,7 @@ class _Emitter(torch.fx.Interpreter):
 
         self.concrete_output_ids: List[_AbstractValue] = []
         self.debug_handle_map: Dict[int, Union[int, List[int]]] = {}
+        self.instruction_id_to_num_outs_map: Dict[int, int] = {}
         self.instr_id_to_delegate_debug_id_map: Dict[
             int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]
         ] = {}
@@ -1003,7 +1004,11 @@ class _Emitter(torch.fx.Interpreter):
                     and node.meta.get("debug_handle") is not None
                 ):
                     debug_handle_list.append(node.meta.get("debug_handle"))
+            output_node = lowered_module.original_module.graph.output_node()
+            outputs = output_node.args[0]
+            num_outputs = len(outputs) if isinstance(outputs, (list, tuple)) else 1
             self.debug_handle_map[emitter_id] = debug_handle_list
+            self.instruction_id_to_num_outs_map[emitter_id] = num_outputs
             # Debug handle for this node is the emitter_id which is essentially the index of the
             # instruction in the chain.
             self.node.meta["debug_handle"] = emitter_id
@@ -1030,7 +1035,7 @@ class _Emitter(torch.fx.Interpreter):
         code, module hierarchy etc.
         """
         delegate_map = {}
-        if hasattr(lowered_module, "meta"):
+        if lowered_module.meta is not None:
             delegate_map = lowered_module.meta.get("debug_handle_map", {})
 
         self.instr_id_to_delegate_debug_id_map[delegate_instruction_id] = {
@@ -1480,10 +1485,11 @@ class _Emitter(torch.fx.Interpreter):
             # pyre-ignore
             return self._emit_free(args[0])
 
-        elif target is torch.ops.higher_order.cond:
-            return self._emit_control_flow(target, args, kwargs)
-
-        elif target is torch.ops.higher_order.map_impl:
+        elif target in (
+            torch.ops.higher_order.cond,
+            torch.ops.higher_order.map_impl,
+            torch.ops.higher_order.while_loop,
+        ):
             return self._emit_control_flow(target, args, kwargs)
 
         elif target == executorch_call_delegate:

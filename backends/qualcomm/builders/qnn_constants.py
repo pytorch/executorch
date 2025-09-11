@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmax:
+    op_name: str = "Argmax"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpArgmin:
     op_name: str = "Argmin"
     param_axis: str = "axis"
@@ -106,6 +113,22 @@ class OpElementWiseAnd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAsin:
+    op_name: str = "ElementWiseAsin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseAtan:
+    op_name: str = "ElementWiseAtan"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseBinary:
+    op_name: str = "ElementWiseBinary"
+    param_operation: str = "operation"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -128,6 +151,11 @@ class OpElementWiseExp:
 @dataclass(init=False, frozen=True)
 class OpElementWiseEqual:
     op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseFloor:
+    op_name: str = "ElementWiseFloor"
 
 
 @dataclass(init=False, frozen=True)
@@ -204,6 +232,11 @@ class OpElementWisePower:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseRound:
+    op_name: str = "ElementWiseRound"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseRsqrt:
     op_name: str = "ElementWiseRsqrt"
 
@@ -219,6 +252,11 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSign:
+    op_name: str = "ElementWiseSign"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSquareRoot:
     op_name = "ElementWiseSquareRoot"
 
@@ -226,6 +264,11 @@ class OpElementWiseSquareRoot:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseXor:
+    op_name: str = "ElementWiseXor"
 
 
 @dataclass(init=False, frozen=True)
@@ -380,6 +423,13 @@ class OpReduceMax:
 @dataclass(init=False, frozen=True)
 class OpReduceMean:
     op_name: str = "ReduceMean"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpReduceMin:
+    op_name: str = "ReduceMin"
     param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 

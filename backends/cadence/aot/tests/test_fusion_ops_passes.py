@@ -12,7 +12,6 @@ from typing import cast, Final, List, Tuple
 
 import executorch.backends.cadence.aot.ops_registrations  # noqa
 import torch
-from executorch.backends.cadence.aot import compiler
 from executorch.backends.cadence.aot.fuse_ops import (
     FuseCascadedTransposeOrPermuteOps,
     FuseCascadedViewOps,
@@ -30,7 +29,6 @@ from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import PassResult, ProxyValue
-from torch import nn
 
 
 class TestFusionPassesBase(unittest.TestCase):
@@ -42,7 +40,29 @@ class TestFusionPassesBase(unittest.TestCase):
         self.assertTrue(op_counts_match(graph_module, expected_op_counts))
 
 
-class TestFusionPasses(TestFusionPassesBase):
+class TestFuseMMWithAddPass(TestFusionPassesBase):
+    def test_no_fuse_for_3d_bias(self) -> None:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(4, 3, dtype=torch.float32))
+        y = builder.placeholder("y", torch.randn(3, 5, dtype=torch.float32))
+        z = builder.placeholder("z", torch.randn(1, 4, 5, dtype=torch.float32))
+        mm = builder.call_operator(
+            op=exir_ops.edge.aten.mm.default,
+            args=(x, y),
+        )
+        output = builder.call_operator(op=exir_ops.edge.aten.add.Tensor, args=(mm, z))
+        builder.output([output])
+        original_graph = builder.get_graph_module()
+
+        p = FuseMMWithAdd()
+        converted_graph = cast(PassResult, p(original_graph)).graph_module
+        converted_graph.graph.eliminate_dead_code()
+        self.assertEqual(
+            count_node(converted_graph, exir_ops.edge.aten.addmm.default), 0
+        )
+        self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.mm.default), 1)
+        self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.add.Tensor), 1)
+
     def test_fuse_mm_with_add(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 5, dtype=torch.float32))
@@ -178,43 +198,8 @@ class TestFusionPasses(TestFusionPassesBase):
         self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.mm.default), 1)
         self.assertEqual(count_node(converted_graph, exir_ops.edge.aten.add.Tensor), 3)
 
-    # TODO(matthiascremon) -> None: enable that pass with new flow
-    @torch.no_grad()
-    @unittest.expectedFailure
-    def test_legacy_conv_bn_fusion(self) -> None:
-        class ModelConvBN(torch.nn.Module):
-            def __init__(
-                self, in_features: int, out_features: int, kernel_size: int
-            ) -> None:
-                super().__init__()
-                self.conv1d = nn.Conv1d(in_features, out_features, kernel_size)
-                self.bn = nn.BatchNorm1d(out_features)
 
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                y = self.conv1d(x)
-                return self.bn(y)
-
-        model = ModelConvBN(64, 1, 2)
-        x = torch.randn(1, 64, 4)
-
-        graph_module = (
-            compiler.export_to_executorch_gen_etrecord(model.eval(), (x,))
-            .exported_program()
-            .graph_module
-        )
-        # Assert that after running the fusion passes, batchnorm was fused with conv1d
-        self.assertEqual(
-            count_node(graph_module, torch.ops.aten.linear.out)
-            + count_node(graph_module, torch.ops.cadence.convolution.out),
-            1,
-        )
-        self.assertEqual(
-            count_node(
-                graph_module, torch.ops.aten._native_batch_norm_legit_no_training.out
-            ),
-            0,
-        )
-
+class TestFusionPasses(TestFusionPassesBase):
     def test_permute_transpose_fusion(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(3, 1, 3, 1, 4, dtype=torch.float32))
@@ -598,7 +583,7 @@ class TestFusionPasses(TestFusionPassesBase):
         self.assertEqual(deq_scale, dequant_scale * mul_value)
 
     def test_fuse_mul_into_quant(self) -> None:
-        quant_scale = 1.5
+        quant_scale = 5
         mul_value = 10
 
         builder = GraphBuilder()
@@ -613,7 +598,7 @@ class TestFusionPasses(TestFusionPassesBase):
         )
         quant = builder.call_operator(
             op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(mul, quant_scale, 0, 0, 255, torch.uint8),
+            args=(mul, quant_scale, 7, 0, 255, torch.uint8),
         )
         builder.output([quant])
         original_graph = builder.get_graph_module()
@@ -631,14 +616,18 @@ class TestFusionPasses(TestFusionPassesBase):
         )
 
         # verify that the quant scale value was updated correctly
-        deq_scale = -1
-        for node in converted_graph.graph.nodes:
-            if (
-                node.target
-                == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-            ):
-                deq_scale = node.args[1]
-        self.assertEqual(deq_scale, quant_scale * mul_value)
+        for node in converted_graph.graph.find_nodes(
+            op="call_function",
+            target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        ):
+            new_quant_scale = node.args[1]
+            self.assertEqual(new_quant_scale, quant_scale / mul_value)
+
+        # verify the math is correct
+        inp = torch.randn(4, 32, dtype=torch.float32)
+        original_out = original_graph(inp)[0]
+        new_out = converted_graph(inp)[0]
+        assert torch.equal(original_out, new_out)
 
     def test_fuse_then_transpose_pass(self) -> None:
         # Create a graph with full -> transpose.

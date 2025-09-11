@@ -746,6 +746,21 @@ TEST_F(OpMulOutTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
+// >>> torch.ops.aten.mul(torch.tensor([100], dtype=torch.int8),
+// torch.tensor([100], dtype=torch.int8), out=torch.zeros([1],
+// dtype=torch.long)) tensor([16])
+TEST_F(OpMulOutTest, MixedIntegerDtypeMatchesATen) {
+  TensorFactory<ScalarType::Char> tf_in;
+  TensorFactory<ScalarType::Long> tf_out;
+
+  Tensor in = tf_in.make({1}, {100});
+  Tensor out = tf_out.zeros({1});
+  Tensor ret = op_mul_out(in, in, out);
+
+  Tensor expected = tf_out.make({1}, {16});
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 TEST_F(OpMulScalarOutTest, SanityCheck) {
   TensorFactory<ScalarType::Bool> tf_a;
   TensorFactory<ScalarType::Float> tf_out;

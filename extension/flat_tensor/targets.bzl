@@ -1,7 +1,7 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_aten_mode_options", "runtime")
 
 def define_common_targets():
-    for aten_mode in [True, False]:
+    for aten_mode in get_aten_mode_options():
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
             name = "flat_tensor_data_map" + aten_suffix,
@@ -21,6 +21,6 @@ def define_common_targets():
                 "//executorch/extension/flat_tensor/serialize:generated_headers",
             ],
             visibility = [
-                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
             ],
         )

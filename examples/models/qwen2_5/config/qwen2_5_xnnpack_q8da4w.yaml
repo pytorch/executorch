@@ -9,3 +9,6 @@ model:
 backend:
   xnnpack:
     enabled: True
+
+quantization:
+  qmode: 8da4w

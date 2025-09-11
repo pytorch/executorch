@@ -45,7 +45,7 @@ Tests the ConvertToClampPass which converts hardtanh.default and relu.default to
 
 
 @common.parametrize("test_data", HardTanh.test_data)
-def test_tosa_MI_hardtahn(test_data: input_t):
+def test_tosa_FP_hardtahn(test_data: input_t):
     module = HardTanh()
     op_checks_before_pass = {
         "executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1,
@@ -69,7 +69,7 @@ def test_tosa_MI_hardtahn(test_data: input_t):
 
 
 @common.parametrize("test_data", ReLU.test_data)
-def test_tosa_MI_relu(test_data: input_t):
+def test_tosa_FP_relu(test_data: input_t):
     module = ReLU()
     op_checks_before_pass = {
         "executorch_exir_dialects_edge__ops_aten_relu_default": 1,

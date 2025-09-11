@@ -178,6 +178,11 @@ class QnnBackend(BackendDetails):
 
             if len(py_op_wrapper_list) == len(edge_programs.values()):
                 qnn_context_binary = qnn_manager.Compile(graph_name, py_op_wrapper_list)
+                if option.saver:
+                    # TODO: Currently, only the first method is saved. Update this logic if saving multiple methods becomes necessary in the future.
+                    exit(
+                        f"Record all QNN API calls from saver backend at: {option.saver_output_dir}"
+                    )
                 assert (
                     len(qnn_context_binary) != 0
                 ), "Failed to generate Qnn context binary."

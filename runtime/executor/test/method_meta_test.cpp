@@ -39,12 +39,13 @@ class TensorInfoTestFriend final {
       executorch::aten::ScalarType scalar_type,
       const bool is_memory_planned,
       executorch::aten::string_view name) {
-    return TensorInfo(
-        Span<const int32_t>(sizes.data(), sizes.size()),
-        Span<const uint8_t>(dim_order.data(), dim_order.size()),
-        scalar_type,
-        is_memory_planned,
-        name);
+    return TensorInfo::create(
+               Span<const int32_t>(sizes.data(), sizes.size()),
+               Span<const uint8_t>(dim_order.data(), dim_order.size()),
+               scalar_type,
+               is_memory_planned,
+               name)
+        .get();
   }
 };
 } // namespace testing

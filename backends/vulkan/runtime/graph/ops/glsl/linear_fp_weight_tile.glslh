@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Macro Settings:
+ * - TILE_K
+ * - TILE_N4
+ */
+
+#ifndef LINEAR_FP_WEIGHT_TILE_GLSLH
+#define LINEAR_FP_WEIGHT_TILE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "common.glslh"
+
+struct FPWeightTile {
+  VEC4_T data[TILE_K][TILE_N4];
+};
+
+#ifdef DEBUG_MODE
+
+void printFPWeightTile(const FPWeightTile tile) {
+  debugPrintfEXT("weight_tile: \\n");
+  [[unroll]] for (int k = 0; k < TILE_K; ++k) {
+    [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+      debugPrintfEXT(
+          "  %f, %f, %f, %f, ",
+          tile.data[k][n4].x,
+          tile.data[k][n4].y,
+          tile.data[k][n4].z,
+          tile.data[k][n4].w);
+    }
+    debugPrintfEXT("\\n");
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // LINEAR_FP_WEIGHT_TILE_GLSLH

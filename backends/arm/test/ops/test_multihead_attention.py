@@ -7,10 +7,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -41,9 +42,9 @@ test_suite = {
     "test_data",
     test_suite,
 )
-def test_multihead_attention_tosa_MI(test_data: input_t1):
+def test_multihead_attention_tosa_FP(test_data: input_t1):
     test_data, module = test_data()
-    pipeline = TosaPipelineMI(module, (*test_data, *test_data, *test_data), [], [])
+    pipeline = TosaPipelineFP(module, (*test_data, *test_data, *test_data), [], [])
     pipeline.run()
 
 
@@ -51,9 +52,16 @@ def test_multihead_attention_tosa_MI(test_data: input_t1):
     "test_data",
     test_suite,
 )
-def test_multihead_attention_tosa_BI(test_data):
+def test_multihead_attention_tosa_INT(test_data):
     test_data, module = test_data()
-    pipeline = TosaPipelineBI(module, (*test_data, *test_data, *test_data), [], [])
+    pipeline = TosaPipelineINT(
+        module,
+        (*test_data, *test_data, *test_data),
+        [],
+        [],
+        # TODO: Per-channel quantization is broken (MLETORCH-1144)
+        per_channel_quantization=False,
+    )
     pipeline.run()
 
 
@@ -63,15 +71,17 @@ def test_multihead_attention_tosa_BI(test_data):
 )
 @pytest.mark.xfail(reason="MLETORCH-1102: Numerical issues on FVP")
 @common.XfailIfNoCorstone300
-def test_multihead_attention_u55_BI(test_data: input_t1):
+def test_multihead_attention_u55_INT(test_data: input_t1):
     test_data, module = test_data()
-    pipeline = EthosU55PipelineBI(
+    pipeline = EthosU55PipelineINT(
         module,
         (*test_data, *test_data, *test_data),
         [],
         [],
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
+        # TODO: Per-channel quantization is broken (MLETORCH-1144)
+        per_channel_quantization=False,
     )
     pipeline.pop_stage("check_count.exir")
     pipeline.run()
@@ -83,14 +93,52 @@ def test_multihead_attention_u55_BI(test_data: input_t1):
 )
 @pytest.mark.xfail(reason="MLETORCH-1102: Numerical issues on FVP")
 @common.XfailIfNoCorstone320
-def test_multihead_attention_u85_BI(test_data: input_t1):
+def test_multihead_attention_u85_INT(test_data: input_t1):
     test_data, module = test_data()
-    pipeline = EthosU85PipelineBI(
+    pipeline = EthosU85PipelineINT(
         module,
         (*test_data, *test_data, *test_data),
         [],
         [],
         use_to_edge_transform_and_lower=True,
         run_on_fvp=True,
+        # TODO: Per-channel quantization is broken (MLETORCH-1144)
+        per_channel_quantization=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_suite,
+)
+@common.SkipIfNoModelConverter
+def test_multihead_attention_vgf_FP(test_data: input_t1):
+    test_data_vals, module = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        (*test_data_vals, *test_data_vals, *test_data_vals),
+        [],
+        [],
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize(
+    "test_data",
+    test_suite,
+)
+@common.SkipIfNoModelConverter
+def test_multihead_attention_vgf_INT(test_data: input_t1):
+    test_data_vals, module = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        (*test_data_vals, *test_data_vals, *test_data_vals),
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+        # TODO: Per-channel quantization is broken (MLETORCH-1144)
+        per_channel_quantization=False,
     )
     pipeline.run()

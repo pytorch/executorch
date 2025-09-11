@@ -110,6 +110,20 @@ def trunc(a: _SymScalar) -> _SymScalar:
     return math.trunc(a)  # pyre-ignore
 
 
+@bind_pattern_to_op(
+    executorch_prims_lib, "sym_max.Scalar(Scalar a, Scalar b) -> Scalar"
+)
+def sym_max(a: _SymScalar, b: _SymScalar) -> bool:
+    return max(a, b)  # pyre-ignore
+
+
+@bind_pattern_to_op(
+    executorch_prims_lib, "sym_min.Scalar(Scalar a, Scalar b) -> Scalar"
+)
+def sym_min(a: _SymScalar, b: _SymScalar) -> bool:
+    return min(a, b)  # pyre-ignore
+
+
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
     builtins.round: ops.backend.executorch_prim.round.Scalar,
     math.ceil: ops.backend.executorch_prim.ceil.Scalar,
@@ -127,12 +141,12 @@ _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[Any, OpOverload] = {
     operator.mod: ops.backend.executorch_prim.mod.Scalar,
     operator.neg: ops.backend.executorch_prim.neg.Scalar,
     torch.sym_float: ops.backend.executorch_prim.sym_float.Scalar,
+    torch.sym_max: ops.backend.executorch_prim.sym_max.Scalar,
+    torch.sym_min: ops.backend.executorch_prim.sym_min.Scalar,
 }
 
 
-_EXECUTORCH_SYM_OPS: Set[OpOverload] = set(
-    _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS.values()
-)
+_EXECUTORCH_SYM_OPS: Set[Any] = set(_PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS.values())
 _EXECUTORCH_SYM_OPS.update(
     {
         torch.ops.aten.sym_stride.int,

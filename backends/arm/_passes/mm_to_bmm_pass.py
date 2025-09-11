@@ -12,7 +12,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     insert_q_dq_pair,
 )
-from executorch.backends.arm.tosa_quant_utils import dq_ops, q_ops
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
@@ -56,7 +56,7 @@ class ConvertMmToBmmPass(ExportPass):
                     node.replace_input_with(input_node, unsqueeze_before)
 
                 # If Quantized we must insert unsqueeze --> q --> dq --> node
-                if input_node.target in dq_ops:
+                if input_node.target in DQ_OPS:
                     q_params = input_node.args[1:]
                     insert_q_dq_pair(graph, unsqueeze_before, q_params, from_node=node)
 
@@ -89,7 +89,7 @@ class ConvertMmToBmmPass(ExportPass):
                     user.replace_input_with(bmm_node, squeeze_after)
 
             # If quantized, insert mm --> q --> dq --> squeeze
-            if all(original_user.target in q_ops for original_user in original_users):
+            if all(original_user.target in Q_OPS for original_user in original_users):
                 q_params = original_users[0].args[1:]
                 insert_q_dq_pair(graph, bmm_node, q_params, from_node=node)
 

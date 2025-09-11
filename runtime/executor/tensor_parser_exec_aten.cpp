@@ -194,6 +194,11 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     } else {
       // Mutable value.
       // Look up tensor in named data map.
+      ET_CHECK_OR_RETURN_ERROR(
+          named_data_map != nullptr,
+          InvalidExternalData,
+          "Cannot retrieve external tensor with fqn: %s. The named_data_map is null; most likely no external .ptd file was provided.",
+          fqn);
       Result<const TensorLayout> tensor_layout_res =
           named_data_map->get_tensor_layout(fqn);
       if (!tensor_layout_res.ok()) {

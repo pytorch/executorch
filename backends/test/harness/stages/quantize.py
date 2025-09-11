@@ -7,7 +7,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
 
-from torch.export import export_for_training
+from torch.export import export
 
 from torchao.quantization.pt2e.quantize_pt2e import (
     convert_pt2e,
@@ -25,13 +25,15 @@ class Quantize(Stage):
         calibrate: bool = True,
         calibration_samples: Optional[Sequence[Any]] = None,
         is_qat: Optional[bool] = False,
+        set_global: bool = True,
     ):
         self.quantizer = quantizer
         self.quantization_config = quantization_config
         self.calibrate = calibrate
         self.calibration_samples = calibration_samples
 
-        self.quantizer.set_global(self.quantization_config)
+        if self.quantization_config is not None and set_global:
+            self.quantizer.set_global(self.quantization_config)
 
         self.converted_graph = None
         self.is_qat = is_qat
@@ -45,7 +47,7 @@ class Quantize(Stage):
         assert inputs is not None
         if self.is_qat:
             artifact.train()
-        captured_graph = export_for_training(artifact, inputs, strict=True).module()
+        captured_graph = export(artifact, inputs, strict=True).module()
 
         assert isinstance(captured_graph, torch.fx.GraphModule)
 

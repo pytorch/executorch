@@ -7,11 +7,10 @@
  */
 
 #include <executorch/backends/cadence/reference/kernels/kernels.h>
-#include <math.h>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
-#include <numeric>
 
 namespace impl {
 namespace reference {
@@ -20,10 +19,18 @@ namespace kernels {
 // Quantize a fp32 value to an int8_t/uint8_t value
 template <typename T>
 T quantize(const float x, float scale, int32_t zero_point) {
-  constexpr float min_val = std::numeric_limits<T>::min();
-  constexpr float max_val = std::numeric_limits<T>::max();
-  float tmp = roundf(x * scale + zero_point);
-  return std::max(std::min(tmp, max_val), min_val);
+  // constexpr float min_val = std::numeric_limits<T>::min();
+  // constexpr float max_val = std::numeric_limits<T>::max();
+  // float tmp = roundf(x * scale + zero_point);
+  // return std::max(std::min(tmp, max_val), min_val);
+  // Match Executorch CPU kernel implementation at
+  // https://fburl.com/code/fxizw6u6
+  int64_t qvalue;
+  qvalue = static_cast<int64_t>(zero_point + std::nearbyint(scale * x));
+
+  qvalue = std::max<int64_t>(qvalue, std::numeric_limits<T>::min());
+  qvalue = std::min<int64_t>(qvalue, std::numeric_limits<T>::max());
+  return static_cast<T>(qvalue);
 }
 
 // Quantize an fp32 array to an int8_t/uint8_t array
@@ -58,36 +65,6 @@ void dequantize(
   }
 }
 
-// Requantize the int8_t/uint8_t in value to a uint8_t/int8_t out value.
-// The scale and zero_point for requantization are in the args.
-template <typename IT, typename OT>
-OT requantize(
-    const IT in,
-    float in_scale,
-    int32_t in_zero_point,
-    float inv_out_scale,
-    int32_t out_zero_point) {
-  float dequant = dequantize<IT>(in, in_scale, in_zero_point);
-  return quantize<OT>(dequant, inv_out_scale, out_zero_point);
-}
-
-// Requantize the int8_t/uint8_t in array to a uint8_t/int8_t out array.
-// The scale and zero_point for requantization are in the args.
-template <typename IT, typename OT>
-void requantize(
-    OT* __restrict__ out,
-    const IT* __restrict__ in,
-    float in_scale,
-    int32_t in_zero_point,
-    float inv_out_scale,
-    int32_t out_zero_point,
-    size_t size) {
-  for (size_t i = 0; i < size; ++i) {
-    out[i] = requantize<IT, OT>(
-        in[i], in_scale, in_zero_point, inv_out_scale, out_zero_point);
-  }
-}
-
 // explicit template instantiation
 
 #define typed_quantize_val(dtype) \
@@ -96,7 +73,6 @@ typed_quantize_val(int8_t);
 typed_quantize_val(uint8_t);
 typed_quantize_val(int16_t);
 typed_quantize_val(uint16_t);
-typed_quantize_val(int32_t);
 #undef typed_quantize_val
 
 #define typed_quantize_vec(dtype)  \
@@ -110,7 +86,6 @@ typed_quantize_vec(int8_t);
 typed_quantize_vec(uint8_t);
 typed_quantize_vec(int16_t);
 typed_quantize_vec(uint16_t);
-typed_quantize_vec(int32_t);
 #undef typed_quantize_vec
 
 #define typed_dequantize_val(dtype) \
@@ -119,7 +94,6 @@ typed_dequantize_val(int8_t);
 typed_dequantize_val(uint8_t);
 typed_dequantize_val(int16_t);
 typed_dequantize_val(uint16_t);
-typed_dequantize_val(int32_t);
 #undef typed_dequantize_val
 
 #define typed_dequantize_vec(dtype) \
@@ -133,60 +107,7 @@ typed_dequantize_vec(int8_t);
 typed_dequantize_vec(uint8_t);
 typed_dequantize_vec(int16_t);
 typed_dequantize_vec(uint16_t);
-typed_dequantize_vec(int32_t);
 #undef typed_dequantize_vec
-
-#define typed_requantize_val(itype, otype) \
-  template otype requantize(               \
-      const itype in,                      \
-      float in_scale,                      \
-      int32_t in_zero_point,               \
-      float inv_out_scale,                 \
-      int32_t out_zero_point);
-typed_requantize_val(int8_t, int8_t);
-typed_requantize_val(int8_t, uint8_t);
-typed_requantize_val(int8_t, int16_t);
-typed_requantize_val(int8_t, uint16_t);
-typed_requantize_val(uint8_t, int8_t);
-typed_requantize_val(uint8_t, uint8_t);
-typed_requantize_val(uint8_t, int16_t);
-typed_requantize_val(uint8_t, uint16_t);
-typed_requantize_val(int16_t, int8_t);
-typed_requantize_val(int16_t, uint8_t);
-typed_requantize_val(int16_t, int16_t);
-typed_requantize_val(int16_t, uint16_t);
-typed_requantize_val(uint16_t, int8_t);
-typed_requantize_val(uint16_t, uint8_t);
-typed_requantize_val(uint16_t, int16_t);
-typed_requantize_val(uint16_t, uint16_t);
-#undef typed_requantize_val
-
-#define typed_requantize_vec(itype, otype) \
-  template void requantize(                \
-      otype* __restrict__ out,             \
-      const itype* __restrict__ in,        \
-      float in_scale,                      \
-      int32_t in_zero_point,               \
-      float inv_out_scale,                 \
-      int32_t out_zero_point,              \
-      size_t size);
-typed_requantize_vec(int8_t, int8_t);
-typed_requantize_vec(int8_t, uint8_t);
-typed_requantize_vec(int8_t, int16_t);
-typed_requantize_vec(int8_t, uint16_t);
-typed_requantize_vec(uint8_t, int8_t);
-typed_requantize_vec(uint8_t, uint8_t);
-typed_requantize_vec(uint8_t, int16_t);
-typed_requantize_vec(uint8_t, uint16_t);
-typed_requantize_vec(int16_t, int8_t);
-typed_requantize_vec(int16_t, uint8_t);
-typed_requantize_vec(int16_t, int16_t);
-typed_requantize_vec(int16_t, uint16_t);
-typed_requantize_vec(uint16_t, int8_t);
-typed_requantize_vec(uint16_t, uint8_t);
-typed_requantize_vec(uint16_t, int16_t);
-typed_requantize_vec(uint16_t, uint16_t);
-#undef typed_requantize_vec
 
 }; // namespace kernels
 }; // namespace reference

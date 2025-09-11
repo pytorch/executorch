@@ -27,15 +27,15 @@ void add_staging_to_tensor_node(
   VK_CHECK_COND(graph.val_is_staging(in_staging));
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
+      graph, out_tensor, graph.int8_buffers_enabled());
+
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(out_tensor)) {
+    param_buffers.append(graph.buffer_meta_ubo(out_tensor));
+  }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_buffer_storage(out_tensor)) {
-    pcs = {
-        graph.sizes_pc_of(out_tensor),
-        graph.strides_pc_of(out_tensor),
-        graph.numel_pc_of(out_tensor)};
-  } else {
+  if (graph.is_texture_storage(out_tensor)) {
     pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
@@ -47,7 +47,7 @@ void add_staging_to_tensor_node(
       // Input and Outputs
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
-      {},
+      param_buffers,
       // Push Constants
       pcs,
       // Specialization Constants
@@ -73,7 +73,7 @@ vkapi::ShaderInfo get_tensor_to_staging_shader(
   (void)resize_args;
   const ValueRef in_tensor = args.at(1).refs.at(0);
   return get_tensor_to_nchw_shader(
-      *graph->get_tensor(in_tensor), graph->int8_buffers_enabled());
+      *graph, in_tensor, graph->int8_buffers_enabled());
 }
 
 utils::uvec3 tensor_to_staging_global_wg_size(
@@ -110,16 +110,16 @@ void add_tensor_to_staging_node(
     const ValueRef out_staging) {
   VK_CHECK_COND(graph.val_is_staging(out_staging));
 
-  vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
-      *graph.get_tensor(in_tensor), graph.int8_buffers_enabled());
+  vkapi::ShaderInfo shader =
+      get_tensor_to_nchw_shader(graph, in_tensor, graph.int8_buffers_enabled());
+
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(in_tensor)) {
+    param_buffers.append(graph.buffer_meta_ubo(in_tensor));
+  }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_buffer_storage(in_tensor)) {
-    pcs = {
-        graph.sizes_pc_of(in_tensor),
-        graph.strides_pc_of(in_tensor),
-        graph.numel_pc_of(in_tensor)};
-  } else {
+  if (graph.is_texture_storage(in_tensor)) {
     pcs = {graph.sizes_pc_of(in_tensor)};
   }
 
@@ -135,7 +135,7 @@ void add_tensor_to_staging_node(
       // Input and Outputs
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
-      {},
+      param_buffers,
       // Push Constants
       pcs,
       // Specialization Constants
@@ -151,8 +151,13 @@ void add_prepack_standard_node(
     const ValueRef tensor_data,
     const ValueRef tensor,
     const bool transpose_hw = false) {
-  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(tensor), graph.int8_buffers_enabled());
+  vkapi::ShaderInfo shader =
+      get_nchw_to_tensor_shader(graph, tensor, graph.int8_buffers_enabled());
+
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(tensor)) {
+    param_buffers.append(graph.buffer_meta_ubo(tensor));
+  }
 
   std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(tensor)) {
@@ -175,7 +180,7 @@ void add_prepack_standard_node(
       tensor_data,
       tensor,
       // Parameter Buffers
-      {},
+      param_buffers,
       // Specialization Constants
       {graph.hashed_layout_of(tensor), transpose_hw_spec},
       pcs));

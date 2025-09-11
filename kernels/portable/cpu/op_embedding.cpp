@@ -116,10 +116,12 @@ Tensor& embedding_out(
       ix_type == ScalarType::Long || ix_type == ScalarType::Int,
       "Expected indices tensor to have Long or Int scalar types");
 
-  ET_SWITCH_TWO_TYPES(
-      Long, Int, ix_type, ctx, "op_embedding.out", CTYPE, [&]() {
-        embedding_kernel<CTYPE>(ctx, weight, indices, out);
-      });
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "op_embedding.out";
+
+  ET_SWITCH_TWO_TYPES(Long, Int, ix_type, ctx, op_name, CTYPE, [&]() {
+    embedding_kernel<CTYPE>(ctx, weight, indices, out);
+  });
 
   return out;
 }

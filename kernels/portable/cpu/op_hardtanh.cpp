@@ -45,8 +45,15 @@ Tensor& hardtanh_out(
   ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REALHBF16_TYPES(in_type, ctx, "hardtanh.out", CTYPE, [&]() {
-    const CTYPE min_casted = utils::scalar_to<CTYPE>(min);
-    const CTYPE max_casted = utils::scalar_to<CTYPE>(max);
+    auto opt_min_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE>(min);
+    ET_KERNEL_CHECK(ctx, opt_min_casted.has_value(), InvalidArgument, );
+    auto min_casted = opt_min_casted.value();
+
+    auto opt_max_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE>(max);
+    ET_KERNEL_CHECK(ctx, opt_max_casted.has_value(), InvalidArgument, );
+    auto max_casted = opt_max_casted.value();
 
     apply_unary_map_fn(
         [min_casted, max_casted](const CTYPE val_in) {

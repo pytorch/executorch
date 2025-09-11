@@ -25,12 +25,15 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+
+layout(push_constant) uniform restrict Block {
 $if STORAGE == "buffer":
-  ${layout_declare_ubo(2, "int", "numel")}
+  int numel;
 $else:
-  ${layout_declare_ubo(2, "ivec3", "out_limits")}
-${layout_declare_ubo(3, "float", "minimum")}
-${layout_declare_ubo(4, "float", "maximum")}
+  ivec4 out_limits;
+float minimum;
+float maximum;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -53,7 +56,7 @@ void main() {
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(pos, out_limits))) {
+  if (any(greaterThanEqual(pos, out_limits.xyz))) {
     return;
   }
 

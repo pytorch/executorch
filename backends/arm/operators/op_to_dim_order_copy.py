@@ -15,36 +15,7 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-
-
-@register_node_visitor
-class ToDimOrderCopyVisitor_0_80(NodeVisitor):
-    """
-    Implement the type cast functionality of _to_dim_order_copy.
-
-    Other features like setting of the dim_order or moving a tensor to a
-    different device are not supported.
-
-    Also note that the node should not be quantized.
-    """
-
-    target = "dim_order_ops._to_dim_order_copy.default"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 1)
-
-        tosa_graph.addOperator(ts.TosaOp.Op().CAST, [inputs[0].name], [output.name])
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 @register_node_visitor
@@ -60,7 +31,7 @@ class ToDimOrderCopyVisitor(NodeVisitor):
 
     target = "dim_order_ops._to_dim_order_copy.default"
 
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def define_node(
         self,
@@ -73,4 +44,6 @@ class ToDimOrderCopyVisitor(NodeVisitor):
 
         validate_num_inputs(self.target, inputs, 1)
 
-        tosa_graph.addOperator(ts.TosaOp.Op().CAST, [inputs[0].name], [output.name])
+        self._serialize_operator(
+            node, tosa_graph, ts.TosaOp.Op().CAST, [inputs[0].name], [output.name]
+        )

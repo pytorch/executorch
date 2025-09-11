@@ -13,8 +13,9 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    CanonicalizeConv,
     ConvertBmmToMatmul,
-    ConvertConv1dToConv2d,
+    ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
     DecomposeCDist,
@@ -22,6 +23,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
+    DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeWrapWithAutocast,
@@ -80,17 +82,18 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
+        (CanonicalizeConv, True),
         (ConvertBmmToMatmul, False),
-        (ConvertConv1dToConv2d, True),
         (DecomposeAny, True),
         (DecomposeColIm, True),
+        (DecomposeMinMaxDim, True),
         (ExpandBroadcastTensorShape, False),
         (FixedLinearKeepDim, True),
         (FoldQDQ, True),
         (I64toI32, True),
         (LayoutTransform, True),
         (RecomposePixelUnshuffle, True),
-        (RecomposeRmsNorm, False),
+        (RecomposeRmsNorm, True),
         (Remove0DTensor, True),
         (RemoveRedundancy, True),
         (TagQuantIO, False),
@@ -188,6 +191,7 @@ class QnnPassManager(PassManager):
         self.add_pass(RemoveRedundancy(quantization_capture=True))
         self.add_pass(ReduceDynamicRange())
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
+        self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
@@ -201,7 +205,9 @@ class QnnPassManager(PassManager):
         self.add_pass(LiftConstantScalarOperands())
         return self._transform(graph_module)
 
-    def transform_for_export_pipeline(self, exported_program: ExportedProgram):
+    def transform_for_export_pipeline(
+        self, exported_program: ExportedProgram, convert_linear_to_conv2d: bool = False
+    ):
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
@@ -210,7 +216,9 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
-        self.add_pass(ConvertConv1dToConv2d(exported_program))
+        self.add_pass(CanonicalizeConv(exported_program))
+        if convert_linear_to_conv2d:
+            self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
         self._transform(exported_program.graph_module)

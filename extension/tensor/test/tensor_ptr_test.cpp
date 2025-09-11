@@ -784,16 +784,30 @@ TEST_F(TensorPtrTest, TensorUint8BufferTooSmallExpectDeath) {
       { auto tensor = make_tensor_ptr({2, 2}, std::move(data)); }, "");
 }
 
-TEST_F(TensorPtrTest, TensorUint8BufferTooLarge) {
+TEST_F(TensorPtrTest, TensorUint8BufferTooLargeExpectDeath) {
   std::vector<uint8_t> data(
-      4 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
-  auto tensor = make_tensor_ptr({2, 2}, std::move(data));
+      5 * executorch::aten::elementSize(executorch::aten::ScalarType::Float));
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 2}, std::move(data)); }, "");
+}
 
-  EXPECT_EQ(tensor->dim(), 2);
-  EXPECT_EQ(tensor->size(0), 2);
-  EXPECT_EQ(tensor->size(1), 2);
-  EXPECT_EQ(tensor->strides()[0], 2);
-  EXPECT_EQ(tensor->strides()[1], 1);
+TEST_F(TensorPtrTest, VectorFloatTooSmallExpectDeath) {
+  std::vector<float> data(9, 1.f);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, VectorFloatTooLargeExpectDeath) {
+  std::vector<float> data(11, 1.f);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, VectorIntToFloatCastTooSmallExpectDeath) {
+  std::vector<int32_t> data(9, 1);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
+}
+
+TEST_F(TensorPtrTest, VectorIntToFloatCastTooLargeExpectDeath) {
+  std::vector<int32_t> data(11, 1);
+  ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
 }
 
 TEST_F(TensorPtrTest, StridesAndDimOrderMustMatchSizes) {

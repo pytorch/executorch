@@ -19,7 +19,9 @@ from torch.utils import _pytree as pytree
 
 # pyre-ignore
 def make_spec(x):
-    if isinstance(x, torch.Tensor):
+    if isinstance(x, ProxyValue):
+        return make_spec(x.node.meta["val"])
+    elif isinstance(x, torch.Tensor):
         return TensorSpec.from_tensor(x)
     elif isinstance(x, (int, bool, float)):
         return x
@@ -108,6 +110,19 @@ class SpecPropPass(ExportPass):
         *_, true_out_node = true_fn.graph.nodes
         meta["spec"] = pytree.tree_map(make_spec, true_out_node.meta["val"])
         return super().call_cond(pred, true_fn, false_fn, inputs, meta)
+
+    def call_while(
+        self,
+        cond_fn: torch.fx.GraphModule,
+        body_fn: torch.fx.GraphModule,
+        carried_inputs: List[ProxyValue],
+        additional_inputs: List[ProxyValue],
+        meta: NodeMetadata,
+    ):
+        meta["spec"] = pytree.tree_map(make_spec, carried_inputs)
+        return super().call_while(
+            cond_fn, body_fn, carried_inputs, additional_inputs, meta
+        )
 
     def call_map(
         self,

@@ -6,14 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import ExecuTorchLLM
 import SwiftUI
 import UniformTypeIdentifiers
 
-import LLaMARunner
-
 class RunnerHolder: ObservableObject {
-  var llamaRunner: LLaMARunner?
-  var llavaRunner: LLaVARunner?
+  var textRunner: TextRunner?
+  var multimodalRunner: MultimodalRunner?
 }
 
 extension UIImage {
@@ -347,15 +346,34 @@ struct ContentView: View {
 
       switch modelType {
       case .llama, .qwen3, .phi4:
-        runnerHolder.llamaRunner = runnerHolder.llamaRunner ?? LLaMARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+        runnerHolder.textRunner = runnerHolder.textRunner ?? TextRunner(
+          modelPath: modelPath,
+          tokenizerPath: tokenizerPath,
+          specialTokens: [
+            "<|begin_of_text|>",
+            "<|end_of_text|>",
+            "<|reserved_special_token_0|>",
+            "<|reserved_special_token_1|>",
+            "<|finetune_right_pad_id|>",
+            "<|step_id|>",
+            "<|start_header_id|>",
+            "<|end_header_id|>",
+            "<|eom_id|>",
+            "<|eot_id|>",
+            "<|python_tag|>"
+          ] + (2..<256).map { "<|reserved_special_token_\($0)|>" }
+        )
       case .llava:
-        runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+        runnerHolder.multimodalRunner = runnerHolder.multimodalRunner ?? MultimodalRunner(
+          modelPath: modelPath,
+          tokenizerPath: tokenizerPath
+        )
       }
 
       guard !shouldStopGenerating else { return }
       switch modelType {
       case .llama, .qwen3, .phi4:
-        if let runner = runnerHolder.llamaRunner, !runner.isLoaded() {
+        if let runner = runnerHolder.textRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -385,7 +403,7 @@ struct ContentView: View {
           }
         }
       case .llava:
-        if let runner = runnerHolder.llavaRunner, !runner.isLoaded() {
+        if let runner = runnerHolder.multimodalRunner, !runner.isLoaded() {
           var error: Error?
           let startLoadTime = Date()
           do {
@@ -426,25 +444,21 @@ struct ContentView: View {
       }
       do {
         var tokens: [String] = []
-        var rgbArray: [UInt8]?
-        let MAX_WIDTH = 336.0
-        var newHeight = 0.0
-        var imageBuffer: UnsafeMutableRawPointer?
 
         if let img = selectedImage {
           let llava_prompt = "\(text) ASSISTANT"
-
-          newHeight = MAX_WIDTH * img.size.height / img.size.width
+          let MAX_WIDTH = 336.0
+          let newHeight = MAX_WIDTH * img.size.height / img.size.width
           let resizedImage = img.resized(to: CGSize(width: MAX_WIDTH, height: newHeight))
-          rgbArray = resizedImage.toRGBArray()
-          imageBuffer = UnsafeMutableRawPointer(mutating: rgbArray)
 
-          try runnerHolder.llavaRunner?.generate(imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: llava_prompt, sequenceLength: seq_len) { token in
-
+          try runnerHolder.multimodalRunner?.generate([
+            MultimodalInput(Image(data: Data(resizedImage.toRGBArray() ?? []), width: Int(MAX_WIDTH), height: Int(newHeight.rounded()), channels: 3)),
+            MultimodalInput(llava_prompt),
+          ], sequenceLength: seq_len) { token in
             if token != llava_prompt {
               if token == "</s>" {
                 shouldStopGenerating = true
-                runnerHolder.llavaRunner?.stop()
+                runnerHolder.multimodalRunner?.stop()
               } else {
                 tokens.append(token)
                 if tokens.count > 2 {
@@ -460,7 +474,7 @@ struct ContentView: View {
                   }
                 }
                 if shouldStopGenerating {
-                  runnerHolder.llavaRunner?.stop()
+                  runnerHolder.multimodalRunner?.stop()
                 }
               }
             }
@@ -481,7 +495,7 @@ struct ContentView: View {
               prompt = String(format: Constants.phi4PromptTemplate, text)
           }
 
-          try runnerHolder.llamaRunner?.generate(prompt, sequenceLength: seq_len) { token in
+          try runnerHolder.textRunner?.generate(prompt, sequenceLength: seq_len) { token in
 
             if token != prompt {
                 if token == "<|eot_id|>" {
@@ -534,7 +548,7 @@ struct ContentView: View {
                   }
                 }
                 if shouldStopGenerating {
-                  runnerHolder.llamaRunner?.stop()
+                  runnerHolder.textRunner?.stop()
                 }
               }
             }
@@ -577,8 +591,8 @@ struct ContentView: View {
         return
       }
       runnerQueue.async {
-        runnerHolder.llamaRunner = nil
-        runnerHolder.llavaRunner = nil
+        runnerHolder.textRunner = nil
+        runnerHolder.multimodalRunner = nil
       }
       switch pickerType {
       case .model:

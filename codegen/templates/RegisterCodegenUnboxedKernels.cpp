@@ -8,6 +8,7 @@
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/profiler.h>

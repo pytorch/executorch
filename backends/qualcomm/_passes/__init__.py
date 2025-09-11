@@ -8,8 +8,9 @@ from .annotate_adaptive_avg_pool1d import AnnotateAdaptiveAvgPool1D
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .annotate_stack import AnnotateStack
 from .annotate_unbind import AnnotateUnbind
+from .canonicalize_conv import CanonicalizeConv
 from .convert_bmm_to_matmul import ConvertBmmToMatmul
-from .convert_conv1d_to_conv2d import ConvertConv1dToConv2d
+from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_any import DecomposeAny
 from .decompose_cdist import DecomposeCDist
@@ -17,6 +18,7 @@ from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
+from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
@@ -45,8 +47,9 @@ __all__ = [
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    CanonicalizeConv,
     ConvertBmmToMatmul,
-    ConvertConv1dToConv2d,
+    ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
     DecomposeCDist,
@@ -54,6 +57,7 @@ __all__ = [
     DecomposeEinsum,
     DecomposeExpM1,
     DecomposeLinalgVectorNorm,
+    DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
     DecomposeWrapWithAutocast,

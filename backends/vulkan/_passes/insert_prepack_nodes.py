@@ -35,7 +35,7 @@ def insert_prepack_nodes(program: ExportedProgram) -> ExportedProgram:
 
         # Mark that this node is going to be represented as a TensorRef type in the
         # Vulkan compute graph. This annotation is used in later graph passes.
-        node.meta["vkdg_tensorref"] = True
+        node.meta["etvk_tensorref"] = True
 
         # Get the list of node users that do not handle their own prepacking
         nodes_to_replace_input = []

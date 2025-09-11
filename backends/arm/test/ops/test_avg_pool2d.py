@@ -15,11 +15,12 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.avg_pool2d.default"
@@ -113,10 +114,10 @@ test_modules = {
 
 
 @common.parametrize("test_module", test_modules)
-def test_avg_pool2d_tosa_MI(test_module):
+def test_avg_pool2d_tosa_FP(test_module):
     model, input_tensor = test_module()
 
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         model,
         input_tensor,
         aten_op,
@@ -127,10 +128,10 @@ def test_avg_pool2d_tosa_MI(test_module):
 
 
 @common.parametrize("test_module", test_modules)
-def test_avg_pool2d_tosa_BI(test_module):
+def test_avg_pool2d_tosa_INT(test_module):
     model, input_tensor = test_module()
 
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         model,
         input_tensor,
         aten_op,
@@ -142,10 +143,10 @@ def test_avg_pool2d_tosa_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone300
-def test_avg_pool2d_u55_BI(test_module):
+def test_avg_pool2d_u55_INT(test_module):
     model, input_tensor = test_module()
 
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         model,
         input_tensor,
         aten_op,
@@ -157,15 +158,43 @@ def test_avg_pool2d_u55_BI(test_module):
 
 @common.parametrize("test_module", test_modules)
 @common.XfailIfNoCorstone320
-def test_avg_pool2d_u85_BI(test_module):
+def test_avg_pool2d_u85_INT(test_module):
     model, input_tensor = test_module()
 
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         model,
         input_tensor,
         aten_op,
         exir_op,
         run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_avg_pool2d_vgf_FP(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules)
+@common.SkipIfNoModelConverter
+def test_avg_pool2d_vgf_INT(test_module):
+    model, input_tensor = test_module()
+    pipeline = VgfPipeline[input_t](
+        model,
+        input_tensor,
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 
@@ -192,7 +221,7 @@ reject_modules = {
 
 
 @common.parametrize("reject_module", reject_modules)
-def test_avg_pool2d_u55_BI_not_delegated(reject_module):
+def test_avg_pool2d_u55_INT_not_delegated(reject_module):
 
     model, test_data = reject_module()
 

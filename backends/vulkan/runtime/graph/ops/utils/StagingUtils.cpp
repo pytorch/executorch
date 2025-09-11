@@ -21,29 +21,30 @@ bool is_bitw8(vkapi::ScalarType dtype) {
 }
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
-    const api::vTensor& v_dst,
+    ComputeGraph& graph,
+    const ValueRef dst,
     bool int8_buffer_enabled,
     bool push_constant_variant) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  if (is_bitw8(v_dst.dtype()) && v_dst.storage_type() != utils::kBuffer &&
+  const vkapi::ScalarType dst_dtype = graph.dtype_of(dst);
+  const utils::StorageType dst_storage_type = graph.storage_type_of(dst);
+
+  if (is_bitw8(dst_dtype) && dst_storage_type != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "nchw_to_bitw8_image_nobitw8buffer";
     if (!push_constant_variant) {
       kernel_name += "_no_pc";
     }
-    add_storage_type_suffix(kernel_name, v_dst);
-    add_dtype_suffix(kernel_name, v_dst);
+    add_storage_type_suffix(kernel_name, dst_storage_type);
+    add_dtype_suffix(kernel_name, dst_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
-  if (v_dst.storage_type() == utils::kBuffer) {
+  if (dst_storage_type == utils::kBuffer) {
     kernel_name = "nchw_to_buffer";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
-    add_dtype_suffix(kernel_name, v_dst);
+    add_dtype_suffix(kernel_name, dst_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -51,36 +52,37 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
   if (!push_constant_variant) {
     kernel_name += "_no_pc";
   }
-  add_storage_type_suffix(kernel_name, v_dst);
-  add_dtype_suffix(kernel_name, v_dst);
+  add_storage_type_suffix(kernel_name, dst_storage_type);
+  add_dtype_suffix(kernel_name, dst_dtype);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
 vkapi::ShaderInfo get_tensor_to_nchw_shader(
-    const api::vTensor& v_src,
+    ComputeGraph& graph,
+    const ValueRef src,
     bool int8_buffer_enabled,
     bool push_constant_variant) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  if (is_bitw8(v_src.dtype()) && v_src.storage_type() != utils::kBuffer &&
+  const vkapi::ScalarType src_dtype = graph.dtype_of(src);
+  const utils::StorageType src_storage_type = graph.storage_type_of(src);
+
+  if (is_bitw8(src_dtype) && src_storage_type != utils::kBuffer &&
       !int8_buffer_enabled) {
     kernel_name = "bitw8_image_to_nchw_nobitw8buffer";
     if (!push_constant_variant) {
       kernel_name += "_no_pc";
     }
-    add_storage_type_suffix(kernel_name, v_src);
-    add_dtype_suffix(kernel_name, v_src);
+    add_storage_type_suffix(kernel_name, src_storage_type);
+    add_dtype_suffix(kernel_name, src_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
-  if (v_src.storage_type() == utils::kBuffer) {
+  if (src_storage_type == utils::kBuffer) {
     kernel_name = "buffer_to_nchw";
-    if (!push_constant_variant) {
-      kernel_name += "_no_pc";
-    }
-    add_dtype_suffix(kernel_name, v_src);
+    add_dtype_suffix(kernel_name, src_dtype);
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
@@ -88,8 +90,8 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
   if (!push_constant_variant) {
     kernel_name += "_no_pc";
   }
-  add_storage_type_suffix(kernel_name, v_src);
-  add_dtype_suffix(kernel_name, v_src);
+  add_storage_type_suffix(kernel_name, src_storage_type);
+  add_dtype_suffix(kernel_name, src_dtype);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }

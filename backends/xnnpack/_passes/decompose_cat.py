@@ -7,7 +7,11 @@
 import logging
 
 import torch
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_quant,
+    tag_as_implicit_q_dq,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -79,6 +83,7 @@ class DecomposeConcatenate(ExportPass):
                             args=(node,) + q_params,
                             kwargs=q_kwargs,
                         )
+                        tag_as_implicit_q_dq(q_node)
                     with gm.graph.inserting_after(q_node):
                         dq_node = gm.graph.create_node(
                             "call_function",
@@ -86,6 +91,7 @@ class DecomposeConcatenate(ExportPass):
                             args=(q_node,) + q_params,
                             kwargs=q_kwargs,
                         )
+                        tag_as_implicit_q_dq(dq_node)
                     remainder_concat_node.args = (
                         [dq_node] + remainder_nodes_to_concat,
                     ) + node.args[1:]

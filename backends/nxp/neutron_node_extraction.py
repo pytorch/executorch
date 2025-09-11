@@ -6,7 +6,6 @@
 from dataclasses import dataclass
 
 import numpy as np
-
 from executorch.backends.nxp.backend.ir.lib.tflite.BuiltinOperator import (
     BuiltinOperator,
 )
@@ -15,6 +14,10 @@ from executorch.backends.nxp.backend.ir.lib.tflite.Model import Model
 
 @dataclass
 class NeutronNodeArtifacts:
+    input_names: list[str]
+    input_indices: list[int]
+    output_names: list[str]
+    output_indices: list[int]
     microcode: np.ndarray
     weights: np.ndarray
     kernels: np.ndarray
@@ -42,7 +45,8 @@ def extract_artifacts_from_neutron_node(
 
     if sub_graph.OperatorsLength() == 0:
         raise RuntimeError(
-            "Model converted with neutron-converter has `0` operators instead of `1`."
+            "Model converted with neutron-converter has `0` operators instead of `1`.",
+            sub_graph.OperatorsLength(),
         )
     elif sub_graph.OperatorsLength() > 1:
         builtin_operators_map: dict[int, str] = {
@@ -58,7 +62,8 @@ def extract_artifacts_from_neutron_node(
 
         raise RuntimeError(
             f"Model converted with neutron-converter has `{sub_graph.OperatorsLength()}` operators "
-            f'instead of `1`. Operators found: {", ".join(ops_found)}.'
+            f'instead of `1`. Operators found: {", ".join(ops_found)}.',
+            sub_graph.OperatorsLength(),
         )
 
     neutron_node = None
@@ -99,4 +104,42 @@ def extract_artifacts_from_neutron_node(
         microcode.dtype == weights.dtype == kernels.dtype == np.dtype("uint8")
     ), "The Neutron Node uses unexpected data types."
 
-    return NeutronNodeArtifacts(microcode, weights, kernels)
+    input_names = []
+    input_indices = []
+    graph_inputs = sub_graph.InputsAsNumpy()
+    node_inputs = neutron_node.InputsAsNumpy()[:-3]
+    for tensor_idx in node_inputs:
+        which_graph_input = np.where(graph_inputs == tensor_idx)[0]
+        assert (
+            which_graph_input.size == 1
+        ), "Mismatch between Neutron Node inputs and graph inputs."
+        input_indices.append(which_graph_input[0])
+        input_names.append(sub_graph.Tensors(graph_inputs[which_graph_input[0]]).Name())
+
+    assert (
+        neutron_node.OutputsLength() >= 2
+    ), f"The Neutron Node only has `{neutron_node.GetOutputsLen()}` outputs. Expected at least `2` including the scratch buffer."
+
+    output_names = []
+    output_indices = []
+    graph_outputs = sub_graph.OutputsAsNumpy()
+    node_outputs = neutron_node.OutputsAsNumpy()[:-1]
+    for tensor_idx in node_outputs:
+        which_graph_output = np.where(graph_outputs == tensor_idx)[0]
+        assert (
+            which_graph_output.size == 1
+        ), "Mismatch between Neutron Node outputs and graph outputs."
+        output_indices.append(which_graph_output[0])
+        output_names.append(
+            sub_graph.Tensors(graph_outputs[which_graph_output[0]]).Name()
+        )
+
+    return NeutronNodeArtifacts(
+        input_names,
+        input_indices,
+        output_names,
+        output_indices,
+        microcode,
+        weights,
+        kernels,
+    )

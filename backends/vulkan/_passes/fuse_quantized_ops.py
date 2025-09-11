@@ -217,12 +217,14 @@ class FuseQuantizedOpsTransform(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         for node in graph_module.graph.nodes:
+            # Check for linear_qcnw pattern (weight-only quantization)
             qcnw_details = matches_linear_qcnw_pattern(self.program, node)
             if qcnw_details is not None:
                 qcnw_method, qcnw_nbits = qcnw_details
                 fuse_into_linear_qcnw_node(
                     self.program, graph_module, node, qcnw_method, qcnw_nbits
                 )
+                continue
 
         graph_module.recompile()
         dead_code_elimination_pass(graph_module)

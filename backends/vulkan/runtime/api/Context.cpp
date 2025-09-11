@@ -111,6 +111,12 @@ void Context::check_device_capabilities(const vkapi::ShaderInfo& shader) {
           shader.kernel_name, vkapi::VulkanExtension::INT8_STORAGE);
     }
   }
+  if (shader.requires_integer_dot_product) {
+    if (!adapter_p_->supports_int8_dot_product()) {
+      throw vkapi::ShaderNotSupportedError(
+          shader.kernel_name, vkapi::VulkanExtension::INTEGER_DOT_PRODUCT);
+    }
+  }
 }
 
 vkapi::DescriptorSet Context::get_descriptor_set(
@@ -198,14 +204,18 @@ void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
   if (cmd_) {
     cmd_.end();
     adapter_p_->submit_cmd(
-        queue_, cmd_.get_submit_handle(final_use), fence_handle);
+        queue_,
+        cmd_.get_submit_handle(final_use),
+        fence_handle,
+        VK_NULL_HANDLE,
+        VK_NULL_HANDLE);
 
     submit_count_ = 0u;
   }
 }
 
 void Context::flush() {
-  VK_CHECK(vkQueueWaitIdle(queue()));
+  VK_CHECK(vkQueueWaitIdle(queue().handle));
 
   command_pool_.flush();
   descriptor_pool_.flush();

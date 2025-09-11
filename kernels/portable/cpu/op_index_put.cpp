@@ -160,6 +160,7 @@ Tensor& index_put_out(
 namespace {
 
 bool check_special_case_in_place_args(
+    KernelRuntimeContext& ctx,
     Tensor& in,
     TensorOptList indices,
     const Tensor& values,
@@ -285,7 +286,8 @@ Tensor& index_put_(
   size_t dim = 0;
   ET_KERNEL_CHECK(
       ctx,
-      check_special_case_in_place_args(in, indices, values, accumulate, &dim),
+      check_special_case_in_place_args(
+          ctx, in, indices, values, accumulate, &dim),
       InvalidArgument,
       in);
 

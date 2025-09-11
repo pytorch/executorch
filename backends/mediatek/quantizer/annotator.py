@@ -10,7 +10,7 @@ import torch
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 
-from torch.export import export_for_training
+from torch.export import export
 from torch.fx import Graph, Node
 from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
@@ -21,6 +21,7 @@ from torchao.quantization.pt2e.quantizer import (
     annotate_output_qspec as _annotate_output_qspec,
     QuantizationAnnotation,
 )
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 from .qconfig import QuantizationConfig
 
@@ -57,12 +58,12 @@ def _is_annotated(node: Node):
     return True if any of the node
     is annotated, otherwise return False
     """
-    KEY = "quantization_annotation"
+    KEY = Q_ANNOTATION_KEY
     return KEY in node.meta and node.meta[KEY]._annotated
 
 
 def _mark_as_annotated(nodes: List[Node]):
-    KEY = "quantization_annotation"
+    KEY = Q_ANNOTATION_KEY
     for node in nodes:
         if KEY not in node.meta:
             node.meta[KEY] = QuantizationAnnotation()
@@ -157,9 +158,7 @@ def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) ->
             return norm, {}
 
     for pattern_cls in (ExecuTorchPattern, MTKPattern):
-        pattern_gm = export_for_training(
-            pattern_cls(), (torch.randn(3, 3),), strict=True
-        ).module()
+        pattern_gm = export(pattern_cls(), (torch.randn(3, 3),), strict=True).module()
         matcher = SubgraphMatcherWithNameNodeMap(
             pattern_gm, ignore_literals=True, remove_overlapping_matches=False
         )

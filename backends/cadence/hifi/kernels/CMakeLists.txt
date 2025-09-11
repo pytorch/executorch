@@ -29,8 +29,9 @@ add_library(
   ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/xa_nn_transpose_32.c
 )
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..
-${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 
 target_include_directories(
   cadence_kernels
@@ -40,7 +41,7 @@ target_include_directories(
     ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include/nnlib
     ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include
     ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/ndsp/hifi4/include/
-  ${_common_include_directories}
+    ${_common_include_directories}
 )
 
 target_link_libraries(cadence_kernels PRIVATE xa_nnlib)

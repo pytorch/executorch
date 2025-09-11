@@ -112,9 +112,8 @@ void test_reference(
   ValueRef staging_xk_out = graph.set_output_tensor(r_xk_out);
 
   graph.prepare();
-  graph.encode_prepack();
+
   graph.prepack();
-  graph.encode_execute();
 
   //
   // Run model

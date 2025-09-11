@@ -41,6 +41,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
+from torch.fx.traceback import NodeSource
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -88,6 +89,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
         if node.target is memory.alloc:
             ex_node = schema.Node(
+                name=node.name,
                 target="memory.alloc",
                 inputs=self.serialize_alloc_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -98,6 +100,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         elif isinstance(node.target, EdgeOpOverload):
             assert node.target._op is not None
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 # pyre-ignore Undefined attribute [16]: Item `typing.Callable` of
                 # `typing.Union[typing.Callable[..., typing.Any], str]` has no attribute `_op`.
@@ -110,6 +113,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             return
         elif node.target is delegate.executorch_call_delegate:
             ex_node = schema.Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_call_delegate_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
@@ -141,7 +145,23 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             debug_handle = node.meta["debug_handle"]
             meta["debug_handle"] = str(debug_handle)
 
+        if "from_node" in node.meta:
+            from_node = node.meta["from_node"]
+            # Serialize from_node as JSON since it's a complex nested structure
+            meta["from_node"] = json.dumps(self._make_from_node_json_acceptable(from_node))
+
         return meta
+
+    def _make_from_node_json_acceptable(self, from_node: Optional[List[NodeSource]]):
+        """
+        Serialize from_node metadata from a list of NodeSource objects to a list of dictionaries.
+        """
+        if from_node is None:
+            return None
+
+        json_acceptable_from_node = [node_source.to_dict() for node_source in from_node if isinstance(node_source, NodeSource)]
+
+        return json_acceptable_from_node
 
     def serialize_alloc_inputs(
         self, inputs  # pyre-ignore
@@ -473,7 +493,21 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         if debug_handle := metadata.get("debug_handle"):
             res["debug_handle"] = int(debug_handle)
 
+        if from_node_str := metadata.get("from_node"):
+            res["from_node"] = self._deserialize_from_node(json.loads(from_node_str))
+
         return res
+
+    def _deserialize_from_node(self, from_node_data: Optional[List[Dict[str, Any]]]) -> Optional[List[NodeSource]]:
+        """
+        Recursively deserialize from_node metadata from JSON data.
+        """
+        if from_node_data is None:
+            return None
+
+        assert isinstance(from_node_data, list)
+
+        return [NodeSource._from_dict(fn_dict) for fn_dict in from_node_data]
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):

@@ -15,12 +15,16 @@
 
 #define OUT_T ${buffer_scalar_type(OUT_DTYPE)}
 #define FVEC4_T ${texel_load_type(OUT_DTYPE, "texture3d")}
+#define SCALE_T ${buffer_scalar_type(SCALE_DTYPE)}
+#define ZP_T ${buffer_scalar_type(ZP_DTYPE)}
 
 #define ${MODE}
 
 ${define_active_storage_type("texture3d")}
 ${define_required_extensions(IN_DTYPE)}
 ${define_required_extensions(OUT_DTYPE)}
+${define_required_extensions(SCALE_DTYPE)}
+${define_required_extensions(ZP_DTYPE)}
 
 #extension GL_EXT_control_flow_attributes : require
 
@@ -30,18 +34,40 @@ ${layout_declare_tensor(B, "w", "t_out", OUT_DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "t_in", IN_DTYPE, "texture3d")}
 
 $if MODE == "per_tensor":
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
+
   layout(push_constant) uniform restrict Block {
-    float scale;
-    int zero_point;
     int quant_min;
     int quant_max;
   };
 $if MODE == "per_token":
-  ${layout_declare_tensor(B, "r", "t_scale", "float", "buffer")}
-  ${layout_declare_tensor(B, "r", "t_zero_point", "int", "buffer")}
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
 
   layout(push_constant) uniform restrict Block {
     int num_tokens;
+    int quant_min;
+    int quant_max;
+  };
+$if MODE == "per_channel":
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
+
+  layout(push_constant) uniform restrict Block {
+    int axis;
+    int num_channels;
+    int quant_min;
+    int quant_max;
+  };
+$if MODE == "block_wise":
+  ${layout_declare_tensor(B, "r", "t_scale", SCALE_DTYPE, "buffer")}
+  ${layout_declare_tensor(B, "r", "t_zero_point", ZP_DTYPE, "buffer")}
+
+  layout(push_constant) uniform restrict Block {
+    ivec4 blockSize;     // bW, bH, bC, bN
+    ivec4 numBlocks;     // tW/bW, tH/bH, tC/bC, tN/bN
+    ivec4 blockStride;   // pre-computed linear strides for the block grid
     int quant_min;
     int quant_max;
   };
@@ -138,7 +164,8 @@ void dequantize_per_tensor() {
 
   [[unroll]] for (int i = 0; i < 4; ++i) {
     IN_T qvalue = IN_T(intex[i]);
-    OUT_T value = dequantize_val(qvalue, scale, zero_point);
+    OUT_T value = dequantize_val(qvalue, float(t_scale[0]), int(t_zero_point[0]));
+
     $if OUT_DTYPE == "double":
       outtex[i] = float(value);
     $else:
@@ -147,7 +174,7 @@ void dequantize_per_tensor() {
   write_texel(t_out, pos, outtex);
 }
 
-#else
+#elif defined(per_token)
 
 void dequantize_per_token() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -173,13 +200,137 @@ void dequantize_per_token() {
   token_idx = min(token_idx, num_tokens - 1);
 
   // Scale and zero_point are prepacked as buffers, so direct access
-  float scale_val = t_scale[token_idx];
-  int zero_point_val = t_zero_point[token_idx];
+  float scale_val = float(t_scale[token_idx]);
+  int zero_point_val = int(t_zero_point[token_idx]);
 
   FVEC4_T outtex;
   [[unroll]] for (int i = 0; i < 4; ++i) {
     IN_T qvalue = IN_T(intex[i]);
     OUT_T value = dequantize_val(qvalue, scale_val, zero_point_val);
+    $if OUT_DTYPE == "double":
+      outtex[i] = float(value);
+    $else:
+      outtex[i] = value;
+  }
+
+  write_texel(t_out, pos, outtex);
+}
+
+#elif defined(per_channel)
+
+void dequantize_per_channel() {
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+
+  if (any(greaterThanEqual(pos, t_in_limits))) {
+    return;
+  }
+
+  IVEC4_T intex = load_texel(t_in, pos);
+  FVEC4_T outtex;
+
+  // Calculate channel index based on the dequantization axis (already converted to WHCN)
+  // The axis parameter is now in WHCN coordinate system:
+  // axis 0 -> W dimension (pos.x)
+  // axis 1 -> H dimension (pos.y)
+  // axis 2 -> C dimension (pos.z)
+  // axis 3 -> N dimension (batch folding in texture storage)
+
+  if (axis == 0) {
+    // Width dimension - each texel component has different channel index
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      IN_T qvalue = IN_T(intex[i]);
+      int channel_idx = pos.x * 4 + i;
+      channel_idx = min(channel_idx, num_channels - 1);
+
+      float scale_val = float(t_scale[channel_idx]);
+      int zero_point_val = int(t_zero_point[channel_idx]);
+      OUT_T value = dequantize_val(qvalue, scale_val, zero_point_val);
+      $if OUT_DTYPE == "double":
+        outtex[i] = float(value);
+      $else:
+        outtex[i] = value;
+    }
+  } else if (axis == 1) {
+    int channel_idx = pos.y;
+    channel_idx = min(channel_idx, num_channels - 1);
+    float scale_val = float(t_scale[channel_idx]);
+    int zero_point_val = int(t_zero_point[channel_idx]);
+
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      IN_T qvalue = IN_T(intex[i]);
+      OUT_T value = dequantize_val(qvalue, scale_val, zero_point_val);
+      $if OUT_DTYPE == "double":
+        outtex[i] = float(value);
+      $else:
+        outtex[i] = value;
+    }
+  } else if (axis == 2) {
+    // Channel dimension - for 4D tensors, need to account for batch-channel folding
+    // The Z coordinate contains folded batch*channel information
+    // We need to extract the actual channel index from the folded dimension
+    int folded_idx = pos.z;
+    int channel_idx = folded_idx % num_channels;
+
+    float scale_val = float(t_scale[channel_idx]);
+    int zero_point_val = int(t_zero_point[channel_idx]);
+
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      IN_T qvalue = IN_T(intex[i]);
+      OUT_T value = dequantize_val(qvalue, scale_val, zero_point_val);
+      $if OUT_DTYPE == "double":
+        outtex[i] = float(value);
+      $else:
+        outtex[i] = value;
+    }
+  } else if (axis == 3) {
+    // Batch dimension - for 4D tensors, need to account for batch-channel folding
+    // The Z coordinate contains folded batch*channel information
+    // We need to extract the actual channel index from the folded dimension
+    int folded_idx = pos.z;
+    // In this case num_channels actually corresponds to the number of channels
+    // the C dimension N(C)HW
+    int channel_idx = folded_idx / num_channels;
+
+    float scale_val = float(t_scale[channel_idx]);
+    int zero_point_val = int(t_zero_point[channel_idx]);
+
+    [[unroll]] for (int i = 0; i < 4; ++i) {
+      IN_T qvalue = IN_T(intex[i]);
+      OUT_T value = dequantize_val(qvalue, scale_val, zero_point_val);
+      $if OUT_DTYPE == "double":
+        outtex[i] = float(value);
+      $else:
+        outtex[i] = value;
+    }
+  }
+
+  write_texel(t_out, pos, outtex);
+}
+
+#else // block_wise
+
+void dequantize_block_wise() {
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
+
+  if (any(greaterThanEqual(pos, t_in_limits)))
+    return;
+
+  IVEC4_T intex = load_texel(t_in, pos);
+  FVEC4_T outtex;
+
+  ivec4 base_tidx = ivec4(pos.x * 4, pos.y, pos.z, 0);
+  int foldedZ = pos.z;
+
+  int C_total = numBlocks.z * blockSize.z;
+
+  [[unroll]] for (int i = 0; i < 4; ++i) {
+    ivec4 tidx = ivec4(base_tidx.x + i, base_tidx.y, (foldedZ % C_total), (foldedZ / C_total));
+
+    ivec4 bcoord = tidx / blockSize;
+    int block_id = bcoord.x * blockStride.x + bcoord.y * blockStride.y + bcoord.z * blockStride.z + bcoord.w * blockStride.w;
+
+    IN_T qvalue = IN_T(intex[i]);
+    OUT_T value = dequantize_val(qvalue, float(t_scale[block_id]), int(t_zero_point[block_id]));
     $if OUT_DTYPE == "double":
       outtex[i] = float(value);
     $else:

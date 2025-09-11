@@ -88,6 +88,12 @@ TEST_F(TrainingModuleTest, JointGraphTest) {
   ASSERT_EQ(param.find("linear.weight")->second.dim(), 2);
   ASSERT_EQ(param.find("linear.bias")->second.sizes()[0], 3);
   ASSERT_EQ(param.find("linear.bias")->second.dim(), 1);
+
+  // Test attributes for pte only model
+  auto attributes_res = mod.named_attributes("forward");
+  ASSERT_EQ(attributes_res.error(), Error::Ok);
+  auto& attributes = attributes_res.get();
+  ASSERT_EQ(attributes.size(), 0);
 }
 
 TEST_F(TrainingModuleTest, NonTrainingModuleTest) {
@@ -152,4 +158,99 @@ TEST_F(TrainingModuleTest, SeperateDataTest) {
   auto res = mod.execute_forward_backward("forward", inputs);
   ASSERT_EQ(res.error(), Error::Ok);
   ASSERT_EQ(res.get().size(), 1);
+}
+
+TEST_F(TrainingModuleTest, DataExternalConstantsTest) {
+  // Test the external constants are loaded correctly.
+  const char* ptd_path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
+  Result<FileDataLoader> data_map_loader_res = FileDataLoader::from(ptd_path);
+  ASSERT_EQ(data_map_loader_res.error(), Error::Ok);
+
+  auto data_map_loader =
+      std::make_unique<torch::executor::util::FileDataLoader>(
+          std::move(data_map_loader_res.get()));
+
+  const char* pte_path = std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH");
+  Result<FileDataLoader> pte_loader_res = FileDataLoader::from(pte_path);
+  ASSERT_EQ(pte_loader_res.error(), Error::Ok);
+
+  auto pte_loader = std::make_unique<torch::executor::util::FileDataLoader>(
+      std::move(pte_loader_res.get()));
+
+  auto mod = executorch::extension::training::TrainingModule(
+      std::move(pte_loader),
+      nullptr,
+      nullptr,
+      nullptr,
+      std::move(data_map_loader));
+
+  // Test Attributes for pte + ptd model containing external constants
+  auto attributes_res = mod.named_attributes("forward");
+  ASSERT_EQ(attributes_res.error(), Error::Ok);
+  auto& attributes = attributes_res.get();
+  ASSERT_EQ(attributes.size(), 2);
+  ASSERT_NE(attributes.find("a"), attributes.end());
+  ASSERT_NE(attributes.find("b"), attributes.end());
+
+  ASSERT_EQ(attributes.find("a")->second.sizes()[0], 2);
+  ASSERT_EQ(attributes.find("a")->second.sizes()[1], 2);
+  ASSERT_EQ(attributes.find("a")->second.dim(), 2);
+  ASSERT_EQ(attributes.find("b")->second.sizes()[0], 2);
+  ASSERT_EQ(attributes.find("b")->second.sizes()[0], 2);
+  ASSERT_EQ(attributes.find("b")->second.dim(), 2);
+}
+
+TEST_F(TrainingModuleTest, UnloadMethodTest) {
+  const char* ptd_path = std::getenv("ET_MODULE_TRAIN_DATA_PATH");
+  Result<FileDataLoader> data_map_loader_res = FileDataLoader::from(ptd_path);
+  ASSERT_EQ(data_map_loader_res.error(), Error::Ok);
+
+  auto data_map_loader =
+      std::make_unique<torch::executor::util::FileDataLoader>(
+          std::move(data_map_loader_res.get()));
+
+  const char* pte_path = std::getenv("ET_MODULE_TRAIN_PROGRAM_PATH");
+  Result<FileDataLoader> pte_loader_res = FileDataLoader::from(pte_path);
+  ASSERT_EQ(pte_loader_res.error(), Error::Ok);
+
+  auto pte_loader = std::make_unique<torch::executor::util::FileDataLoader>(
+      std::move(pte_loader_res.get()));
+
+  auto mod = executorch::extension::training::TrainingModule(
+      std::move(pte_loader),
+      nullptr,
+      nullptr,
+      nullptr,
+      std::move(data_map_loader));
+
+  auto parameters_res = mod.named_parameters("forward");
+  ASSERT_EQ(parameters_res.error(), Error::Ok);
+  auto& parameters = parameters_res.get();
+
+  ASSERT_NEAR(
+      parameters_res.get()
+          .find("linear.bias")
+          ->second.const_data_ptr<float>()[0],
+      0.1528,
+      0.0001);
+
+  // mock training
+  auto linear_bias_ptr =
+      parameters.find("linear.bias")->second.mutable_data_ptr<float>();
+  linear_bias_ptr[0] += 0.5;
+  ASSERT_NEAR(
+      parameters.find("linear.bias")->second.const_data_ptr<float>()[0],
+      0.6528,
+      0.0001);
+
+  mod.unload_method("forward");
+
+  auto new_parameters_res = mod.named_parameters("forward");
+  ASSERT_EQ(new_parameters_res.error(), Error::Ok);
+  ASSERT_NEAR(
+      new_parameters_res.get()
+          .find("linear.bias")
+          ->second.const_data_ptr<float>()[0],
+      0.1528,
+      0.0001);
 }

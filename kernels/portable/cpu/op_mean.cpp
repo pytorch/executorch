@@ -45,9 +45,12 @@ Tensor& mean_dim_out(
       InvalidArgument,
       out);
 
-  MapReduceOverDimListPlan plan(in, dim_list);
+  std::optional<MapReduceOverDimListPlan> plan;
+  if (in.numel() > 0) {
+    plan.emplace(in, dim_list);
+  }
   // @lint-ignore CLANGTIDY facebook-hte-CArray
-  static constexpr const char op_name[] = "add.out";
+  static constexpr const char op_name[] = "mean.out";
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
     ET_SWITCH_FLOATHBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
@@ -56,8 +59,8 @@ Tensor& mean_dim_out(
           in, dim_list, out, [&](const auto begin, const auto end) {
             for (const auto out_ix : c10::irange(begin, end)) {
               CTYPE_OUT sum = 0;
-              if (in.numel() > 0) {
-                sum = plan.execute<CTYPE_IN, CTYPE_OUT>(
+              if (plan.has_value()) {
+                sum = plan->execute<CTYPE_IN, CTYPE_OUT>(
                     [](CTYPE_IN v) { return static_cast<CTYPE_OUT>(v); },
                     [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc + outv; },
                     out_ix);

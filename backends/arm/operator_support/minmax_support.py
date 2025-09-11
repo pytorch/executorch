@@ -8,7 +8,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     register_tosa_support_check,
     SupportedTOSAOperatorCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -21,7 +21,6 @@ class MinMaxSupported(SupportedTOSAOperatorCheck):
 
     # TODO : "MLETORCH-718 : Quantization of indices in arm_quantizer"
     tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
         TosaSpecification.create_from_string("TOSA-1.0+FP"),
     ]
 

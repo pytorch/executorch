@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_attn_weights
+ *
+ * Macro Settings:
+ * - INPUT_BUFFER
+ */
+
+#ifndef SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+#define SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_input_tile.glslh"
+
+VEC4_T load_attn_weight_c4(
+    const int c4,
+    const int s,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+#ifdef INPUT_BUFFER
+  return t_attn_weights[(q_h * S * C4) + (s * C4) + c4];
+#else
+  return texelFetch(t_attn_weights, ivec3(c4, s, q_h), 0);
+#endif
+}
+
+void load_attn_weight_tile_no_checks(
+    out FPInputTile tile,
+    const int c4_start,
+    const int s_start,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      tile.data[s][c4] =
+          load_attn_weight_c4(c4_start + c4, s_start + s, q_h, C4, S, Q_H);
+    }
+  }
+}
+
+void load_attn_weight_tile_with_checks(
+    out FPInputTile tile,
+    const int c4_start,
+    const int s_start,
+    const int q_h,
+    const int C4,
+    const int S,
+    const int Q_H) {
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      if (c4_start + c4 < C4 && s_start + s < S) {
+        tile.data[s][c4] =
+            load_attn_weight_c4(c4_start + c4, s_start + s, q_h, C4, S, Q_H);
+      } else {
+        tile.data[s][c4] = VEC4_T(0.0);
+      }
+    }
+  }
+}
+
+#endif // SDPA_FP_ATTN_WEIGHT_TILE_LOAD_GLSLH

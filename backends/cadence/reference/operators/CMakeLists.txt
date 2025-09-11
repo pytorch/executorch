@@ -67,8 +67,9 @@ target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..
-${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
@@ -79,7 +80,8 @@ target_include_directories(
 add_library(
   custom_ops
   "quantized_linear_out.cpp"
-  "quantized_conv_out.cpp"
+  "quantized_conv_nchw_out.cpp"
+  "quantized_conv_nhwc_out.cpp"
   "quantized_relu_out.cpp"
   "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp"

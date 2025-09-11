@@ -36,16 +36,17 @@ Tensor& bmm_out(
       InvalidArgument,
       out);
 
-  constexpr auto name = "bmm.out";
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "bmm.out";
 
   auto in_type = in.scalar_type();
 
   if (executorch::runtime::isComplexType(in_type)) {
-    ET_SWITCH_COMPLEXH_TYPES(in_type, ctx, name, CTYPE, [&]() {
+    ET_SWITCH_COMPLEXH_TYPES(in_type, ctx, op_name, CTYPE, [&]() {
       internal::bmm_out_impl<CTYPE>(in, mat2, out);
     });
   } else {
-    ET_SWITCH_REALH_TYPES(in_type, ctx, name, CTYPE, [&]() {
+    ET_SWITCH_REALHBF16_TYPES(in_type, ctx, op_name, CTYPE, [&]() {
       internal::bmm_out_impl<CTYPE>(in, mat2, out);
     });
   }

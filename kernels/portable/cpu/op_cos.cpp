@@ -14,9 +14,7 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor& cos_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhbbf16_to_floathbf16(std::cos, ctx, in, out);
-}
+DEFINE_UNARY_UFUNC_REALHBBF16_TO_FLOATHBF16(cos_out, std::cos)
 
 } // namespace native
 } // namespace executor

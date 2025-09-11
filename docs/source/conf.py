@@ -202,7 +202,6 @@ redirects = {
     "export-overview": "using-executorch-export.html",
     "runtime-build-and-cross-compilation": "using-executorch-building-from-source.html",
     "tutorials/export-to-executorch-tutorial": "../using-executorch-export.html",
-    "running-a-model-cpp-tutorial": "using-executorch-cpp.html",
     "build-run-vulkan": "backends-vulkan.html",
     "executorch-arm-delegate-tutorial": "backends-arm-ethos-u.html",
     "build-run-coreml": "backends-coreml.html",

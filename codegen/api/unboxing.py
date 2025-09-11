@@ -34,7 +34,7 @@ class Unboxing:
     Takes a sequence of Bindings and unbox EValues to these Bindings. Return generated code that performs correct unboxing.
     A sample generated code:
     // aten::mul.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
-    void mul_out(EValue** stack) {
+    void mul_out(Span<EValue*> stack) {
         EValue& self = *stack[0];
         EValue& other = *stack[1];
         EValue& out = *stack[2];

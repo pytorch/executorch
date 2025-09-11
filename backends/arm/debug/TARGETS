@@ -1,0 +1,14 @@
+# @noautodeps
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "schema",
+    srcs = [
+        "__init__.py",
+        "schema.py",
+    ],
+    deps = [
+        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+    ],
+)

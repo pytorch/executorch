@@ -9,10 +9,10 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -29,14 +29,14 @@ class MultipleOutputsModule(torch.nn.Module):
 
 
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
-def test_tosa_MI_pipeline(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](MultipleOutputsModule(), test_data, [], [])
+def test_tosa_FP_pipeline(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](MultipleOutputsModule(), test_data, [], [])
     pipeline.run()
 
 
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
-def test_tosa_BI_pipeline(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_tosa_INT_pipeline(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         MultipleOutputsModule(), test_data, [], [], qtol=1
     )
     pipeline.run()
@@ -45,7 +45,7 @@ def test_tosa_BI_pipeline(test_data: input_t1):
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
 @common.XfailIfNoCorstone300
 def test_U55_pipeline(test_data: input_t1):
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         MultipleOutputsModule(), test_data, [], [], qtol=1
     )
     pipeline.run()
@@ -54,7 +54,7 @@ def test_U55_pipeline(test_data: input_t1):
 @common.parametrize("test_data", MultipleOutputsModule.inputs)
 @common.XfailIfNoCorstone320
 def test_U85_pipeline(test_data: input_t1):
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         MultipleOutputsModule(), test_data, [], [], qtol=1
     )
     pipeline.run()

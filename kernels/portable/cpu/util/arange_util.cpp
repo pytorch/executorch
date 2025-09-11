@@ -12,20 +12,21 @@ namespace torch::executor::native {
 #define ET_ARANGE_IMPL(ctx, start, numel, step, out, op_name)               \
   ET_SWITCH_REALHBF16_TYPES(out.scalar_type(), ctx, op_name, CTYPE, [&]() { \
     auto out_data = out.mutable_data_ptr<CTYPE>();                          \
-    for (Tensor::SizesType i = 0; i < numel; ++i) {                         \
+    for (executorch::aten::SizesType i = 0; i < numel; ++i) {               \
       out_data[i] = static_cast<CTYPE>(start + i * step);                   \
     }                                                                       \
   })
 
-Tensor::SizesType
+executorch::aten::SizesType
 compute_arange_out_size(double start, double end, double step) {
-  Tensor::SizesType numel =
-      static_cast<Tensor::SizesType>(std::ceil((end - start) / step));
+  executorch::aten::SizesType numel =
+      static_cast<executorch::aten::SizesType>(std::ceil((end - start) / step));
 
   ET_CHECK_MSG(
       numel >= 0,
-      "numel should be non-negative, but got (%d). start (%f), end (%f), step (%f)",
-      numel,
+      "numel should be non-negative, but got (%" PRId64
+      "). start (%f), end (%f), step (%f)",
+      static_cast<int64_t>(numel),
       start,
       end,
       step);
@@ -39,7 +40,7 @@ void arange_out_impl(
     double step,
     Tensor& out) {
   (void)ctx;
-  Tensor::SizesType numel = compute_arange_out_size(start, end, step);
+  executorch::aten::SizesType numel = compute_arange_out_size(start, end, step);
   ET_ARANGE_IMPL(ctx, start, numel, step, out, "arange.start_out");
 }
 

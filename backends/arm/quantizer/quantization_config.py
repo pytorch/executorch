@@ -13,7 +13,6 @@ from torchao.quantization.pt2e import ObserverOrFakeQuantize
 
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
-    FixedQParamsQuantizationSpec,
     QuantizationSpec,
 )
 
@@ -122,21 +121,3 @@ class QuantizationConfig:
                 "Only float dtype for bias is supported for bias right now"
             )
         return self.bias
-
-    def get_fixed_qspec(
-        self,
-        scale: float,
-        zp: int,
-        dtype: torch.dtype = torch.int8,
-        quant_min: int = -128,
-        quant_max: int = 127,
-    ) -> FixedQParamsQuantizationSpec:
-        """Returns a new FixedQParamsQuantizationSpec with the given parameters."""
-        return FixedQParamsQuantizationSpec(
-            dtype=dtype,
-            qscheme=torch.per_tensor_affine,
-            scale=scale,
-            zero_point=zp,
-            quant_min=quant_min,
-            quant_max=quant_max,
-        )

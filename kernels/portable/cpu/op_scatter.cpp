@@ -104,25 +104,20 @@ void scatter_value_helper(
 } // namespace
 
 Tensor& scatter_src_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  (void)context;
-
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       check_scatter_src_args(in, dim, index, src, out),
       InvalidArgument,
       out);
 
   ET_KERNEL_CHECK(
-      context,
-      resize_tensor(out, in.sizes()) == Error::Ok,
-      InvalidArgument,
-      out);
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   constexpr auto name = "scatter.src_out";
 
@@ -154,7 +149,9 @@ Tensor& scatter_value_out(
   constexpr auto name = "scatter.value_out";
 
   ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
-    const CTYPE val = utils::scalar_to<CTYPE>(value);
+    auto opt_val = utils::internal::check_overflow_scalar_cast<CTYPE>(value);
+    ET_KERNEL_CHECK(ctx, opt_val.has_value(), InvalidArgument, );
+    auto val = opt_val.value();
     scatter_value_helper<CTYPE>(in, dim, index, val, out);
   });
 

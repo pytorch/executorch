@@ -23,7 +23,7 @@ Under `extension/android/`,
 
 The usage is:
 ```sh
-export ANDROID_HOME=/path/to/sdk
+export ANDROID_SDK=/path/to/sdk
 export ANDROID_NDK=/path/to/ndk
 sh scripts/build_android_library.sh
 ```

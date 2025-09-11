@@ -42,8 +42,13 @@ class ThreadPool final {
    * is a private API, which will later be replaced by something that allows
    * creating of threadpool with requested size and use such a threadpool with
    * backend delegates, custom ops or optimized lib.
+   * For Meta internal use, there is
+   * executorch::extension::threadpool::UseNThreadsThreadPoolGuard API that
+   * provides a safer way to select a subset of threads, from threadpool, to run
+   * the model on.
    */
-  [[deprecated("This API is experimental and may change without notice.")]]
+  [[deprecated(
+      "This API is experimental and may change without notice. Consider using UseNThreadsThreadPoolGuard")]]
   bool _unsafe_reset_threadpool(uint32_t num_threads);
 
   /**

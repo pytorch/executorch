@@ -22,7 +22,7 @@ trap 'rm -rfv ${TMP_DIR}' EXIT
 # Setup MacOS dependencies as there is no Docker support on MacOS atm
 # We need the runner to test the built library.
 PYTHON_EXECUTABLE=python \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \
+CMAKE_ARGS="-DEXECUTORCH_BUILD_EXTENSION_EVALUE_UTIL=ON -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON -DEXECUTORCH_BUILD_TESTS=ON" \
 ${CONDA_RUN} --no-capture-output \
 .ci/scripts/setup-macos.sh "$@"
 

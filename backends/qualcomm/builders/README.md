@@ -360,9 +360,14 @@ The operator now should be functional for Qualcomm backends. For operator to wor
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
-| Operators | HTP - 77/116 Enabled |
++ &check; = Supported
++ &cross; = Not Supported
++ &#128683; = Deprecated, supported with other QNN Ops
+
+
+| Operators | HTP - 90/116 Enabled |
 |-----------|---------|
-| Argmax | &cross; |
+| Argmax | &check; |
 | Argmin | &check; |
 | BatchNorm | &check; |
 | BatchToSpace | &cross; |
@@ -381,16 +386,16 @@ Please help update following table if you are contributing new operators:
 | ElementWiseAbs | &check; |
 | ElementWiseAdd | &check; |
 | ElementWiseAnd | &check; |
-| ElementWiseAsin | &cross; |
-| ElementWiseAtan | &cross; |
-| ElementWiseBinary | &cross; |
+| ElementWiseAsin | &check; |
+| ElementWiseAtan | &check; |
+| ElementWiseBinary | &check; |
 | ElementWiseCeil | &check; |
 | ElementWiseCos | &check; |
 | ElementWiseDivide | &check; |
 | ElementWiseEqual | &check; |
 | ElementWiseExp | &check; |
-| ElementWiseFloor | &cross; |
-| ElementWiseFloorDiv | &cross; |
+| ElementWiseFloor | &check; |
+| ElementWiseFloorDiv | &check; |
 | ElementWiseGreater | &check; |
 | ElementWiseGreaterEqual | &check; |
 | ElementWiseLess | &check; |
@@ -405,16 +410,16 @@ Please help update following table if you are contributing new operators:
 | ElementWiseNotEqual | &check; |
 | ElementWiseOr | &check; |
 | ElementWisePower | &check; |
-| ElementWiseRound | &cross; |
+| ElementWiseRound | &check; |
 | ElementWiseRsqrt | &check; |
 | ElementWiseSelect | &check; |
-| ElementWiseSign | &cross; |
+| ElementWiseSign | &check; |
 | ElementWiseSin | &check; |
 | ElementWiseSquaredDifference | &cross; |
 | ElementWiseSquareRoot | &check; |
 | ElementWiseSubtract | &check; |
 | ElementWiseUnary | &cross; |
-| ElementWiseXor | &cross; |
+| ElementWiseXor | &check; |
 | Elu | &check; |
 | ExpandDims | &check; |
 | ExtractGlimpse | &cross; |
@@ -449,14 +454,14 @@ Please help update following table if you are contributing new operators:
 | Quantize | &check; |
 | ReduceMax | &check; |
 | ReduceMean | &check; |
-| ReduceMin | &cross; |
+| ReduceMin | &check; |
 | ReduceSum | &check; |
 | Relu | &check; |
-| Relu1 | &cross; |
-| Relu6 | &cross; |
+| Relu1 | &#128683; |
+| Relu6 | &#128683; |
 | ReluMinMax | &check; |
 | Reshape | &check; |
-| Resize | &cross; |
+| Resize | &check; |
 | ResizeBilinear | &check; |
 | ResizeNearestNeighbor | &check; |
 | RoiAlign | &cross; |

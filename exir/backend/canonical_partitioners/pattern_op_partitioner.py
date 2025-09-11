@@ -8,6 +8,10 @@ import logging
 from typing import List, Optional
 
 import torch
+
+from executorch.exir.backend.canonical_partitioners.group_partitioner import (
+    GroupBasedPartitioner,
+)
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
@@ -48,6 +52,50 @@ def generate_partitions_from_list_of_nodes(
         allows_single_node_partition=True,
     )
     partition_list = capability_partitioner.propose_partitions()
+
+    # Remove the metadata field we added
+    for partition in partition_list:
+        for node in partition.nodes:
+            node.meta.pop("match", False)
+    return partition_list
+
+
+def generate_grouped_partitions_from_list_of_nodes(
+    graph_module: torch.fx.GraphModule,
+    pattern_list: Optional[List[List[torch.fx.Node]]] = None,
+    op_support: Optional[OperatorSupportBase] = None,
+) -> List[Partition]:
+    final_op_support: Optional[OperatorSupportBase] = op_support
+
+    if pattern_list is not None:
+        # Tag all the nodes in these patterns
+        for node_list in pattern_list:
+            for node in node_list:
+                node.meta["match"] = True
+
+        class MatchTag(OperatorSupportBase):
+            def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+                return node.meta.get("match", False)
+
+        final_op_support = (
+            MatchTag()
+            if final_op_support is None
+            else any_chain(final_op_support, MatchTag())
+        )
+
+    assert (
+        final_op_support is not None
+    ), "Did not give a pattern or OperatorSupportBase instance to partition with"
+
+    # Run the CapabilityBasedPartitioner to return the largest possible
+    # subgraphs containing the nodes with the tags
+    group_partitioner = GroupBasedPartitioner(
+        graph_module,
+        final_op_support,
+        node_groups=pattern_list,
+        allows_single_node_partition=True,
+    )
+    partition_list = group_partitioner.propose_partitions()
 
     # Remove the metadata field we added
     for partition in partition_list:

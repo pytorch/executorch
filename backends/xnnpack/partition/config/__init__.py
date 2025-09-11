@@ -50,6 +50,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     SquareRootConfig,
     SubConfig,
     TanhConfig,
+    ToDimOrderCopyConfig,
     UpsampleBilinear2dConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
@@ -102,6 +103,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     ReciprocalSquareRootConfig,
     ReLUConfig,
     TanhConfig,
+    ToDimOrderCopyConfig,
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,

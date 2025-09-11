@@ -94,3 +94,22 @@ runtime.python_test(
         "libtorch",
     ],
 )
+
+runtime.python_test(
+    name = "test_xnnpack_recipes",
+    srcs = glob([
+        "recipes/*.py",
+    ]),
+    env = {
+        "HTTP_PROXY": "http://fwdproxy:8080",
+        "HTTPS_PROXY": "http://fwdproxy:8080",
+    },
+    deps = [
+       "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/export:lib",
+        "//pytorch/vision:torchvision",  # @manual
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/examples/models:models",  # @manual
+        "//executorch/examples/xnnpack:models",  # @manual
+    ],
+)

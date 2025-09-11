@@ -10,6 +10,8 @@
 #include <cmath>
 #include <tuple>
 
+#include <executorch/kernels/portable/cpu/util/math_util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -62,7 +64,7 @@ bool float_less_than(T x, T y) {
   if constexpr (std::is_integral_v<T>) {
     return x < y;
   }
-  return (!std::isnan(x) && std::isnan(y)) || x < y;
+  return (!utils::isnan_override(x) && utils::isnan_override(y)) || x < y;
 }
 
 template <typename CTYPE, typename elem_t = std::pair<CTYPE, int64_t>>

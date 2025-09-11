@@ -15,9 +15,7 @@
 #include <executorch/examples/models/llava/runner/llava_text_decoder_runner.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 
-#include <ctime>
 #include <memory>
-#include <sstream>
 #include <vector>
 
 namespace llm = ::executorch::extension::llm;
@@ -49,7 +47,8 @@ Error LlavaRunner::load() {
   // Load the text decoder runner
   text_decoder_runner_ =
       // @lint-ignore CLANGTIDY facebook-hte-Deprecated
-      std::make_unique<LlavaTextDecoderRunner>(module_.get());
+      std::make_unique<LlavaTextDecoderRunner>(
+          module_.get(), io_manager_.get());
   // @lint-ignore CLANGTIDY facebook-hte-Deprecated
   text_decoder_runner_->load();
 

@@ -21,8 +21,27 @@ memcpy(void* dst, const void* src, size_t num_bytes) {
 }
 
 void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
-  Result<void*> temp_mem_res = ctx.allocate_temp(size);
-  return temp_mem_res.ok() ? temp_mem_res.get() : nullptr;
+  constexpr size_t kAlignment =
+      16; // 16-byte alignment for vectorized operations
+  ET_LOG(
+      Info,
+      "Attempting to allocate %zu bytes of temp memory (16-byte aligned)",
+      size);
+  Result<void*> temp_mem_res = ctx.allocate_temp(size, kAlignment);
+  if (temp_mem_res.ok()) {
+    void* ptr = temp_mem_res.get();
+    ET_LOG(
+        Info,
+        "Successfully allocated temp memory at %p (16-byte aligned)",
+        ptr);
+    return ptr;
+  } else {
+    ET_LOG(
+        Error,
+        "Failed to allocate temp memory, error: 0x%x",
+        static_cast<uint32_t>(temp_mem_res.error()));
+    return nullptr;
+  }
 }
 
 // Quantize a fp32 value to an int8_t/uint8_t value
@@ -108,60 +127,6 @@ void dequantize(
   }
 }
 
-// Requantize the int8_t/uint8_t in value to a uint8_t/int8_t out value.
-// The scale and zero_point for requantization are in the args.
-template <typename IT, typename OT>
-__attribute__((always_inline)) OT requantize(
-    const IT in,
-    float in_scale,
-    int32_t in_zero_point,
-    float inv_out_scale,
-    int32_t out_zero_point) {
-  float dequant = dequantize<IT>(in, in_scale, in_zero_point);
-  return quantize<OT>(dequant, inv_out_scale, out_zero_point);
-}
-
-// Requantize the int8_t/uint8_t in array to a uint8_t/int8_t out array.
-// The scale and zero_point for requantization are in the args.
-template <typename IT, typename OT>
-void requantize(
-    OT* __restrict__ out,
-    const IT* __restrict__ in,
-    float in_scale,
-    int32_t in_zero_point,
-    float inv_out_scale,
-    int32_t out_zero_point,
-    size_t size) {
-  xtfloatx2 in_scale_vec = (xtfloatx2)in_scale;
-  xtfloatx2 in_zero_vec = XT_FLOAT_SX2(in_zero_point, 0);
-  xtfloatx2 inv_out_scale_vec = (xtfloatx2)inv_out_scale;
-  xtfloatx2 out_zero_vec = XT_FLOAT_SX2(out_zero_point, 0);
-
-  float min_val = std::numeric_limits<OT>::min();
-  float max_val = std::numeric_limits<OT>::max();
-
-  size_t i = 0;
-  // Vectorize by 2
-  for (; i < (size & ~1); i += 2) {
-    xtfloatx2 in_vec = {(float)in[i], (float)in[i + 1]};
-    xtfloatx2 t0 = XT_SUB_SX2(in_vec, in_zero_vec);
-    xtfloatx2 t1 = XT_MUL_SX2(t0, in_scale_vec);
-
-    xtfloatx2 acc = out_zero_vec;
-    XT_MADD_SX2(acc, inv_out_scale_vec, t1);
-    xtfloatx2 t2 = XT_FIROUND_SX2(acc);
-    ae_int32x2 t3 =
-        XT_UTRUNC_SX2(XT_MAX_SX2(XT_MIN_SX2(t2, max_val), min_val), 0);
-    out[i] = AE_MOVAD32_H(t3);
-    out[i + 1] = AE_MOVAD32_L(t3);
-  }
-  // Handle residual iteration
-  if (i < size) {
-    out[i] = requantize<IT, OT>(
-        in[i], in_scale, in_zero_point, inv_out_scale, out_zero_point);
-  }
-}
-
 // explicit template instantiation
 
 #define typed_quantize_val(dtype)                         \
@@ -209,34 +174,6 @@ typed_dequantize_vec(int16_t);
 typed_dequantize_vec(uint16_t);
 typed_dequantize_vec(int32_t);
 #undef typed_dequantize_vec
-
-#define typed_requantize_val(itype, otype)                  \
-  template __attribute__((always_inline)) otype requantize( \
-      const itype in,                                       \
-      float in_scale,                                       \
-      int32_t in_zero_point,                                \
-      float inv_out_scale,                                  \
-      int32_t out_zero_point);
-typed_requantize_val(int8_t, int8_t);
-typed_requantize_val(uint8_t, uint8_t);
-typed_requantize_val(int8_t, uint8_t);
-typed_requantize_val(uint8_t, int8_t);
-#undef typed_requantize_val
-
-#define typed_requantize_vec(itype, otype) \
-  template void requantize(                \
-      otype* __restrict__ out,             \
-      const itype* __restrict__ in,        \
-      float in_scale,                      \
-      int32_t in_zero_point,               \
-      float inv_out_scale,                 \
-      int32_t out_zero_point,              \
-      size_t size);
-typed_requantize_vec(int8_t, int8_t);
-typed_requantize_vec(uint8_t, uint8_t);
-typed_requantize_vec(int8_t, uint8_t);
-typed_requantize_vec(uint8_t, int8_t);
-#undef typed_requantize_vec
 
 }; // namespace kernels
 }; // namespace HiFi

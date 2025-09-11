@@ -194,7 +194,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check the delegate instruction
@@ -266,7 +266,6 @@ class TestBackends(unittest.TestCase):
 
         executorch_module = _load_for_executorch_from_buffer(buff)
 
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(model_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = add_mul_module(*model_inputs)
@@ -319,16 +318,17 @@ class TestBackends(unittest.TestCase):
         )
 
         buff = exec_prog.buffer
-
+        executorch_module = _load_for_executorch_from_buffer(buff)
         # This line should raise an exception like
         # RuntimeError: failed with error 0x12
-        _load_for_executorch_from_buffer(buff)
+        inputs_flattened, _ = tree_flatten(model_inputs)
+        executorch_module.run_method("forward", tuple(inputs_flattened))
 
     @vary_segments
     def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
-            "loading method forward failed with error 0x12",
+            "Failed to execute method forward, error: 0x12",
         ):
             self.run_model_in_unsupported_backend(
                 extract_delegate_segments=extract_delegate_segments
@@ -414,7 +414,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check the delegate instruction
@@ -876,7 +876,6 @@ class TestBackends(unittest.TestCase):
         self.assertEqual(counter, 2)
 
         executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = m(*inputs)
@@ -1033,7 +1032,7 @@ class TestBackends(unittest.TestCase):
 
         def f(x, y):
             x = x + y
-            x = torch.ops.higher_order.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
+            x = torch.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
             x = x - y
             return x
 
@@ -1320,7 +1319,7 @@ class TestBackends(unittest.TestCase):
             program=program,
             delegate=program.execution_plan[0].delegates[0],
             expected_id=BackendWithCompilerDemo.__name__,
-            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>2#",
+            expected_processed=b"1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
         )
 
         # Check the delegate instruction

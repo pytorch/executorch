@@ -14,9 +14,9 @@ build_neuron_backend() {
   export NEURON_BUFFER_ALLOCATOR_LIB=${MEDIATEK_SDK_ROOT}/libneuron_buffer_allocator.so
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-
   cd ${EXECUTORCH_ROOT}
   ./backends/mediatek/scripts/mtk_build.sh
+  ./examples/mediatek/mtk_build_examples.sh
 }
 
 build_neuron_backend

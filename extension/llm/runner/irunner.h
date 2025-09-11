@@ -130,7 +130,9 @@ class ET_EXPERIMENTAL IRunner {
    * given position in KV cache.
    *
    * @param prompt The input prompt to generate from
-   * @param start_pos The starting position in KV cache of the input
+   * @param start_pos The starting position in KV cache of the input. Note:
+   * Depending on the actual implementation, a runner may manage the position
+   * internally, and this may not be respected.
    * @param config Generation configuration parameters
    * @param token_callback Callback function called for each generated token
    * @param stats_callback Callback function for generation statistics
@@ -146,6 +148,16 @@ class ET_EXPERIMENTAL IRunner {
    * Stop the generation process.
    */
   virtual void stop() = 0;
+  /**
+   * Force remove prefilled tokens and reset KV cache start position
+   *
+   * For some existing runners, overriding this method is not needed because
+   * start_pos is passed as an argument to generate_from_pos.
+   *
+   * This method removes the prefilled tokens from the KV cache and resets the
+   * start position to 0.
+   */
+  virtual void reset() {};
 };
 
 } // namespace llm

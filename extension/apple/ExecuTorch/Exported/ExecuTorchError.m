@@ -30,6 +30,10 @@ NSString *ExecuTorchErrorDescription(ExecuTorchErrorCode code) {
       return @"Invalid type";
     case ExecuTorchErrorCodeOperatorMissing:
       return @"Operator missing";
+    case ExecuTorchErrorCodeRegistrationExceedingMaxKernels:
+      return @"Exceeded maximum number of kernels";
+    case ExecuTorchErrorCodeRegistrationAlreadyRegistered:
+      return @"Kernel is already registered";
     case ExecuTorchErrorCodeNotFound:
       return @"Resource not found";
     case ExecuTorchErrorCodeMemoryAllocationFailed:

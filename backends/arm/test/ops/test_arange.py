@@ -10,10 +10,12 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    OpNotSupportedPipeline,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t = tuple[torch.Tensor]
@@ -45,6 +47,8 @@ class ArangeAdd(torch.nn.Module):
             lambda: (torch.randint(0, 10, [10], dtype=torch.int32),),
             (0.0, 10.0, 1.0, torch.int32),
         ),
+    }
+    test_reject: dict[str, test_data_t] = {
         "int32_int64": (
             lambda: (torch.randint(0, 10, [10], dtype=torch.int32),),
             (0.0, 10.0, 1.0, torch.int64),
@@ -53,9 +57,9 @@ class ArangeAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_MI(test_data: test_data_t):
+def test_arange_start_step_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -65,9 +69,9 @@ def test_arange_start_step_tosa_MI(test_data: test_data_t):
 
 
 @common.parametrize("test_data", ArangeAdd.test_data_dtypes)
-def test_arange_start_step_tosa_MI_dtypes(test_data: test_data_t):
+def test_arange_start_step_tosa_FP_dtypes(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -76,10 +80,19 @@ def test_arange_start_step_tosa_MI_dtypes(test_data: test_data_t):
     pipeline.run()
 
 
-@common.parametrize("test_data", ArangeAdd.test_data)
-def test_arange_start_step_tosa_BI(test_data: test_data_t):
+@common.parametrize("test_data", ArangeAdd.test_reject)
+def test_arange_start_step_tosa_FP_not_delegated(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = OpNotSupportedPipeline[input_t](
+        ArangeAdd(*init_data), input_data(), non_delegated_ops={ArangeAdd.exir_op: 1}
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ArangeAdd.test_data)
+def test_arange_start_step_tosa_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = TosaPipelineINT[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -91,9 +104,9 @@ def test_arange_start_step_tosa_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", ArangeAdd.test_data)
 @common.XfailIfNoCorstone300
-def test_arange_start_step_u55_BI(test_data: test_data_t):
+def test_arange_start_step_u55_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU55PipelineBI[input_t](
+    pipeline = EthosU55PipelineINT[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
@@ -104,14 +117,44 @@ def test_arange_start_step_u55_BI(test_data: test_data_t):
 
 @common.parametrize("test_data", ArangeAdd.test_data)
 @common.XfailIfNoCorstone320
-def test_arange_start_step_u85_BI(test_data: test_data_t):
+def test_arange_start_step_u85_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = EthosU85PipelineBI[input_t](
+    pipeline = EthosU85PipelineINT[input_t](
         ArangeAdd(*init_data),
         input_data(),
         ArangeAdd.aten_op,
     )
     pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", ArangeAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_arange_start_step_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    module = ArangeAdd(*init_data)
+    pipeline = VgfPipeline[input_t](
+        module,
+        input_data(),
+        module.aten_op,
+        module.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", ArangeAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_arange_start_step_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    module = ArangeAdd(*init_data)
+    pipeline = VgfPipeline[input_t](
+        module,
+        input_data(),
+        module.aten_op,
+        module.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()
 
 
@@ -134,9 +177,9 @@ class LinspaceAdd(torch.nn.Module):
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
-def test_linspace_tosa_MI(test_data):
+def test_linspace_tosa_FP(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineMI[input_t](
+    pipeline = TosaPipelineFP[input_t](
         LinspaceAdd(*init_data),
         input_data(),
         LinspaceAdd.aten_op,
@@ -146,15 +189,42 @@ def test_linspace_tosa_MI(test_data):
 
 
 @common.parametrize("test_data", LinspaceAdd.test_data)
-def test_linspace_tosa_BI(test_data: test_data_t):
+def test_linspace_tosa_INT(test_data: test_data_t):
     input_data, init_data = test_data
-    pipeline = TosaPipelineBI[input_t](
+    pipeline = TosaPipelineINT[input_t](
         LinspaceAdd(*init_data),
         input_data(),
         LinspaceAdd.aten_op,
         LinspaceAdd.exir_op,
     )
-    pipeline.pop_stage("check.quant_nodes")
+    pipeline.run()
+
+
+@common.parametrize("test_data", LinspaceAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_linspace_vgf_FP(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LinspaceAdd.test_data)
+@common.SkipIfNoModelConverter
+def test_linspace_vgf_INT(test_data: test_data_t):
+    input_data, init_data = test_data
+    pipeline = VgfPipeline[input_t](
+        LinspaceAdd(*init_data),
+        input_data(),
+        LinspaceAdd.aten_op,
+        LinspaceAdd.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()
 
 
@@ -162,20 +232,30 @@ skip_str = "aten.arange.default is decomposed to aten.arange.start_step, so it w
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_tosa_MI():
+def test_arange_tosa_FP():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_tosa_BI():
+def test_arange_tosa_INT():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_u55_BI():
+def test_arange_u55_INT():
     pass
 
 
 @pytest.mark.skip(reason=skip_str)
-def test_arange_u85_BI():
+def test_arange_u85_INT():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_vgf_FP():
+    pass
+
+
+@pytest.mark.skip(reason=skip_str)
+def test_arange_vgf_INT():
     pass

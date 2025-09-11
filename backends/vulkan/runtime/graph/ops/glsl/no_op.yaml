@@ -13,6 +13,7 @@ no_op:
       - VALUE: half
       - VALUE: float
       - VALUE: int32
+      - VALUE: uint32
       - VALUE: int8
       - VALUE: uint8
     STORAGE:

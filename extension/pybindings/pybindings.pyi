@@ -133,6 +133,10 @@ class MethodMeta:
         internal buffers"""
         ...
 
+    def num_attributes(self) -> int:
+        """The number of attribute tensors from the method"""
+        ...
+
     def input_tensor_meta(self, index: int) -> TensorInfo:
         """The tensor info for the 'index'th input. Index must be in the interval
         [0, num_inputs()). Raises an IndexError if the index is out of bounds"""
@@ -143,11 +147,17 @@ class MethodMeta:
         [0, num_outputs()). Raises an IndexError if the index is out of bounds"""
         ...
 
+    def attribute_tensor_meta(self, index: int) -> TensorInfo:
+        """The tensor info for the 'index'th attribute. Index must be in the interval
+        [0, num_attributes()). Raises an IndexError if the index is out of bounds"""
+        ...
+
     def __repr__(self) -> str: ...
 
 @experimental("This API is experimental and subject to change without notice.")
 def _load_for_executorch(
-    path: str,
+    program_path: str,
+    data_path: Optional[str] = None,
     enable_etdump: bool = False,
     debug_buffer_size: int = 0,
     program_verification: Verification = Verification.InternalConsistency,
@@ -159,7 +169,8 @@ def _load_for_executorch(
         This API is experimental and subject to change without notice.
 
     Args:
-        path: File path to the ExecuTorch program as a string.
+        program_path: File path to the ExecuTorch program as a string.
+        data_path: File path to a .ptd file containing data used by the program.
         enable_etdump: If true, enables an ETDump which can store profiling information.
             See documentation at https://pytorch.org/executorch/main/etdump
             for how to use it.

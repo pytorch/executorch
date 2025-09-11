@@ -64,8 +64,15 @@ constexpr size_t kTensorDimensionLimit = 16;
 //
 // The output of each iteration (copy_from) is copied into the copy_to tensor at
 // the specified index. This operator is supported in both ATen and lean modes.
-void et_copy_index(KernelRuntimeContext& context, EValue** stack) {
-  (void)context;
+void et_copy_index(KernelRuntimeContext& context, Span<EValue*> stack) {
+  ET_KERNEL_CHECK_MSG(
+      context,
+      stack.size() == 3,
+      InvalidProgram,
+      /* void */,
+      "Expected %zu args, got %zu",
+      (size_t)3,
+      stack.size());
   SizesType expected_output_size[kTensorDimensionLimit];
 
   auto copy_to = (*stack[0]).toTensor();
@@ -86,11 +93,9 @@ void et_copy_index(KernelRuntimeContext& context, EValue** stack) {
     // If we're copying past the first index then the shape of
     // copy_from and copy_to without the leading dimension should be
     // the same. i.e. copy_to.size[1:] == copy_from.size[:].
-    if (index > 0) {
-      ET_CHECK_MSG(
-          copy_to.sizes()[i + 1] == copy_from.sizes()[i],
-          "Mismatch in shape between copy_to and copy_from tensors");
-    }
+    ET_CHECK_MSG(
+        copy_to.sizes()[i + 1] == copy_from.sizes()[i],
+        "Mismatch in shape between copy_to and copy_from tensors");
     expected_output_size[i + 1] = copy_from.sizes()[i];
   }
 
@@ -111,8 +116,17 @@ void et_copy_index(KernelRuntimeContext& context, EValue** stack) {
   // If we've reached here, it means the copy_to tensor has been
   // successfully resized so we can now copy over the data from
   // copy_from into the copy_to tensor.
+
+  // Check that the destination has enough space for the copy.
+  size_t offset = index * size_copy_from;
+  size_t copy_to_size = copy_to.element_size() * copy_to.numel();
+  ET_CHECK_MSG(
+      offset + size_copy_from <= copy_to_size,
+      "Buffer overflow: copy_to tensor is smaller than copy_from tensor.");
+
   memcpy(
-      (void*)((uintptr_t)copy_to_ptr + index * size_copy_from),
+      // NOLINTNEXTLINE(performance-no-int-to-ptr)
+      (void*)((uintptr_t)copy_to_ptr + offset),
       copy_from_ptr,
       size_copy_from);
 }

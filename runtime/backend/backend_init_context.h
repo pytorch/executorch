@@ -11,6 +11,12 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/named_data_map.h>
 
+#ifdef __GNUC__
+// Disable -Wdeprecated-declarations, as some builds use 'Werror'.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 namespace executorch {
 namespace ET_RUNTIME_NAMESPACE {
 /**

@@ -49,6 +49,15 @@ class ET_EXPERIMENTAL TrainingModule final
   explicit TrainingModule(Module&&) = delete;
   TrainingModule& operator=(Module&&) = delete;
 
+  // Redefine to erase the tensors pointing to the released memory.
+  inline bool unload_method(const std::string& method_name) {
+    method_named_gradients_.erase(method_name);
+    method_named_parameters_.erase(method_name);
+    method_named_attributes_.erase(method_name);
+
+    return methods_.erase(method_name);
+  }
+
   /**
    * Execute a specific method with the given input and retrieve output. Only
    * valid if the specified method is a joint graph. Loads the program and
@@ -93,6 +102,19 @@ class ET_EXPERIMENTAL TrainingModule final
   runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
   named_gradients(const std::string& method_name);
 
+  /**
+   * Retrieve the attributes for a method.
+   *
+   * @param[in] method_name The name of the  method to get the
+   * attributes for.
+   *
+   * @returns A Result object containing a map of the fully qualified name to
+   * attribute tensor.
+   */
+  ET_EXPERIMENTAL
+  runtime::Result<const std::map<std::string_view, executorch::aten::Tensor>>
+  named_attributes(const std::string& method_name);
+
  private:
   std::unordered_map<
       std::string,
@@ -103,6 +125,11 @@ class ET_EXPERIMENTAL TrainingModule final
       std::string,
       std::map<std::string_view, executorch::aten::Tensor>>
       method_named_parameters_;
+
+  std::unordered_map<
+      std::string,
+      std::map<std::string_view, executorch::aten::Tensor>>
+      method_named_attributes_;
 };
 
 } // namespace training

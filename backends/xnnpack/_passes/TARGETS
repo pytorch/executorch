@@ -9,7 +9,6 @@ python_library(
         "//caffe2:torch",
         "//executorch/backends/transforms:addmm_mm_to_linear",
         "//executorch/backends/transforms:lib",
-        "//executorch/backends/xnnpack/partition:configs",
         "//executorch/backends/xnnpack/partition:partitioner_graphs",
         "//executorch/backends/xnnpack/serialization:xnnpack_schema",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
