@@ -93,7 +93,7 @@ class LLMEdgeManager:
         calibration_data: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
         verbose: bool = False,
-        metadata: dict = {},
+        metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
         save_exported_program: bool = False,
         generate_etrecord: bool = False,
@@ -114,7 +114,8 @@ class LLMEdgeManager:
         self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
         self.verbose = verbose
-        self.metadata = metadata
+        self.metadata = metadata if metadata is not None else {}
+        self.metadata["get_max_seq_len"] = max_seq_len
         self.dynamic_shapes = dynamic_shapes
         self.save_exported_program = save_exported_program
         self.generate_etrecord = generate_etrecord
@@ -146,14 +147,6 @@ class LLMEdgeManager:
                     {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
                     {"input_pos": {0: 1}},
                 )
-
-        if self.dynamic_shapes is not None:
-            token_dim = self.dynamic_shapes[0][1]
-            if self.verbose:
-                logging.info(
-                    f"Metadata 'get_max_seq_len' is being updated to match torch.export's dynamic shape max: {token_dim.max}"
-                )
-            self.metadata["get_max_seq_len"] = token_dim.max
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
