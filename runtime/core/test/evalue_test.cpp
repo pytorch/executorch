@@ -166,7 +166,9 @@ TEST_F(EValueTest, ToScalarType) {
 }
 
 TEST_F(EValueTest, toString) {
-  const EValue e("foo", 3);
+  auto string_ref =
+      std::make_unique<executorch::aten::ArrayRef<char>>("foo", 3);
+  const EValue e(string_ref.get());
   EXPECT_TRUE(e.isString());
   EXPECT_FALSE(e.isNone());
 
@@ -218,11 +220,12 @@ TEST_F(EValueTest, toOptionalTensorList) {
   EValue* values_p[2] = {&values[0], &values[1]};
   std::optional<executorch::aten::Tensor> storage[2];
   // wrap in array ref
-  BoxedEvalueList<std::optional<executorch::aten::Tensor>> a(
+  auto boxed_list = std::make_unique<
+      BoxedEvalueList<std::optional<executorch::aten::Tensor>>>(
       values_p, storage, 2);
 
   // create Evalue
-  EValue e(a);
+  EValue e(boxed_list.get());
   e.tag = Tag::ListOptionalTensor;
   EXPECT_TRUE(e.isListOptionalTensor());
 
