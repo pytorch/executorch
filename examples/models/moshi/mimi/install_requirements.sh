@@ -7,6 +7,7 @@
 
 set -x
 
+conda install "ffmpeg<8"
 pip install moshi==0.2.4
 pip install bitsandbytes soundfile
 # Run llama2/install requirements for torchao deps
