@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
+#include <string>
 #include <vector>
 
 namespace vkcompute {
