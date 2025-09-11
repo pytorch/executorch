@@ -33,6 +33,11 @@ class DeadCodeModule(torch.nn.Module):
 class TestRemovingDeadCode(unittest.TestCase):
     __test__ = False  # Prevent interfering with PyTest tests
 
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(23)
+        np.random.seed(23)
+
     def test_removing_dead_code(self):
         input_shape = (42,)
         example_inputs = (torch.ones(input_shape),)
@@ -55,8 +60,3 @@ class TestRemovingDeadCode(unittest.TestCase):
         assert not any(
             "add" in str(node.target) for node in exir_program_aten_quant.graph.nodes
         )
-
-    @classmethod
-    def setUpClass(cls):
-        torch.manual_seed(23)
-        np.random.seed(23)
