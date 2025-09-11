@@ -145,7 +145,10 @@ class CompileTimeTypeDispatchPass(ExportPass):
             is_1d = len(args[0].to_tensor().shape) == 3
 
             if is_1d:
-                type_suffix = f"1d_{type_suffix}"
+                if is_depthwise:
+                    type_suffix = f"1d_depthwise_{type_suffix}"
+                else:
+                    type_suffix = f"1d_{type_suffix}"
             elif is_dilated:
                 type_suffix = f"dilated_{type_suffix}"
             elif is_depthwise:
