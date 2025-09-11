@@ -67,7 +67,7 @@ runtime.python_library(
         "partitioner.py",
     ],
     deps = [
-        "//executorch/backends/arm:arm_compile_spec",
+        "//executorch/backends/arm:arm_backend",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:process_node",
         "//executorch/backends/arm/debug:schema",
