@@ -195,6 +195,28 @@ void cleanup_aoti_tensor_output() {
   // No cleanup needed since file is opened and closed on each call
 }
 
+// Dtype validation utility function
+AOTITorchError validate_dtype(int32_t dtype) {
+  // Only float32 tensors are supported (dtype 6)
+  if (dtype != 6) {
+    std::cout << "ERROR: Only float32 tensors are supported. Got dtype: "
+              << dtype << " (expected: 6 for float32)" << std::endl;
+    return Error::InvalidArgument;
+  }
+  return Error::Ok;
+}
+
+// Storage offset validation utility function
+AOTITorchError validate_storage_offset(int64_t storage_offset) {
+  // Storage offset must always be 0
+  if (storage_offset != 0) {
+    std::cout << "ERROR: Storage offset must be 0. Got storage_offset: "
+              << storage_offset << std::endl;
+    return Error::InvalidArgument;
+  }
+  return Error::Ok;
+}
+
 } // extern "C"
 
 } // namespace aoti

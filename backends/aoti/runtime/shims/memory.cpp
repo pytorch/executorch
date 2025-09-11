@@ -18,12 +18,27 @@
 #include <unordered_set>
 #include <vector>
 #include "tensor_attribute.h"
+#include "utils.h"
 
 namespace executorch {
 namespace backends {
 namespace aoti {
 
 namespace { // Internal namespace for utility functions
+
+// Utility function to print array values in format [val1, val2, ...]
+// For use with pointer-based arrays (e.g., int64_t* strides, int64_t* sizes)
+template <typename ValueType>
+void print_array_values(
+    const ValueType* values,
+    int64_t count,
+    const std::string& name = "values") {
+  std::cout << name << ": [";
+  for (int i = 0; i < count; i++) {
+    std::cout << values[i] << (i < count - 1 ? ", " : "");
+  }
+  std::cout << "]" << std::endl;
+}
 
 // Version 1: For use with int64_t sizes (e.g., from blob creation functions)
 // Check if tensor is in contiguous memory format (NCHW for 4D tensors)
@@ -61,7 +76,8 @@ bool is_tensor_channels_last(
       (strides[2] == W * C || H <= 1) && (strides[3] == C || W <= 1);
 }
 
-// Check if tensor is in contiguous memory format (NCHW for 4D tensors)
+// Check if tensor is in contiguous memory format (NCHW for 4D tensors) for
+// int32_t sizes
 bool is_tensor_contiguous(
     int64_t ndim,
     const int32_t* sizes,
@@ -114,29 +130,22 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     int32_t layout,
     const uint8_t* opaque_metadata,
     int64_t opaque_metadata_size) {
-  std::cout << "Creating tensor from data blob " << data << " - ndim: " << ndim
-            << ", dtype: " << dtype << ", device_type: " << device_type
-            << ", storage_offset: " << storage_offset << std::endl;
-
   // Only float32 tensors are supported
-  if (dtype != 6) { // 6 = float32
-    std::cout << "ERROR: Only float32 tensors are supported. Got dtype: "
-              << dtype << " (expected: 6 for float32)" << std::endl;
-    return Error::InvalidArgument;
+  AOTITorchError dtype_error = validate_dtype(dtype);
+  if (dtype_error != Error::Ok) {
+    return dtype_error;
   }
 
   // Storage offset must always be 0
-  if (storage_offset != 0) {
-    std::cout << "ERROR: Storage offset must be 0. Got storage_offset: "
-              << storage_offset << std::endl;
-    return Error::InvalidArgument;
+  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
+  if (storage_offset_error != Error::Ok) {
+    return storage_offset_error;
   }
 
   // Convert sizes to the format expected by ExecutorTorch
   std::vector<int32_t> sizes(ndim);
   for (int i = 0; i < ndim; i++) {
     sizes[i] = static_cast<int32_t>(sizes_ptr[i]);
-    std::cout << "Size[" << i << "] = " << sizes[i] << std::endl;
   }
 
   // check the tensor format
@@ -168,26 +177,9 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   tensors.insert(tensor);
 
   *ret_new_tensor = tensor.get();
-
   is_tensor_own_memory[tensor.get()] = false;
 
-  std::cout << "Successfully created tensor from blob: " << tensor.get()
-            << " wrapping data at: " << adjusted_data << std::endl;
-
   return Error::Ok;
-}
-
-AOTITorchError aoti_torch_create_tensor_from_blob(
-    void* data,
-    int64_t ndim,
-    const int64_t* sizes_ptr,
-    const int64_t* strides_ptr,
-    int64_t storage_offset,
-    int32_t dtype,
-    int32_t device_type,
-    int32_t device_index,
-    AOTITensorHandle* ret_new_tensor) {
-  throw std::runtime_error("Should never create from blob");
 }
 
 AOTITorchError aoti_torch_empty_strided(
@@ -205,14 +197,14 @@ AOTITorchError aoti_torch_empty_strided(
     numel *= sizes_ptr[i];
   }
 
-  if (dtype != 6) { // throw if not float32
-    throw std::runtime_error("Need to implement empty_strided for non-float32");
+  AOTITorchError dtype_error = validate_dtype(dtype);
+  if (dtype_error != Error::Ok) {
+    return dtype_error;
   }
 
   int64_t nbytes = numel * 4;
 
   if (device_type == 1) { // cuda
-    std::cout << "Allocating " << nbytes << " bytes on CUDA " << std::endl;
     cudaError_t err = cudaMalloc(&ptr, nbytes);
     if (err != cudaSuccess) {
       std::cout << "failed to allocate " << nbytes
@@ -220,8 +212,8 @@ AOTITorchError aoti_torch_empty_strided(
       throw std::runtime_error("Failed to call cudaMalloc");
     }
   } else if (device_type == 0) { // cpu
-    std::cout << "Allocating " << nbytes << " bytes on CPU " << std::endl;
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
+    // do we need to do this in cuda backend?
     int result = posix_memalign(&ptr, 16, nbytes);
     if (result != 0) {
       throw std::runtime_error("Failed to allocate aligned CPU memory");
@@ -233,21 +225,12 @@ AOTITorchError aoti_torch_empty_strided(
     throw std::runtime_error(
         "Need to implement empty_strided for non-CUDA non-CPU");
   }
-  std::cout << "////Allocated " << nbytes << " bytes at " << ptr
-            << ", sizes_ptr " << sizes_ptr << std::endl;
 
   // ETensor sizes
   std::vector<int32_t> sizes(ndim);
   for (int i = 0; i < ndim; i++) {
     sizes[i] = sizes_ptr[i];
   }
-
-  std::cout << "Sizes: ";
-  for (int i = 0; i < ndim; i++) {
-    std::cout << sizes[i] << ", ";
-  }
-
-  std::cout << std::endl;
 
   // ETensor strides
   std::vector<int32_t> strides(ndim);
@@ -263,7 +246,6 @@ AOTITorchError aoti_torch_empty_strided(
       strides[i] = strides[i + 1] * sizes_ptr[i + 1];
     }
   }
-  std::cout << std::endl;
 
   // ETensor creation
   auto tensor = executorch::extension::from_blob(ptr, sizes, strides);
@@ -273,22 +255,10 @@ AOTITorchError aoti_torch_empty_strided(
   *ret_new_tensor = tensor.get();
   is_tensor_own_memory[tensor.get()] = true;
 
-  std::cout << "Finished. Created tensor " << tensor.get() << " with sizes "
-            << std::endl
-            << "sizes.data(): " << sizes.data()
-            << ", tensor->sizes().data(): " << tensor->sizes().data()
-            << std::endl;
-  std::cout << "Size[0] of tensor " << tensor.get() << " is "
-            << tensor->sizes()[0] << std::endl
-            << std::endl;
-
   return Error::Ok;
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
-  std::cout << "Called aoti_torch_delete_tensor_object for tensor " << tensor
-            << std::endl;
-
   // Check ownership before cleaning up metadata
   auto ownership_it = is_tensor_own_memory.find(tensor);
   bool owns_memory = (ownership_it != is_tensor_own_memory.end())
@@ -301,8 +271,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   is_tensor_own_memory.erase(tensor);
 
   if (!owns_memory) {
-    std::cout << "Tensor " << tensor << " does not own memory. Skipped \n\n"
-              << std::endl;
+    // Don't free memory since the tensor doesn't own it
     return Error::Ok;
   }
 
@@ -320,26 +289,16 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       // et tensor does not own data; need to free them manually.
       if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
         // This is GPU memory - free with proper synchronization
-        std::cout << "Freeing GPU memory at " << data_ptr << std::endl;
         cudaDeviceSynchronize(); // Wait for all operations to complete BEFORE
                                  // freeing
         cudaFree(data_ptr);
-        std::cout << "GPU memory freed successfully" << std::endl;
       } else {
         // This is CPU memory - free immediately
-        std::cout << "Freeing CPU memory at " << data_ptr << std::endl;
         free(data_ptr);
-        std::cout << "CPU memory freed successfully" << std::endl;
       }
-
-      std::cout << "Memory freed. Now erasing tensor " << tensor << std::endl;
-
       // Remove from set (this will call the destructor if it's the last
       // reference)
       tensors.erase(it);
-
-      std::cout << "Tensor erased. Now returning \n\n" << std::endl;
-
       return Error::Ok;
     }
   }
@@ -374,10 +333,14 @@ AOTITorchError aoti_torch_copy_(
   aoti_torch_get_dtype(self, &self_dtype);
   aoti_torch_get_dtype(src, &src_dtype);
 
-  if (self_dtype != 6 || src_dtype != 6) { // 6 = float32
-    std::cout << "Error: Only float32 tensors supported. Got self.dtype="
-              << self_dtype << ", src.dtype=" << src_dtype << std::endl;
-    return Error::InvalidArgument;
+  AOTITorchError self_dtype_error = validate_dtype(self_dtype);
+  if (self_dtype_error != Error::Ok) {
+    return self_dtype_error;
+  }
+
+  AOTITorchError src_dtype_error = validate_dtype(src_dtype);
+  if (src_dtype_error != Error::Ok) {
+    return src_dtype_error;
   }
 
   // Get stride information for layout validation
@@ -386,8 +349,10 @@ AOTITorchError aoti_torch_copy_(
   aoti_torch_get_strides(self, &self_strides);
   aoti_torch_get_strides(src, &src_strides);
 
-  auto self_sizes = self->sizes();
-  auto src_sizes = src->sizes();
+  int64_t* self_sizes;
+  int64_t* src_sizes;
+  aoti_torch_get_sizes(self, &self_sizes);
+  aoti_torch_get_sizes(src, &src_sizes);
 
   // Check if tensors have the same tensor schema (sizes, strides, dtype)
   bool same_schema = true;
@@ -416,66 +381,46 @@ AOTITorchError aoti_torch_copy_(
   bool self_is_channels_last = false;
   bool src_is_channels_last = false;
 
-  if (same_schema) {
-    std::cout << "Same tensor schema detected - enabling naive copy"
-              << std::endl;
-    // For same schema, we don't need to check memory formats - just use direct
-    // copy
-  } else {
+  // For same schema, we don't need to check memory formats - just use direct
+  // copy
+  if (!same_schema) {
     // Different strides: check memory format and only support contiguous <->
     // channels-last conversion
-    std::cout
-        << "Different tensor schemas - checking memory format compatibility"
-        << std::endl;
 
     // Check if contiguous (strides decrease from left to right)
     self_is_contiguous =
-        is_tensor_contiguous(self->dim(), self_sizes.data(), self_strides);
+        is_tensor_contiguous(self->dim(), self_sizes, self_strides);
 
     src_is_contiguous =
-        is_tensor_contiguous(src->dim(), src_sizes.data(), src_strides);
+        is_tensor_contiguous(src->dim(), src_sizes, src_strides);
 
     // Check if channels-last (4D: NHWC format)
     if (!self_is_contiguous) {
       self_is_channels_last =
-          is_tensor_channels_last(self->dim(), self_sizes.data(), self_strides);
+          is_tensor_channels_last(self->dim(), self_sizes, self_strides);
     }
 
     if (!src_is_contiguous) {
       src_is_channels_last =
-          is_tensor_channels_last(src->dim(), src_sizes.data(), src_strides);
+          is_tensor_channels_last(src->dim(), src_sizes, src_strides);
     }
 
     // Validate layout assumptions only when schemas differ
     if (!self_is_contiguous && !self_is_channels_last) {
       std::cout
           << "Error: self tensor must be contiguous or channels-last for stride conversion. "
-          << "Got strides: [";
-      for (int i = 0; i < self->dim(); i++) {
-        std::cout << self_strides[i] << (i < self->dim() - 1 ? ", " : "");
-      }
-      std::cout << "]" << std::endl;
-      std::cout << "self_sizes: [";
-      for (int i = 0; i < self->dim(); i++) {
-        std::cout << self_sizes[i] << (i < self->dim() - 1 ? ", " : "");
-      }
-      std::cout << "]" << std::endl;
+          << std::endl;
+      print_array_values(self_strides, self->dim(), "self strides");
+      print_array_values(self_sizes, self->dim(), "self_sizes");
       return Error::InvalidArgument;
     }
 
     if (!src_is_contiguous && !src_is_channels_last) {
       std::cout
-          << "Error: src tensor must be contiguous or channels-last for stride conversion. \n"
-          << "Got strides: [";
-      for (int i = 0; i < src->dim(); i++) {
-        std::cout << src_strides[i] << (i < src->dim() - 1 ? ", " : "");
-      }
-      std::cout << "]" << std::endl;
-      std::cout << "src_sizes: [";
-      for (int i = 0; i < self->dim(); i++) {
-        std::cout << src_sizes[i] << (i < self->dim() - 1 ? ", " : "");
-      }
-      std::cout << "]" << std::endl;
+          << "Error: src tensor must be contiguous or channels-last for stride conversion."
+          << std::endl;
+      print_array_values(src_strides, src->dim(), "self strides");
+      print_array_values(src_sizes, src->dim(), "src_sizes");
       return Error::InvalidArgument;
     }
   }
@@ -493,18 +438,9 @@ AOTITorchError aoti_torch_copy_(
   bool srcIsDevice = srcAttributes.type == cudaMemoryTypeDevice;
   bool dstIsDevice = dstAttributes.type == cudaMemoryTypeDevice;
 
-  std::cout << "Copy layout: src="
-            << (src_is_contiguous ? "contiguous" : "channels-last") << " ("
-            << (srcIsDevice ? "GPU" : "CPU") << ") -> "
-            << "dst=" << (self_is_contiguous ? "contiguous" : "channels-last")
-            << " (" << (dstIsDevice ? "GPU" : "CPU") << ")" << std::endl;
-
   size_t total_bytes = src->nbytes();
 
   if (same_schema) {
-    std::cout << "Same layout - doing direct copy of " << total_bytes
-              << " bytes" << std::endl;
-
     // Simple copy since layouts match
     if (srcIsDevice && dstIsDevice) {
       err = cudaMemcpy(
@@ -646,23 +582,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     const int64_t* strides_ptr,
     int64_t storage_offset,
     AOTITensorHandle* ret_new_tensor) {
-  std::cout << "aoti_torch__reinterpret_tensor called with tensor " << self
-            << ", ndim: " << ndim << ", storage_offset: " << storage_offset
-            << std::endl;
-
-  for (int i = 0; i < ndim; i++) {
-    std::cout << "sizes[" << i << "]: " << sizes_ptr[i] << std::endl;
-  }
-  for (int i = 0; i < ndim; i++) {
-    std::cout << "strides[" << i << "]: " << strides_ptr[i] << std::endl;
-  }
-
   // Check if storage_offset is not 0 - return error if not
-  if (storage_offset != 0) {
-    std::cout
-        << "Error: aoti_torch__reinterpret_tensor does not support non-zero storage_offset: "
-        << storage_offset << std::endl;
-    return Error::InvalidArgument;
+  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
+  if (storage_offset_error != Error::Ok) {
+    return storage_offset_error;
   }
 
   // Check if dimensions match
@@ -678,13 +601,6 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   if (dtype_err != Error::Ok) {
     std::cout << "Error: failed to get dtype from input tensor" << std::endl;
     return dtype_err;
-  }
-
-  if (dtype != 6) { // 6 = float32
-    std::cout
-        << "ERROR: Only float32 tensors are supported in reinterpret_tensor. Got dtype: "
-        << dtype << " (expected: 6 for float32)" << std::endl;
-    return Error::InvalidArgument;
   }
 
   int32_t device_type;
@@ -704,10 +620,6 @@ AOTITorchError aoti_torch__reinterpret_tensor(
               << std::endl;
     return device_index_err;
   }
-
-  std::cout << "Creating new tensor with dtype: " << dtype
-            << ", device_type: " << device_type
-            << ", device_index: " << device_index << std::endl;
 
   // Create new tensor with the provided sizes and strides using
   // aoti_torch_empty_strided
@@ -736,9 +648,6 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     *ret_new_tensor = nullptr;
     return copy_err;
   }
-
-  std::cout << "Successfully created reinterpreted tensor " << *ret_new_tensor
-            << " from source tensor " << self << std::endl;
 
   return Error::Ok;
 }

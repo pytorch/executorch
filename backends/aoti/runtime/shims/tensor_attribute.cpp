@@ -8,6 +8,7 @@
 
 #include "tensor_attribute.h"
 #include <iostream>
+#include "utils.h"
 
 namespace executorch {
 namespace backends {
@@ -44,10 +45,10 @@ AOTITorchError aoti_torch_get_storage_offset(
   *ret_storage_offset = 0;
 
   // ASSERTION: Storage offset must always be 0
-  if (*ret_storage_offset != 0) {
-    std::cout << "ERROR: Storage offset must be 0. Got storage_offset: "
-              << *ret_storage_offset << std::endl;
-    return Error::InvalidArgument;
+  AOTITorchError storage_offset_error =
+      validate_storage_offset(*ret_storage_offset);
+  if (storage_offset_error != Error::Ok) {
+    return storage_offset_error;
   }
 
   return Error::Ok;
@@ -66,11 +67,7 @@ AOTITorchError aoti_torch_get_strides(
     it = tensor_to_strides.emplace(tensor, std::move(strides)).first;
   }
   *ret_strides = it->second.data();
-  std::cout << "getting strides from tensor " << tensor << " with dim "
-            << tensor->dim() << std::endl;
-  for (int i = 0; i < tensor->dim(); i++) {
-    std::cout << "strides " << i << " = " << (*ret_strides)[i] << std::endl;
-  }
+
   return Error::Ok;
 }
 
@@ -80,10 +77,9 @@ AOTITorchError aoti_torch_get_dtype(
   *ret_dtype = static_cast<int32_t>(tensor->scalar_type());
 
   // ASSERTION: Only float32 tensors are supported
-  if (*ret_dtype != 6) { // 6 = float32
-    std::cout << "ERROR: Only float32 tensors are supported. Got dtype: "
-              << *ret_dtype << " (expected: 6 for float32)" << std::endl;
-    return Error::InvalidArgument;
+  AOTITorchError dtype_error = validate_dtype(*ret_dtype);
+  if (dtype_error != Error::Ok) {
+    return dtype_error;
   }
 
   return Error::Ok;
@@ -102,11 +98,6 @@ AOTITorchError aoti_torch_get_sizes(
     it = tensor_to_sizes.emplace(tensor, std::move(sizes)).first;
   }
   *ret_sizes = it->second.data();
-  std::cout << "getting sizes from tensor " << tensor << " with dim "
-            << tensor->dim() << std::endl;
-  for (int i = 0; i < tensor->dim(); i++) {
-    std::cout << "size " << i << " = " << (*ret_sizes)[i] << std::endl;
-  }
   return Error::Ok;
 }
 
