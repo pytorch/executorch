@@ -16,7 +16,7 @@ LLAMA_PARAMS=<path/to/model/folder>/params.json
 LLAMA_TOKENIZER=<path/to/model/folder>/tokenizer.model
 
 python -m executorch.extension.llm.export.export_llm \
-  --config llama3_2_ov_4wo_config.yaml \
+  --config llama3_2_ov_4wo.yaml \
   +base.model_class="llama3_2" \
   +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
   +base.params="${LLAMA_PARAMS:?}" \
