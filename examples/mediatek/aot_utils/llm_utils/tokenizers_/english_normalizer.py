@@ -541,7 +541,7 @@ class EnglishNumberNormalizer:
 class EnglishSpellingNormalizer:
     """Applies British-American spelling mappings as listed in [1].
 
-    [1] https://www.tysto.com/uk-us-spelling-list.html
+    [1] https://www.tysto.com/uk-us-spelling-list.html @lint-ignore
     """
 
     def __init__(self, english_spelling_mapping):
