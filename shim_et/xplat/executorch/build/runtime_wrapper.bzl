@@ -182,7 +182,7 @@ def _patch_kwargs_common(kwargs):
     # don't pick up unexpected clients while things are still in flux.
     if not kwargs.pop("_is_external_target", False):
         for target in kwargs.get("visibility", []):
-            if not (target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
+            if not (target == "PUBLIC" or target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
                 fail("Please manage all external visibility using the " +
                      "EXECUTORCH_CLIENTS list in " +
                      "//executorch/build/fb/clients.bzl. " +
@@ -199,7 +199,7 @@ def _patch_kwargs_common(kwargs):
         env.patch_deps(kwargs, dep_type)
 
     if "visibility" not in kwargs:
-        kwargs["visibility"] = ["//executorch/..."]
+        kwargs["visibility"] = ["PUBLIC"]
 
     # Patch up references to "//executorch/..." in lists of build targets,
     # if necessary.
