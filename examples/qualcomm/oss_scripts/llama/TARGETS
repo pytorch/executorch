@@ -90,6 +90,7 @@ python_binary(
         "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
         "fbsource//third-party/pypi/lm-eval:lm-eval",
     ],
+    keep_gpu_sections = True,
 )
 
 runtime.command_alias(
