@@ -326,6 +326,8 @@ def _genrule(*args, **kwargs):
         env.genrule(*args, **kwargs)
 
 def _remove_caffe2_deps(kwargs):
+    if not env.is_oss:
+        return
     # We don't have Buckified PyTorch in OSS. At least let buck query work.
     MISSING_BUCK_DIRS = ("//caffe2", "//pytorch", "fbsource//third-party")
     for dep_type in ('deps', 'exported_deps'):
