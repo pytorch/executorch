@@ -40,8 +40,6 @@ layout(push_constant) uniform PushConstants {
   int quant_max;
 };
 
-#extension GL_EXT_debug_printf : enable
-
 // Shared memory for cooperative min/max finding
 shared T shared_min[NUM_OUTPUTS_PER_WG][NUM_WORKERS_PER_OUTPUT];
 shared T shared_max[NUM_OUTPUTS_PER_WG][NUM_WORKERS_PER_OUTPUT];

@@ -6,7 +6,7 @@
  */
 
 /*
- * Warning: Do not change this without changing arm_vela.py::vela_compile
+ * Warning: Do not change this without changing arm_backend.py::vela_compile
  *          as that function emits this format and the two need to align.
  */
 

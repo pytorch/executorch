@@ -73,8 +73,6 @@ ${layout_declare_spec_const(C, "float", "inv_scale", "1.0")}
  *
  */
 
-#extension GL_EXT_debug_printf : enable
-
 void main() {
   const int tile_idx_x = int(gl_GlobalInvocationID.x);
   const int tile_idx_y = int(gl_GlobalInvocationID.y);
