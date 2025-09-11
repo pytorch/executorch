@@ -242,9 +242,9 @@ std::vector<TestCase> generate_quantized_linear_test_cases() {
       {32, 256, 128, 64, false},
       // Performance test cases
       {1, 2048, 2048, 128},
-      {128, 2048, 2048, 256},
-      {256, 2048, 2048, 256},
-      {1024, 2048, 2048, 256},
+      {128, 2048, 2048, 128},
+      {256, 2048, 2048, 128},
+      {1024, 2048, 2048, 128},
   };
 
   // Test with different storage types and data types

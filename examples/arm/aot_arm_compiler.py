@@ -18,8 +18,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
-from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
+from executorch.backends.arm.arm_backend import (
+    ArmCompileSpecBuilder,
+    is_ethosu,
+    is_tosa,
+    is_vgf,
+)
+from executorch.backends.arm.ethosu import EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -27,15 +32,15 @@ from executorch.backends.arm.quantizer import (
     VgfQuantizer,
 )
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.tosa.specification import get_tosa_spec
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     GenericModelEvaluator,
     MobileNetV2Evaluator,
 )
 
-from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
+from executorch.backends.arm.vgf import VgfPartitioner
 
 # To use Cortex-M backend
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
@@ -55,6 +60,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 from torch.utils.data import DataLoader
@@ -143,7 +149,7 @@ def get_model_and_inputs_from_name(
 def quantize(
     model: torch.nn.Module,
     model_name: str,
-    compile_specs: EthosUCompileSpec | VgfCompileSpec | TosaCompileSpec,
+    compile_specs: list[CompileSpec],
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
@@ -152,11 +158,11 @@ def quantize(
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
     quantizer = None
-    if isinstance(compile_specs, EthosUCompileSpec):
+    if is_ethosu(compile_specs):
         quantizer = EthosUQuantizer(compile_specs)
-    elif isinstance(compile_specs, TosaCompileSpec):
-        quantizer = TOSAQuantizer(compile_specs)
-    elif isinstance(compile_specs, VgfCompileSpec):
+    elif is_tosa(compile_specs):
+        quantizer = TOSAQuantizer(get_tosa_spec(compile_specs))
+    elif is_vgf(compile_specs):
         quantizer = VgfQuantizer(compile_specs)
     else:
         raise RuntimeError("Unsupported compilespecs for quantization!")
@@ -387,21 +393,20 @@ def get_compile_spec(
     memory_mode: Optional[str] = None,
     quantize: bool = False,
     config: Optional[str] = None,
-    debug_mode: Optional[str] = None,
-) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
-    compile_spec = None
+) -> list[CompileSpec]:
+    spec_builder = None
     if target.startswith("TOSA"):
         try:
             tosa_spec = TosaSpecification.create_from_string(target)
-        except Exception:
+        except:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
-        compile_spec = TosaCompileSpec(tosa_spec)
+        spec_builder = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec)
     elif "ethos-u" in target:
-        compile_spec = EthosUCompileSpec(
+        spec_builder = ArmCompileSpecBuilder().ethosu_compile_spec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags=["--verbose-operators", "--verbose-cycle-estimate"],
+            extra_flags="--verbose-operators --verbose-cycle-estimate",
             config_ini=config,
         )
     elif "vgf" in target:
@@ -409,18 +414,12 @@ def get_compile_spec(
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         else:
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+FP")
-        compile_spec = VgfCompileSpec(tosa_spec)
-    else:
-        raise RuntimeError(f"Unkown target {target}")
+        spec_builder = ArmCompileSpecBuilder().vgf_compile_spec(tosa_spec)
 
     if intermediates is not None:
-        compile_spec.dump_intermediate_artifacts_to(intermediates)
+        spec_builder.dump_intermediate_artifacts_to(intermediates)
 
-    if debug_mode is not None:
-        mode = ArmCompileSpec.DebugMode[debug_mode.upper()]
-        compile_spec.dump_debug_info(mode)
-
-    return compile_spec
+    return spec_builder.build()
 
 
 def evaluate_model(
@@ -607,12 +606,6 @@ def get_args():
         action="store_true",
         help="Enable the QuantizedOpFusionPass fusion step",
     )
-    parser.add_argument(
-        "--enable_debug_mode",
-        required=False,
-        choices=["json", "tosa"],
-        help="Flag to enable ATen-to-TOSA debug mode.",
-    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -747,7 +740,6 @@ def to_edge_TOSA_delegate(
         args.memory_mode,
         args.quantize,
         args.config,
-        args.enable_debug_mode,
     )
 
     model_int8 = None
@@ -757,11 +749,11 @@ def to_edge_TOSA_delegate(
         )
         model = model_int8
 
-    if isinstance(compile_spec, EthosUCompileSpec):
+    if is_ethosu(compile_spec):
         partitioner = EthosUPartitioner(compile_spec)
-    elif isinstance(compile_spec, TosaCompileSpec):
+    elif is_tosa(compile_spec):
         partitioner = TOSAPartitioner(compile_spec)
-    elif isinstance(compile_spec, VgfCompileSpec):
+    elif is_vgf(compile_spec):
         partitioner = VgfPartitioner(compile_spec)
     else:
         raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
@@ -789,7 +781,6 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.memory_mode,
             args.quantize,
             args.config,
-            args.enable_debug_mode,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
@@ -838,20 +829,11 @@ if __name__ == "__main__":  # noqa: C901
     exported_program = torch.export.export(
         model, example_inputs, strict=args.strict_export
     )
-
     model = exported_program.module()
     model_fp32 = model
 
-    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
         os.makedirs(args.intermediates, exist_ok=True)
-
-        # We only support Python3.10 and above, so use a later pickle protocol
-        torch.export.save(
-            exported_program,
-            f"{args.intermediates}/{model_name}_exported_program.pt2",
-            pickle_protocol=5,
-        )
 
     # Quantize if required
     model_int8 = None
@@ -885,6 +867,7 @@ if __name__ == "__main__":  # noqa: C901
         else:
             raise e
 
+    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     output_name = f"{model_name}" + (
         f"_arm_delegate_{args.target}"
         if args.delegate is True
