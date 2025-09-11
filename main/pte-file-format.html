@@ -577,7 +577,10 @@ Optional extended header:
 |          byte offset zero above. I.e., it includes these headers.
 | [24..31] uint64_t offset (from byte offset zero above) to the start of the
 |          first segment, or zero if there are no segments.
-|  [31..?] Any zero-padding necessary to preserve the alignment of the data
+| [32..39] uint64_t size of the segment data, ie. the size from the segment_base_offset
+|          to the end of the segments. Note, the last segment should not have any
+|          trailing padding.
+| [40..?]  Any zero-padding necessary to preserve the alignment of the data
 |          that follows.
 End of optional extended header.
 </pre></div>
@@ -586,13 +589,16 @@ End of optional extended header.
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>        <span class="n">Offset</span> <span class="n">to</span> <span class="n">flatbuffer</span> <span class="n">root</span> <span class="p">(</span><span class="mh">0x38</span><span class="p">)</span>
         <span class="o">|</span>            <span class="n">File</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">&quot;ET??&quot;</span><span class="p">)</span>
         <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">magic</span> <span class="p">(</span><span class="s2">&quot;eh??&quot;</span><span class="p">)</span>
-        <span class="o">|</span>            <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x18</span><span class="p">)</span>
+        <span class="o">|</span>            <span class="o">|</span>            <span class="o">|</span>            <span class="n">Extended</span> <span class="n">header</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x20</span><span class="p">)</span>
         <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>  <span class="n">vvvvvvvvvvv</span>
-<span class="mh">0x0000</span>  <span class="mi">38</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">45</span> <span class="mi">54</span> <span class="mi">3</span><span class="n">F</span> <span class="mi">3</span><span class="n">F</span>  <span class="mi">65</span> <span class="mi">68</span> <span class="mi">3</span><span class="n">F</span> <span class="mi">3</span><span class="n">F</span>  <span class="mi">18</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>
+<span class="mh">0x0000</span>  <span class="mi">38</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">45</span> <span class="mi">54</span> <span class="mi">3</span><span class="n">F</span> <span class="mi">3</span><span class="n">F</span>  <span class="mi">65</span> <span class="mi">68</span> <span class="mi">3</span><span class="n">F</span> <span class="mi">3</span><span class="n">F</span>  <span class="mi">20</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>
 <span class="mh">0x0010</span>  <span class="n">F0</span> <span class="mi">02</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">10</span> <span class="mi">00</span> <span class="mi">00</span>  <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span> <span class="mi">00</span>
+<span class="mh">0x0020</span>  <span class="mi">20</span>
         <span class="o">^^^^^^^^^^^^^^^^^^^^^^^^</span>  <span class="o">^^^^^^^^^^^^^^^^^^^^^^^^</span>
         <span class="o">|</span>                         <span class="n">Offset</span> <span class="n">to</span> <span class="n">segments</span> <span class="p">(</span><span class="mh">0x1000</span><span class="p">)</span>
         <span class="n">Size</span> <span class="n">of</span> <span class="n">program</span> <span class="n">flatbuffer</span> <span class="n">data</span> <span class="p">(</span><span class="mh">0x2f0</span><span class="p">)</span>
+        <span class="o">|</span>
+        <span class="n">Segment</span> <span class="n">data</span> <span class="n">size</span> <span class="p">(</span><span class="mh">0x20</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
