@@ -21,8 +21,8 @@ from typing import (
 )
 
 import torch
-from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -37,6 +37,7 @@ from executorch.backends.arm.tosa.specification import (
 )
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
@@ -103,7 +104,7 @@ class BasePipelineMaker(Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        compile_spec: ArmCompileSpec,
+        compile_spec: List[CompileSpec],
         exir_ops: Optional[str | List[str]] = None,
         use_to_edge_transform_and_lower: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
@@ -339,7 +340,7 @@ class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
-        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
@@ -444,7 +445,7 @@ class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
         run_on_tosa_ref_model: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
-        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
@@ -525,7 +526,7 @@ class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
-        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
@@ -616,7 +617,7 @@ class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
-        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
@@ -929,7 +930,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
-        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        tosa_debug_mode: Optional[ArmCompileSpecBuilder.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
