@@ -40,7 +40,7 @@ def is_linux_x86() -> bool:
 
 import subprocess
 
-MINIMUM_LIBC_VERSION = 2.28
+MINIMUM_LIBC_VERSION = 2.29
 
 REQUIRED_LIBC_LIBS = [
     "/lib/x86_64-linux-gnu/libc.so.6",
