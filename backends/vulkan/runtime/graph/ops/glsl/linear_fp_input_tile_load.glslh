@@ -1,0 +1,62 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Assume the following variables are defined in the shader layout:
+ * - t_input
+ *
+ * Macro Settings:
+ * - INPUT_BUFFER
+ */
+
+#ifndef LINEAR_FP_INPUT_TILE_LOAD_GLSLH
+#define LINEAR_FP_INPUT_TILE_LOAD_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_input_tile.glslh"
+
+VEC4_T load_input_x4(const int k4, const int m, const int ntexels_k) {
+#ifdef INPUT_BUFFER
+  return t_input[(m * ntexels_k) + k4];
+#else
+  return texelFetch(t_input, ivec3(k4, m, 0), 0);
+#endif
+}
+
+void load_input_tile_no_checks(
+    out FPInputTile in_tile,
+    const int k4_start,
+    const int m_start,
+    const int K4,
+    const int M) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      in_tile.data[m][k4] = load_input_x4(k4_start + k4, m_start + m, K4);
+    }
+  }
+}
+
+void load_input_tile_with_checks(
+    out FPInputTile in_tile,
+    const int k4_start,
+    const int m_start,
+    const int K4,
+    const int M) {
+  [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+    [[unroll]] for (int k4 = 0; k4 < TILE_K4; ++k4) {
+      if (m_start + m < M && k4_start + k4 < K4) {
+        in_tile.data[m][k4] = load_input_x4(k4_start + k4, m_start + m, K4);
+      } else {
+        in_tile.data[m][k4] = VEC4_T(0.0);
+      }
+    }
+  }
+}
+
+#endif // LINEAR_FP_INPUT_TILE_LOAD_GLSLH
