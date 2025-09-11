@@ -59,3 +59,20 @@ python_library(
        ":specification",
     ],
 )
+
+python_library(
+    name = "partitioner",
+    srcs = [
+        "backend.py",
+        "partitioner.py",
+    ],
+    deps = [
+        "//executorch/backends/arm:tosa_compile_spec",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm:process_node",
+        "//executorch/backends/arm/debug:schema",
+        "//executorch/backends/arm/operator_support:operator_support",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/exir:lib",
+    ],
+)
