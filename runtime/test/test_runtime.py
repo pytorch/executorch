@@ -17,6 +17,7 @@ from executorch.extension.pybindings.test.make_test import (
 )
 from executorch.runtime import Runtime, Verification
 
+
 class RuntimeTest(unittest.TestCase):
     def test_smoke(self):
         ep, inputs = create_program(ModuleAdd())

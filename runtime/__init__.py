@@ -180,7 +180,9 @@ class Program:
         """
         return self._program.method_meta(method_name)
 
-    def write_etdump_result_to_file(self, etdump_path: str, debug_buffer_path: str) -> None:
+    def write_etdump_result_to_file(
+        self, etdump_path: str, debug_buffer_path: str
+    ) -> None:
         """Writes the etdump and debug result to a file.
 
         Args:
