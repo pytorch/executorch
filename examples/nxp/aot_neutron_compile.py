@@ -15,6 +15,7 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
@@ -109,18 +110,21 @@ models = {
 
 
 def post_training_quantize(
-    model, calibration_inputs: tuple[torch.Tensor] | Iterator[tuple[torch.Tensor]]
+    model,
+    calibration_inputs: tuple[torch.Tensor] | Iterator[tuple[torch.Tensor]],
+    neutron_target_spec: NeutronTargetSpec,
 ):
     """Quantize the provided model.
 
     :param model: Aten model to quantize.
     :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
                                 input. Or an iterator over such tuples.
+    :param _neutron_target_spec: The functionality for probing the properties of Neutron Target.
     """
     # Based on executorch.examples.arm.aot_amr_compiler.quantize
     logging.info("Quantizing model")
     logging.debug(f"---> Original model: {model}")
-    quantizer = NeutronQuantizer()
+    quantizer = NeutronQuantizer(neutron_target_spec)
 
     m = prepare_pt2e(model, quantizer)
     # Calibration:
@@ -228,6 +232,10 @@ if __name__ == "__main__":  # noqa C901
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
 
+    neutron_target_spec = NeutronTargetSpec(
+        target=args.target, neutron_converter_flavor=args.neutron_converter_flavor
+    )
+
     # 1. pick model from one of the supported lists
     model, example_inputs, calibration_inputs = get_model_and_inputs_from_name(
         args.model_name
@@ -246,7 +254,7 @@ if __name__ == "__main__":  # noqa C901
                 "No calibration inputs available, using the example inputs instead"
             )
             calibration_inputs = example_inputs
-        module = post_training_quantize(module, calibration_inputs)
+        module = post_training_quantize(module, calibration_inputs, neutron_target_spec)
 
     if args.so_library is not None:
         logging.debug(f"Loading libraries: {args.so_library}")
@@ -272,7 +280,9 @@ if __name__ == "__main__":  # noqa C901
         operators_not_to_delegate=args.operators_not_to_delegate,
         neutron_converter_flavor=args.neutron_converter_flavor,
     )
-    partitioners = [NeutronPartitioner(compile_spec)] if args.delegate else []
+    partitioners = (
+        [NeutronPartitioner(compile_spec, neutron_target_spec)] if args.delegate else []
+    )
 
     edge_program_manager = to_edge_transform_and_lower(
         export(module, example_inputs, strict=True),
