@@ -74,7 +74,8 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
           segments->size());
       // Validate the segment.
       ET_CHECK_OR_RETURN_ERROR(
-          segments->Get(segment_index)->offset() < segment_end_offset,
+          (segments->Get(segment_index)->offset() +
+           segments->Get(segment_index)->size()) <= segment_end_offset,
           InvalidExternalData,
           "Invalid segment offset %" PRIu64
           " is larger than the segment_base_offset + segment_data_size %" PRIu64
@@ -207,15 +208,21 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   }
   Result<FlatTensorHeader> fh =
       FlatTensorHeader::Parse(header->data(), header->size());
-  if (fh.error() == Error::NotFound) {
-    // No header, throw error.
-    ET_LOG(Error, "No FlatTensorHeader found.");
-    return fh.error();
-  } else if (fh.error() != Error::Ok) {
-    // corruption, throw error.
-    ET_LOG(Error, "Flat tensor header may be corrupt.");
-    return fh.error();
-  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      fh.ok(),
+      InvalidExternalData,
+      "Failed to parse FlatTensor header with error code %u. File may be corrupt.",
+      static_cast<uint32_t>(fh.error()));
+
+  size_t expected_size = fh->segment_base_offset + fh->segment_data_size;
+  size_t actual_size = loader->size().get();
+  ET_CHECK_OR_RETURN_ERROR(
+      expected_size == actual_size,
+      InvalidExternalData,
+      "File size is too small; file may be corrupted or truncated. Expected %zu from flat_tensor header, received %zu from data loader",
+      expected_size,
+      actual_size);
 
   // Load flatbuffer data as a segment.
   Result<FreeableBuffer> flat_tensor_data = loader->load(
