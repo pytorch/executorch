@@ -103,8 +103,10 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
   return 0;
 }
 
-inline runtime::Result<TensorPtr> populate_start_pos_tensor(Module* module, int64_t& start_pos, int seq_len) {
-  // Get expected shape of cache position tensor, which should be the second argument
+inline runtime::Result<TensorPtr>
+populate_start_pos_tensor(Module* module, int64_t& start_pos, int seq_len) {
+  // Get expected shape of cache position tensor, which should be the second
+  // argument
   auto method_meta = ET_UNWRAP(module->method_meta(kTextModelMethod));
   auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
   auto second_input_sizes = second_input_info.sizes();
