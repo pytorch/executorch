@@ -55,3 +55,27 @@ jobs:
           echo "Or add \`@lint-ignore\` somewhere on the same line as the reference you want to skip checking."
           exit 1
         }
+
+  lint-file-size:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-linter
+      submodules: false
+      fetch-depth: 0
+      ref: ${{ inputs.ref }}
+      timeout: 30
+      script: |
+        ./scripts/lint_file_size.sh $(
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+          else
+            echo "${{ github.event.before }}" "${{ github.sha }}"
+          fi
+        ) || {
+          echo
+          echo "File size lint failed: some files exceed the 1 MB limit."
+          echo "If you really need large files, consider using Git LFS or storing them elsewhere."
+          exit 1
+        }
