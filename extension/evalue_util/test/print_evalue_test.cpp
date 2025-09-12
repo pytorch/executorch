@@ -267,7 +267,7 @@ TEST(PrintEvalueTest, UnelidedBoolLists) {
   // case; the other scalar types use the same underlying code, so they don't
   // need to test this again.
   {
-    EValue value(ArrayRef<bool>(list.data(), 0ul));
+    EValue value(ArrayRef<bool>(list.data(), static_cast<size_t>(0ul)));
     expect_output(value, "(len=0)[]");
   }
   {
@@ -419,7 +419,7 @@ TEST(PrintEvalueTest, UnelidedDoubleLists) {
   std::array<double, 6> list = {-2.2, -1, 0, INFINITY, NAN, 3.3};
 
   {
-    EValue value(ArrayRef<double>(list.data(), 0ul));
+    EValue value(ArrayRef<double>(list.data(), static_cast<size_t>(0ul)));
     expect_output(value, "(len=0)[]");
   }
   {
