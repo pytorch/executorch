@@ -23,27 +23,44 @@ while IFS=: read -r filepath link; do
     status=1
   fi
 done < <(
-  pattern='(?!.*@lint-ignore)(?:\[[^]]+\]\([^[:space:]\)]+/[^[:space:]\)]+\)|href="[^"]*/[^"]*"|src="[^"]*/[^"]*")'
+  # Removed negative lookahead from regex
+  pattern='(?:\[[^]]+\]\([^[:space:]\)]+/[^[:space:]\)]+\)|href="[^"]*/[^"]*"|src="[^"]*/[^"]*")'
+
   excludes=(
     ':(exclude,glob)**/.*'
     ':(exclude,glob)**/*.lock'
     ':(exclude,glob)**/*.svg'
     ':(exclude,glob)**/*.xml'
+    ':(exclude,glob)**/*.json'     # exclude JSON (e.g., vocab files)
     ':(exclude,glob)**/*.gradle*'
     ':(exclude,glob)**/*gradle*'
     ':(exclude,glob)**/third-party/**'
     ':(exclude,glob)**/third_party/**'
   )
+
   if [ $# -eq 2 ]; then
     for filename in $(git diff --name-only --unified=0 "$1...$2"); do
       git diff --unified=0 "$1...$2" -- "$filename" "${excludes[@]}" \
         | grep -E '^\+' \
         | grep -Ev '^\+\+\+' \
+        | grep -Ev '@lint-ignore' \
         | perl -nle 'print for m#'"$pattern"'#g' \
         | sed 's|^|'"$filename"':|'
     done
   else
-    git --no-pager grep --no-color -I -P -o "$pattern" -- . "${excludes[@]}"
+    # Dumps all text lines in the repo (ignoring binary + excludes).
+    # Drops any line with @lint-ignore.
+    # Extracts only the cross-reference substrings (markdown links, href="…", src="…") and prints them with their filename.
+    git --no-pager grep --no-color -I -n . "${excludes[@]}" \
+      | grep -Ev '@lint-ignore' \
+      | perl -ne '
+          if (m/^([^:]+):\d+:(.*)$/) {
+            my ($file, $line) = ($1, $2);
+            while ($line =~ m#'"$pattern"'#g) {
+              print "$file:$&\n";
+            }
+          }
+        '
   fi \
   | grep -Ev 'https?://' \
   | sed -E \
