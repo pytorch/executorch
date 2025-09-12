@@ -56,8 +56,6 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * output has shape (batches, seq_len, num_q_heads, head_dim)
  */
 
-#extension GL_EXT_debug_printf : enable
-
 void main() {
   const int tile_idx_x = int(gl_GlobalInvocationID.x);
   const int tile_idx_y = int(gl_GlobalInvocationID.y);

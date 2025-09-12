@@ -14,17 +14,21 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
-from executorch.backends.arm.ethosu import EthosUCompileSpec
 
 from executorch.backends.arm.quantizer import QuantizationConfig
 from executorch.backends.arm.tosa import TosaSpecification
-from executorch.backends.arm.common.arm_compile_spec import (
-    ArmCompileSpec,
-)  # isort: skip
-from executorch.backends.arm.vgf import VgfCompileSpec
+from executorch.backends.arm.tosa.specification import get_tosa_spec
+
+from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
+from .quantization_annotator import annotate_graph
+from executorch.backends.arm.arm_backend import (
+    is_ethosu,
+    is_vgf,
+)  # usort: skip
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -44,9 +48,6 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     Quantizer,
 )
-
-from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
-from .quantization_annotator import annotate_graph
 
 __all__ = [
     "TOSAQuantizer",
@@ -104,14 +105,26 @@ def get_symmetric_quantization_config(
     # Determine the right observer/fake-quant constructor
     if is_qat:
         if is_per_channel:
-            weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+            weight_observer_or_fake_quant_ctr = FakeQuantize.with_args(
+                observer=PerChannelMinMaxObserver,
+                quant_min=weight_qmin,
+                quant_max=weight_qmax,
+                dtype=torch.qint8,
+                qscheme=torch.per_channel_symmetric,
+                reduce_range=False,
+                ch_axis=0,
+                **extra_args,
+            )
         else:
             # Set plain fake-quant with true min/max
-            weight_observer_or_fake_quant_ctr = FakeQuantize
+            weight_observer_or_fake_quant_ctr = FakeQuantize.with_args(**extra_args)
     else:
         # PTQ: set min/max observer
         weight_observer_or_fake_quant_ctr = (
             PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+        )
+        weight_observer_or_fake_quant_ctr = weight_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
         )
 
     weight_quantization_spec = QuantizationSpec(
@@ -121,9 +134,7 @@ def get_symmetric_quantization_config(
         qscheme=weight_qscheme,
         ch_axis=0,
         is_dynamic=False,
-        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
-            **extra_args
-        ),
+        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
     )
 
     bias_quantization_spec = None
@@ -299,16 +310,27 @@ def _get_not_module_type_or_name_filter(
 class TOSAQuantizer(Quantizer):
 
     def __init__(
-        self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
+        self, compile_spec_or_tosa_spec: Union[TosaSpecification, List[CompileSpec]]
     ) -> None:
 
         super().__init__()
         if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
             self.tosa_spec = compile_spec_or_tosa_spec
             self.compile_spec = None
-        elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
+        elif isinstance(compile_spec_or_tosa_spec, list):
             self.compile_spec = compile_spec_or_tosa_spec
-            self.tosa_spec = self.compile_spec.tosa_spec
+            # find entry that is 'tosa_spec'
+            for cs in compile_spec_or_tosa_spec:
+                if cs.key == "tosa_spec":
+                    spec_val = (
+                        cs.value.decode() if isinstance(cs.value, bytes) else cs.value
+                    )
+                    self.tosa_spec = TosaSpecification.create_from_string(spec_val)
+                    break
+            else:
+                raise ValueError(
+                    "compile_spec list did not contain a 'tosa_spec' entry"
+                )
         else:
             raise TypeError(
                 f"TOSAQuantizer constructor expects "
@@ -454,10 +476,18 @@ class TOSAQuantizer(Quantizer):
 
 
 class EthosUQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: EthosUCompileSpec) -> None:
-        super().__init__(compile_spec)
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_ethosu(compile_spec):
+            raise RuntimeError("compile spec is not targeting Ethos-U")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)
 
 
 class VgfQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: VgfCompileSpec) -> None:
-        super().__init__(compile_spec)
+    def __init__(self, compile_spec: list[CompileSpec]) -> None:
+        if not is_vgf(compile_spec):
+            raise RuntimeError("compile spec is not targeting VGF")
+
+        tosa_spec = get_tosa_spec(compile_spec)
+        super().__init__(tosa_spec)

@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 import torch
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
     TOSAQuantizer,
 )
-from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.exir import to_edge_transform_and_lower
@@ -81,7 +81,7 @@ def test_network_output_order_and_restore(tmp_path, batch_size):
     model = Network(batch_norm=True).eval()
     # Prepare spec
     spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
-    compile_spec = TosaCompileSpec(tosa_spec=spec)
+    compile_spec = ArmCompileSpecBuilder().tosa_compile_spec(tosa_spec=spec).build()
     # Setup quantizer
     quantizer = TOSAQuantizer(compile_spec)
     quantizer.set_global(
@@ -89,7 +89,7 @@ def test_network_output_order_and_restore(tmp_path, batch_size):
     )
     # Trace the model
     dummy = torch.randn(batch_size, 1, 28, 28)
-    fx_mod = torch.export.export(model, (dummy,)).module()
+    fx_mod = torch.export.export_for_training(model, (dummy,)).module()
     model = prepare_pt2e(fx_mod, quantizer)
     model(dummy)
     model = convert_pt2e(model)
@@ -98,7 +98,10 @@ def test_network_output_order_and_restore(tmp_path, batch_size):
     with tempfile.TemporaryDirectory() as tmpdir:
         art_dir = Path(tmpdir)
         part = TOSAPartitioner(
-            TosaCompileSpec(spec).dump_intermediate_artifacts_to(str(art_dir))
+            ArmCompileSpecBuilder()
+            .tosa_compile_spec(spec)
+            .dump_intermediate_artifacts_to(str(art_dir))
+            .build()
         )
         _ = to_edge_transform_and_lower(aten_gm, partitioner=[part])
         # Expect exactly one .tosa file in the artefact dir
