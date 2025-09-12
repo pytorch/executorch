@@ -242,6 +242,7 @@ def export_all(llava_model: LlavaModel):
                 XnnpackPartitioner(),
             ],
         },
+        constant_methods={"get_max_seq_len": llava_model.max_seq_len},
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 

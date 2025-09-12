@@ -16,7 +16,8 @@ from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_down_proj,
     annotate_kv_8bit,
     annotate_output_16a8w,
-    annotate_wv_sha,
+    annotate_qkv_proj_sha,
+    StaticLLMQuantConfig,
 )
 from executorch.backends.qualcomm.quantizer.qconfig import (
     get_ptq_per_channel_quant_config,
@@ -33,6 +34,9 @@ from executorch.examples.models.qwen2_5 import (
 from executorch.examples.models.qwen3 import convert_weights as convert_qwen3_weights
 from executorch.examples.models.smollm2 import (
     convert_weights as convert_smollm2_weights,
+)
+from executorch.examples.models.smollm3 import (
+    convert_weights as convert_smollm3_weights,
 )
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_constants import (
@@ -51,6 +55,15 @@ BASE_DIR = os.path.dirname(__file__)
 LLM_VARIANT_ARCHS = {
     "gemma3-1b": MultiScopeAwareLlamaModel,
 }
+annotate_wqkv_sha = partial(
+    annotate_qkv_proj_sha,
+    qkv_tags={
+        StaticLLMQuantConfig.wq_sha,
+        StaticLLMQuantConfig.wk_sha,
+        StaticLLMQuantConfig.wv_sha,
+    },
+)
+annotate_wv_sha = partial(annotate_qkv_proj_sha, qkv_tags={StaticLLMQuantConfig.wv_sha})
 
 
 @dataclass(init=False, frozen=True)
@@ -472,3 +485,32 @@ class Smollm2_135M(LLMModelConfig):
     r2 = False
     r3 = False
     custom_annotation = ()
+
+
+@register_llm_model("smollm3-3b")
+@dataclass(init=False, frozen=True)
+class Smollm3_3B(LLMModelConfig):
+    repo_id: str = "HuggingFaceTB/SmolLM3-3B"
+    params_path: str = os.path.join(BASE_DIR, "../../../models/smollm3/3b_config.json")
+    convert_weights = convert_smollm3_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 4
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 32
+    masked_softmax = True
+    r1 = False
+    r2 = False
+    r3 = False
+    quantization_config_wqkv_sha_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        annotate_kv_8bit,
+        annotate_output_16a8w,
+        partial(
+            annotate_wqkv_sha, quantization_config=quantization_config_wqkv_sha_16a8w
+        ),
+    )
