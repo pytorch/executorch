@@ -16,7 +16,8 @@ import torch
 from executorch.backends.qualcomm.quantizer.custom_annotation import (
     annotate_kv_8bit,
     annotate_output_16a8w,
-    annotate_wv_sha,
+    annotate_qkv_proj_sha,
+    StaticLLMQuantConfig,
 )
 
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
@@ -218,7 +219,9 @@ def gen_eval_wrapper(model_name, args):
         custom_annotations = (
             annotate_kv_8bit,
             partial(
-                annotate_wv_sha, quantization_config=quantization_config_wv_sha_8a4w
+                annotate_qkv_proj_sha,
+                qkv_tags={StaticLLMQuantConfig.wv_sha},
+                quantization_config=quantization_config_wv_sha_8a4w,
             ),
         )
         if args.llama_model == "stories110m":

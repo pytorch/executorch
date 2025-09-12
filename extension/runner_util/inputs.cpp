@@ -114,7 +114,7 @@ Result<BufferCleanup> prepare_input_tensors(
       if (buffer_size != tensor_meta->nbytes()) {
         ET_LOG(
             Error,
-            "input size (%ld) and tensor size (%ld) mismatch!",
+            "input size (%zu) and tensor size (%zu) mismatch!",
             buffer_size,
             tensor_meta->nbytes());
         BufferCleanup cleanup({inputs, num_allocated});

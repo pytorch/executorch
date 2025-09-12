@@ -763,13 +763,7 @@ void log_mem_status(const RunnerContext& ctx) {
     ET_LOG(Info, "method_allocator_executor: %zu bytes", executor_memsize);
   }
   if (ctx.temp_allocator->size() > 0) {
-    ET_LOG(
-        Info,
-        "peak_temp_allocator:       %zu / %zu free: %zu ( used: %zu %% ) ",
-        ctx.temp_allocator->peak_used(),
-        ctx.temp_allocator->size(),
-        ctx.temp_allocator->free_size(),
-        100 * ctx.temp_allocator->peak_used() / ctx.temp_allocator->size());
+    ET_LOG(Info, "temp_allocator:            %zu", ctx.temp_allocator->size());
   }
 }
 
@@ -927,15 +921,20 @@ void verify_result(RunnerContext& ctx, const void* model_pte) {
 void run_model(RunnerContext& ctx, const void* model_pte) {
   Error status;
   ET_LOG(Info, "Starting running %d inferences...", num_inferences);
-
   int n = 0;
   StartMeasurements();
   for (n = 0; n < num_inferences; n++) {
+    ET_LOG(Debug, "Running inference number %d", n);
     // Run the model.
     status = ctx.method.value()->execute();
     if (status != Error::Ok) {
       break;
     }
+    // Reset the temporary allocator holding the scratch buffer between
+    // inferences. We want to reuse the temp_allocator between inferences of the
+    // same Ethos-U custom delegate, not allocate memory with every new
+    // inference.
+    ctx.temp_allocator.reset(temp_allocation_pool_size, temp_allocation_pool);
   }
   StopMeasurements(n);
 

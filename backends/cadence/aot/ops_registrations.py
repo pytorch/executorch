@@ -1771,6 +1771,7 @@ def quantized_fully_connected_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -1793,6 +1794,7 @@ def quantized_fully_connected_per_tensor_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -1815,6 +1817,7 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
@@ -1837,6 +1840,7 @@ def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_meta(
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
+    assert src.shape[0] == 1
     out_size = list(src.size())
     weight_size = list(weight.size())
     assert len(weight_size) == 2
