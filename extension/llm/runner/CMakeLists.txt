@@ -79,3 +79,46 @@ install(
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
+
+# Python bindings for MultimodalRunner
+if(EXECUTORCH_BUILD_PYBIND)
+  # Find pybind11
+  find_package(pybind11 REQUIRED)
+  
+  # Create the Python extension module for LLM runners
+  pybind11_add_module(
+    _llm_runner
+    ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
+  )
+  
+  # Link with the extension_llm_runner library and its dependencies
+  target_link_libraries(
+    _llm_runner
+    PRIVATE
+    extension_llm_runner
+    executorch_core
+    extension_module
+    extension_tensor
+    tokenizers::tokenizers
+  )
+  
+  # Set properties for the Python extension
+  set_target_properties(
+    _llm_runner
+    PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET "hidden"
+    INTERPROCEDURAL_OPTIMIZATION TRUE
+    PREFIX "${PYTHON_MODULE_PREFIX}"
+    SUFFIX "${PYTHON_MODULE_SUFFIX}"
+  )
+  
+  # Add include directories
+  target_include_directories(
+    _llm_runner
+    PRIVATE
+    ${_common_include_directories}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sampler
+  )
+endif()
