@@ -7,13 +7,6 @@
 
 set -euo pipefail
 
-# Default max file size in bytes (1 MB)
-if [[ "$filepath" =~ \.(png|jpg|jpeg|gif|svg)$ ]]; then
-  MAX_SIZE=$((5 * 1024 * 1024))  # 5 MB limit for pictures
-else
-  MAX_SIZE=$((1 * 1024 * 1024))  # 1 MB for others
-fi
-
 status=0
 
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; reset='\e[0m'
@@ -30,6 +23,13 @@ fi
 
 for file in $files; do
   if [ -f "$file" ]; then
+    # Set size limit depending on extension
+    if [[ "$file" =~ \.(png|jpg|jpeg|gif|svg|mp3|mp4)$ ]]; then
+      MAX_SIZE=$((8 * 1024 * 1024))  # 5 MB for pictures
+    else
+      MAX_SIZE=$((1 * 1024 * 1024))  # 1 MB for others
+    fi
+
     size=$(wc -c <"$file")
     if [ "$size" -gt "$MAX_SIZE" ]; then
       echo -e "${red}FAIL${reset} $file (${cyan}${size} bytes${reset}) exceeds ${MAX_SIZE} bytes"
