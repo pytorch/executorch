@@ -44,13 +44,6 @@ AOTITorchError aoti_torch_get_storage_offset(
   // Storage offset is always 0 in ET
   *ret_storage_offset = 0;
 
-  // ASSERTION: Storage offset must always be 0
-  AOTITorchError storage_offset_error =
-      validate_storage_offset(*ret_storage_offset);
-  if (storage_offset_error != Error::Ok) {
-    return storage_offset_error;
-  }
-
   return Error::Ok;
 }
 
@@ -110,10 +103,8 @@ AOTITorchError aoti_torch_get_storage_size(
 AOTITorchError aoti_torch_get_device_type(
     AOTITensorHandle tensor,
     int32_t* ret_device_type) {
-  // Let's assume all tensors AOTI using are on CUDA device
+  // All tensors in aoti-cuda delegate are on CUDA
   *ret_device_type = aoti_torch_device_type_cuda();
-  std::cout << "getting device_type from tensor " << tensor << " = "
-            << *ret_device_type << std::endl;
   return Error::Ok;
 }
 
@@ -122,15 +113,11 @@ AOTITorchError aoti_torch_get_device_index(
     int32_t* ret_device_index) {
   // Let's assume all tensors AOTI using are on CUDA:0
   *ret_device_index = 0;
-  std::cout << "getting device_index from tensor " << tensor << " = "
-            << *ret_device_index << std::endl;
   return Error::Ok;
 }
 
 AOTITorchError aoti_torch_get_dim(AOTITensorHandle tensor, int64_t* ret_dim) {
-  *ret_dim = tensor->dim();
-  std::cout << "getting dim from tensor " << tensor << " = " << *ret_dim
-            << std::endl;
+  *ret_dim = static_cast<int64_t>(tensor->dim());
   return Error::Ok;
 }
 
@@ -152,7 +139,6 @@ aoti_torch_device_type_cuda() {
 }
 
 __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float32() {
-  // Let assume the dtype here is all we will support
   return 6;
 }
 

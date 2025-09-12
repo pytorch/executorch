@@ -40,7 +40,6 @@ void print_array_values(
   std::cout << "]" << std::endl;
 }
 
-// Version 1: For use with int64_t sizes (e.g., from blob creation functions)
 // Check if tensor is in contiguous memory format (NCHW for 4D tensors)
 // Contiguous format means strides decrease from left to right:
 // For NCHW: strides = [C*H*W, H*W, W, 1]
@@ -63,39 +62,6 @@ bool is_tensor_contiguous(
 bool is_tensor_channels_last(
     int64_t ndim,
     const int64_t* sizes,
-    const int64_t* strides) {
-  if (ndim != 4) {
-    return false; // Channels-last only defined for 4D tensors
-  }
-
-  int64_t N = sizes[0], C = sizes[1], H = sizes[2], W = sizes[3];
-
-  // Check NHWC format: strides = [H*W*C, 1, W*C, C]
-  // Handle edge cases where dimensions might be 1
-  return (strides[0] == H * W * C || N <= 1) && (strides[1] == 1 || C <= 1) &&
-      (strides[2] == W * C || H <= 1) && (strides[3] == C || W <= 1);
-}
-
-// Check if tensor is in contiguous memory format (NCHW for 4D tensors) for
-// int32_t sizes
-bool is_tensor_contiguous(
-    int64_t ndim,
-    const int32_t* sizes,
-    const int64_t* strides) {
-  int64_t expected_stride = 1;
-  for (int i = ndim - 1; i >= 0; i--) {
-    if (strides[i] != expected_stride) {
-      return false;
-    }
-    expected_stride *= sizes[i];
-  }
-  return true;
-}
-
-// Check if tensor is in channels-last format (NHWC for 4D tensors)
-bool is_tensor_channels_last(
-    int64_t ndim,
-    const int32_t* sizes,
     const int64_t* strides) {
   if (ndim != 4) {
     return false; // Channels-last only defined for 4D tensors
@@ -318,9 +284,6 @@ AOTITorchError aoti_torch_copy_(
     AOTITensorHandle self,
     AOTITensorHandle src,
     int32_t non_blocking) {
-  std::cout << "aoti_torch_copy_ called: self=" << self << ", src=" << src
-            << std::endl;
-
   // assert same dim for now
   if (self->dim() != src->dim()) {
     std::cout << "Error: dimension mismatch. self.dim()=" << self->dim()
@@ -357,21 +320,11 @@ AOTITorchError aoti_torch_copy_(
   // Check if tensors have the same tensor schema (sizes, strides, dtype)
   bool same_schema = true;
 
-  // Check sizes match
+  // Check schema match
   for (int i = 0; i < self->dim(); i++) {
-    if (self_sizes[i] != src_sizes[i]) {
+    if (self_sizes[i] != src_sizes[i] || self_strides[i] != src_strides[i]) {
       same_schema = false;
       break;
-    }
-  }
-
-  // Check strides match (only if sizes match)
-  if (same_schema) {
-    for (int i = 0; i < self->dim(); i++) {
-      if (self_strides[i] != src_strides[i]) {
-        same_schema = false;
-        break;
-      }
     }
   }
 
@@ -468,8 +421,6 @@ AOTITorchError aoti_torch_copy_(
     }
   } else {
     // Layout conversion needed (contiguous <-> channels-last)
-    std::cout << "Layout conversion needed - doing element-wise copy"
-              << std::endl;
 
     if (self->dim() != 4) {
       std::cout << "Error: Layout conversion only supported for 4D tensors"
@@ -567,10 +518,6 @@ AOTITorchError aoti_torch_copy_(
   } else {
     dst_first = static_cast<const float*>(self->data_ptr())[0];
   }
-
-  std::cout << "Copy verification: src[0]=" << src_first
-            << ", dst[0]=" << dst_first << std::endl;
-  std::cout << "aoti_torch_copy_ completed successfully" << std::endl;
 
   return Error::Ok;
 }
