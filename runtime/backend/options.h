@@ -32,6 +32,12 @@ struct BackendOption {
   char key[kMaxOptionKeyLength]{};
   // value is the value of the backend option, like 4, true, etc
   OptionValue value;
+
+  BackendOption(const char* k, OptionValue v) {
+    strncpy(key, k, kMaxOptionKeyLength);
+    key[kMaxOptionKeyLength - 1] = '\0'; // ensure null-termination
+    value = v;
+  }
 };
 
 /**
