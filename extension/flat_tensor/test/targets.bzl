@@ -45,6 +45,7 @@ def define_common_targets(is_fbcode=False):
                 "flat_tensor_data_map_test.cpp",
             ],
             deps = [
+                "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map",
                 "//executorch/runtime/core:named_data_map",
