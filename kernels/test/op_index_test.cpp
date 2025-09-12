@@ -112,6 +112,36 @@ class OpIndexTensorOutTest : public OperatorTest {
 #undef TEST_ENTRY
   }
 
+  template <executorch::aten::ScalarType INPUT_DTYPE>
+  void test_indices_with_only_null_tensors_supported() {
+    TensorFactory<INPUT_DTYPE> tf;
+
+    Tensor x = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+    Tensor out = tf.zeros({2, 3});
+
+    std::array<optional<Tensor>, 1> indices1 = {optional<Tensor>()};
+    op_index_tensor_out(x, indices1, out);
+    EXPECT_TENSOR_EQ(out, x);
+
+    out = tf.zeros({2, 3});
+    std::array<optional<Tensor>, 2> indices2 = {
+        optional<Tensor>(), std::optional<Tensor>()};
+    op_index_tensor_out(x, indices2, out);
+    EXPECT_TENSOR_EQ(out, x);
+  }
+
+  /**
+   * Test indices with only null tensors for all input data types
+   */
+  void test_indices_with_only_null_tensors_enumerate_in_types() {
+#define TEST_ENTRY(ctype, dtype) \
+  test_indices_with_only_null_tensors_supported<ScalarType::dtype>();
+
+    ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+
+#undef TEST_ENTRY
+  }
+
   // Run the test by selecting elements in input
   void run_test_cases(
       const Tensor& x,
@@ -405,21 +435,19 @@ TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
+  test_indices_with_only_null_tensors_enumerate_in_types();
+}
+
+TEST_F(OpIndexTensorOutTest, TooManyNullIndices) {
   TensorFactory<ScalarType::Double> tf;
-
   Tensor x = tf.make({2, 3}, {1., 2., 3., 4., 5., 6.});
-  std::array<optional<Tensor>, 1> indices0 = {optional<Tensor>()};
-  run_test_cases(x, indices0, x);
-
-  std::array<optional<Tensor>, 2> indices1 = {
-      optional<Tensor>(), std::optional<Tensor>()};
-  run_test_cases(x, indices1, x);
-
-  std::array<optional<Tensor>, 3> indices2 = {
+  std::array<optional<Tensor>, 3> indices = {
       optional<Tensor>(), std::optional<Tensor>(), std::optional<Tensor>()};
   Tensor out = tf.ones({2, 3});
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_, op_index_tensor_out(x, indices2, out), "");
+      context_,
+      op_index_tensor_out(x, indices, out),
+      "Indexing too many dimensions");
 }
 
 TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {

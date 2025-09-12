@@ -154,7 +154,7 @@ class TestXnnpackRecipes(unittest.TestCase):
             ),
             ExportRecipe.get_recipe(
                 XNNPackRecipeType.TORCHAO_INT8_DYNAMIC_ACT_INT4_WEIGHT_PER_TENSOR,
-                group_size=8,
+                group_size=32,
             ),
         ]
 

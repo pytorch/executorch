@@ -2680,14 +2680,17 @@ class TestVulkanBackend(unittest.TestCase):
             def apply_8da4w_quantization(self):
                 """Apply TorchAO 8da4w quantization (int8 dynamic activation + int4 weight)."""
                 from torchao.quantization import (
-                    int8_dynamic_activation_int4_weight,
+                    Int8DynamicActivationIntxWeightConfig,
                     quantize_,
                 )
+                from torchao.quantization.granularity import PerGroup
                 from torchao.utils import unwrap_tensor_subclass
 
                 quantize_(
                     self,
-                    int8_dynamic_activation_int4_weight(group_size=self.group_size),
+                    Int8DynamicActivationIntxWeightConfig(
+                        weight_dtype=torch.int4, granularity=PerGroup(self.group_size)
+                    ),
                 )
                 unwrap_tensor_subclass(self)
                 return self

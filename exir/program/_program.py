@@ -22,6 +22,7 @@ from executorch.exir._serialize._named_data_store import (
 )
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
+from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
@@ -625,6 +626,24 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = bytes(self._get_pte_data())
         return self._buffer
+
+    @property
+    @experimental("This API is experimental and subject to change without notice.")
+    def data_files(self) -> Dict[str, bytes]:
+        """Returns the data files as a dictionary of filename to byte data.
+
+        Returns:
+            Dict[str, bytes]: Dictionary mapping data filenames (e.g., .ptd files) to
+                their serialized byte content.
+            Returns empty dict if no data files are available.
+        """
+        if self._pte_data is None:
+            self._get_pte_data()  # This populates _tensor_data
+
+        if self._tensor_data is None:
+            return {}
+
+        return {filename: bytes(cord) for filename, cord in self._tensor_data.items()}
 
     @property
     def program(self) -> Program:

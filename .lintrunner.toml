@@ -73,7 +73,6 @@ exclude_patterns = [
     '**/third-party/**',
     # NB: Objective-C is not supported
     'examples/apple/**',
-    'examples/demo-apps/apple_ios/**',
     'examples/demo-apps/react-native/rnllama/ios/**',
     'extension/apple/**',
     'extension/llm/apple/**',

@@ -146,6 +146,8 @@ class _ExtendedHeader:
         + 8
         # Segment base offset
         + 8
+        # Segment data size
+        + 8
     )
 
     # Instance attributes. @dataclass will turn these into ctor args.
@@ -155,6 +157,9 @@ class _ExtendedHeader:
     # Offset to the start of the first segment, or zero if there
     # are no segments.
     segment_base_offset: int
+    # Size of the segment data, in bytes, or zero if there are no segments, or
+    # if the this field isn't populated in the PTE file.
+    segment_data_size: int
 
     # The magic bytes read from or to be written to the binary header.
     magic: bytes = EXPECTED_MAGIC
@@ -189,6 +194,7 @@ class _ExtendedHeader:
             segment_base_offset=int.from_bytes(
                 data[16:24], byteorder=_HEADER_BYTEORDER
             ),
+            segment_data_size=int.from_bytes(data[24:32], byteorder=_HEADER_BYTEORDER),
         )
 
     def is_valid(self) -> bool:
@@ -220,6 +226,9 @@ class _ExtendedHeader:
             # uint64_t: Offset to the start of the first segment, or zero if
             # there are no segments.
             + self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)
+            # uint64_t: size of the segment data, or zero if there are no
+            # segments.
+            + self.segment_data_size.to_bytes(8, byteorder=_HEADER_BYTEORDER)
         )
         return data
 
@@ -512,7 +521,9 @@ def serialize_pte_binary(
 
     # Construct and pad the extended header.
     header_data: bytes = _ExtendedHeader(
-        program_size=program_size, segment_base_offset=segment_base_offset
+        program_size=program_size,
+        segment_base_offset=segment_base_offset,
+        segment_data_size=len(segments_data),
     ).to_bytes()
     header_data = pad_to(header_data, padded_header_length)
 

@@ -22,6 +22,7 @@ def define_common_targets():
         name = "threadpool_lib",
         srcs = _THREADPOOL_SRCS,
         deps = [
+            ":cpuinfo_utils",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/portable_type/c10/c10:c10",
         ],

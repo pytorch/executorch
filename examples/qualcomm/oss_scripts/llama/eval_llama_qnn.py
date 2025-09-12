@@ -15,6 +15,13 @@ import types
 
 import torch
 
+from executorch.backends.qualcomm.quantizer.custom_annotation import (
+    annotate_kv_8bit,
+    annotate_output_16a8w,
+    annotate_qkv_proj_sha,
+    StaticLLMQuantConfig,
+)
+
 from executorch.backends.qualcomm.quantizer.observers.per_channel_param_observer import (
     PerChannelParamObserver,
 )
@@ -319,8 +326,22 @@ def gen_eval_wrapper(args):
 
     if args.ptq is not None:
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
-        decoder_model_config = SUPPORTED_LLM_MODELS[args.decoder_model]
-        custom_annotations = decoder_model_config.custom_annotation
+        quantization_config_wv_sha_8a4w = get_ptq_per_channel_quant_config(
+            act_dtype=torch.uint8,
+            weight_dtype=torch.int4,
+            act_observer=MinMaxObserver,
+            act_symmetric=True,
+        )
+        custom_annotations = (
+            annotate_kv_8bit,
+            partial(
+                annotate_qkv_proj_sha,
+                qkv_tags={StaticLLMQuantConfig.wv_sha},
+                quantization_config=quantization_config_wv_sha_8a4w,
+            ),
+        )
+        if args.llama_model == "stories110m":
+            custom_annotations = custom_annotations + (annotate_output_16a8w,)
 
         quantizer = make_custom_quantizer(
             quant_dtype, args.range_setting, custom_annotations, args.quant_linear_only

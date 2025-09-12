@@ -70,6 +70,14 @@ struct ExtendedHeader {
    * is present.
    */
   uint64_t segment_base_offset;
+
+  /**
+   * The size of all the segment data, in bytes. Zero if:
+   * - no segment is present
+   * - the segment_data_size field doesn't exist in the header - the case for
+   *   older PTE files.
+   */
+  uint64_t segment_data_size;
 };
 
 } // namespace runtime

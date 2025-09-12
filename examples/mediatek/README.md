@@ -71,7 +71,7 @@ source shell_scripts/export_llama.sh <model_name> <num_chunks> <prompt_num_token
 bash shell_scripts/export_oss.sh <model_name>
 ```
 - Argument Options:
-    - `model_name`: deeplabv3/edsr/inceptionv3/inceptionv4/mobilenetv2/mobilenetv3/resnet18/resnet50
+    - `model_name`: deeplabv3/edsr/inceptionv3/inceptionv4/mobilenetv2/mobilenetv3/resnet18/resnet50/dcgan/wav2letter/vit_b_16/mobilebert/emformer_rnnt/bert/distilbert
 
 # Runtime
 ## Environment Setup

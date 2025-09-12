@@ -1032,5 +1032,5 @@ jobs:
 
           .ci/scripts/setup-windows.ps1
 
-          powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+          .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
         }"

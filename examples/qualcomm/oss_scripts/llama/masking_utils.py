@@ -127,6 +127,7 @@ class CausalAttentionMask(BaseAttentionMask):
     def smart_mask_update(self, pos, n_updates):
         """
         Smart Mask mechanism for attention mask updating
+
         Initial mask(5x15) layout (before any updates):
             Each row represents a query token in the autoregressive context.
             ● = activate (can attend), ○ = inactivate (masked)
@@ -166,15 +167,15 @@ class CausalAttentionMask(BaseAttentionMask):
             Each row represents a query token in the autoregressive context.
             ● = activate (can attend), ○ = inactivate (masked)
 
-            Init mask:
-                0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
-                1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
-                2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
-                3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ○
-                4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ●
+            0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
+            1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
+            2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
+            3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ○
+            4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ●
 
         After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
             Newly added tokens are unmasked (set to 0).
+
             0 ○ ○ ○ ○ ○ ● ● ● ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ● ○ ○
@@ -182,6 +183,7 @@ class CausalAttentionMask(BaseAttentionMask):
             4 ○ ○ ○ ○ ○ ● ● ● ● ● ● ● ● ● ●
 
         After 2nd update (e.g., pos=5, n_updates=5):
+
             0 ● ● ● ● ● ● ● ● ● ● ● ○ ○ ○ ○
             1 ● ● ● ● ● ● ● ● ● ● ● ● ○ ○ ○
             2 ● ● ● ● ● ● ● ● ● ● ● ● ● ○ ○
@@ -225,7 +227,6 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
 
-
         After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
             Newly added tokens are unmasked (set to 0).
             Earlier tokens lose access to older cache due to sliding window limits.
@@ -235,7 +236,6 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
-
 
         After 2nd update (e.g., pos=5, n_updates=5):
             Sliding window shifts again, masking older positions and activate new postion.
@@ -269,7 +269,6 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             Each row represents a query token in the autoregressive context.
             ● = activate (can attend), ○ = inactivate (masked)
 
-        Init mask:
             0 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
@@ -277,6 +276,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
 
         After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
+
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○
@@ -284,6 +284,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
 
          After 2nd update (e.g., pos=5, n_updates=5):
+
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
             2 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○

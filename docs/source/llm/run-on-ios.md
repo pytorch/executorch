@@ -123,4 +123,4 @@ runner.stop()
 
 ## Demo
 
-Get hands-on with our [LLaMA iOS Demo App](llama-demo-ios.md) to see the LLM runtime APIs in action.
+Get hands-on with our [etLLM iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) to see the LLM runtime APIs in action.

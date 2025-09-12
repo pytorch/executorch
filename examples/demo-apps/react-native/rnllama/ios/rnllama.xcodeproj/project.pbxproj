@@ -7,8 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		036509DE2E1F7CA700C1BC1B /* LLaMARunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 036509D32E1F7C0800C1BC1B /* LLaMARunner.framework */; };
-		036509DF2E1F7CB100C1BC1B /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 036509D32E1F7C0800C1BC1B /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		03F814712E729261002D91CC /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814702E729261002D91CC /* backend_coreml */; };
+		03F814732E729261002D91CC /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814722E729261002D91CC /* backend_mps */; };
+		03F814752E729261002D91CC /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814742E729261002D91CC /* backend_xnnpack */; };
+		03F814772E729261002D91CC /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814762E729261002D91CC /* executorch_debug */; };
+		03F814792E729261002D91CC /* executorch_llm_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814782E729261002D91CC /* executorch_llm_debug */; };
+		03F8147B2E729261002D91CC /* kernels_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 03F8147A2E729261002D91CC /* kernels_llm */; };
+		03F8147D2E729261002D91CC /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F8147C2E729261002D91CC /* kernels_optimized */; };
+		03F8147F2E729261002D91CC /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03F8147E2E729261002D91CC /* kernels_quantized */; };
+		03F814812E729261002D91CC /* kernels_torchao in Frameworks */ = {isa = PBXBuildFile; productRef = 03F814802E729261002D91CC /* kernels_torchao */; };
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
@@ -21,30 +28,6 @@
 		E931C67F2CFAF17500DA599B /* LlamaBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = E931C67E2CFAF17500DA599B /* LlamaBridge.mm */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
-		036509D22E1F7C0800C1BC1B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 036509C92E1F7C0800C1BC1B /* LLaMA.xcodeproj */;
-			proxyType = 2;
-			remoteGlobalIDString = 03729ED52BB1F8DE00152F2E;
-			remoteInfo = LLaMARunner;
-		};
-		036509DC2E1F7C9B00C1BC1B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 036509C92E1F7C0800C1BC1B /* LLaMA.xcodeproj */;
-			proxyType = 1;
-			remoteGlobalIDString = 03729ED42BB1F8DE00152F2E;
-			remoteInfo = LLaMARunner;
-		};
-		036509E32E1F983A00C1BC1B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 036509C92E1F7C0800C1BC1B /* LLaMA.xcodeproj */;
-			proxyType = 2;
-			remoteGlobalIDString = 036CAF9D2BB1444500D6C2D5;
-			remoteInfo = LLaMA;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXCopyFilesBuildPhase section */
 		E931C64C2CFAF07E00DA599B /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -52,7 +35,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				036509DF2E1F7CB100C1BC1B /* LLaMARunner.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -60,7 +42,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		036509C92E1F7C0800C1BC1B /* LLaMA.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = LLaMA.xcodeproj; path = "/Users/shoumikhin/executorch/examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj"; sourceTree = "<absolute>"; };
 		13B07F961A680F5B00A75B9A /* rnllama.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rnllama.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FAF1A68108700A75B9A /* AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AppDelegate.h; path = rnllama/AppDelegate.h; sourceTree = "<group>"; };
 		13B07FB01A68108700A75B9A /* AppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = AppDelegate.mm; path = rnllama/AppDelegate.mm; sourceTree = "<group>"; };
@@ -86,23 +67,22 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				036509DE2E1F7CA700C1BC1B /* LLaMARunner.framework in Frameworks */,
+				03F814792E729261002D91CC /* executorch_llm_debug in Frameworks */,
+				03F8147F2E729261002D91CC /* kernels_quantized in Frameworks */,
+				03F8147D2E729261002D91CC /* kernels_optimized in Frameworks */,
+				03F814772E729261002D91CC /* executorch_debug in Frameworks */,
 				96905EF65AED1B983A6B3ABC /* libPods-rnllama.a in Frameworks */,
+				03F814752E729261002D91CC /* backend_xnnpack in Frameworks */,
+				03F814812E729261002D91CC /* kernels_torchao in Frameworks */,
+				03F814732E729261002D91CC /* backend_mps in Frameworks */,
+				03F8147B2E729261002D91CC /* kernels_llm in Frameworks */,
+				03F814712E729261002D91CC /* backend_coreml in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		036509CC2E1F7C0800C1BC1B /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				036509E42E1F983A00C1BC1B /* LLaMA.app */,
-				036509D32E1F7C0800C1BC1B /* LLaMARunner.framework */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* rnllama */ = {
 			isa = PBXGroup;
 			children = (
@@ -147,7 +127,6 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				D65327D7A22EEC0BE12398D9 /* Pods */,
 				D7E4C46ADA2E9064B798F356 /* ExpoModulesProviders */,
-				036509C92E1F7C0800C1BC1B /* LLaMA.xcodeproj */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -216,7 +195,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				036509DD2E1F7C9B00C1BC1B /* PBXTargetDependency */,
 			);
 			name = rnllama;
 			productName = rnllama;
@@ -246,37 +224,17 @@
 				Base,
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
+			packageReferences = (
+				03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */,
+			);
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
-			projectReferences = (
-				{
-					ProductGroup = 036509CC2E1F7C0800C1BC1B /* Products */;
-					ProjectRef = 036509C92E1F7C0800C1BC1B /* LLaMA.xcodeproj */;
-				},
-			);
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* rnllama */,
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXReferenceProxy section */
-		036509D32E1F7C0800C1BC1B /* LLaMARunner.framework */ = {
-			isa = PBXReferenceProxy;
-			fileType = wrapper.framework;
-			path = LLaMARunner.framework;
-			remoteRef = 036509D22E1F7C0800C1BC1B /* PBXContainerItemProxy */;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-		036509E42E1F983A00C1BC1B /* LLaMA.app */ = {
-			isa = PBXReferenceProxy;
-			fileType = wrapper.application;
-			path = LLaMA.app;
-			remoteRef = 036509E32E1F983A00C1BC1B /* PBXContainerItemProxy */;
-			sourceTree = BUILT_PRODUCTS_DIR;
-		};
-/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		13B07F8E1A680F5B00A75B9A /* Resources */ = {
@@ -417,14 +375,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		036509DD2E1F7C9B00C1BC1B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = LLaMARunner;
-			targetProxy = 036509DC2E1F7C9B00C1BC1B /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
@@ -640,6 +590,65 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pytorch/executorch";
+			requirement = {
+				branch = "swiftpm-0.8.0.20250909";
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		03F814702E729261002D91CC /* backend_coreml */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_coreml;
+		};
+		03F814722E729261002D91CC /* backend_mps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_mps;
+		};
+		03F814742E729261002D91CC /* backend_xnnpack */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_xnnpack;
+		};
+		03F814762E729261002D91CC /* executorch_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch_debug;
+		};
+		03F814782E729261002D91CC /* executorch_llm_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch_llm_debug;
+		};
+		03F8147A2E729261002D91CC /* kernels_llm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_llm;
+		};
+		03F8147C2E729261002D91CC /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized;
+		};
+		03F8147E2E729261002D91CC /* kernels_quantized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized;
+		};
+		03F814802E729261002D91CC /* kernels_torchao */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03F8146F2E729261002D91CC /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_torchao;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }

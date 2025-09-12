@@ -9,13 +9,11 @@
 #pragma once
 
 #include <array>
+#include <fstream>
 #include <memory>
 #include <string>
 
 #include <fcntl.h> // open()
-#include <stdio.h> // tmpnam(), remove()
-#include <unistd.h> // write(), close()
-
 #include <gtest/gtest.h>
 
 namespace executorch {
@@ -72,19 +70,13 @@ class TempFile {
     }
 
     // Write the contents to the file.
-    int fd = open(
-        path.c_str(),
-        // O_EXCL ensures that we are the ones creating this file, to help
-        // protect against race conditions.
-        O_CREAT | O_EXCL | O_RDWR,
-        // User can read and write, group can read.
-        S_IRUSR | S_IWUSR | S_IRGRP);
-    ASSERT_GE(fd, 0) << "open(" << path << ") failed: " << strerror(errno);
+    std::ofstream file(path, std::ios::out | std::ios::binary);
+    ASSERT_TRUE(file.is_open())
+        << "open(" << path << ") failed: " << strerror(errno);
 
-    ssize_t nwrite = write(fd, data, size);
-    ASSERT_EQ(nwrite, size) << "Failed to write " << size << " bytes (wrote "
-                            << nwrite << "): " << strerror(errno);
-    close(fd);
+    file.write((const char*)data, size);
+    ASSERT_TRUE(file.good())
+        << "Failed to write " << size << " bytes: " << strerror(errno);
 
     *out_path = path;
   }
