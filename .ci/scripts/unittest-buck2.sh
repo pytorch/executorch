@@ -9,7 +9,11 @@ set -eux
 # TODO: expand this to //...
 # TODO: can't query cadence & vulkan backends
 # TODO: can't query //kernels/prim_ops because of non-buckified stuff in OSS.
-buck2 query "//backends/apple/... + //backends/example/... + \
+# TODO: Make //backends/arm tests use runtime wrapper so we can just query //backends/arm/...
+buck2 query "//backends/apple/... + //backends/arm: + //backends/arm/debug/... + \
+//backends/arm/operator_support/... + //backends/arm/operators/... + \
+//backends/arm/_passes/... + //backends/arm/runtime/... + //backends/arm/tosa/... \
++ //backends/example/... + \
 //backends/mediatek/... + //backends/transforms/... + \
 //backends/xnnpack/... + //configurations/... + //extension/flat_tensor: + \
 //extension/llm/runner: + //kernels/aten/... + //kernels/optimized/... + \
