@@ -81,6 +81,11 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        # Not sure why this isn't set up in the docker
+        # image. lintrunner-mypy seems to work becaus setup-linux.sh
+        # does this as part of install_executorch.
+        pip install -r requirements-dev.txt
+
         CACHE_DIRECTORY="/tmp/.lintbin"
         # Try to recover the cached binaries
         if [[ -d "${CACHE_DIRECTORY}" ]]; then
