@@ -260,7 +260,8 @@ Shared Sram memory mode, you would need to us the Dedicated Sram mode in order t
 The main advantage of the Dedicated_Sram memory mode is that you can run large models and still benefit from the low-latency/high-bandwidth of the SRAM, used as a cache.
 It is important to highlight that when you specify a memory mode in the compile spec, in the runtime, the user is expected to place the scratch buffer and NN in the correct memory location.
 In other words, when you specify for ex. Shared Sram memory mode, the runtime application logic should place the ethos-U scratch buffer in the on-chip memory and the NN in the external memory for optimal performance.
-You can see how  this coupling between the memory mode and runtime application is done in the [Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.m
+You can see how  this coupling between the memory mode and runtime application is done in the
+[Ethos-U porting guide](https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md)
 
 
 ### Bundled.io and ETdump
