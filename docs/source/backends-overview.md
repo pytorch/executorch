@@ -17,4 +17,5 @@ Commonly used hardware backends are listed below. For mobile, consider using XNN
 - [Qualcomm NPU](backends-qualcomm.md)
 - [MediaTek NPU](backends-mediatek.md)
 - [Arm Ethos-U NPU](backends-arm-ethos-u.md)
+- [Arm VGF](backends-arm-vgf.md)
 - [Cadence DSP](backends-cadence.md)
