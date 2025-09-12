@@ -12,15 +12,14 @@
 
 #define ALIGN_PTR(x, bytes) ((((unsigned)(x)) + (bytes - 1)) & (~(bytes - 1)))
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-using ::cadence::impl::HiFi::kernels::quantize;
 using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
+using ::impl::HiFi::kernels::quantize;
 using ::torch::executor::KernelRuntimeContext;
 
 // This implements a generic 2d conv kernel that operates on raw pointers.
@@ -643,4 +642,3 @@ void quantized_conv_nchw_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

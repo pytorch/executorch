@@ -33,7 +33,6 @@ using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_scalar_dtype;
 using torch::executor::native::utils::promote_type_with_scalar;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -287,4 +286,3 @@ Tensor& fmod_Scalar_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

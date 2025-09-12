@@ -18,7 +18,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -45,7 +44,7 @@ class HiFiQuantizedReluTest : public OperatorTest {
       const Tensor& out_multiplier,
       const Tensor& out_shift,
       Tensor& output) {
-    return ::cadence::impl::HiFi::native::quantized_relu_out(
+    return ::impl::HiFi::native::quantized_relu_out(
         context_,
         input,
         in_zero_point,
@@ -106,4 +105,3 @@ TEST_F(HiFiQuantizedReluTest, OneDimensionalTest) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence
