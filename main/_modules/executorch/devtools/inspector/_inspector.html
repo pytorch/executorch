@@ -1679,6 +1679,7 @@
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_get_aot_intermediate_outputs_and_op_names</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
+        <span class="n">disable_debug_handle_valdiation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="n">DebugHandle</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Capture intermediate outputs only if _representative_inputs are provided</span>
@@ -1694,6 +1695,7 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">export_graph_id</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">edge_dialect_program</span><span class="p">,</span>
+            <span class="n">disable_debug_handle_valdiation</span><span class="p">,</span>
         <span class="p">):</span>
             <span class="n">export_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="k">else</span><span class="p">:</span>
@@ -1914,7 +1916,9 @@
             <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="o">.</span><span class="n">graph_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">graph</span><span class="p">)</span>
         <span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_numeric_gap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">distance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSE&quot;</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_numeric_gap</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">distance</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;MSE&quot;</span><span class="p">,</span> <span class="n">disable_debug_handle_valdiation</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Compares logged intermediate outputs from the exported graph (in ETRecord)</span>
 <span class="sd">        with runtime outputs (in ETDump) using a user-specific numerical comparator.</span>
@@ -1926,12 +1930,19 @@
 
 <span class="sd">        Args:</span>
 <span class="sd">            distance: the metrics the inspector will use for gap calculation. Should be one of &quot;MSE&quot;, &quot;L1&quot; and &quot;SNR&quot;.</span>
+<span class="sd">            disable_debug_handle_validation: Often when aten graph has symbolic shape nodes, and inbuilt ops like gt/lt etc.,</span>
+<span class="sd">            during re-export of such a graph &#39;from_node&#39; information is lost from node.meta. As a result we loose connection</span>
+<span class="sd">            between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR node has corresponding</span>
+<span class="sd">            node in aten IR, and when such validation fails numeric debugger falls back to edge IR as reference graph. This</span>
+<span class="sd">            flag allows one to override such behavior and make best effort comparison.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            pd.DataFrame: A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">aot_intermediate_outputs</span><span class="p">,</span> <span class="n">aot_debug_handle_to_op_names</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_get_aot_intermediate_outputs_and_op_names</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_get_aot_intermediate_outputs_and_op_names</span><span class="p">(</span>
+                <span class="n">disable_debug_handle_valdiation</span>
+            <span class="p">)</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_intermediate_outputs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_debug_handle_to_op_names</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
@@ -1960,6 +1971,15 @@
             <span class="n">runtime_intermediate_output</span><span class="p">,</span>
         <span class="p">)</span> <span class="ow">in</span> <span class="n">mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">if</span> <span class="n">aot_intermediate_output</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">runtime_intermediate_output</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># If aot outputs length is &gt; 1 then comparison fails since we dont really have</span>
+            <span class="c1"># any instances where runtime intermediate output is a tuple or list</span>
+            <span class="c1"># This does not happen when edge dialect program is reference for comparison</span>
+            <span class="c1"># but happens in aten graph where ops like unbind remain undecomposed</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">aot_intermediate_output</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">aot_intermediate_output</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span>
+            <span class="p">):</span>
                 <span class="k">continue</span>
             <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                 <span class="p">{</span>

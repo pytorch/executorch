@@ -669,7 +669,7 @@ methods that exist in the spec will be created.</p>
 <h3>calculate_numeric_gap<a class="headerlink" href="#calculate-numeric-gap" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="executorch.devtools.Inspector.calculate_numeric_gap">
-<span class="sig-prename descclassname"><span class="pre">executorch.devtools.Inspector.</span></span><span class="sig-name descname"><span class="pre">calculate_numeric_gap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'MSE'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#executorch.devtools.Inspector.calculate_numeric_gap" title="Permalink to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">executorch.devtools.Inspector.</span></span><span class="sig-name descname"><span class="pre">calculate_numeric_gap</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'MSE'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">disable_debug_handle_valdiation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#executorch.devtools.Inspector.calculate_numeric_gap" title="Permalink to this definition">¶</a></dt>
 <dd><p>Compares logged intermediate outputs from the exported graph (in ETRecord)
 with runtime outputs (in ETDump) using a user-specific numerical comparator.
 If the exported graph is not supported, the function will fall back to use edge dialect graph.</p>
@@ -678,7 +678,15 @@ and then create the Inspector instance with the ETRecord and ETDump. The Inspect
 compare the intermediate outputs from the AOT and the runtime.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>distance</strong> – the metrics the inspector will use for gap calculation. Should be one of “MSE”, “L1” and “SNR”.</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>distance</strong> – the metrics the inspector will use for gap calculation. Should be one of “MSE”, “L1” and “SNR”.</p></li>
+<li><p><strong>disable_debug_handle_validation</strong> – Often when aten graph has symbolic shape nodes, and inbuilt ops like gt/lt etc.,</p></li>
+<li><p><strong>connection</strong> (<em>during re-export</em><em> of </em><em>such a graph 'from_node' information is lost from node.meta. As a result we loose</em>) – </p></li>
+<li><p><strong>corresponding</strong> (<em>between edge IR nodes and aten nodes for such ops. By default we validate that every edge IR node has</em>) – </p></li>
+<li><p><strong>IR</strong> (<em>node in aten</em>) – </p></li>
+<li><p><strong>This</strong> (<em>and when such validation fails numeric debugger falls back to edge IR as reference graph.</em>) – </p></li>
+<li><p><strong>comparison.</strong> (<em>flag allows one to override such behavior and make best effort</em>) – </p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A DataFrame listing corresponding operator intermediate outputs from both stages and their computed numerical gaps.</p>
