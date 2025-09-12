@@ -103,8 +103,14 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
   return 0;
 }
 
-inline runtime::Result<TensorPtr>
-populate_start_pos_tensor(Module* module, int64_t& start_pos, int seq_len) {
+// Returns the cache position tensor, which can be either a single start_pos
+// (when the text_decoder expects a tensor with size 1 because model will
+// populate the cache position tensor underneath), or a populated tensor for
+// cache position, for the given start_pos and seq_len.
+inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
+    Module* module,
+    int64_t& start_pos,
+    int seq_len) {
   // Get expected shape of cache position tensor, which should be the second
   // argument
   auto method_meta = ET_UNWRAP(module->method_meta(kTextModelMethod));
@@ -113,7 +119,6 @@ populate_start_pos_tensor(Module* module, int64_t& start_pos, int seq_len) {
   auto numel = second_input_sizes[0];
 
   TensorPtr start_pos_tensor;
-  std::vector<::executorch::aten::SizesType> sizes_vec = {numel};
   if (numel > 1) {
     // `cache_position` goes from start_pos to start_pos +
     // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1)
