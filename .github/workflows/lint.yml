@@ -45,9 +45,6 @@ jobs:
           cp -r "${CACHE_DIRECTORY}" . || true
         fi
 
-        # This has already been cached in the docker image
-        lintrunner init
-
         RC=0
         # Run lintrunner on all files
         if ! lintrunner --force-color --all-files --tee-json=lint.json 2> /dev/null; then
