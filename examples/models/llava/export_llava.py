@@ -77,18 +77,20 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             super().__init__()
             self.text_model = llava.text_model
 
-        def forward(self, input_pos, embeddings):
-            return self.text_model(None, {"input_pos": input_pos}, embeddings)
+        def forward(self, cache_positions, embeddings):
+            return self.text_model(None, {"input_pos": cache_positions[:1]}, embeddings)
 
     llava_text_model = LlavaTextModel(llava)
-
     text_model_em = LLMEdgeManager(
         model=llava_text_model,
         modelname="llava_text_model",
         max_seq_len=llava.text_model_args.max_seq_len,
         dtype=DType.fp32,
         use_kv_cache=True,
-        example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
+        example_inputs=(
+            torch.tensor(list(range(embeddings.shape[1])), dtype=torch.int64),
+            embeddings,
+        ),
         dynamic_shapes=dynamic_shapes,
     )
 
