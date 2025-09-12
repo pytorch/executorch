@@ -10,6 +10,9 @@ BUILDDIR      = _build
 
 # Put it first so that "make" without argument is like "make help".
 
+html-noplot:
+	$(SPHINXBUILD) -D plot_gallery=0 -b html $(SPHINXOPTS) "$(SOURCEDIR)" "$(BUILDDIR)/html"
+
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
