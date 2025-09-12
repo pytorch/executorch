@@ -13,9 +13,8 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <optional>
 
-namespace cadence {
 namespace impl {
-namespace cpu {
+namespace generic {
 namespace native {
 namespace {
 using ::executorch::runtime::getLeadingDims;
@@ -58,6 +57,5 @@ inline __attribute__((always_inline)) void linear_(
 
 } // namespace
 } // namespace native
-} // namespace cpu
+} // namespace generic
 } // namespace impl
-} // namespace cadence

@@ -20,17 +20,17 @@
 - op: _softmax.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::_softmax_out
+      kernel_name: impl::G3::_softmax_out
 
 - op: add.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::add_out
+      kernel_name: impl::G3::add_out
 
 - op: add.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::add_scalar_out
+      kernel_name: impl::G3::add_scalar_out
 
 - op: bmm.out
   kernels:
@@ -40,18 +40,18 @@
 - op: cat.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::cat_out
+      kernel_name: impl::G3::cat_out
 
 - op: clamp.out
   cpp_no_default_args: ['min']
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::clamp_out
+      kernel_name: impl::G3::clamp_out
 
 - op: clamp.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::clamp_Tensor_out
+      kernel_name: impl::G3::clamp_Tensor_out
 
 - op: clone.out
   kernels:
@@ -61,12 +61,12 @@
 - op: div.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::div_out
+      kernel_name: impl::G3::div_out
 
 - op: div.out_mode
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::div_out_mode
+      kernel_name: impl::G3::div_out_mode
 
 - op: embedding.out
   kernels:
@@ -81,41 +81,41 @@
 - op: lt.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::lt_Scalar_out
+      kernel_name: impl::G3::lt_Scalar_out
 
 - op: lt.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::lt_Tensor_out
+      kernel_name: impl::G3::lt_Tensor_out
 
 - op: mul.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::mul_out
+      kernel_name: impl::G3::mul_out
 - op: mul.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::mul_scalar_out
+      kernel_name: impl::G3::mul_scalar_out
 
 - op: permute_copy.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::permute_copy_out
+      kernel_name: impl::G3::permute_copy_out
 
 - op: rsqrt.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::rsqrt_out
+      kernel_name: impl::G3::rsqrt_out
 
 - op: sigmoid.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::sigmoid_out
+      kernel_name: impl::G3::sigmoid_out
 
 - op: slice_copy.Tensor_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::slice_copy_Tensor_out
+      kernel_name: impl::G3::slice_copy_Tensor_out
 
 - op: split_with_sizes_copy.out
   kernels:
@@ -125,27 +125,27 @@
 - op: sqrt.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::sqrt_out
+      kernel_name: impl::G3::sqrt_out
 
 - op: sub.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::sub_out
+      kernel_name: impl::G3::sub_out
 
 - op: sub.Scalar_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::sub_scalar_out
+      kernel_name: impl::G3::sub_scalar_out
 
 - op: tanh.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::tanh_out
+      kernel_name: impl::G3::tanh_out
 
 - op: transpose_copy.int_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::transpose_copy_int_out
+      kernel_name: impl::G3::transpose_copy_int_out
 
 - op: view_copy.out
   kernels:
@@ -155,37 +155,37 @@
 - op: where.self_out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::where_self_out
+      kernel_name: impl::G3::where_self_out
 
 - op: native_layer_norm.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::native_layer_norm_out
+      kernel_name: impl::G3::native_layer_norm_out
 
 - op: mean.out
   kernels:
     - arg_meta: null
-      kernel_name:  cadence::impl::G3::mean_out
+      kernel_name:  impl::G3::mean_out
 
 - op: exp.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::exp_out
-      
+      kernel_name: impl::G3::exp_out
+
 - op: hardtanh.out
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::hardtanh_out
+      kernel_name: impl::G3::hardtanh_out
 
 # custom ops
 - func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::native::quantize_per_tensor_out
+      kernel_name: impl::G3::native::quantize_per_tensor_out
 
 - func: cadence::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: cadence::impl::G3::native::dequantize_per_tensor_out
+      kernel_name: impl::G3::native::dequantize_per_tensor_out

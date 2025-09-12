@@ -10,7 +10,7 @@
 #include "stddef.h"
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace kernels {
 
 template <typename T>
@@ -54,6 +54,6 @@ void requantize(
     int32_t out_zero_point,
     size_t size);
 
-}; // namespace kernels
-}; // namespace reference
-}; // namespace impl
+} // namespace kernels
+} // namespace generic
+} // namespace impl

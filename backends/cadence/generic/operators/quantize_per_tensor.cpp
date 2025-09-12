@@ -6,16 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace native {
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
+using ::impl::generic::kernels::quantize;
 
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.
@@ -33,21 +34,21 @@ void quantize_per_tensor_out(
 
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-    impl::reference::kernels::quantize<uint8_t>(
+    impl::generic::kernels::quantize<uint8_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Char) {
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
-    impl::reference::kernels::quantize<int8_t>(
+    impl::generic::kernels::quantize<int8_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (
       out.scalar_type() == ScalarType::Bits16 ||
       out.scalar_type() == ScalarType::UInt16) {
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-    impl::reference::kernels::quantize<uint16_t>(
+    impl::generic::kernels::quantize<uint16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Short) {
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
-    impl::reference::kernels::quantize<int16_t>(
+    impl::generic::kernels::quantize<int16_t>(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_CHECK_MSG(
@@ -57,6 +58,6 @@ void quantize_per_tensor_out(
   }
 }
 
-}; // namespace native
-}; // namespace reference
-}; // namespace impl
+} // namespace native
+} // namespace generic
+} // namespace impl
