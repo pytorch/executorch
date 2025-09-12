@@ -69,15 +69,7 @@ jobs:
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          .ci/scripts/setup-windows.ps1 -editable "${{ inputs.editable }}"
-          if (\$LASTEXITCODE -ne 0) {
-              Write-Host "Setup failed. Exit code: \$LASTEXITCODE."
-              exit \$LASTEXITCODE
-          }
+          .ci/scripts/setup-windows.ps1       
 
-          .ci/scripts/unittest-windows.ps1 -buildMode "${{ inputs.build-mode }}"
-          if (\$LASTEXITCODE -ne 0) {
-              Write-Host "Unit tests failed. Exit code: \$LASTEXITCODE."
-              exit \$LASTEXITCODE
-          }
+          powershell .ci/scripts/unittest-windows.ps1 -editable "${{ inputs.editable }}"
         }"
