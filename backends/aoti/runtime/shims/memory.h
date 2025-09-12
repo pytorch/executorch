@@ -66,7 +66,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     AOTITensorHandle* ret_new_tensor);
 
 // Utility functions
-void checkCudaError(cudaError_t err, const char* msg);
+AOTITorchError checkCudaError(cudaError_t err, const char* msg);
 void cleanup_memory();
 
 } // extern "C"

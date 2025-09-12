@@ -7,6 +7,7 @@
  */
 
 #include "memory.h"
+#include <executorch/runtime/platform/log.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -26,18 +27,28 @@ namespace aoti {
 
 namespace { // Internal namespace for utility functions
 
-// Utility function to print array values in format [val1, val2, ...]
+// Utility function to log array values as error msg in format [val1, val2, ...]
 // For use with pointer-based arrays (e.g., int64_t* strides, int64_t* sizes)
-template <typename ValueType>
-void print_array_values(
-    const ValueType* values,
+void et_error_log_array_values(
+    const int64_t* values,
     int64_t count,
     const std::string& name = "values") {
-  std::cout << name << ": [";
-  for (int i = 0; i < count; i++) {
-    std::cout << values[i] << (i < count - 1 ? ", " : "");
+  if (count <= 0) {
+    ET_LOG(Error, "%s: empty array", name.c_str());
+    return;
   }
-  std::cout << "]" << std::endl;
+
+  // Build array string representation
+  std::string array_str = "[";
+  for (int64_t i = 0; i < count; i++) {
+    array_str += std::to_string(values[i]);
+    if (i < count - 1) {
+      array_str += ", ";
+    }
+  }
+  array_str += "]";
+
+  ET_LOG(Error, "%s: %s", name.c_str(), array_str.c_str());
 }
 
 // Check if tensor is in contiguous memory format (NCHW for 4D tensors)
@@ -117,9 +128,9 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   // check the tensor format
   // Only support contiguous format for now
   if (!is_tensor_contiguous(ndim, sizes_ptr, strides_ptr)) {
-    std::cout
-        << "aoti_torch_create_tensor_from_blob_v2 failed since input stride is not in contiguous format. Return with Error"
-        << std::endl;
+    ET_LOG(
+        Error,
+        "aoti_torch_create_tensor_from_blob_v2 failed since input stride is not in contiguous format");
     return Error::InvalidArgument;
   }
 
@@ -135,7 +146,7 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   );
 
   if (!tensor) {
-    std::cerr << "Failed to create tensor from blob" << std::endl;
+    ET_LOG(Error, "Failed to create tensor from blob");
     return Error::InvalidArgument;
   }
 
@@ -173,23 +184,31 @@ AOTITorchError aoti_torch_empty_strided(
   if (device_type == 1) { // cuda
     cudaError_t err = cudaMalloc(&ptr, nbytes);
     if (err != cudaSuccess) {
-      std::cout << "failed to allocate " << nbytes
-                << " error: " << cudaGetErrorString(err) << std::endl;
-      throw std::runtime_error("Failed to call cudaMalloc");
+      ET_LOG(
+          Error,
+          "failed to allocate %ld bytes: %s",
+          nbytes,
+          cudaGetErrorString(err));
+      return Error::MemoryAllocationFailed;
     }
   } else if (device_type == 0) { // cpu
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
     // do we need to do this in cuda backend?
     int result = posix_memalign(&ptr, 16, nbytes);
     if (result != 0) {
-      throw std::runtime_error("Failed to allocate aligned CPU memory");
+      ET_LOG(Error, "Failed to allocate aligned CPU memory");
+      return Error::MemoryAllocationFailed;
     }
     if (ptr == nullptr) {
-      throw std::runtime_error("Failed to call posix_memalign");
+      ET_LOG(Error, "Failed to call posix_memalign");
+      return Error::MemoryAllocationFailed;
     }
   } else {
-    throw std::runtime_error(
-        "Need to implement empty_strided for non-CUDA non-CPU");
+    ET_LOG(
+        Error,
+        "Need to implement empty_strided for non-CUDA non-CPU device type %d",
+        device_type);
+    return Error::NotImplemented;
   }
 
   // ETensor sizes
@@ -268,16 +287,16 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
       return Error::Ok;
     }
   }
-  std::cout << "Error: Didn't find tensor " << tensor << std::endl;
+  ET_LOG(Error, "Didn't find tensor %p", tensor);
   return Error::InvalidArgument;
 }
 
-void checkCudaError(cudaError_t err, const char* msg) {
+AOTITorchError checkCudaError(cudaError_t err, const char* msg) {
   if (err != cudaSuccess) {
-    std::cerr << "Error: " << msg << " (" << cudaGetErrorString(err) << ")"
-              << std::endl;
-    exit(EXIT_FAILURE);
+    ET_LOG(Error, "%s (%s)", msg, cudaGetErrorString(err));
+    return Error::Internal;
   }
+  return Error::Ok;
 }
 
 AOTITorchError aoti_torch_copy_(
@@ -286,8 +305,11 @@ AOTITorchError aoti_torch_copy_(
     int32_t non_blocking) {
   // assert same dim for now
   if (self->dim() != src->dim()) {
-    std::cout << "Error: dimension mismatch. self.dim()=" << self->dim()
-              << ", src.dim()=" << src->dim() << std::endl;
+    ET_LOG(
+        Error,
+        "dimension mismatch. self.dim()=%d, src.dim()=%d",
+        self->dim(),
+        src->dim());
     return Error::InvalidArgument;
   }
 
@@ -360,20 +382,20 @@ AOTITorchError aoti_torch_copy_(
 
     // Validate layout assumptions only when schemas differ
     if (!self_is_contiguous && !self_is_channels_last) {
-      std::cout
-          << "Error: self tensor must be contiguous or channels-last for stride conversion. "
-          << std::endl;
-      print_array_values(self_strides, self->dim(), "self strides");
-      print_array_values(self_sizes, self->dim(), "self_sizes");
+      ET_LOG(
+          Error,
+          "self tensor must be contiguous or channels-last for stride conversion");
+      et_error_log_array_values(self_strides, self->dim(), "self strides");
+      et_error_log_array_values(self_sizes, self->dim(), "self_sizes");
       return Error::InvalidArgument;
     }
 
     if (!src_is_contiguous && !src_is_channels_last) {
-      std::cout
-          << "Error: src tensor must be contiguous or channels-last for stride conversion."
-          << std::endl;
-      print_array_values(src_strides, src->dim(), "self strides");
-      print_array_values(src_sizes, src->dim(), "src_sizes");
+      ET_LOG(
+          Error,
+          "src tensor must be contiguous or channels-last for stride conversion");
+      et_error_log_array_values(src_strides, src->dim(), "self strides");
+      et_error_log_array_values(src_sizes, src->dim(), "src_sizes");
       return Error::InvalidArgument;
     }
   }
@@ -383,10 +405,18 @@ AOTITorchError aoti_torch_copy_(
   cudaError_t err;
 
   err = cudaPointerGetAttributes(&srcAttributes, src->data_ptr());
-  checkCudaError(err, "Failed to get source pointer attributes");
+  AOTITorchError cuda_err =
+      checkCudaError(err, "Failed to get source pointer attributes");
+  if (cuda_err != Error::Ok) {
+    return cuda_err;
+  }
 
   err = cudaPointerGetAttributes(&dstAttributes, self->data_ptr());
-  checkCudaError(err, "Failed to get destination pointer attributes");
+  cuda_err =
+      checkCudaError(err, "Failed to get destination pointer attributes");
+  if (cuda_err != Error::Ok) {
+    return cuda_err;
+  }
 
   bool srcIsDevice = srcAttributes.type == cudaMemoryTypeDevice;
   bool dstIsDevice = dstAttributes.type == cudaMemoryTypeDevice;
@@ -401,21 +431,30 @@ AOTITorchError aoti_torch_copy_(
           src->data_ptr(),
           total_bytes,
           cudaMemcpyDeviceToDevice);
-      checkCudaError(err, "Failed to copy from device to device");
+      cuda_err = checkCudaError(err, "Failed to copy from device to device");
+      if (cuda_err != Error::Ok) {
+        return cuda_err;
+      }
     } else if (srcIsDevice && !dstIsDevice) {
       err = cudaMemcpy(
           self->mutable_data_ptr(),
           src->data_ptr(),
           total_bytes,
           cudaMemcpyDeviceToHost);
-      checkCudaError(err, "Failed to copy from device to host");
+      cuda_err = checkCudaError(err, "Failed to copy from device to host");
+      if (cuda_err != Error::Ok) {
+        return cuda_err;
+      }
     } else if (!srcIsDevice && dstIsDevice) {
       err = cudaMemcpy(
           self->mutable_data_ptr(),
           src->data_ptr(),
           total_bytes,
           cudaMemcpyHostToDevice);
-      checkCudaError(err, "Failed to copy from host to device");
+      cuda_err = checkCudaError(err, "Failed to copy from host to device");
+      if (cuda_err != Error::Ok) {
+        return cuda_err;
+      }
     } else {
       std::memcpy(self->mutable_data_ptr(), src->data_ptr(), total_bytes);
     }
@@ -423,8 +462,7 @@ AOTITorchError aoti_torch_copy_(
     // Layout conversion needed (contiguous <-> channels-last)
 
     if (self->dim() != 4) {
-      std::cout << "Error: Layout conversion only supported for 4D tensors"
-                << std::endl;
+      ET_LOG(Error, "Layout conversion only supported for 4D tensors");
       return Error::NotImplemented;
     }
 
@@ -439,7 +477,11 @@ AOTITorchError aoti_torch_copy_(
       src_host_data = new float[total_elements];
       err = cudaMemcpy(
           src_host_data, src->data_ptr(), total_bytes, cudaMemcpyDeviceToHost);
-      checkCudaError(err, "Failed to copy src to host");
+      cuda_err = checkCudaError(err, "Failed to copy src to host");
+      if (cuda_err != Error::Ok) {
+        delete[] src_host_data;
+        return cuda_err;
+      }
       need_free_src = true;
     } else {
       src_host_data = static_cast<float*>(src->data_ptr());
@@ -491,7 +533,15 @@ AOTITorchError aoti_torch_copy_(
           dst_host_data,
           total_bytes,
           cudaMemcpyHostToDevice);
-      checkCudaError(err, "Failed to copy result to device");
+      cuda_err = checkCudaError(err, "Failed to copy result to device");
+      if (cuda_err != Error::Ok) {
+        // Clean up temporary buffers before returning
+        if (need_free_src)
+          delete[] src_host_data;
+        if (need_free_dst)
+          delete[] dst_host_data;
+        return cuda_err;
+      }
     }
 
     // Clean up temporary buffers
@@ -506,7 +556,10 @@ AOTITorchError aoti_torch_copy_(
   if (srcIsDevice) {
     err = cudaMemcpy(
         &src_first, src->data_ptr(), sizeof(float), cudaMemcpyDeviceToHost);
-    checkCudaError(err, "Failed to copy first src element");
+    cuda_err = checkCudaError(err, "Failed to copy first src element");
+    if (cuda_err != Error::Ok) {
+      return cuda_err;
+    }
   } else {
     src_first = static_cast<const float*>(src->data_ptr())[0];
   }
@@ -514,7 +567,10 @@ AOTITorchError aoti_torch_copy_(
   if (dstIsDevice) {
     err = cudaMemcpy(
         &dst_first, self->data_ptr(), sizeof(float), cudaMemcpyDeviceToHost);
-    checkCudaError(err, "Failed to copy first dst element");
+    cuda_err = checkCudaError(err, "Failed to copy first dst element");
+    if (cuda_err != Error::Ok) {
+      return cuda_err;
+    }
   } else {
     dst_first = static_cast<const float*>(self->data_ptr())[0];
   }
@@ -537,8 +593,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
   // Check if dimensions match
   if (self->dim() != ndim) {
-    std::cout << "Error: tensor dimension mismatch. self->dim(): "
-              << self->dim() << ", provided ndim: " << ndim << std::endl;
+    ET_LOG(
+        Error,
+        "tensor dimension mismatch. self->dim(): %d, provided ndim: %ld",
+        self->dim(),
+        ndim);
     return Error::InvalidArgument;
   }
 
@@ -546,7 +605,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   int32_t dtype;
   AOTITorchError dtype_err = aoti_torch_get_dtype(self, &dtype);
   if (dtype_err != Error::Ok) {
-    std::cout << "Error: failed to get dtype from input tensor" << std::endl;
+    ET_LOG(Error, "failed to get dtype from input tensor");
     return dtype_err;
   }
 
@@ -554,8 +613,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   AOTITorchError device_type_err =
       aoti_torch_get_device_type(self, &device_type);
   if (device_type_err != Error::Ok) {
-    std::cout << "Error: failed to get device_type from input tensor"
-              << std::endl;
+    ET_LOG(Error, "failed to get device_type from input tensor");
     return device_type_err;
   }
 
@@ -563,8 +621,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   AOTITorchError device_index_err =
       aoti_torch_get_device_index(self, &device_index);
   if (device_index_err != Error::Ok) {
-    std::cout << "Error: failed to get device_index from input tensor"
-              << std::endl;
+    ET_LOG(Error, "failed to get device_index from input tensor");
     return device_index_err;
   }
 
@@ -580,16 +637,14 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       ret_new_tensor);
 
   if (create_err != Error::Ok) {
-    std::cout << "Error: failed to create new tensor with empty_strided"
-              << std::endl;
+    ET_LOG(Error, "failed to create new tensor with empty_strided");
     return create_err;
   }
 
   // Copy data from source tensor to new tensor
   AOTITorchError copy_err = aoti_torch_copy_(*ret_new_tensor, self, 0);
   if (copy_err != Error::Ok) {
-    std::cout << "Error: failed to copy data from source tensor to new tensor"
-              << std::endl;
+    ET_LOG(Error, "failed to copy data from source tensor to new tensor");
     // Clean up the created tensor on failure
     aoti_torch_delete_tensor_object(*ret_new_tensor);
     *ret_new_tensor = nullptr;
@@ -603,7 +658,7 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 void cleanup_memory() {
   is_tensor_own_memory.clear();
   if (!tensors.empty()) {
-    std::cout << "Warning: tensors not empty" << std::endl;
+    ET_LOG(Error, "Warning: tensors not empty during cleanup");
   }
 }
 
