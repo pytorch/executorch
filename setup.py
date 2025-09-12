@@ -885,6 +885,11 @@ setup(
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
         BuiltExtension(
+            src="extension/llm/runner/_llm_runner.*",
+            modpath="executorch.extension.llm.runner._llm_runner",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        BuiltExtension(
             src="executorchcoreml.*",
             src_dir="backends/apple/coreml",
             modpath="executorch.backends.apple.coreml.executorchcoreml",
