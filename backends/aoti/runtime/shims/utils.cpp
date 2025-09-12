@@ -7,6 +7,7 @@
  */
 
 #include "utils.h"
+#include <executorch/runtime/platform/log.h>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -199,8 +200,10 @@ void cleanup_aoti_tensor_output() {
 AOTITorchError validate_dtype(int32_t dtype) {
   // Only float32 tensors are supported (dtype 6)
   if (dtype != 6) {
-    std::cout << "ERROR: Only float32 tensors are supported. Got dtype: "
-              << dtype << " (expected: 6 for float32)" << std::endl;
+    ET_LOG(
+        Error,
+        "Only float32 tensors are supported. Got dtype: %d (expected: 6 for float32)",
+        dtype);
     return Error::InvalidArgument;
   }
   return Error::Ok;
@@ -210,8 +213,10 @@ AOTITorchError validate_dtype(int32_t dtype) {
 AOTITorchError validate_storage_offset(int64_t storage_offset) {
   // Storage offset must always be 0
   if (storage_offset != 0) {
-    std::cout << "ERROR: Storage offset must be 0. Got storage_offset: "
-              << storage_offset << std::endl;
+    ET_LOG(
+        Error,
+        "Storage offset must be 0. Got storage_offset: %ld",
+        storage_offset);
     return Error::InvalidArgument;
   }
   return Error::Ok;
