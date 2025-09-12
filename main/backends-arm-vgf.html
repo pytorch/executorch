@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Backend Overview &mdash; ExecuTorch main documentation</title>
+  <title>Arm® VGF Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,6 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="XNNPACK Backend" href="backends-xnnpack.html" />
-    <link rel="prev" title="Arm® Backend Tutorial" href="tutorial-arm.html" />
 
 
   <!-- Google Tag Manager -->
@@ -344,8 +342,8 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorial-arm.html">Arm® Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Backend Overview</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
@@ -473,13 +471,13 @@
       </li>
 
         
-      <li>Backend Overview</li>
+      <li>Arm® VGF Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/backends-overview.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/backends-arm-vgf.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -511,25 +509,215 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="backend-overview">
-<h1>Backend Overview<a class="headerlink" href="#backend-overview" title="Permalink to this heading">¶</a></h1>
-<p>ExecuTorch backends provide hardware acceleration for a specific hardware target. In order to achieve maximum performance on target hardware, ExecuTorch optimizes the model for a specific backend during the export and lowering process. This means that the resulting .pte file is specialized for the specific hardware. In order to deploy to multiple backends, such as Core ML on iOS and Arm CPU on Android, it is common to generate a dedicated .pte file for each.</p>
-<p>The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requires and level of model support. See the documentation for each hardware backend for more details.</p>
-<p>As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.</p>
-<div class="section" id="available-backends">
-<h2>Available Backends<a class="headerlink" href="#available-backends" title="Permalink to this heading">¶</a></h2>
-<p>Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. See the appropriate backend documentation for more information.</p>
+  <div class="section" id="arm-vgf-backend">
+<h1>Arm® VGF Backend<a class="headerlink" href="#arm-vgf-backend" title="Permalink to this heading">¶</a></h1>
+<p>The Arm VGF backend is the ExecuTorch solution for lowering PyTorch models to VGF compatible hardware.
+It leverages the TOSA operator set and the <a class="reference external" href="https://github.com/arm/ai-ml-sdk-for-vulkan?tab=readme-ov-file">ML SDK for Vulkan®</a> to produce a .PTE file.
+The VGF backend also supports execution from a .PTE file and provides functionality to extract the corresponding VGF file for integration into various applications.</p>
+<div class="section" id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="backends-xnnpack.html"><span class="doc std std-doc">XNNPACK (Mobile CPU)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-coreml.html"><span class="doc std std-doc">Core ML (iOS)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-mps.html"><span class="doc std std-doc">Metal Performance Shaders (iOS GPU)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-vulkan.html"><span class="doc std std-doc">Vulkan (Android GPU)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-qualcomm.html"><span class="doc std std-doc">Qualcomm NPU</span></a></p></li>
-<li><p><a class="reference internal" href="backends-mediatek.html"><span class="doc std std-doc">MediaTek NPU</span></a></p></li>
-<li><p><a class="reference internal" href="backends-arm-ethos-u.html"><span class="doc std std-doc">ARM Ethos-U NPU</span></a></p></li>
-<li><p><a class="reference internal" href="backends-arm-vgf.html"><span class="doc std std-doc">ARM VGF</span></a></p></li>
-<li><p><a class="reference internal" href="backends-cadence.html"><span class="doc std std-doc">Cadence DSP</span></a></p></li>
+<li><p>Wide operator support for delegating large parts of models to the VGF target.</p></li>
+<li><p>A quantizer that optimizes quantization for the VGF target.</p></li>
 </ul>
+</div>
+<div class="section" id="target-requirements">
+<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Permalink to this heading">¶</a></h2>
+<p>The target system must include ML SDK for Vulkan and a Vulkan driver with Vulkan API &gt;= 1.3.</p>
+</div>
+<div class="section" id="development-requirements">
+<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>All requirements can be downloaded using <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span> <span class="pre">--enable-mlsdk-deps</span> <span class="pre">--disable-ethos-u-deps</span></code> and added to the path using
+<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">examples/arm/ethos-u-scratch/setup_path.sh</span></code></p>
+</div>
+<p>For the AOT flow, compilation of a model to <code class="docutils literal notranslate"><span class="pre">.pte</span></code> format using the VGF backend, the requirements are:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
+<li><p><a class="reference external" href="https://github.com/arm/ai-ml-sdk-model-converter">ML SDK Model Converter</a> for converting TOSA flatbuffers to VGF files.</p></li>
+</ul>
+<p>And for building and running your application using the generic executor_runner:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.vulkan.org">Vulkan API</a> should be set up locally for GPU execution support.</p></li>
+<li><p><a class="reference external" href="https://github.com/arm/ai-ml-emulation-layer-for-vulkan">ML Emulation Layer for Vulkan</a> for testing on Vulkan API.</p></li>
+</ul>
+</div>
+<div class="section" id="using-the-arm-vgf-backend">
+<h2>Using the Arm VGF Backend<a class="headerlink" href="#using-the-arm-vgf-backend" title="Permalink to this heading">¶</a></h2>
+<p>The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/vgf_minimal_example.ipynb">VGF Minimal Example</a> demonstrates how to lower a module using the VGF backend.</p>
+<p>The main configuration point for the lowering is the <code class="docutils literal notranslate"><span class="pre">VgfCompileSpec</span></code> consumed by the partitioner and quantizer.
+The full user-facing API is documented below.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">VgfCompileSpec</span><span class="p">(</span><span class="n">tosa_spec</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">tosa</span><span class="o">.</span><span class="n">specification</span><span class="o">.</span><span class="n">TosaSpecification</span> <span class="o">|</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">compiler_flags</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Compile spec for VGF compatible targets.</p>
+<p>Attributes:</p>
+<ul class="simple">
+<li><p><strong>tosa_spec</strong>: A TosaSpecification, or a string specifying a TosaSpecification.</p></li>
+<li><p><strong>compiler_flags</strong>: Extra compiler flags for converter_backend.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfCompileSpec</span><span class="o">.</span><span class="n">dump_debug_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">debug_mode</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">common</span><span class="o">.</span><span class="n">arm_compile_spec</span><span class="o">.</span><span class="n">ArmCompileSpec</span><span class="o">.</span><span class="n">DebugMode</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Dump debugging information into the intermediates path.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfCompileSpec</span><span class="o">.</span><span class="n">dump_intermediate_artifacts_to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Sets a path for dumping intermediate results during lowering such as tosa and pte.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfCompileSpec</span><span class="o">.</span><span class="n">get_intermediate_path</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Returns the path for dumping intermediate results during lowering such as tosa and pte.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfCompileSpec</span><span class="o">.</span><span class="n">get_output_format</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Returns a constant string that is the output format of the class.</p>
+<div class="section" id="partitioner-api">
+<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">VgfPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">vgf</span><span class="o">.</span><span class="n">compile_spec</span><span class="o">.</span><span class="n">VgfCompileSpec</span><span class="p">,</span> <span class="n">additional_checks</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">passes</span><span class="o">.</span><span class="n">operator_support</span><span class="o">.</span><span class="n">OperatorSupportBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</pre></div>
+</div>
+<p>Partitions subgraphs supported by the Arm Vgf backend.</p>
+<p>Attributes:</p>
+<ul class="simple">
+<li><p><strong>compile_spec</strong>:List of CompileSpec objects for Vgf backend.</p></li>
+<li><p><strong>additional_checks</strong>: Optional sequence of additional operator support checks.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfPartitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ep</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">node</span><span class="o">.</span><span class="n">Node</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]]]:</span>
+</pre></div>
+</div>
+<p>Returns a list of operator names that should not be decomposed. When these ops are
+registered and the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> is invoked through to_edge_transform_and_lower it will be
+guaranteed that the program that the backend receives will not have any of these ops
+decomposed.</p>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>List[torch._ops.OpOverload]</strong>: a list of operator names that should not be decomposed.</p></li>
+<li><p><strong>Optional[Callable[[torch.fx.Node], bool]]]</strong>: an optional callable, acting as a filter, that users can provide
+which will be called for each node in the graph that users can use as a filter for certain
+nodes that should be continued to be decomposed even though the op they correspond to is
+in the list returned by ops_to_not_decompose.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfPartitioner</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exported_program</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">partitioner</span><span class="o">.</span><span class="n">PartitionResult</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Returns the input exported program with newly created sub-Modules encapsulating
+specific portions of the input “tagged” for delegation.</p>
+<p>The specific implementation is free to decide how existing computation in the
+input exported program should be delegated to one or even more than one specific
+backends.</p>
+<p>The contract is stringent in that:</p>
+<ul class="simple">
+<li><p>Each node that is intended to be delegated must be tagged</p></li>
+<li><p>No change in the original input exported program (ExportedProgram) representation can take
+place other than adding sub-Modules for encapsulating existing portions of the
+input exported program and the associated metadata for tagging.</p></li>
+</ul>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>exported_program</strong>: An ExportedProgram in Edge dialect to be partitioned for backend delegation.</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>PartitionResult</strong>: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.</p></li>
+</ul>
+</div>
+<div class="section" id="quantizer">
+<h3>Quantizer<a class="headerlink" href="#quantizer" title="Permalink to this heading">¶</a></h3>
+<p>The VGF quantizer supports <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">Post Training Quantization (PT2E)</a>
+and <a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html">Quantization-Aware Training (QAT)</a> quantization.</p>
+<p>Currently the symmetric <code class="docutils literal notranslate"><span class="pre">int8</span></code> config defined by <code class="docutils literal notranslate"><span class="pre">executorch.backends.arm.quantizer.arm_quantizer.get_symmetric_quantization_config</span></code> is
+the main config available to use with the VGF quantizer.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">VgfQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="s1">&#39;VgfCompileSpec&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;None&#39;</span>
+</pre></div>
+</div>
+<p>Quantizer supported by the Arm Vgf backend.</p>
+<p>Attributes:</p>
+<ul class="simple">
+<li><p><strong>compile_spec</strong>: VgfCompileSpec, specifies the compilation configuration.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfQuantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;QuantizationConfig&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Set quantization_config for submodules that are not already annotated by name or type filters.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>quantization_config</strong>: Specifies the quantization scheme for the weights and activations</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfQuantizer</span><span class="o">.</span><span class="n">set_io</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Set quantization_config for input and output nodes.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>quantization_config</strong>: Specifies the quantization scheme for the weights and activations</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfQuantizer</span><span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="s1">&#39;str&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Set quantization_config for a submodule with name: <code class="docutils literal notranslate"><span class="pre">module_name</span></code>, for example:
+quantizer.set_module_name(“blocks.sub”), it will quantize all supported operator/operator
+patterns in the submodule with this module name with the given <code class="docutils literal notranslate"><span class="pre">quantization_config</span></code></p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>module_name</strong>: Name of the module to which the quantization_config is set.</p></li>
+<li><p><strong>quantization_config</strong>: Specifies the quantization scheme for the weights and activations.</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>TOSAQuantizer</strong>: The quantizer instance with the updated module name configuration</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfQuantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_type</span><span class="p">:</span> <span class="s1">&#39;Callable&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;QuantizationConfig&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Set quantization_config for a submodule with type: <code class="docutils literal notranslate"><span class="pre">module_type</span></code>, for example:
+quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
+patterns in the submodule with this module type with the given <code class="docutils literal notranslate"><span class="pre">quantization_config</span></code></p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>module_type</strong>: Type of module to which the quantization_config is set.</p></li>
+<li><p><strong>quantization_config</strong>: Specifies the quantization scheme for the weights and activations.</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>TOSAQuantizer</strong>: The quantizer instance with the updated module type configuration</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">VgfQuantizer</span><span class="o">.</span><span class="n">transform_for_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="s1">&#39;GraphModule&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;GraphModule&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>An initial pass for transforming the graph to prepare it for annotation.
+Currently transforms scalar values to tensor attributes.</p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>model</strong>: Module that is transformed.</p></li>
+</ul>
+<p>Returns:
+The transformed model.</p>
+</div>
+<div class="section" id="supported-quantization-schemes">
+<h3>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Permalink to this heading">¶</a></h3>
+<p>The quantization schemes supported by the VGF Backend are:</p>
+<ul class="simple">
+<li><p>8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).</p>
+<ul>
+<li><p>Supports both static and dynamic activations</p></li>
+<li><p>Supports per-channel and per-tensor schemes</p></li>
+</ul>
+</li>
+</ul>
+<p>Weight-only quantization is not currently supported on VGF</p>
+</div>
+</div>
+<div class="section" id="runtime-integration">
+<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
+<p>The VGF backend can use the default ExecuTorch runner. The steps required for building and running it are explained in the previously mentioned <a class="reference external" href="https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html">VGF Backend Tutorial</a>.
+The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.</p>
+<div class="section" id="vgf-adapter-for-model-explorer">
+<h3>VGF Adapter for Model Explorer<a class="headerlink" href="#vgf-adapter-for-model-explorer" title="Permalink to this heading">¶</a></h3>
+<p>The <a class="reference external" href="https://github.com/arm/vgf-adapter-model-explorer">VGF Adapter for Model Explorer</a> enables visualization of
+VGF files and can be useful for debugging.</p>
+</div>
 </div>
 </div>
 
@@ -538,15 +726,6 @@
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="backends-xnnpack.html" class="btn btn-neutral float-right" title="XNNPACK Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="tutorial-arm.html" class="btn btn-neutral" title="Arm® Backend Tutorial" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
@@ -578,8 +757,20 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Backend Overview</a><ul>
-<li><a class="reference internal" href="#available-backends">Available Backends</a></li>
+<li><a class="reference internal" href="#">Arm® VGF Backend</a><ul>
+<li><a class="reference internal" href="#features">Features</a></li>
+<li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
+<li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
+<li><a class="reference internal" href="#using-the-arm-vgf-backend">Using the Arm VGF Backend</a><ul>
+<li><a class="reference internal" href="#partitioner-api">Partitioner API</a></li>
+<li><a class="reference internal" href="#quantizer">Quantizer</a></li>
+<li><a class="reference internal" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime-integration">Runtime Integration</a><ul>
+<li><a class="reference internal" href="#vgf-adapter-for-model-explorer">VGF Adapter for Model Explorer</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
