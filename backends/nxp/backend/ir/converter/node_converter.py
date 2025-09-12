@@ -132,13 +132,8 @@ class NodeConverter(ABC):
             # Some exotic operator (only consumer or only produces)
             return True
 
-        pre_node = node.prev
-        post_node = node.next
-
-        if pre_node.name == node.all_input_nodes[0] and post_node.name == node.users[0]:
-            raise RuntimeError(
-                "Prev & next nodes are not the same as inputs and outputs."
-            )
+        pre_node = node.all_input_nodes[0]
+        post_node = list(node.users)[0]
 
         if _is_dequant_node(pre_node) and _is_quant_node(post_node):
             # Node is quantized

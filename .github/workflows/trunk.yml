@@ -8,6 +8,9 @@ on:
     tags:
       - ciflow/trunk/*
   pull_request:
+    paths:
+      - .ci/docker/ci_commit_pins/pytorch.txt
+      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:
@@ -1029,5 +1032,5 @@ jobs:
 
           .ci/scripts/setup-windows.ps1
 
-          powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+          .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
         }"

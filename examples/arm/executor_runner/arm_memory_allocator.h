@@ -21,15 +21,10 @@ class ArmMemoryAllocator : public executorch::runtime::MemoryAllocator {
   // Returns the used size of the allocator's memory buffer.
   size_t used_size() const;
 
-  // Returns the peak memory usage of the allocator's memory buffer
-  // Peak usage is useful when doing multiple allocations & resets
-  size_t peak_used() const;
-
   // Returns the free size of the allocator's memory buffer.
   size_t free_size() const;
   void reset();
 
  private:
   size_t used_;
-  size_t peak_used_;
 };

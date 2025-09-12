@@ -1,9 +1,9 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "example_quantizer",
     srcs = [
         "example_quantizer.py",
@@ -15,7 +15,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "example_backend",
     srcs = [
         "example_backend.py",
@@ -27,7 +27,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "example_partitioner",
     srcs = [
         "example_partitioner.py",

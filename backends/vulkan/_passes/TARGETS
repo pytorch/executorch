@@ -35,20 +35,6 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "int4_weight_only_quantizer",
-    srcs = [
-        "int4_weight_only_quantizer.py",
-    ],
-    visibility = [
-        "//executorch/backends/...",
-    ],
-    deps = [
-        "//executorch/backends/vulkan:custom_ops_lib",
-        "//pytorch/ao:torchao",
-    ]
-)
-
-runtime.python_library(
     name = "squeeze_unsqueeze_inputs",
     srcs = [
         "squeeze_unsqueeze_inputs.py",
@@ -161,7 +147,6 @@ runtime.python_library(
         ":fuse_patterns",
         ":fuse_quantized_ops",
         ":insert_prepack_nodes",
-        ":int4_weight_only_quantizer",
         ":remove_asserts",
         ":remove_local_scalar_dense",
         ":remove_redundant_ops",
