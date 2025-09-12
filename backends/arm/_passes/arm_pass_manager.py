@@ -7,6 +7,9 @@
 
 # pyre-unsafe
 
+
+from collections import defaultdict
+
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
@@ -94,6 +97,7 @@ from executorch.backends.arm._passes import (
     UnsqueezeScalarPlaceholdersPass,
 )
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -114,6 +118,32 @@ class ArmPassManager(PassManager):
     def __init__(self, tosa_spec: TosaSpecification) -> None:
         self.tosa_spec = tosa_spec
         super().__init__()
+
+    def validate_constraints_mandatory(self):
+        """
+        Validates that necessary passes have run before transforming to backend.
+
+        Note that this differs from the original validate_constraints function, which
+        only checks the order of passes.
+        """
+        passes_to_run = defaultdict(list)
+
+        for current_pass in self.passes:
+            current_pass_name = ArmPass.get_name(current_pass)
+            for required_pass_name in ArmPass.get_required_passes(current_pass):
+                passes_to_run[required_pass_name].append(current_pass_name)
+
+            passes_to_run.pop(current_pass_name, None)
+
+        if len(passes_to_run) > 0:
+            error_msg = "The following constraints for passes are not met:\n"
+            for required_pass, requiring_passes in passes_to_run.items():
+                for requiring_pass in requiring_passes:
+                    error_msg += (
+                        f"  - {required_pass} must run after {requiring_pass}\n"
+                    )
+
+            raise RuntimeError(error_msg)
 
     def _transform(self, graph_module: GraphModule):
         with TosaLoweringContext(self.tosa_spec):
@@ -175,6 +205,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
 
+        self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
@@ -258,6 +289,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
 
+        self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
 
     def transform_to_backend_pipeline(self, exported_program: ExportedProgram):

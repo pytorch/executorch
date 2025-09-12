@@ -7,6 +7,8 @@
 
 # pyre-strict
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -62,6 +64,8 @@ def remove_noop_view_copy(graph: torch.fx.Graph) -> tuple[torch.fx.Graph, bool]:
 
 
 class FuseViewCopyTransform(ExportPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph_module.graph, merge_modified = merge_view_copy_chains(graph_module.graph)
         graph_module.graph, noop_modified = remove_noop_view_copy(graph_module.graph)

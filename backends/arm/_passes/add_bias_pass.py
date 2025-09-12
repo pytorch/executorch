@@ -3,13 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.transforms.utils import create_constant_placeholder
 
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 from torch.export.graph_signature import InputKind
 
 
@@ -18,6 +20,8 @@ class AddBiasPass(ArmPass):
     This pass adds a bias input to convolution nodes that do not have one.
     The bias is set to zero.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = (exir_ops.edge.aten.convolution.default,)
 

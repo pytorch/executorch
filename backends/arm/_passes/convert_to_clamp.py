@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Tuple
+from typing import Set, Tuple, Type
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -24,6 +24,8 @@ def get_clamp_params(op, args) -> Tuple[float | None, float | None]:
 
 
 class ConvertToClampPass(ExportPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_operators:
             return super().call_operator(op, args, kwargs, meta)
