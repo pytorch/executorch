@@ -15,15 +15,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  get-changed-files:
+    if: github.repository_owner == 'pytorch'
+    name: Get changed files
+    uses: ./.github/workflows/_get-changed-files.yml
+
   lintrunner-mypy:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: [get-changed-files]
     permissions:
       id-token: write
       contents: read
+    if: |
+      github.repository_owner == 'pytorch' && (
+        needs.get-changed-files.outputs.changed-files == '*' ||
+        contains(needs.get-changed-files.outputs.changed-files, '.py') ||
+        contains(needs.get-changed-files.outputs.changed-files, '.pyi')
+      )
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-linter
-      submodules: 'recursive'
+      submodules: true
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -46,7 +58,8 @@ jobs:
         fi
 
         RC=0
-        # Run lintrunner on all files
+        # Run lintrunner on all files. pytorch/pytorch notes that mypy
+        # in particular needs this.
         if ! lintrunner --force-color --all-files --take MYPY --tee-json=lint.json 2> /dev/null; then
           echo ""
           echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --take MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
@@ -63,13 +76,14 @@ jobs:
 
   lintrunner:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    needs: [get-changed-files]
     permissions:
       id-token: write
       contents: read
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-linter
-      submodules: 'recursive'
+      submodules: false
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -92,8 +106,12 @@ jobs:
         fi
 
         RC=0
-        # Run lintrunner on all files
-        if ! lintrunner --force-color --all-files --skip MYPY --tee-json=lint.json 2> /dev/null; then
+        CHANGED_FILES="${{ needs.get-changed-files.outputs.changed-files }}"
+        if [ "$CHANGED_FILES" = '*' ]; then
+          LINTRUNNER_FILES="--all-files"
+        else
+          LINTRUNNER_FILES="${CHANGED_FILES}"
+        if ! lintrunner --force-color ${LINTRUNNER_FILES} --skip MYPY --tee-json=lint.json 2> /dev/null; then
           echo ""
           echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --skip MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
           echo -e "\e[1m\e[36mSee https://github.com/pytorch/pytorch/wiki/lintrunner for setup instructions.\e[0m"
