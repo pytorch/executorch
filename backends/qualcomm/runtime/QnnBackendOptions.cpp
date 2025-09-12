@@ -21,12 +21,24 @@ T get_option(T aot_option) {
   executorch::runtime::BackendOption backend_option;
 
   if constexpr (std::is_same_v<T, QnnExecuTorchLogLevel>) {
-    backend_option = {QNN_RUNTIME_LOG_LEVEL, -1};
+    std::strncpy(
+        backend_option.key, QNN_RUNTIME_LOG_LEVEL, kMaxOptionKeyLength);
+    backend_option.key[kMaxOptionKeyLength - 1] = '\0';
+    backend_option.value = -1;
   } else if constexpr (std::is_same_v<T, QnnExecuTorchHtpPerformanceMode>) {
-    backend_option = {QNN_RUNTIME_HTP_PERFORMANCE_MODE, -1};
+    std::strncpy(
+        backend_option.key,
+        QNN_RUNTIME_HTP_PERFORMANCE_MODE,
+        kMaxOptionKeyLength);
+    backend_option.key[kMaxOptionKeyLength - 1] = '\0';
+    backend_option.value = -1;
   } else if constexpr (std::is_same_v<T, QnnExecuTorchProfileLevel>) {
-    backend_option = {QNN_RUNTIME_PROFILE_LEVEL, -1};
+    std::strncpy(
+        backend_option.key, QNN_RUNTIME_PROFILE_LEVEL, kMaxOptionKeyLength);
+    backend_option.key[kMaxOptionKeyLength - 1] = '\0';
+    backend_option.value = -1;
   }
+
   // This will call get_option under runtime backend interface
   status = get_option(QNN_BACKEND, backend_option);
 
