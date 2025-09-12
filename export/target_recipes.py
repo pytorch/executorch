@@ -17,20 +17,40 @@ import coremltools as ct
 
 # pyre-ignore
 from executorch.backends.apple.coreml.recipes import CoreMLRecipeType
+
+# pyre-ignore
+from executorch.backends.qualcomm.recipes import QNNRecipeType
 from executorch.backends.xnnpack.recipes import XNNPackRecipeType
 from executorch.export.recipe import ExportRecipe, RecipeType
-
+from executorch.export.utils import (
+    is_supported_platform_for_coreml_lowering,
+    is_supported_platform_for_qnn_lowering,
+)
 
 ## IOS Target configs
 # The following list of recipes are not exhaustive for CoreML; refer to CoreMLRecipeType for more detailed recipes.
-IOS_CONFIGS: Dict[str, List[RecipeType]] = {
-    # pyre-ignore
-    "ios-arm64-coreml-fp32": [CoreMLRecipeType.FP32, XNNPackRecipeType.FP32],
-    # pyre-ignore
-    "ios-arm64-coreml-fp16": [CoreMLRecipeType.FP16],
-    # pyre-ignore
-    "ios-arm64-coreml-int8": [CoreMLRecipeType.PT2E_INT8_STATIC],
-}
+IOS_CONFIGS: Dict[str, List[RecipeType]] = (
+    {
+        # pyre-ignore
+        "ios-arm64-coreml-fp32": [CoreMLRecipeType.FP32, XNNPackRecipeType.FP32],
+        # pyre-ignore
+        "ios-arm64-coreml-fp16": [CoreMLRecipeType.FP16],
+        # pyre-ignore
+        "ios-arm64-coreml-int8": [CoreMLRecipeType.PT2E_INT8_STATIC],
+    }
+    if is_supported_platform_for_coreml_lowering()
+    else {}
+)
+
+# Android Target configs
+ANDROID_CONFIGS: Dict[str, List[RecipeType]] = (
+    {
+        # pyre-ignore
+        "android-arm64-snapdragon-fp16": [QNNRecipeType.FP16],
+    }
+    if is_supported_platform_for_qnn_lowering()
+    else {}
+)
 
 
 def _create_target_recipe(
@@ -40,7 +60,7 @@ def _create_target_recipe(
     Create a combined recipe for a target.
 
     Args:
-        target: Human-readable hardware configuration name
+        target_config: Human-readable hardware configuration name
         recipes: List of backend recipe types to combine
         **kwargs: Additional parameters - each backend will use what it needs
 
@@ -61,7 +81,6 @@ def _create_target_recipe(
                 f"Failed to create {recipe_type.value} recipe for {target_config}: {e}"
             ) from e
 
-    # Combine into single recipe
     if len(backend_recipes) == 1:
         return backend_recipes[0]
 
@@ -94,6 +113,10 @@ def get_ios_recipe(
         recipe = get_ios_recipe('ios-arm64-coreml-int8')
         session = export(model, recipe, example_inputs)
     """
+
+    if not is_supported_platform_for_coreml_lowering():
+        raise ValueError("CoreML is not supported on this platform")
+
     if target_config not in IOS_CONFIGS:
         supported = list(IOS_CONFIGS.keys())
         raise ValueError(
@@ -108,4 +131,49 @@ def get_ios_recipe(
             kwargs["minimum_deployment_target"] = ct.target.iOS17
 
     backend_recipes = IOS_CONFIGS[target_config]
+    return _create_target_recipe(target_config, backend_recipes, **kwargs)
+
+
+# Android Recipe
+def get_android_recipe(
+    target_config: str = "android-arm64-snapdragon-fp16", **kwargs
+) -> ExportRecipe:
+    """
+    Get Android-optimized recipe for specified hardware configuration.
+
+    Supported configurations:
+    - 'android-arm64-snapdragon-fp16': QNN fp16 recipe
+
+    Args:
+        target_config: Android configuration string
+        **kwargs: Additional parameters for backend recipes
+
+    Returns:
+        ExportRecipe configured for Android deployment
+
+    Raises:
+        ValueError: If target configuration is not supported
+
+    Example:
+        recipe = get_android_recipe('android-arm64-snapdragon-fp16')
+        session = export(model, recipe, example_inputs)
+    """
+
+    if not is_supported_platform_for_qnn_lowering():
+        raise ValueError("QNN is not supported on this platform")
+
+    if target_config not in ANDROID_CONFIGS:
+        supported = list(ANDROID_CONFIGS.keys())
+        raise ValueError(
+            f"Unsupported Android configuration: '{target_config}'. "
+            f"Supported: {supported}"
+        )
+
+    kwargs = kwargs or {}
+
+    if target_config == "android-arm64-snapdragon-fp16":
+        if "soc_model" not in kwargs:
+            kwargs["soc_model"] = "SM8650"
+
+    backend_recipes = ANDROID_CONFIGS[target_config]
     return _create_target_recipe(target_config, backend_recipes, **kwargs)
