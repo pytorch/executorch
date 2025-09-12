@@ -26,8 +26,8 @@ foreach(kernel ${_kernels})
   set(_functions_include "#include <executorch/kernels/${kernel}/Functions.h>")
   add_custom_command(
     OUTPUT "${_wrapper_path}"
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${_wrapper_dir}
-    COMMAND ${CMAKE_COMMAND} -E echo ${_functions_include} > "${_wrapper_path}"
+    COMMAND mkdir -p ${_wrapper_dir}
+    COMMAND echo ${_functions_include} > "${_wrapper_path}"
     DEPENDS
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
@@ -44,7 +44,7 @@ foreach(kernel ${_kernels})
   add_custom_command(
     OUTPUT "${_wrapper_dir}/supported_features.cpp"
            "${_wrapper_dir}/supported_features.h"
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${_wrapper_dir}
+    COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
       ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
       kernels/${_supported_features_kernel}/test/supported_features_def.yaml >
@@ -73,35 +73,17 @@ foreach(kernel ${_kernels})
         "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib"
     )
   endif()
-
-  # Copy with glob needs to be handle in a platform-specific manner.
-  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
-    # The quoting here is complicated, because there are three levels of
-    # interpretation: CMake -> Batch -> Powershell. The invoked (batch) command
-    # should look like `powershell -Command "Copy-Item ... -Path \"...\" ...".
-    # Powershell sees `Copy-Item -Path "..." ...`.
-    set(_copy_headers_cmd
-        powershell
-        -Command
-        "Copy-Item -Path \\\"${_kernel_ops_lib_path}/*.h\\\" -Destination \\\"${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/\\\""
-    )
-  else()
-    set(_copy_headers_cmd
-        cp
-        "${_kernel_ops_lib_path}/*.h"
-        "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-    )
-  endif()
-
   add_custom_command(
     OUTPUT
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
     COMMAND
-      ${CMAKE_COMMAND} -E make_directory
+      mkdir -p
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-    COMMAND ${_copy_headers_cmd}
+    COMMAND
+      cp "${_kernel_ops_lib_path}/*.h"
+      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
     DEPENDS ${_kernel_ops_lib}
   )
 endforeach()

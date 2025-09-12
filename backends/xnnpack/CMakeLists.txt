@@ -59,7 +59,7 @@ foreach(fbs_file ${_xnnpack_schema__srcs})
   )
 endforeach()
 
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+if(WIN32 AND NOT CMAKE_CROSSCOMPILING)
   set(MV_COMMAND
       powershell -Command
       "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs} -Force"

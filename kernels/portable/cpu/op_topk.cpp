@@ -79,7 +79,7 @@ void perform_topk(
     elem_t* queue) {
   const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* values_data = values.mutable_data_ptr<CTYPE>();
-  int64_t* indices_data = indices.mutable_data_ptr<int64_t>();
+  long* indices_data = indices.mutable_data_ptr<long>();
 
   if (in.dim() == 0) {
     values_data[0] = in_data[0];

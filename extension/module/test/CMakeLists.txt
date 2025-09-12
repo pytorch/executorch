@@ -24,10 +24,10 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
   COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
-    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
