@@ -143,13 +143,9 @@ endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
-if(WIN32)
-  set(CMAKE_CXX_FLAGS_RELEASE "/Gy /Gw ${CMAKE_CXX_FLAGS_RELEASE}")
-else()
-  set(CMAKE_CXX_FLAGS_RELEASE
-      "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
-  )
-endif()
+set(CMAKE_CXX_FLAGS_RELEASE
+    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
+)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()

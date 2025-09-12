@@ -11,32 +11,26 @@ This module provides platform-specific functions that abstract away backend
 selection and combine multiple backends optimally for target hardware.
 """
 
-import sys
 from typing import Dict, List
 
-if sys.platform != "win32":
-    import coremltools as ct
-    from executorch.backends.apple.coreml.recipes import CoreMLRecipeType
+import coremltools as ct
 
 # pyre-ignore
+from executorch.backends.apple.coreml.recipes import CoreMLRecipeType
 from executorch.backends.xnnpack.recipes import XNNPackRecipeType
 from executorch.export.recipe import ExportRecipe, RecipeType
 
 
 ## IOS Target configs
 # The following list of recipes are not exhaustive for CoreML; refer to CoreMLRecipeType for more detailed recipes.
-IOS_CONFIGS: Dict[str, List[RecipeType]] = (
-    {
-        # pyre-ignore
-        "ios-arm64-coreml-fp32": [CoreMLRecipeType.FP32, XNNPackRecipeType.FP32],
-        # pyre-ignore
-        "ios-arm64-coreml-fp16": [CoreMLRecipeType.FP16],
-        # pyre-ignore
-        "ios-arm64-coreml-int8": [CoreMLRecipeType.PT2E_INT8_STATIC],
-    }
-    if sys.platform != "win32"
-    else {}
-)
+IOS_CONFIGS: Dict[str, List[RecipeType]] = {
+    # pyre-ignore
+    "ios-arm64-coreml-fp32": [CoreMLRecipeType.FP32, XNNPackRecipeType.FP32],
+    # pyre-ignore
+    "ios-arm64-coreml-fp16": [CoreMLRecipeType.FP16],
+    # pyre-ignore
+    "ios-arm64-coreml-int8": [CoreMLRecipeType.PT2E_INT8_STATIC],
+}
 
 
 def _create_target_recipe(
