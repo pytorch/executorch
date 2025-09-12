@@ -111,6 +111,7 @@ jobs:
           LINTRUNNER_FILES="--all-files"
         else
           LINTRUNNER_FILES="${CHANGED_FILES}"
+        fi
         if ! lintrunner --force-color ${LINTRUNNER_FILES} --skip MYPY --tee-json=lint.json 2> /dev/null; then
           echo ""
           echo -e "\e[1m\e[36mYou can reproduce these results locally by using \`lintrunner --skip MYPY\`. (If you don't get the same results, run \'lintrunner init\' to update your local linter)\e[0m"
