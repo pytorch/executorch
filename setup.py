@@ -478,7 +478,6 @@ class InstallerBuildExt(build_ext):
                     tmp_path = Path(tmpdir)
                     sdk_path = _download_qnn_sdk(dst_folder=tmp_path)
 
-                    logging.info("sdk_path: ", sdk_path)
                     if not sdk_path:
                         raise RuntimeError(
                             "Qualcomm SDK not found, cannot build backend"
@@ -486,7 +485,6 @@ class InstallerBuildExt(build_ext):
 
                     # Determine paths
                     prj_root = Path(__file__).parent.resolve()
-                    logging.info("prj_root: ", prj_root)
                     build_sh = prj_root / "backends/qualcomm/scripts/build.sh"
                     build_root = prj_root / "build-x86"
 
