@@ -4,9 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 # @noautodeps
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "ethosu_partitioner",
     srcs = [
         "ethosu/__init__.py",
@@ -17,7 +17,7 @@ python_library(
         ":arm_partitioner",
     ]
 )
-python_library(
+runtime.python_library(
     name = "vgf_partitioner",
     srcs = [
         "vgf/__init__.py",
@@ -28,7 +28,7 @@ python_library(
         ":arm_partitioner",
     ]
 )
-python_library(
+runtime.python_library(
     name = "constants",
     srcs = [
         "constants.py",
@@ -37,7 +37,7 @@ python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
-python_library(
+runtime.python_library(
     name = "common",
     srcs = [
         "common/__init__.py",
@@ -50,7 +50,7 @@ python_library(
         "//executorch/exir:lib",
     ],
 )
-python_library(
+runtime.python_library(
     name = "arm_partitioner",
     srcs = [
         "tosa/backend.py",
@@ -65,7 +65,7 @@ python_library(
         "//executorch/exir:lib",
     ],
 )
-python_library(
+runtime.python_library(
     name = "arm_backend",
     srcs = [
         "arm_backend.py",
@@ -84,7 +84,7 @@ python_library(
         "//executorch/backends/arm/_passes:passes",
     ],
 )
-python_library(
+runtime.python_library(
     name = "process_node",
     srcs = ["process_node.py"],
     deps = [
@@ -97,7 +97,7 @@ python_library(
         "//executorch/exir:lib",
     ],
 )
-python_library(
+runtime.python_library(
     name = "arm_vela",
     srcs = [
         "arm_vela.py",
@@ -106,7 +106,7 @@ python_library(
         "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
     ],
 )
-python_library(
+runtime.python_library(
     name = "arm_model_evaluator",
     srcs = [
         "util/arm_model_evaluator.py",

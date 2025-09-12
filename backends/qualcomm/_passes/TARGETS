@@ -12,6 +12,7 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/backends/transforms:addmm_mm_to_linear",
+        "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/exir/backend:backend_details",
         "//executorch/exir/backend:compile_spec_schema",
     ],
