@@ -56,7 +56,8 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
     return Error::NotFound;
   }
   for (int i = 0; i < named_data->size(); i++) {
-    if (std::strncmp(
+    if (key.size() == named_data->Get(i)->key()->size() &&
+        std::strncmp(
             named_data->Get(i)->key()->c_str(),
             key.data(),
             named_data->Get(i)->key()->size()) == 0) {
