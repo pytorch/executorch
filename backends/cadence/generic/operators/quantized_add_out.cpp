@@ -6,18 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
-#include <executorch/backends/cadence/reference/operators/operators.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/operators/operators.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace native {
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-using ::impl::reference::kernels::dequantize;
-using ::impl::reference::kernels::quantize;
+using ::impl::generic::kernels::dequantize;
+using ::impl::generic::kernels::quantize;
 
 template <typename T>
 void quantized_add_per_tensor_impl(
@@ -188,5 +188,5 @@ void quantized_add_asym8uxasym8u_asym8u_per_tensor_out(
 }
 
 } // namespace native
-} // namespace reference
+} // namespace generic
 } // namespace impl
