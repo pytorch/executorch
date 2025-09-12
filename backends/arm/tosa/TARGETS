@@ -6,7 +6,6 @@ runtime.python_library(
         "mapping.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
         "//caffe2:torch",
         ":specification",
@@ -19,9 +18,7 @@ runtime.python_library(
     ],
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         "//executorch/backends/arm:constants",
         ":mapping",
@@ -44,7 +41,6 @@ runtime.python_library(
         "utils.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         ":quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
