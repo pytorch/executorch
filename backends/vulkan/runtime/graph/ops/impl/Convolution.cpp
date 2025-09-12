@@ -105,7 +105,8 @@ ValueRef prepack_biases(
   ValueRef v = graph.add_tensor(
       {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
 
-  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(graph, v);
+  vkapi::ShaderInfo shader =
+      get_nchw_to_tensor_shader(graph, v, graph.dtype_of(weight));
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
