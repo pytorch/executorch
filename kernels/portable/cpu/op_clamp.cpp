@@ -45,9 +45,9 @@ ET_NODISCARD bool check_bounds(
   static constexpr const char op_name[] = "clamp.out";
 
   if (isIntegralType(out_type, /*includeBool=*/false)) {
-    const int64_t val_long = utils::scalar_to<int64_t>(val_scalar);
+    const long val_long = utils::scalar_to<long>(val_scalar);
     ET_SWITCH_INT_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&]() {
-      if (is_out_of_bounds<CTYPE_OUT, int64_t>(val_long)) {
+      if (is_out_of_bounds<CTYPE_OUT, long>(val_long)) {
         ET_LOG(Error, "%s value out of bounds", val_name);
         is_valid = false;
       }

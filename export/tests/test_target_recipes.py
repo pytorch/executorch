@@ -7,21 +7,16 @@
 # pyre-strict
 
 import logging
-import sys
 import unittest
 
 import torch
+from executorch.backends.apple.coreml.recipes import CoreMLRecipeProvider  # pyre-ignore
 from executorch.backends.xnnpack.recipes.xnnpack_recipe_provider import (
     XNNPACKRecipeProvider,
 )
 from executorch.export import export, recipe_registry
 from executorch.export.target_recipes import get_ios_recipe
 from executorch.runtime import Runtime
-
-if sys.platform != "win32":
-    from executorch.backends.apple.coreml.recipes import (  # pyre-ignore
-        CoreMLRecipeProvider,
-    )
 
 
 class TestTargetRecipes(unittest.TestCase):
@@ -31,14 +26,12 @@ class TestTargetRecipes(unittest.TestCase):
         torch._dynamo.reset()
         super().setUp()
         recipe_registry.register_backend_recipe_provider(XNNPACKRecipeProvider())
-        if sys.platform != "win32":
-            # pyre-ignore
-            recipe_registry.register_backend_recipe_provider(CoreMLRecipeProvider())
+        # pyre-ignore
+        recipe_registry.register_backend_recipe_provider(CoreMLRecipeProvider())
 
     def tearDown(self) -> None:
         super().tearDown()
 
-    @unittest.skipIf(sys.platform == "win32", "Core ML is not available on Windows.")
     def test_ios_fp32_recipe_with_xnnpack_fallback(self) -> None:
         # Linear ops skipped by coreml but handled by xnnpack
         class Model(torch.nn.Module):
@@ -114,7 +107,6 @@ class TestTargetRecipes(unittest.TestCase):
             et_output = session.run_method("forward", example_inputs[0])
             logging.info(f"et output {et_output}")
 
-    @unittest.skipIf(sys.platform == "win32", "Core ML is not available on Windows.")
     def test_ios_quant_recipes(self) -> None:
         class Model(torch.nn.Module):
             def __init__(self):
