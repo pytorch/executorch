@@ -12,11 +12,11 @@ PROMPT_TOKEN_BATCH_SIZE=128
 CACHE_SIZE=512
 
 # Model Internals
-HIDDEN_SIZE=2304
-NUM_HEAD=8
-HEAD_DIM=256
-NUM_LAYER=26
-MAX_TOKEN_LENGTH=8192
+HIDDEN_SIZE=3072
+NUM_HEAD=24
+NUM_LAYER=32
+PARTIAL_ROTARY_FACTOR=0.75
+MAX_TOKEN_LENGTH=4096
 ROT_EMB_BASE=10000
 
 # Model IO Types
@@ -27,32 +27,35 @@ MASK_TYPE=fp32
 ROT_EMB_TYPE=fp32
 
 # Tokenizer
-VOCAB_SIZE=256000
-BOS_TOKEN=2
-EOS_TOKEN=1
-TOKENIZER_TYPE=bpe  # Use "bpe" for LLAMA2, "tiktoken" for LLAMA3, "hf" for huggingface tokenizer
+VOCAB_SIZE=200064
+BOS_TOKEN=199999
+EOS_TOKEN=199999
+TOKENIZER_TYPE=hf  # Use "bpe" for LLAMA2, "tiktoken" for LLAMA3, "hf" for huggingface tokenizer
 
 # Paths
-TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer_gemma2.bin"
-TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_gemma2_2b_it_fp32.bin"
+TOKENIZER_PATH="/data/local/tmp/et_mtk/tokenizer_phi4.json"
+TOKEN_EMBEDDING_PATH="/data/local/tmp/et_mtk/embedding_phi-4-mini-reasoning_fp32.bin"
 
 # Comma-Separated Paths
-WEIGHT_SHARED_MODEL_PACKAGE_PATHS="\
-/data/local/tmp/et_mtk/gemma2_2b_it_A16W4_1_chunks/gemma2_2b_it_A16W4_1_chunks_0.pte,"
+MODEL_PACKAGE_PATHS="\
+/data/local/tmp/et_mtk/phi-4-mini-reasoning_A16W8_4_chunks/phi-4-mini-reasoning_A16W8_4_chunks_0.pte,\
+/data/local/tmp/et_mtk/phi-4-mini-reasoning_A16W8_4_chunks/phi-4-mini-reasoning_A16W8_4_chunks_1.pte,\
+/data/local/tmp/et_mtk/phi-4-mini-reasoning_A16W8_4_chunks/phi-4-mini-reasoning_A16W8_4_chunks_2.pte,\
+/data/local/tmp/et_mtk/phi-4-mini-reasoning_A16W8_4_chunks/phi-4-mini-reasoning_A16W8_4_chunks_3.pte,"
 
-PROMPT_FILE=/data/local/tmp/et_mtk/prompt_gemma.txt
+PROMPT_FILE=/data/local/tmp/et_mtk/prompt_phi4.txt
 
 chmod +x mtk_llama_executor_runner
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
 
-./mtk_llama_executor_runner \
+./mtk_llama_executor_runner_longrope \
     --max_response=$MAX_RESPONSE \
     --prompt_token_batch_size=$PROMPT_TOKEN_BATCH_SIZE \
     --cache_size=$CACHE_SIZE \
     --hidden_size=$HIDDEN_SIZE \
-    --head_dim=$HEAD_DIM \
     --num_head=$NUM_HEAD \
+    --partial_rotary_factor=$PARTIAL_ROTARY_FACTOR \
     --num_layer=$NUM_LAYER \
     --max_token_length=$MAX_TOKEN_LENGTH \
     --rot_emb_base=$ROT_EMB_BASE \
@@ -67,5 +70,5 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
     --tokenizer_type=$TOKENIZER_TYPE \
     --tokenizer_path=$TOKENIZER_PATH \
     --token_embedding_path=$TOKEN_EMBEDDING_PATH \
-    --model_package_paths=$WEIGHT_SHARED_MODEL_PACKAGE_PATHS \
+    --model_package_paths=$MODEL_PACKAGE_PATHS \
     --prompt_file=$PROMPT_FILE

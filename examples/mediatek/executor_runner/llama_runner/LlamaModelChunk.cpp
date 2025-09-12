@@ -370,8 +370,6 @@ void LlamaModelChunk::UpdatePosEmbAndMask(const size_t numInputToken) {
     const auto swaMaskSizeBytes = swaMaskBufferInfo.nbytesUsed;
     mMaskBuilder->setMaskBuffer(swaMaskBuffer, swaMaskSizeBytes);
     mMaskBuilder->enableSlidingWindow(kWindowSize);
-    // mMaskBuilder->updateMask(mTokenBatchSize, mCurrentTokenIndex,
-    // numInputToken);
     mMaskBuilder->buildMask(mTokenBatchSize, mCurrentTokenIndex);
   }
   // Pass same isMaskUpdatable to both mask
