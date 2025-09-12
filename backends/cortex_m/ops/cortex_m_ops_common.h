@@ -32,16 +32,19 @@ inline void validate_cmsis_nn_tensor_requirements(
   // Basic dtype validation
   ET_CHECK_MSG(
       input1.scalar_type() == expected_dtype,
-      "Input1 dtype must be %hhd",
-      expected_dtype);
+      "Input1 dtype must be %hhd, got %hhd",
+      expected_dtype,
+      input1.scalar_type());
   ET_CHECK_MSG(
       input2.scalar_type() == expected_dtype,
-      "Input2 dtype must be %hhd",
-      expected_dtype);
+      "Input2 dtype must be %hhd, got %hhd",
+      expected_dtype,
+      input2.scalar_type());
   ET_CHECK_MSG(
       output.scalar_type() == expected_dtype,
-      "Output dtype must be %hhd",
-      expected_dtype);
+      "Output dtype must be %hhd, got %hhd",
+      expected_dtype,
+      output.scalar_type());
 
   // Dim order consistency
   ET_CHECK_MSG(
@@ -112,6 +115,26 @@ inline void validate_quantization_params(
       output_multiplier,
       output_shift,
       "Single quant Output");
+}
+
+inline void validate_per_channel_quant_params(
+    const int32_t* multipliers,
+    const int32_t* shifts,
+    int num_channels) {
+  for (int i = 0; i < num_channels; ++i) {
+    if (multipliers[i] < (1LL << 30) || multipliers[i] > ((1LL << 31) - 1)) {
+      ET_LOG(
+          Error,
+          "weight_multiplier[%d] out of CMSIS-NN range: %d",
+          i,
+          multipliers[i]);
+      return;
+    }
+    if (shifts[i] < 0 || shifts[i] > 31) {
+      ET_LOG(Error, "weight_shift[%d] out of range: %d", i, shifts[i]);
+      return;
+    }
+  }
 }
 
 inline Error resize_to_broadcast_target_size(

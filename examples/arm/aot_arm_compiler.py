@@ -43,6 +43,10 @@ from executorch.backends.arm.util.arm_model_evaluator import (
 from executorch.backends.arm.vgf import VgfPartitioner
 
 # To use Cortex-M backend
+from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
+    QuantizedLinearFusionPass,
+)
+
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
     QuantizedOpFusionPass,
 )
@@ -61,6 +65,8 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.pass_base import ExportPass
+
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 from torch.utils.data import DataLoader
@@ -297,6 +303,20 @@ class MultipleOutputsModule(torch.nn.Module):
     can_delegate = True
 
 
+class QuantLinearTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define a simple linear layer
+        self.linear = torch.nn.Linear(64, 32)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    # Example input dimensions that will test your op
+    example_input = (torch.randn([8, 64], dtype=torch.float32),)
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
@@ -306,6 +326,7 @@ models = {
     "qops": QuantOpTest,
     "softmax": SoftmaxModule,
     "MultipleOutputsModule": MultipleOutputsModule,
+    "qlinear": QuantLinearTest,
 }
 
 calibration_data = {
@@ -330,6 +351,7 @@ calibration_data = {
         torch.randn(32, 2, 1) * 1000,
     ),
     "softmax": (torch.randn(32, 2, 2),),
+    "qlinear": (torch.randn(32, 64),),
 }
 
 evaluators = {
@@ -604,7 +626,7 @@ def get_args():
     parser.add_argument(
         "--enable_qdq_fusion_pass",
         action="store_true",
-        help="Enable the QuantizedOpFusionPass fusion step",
+        help="Enable the Quantized qdq fusion Op passes",
     )
     args = parser.parse_args()
 
@@ -797,22 +819,33 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
     return model_int8, edge
 
 
-def transform_for_cortex_m_backend(edge, args):
+def transform_for_cortex_m_backend(edge_program_manager, args):
     # Let's make sure we are using optimized Cortex M backend
     # NB: If we can't find and replace ops those are expected to be replaced,
     # bad things will happen at runtime, like "missing operator" errors!
 
     # Instantiate the mandatory ReplaceQuantNodesPass
-    passes = [ReplaceQuantNodesPass()]
+    passes = [ReplaceQuantNodesPass]
 
-    # Conditionally add the QuantizedOpFusionPass
+    # Conditionally add the following passes
     if args.enable_qdq_fusion_pass:
-        passes.append(QuantizedOpFusionPass())
+        passes.append(QuantizedLinearFusionPass)
+        passes.append(QuantizedOpFusionPass)
 
     # Apply the passes
-    edge = edge.transform(passes)
-
-    return edge
+    current_edge = edge_program_manager
+    for pass_cls in passes:
+        # Check by class name or use specific attribute
+        if pass_cls.__name__ == "QuantizedLinearFusionPass":
+            transform_pass = pass_cls(current_edge.exported_program())
+        elif issubclass(pass_cls, ExportPass):
+            transform_pass = pass_cls()
+        else:
+            raise RuntimeError(
+                f"Expecting ExportPass, but got pass: {pass_cls} with type: {type(pass_cls)}"
+            )
+        current_edge = current_edge.transform([transform_pass])
+    return current_edge
 
 
 if __name__ == "__main__":  # noqa: C901
