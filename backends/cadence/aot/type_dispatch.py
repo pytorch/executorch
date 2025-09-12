@@ -27,6 +27,7 @@ class OpConfig:
     base_name: str
     type_dispatch_suffixes: dict[tuple[torch.dtype, ...], str]
     weight_arg_idx: Optional[int] = None
+    is_quant_op: bool = False
     variant: str = "per_tensor"
 
 
@@ -100,6 +101,27 @@ class CompileTimeTypeDispatchPass(ExportPass):
             },
             variant="default",
         ),
+        exir_ops.edge.cadence.quantize_per_tensor.default: OpConfig(
+            "quantize_per_tensor",
+            type_dispatch_suffixes={
+                (torch.int8,): "asym8s",
+                (torch.uint8,): "asym8u",
+                (torch.int16,): "asym16s",
+                (torch.uint16,): "asym16s",
+            },
+            variant="default",
+            is_quant_op=True,
+        ),
+        exir_ops.edge.cadence.dequantize_per_tensor.default: OpConfig(
+            "dequantize_per_tensor",
+            type_dispatch_suffixes={
+                (torch.int8,): "asym8s",
+                (torch.uint8,): "asym8u",
+                (torch.int16,): "asym16s",
+                (torch.uint16,): "asym16s",
+            },
+            variant="default",
+        ),
     }
 
     def call_operator(
@@ -120,6 +142,8 @@ class CompileTimeTypeDispatchPass(ExportPass):
         if config.weight_arg_idx is not None:
             weight_dtype = args[config.weight_arg_idx].to_tensor().dtype
             dtype_key = (input_dtype, weight_dtype)
+        elif config.is_quant_op:
+            dtype_key = (args[5],)
         else:
             dtype_key = (input_dtype,)
 

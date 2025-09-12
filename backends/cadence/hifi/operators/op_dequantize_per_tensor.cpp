@@ -53,6 +53,51 @@ void dequantize_per_tensor_out(
   }
 }
 
+void dequantize_per_tensor_asym8u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const uint8_t* input_data = input.const_data_ptr<uint8_t>();
+  dequantize<uint8_t>(out_data, input_data, scale, zero_point, numel);
+}
+
+void dequantize_per_tensor_asym16s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const int16_t* input_data = input.const_data_ptr<int16_t>();
+  dequantize<int16_t>(out_data, input_data, scale, zero_point, numel);
+}
+
+void dequantize_per_tensor_asym16u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  float* out_data = out.mutable_data_ptr<float>();
+  size_t numel = out.numel();
+  const uint16_t* input_data = input.const_data_ptr<uint16_t>();
+  dequantize<uint16_t>(out_data, input_data, scale, zero_point, numel);
+}
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
