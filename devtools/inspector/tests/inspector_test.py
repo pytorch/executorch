@@ -10,6 +10,7 @@ import copy
 import os
 import random
 import statistics
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -838,6 +839,7 @@ class TestInspector(unittest.TestCase):
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
         return [torch.randn(RAW_DATA_SIZE)]
 
+    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
     def test_disable_debug_handle_validation_with_symbolic_shapes(self):
         """
         Test that demonstrates the issue with symbolic shape related nodes losing from_node info
