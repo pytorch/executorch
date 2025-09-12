@@ -22,7 +22,6 @@ runtime.python_library(
         "common/debug.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
         "//caffe2:torch",
         "//executorch/exir:lib",
@@ -37,9 +36,7 @@ runtime.python_library(
     deps = [
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         ":process_node",
         "//executorch/exir/backend:compile_spec_schema",
@@ -83,7 +80,6 @@ runtime.python_library(
     name = "process_node",
     srcs = ["process_node.py"],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
         "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
         "//executorch/backends/arm/operators:node_visitor",
         "//executorch/backends/arm/tosa:mapping",
