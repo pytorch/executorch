@@ -175,7 +175,7 @@ class WhisperAudioProcessor(SequenceFeatureExtractor):
                 Whether to return the attention mask. If left to the default, will return the attention mask according
                 to the specific feature_extractor's default.
 
-                [What are attention masks?](../glossary#attention-mask)
+                [What are attention masks?](../glossary#attention-mask) @lint-ignore
 
                 <Tip>
 

@@ -1318,12 +1318,12 @@ ENCODE_PLUS_ADDITIONAL_KWARGS_DOCSTRING = r"""
                 Whether to return token type IDs. If left to the default, will return the token type IDs according to
                 the specific tokenizer's default, defined by the `return_outputs` attribute.
 
-                [What are token type IDs?](../glossary#token-type-ids)
+                [What are token type IDs?](../glossary#token-type-ids) @lint-ignore
             return_attention_mask (`bool`, *optional*):
                 Whether to return the attention mask. If left to the default, will return the attention mask according
                 to the specific tokenizer's default, defined by the `return_outputs` attribute.
 
-                [What are attention masks?](../glossary#attention-mask)
+                [What are attention masks?](../glossary#attention-mask) @lint-ignore
             return_overflowing_tokens (`bool`, *optional*, defaults to `False`):
                 Whether or not to return overflowing token sequences. If a pair of sequences of input ids (or a batch
                 of pairs) is provided with `truncation_strategy = longest_first` or `True`, an error is raised instead
@@ -1346,17 +1346,17 @@ ENCODE_PLUS_ADDITIONAL_KWARGS_DOCSTRING = r"""
 
             - **input_ids** -- List of token ids to be fed to a model.
 
-              [What are input IDs?](../glossary#input-ids)
+              [What are input IDs?](../glossary#input-ids) @lint-ignore
 
             - **token_type_ids** -- List of token type ids to be fed to a model (when `return_token_type_ids=True` or
               if *"token_type_ids"* is in `self.model_input_names`).
 
-              [What are token type IDs?](../glossary#token-type-ids)
+              [What are token type IDs?](../glossary#token-type-ids) @lint-ignore
 
             - **attention_mask** -- List of indices specifying which tokens should be attended to by the model (when
               `return_attention_mask=True` or if *"attention_mask"* is in `self.model_input_names`).
 
-              [What are attention masks?](../glossary#attention-mask)
+              [What are attention masks?](../glossary#attention-mask) @lint-ignore
 
             - **overflowing_tokens** -- List of overflowing tokens sequences (when a `max_length` is specified and
               `return_overflowing_tokens=True`).
@@ -3495,7 +3495,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin):
                 Whether to return the attention mask. If left to the default, will return the attention mask according
                 to the specific tokenizer's default, defined by the `return_outputs` attribute.
 
-                [What are attention masks?](../glossary#attention-mask)
+                [What are attention masks?](../glossary#attention-mask)  @lint-ignore
             return_tensors (`str` or [`~utils.TensorType`], *optional*):
                 If set, will return tensors instead of list of python integers. Acceptable values are:
 
@@ -3621,7 +3621,7 @@ class PreTrainedTokenizerBase(SpecialTokensMixin):
     ) -> List[int]:
         """Create the token type IDs corresponding to the sequences passed.
 
-        [What are token type IDs?](../glossary#token-type-ids)
+        [What are token type IDs?](../glossary#token-type-ids) @lint-ignore
 
         Should be overridden in a subclass if the model has a special way of building those.
 
