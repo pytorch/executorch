@@ -32,7 +32,7 @@ The ExecuTorch Vulkan Delegate is a wrapper around a standalone runtime known as
 the **Vulkan Compute Library**. The aim of the Vulkan Compute Library is to
 provide GPU implementations for PyTorch operators via GLSL compute shaders.
 
-The Vulkan Compute Library is a fork/iteration of the [PyTorch Vulkan Backend](https://pytorch.org/tutorials/prototype/vulkan_workflow.html).
+The Vulkan Compute Library is a fork/iteration of the [PyTorch Vulkan Backend](https://docs.pytorch.org/tutorials/unstable/vulkan_workflow.html).
 The core components of the PyTorch Vulkan backend were forked into ExecuTorch
 and adapted for an AOT graph-mode style of model inference (as opposed to
 PyTorch which adopted an eager execution style of model inference).
@@ -127,7 +127,7 @@ using the `to_backend()` API. The Vulkan Delegate implements the
 that are supported by the Vulkan delegate, and separates compatible sections of
 the model to be executed on the GPU.
 
-This means the a model can be lowered to the Vulkan delegate even if it contains
+This means a model can be lowered to the Vulkan delegate even if it contains
 some unsupported operators. This will just mean that only parts of the graph
 will be executed on the GPU.
 
@@ -152,7 +152,7 @@ First, make sure that you have the Android NDK installed; any NDK version past
 NDK r19c should work. Note that the examples in this doc have been validated with
 NDK r27b. The Android SDK should also be installed so that you have access to `adb`.
 
-The instructions in this page assumes that the following environment variables
+The instructions in this page assume that the following environment variables
 are set.
 
 ```shell
