@@ -790,6 +790,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-openvino.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_openvino.sh
 
