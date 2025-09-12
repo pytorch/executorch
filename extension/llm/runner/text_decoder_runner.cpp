@@ -53,20 +53,7 @@ TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
     auto numel = sizes[0];
     std::vector<::executorch::aten::SizesType> sizes_vec = {numel};
 
-    TensorPtr start_pos_tensor;
-    if (numel > 1) {
-      // If we are here, model is exported with cache_positions, create a tensor
-      // with the same length as input_ids. Assuming the last dimension is the
-      // one with the variable token length, for example [1, S] or [1, 1, S]
-      sizes_vec[sizes_vec.size() - 1] = tokens->numel();
-      start_pos_tensor = empty(sizes_vec, ::executorch::aten::ScalarType::Long);
-      torch::executor::native::arange_out_impl(
-          start_pos, start_pos + tokens->numel(), 1.0, *start_pos_tensor);
-    } else {
-      // Assuming model is exported with input_pos, create a tensor with size 1
-      start_pos_tensor = from_blob(
-          &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
-    }
+    auto start_pos_tensor = ET_UNWRAP(populate_start_pos_tensor(module_, start_pos, tokens->numel()));
 
     std::vector<runtime::EValue> inputs;
     auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
