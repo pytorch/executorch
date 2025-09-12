@@ -30,6 +30,7 @@
 #include "llama_runner/llm_helper/include/llm_types.h"
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
@@ -42,10 +43,13 @@ DEFINE_uint64(cache_size, 1024, "Model cache size.");
 DEFINE_uint64(hidden_size, 4096, "Model hidden size.");
 DEFINE_uint64(num_head, 32, "Number of attention heads in each layer.");
 DEFINE_uint64(num_layer, 32, "Number of layers in the model.");
+DEFINE_uint64(head_dim, 0, "Head dimension of the model.");
+DEFINE_uint64(window_size, 0, "Window size of Sliding Window Attention.");
 DEFINE_uint64(
     max_token_length,
     2048,
     "Maximum token length that the model supports.");
+DEFINE_double(partial_rotary_factor, 1, "Partial rotary factor of the model.");
 DEFINE_double(
     rot_emb_base,
     10000,
@@ -102,6 +106,7 @@ using example::utils::Timer;
 using example::utils::to_string;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
+using tokenizers::HFTokenizer;
 using tokenizers::Llama2cTokenizer;
 using tokenizers::Tokenizer;
 
@@ -113,7 +118,10 @@ LlamaModelOptions get_model_options() {
       .hidden_size = FLAGS_hidden_size,
       .num_head = FLAGS_num_head,
       .num_layer = FLAGS_num_layer,
+      .head_dim = FLAGS_head_dim,
+      .window_size = FLAGS_window_size,
       .max_token_length = FLAGS_max_token_length,
+      .partial_rotary_factor = FLAGS_partial_rotary_factor,
       .rot_emb_base = FLAGS_rot_emb_base,
 
       // Types
@@ -271,6 +279,8 @@ Error inference(
   const auto input_tokens = std::move(encode_res.get());
 
   std::cout << "\n[Input Prompt]\n" << prompt << std::endl;
+  std::cout << "\n[Input Prompt Tokens]\n"
+            << to_string(input_tokens) << std::endl;
 
   // Run prompt mode (pre-fill)
   auto prefill_res = digest_prompt(llama_runtime, tokenizer, input_tokens);
@@ -288,6 +298,8 @@ std::unique_ptr<Tokenizer> load_tokenizer() {
     tokenizer = std::make_unique<Llama2cTokenizer>();
   } else if (FLAGS_tokenizer_type == "tiktoken") {
     tokenizer = example::get_tiktoken_for_llama();
+  } else if (FLAGS_tokenizer_type == "hf") {
+    tokenizer = std::make_unique<HFTokenizer>();
   }
   ET_CHECK_MSG(
       tokenizer, "Invalid tokenizer type: %s", FLAGS_tokenizer_type.c_str());
