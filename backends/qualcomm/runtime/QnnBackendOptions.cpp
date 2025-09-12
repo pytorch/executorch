@@ -22,20 +22,24 @@ T get_option(T aot_option) {
 
   if constexpr (std::is_same_v<T, QnnExecuTorchLogLevel>) {
     std::strncpy(
-        backend_option.key, QNN_RUNTIME_LOG_LEVEL, kMaxOptionKeyLength);
-    backend_option.key[kMaxOptionKeyLength - 1] = '\0';
+        backend_option.key,
+        QNN_RUNTIME_LOG_LEVEL,
+        runtime::kMaxOptionKeyLength);
+    backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
     backend_option.value = -1;
   } else if constexpr (std::is_same_v<T, QnnExecuTorchHtpPerformanceMode>) {
     std::strncpy(
         backend_option.key,
         QNN_RUNTIME_HTP_PERFORMANCE_MODE,
-        kMaxOptionKeyLength);
-    backend_option.key[kMaxOptionKeyLength - 1] = '\0';
+        runtime::kMaxOptionKeyLength);
+    backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
     backend_option.value = -1;
   } else if constexpr (std::is_same_v<T, QnnExecuTorchProfileLevel>) {
     std::strncpy(
-        backend_option.key, QNN_RUNTIME_PROFILE_LEVEL, kMaxOptionKeyLength);
-    backend_option.key[kMaxOptionKeyLength - 1] = '\0';
+        backend_option.key,
+        QNN_RUNTIME_PROFILE_LEVEL,
+        runtime::kMaxOptionKeyLength);
+    backend_option.key[runtime::kMaxOptionKeyLength - 1] = '\0';
     backend_option.value = -1;
   }
 
