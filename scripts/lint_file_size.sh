@@ -8,7 +8,12 @@
 set -euo pipefail
 
 # Default max file size in bytes (1 MB)
-MAX_SIZE=$((1024 * 1024))
+if [[ "$filepath" =~ \.(png|jpg|jpeg|gif|svg)$ ]]; then
+  MAX_SIZE=$((5 * 1024 * 1024))  # 5 MB limit for pictures
+else
+  MAX_SIZE=$((1 * 1024 * 1024))  # 1 MB for others
+fi
+
 status=0
 
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; reset='\e[0m'
