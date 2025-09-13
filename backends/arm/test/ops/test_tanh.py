@@ -70,25 +70,27 @@ def test_tanh_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_tanh_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
+        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_tanh_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Tanh(),
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
+        run_on_fvp=True,
     )
     pipeline.run()
 

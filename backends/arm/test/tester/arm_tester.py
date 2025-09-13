@@ -7,7 +7,6 @@ import copy
 
 import logging
 
-import os
 from collections import Counter
 from pprint import pformat
 from typing import (
@@ -42,10 +41,7 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
-    get_elf_path,
     get_output_quantization_params,
-    get_target_board,
-    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -53,6 +49,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
+from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
@@ -90,7 +87,6 @@ from tabulate import tabulate
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
-from torch.utils._pytree import tree_flatten
 
 
 logger = logging.getLogger(__name__)
@@ -176,43 +172,6 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
             generate_etrecord=generate_etrecord,
-        )
-
-
-class Serialize(tester.Serialize):
-    def __init__(self, compile_spec: ArmCompileSpec, timeout):
-        super().__init__()
-        self.timeout = timeout
-        self.executorch_program_manager: ExecutorchProgramManager | None
-        self.compile_spec = compile_spec
-
-    def run(self, artifact: ExecutorchProgramManager, inputs=None) -> None:
-        super().run(artifact, inputs)
-        # Keep the entire ExecutorchProgramManager for execution.
-        self.executorch_program_manager = artifact
-
-    def run_artifact(self, inputs):
-        if self.executorch_program_manager is None:
-            raise RuntimeError(
-                "Tried running artifact from Serialize stage without running the stage."
-            )
-        inputs_flattened, _ = tree_flatten(inputs)
-        intermediate_path = self.compile_spec.get_intermediate_path()
-        target_board = get_target_board(self.compile_spec)
-        elf_path = get_elf_path(target_board)
-
-        if not os.path.exists(elf_path):
-            raise FileNotFoundError(
-                f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
-            )
-
-        return run_target(
-            self.executorch_program_manager,
-            inputs_flattened,
-            intermediate_path,
-            target_board,
-            elf_path,
-            self.timeout,
         )
 
 
@@ -419,7 +378,11 @@ class ArmTester(Tester):
         self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
     ):
         if serialize_stage is None:
-            serialize_stage = Serialize(self.compile_spec, timeout)
+            serialize_stage = Serialize(
+                compile_spec=self.compile_spec,
+                module=self.original_module,
+                timeout=timeout,
+            )
         assert (
             self.compile_spec.get_intermediate_path() is not None
         ), "Can't dump serialized file when compile specs do not contain an artifact path."
