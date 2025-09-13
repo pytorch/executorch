@@ -374,8 +374,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       *tensor_count = *tensor_count * tensor.size(i);
     }
 
-    // The VelaIO type has a shape of fixed size 4
-    for (int i = 0; i < 4; i++) {
+    // The VelaIO type has a shape of fixed size 6
+    for (int i = 0; i < shapeDim; i++) {
       *io_count = *io_count * io->shape[i];
     }
   }

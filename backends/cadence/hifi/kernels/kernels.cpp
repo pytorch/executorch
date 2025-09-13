@@ -23,17 +23,9 @@ memcpy(void* dst, const void* src, size_t num_bytes) {
 void* allocate_temp_memory(KernelRuntimeContext& ctx, size_t size) {
   constexpr size_t kAlignment =
       16; // 16-byte alignment for vectorized operations
-  ET_LOG(
-      Info,
-      "Attempting to allocate %zu bytes of temp memory (16-byte aligned)",
-      size);
   Result<void*> temp_mem_res = ctx.allocate_temp(size, kAlignment);
   if (temp_mem_res.ok()) {
     void* ptr = temp_mem_res.get();
-    ET_LOG(
-        Info,
-        "Successfully allocated temp memory at %p (16-byte aligned)",
-        ptr);
     return ptr;
   } else {
     ET_LOG(

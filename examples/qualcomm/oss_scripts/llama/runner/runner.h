@@ -72,13 +72,7 @@ class Runner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {})
       override;
-  executorch::runtime::Error generate_from_pos(
-      const std::string& prompt,
-      int64_t start_pos,
-      const executorch::extension::llm::GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
-      override;
+
   executorch::runtime::Error generate_from_prompt_or_file(
       const std::string& prompt,
       bool tokenized_prompt,
@@ -86,6 +80,7 @@ class Runner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {});
   void stop() override {};
+  void reset() override {};
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
  private:

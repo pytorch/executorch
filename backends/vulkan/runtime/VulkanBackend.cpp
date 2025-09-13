@@ -86,6 +86,32 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
       return vkapi::kFloat;
     case vkgraph::VkDataType::FLOAT64:
       return vkapi::kDouble;
+    default:
+      VK_THROW("Invalid VkDataType type encountered!");
+  }
+}
+
+vkapi::ScalarType equivalent_scalar_type(
+    const executorch::runtime::etensor::ScalarType& et_datatype) {
+  switch (et_datatype) {
+    case executorch::runtime::etensor::ScalarType::Byte:
+      return vkapi::kByte;
+    case executorch::runtime::etensor::ScalarType::Char:
+      return vkapi::kChar;
+    case executorch::runtime::etensor::ScalarType::Int:
+      return vkapi::kInt;
+    case executorch::runtime::etensor::ScalarType::Long:
+      return vkapi::kLong;
+    case executorch::runtime::etensor::ScalarType::Half:
+      return vkapi::kHalf;
+    case executorch::runtime::etensor::ScalarType::Float:
+      return vkapi::kFloat;
+    case executorch::runtime::etensor::ScalarType::Double:
+      return vkapi::kDouble;
+    case executorch::runtime::etensor::ScalarType::Bool:
+      return vkapi::kBool;
+    default:
+      VK_THROW("Invalid etensor::ScalarType encountered!");
   }
 }
 
@@ -343,6 +369,15 @@ class GraphBuilder {
     }
   }
 
+  vkapi::ScalarType get_staging_scalar_type_of(const uint32_t fb_id) {
+    VkTensorPtr tensor_fb =
+        flatbuffer_->values()->Get(fb_id)->value_as_VkTensor();
+    if (tensor_fb->staging_datatype() == vkgraph::VkDataType::UNSET) {
+      return get_scalar_type(tensor_fb->datatype());
+    }
+    return get_scalar_type(tensor_fb->staging_datatype());
+  }
+
   void build_graph() {
     // Resize the mapping to the number of values in the flatbuffer
     resize(flatbuffer_->values()->size());
@@ -359,7 +394,8 @@ class GraphBuilder {
     for (const uint32_t fb_id : *flatbuffer_->input_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
       if (compute_graph_->val_is_tensor(ref)) {
-        compute_graph_->set_input_tensor(ref);
+        compute_graph_->set_input_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
       } else {
         compute_graph_->set_val_as_input(ref);
       }
@@ -384,7 +420,12 @@ class GraphBuilder {
     // values as well if the source graph returns parameter nodes.
     for (const uint32_t fb_id : *flatbuffer_->output_ids()) {
       const ValueRef ref = get_fb_id_valueref(fb_id);
-      compute_graph_->set_output_value(ref);
+      if (compute_graph_->val_is_tensor(ref)) {
+        compute_graph_->set_output_tensor(
+            ref, get_staging_scalar_type_of(fb_id));
+      } else {
+        compute_graph_->set_output_value(ref);
+      }
     }
 
     if (compute_graph_->graphconfig().enable_querypool) {
@@ -582,10 +623,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         bool was_resized =
             maybe_resize_input(compute_graph, i, args[i]->toTensor());
         should_propagate_resize = should_propagate_resize || was_resized;
-        compute_graph->copy_into_staging(
+        compute_graph->maybe_cast_and_copy_into_staging(
             compute_graph->inputs()[i].staging,
             args[i]->toTensor().const_data_ptr(),
-            args[i]->toTensor().numel());
+            args[i]->toTensor().numel(),
+            equivalent_scalar_type(args[i]->toTensor().scalar_type()));
       } else if (compute_graph->val_is_symint(iref)) {
         VK_CHECK_COND(
             args[i]->isTensor(),
@@ -617,10 +659,11 @@ class VulkanBackend final : public ::executorch::runtime::BackendInterface {
         maybe_resize_output(compute_graph, i, args[o]->toTensor());
         // args holds inputs directly followed by outputs, so the i'th output
         // for compute_graph corresponds to the o'th arg
-        compute_graph->copy_from_staging(
+        compute_graph->maybe_cast_and_copy_from_staging(
             compute_graph->outputs()[i].staging,
             args[o]->toTensor().mutable_data_ptr(),
-            args[o]->toTensor().numel());
+            args[o]->toTensor().numel(),
+            equivalent_scalar_type(args[o]->toTensor().scalar_type()));
       }
       // TensorRef values represent constant tensors which will not have been
       // modified by the graph execution. Therefore, if a constant tensor is
