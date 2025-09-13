@@ -814,6 +814,7 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
             cmake_build_args += ["--target", "selective_build"]
+            cmake_build_args += ["--target", "_llm_runner"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
             cmake_build_args += ["--target", "extension_module"]
@@ -882,6 +883,11 @@ setup(
             src_dir="%CMAKE_CACHE_DIR%/codegen/tools/%BUILD_TYPE%/",
             src="selective_build.cp*" if _is_windows() else "selective_build.*",
             modpath="executorch.codegen.tools.selective_build",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        BuiltExtension(
+            src="extension/llm/runner/_llm_runner.*",
+            modpath="executorch.extension.llm.runner._llm_runner",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
         BuiltExtension(
