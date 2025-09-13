@@ -135,6 +135,7 @@ def quantize(  # noqa C901
                         PerAxis(0) if group_size == 0 else PerGroup(group_size)
                     ),
                     weight_mapping_type=MappingType.SYMMETRIC,
+                    # pyre-ignore[6]
                     intx_packing_format="opaque_torchao_auto",
                 ),
             )
@@ -154,12 +155,23 @@ def quantize(  # noqa C901
         from torchao.quantization.granularity import PerGroup
         from torchao.utils import unwrap_tensor_subclass
 
+        def filter_fn(m, fqn):
+            is_linear = isinstance(m, nn.Linear)
+            has_shape_compatible_with_group_size = False
+            if is_linear:
+                has_shape_compatible_with_group_size = (
+                    m.weight.shape[1] % group_size == 0
+                )
+            return is_linear and has_shape_compatible_with_group_size
+
         quantize_(
             model,
             Int8DynamicActivationIntxWeightConfig(
+                # pyre-ignore[16]
                 weight_dtype=torch.int4,
                 weight_granularity=PerGroup(group_size),
             ),
+            filter_fn=filter_fn,
         )
 
         model = unwrap_tensor_subclass(model)

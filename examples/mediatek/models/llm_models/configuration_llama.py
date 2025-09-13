@@ -1,22 +1,9 @@
-# coding=utf-8
-# Copyright 2022 EleutherAI and the HuggingFace Inc. team. All rights reserved.
+# Copyright (c) MediaTek Inc.
+# All rights reserved
 #
-# This code is based on EleutherAI's GPT-NeoX library and the GPT-NeoX
-# and OPT implementations in this library. It has been modified from its
-# original forms to accommodate minor architectural differences compared
-# to GPT-NeoX and OPT used by the Meta AI team that trained the model.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from contextlib import nullcontext
 
 from models.llm_models.configuration_base import BaseConfig
@@ -83,6 +70,9 @@ class LlamaConfig(BaseConfig):
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
+        self.head_dim = kwargs.pop(
+            "head_dim", self.hidden_size // self.num_attention_heads
+        )
 
         if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")
@@ -115,6 +105,7 @@ class LlamaConfig(BaseConfig):
             print(f"Num layers:           {self.num_hidden_layers}")
             print(f"Num attention heads:  {self.num_attention_heads}")
             print(f"Num KV heads:         {self.num_key_value_heads}")
+            print(f"Head Dim:             {self.head_dim}")
             print(f"Positional embedding: {self.position_embedding}")
             if self.position_embedding == "rope":
                 print(f"Max pos emb:          {self.max_position_embeddings}")

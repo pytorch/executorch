@@ -43,6 +43,7 @@ TextLLMRunner::TextLLMRunner(
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
+      pos_(0),
       temperature_(temperature) {
   // Note: This constructor assumes that text_prefiller and text_token_generator
   // already have references to the Module and TextDecoderRunner they need
@@ -70,9 +71,8 @@ Error TextLLMRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error TextLLMRunner::generate_from_pos(
+Error TextLLMRunner::generate(
     const std::string& prompt,
-    ET_UNUSED int64_t start_pos,
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -215,15 +215,6 @@ Error TextLLMRunner::generate_from_pos(
   }
 
   return Error::Ok;
-}
-
-Error TextLLMRunner::generate(
-    const std::string& prompt,
-    const GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  pos_ = 0;
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
 }
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {

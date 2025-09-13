@@ -417,3 +417,71 @@ class ReluPattern0(ReluBasePattern):
 class ReluPattern1(ReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.relu_.default]
+
+
+# This is a base class for Conv+ReLU fusion, since it can be used with two different relu aten ops
+class ConvReluBasePattern(QuantizationPattern):
+    @abstractmethod
+    def partition_types(self) -> List[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        # The first node should be conv, the second should be relu
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        conv_node = fused_partition[0].nodes[-1]  # Second to last node
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        relu_node = fused_partition[1].nodes[-1]  # Last node
+
+        bias_qspec = DerivedQuantizationSpec(
+            derived_from=[
+                (conv_node.args[0], conv_node),
+                (conv_node.args[1], conv_node),
+            ],
+            derive_qparams_fn=get_bias_qparams,
+            dtype=torch.int32,
+            quant_min=-(2**31),
+            quant_max=2**31 - 1,
+            qscheme=torch.per_tensor_affine,
+        )
+
+        # Keep bias empty if not supplied
+        bias = []
+        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
+            bias = [(conv_node, 2, bias_qspec)]
+
+        return PartitionAnchors(
+            inputs=[(conv_node, 0)],
+            weights=[(conv_node, 1)],
+            # pyre-fixme[6]: Incompatible parameter type
+            biases=bias,
+            output=[(relu_node,)],  # Output is from the relu node
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv_nchw.default
+
+
+# Conv1d + regular relu op fusion
+class Conv1dReluPattern0(ConvReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv1d.default, torch.ops.aten.relu.default]
+
+
+# Conv1d + alternate relu op fusion
+class Conv1dReluPattern1(ConvReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv1d.default, torch.ops.aten.relu_.default]
+
+
+# Conv2d + regular relu op fusion
+class Conv2dReluPattern0(ConvReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv2d.default, torch.ops.aten.relu.default]
+
+
+# Conv2d + alternate relu op fusion
+class Conv2dReluPattern1(ConvReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv2d.default, torch.ops.aten.relu_.default]

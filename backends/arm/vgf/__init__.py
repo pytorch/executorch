@@ -6,9 +6,7 @@
 # pyre-unsafe
 
 from .backend import VgfBackend  # noqa: F401
+from .compile_spec import VgfCompileSpec  # noqa: F401
 from .partitioner import VgfPartitioner  # noqa: F401
 
-__all__ = [
-    "VgfBackend",
-    "VgfPartitioner",
-]
+__all__ = ["VgfBackend", "VgfPartitioner", "VgfCompileSpec"]

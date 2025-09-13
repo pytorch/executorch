@@ -50,7 +50,7 @@ runtime.python_library(
     name = "neutron_sdk",
     srcs = glob(["backend/**/*.py"]),
     deps = [
-       "fbsource//third-party/pypi/neutron_converter:neutron_converter",
+        "fbsource//third-party/pypi/neutron_converter:neutron_converter",
     ],
 )
 
@@ -68,7 +68,6 @@ runtime.python_library(
         ":quantizer",
         "fbsource//third-party/pypi/flatbuffers:flatbuffers",
         "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         "//executorch/exir:lib",
         "//executorch/backends/transforms:remove_getitem_op",
         "//caffe2:torch",

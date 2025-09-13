@@ -395,7 +395,9 @@ class TestLinear(unittest.TestCase):
         quantize_(
             mod,
             Int8DynamicActivationIntxWeightConfig(
-                weight_dtype=torch.int4, weight_granularity=PerGroup(group_size)
+                # pyre-ignore[16]
+                weight_dtype=torch.int4,
+                weight_granularity=PerGroup(group_size),
             ),
         )
         unwrap_tensor_subclass(mod)

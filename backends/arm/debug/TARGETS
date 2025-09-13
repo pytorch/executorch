@@ -8,7 +8,7 @@ runtime.python_library(
         "schema.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools:serializer",
         "//caffe2:torch",
     ],
 )

@@ -405,5 +405,5 @@ class LlavaModel(EagerModelBase):
 
     def _get_prompt_dynamic_shapes(self):
         dim = torch.export.Dim("token_dim", min=2, max=self.max_seq_len)
-        text_model_dynamic_shapes = ({0: 1}, {1: dim})
+        text_model_dynamic_shapes = ({1: dim}, {0: 1})
         return text_model_dynamic_shapes

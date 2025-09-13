@@ -17,16 +17,14 @@ from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
-from executorch.backends.arm.arm_backend import is_tosa, is_vgf
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.test.conftest import is_option_enabled
-from executorch.backends.arm.tosa.specification import (
-    get_tosa_spec,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
+from executorch.backends.arm.vgf import VgfCompileSpec
 from executorch.exir import ExecutorchProgramManager, ExportedProgram
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch.fx.node import Node
 
@@ -168,14 +166,9 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
 
     def _tosa_dispatch(self, lowered_backend_module: LoweredBackendModule, inputs):
         tosa_buffer = lowered_backend_module.processed_bytes
-        compile_specs = lowered_backend_module.compile_specs
-        if not is_tosa(compile_specs):
-            raise RuntimeError(
-                "Model needs to be compiled to tosa to run reference model."
-            )
-        tosa_spec = get_tosa_spec(compile_specs)
+        compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
 
-        return run_tosa_graph(tosa_buffer, tosa_spec, inputs)
+        return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
@@ -725,14 +718,12 @@ def run_tosa_graph(
     return [torch.from_numpy(output) for output in outputs_np]
 
 
-def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
-    if is_vgf(compile_spec):
+def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
+    if isinstance(compile_spec, VgfCompileSpec):
         return "vkml_emulation_layer"
-    for spec in compile_spec:
-        if spec.key == "compile_flags":
-            flags = spec.value.decode()
-            if "u55" in flags:
-                return "corstone-300"
-            elif "u85" in flags:
-                return "corstone-320"
+    if isinstance(compile_spec, EthosUCompileSpec):
+        if "u55" in compile_spec.target:
+            return "corstone-300"
+        if "u85" in compile_spec.target:
+            return "corstone-320"
     return None

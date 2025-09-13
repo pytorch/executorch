@@ -1,11 +1,10 @@
-load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extension")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
 # TODO(T157145817): Update other flatbuffer serializers to use flatc like
 # _flatbuffer.py does, and remove this.
-cpp_python_extension(
+runtime.cxx_python_extension(
     name = "_bindings",
     srcs = [
         "bindings.cpp",

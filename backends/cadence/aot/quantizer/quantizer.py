@@ -16,7 +16,11 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     BmmPattern,
     CatPattern,
     Conv1dPattern,
+    Conv1dReluPattern0,
+    Conv1dReluPattern1,
     Conv2dPattern,
+    Conv2dReluPattern0,
+    Conv2dReluPattern1,
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
@@ -257,6 +261,25 @@ class CadenceWakeWordQuantizer(CadenceQuantizer):
     def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
         if quantizers is None:
             quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
+class CadenceFusedConvReluQuantizer(CadenceQuantizer):
+    """
+    Quantizer using fused conv+relu patterns, and including add and cat
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = []
+        # Order matters here, perform the "fused" patterns first
+        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern0(), qconfig_A8W8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern1(), qconfig_A8W8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern0(), qconfig_A8W8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern1(), qconfig_A8W8sym))
+        quantizers = quantizers + get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
         quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
         super().__init__(quantizers)
