@@ -6,7 +6,7 @@ runtime.python_library(
         "mapping.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools:serializer",
         "//caffe2:torch",
         ":specification",
     ],
@@ -18,8 +18,8 @@ runtime.python_library(
     ],
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools:serializer",
+        "fbsource//third-party/tosa_tools:tosa",
         "//executorch/backends/arm:constants",
         ":mapping",
         "//executorch/exir/dialects:lib",
