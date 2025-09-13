@@ -6,14 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace kernels {
 
 // Quantize a fp32 value to an int8_t/uint8_t value
@@ -73,6 +73,7 @@ typed_quantize_val(int8_t);
 typed_quantize_val(uint8_t);
 typed_quantize_val(int16_t);
 typed_quantize_val(uint16_t);
+typed_quantize_val(int32_t);
 #undef typed_quantize_val
 
 #define typed_quantize_vec(dtype)  \
@@ -86,6 +87,7 @@ typed_quantize_vec(int8_t);
 typed_quantize_vec(uint8_t);
 typed_quantize_vec(int16_t);
 typed_quantize_vec(uint16_t);
+typed_quantize_vec(int32_t);
 #undef typed_quantize_vec
 
 #define typed_dequantize_val(dtype) \
@@ -94,6 +96,7 @@ typed_dequantize_val(int8_t);
 typed_dequantize_val(uint8_t);
 typed_dequantize_val(int16_t);
 typed_dequantize_val(uint16_t);
+typed_dequantize_val(int32_t);
 #undef typed_dequantize_val
 
 #define typed_dequantize_vec(dtype) \
@@ -107,8 +110,9 @@ typed_dequantize_vec(int8_t);
 typed_dequantize_vec(uint8_t);
 typed_dequantize_vec(int16_t);
 typed_dequantize_vec(uint16_t);
+typed_dequantize_vec(int32_t);
 #undef typed_dequantize_vec
 
-}; // namespace kernels
-}; // namespace reference
-}; // namespace impl
+} // namespace kernels
+} // namespace generic
+} // namespace impl

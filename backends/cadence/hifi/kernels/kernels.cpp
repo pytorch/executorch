@@ -10,7 +10,6 @@
 #include <xa_nnlib_common.h>
 #include <xa_nnlib_common_macros.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace kernels {
@@ -128,6 +127,7 @@ typed_quantize_val(int8_t);
 typed_quantize_val(uint8_t);
 typed_quantize_val(int16_t);
 typed_quantize_val(uint16_t);
+typed_quantize_val(int32_t);
 #undef typed_quantize_val
 
 #define typed_quantize_vec(dtype)  \
@@ -151,6 +151,7 @@ typed_dequantize_val(int8_t);
 typed_dequantize_val(uint8_t);
 typed_dequantize_val(int16_t);
 typed_dequantize_val(uint16_t);
+typed_dequantize_val(int32_t);
 #undef typed_dequantize_val
 
 #define typed_dequantize_vec(dtype) \
@@ -167,7 +168,6 @@ typed_dequantize_vec(uint16_t);
 typed_dequantize_vec(int32_t);
 #undef typed_dequantize_vec
 
-}; // namespace kernels
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace kernels
+} // namespace HiFi
+} // namespace impl
