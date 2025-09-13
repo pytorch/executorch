@@ -53,7 +53,9 @@ def _create_test(
         }
         with TestContext(test_name, test_func.__name__, flow.name, params):
             if flow.should_skip_test(test_name):
-                raise unittest.SkipTest(f"Skipping test due to matching flow {flow.name} skip patterns")
+                raise unittest.SkipTest(
+                    f"Skipping test due to matching flow {flow.name} skip patterns"
+                )
 
             test_func(self, flow, dtype, use_dynamic_shapes)
 

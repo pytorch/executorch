@@ -965,7 +965,7 @@ def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
         # Ensure both sequences have the same length
         if len(a) != len(b):
             raise ValueError(
-                f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length for comparison."
+                f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length for comparison. len(a): {len(a)} len(b): {len(b)}."
             )
 
         # Compare each element in the sequences and return the list of results
@@ -989,6 +989,9 @@ def get_ancestor_node_identifiers(node: Node) -> List[str]:
 
     Returns: the identifiers of all its ancestor nodes
     """
+
+    if FROM_NODE_KEY not in node.meta:
+        return []
 
     node_source = node.meta[FROM_NODE_KEY]
     node_source = node_source[-1]
@@ -1111,6 +1114,7 @@ def propagate_back_debug_handle(
     exported_program: ExportedProgram,
     exported_program_graph_id: int,
     edge_dialect_program: ExportedProgram,
+    disable_debug_handle_valdiation: bool = False,
 ) -> bool:
     """
     Propagate debug handle from edge dialect program back to the exported program while maintain the correctness
@@ -1123,6 +1127,10 @@ def propagate_back_debug_handle(
 
     Then debug handle of op1 should be same as op1_0, and debug handle of op3 should be same as op3_0 and op3_1.
     The debug handle of op2 will be UNSET_DEBUG_HANDLE for further skipping.
+
+    disable_debug_handle_validation is used to avoid _verify_graph_match() in case of debug handle mismatch.
+    This can happen when we are comparing against aten graph in which case not all debug handles are matched
+    in aten graph. Example of this is when symbolic shape nodes are re-exported.
 
     Return: True if every debug handle in the edge dialect program has a corresponding node in the exported program, otherwise, return False.
     """
@@ -1137,7 +1145,9 @@ def propagate_back_debug_handle(
     )
 
     # 3. Verify if every debug handle in edge dialect program has a corresponding node
-    if not _verify_graph_match(edge_dialect_program, matched_debug_handles):
+    if not disable_debug_handle_valdiation and not _verify_graph_match(
+        edge_dialect_program, matched_debug_handles
+    ):
         return False
 
     # 4. Apply debug handles to the exported program

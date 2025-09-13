@@ -5,7 +5,6 @@ oncall("executorch")
 runtime.python_library(
     name = "lib",
     srcs = ["__init__.py"],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "//executorch/devtools/bundled_program:core",
         "//executorch/devtools/etrecord:etrecord",
