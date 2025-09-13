@@ -13,7 +13,6 @@ runtime.python_library(
     srcs = [
         "__init__.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "//executorch/extension/training/pybindings:_training_lib",
         "//executorch/extension/training/pybindings:_training_module",

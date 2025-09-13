@@ -839,7 +839,7 @@ def annotate_sigmoid(node: Node, quantization_config: QuantizationConfig) -> Non
         )
 
 
-@register_annotator([torch.ops.aten.__and__.Tensor])
+@register_annotator([torch.ops.aten.__and__.Tensor, torch.ops.aten.logical_and.default])
 def annotate_and(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 

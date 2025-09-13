@@ -47,7 +47,6 @@ runtime.python_library(
         "arg_validator.py",
         "verifier.py",
     ],
-    visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"]
     deps = [
         "//caffe2:torch",
         "//executorch/exir:error",

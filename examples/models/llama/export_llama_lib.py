@@ -418,6 +418,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
     parser.add_argument("-V", "--vulkan", action="store_true")
+    parser.add_argument("--vulkan-force-fp16", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
@@ -885,6 +886,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     use_kv_cache: bool = False,
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
+    vulkan_force_fp16: bool = False,
     coreml_ios: int = 15,
     coreml_quantize: Optional[str] = None,
     coreml_compute_units: str = "cpu_only",
@@ -905,6 +907,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
             get_vulkan_partitioner(
                 dtype_override,
                 enable_dynamic_shape,
+                vulkan_force_fp16,
             )
         )
         modelname = f"vulkan_{modelname}"
@@ -1125,6 +1128,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
                 if llm_config.quantization.pt2e_quantize
                 else None
             ),
+            vulkan_force_fp16=llm_config.backend.vulkan.force_fp16,
             coreml_ios=llm_config.backend.coreml.ios,
             coreml_quantize=(
                 llm_config.backend.coreml.quantize.value
