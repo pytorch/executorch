@@ -16,13 +16,13 @@ def test_conv2d_partitioner():
     lowered_module = edge_program.exported_program().graph_module.lowered_module_0
     nodes = list(lowered_module.original_module.graph.nodes)
 
-    assert len(nodes) == 7
+    assert len(nodes) == 9
 
-    q_x_node = nodes[1]
-    dq_w_node = nodes[2]
-    dq_x_node = nodes[3]
-    conv_node = nodes[4]
-    q_y_node = nodes[5]
+    q_x_node = nodes[3]
+    dq_w_node = nodes[4]
+    dq_x_node = nodes[5]
+    conv_node = nodes[6]
+    q_y_node = nodes[7]
 
     assert "cluster" not in q_x_node.meta
     assert dq_w_node.meta["cluster"] == "aten_convolution_default_cluster"
