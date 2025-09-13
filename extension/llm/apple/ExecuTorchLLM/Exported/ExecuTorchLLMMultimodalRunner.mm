@@ -192,7 +192,9 @@ withTokenCallback:(nullable void (^)(NSString *))callback
   }
   auto status = _runner->generate(
     std::move(nativeInputs),
-    llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
+    llm::GenerationConfig{
+      .seq_len = static_cast<int32_t>(seq_len),
+    },
     [callback](const std::string& token) {
       if (callback) {
         callback(@(token.c_str()));
