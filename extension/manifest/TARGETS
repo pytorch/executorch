@@ -1,0 +1,15 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "_manifest",
+    srcs = [
+        "_manifest.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir:_warnings",
+    ],
+    visibility = ["PUBLIC"],
+)

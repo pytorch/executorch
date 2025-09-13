@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "test_manifest",
+    srcs = [
+        "test_manifest.py",
+    ],
+    deps = [
+        "//executorch/extension/manifest:_manifest",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/exir:lib",
+        "//caffe2:torch",
+    ],
+)
