@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -45,6 +47,7 @@ class TestSqrt(OperatorTest):
         # 3D tensor
         self._test_op(SqrtModel(), (torch.rand(3, 4, 5),), flow)
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_sqrt_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
 
