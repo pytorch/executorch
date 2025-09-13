@@ -19,7 +19,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -38,8 +37,7 @@ class HiFiPermuteCopyTest : public OperatorTest {
  public:
  protected:
   Tensor& permute_copy_out(const Tensor& in, IntArrayRef dims, Tensor& out) {
-    return ::cadence::impl::HiFi::native::permute_copy_out(
-        context_, in, dims, out);
+    return ::impl::HiFi::native::permute_copy_out(context_, in, dims, out);
   }
 };
 
@@ -229,4 +227,3 @@ TEST_F(HiFiPermuteCopyTest, MixedDataTypesTest) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

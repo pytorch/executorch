@@ -36,7 +36,6 @@ enum datatype { Bits4u = 21, Bits4 = 22 };
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
  */
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -784,4 +783,3 @@ Tensor& dequantize_per_token_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

@@ -19,7 +19,6 @@ using executorch::aten::Tensor;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -234,4 +233,3 @@ Tensor& softmax_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence
