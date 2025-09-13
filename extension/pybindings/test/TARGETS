@@ -24,6 +24,9 @@ runtime.python_library(
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
         "//executorch/runtime/core:core",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program/serialize:lib",
     ],
 )
 
