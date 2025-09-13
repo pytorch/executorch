@@ -40,6 +40,7 @@ from executorch.examples.models.llama.eval_llama_lib import (
 from executorch.examples.models.llama.source_transformation.quantize import (
     get_quant_embedding_transform,
 )
+from executorch.examples.qualcomm.oss_scripts.llama.awq import apply_awq
 
 from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import calibrate
 
@@ -170,6 +171,9 @@ def prepare_model(model_name, args):
             qkv_split=True,
         )
         logging.info("Applied SpinQuant to the model")
+
+    if args.awq:
+        apply_awq(model)
 
     if args.range_setting == "mse_with_act_loss":
         wrapped_model = WrappedLlamaModel(
@@ -332,6 +336,11 @@ def main() -> None:
     parser.add_argument(
         "--spinquant",
         help="Apply SpinQuant (R1+R2) to the model. Uses random Hadamard matrices for rotations",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--awq",
+        help="Apply AWQ to the model",
         action="store_true",
     )
     parser.add_argument(

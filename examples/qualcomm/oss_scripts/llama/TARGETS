@@ -66,6 +66,17 @@ runtime.python_library(
     ],
 )
 
+python_library(
+    name = "awq",
+    srcs = [
+        "awq.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        ":llama_lib",
+    ],
+)
+
 python_binary(
     name = "llama",
     main_function = "executorch.examples.qualcomm.oss_scripts.llama.llama.main",
@@ -89,6 +100,7 @@ python_binary(
         "//executorch/examples/models/llama:eval_library",
         "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
         "fbsource//third-party/pypi/lm-eval:lm-eval",
+        ":awq"
     ],
 )
 
