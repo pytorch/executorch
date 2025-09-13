@@ -164,6 +164,123 @@ int main() {
 }
 ```
 
+## Python API
+
+The LLM Runner framework also provides Python bindings for easy integration with Python applications. The Python API mirrors the C++ interface while providing Pythonic convenience features.
+
+### Installation
+
+Build the Python bindings as part of the ExecuTorch build:
+
+```bash
+# Build with Python bindings enabled
+cmake -DPYTHON_EXECUTABLE=$(which python3) \
+      -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+      -DEXECUTORCH_BUILD_PYTHON_BINDINGS=ON \
+      ..
+make -j8 _llm_runner
+```
+
+### Quick Start - Python
+
+```python
+import _llm_runner
+import numpy as np
+
+# Create a multimodal runner
+runner = _llm_runner.MultimodalRunner(
+    model_path="/path/to/model.pte",
+    tokenizer_path="/path/to/tokenizer.bin"
+)
+
+# Create multimodal inputs
+inputs = []
+
+# Add text input
+inputs.append(_llm_runner.make_text_input("Describe this image:"))
+
+# Add image input from numpy array
+image_array = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+inputs.append(_llm_runner.make_image_input(image_array))
+
+# Configure generation
+config = _llm_runner.GenerationConfig()
+config.max_new_tokens = 100
+config.temperature = 0.7
+config.echo = False
+
+# Generate text with callback
+def token_callback(token: str):
+    print(token, end='', flush=True)
+
+def stats_callback(stats):
+    print(f"\nGenerated {stats.num_generated_tokens} tokens")
+    print(f"Tokens/sec: {stats.num_generated_tokens * 1000 / (stats.inference_end_ms - stats.inference_start_ms):.1f}")
+
+# Run generation
+runner.generate(inputs, config, token_callback, stats_callback)
+
+# Or get complete text result
+result = runner.generate_text(inputs, config)
+print(f"Generated text: {result}")
+```
+
+### Python API Features
+
+- **Type hints**: Full type annotations with `.pyi` stub files for IDE support
+- **NumPy integration**: Direct support for numpy arrays as image inputs
+- **Callbacks**: Optional token and statistics callbacks for streaming generation
+- **Exception handling**: Pythonic error handling with RuntimeError for failures
+- **Memory management**: Automatic resource cleanup with Python garbage collection
+
+### Python API Classes
+
+#### GenerationConfig
+```python
+config = _llm_runner.GenerationConfig()
+config.max_new_tokens = 50        # Maximum tokens to generate
+config.temperature = 0.8          # Sampling temperature  
+config.echo = True                # Echo input prompt
+config.seq_len = 512              # Maximum sequence length
+config.num_bos = 1                # Number of BOS tokens
+config.num_eos = 1                # Number of EOS tokens
+```
+
+#### MultimodalInput
+```python
+# Text input
+text_input = _llm_runner.MultimodalInput("Hello, world!")
+# Or using helper
+text_input = _llm_runner.make_text_input("Hello, world!")
+
+# Image input
+image = _llm_runner.Image()
+image.data = [255] * (224 * 224 * 3)  # RGB data
+image.width = 224
+image.height = 224  
+image.channels = 3
+image_input = _llm_runner.MultimodalInput(image)
+
+# Or from numpy array
+img_array = np.ones((224, 224, 3), dtype=np.uint8) * 128
+image_input = _llm_runner.make_image_input(img_array)
+```
+
+#### Stats
+```python
+# Access timing and performance statistics
+stats = _llm_runner.Stats()
+print(f"Model load time: {stats.model_load_end_ms - stats.model_load_start_ms}ms")
+print(f"Inference time: {stats.inference_end_ms - stats.inference_start_ms}ms")
+print(f"Tokens generated: {stats.num_generated_tokens}")
+print(f"Prompt tokens: {stats.num_prompt_tokens}")
+
+# JSON export
+json_str = stats.to_json_string()
+```
+
+For detailed Python API documentation and examples, see [README_PYTHON_BINDINGS.md](README_PYTHON_BINDINGS.md).
+
 ## Core Components
 
 ### Component Architecture
