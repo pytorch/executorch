@@ -189,6 +189,13 @@ if(TARGET mpsdelegate)
   executorch_target_link_options_shared_lib(mpsdelegate)
 endif()
 
+# Openvino backend
+if(TARGET openvino_backend)
+  find_package(OpenVINO REQUIRED)
+  list(APPEND link_libraries openvino_backend)
+  executorch_target_link_options_shared_lib(openvino_backend)
+endif()
+
 if(TARGET coremldelegate)
   find_library(SQLITE_LIBRARY sqlite3)
   list(

@@ -215,6 +215,47 @@ def get_qnn_quantizer(
     return qnn_quantizer, quant_dtype
 
 
+def get_ov_quantizer(
+    pt2e_quantize: str,
+    group_size: int = 128,
+):
+    try:
+        from executorch.backends.openvino.quantizer import (
+            OpenVINOQuantizer,
+            QuantizationMode,
+        )
+    except ImportError:
+        raise ImportError("Please install nncf via backends/openvino/requirements.txt")
+
+    backend, quant_config = pt2e_quantize.split("_")
+    assert (
+        backend == "openvino"
+    ), f"The quantization config is for backend {backend} instead of openvino."
+    assert (
+        group_size
+    ), "Group Size None is Not Supported. It should be set to -1 for per-channel."
+
+    quantization_params = {}
+
+    if quant_config == "4wo":
+        quantization_params["mode"] = QuantizationMode.INT4WO_ASYM
+        quantization_params["group_size"] = group_size
+        quantization_params["ratio"] = 0.8
+
+    elif quant_config == "8wo":
+        quantization_params["mode"] = QuantizationMode.INT8WO_ASYM
+        quantization_params["group_size"] = -1
+        quantization_params["ratio"] = None
+
+    else:
+        raise AssertionError(
+            f"No support for quant type {quant_config}. Support 8a4w, 8a8w only."
+        )
+    ov_quantizer = OpenVINOQuantizer(**quantization_params)
+
+    return ov_quantizer
+
+
 def get_coreml_quantizer(pt2e_quantize: str):
     try:
         from coremltools.optimize.torch.quantization.quantization_config import (

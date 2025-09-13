@@ -9,7 +9,10 @@ Below is the layout of the `examples/openvino` directory, which includes the nec
 ```
 examples/openvino
 ├── README.md                           # Documentation for examples (this file)
-└── aot_optimize_and_infer.py           # Example script to export and execute models
+├── aot_optimize_and_infer.py           # Example script to export and execute models
+└── llama
+    ├── README.md                       # Documentation for Llama example
+    └── llama3_2_ov_4wo.yaml            # Configuration file for exporting Llama3.2 with OpenVINO backend
 ```
 
 # Build Instructions for Examples
