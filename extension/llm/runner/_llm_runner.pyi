@@ -343,12 +343,10 @@ class MultimodalRunner:
             model_path: Path to the model file (.pte)
             tokenizer_path: Path to the tokenizer file
             data_path: Optional path to additional data file
-
         Raises:
             RuntimeError: If initialization fails
         """
         ...
-
     def generate(
         self,
         inputs: List[MultimodalInput],
