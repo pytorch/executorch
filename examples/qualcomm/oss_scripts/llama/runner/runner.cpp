@@ -129,8 +129,12 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "qwen3") {
+    decoder_model_version_ = DecoderModelVersion::kQwen3;
   } else if (decoder_model_version == "smollm2_135m") {
     decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
+  } else if (decoder_model_version == "smollm3") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm3;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -193,7 +197,8 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
   } else if (
       decoder_model_version_ == DecoderModelVersion::kQwen3 ||
-      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m) {
+      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm3) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
@@ -349,17 +354,6 @@ Error Runner<T>::generate(
     const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
-}
-
-template <typename T>
-Error Runner<T>::generate_from_pos(
-    const std::string& prompt,
-    int64_t start_pos,
-    const llm::GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  // TODO: currently only support start_pos == 0
   return generate_from_prompt_or_file(
       prompt, false, config, token_callback, stats_callback);
 }
@@ -430,7 +424,8 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.first_token_ms = time_in_ms();
   stats_.prompt_eval_end_ms = time_in_ms();
 
-  // print the first token from prefill. No prev_token so use cur_token for it.
+  // print the first token from prefill. No prev_token so use cur_token for
+  // it.
   if (token_callback) {
     token_callback(
         ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));

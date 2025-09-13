@@ -78,6 +78,9 @@ class ModelArgs:
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
+    no_rope_layer_interval: Optional[int] = (
+        None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
+    )
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.

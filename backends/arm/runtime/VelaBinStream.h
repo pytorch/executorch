@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 Arm Limited and/or its affiliates.
+ * Copyright 2023-2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@
 
 /*
  * Minimal reading function for vela_bin_stream wire format. This is an
- * implementation detail of the arm_backend AoT flow and ArmBackendEthosU
+ * implementation detail of the arm backend AoT flow and ArmBackendEthosU
  * and subject to change.
  * This format captures the command stream, I/O and memory layout data to
  * enable execution of the command stream on Ethos-U hardware.
