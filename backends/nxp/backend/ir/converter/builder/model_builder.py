@@ -412,6 +412,26 @@ class ModelBuilder:
 
         self.get_sub_graph().outputs.tmp_outputs = new_outputs
 
+    def _keep_one_empty_buffer(self):
+        """Create a single empty `Buffer` object and assign it to all tensors in the model that don't have static data."""
+        empty_buffer = self.get_first_empty_buffer()
+
+        for t in self.get_tensors().vector:
+            if tensor_has_data(t):
+                # The buffer of `t` is not empty.
+                continue
+
+            if t.tmp_buffer == empty_buffer:
+                # Already optimized.
+                continue
+
+            if t.is_variable:
+                # The data of the tensor will change at runtime, so it shouldn't share the buffer with other tensors.
+                continue
+
+            # It's safe to replace the buffer.
+            t.tmp_buffer = empty_buffer
+
     def finish(self) -> tflite_model.Model:
         """Finalize and optimize the converted TFLite model. Then return it.
 
@@ -429,6 +449,8 @@ class ModelBuilder:
             self.conversion_config.optimization_whitelist,
             self.conversion_config.optimization_blacklist,
         )
+
+        self._keep_one_empty_buffer()
 
         # Remove outputs, which are not produced by any node. Otherwise, there would be errors after inference.
         operator_outputs = []
