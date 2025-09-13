@@ -11,12 +11,14 @@ This module provides helper functions for common tasks like image preprocessing,
 configuration creation, and data conversion.
 """
 
-from typing import Union, Tuple, Optional, Dict, Any
-import numpy as np
 from pathlib import Path
+from typing import Any, Optional, Tuple, Union
+
+import numpy as np
 
 try:
     from PIL import Image as PILImage
+
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -27,19 +29,19 @@ from ._llm_runner import GenerationConfig
 def load_image_from_file(
     image_path: Union[str, Path],
     target_size: Optional[Tuple[int, int]] = None,
-    mode: str = 'RGB'
+    mode: str = "RGB",
 ) -> np.ndarray:
     """
     Load an image from file and optionally resize it.
-    
+
     Args:
         image_path: Path to the image file
         target_size: Optional (width, height) tuple to resize the image
         mode: Image mode ('RGB', 'RGBA', 'L' for grayscale)
-        
+
     Returns:
         NumPy array with shape (H, W, C) for color or (H, W) for grayscale
-        
+
     Raises:
         FileNotFoundError: If the image file doesn't exist
         ImportError: If neither PIL nor OpenCV is available
@@ -48,47 +50,47 @@ def load_image_from_file(
     image_path = Path(image_path)
     if not image_path.exists():
         raise FileNotFoundError(f"Image file not found: {image_path}")
-    
+
     if HAS_PIL:
         # Use PIL/Pillow
         image = PILImage.open(image_path)
-        
+
         # Convert to requested mode
         if image.mode != mode:
             image = image.convert(mode)
-        
+
         # Resize if requested
         if target_size is not None:
             image = image.resize(target_size, PILImage.Resampling.LANCZOS)
-        
+
         # Convert to numpy array
         return np.array(image, dtype=np.uint8)
     else:
         # Try OpenCV
         try:
             import cv2
-            
+
             # Read image
-            if mode == 'L':
+            if mode == "L":
                 image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
             else:
                 image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-            
+
             if image is None:
                 raise ValueError(f"Failed to load image: {image_path}")
-            
+
             # Convert BGR to RGB if needed
-            if mode == 'RGB' and len(image.shape) == 3:
+            if mode == "RGB" and len(image.shape) == 3:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            elif mode == 'RGBA' and len(image.shape) == 3:
+            elif mode == "RGBA" and len(image.shape) == 3:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGBA)
-            
+
             # Resize if requested
             if target_size is not None:
                 image = cv2.resize(image, target_size, interpolation=cv2.INTER_LANCZOS4)
-            
+
             return image.astype(np.uint8)
-            
+
         except ImportError:
             raise ImportError(
                 "Either PIL or OpenCV is required to load images from files. "
@@ -101,27 +103,29 @@ def preprocess_image(
     target_size: Optional[Tuple[int, int]] = None,
     normalize: bool = False,
     mean: Optional[Tuple[float, float, float]] = None,
-    std: Optional[Tuple[float, float, float]] = None
+    std: Optional[Tuple[float, float, float]] = None,
 ) -> np.ndarray:
     """
     Preprocess an image array for model input.
-    
+
     Args:
         image: Input image as numpy array (H, W, C)
         target_size: Optional (width, height) tuple to resize the image
         normalize: Whether to normalize pixel values to [0, 1]
         mean: Mean values for normalization (per channel)
         std: Standard deviation values for normalization (per channel)
-        
+
     Returns:
         Preprocessed image array
-        
+
     Raises:
         ValueError: If image dimensions are invalid
     """
     if image.ndim != 3:
-        raise ValueError(f"Image must be 3-dimensional (H, W, C), got shape {image.shape}")
-    
+        raise ValueError(
+            f"Image must be 3-dimensional (H, W, C), got shape {image.shape}"
+        )
+
     # Resize if needed
     if target_size is not None:
         if HAS_PIL:
@@ -133,28 +137,34 @@ def preprocess_image(
             # Try OpenCV
             try:
                 import cv2
+
                 image = cv2.resize(image, target_size, interpolation=cv2.INTER_LANCZOS4)
             except ImportError:
                 # Simple nearest neighbor resize as fallback
                 from scipy import ndimage
-                factors = (target_size[1] / image.shape[0], target_size[0] / image.shape[1], 1)
+
+                factors = (
+                    target_size[1] / image.shape[0],
+                    target_size[0] / image.shape[1],
+                    1,
+                )
                 image = ndimage.zoom(image, factors, order=1)
-    
+
     # Convert to float for normalization
     if normalize or mean is not None or std is not None:
         image = image.astype(np.float32)
-        
+
         if normalize:
             image = image / 255.0
-        
+
         if mean is not None:
             mean_arr = np.array(mean).reshape(1, 1, -1)
             image = image - mean_arr
-        
+
         if std is not None:
             std_arr = np.array(std).reshape(1, 1, -1)
             image = image / std_arr
-    
+
     return image
 
 
@@ -168,11 +178,11 @@ def create_generation_config(
     frequency_penalty: float = 0.0,
     echo: bool = False,
     seed: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> GenerationConfig:
     """
     Create a GenerationConfig with sensible defaults.
-    
+
     Args:
         max_new_tokens: Maximum number of tokens to generate (default: 1000)
         temperature: Sampling temperature, higher = more random (default: 0.8)
@@ -184,10 +194,10 @@ def create_generation_config(
         echo: Whether to echo the input prompt (default: False)
         seed: Random seed for reproducibility (default: None)
         **kwargs: Additional parameters to set on the config
-        
+
     Returns:
         A configured GenerationConfig object
-        
+
     Example:
         >>> config = create_generation_config(
         ...     max_new_tokens=100,
@@ -196,7 +206,7 @@ def create_generation_config(
         ... )
     """
     config = GenerationConfig()
-    
+
     # Set all parameters
     config.max_new_tokens = max_new_tokens
     config.temperature = temperature
@@ -206,72 +216,31 @@ def create_generation_config(
     config.presence_penalty = presence_penalty
     config.frequency_penalty = frequency_penalty
     config.echo = echo
-    
+
     if seed is not None:
         config.seed = seed
-    
+
     # Set any additional parameters
     for key, value in kwargs.items():
         if hasattr(config, key):
             setattr(config, key, value)
         else:
             raise ValueError(f"GenerationConfig has no parameter '{key}'")
-    
+
     return config
-
-
-def batch_generate(
-    runner: 'MultimodalRunner',
-    batch_inputs: list,
-    config: Optional[GenerationConfig] = None,
-    show_progress: bool = True
-) -> list:
-    """
-    Generate text for multiple input batches.
-    
-    Args:
-        runner: The MultimodalRunner instance
-        batch_inputs: List of input lists, each containing multimodal inputs
-        config: Generation configuration (shared for all batches)
-        show_progress: Whether to show a progress bar
-        
-    Returns:
-        List of generated text strings
-        
-    Example:
-        >>> batch_inputs = [
-        ...     [make_text_input("Question 1")],
-        ...     [make_text_input("Question 2")],
-        ... ]
-        >>> results = batch_generate(runner, batch_inputs)
-    """
-    results = []
-    
-    if show_progress:
-        try:
-            from tqdm import tqdm
-            batch_inputs = tqdm(batch_inputs, desc="Generating")
-        except ImportError:
-            pass
-    
-    for inputs in batch_inputs:
-        result = runner.generate_text(inputs, config)
-        results.append(result)
-    
-    return results
 
 
 def estimate_tokens(text: str, chars_per_token: float = 4.0) -> int:
     """
     Estimate the number of tokens in a text string.
-    
+
     This is a rough approximation and actual token count may vary
     depending on the tokenizer used.
-    
+
     Args:
         text: Input text string
         chars_per_token: Average characters per token (default: 4.0)
-        
+
     Returns:
         Estimated number of tokens
     """
@@ -281,10 +250,10 @@ def estimate_tokens(text: str, chars_per_token: float = 4.0) -> int:
 def format_stats(stats: Any) -> str:
     """
     Format generation statistics for display.
-    
+
     Args:
         stats: Stats object from the runner
-        
+
     Returns:
         Formatted string with statistics
     """
