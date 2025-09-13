@@ -54,7 +54,8 @@ The exported model takes in a mel spectrogram input tensor as its audio inputs.
 We provide a simple way to transform raw audio data into a mel spectrogram by exporting a version of Voxtral's audio preprocessor used directly by Transformers.
 
 ```
-python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --output_file voxtral_preprocessor.pte
+# Export a preprocessor that can handle audio up to 5 mins (300s).
+python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --stack_output --max_audio_len 300 --output_file voxtral_preprocessor.pte
 ```
 
 ## Building the multimodal runner

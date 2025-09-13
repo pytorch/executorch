@@ -37,7 +37,7 @@ namespace {
  */
 template <typename T>
 bool element_is_close(const T a, const T b, double rtol, double atol) {
-  if constexpr (is_reduced_floating_point_v<T>) {
+  if constexpr (c10::is_reduced_floating_point_v<T>) {
     // MSVC complains about ambiguous overloads, so explicitly cast to float to
     // compare.
     return element_is_close(

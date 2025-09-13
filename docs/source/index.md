@@ -51,6 +51,7 @@ ExecuTorch provides support for:
 - [MPS](backends-mps)
 - [Vulkan](backends-vulkan)
 - [ARM Ethos-U](backends-arm-ethos-u)
+- [ARM VGF](backends-arm-vgf)
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
