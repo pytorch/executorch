@@ -48,8 +48,8 @@ void test_dtype() {
   Tensor weight_scales = tf.make(
       /*sizes=*/{2},
       /*data=*/{0.2, 0.4});
-  const optional<Tensor> opt_weight_zp{};
-  const optional<ScalarType> opt_dtype_out{};
+  const std::optional<Tensor> opt_weight_zp{};
+  const std::optional<ScalarType> opt_dtype_out{};
 
   Tensor out = tf_out.zeros({1, 2});
 
@@ -101,8 +101,8 @@ void test_dtype_partials() {
   Tensor weight_scales = tf.make(
       /*sizes=*/{2, 2},
       /*data=*/{0.2, 1, 0.4, 0.5});
-  const optional<Tensor> opt_weight_zp{};
-  const optional<ScalarType> opt_dtype_out{};
+  const std::optional<Tensor> opt_weight_zp{};
+  const std::optional<ScalarType> opt_dtype_out{};
 
   Tensor out = tf_out.zeros({1, 2});
 
