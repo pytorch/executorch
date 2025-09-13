@@ -15,7 +15,11 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     BmmPattern,
     CatPattern,
     Conv1dPattern,
+    Conv1dReluPattern0,
+    Conv1dReluPattern1,
     Conv2dPattern,
+    Conv2dReluPattern0,
+    Conv2dReluPattern1,
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
@@ -23,6 +27,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     ReluPattern1,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
+    check_out_zero_point_is_min_range,
     create_zero_bias_int32,
     find_sequential_partitions_aten,
     get_conv_args,
@@ -41,6 +46,13 @@ ArgsType = Any
 
 # Use this part for patterns with multiple aten ops
 ReluPatterns = (ReluPattern0, ReluPattern1)
+ConvPatterns = (Conv1dPattern, Conv2dPattern)
+ConvReluPatterns = (
+    Conv1dReluPattern0,
+    Conv1dReluPattern1,
+    Conv2dReluPattern0,
+    Conv2dReluPattern1,
+)
 
 
 def get_args_and_kwargs_add(
@@ -432,12 +444,12 @@ class QuantFusion(ExportPass):
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
                 # The node is the first index of the list and first of the tuple
-                op_node = anchors.output[0][0]
+                anchor_output_node = anchors.output[0][0]
 
-                assert len(op_node.users) == 1
-                quant_node = list(op_node.users.keys())[0]
+                assert len(anchor_output_node.users) == 1
+                quant_node = list(anchor_output_node.users.keys())[0]
 
-                with graph_module.graph.inserting_after(op_node):
+                with graph_module.graph.inserting_after(anchor_output_node):
                     args = tuple(
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
@@ -451,9 +463,18 @@ class QuantFusion(ExportPass):
                         )
                     elif isinstance(pattern, CatPattern):
                         args, kwargs = get_args_and_kwargs_cat(
-                            inputs_inputs, other_inputs, op_node
+                            inputs_inputs, other_inputs, anchor_output_node
                         )
-                    elif isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
+                    elif isinstance(pattern, ConvReluPatterns):
+                        # For ConvReLU, we are fusing Conv+ReLU
+                        # This means that the op we want to get
+                        # the replacement args and kwargs for is the
+                        # *conv* op, which is the anchor input, NOT
+                        # the anchor output (which is the ReLU)
+                        check_out_zero_point_is_min_range(
+                            quant_node.args[2], quant_node.args[5]
+                        )
+                        anchor_input_node = anchors.inputs[0][0]
                         args, kwargs = get_args_and_kwargs_conv(
                             graph_module,
                             inputs_inputs,
@@ -462,7 +483,18 @@ class QuantFusion(ExportPass):
                             dequants_weights,
                             bias_inputs,
                             quant_node,
-                            op_node,
+                            anchor_input_node,
+                        )
+                    elif isinstance(pattern, ConvPatterns):
+                        args, kwargs = get_args_and_kwargs_conv(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            quant_node,
+                            anchor_output_node,
                         )
                     elif isinstance(pattern, LinearPattern):
                         args, kwargs = get_args_and_kwargs_linear(
