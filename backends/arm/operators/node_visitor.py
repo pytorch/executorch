@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.tosa.mapping import TosaArg
 from executorch.backends.arm.tosa.specification import TosaSpecification
@@ -59,7 +59,7 @@ class NodeVisitor:
                 tosa_op_id=tosa_op,
             )
 
-            if self.debug_hook.mode == ArmCompileSpecBuilder.DebugMode.TOSA:
+            if self.debug_hook.mode == ArmCompileSpec.DebugMode.TOSA:
                 op_location = json.dumps(debug_info.to_dict())
 
         tosa_graph.addOperator(
