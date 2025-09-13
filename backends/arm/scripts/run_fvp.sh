@@ -21,6 +21,7 @@ elf_file=""
 data_file=""
 target="ethos-u55-128"
 timeout="600"
+etrecord_file=""
 
 help() {
     echo "Usage: $(basename $0) [options]"
@@ -29,6 +30,7 @@ help() {
     echo "  --data=<FILE>@<ADDRESS>  Place a file in memory at this address, useful to emulate a PTE flashed into memory instead as part of the code."
     echo "  --target=<TARGET>        Target to build and run for Default: ${target}"
     echo "  --timeout=<TIME_IN_SEC>  Maximum target runtime, used to detect hanging, might need to be higer on large models Default: ${timeout}"
+    echo "  --etrecord=<FILE>        If ETDump is used you can supply a ETRecord file matching the PTE"
     exit 0
 }
 
@@ -39,6 +41,7 @@ for arg in "$@"; do
       --data=*) data_file="--data ${arg#*=}";;
       --target=*) target="${arg#*=}";;
       --timeout=*) timeout="${arg#*=}";;
+      --etrecord=*) etrecord_file="${arg#*=}";;
       *)
       ;;
     esac
@@ -115,15 +118,23 @@ echo "Checking for a etdump in log"
 ! grep "#\[RUN THIS\]" ${log_file} >/dev/null
 if [ $? != 0 ]; then
     echo "Found ETDump in log!"
+    devtools_extra_args=""
     echo "#!/bin/sh" > etdump_script.sh
     sed -n '/^#\[RUN THIS\]$/,/^#\[END\]$/p' ${log_file} >> etdump_script.sh
     # You can run etdump_script.sh if you do
     # $ chmod a+x etdump_script.sh
     # $ ./etdump_script.sh
     # But lets not trust the script as a bad patch would run bad code on your machine
-    grep ">etdump.bin" etdump_script.sh | cut -d\" -f2- | cut -d\" -f1 >etdump.base64
-    base64 -d etdump.base64 >etdump.bin
-    python3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin  --source_time_scale cycles --target_time_scale cycles
+    grep ">etdump.bin" etdump_script.sh | cut -d\" -f2- | cut -d\" -f1 | base64 -d >etdump.bin
+    ! grep ">debug_buffer.bin" etdump_script.sh >/dev/null
+    if [ $? != 0 ]; then
+        grep ">debug_buffer.bin" etdump_script.sh | cut -d\" -f2- | cut -d\" -f1 | base64 -d >debug_buffer.bin
+        devtools_extra_args="${devtools_extra_args} --debug_buffer_path debug_buffer.bin"
+    fi
+    if [[ ${etrecord_file} != "" ]]; then
+        devtools_extra_args="${devtools_extra_args} --etrecord_path ${etrecord_file}"
+    fi
+    python3 -m devtools.inspector.inspector_cli --etdump_path etdump.bin ${devtools_extra_args} --source_time_scale cycles --target_time_scale cycles
 fi
 
 echo "Checking for problems in log:"

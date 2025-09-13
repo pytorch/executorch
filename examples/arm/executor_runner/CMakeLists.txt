@@ -6,28 +6,57 @@
 cmake_minimum_required(VERSION 3.20)
 project(arm_executor_runner)
 
-option(SEMIHOSTING "Enable semihosting" OFF)
-option(
-  ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE
-  "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size"
-  OFF
-)
 option(
   ET_MODEL_PTE_ADDR
   "Place in memory that the PTE file is located/flashed, if set to OFF the PTE is built into the code as a big data area."
   OFF
 )
-option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
-option(ET_ATOL "Set atol to use for BundleIO testing" OFF)
-option(ET_RTOL "Set rtol to use for BundleIO testing" OFF)
-option(ET_DUMP_INPUT "Dump input in log" OFF)
-option(ET_DUMP_OUTPUT "Dump output in log" ON)
-option(FETCH_ETHOS_U_CONTENT
-       "Fetch ethos_u dependencies instead of relying on pre-downloads" ON
-)
+
 set(ET_NUM_INFERENCES
     "1"
     CACHE STRING "Number of inferences to run"
+)
+
+option(ET_LOG_DUMP_INPUT "Dump input in log" OFF)
+option(ET_LOG_DUMP_OUTPUT "Dump output in log" ON)
+
+option(ET_BUNDLE_IO "Set to compile in BundleIO support" OFF)
+set(ET_ATOL
+    "0.01"
+    CACHE STRING "Set atol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
+)
+set(ET_RTOL
+    "0.01"
+    CACHE STRING "Set atol to use for BundleIO testing (Requires ET_BUNDLE_IO)"
+)
+
+option(
+  ET_DUMP_OUTPUTS
+  "Collect and print outputs as a base64 buffer in the log (Requires EXECUTORCH_ENABLE_EVENT_TRACER)"
+  OFF
+)
+option(
+  ET_DUMP_INTERMEDIATE_OUTPUTS
+  "Collect and print intermediate outputs as a base64 buffer in the log (Requires EXECUTORCH_ENABLE_EVENT_TRACER)"
+  OFF
+)
+set(ET_DEBUG_BUFFER_SIZE
+    "2097152"
+    CACHE
+      STRING
+      "Size of buffer to collect intermediate outputs/outputs buffers (Requires EXECUTORCH_ENABLE_EVENT_TRACER and ET_DUMP_OUTPUTS or ET_DUMP_INTERMEDIATE_OUTPUTS)"
+)
+
+option(SEMIHOSTING "Enable semihosting" OFF)
+
+option(
+  ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE
+  "Set ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE to specify memory alloction pool size"
+  OFF
+)
+
+option(FETCH_ETHOS_U_CONTENT
+       "Fetch ethos_u dependencies instead of relying on pre-downloads" ON
 )
 
 if(NOT DEFINED ET_MODEL_PTE_ADDR
@@ -322,9 +351,66 @@ if(NOT ${ET_MODEL_PTE_ADDR} AND NOT SEMIHOSTING)
   add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
+if(ET_MODEL_PTE_ADDR)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC -DET_MODEL_PTE_ADDR=${ET_MODEL_PTE_ADDR}
+  )
+endif()
+
+if(ET_NUM_INFERENCES)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC ET_NUM_INFERENCES=${ET_NUM_INFERENCES}
+  )
+endif()
+
+if(ET_LOG_DUMP_INPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_LOG_DUMP_INPUT)
+endif()
+
+if(ET_LOG_DUMP_OUTPUT)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_LOG_DUMP_OUTPUT)
+endif()
+
+# Devtool BundleIO: Use Bundle PTE with input and reference output included to
+# check if it matches.
+
+if(ET_BUNDLE_IO)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_BUNDLE_IO)
+endif()
+
+if(ET_ATOL)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_ATOL=${ET_ATOL})
+endif()
+
+if(ET_RTOL)
+  target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
+endif()
+
+# Devtools ETDump: Speed and dumping output
+
+if(ET_DUMP_OUTPUTS)
+  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUTS)
+endif()
+
+if(ET_DUMP_INTERMEDIATE_OUTPUTS)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC -DET_DUMP_INTERMEDIATE_OUTPUTS
+  )
+endif()
+
+if(ET_DEBUG_BUFFER_SIZE)
+  target_compile_definitions(
+    arm_executor_runner PUBLIC ET_DEBUG_BUFFER_SIZE=${ET_DEBUG_BUFFER_SIZE}
+  )
+endif()
+
+# Semihosting FVP (FVP Simulator can access host filesystem)
+
 if(SEMIHOSTING)
   target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 endif()
+
+# Memory buffer sizes for Executorch flow
 
 if(ET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE)
   target_compile_definitions(
@@ -344,38 +430,6 @@ if(DEFINED ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE)
     arm_executor_runner
     PUBLIC
       ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE=${ET_ARM_BAREMETAL_FAST_SCRATCH_TEMP_ALLOCATOR_POOL_SIZE}
-  )
-endif()
-
-if(ET_MODEL_PTE_ADDR)
-  target_compile_definitions(
-    arm_executor_runner PUBLIC -DET_MODEL_PTE_ADDR=${ET_MODEL_PTE_ADDR}
-  )
-endif()
-
-if(ET_BUNDLE_IO)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_BUNDLE_IO)
-endif()
-
-if(ET_ATOL)
-  target_compile_definitions(arm_executor_runner PUBLIC ET_ATOL=${ET_ATOL})
-endif()
-
-if(ET_RTOL)
-  target_compile_definitions(arm_executor_runner PUBLIC ET_RTOL=${ET_RTOL})
-endif()
-
-if(ET_DUMP_INPUT)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_INPUT)
-endif()
-
-if(ET_DUMP_OUTPUT)
-  target_compile_definitions(arm_executor_runner PUBLIC -DET_DUMP_OUTPUT)
-endif()
-
-if(ET_NUM_INFERENCES)
-  target_compile_definitions(
-    arm_executor_runner PUBLIC ET_NUM_INFERENCES=${ET_NUM_INFERENCES}
   )
 endif()
 

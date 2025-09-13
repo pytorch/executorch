@@ -184,7 +184,7 @@ def build_ethosu_runtime(
             "--build_type=Release",
             f"--system_config={system_config}",
             f"--memory_mode={memory_mode}",
-            f"--extra_build_flags=-DET_DUMP_OUTPUT=OFF {extra_flags}",
+            f"--extra_build_flags=-DET_LOG_DUMP_OUTPUT=OFF {extra_flags}",
             f"--output={elf_build_path}",
         ]
     )

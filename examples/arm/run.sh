@@ -52,7 +52,7 @@ function help() {
     echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
-    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delegated) kernels to include Default: ${select_ops_list}"
     echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
@@ -289,6 +289,12 @@ for i in "${!test_model[@]}"; do
 
     pte_file=$(realpath ${pte_file})
 
+    if [ "${etrecord_flag}" != "" ] ; then
+        etrecord_filename="${output_folder}/${model_filename}_etrecord.bin"
+        etrecord_filename=$(realpath ${etrecord_filename})
+        etrecord_flag="--etrecord=${etrecord_filename}"
+    fi
+
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "pte_data_size: $(wc -c ${pte_file})"
     echo "pte_file: ${pte_file}"
@@ -322,7 +328,8 @@ for i in "${!test_model[@]}"; do
         backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
         if [ "$build_only" = false ] ; then
             # Execute the executor_runner on FVP Simulator
-            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target
+
+            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target ${etrecord_flag}
         fi
         set +x
     fi
