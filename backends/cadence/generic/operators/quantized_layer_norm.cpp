@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #include <cmath>
@@ -16,11 +16,11 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
-using ::impl::reference::kernels::dequantize;
-using ::impl::reference::kernels::quantize;
+using ::impl::generic::kernels::dequantize;
+using ::impl::generic::kernels::quantize;
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace native {
 
 // Compute quantized layer_norm. The current implementation assumes that the
@@ -198,6 +198,6 @@ void quantized_layer_norm_per_tensor_out(
   }
 }
 
-}; // namespace native
-}; // namespace reference
-}; // namespace impl
+} // namespace native
+} // namespace generic
+} // namespace impl

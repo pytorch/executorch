@@ -17,7 +17,6 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 using ScalarType = executorch::aten::ScalarType;
 using ::executorch::aten::IntArrayRef;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -170,4 +169,3 @@ void quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

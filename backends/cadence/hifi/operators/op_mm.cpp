@@ -22,7 +22,6 @@ using torch::executor::check_mm_args;
 using torch::executor::Error;
 using torch::executor::get_mm_out_target_size;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -156,4 +155,3 @@ Tensor& mm_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace native {
 
 using executorch::aten::ScalarType;
@@ -256,6 +256,6 @@ Tensor& requantize_per_tensor_out(
   return out;
 }
 
-}; // namespace native
-}; // namespace reference
-}; // namespace impl
+} // namespace native
+} // namespace generic
+} // namespace impl

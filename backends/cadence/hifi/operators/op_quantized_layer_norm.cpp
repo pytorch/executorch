@@ -13,15 +13,14 @@
 #include <cmath>
 #include <tuple>
 
-using ::cadence::impl::HiFi::kernels::dequantize;
-using ::cadence::impl::HiFi::kernels::quantize;
 using ::executorch::aten::IntArrayRef;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::getLeadingDims;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::HiFi::kernels::dequantize;
+using ::impl::HiFi::kernels::quantize;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -195,7 +194,6 @@ void quantized_layer_norm_per_tensor_out(
 #undef typed_quantized_layer_norm
 }
 
-}; // namespace native
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace native
+} // namespace HiFi
+} // namespace impl

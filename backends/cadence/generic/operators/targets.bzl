@@ -3,7 +3,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
-        name = "cadence_cpu_ops",
+        name = "cadence_generic_ops",
         srcs = glob([
             "*.cpp",
         ]),
@@ -15,7 +15,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/backends/cadence/reference/kernels:cadence_kernels",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
         ],
         visibility = [
             "//executorch/backends/cadence/...",

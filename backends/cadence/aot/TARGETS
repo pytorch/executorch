@@ -142,8 +142,8 @@ executorch_generated_lib(
     platforms = CXX,
     visibility = ["PUBLIC"],
     deps = [
-        "//executorch/backends/cadence/reference/kernels:cadence_kernels",
-        "//executorch/backends/cadence/reference/operators:cadence_cpu_ops",
+        "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        "//executorch/backends/cadence/generic/operators:cadence_generic_ops",
         "//executorch/kernels/portable:executorch_all_ops",
         "//executorch/kernels/portable:operators",
     ],
