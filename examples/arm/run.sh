@@ -41,6 +41,7 @@ scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
 qdq_fusion_op=false
+model_explorer=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -71,6 +72,7 @@ function help() {
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
     echo "  --qdq_fusion_op                        Enable QDQ fusion op"
+    echo "  --model_explorer                       Generate and open a visual graph of the compiled model."
     exit 0
 }
 
@@ -99,6 +101,7 @@ for arg in "$@"; do
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
       --qdq_fusion_op) qdq_fusion_op=true;;
+      --model_explorer) model_explorer=true ;;
       *)
       ;;
     esac
@@ -325,6 +328,11 @@ for i in "${!test_model[@]}"; do
             backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target
         fi
         set +x
+    fi
+
+    if [ "$model_explorer" = true ]; then
+        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
+        python3 ${script_dir}/visualize.py ${tosa_flatbuffer_path}
     fi
 done
 
