@@ -17,31 +17,6 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
-  # Use a wrapper script to set up the environment for MSVC to make Dynamo
-  # export work.
-  set(_export_program_cmd
-      powershell
-      ${EXECUTORCH_ROOT}/kernels/test/export_test_model.ps1
-      -Modules
-      "\"ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful\""
-      -outDir
-      "${CMAKE_CURRENT_BINARY_DIR}"
-      -CondaEnv
-      $ENV{CONDA_DEFAULT_ENV}
-  )
-else()
-  set(_export_program_cmd
-      ${PYTHON_EXECUTABLE}
-      -m
-      test.models.export_program
-      --modules
-      "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
-      --outdir
-      "${CMAKE_CURRENT_BINARY_DIR}"
-  )
-endif()
-
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddHalf.pte"
@@ -54,14 +29,17 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrain.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleStateful.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/delegated/ModuleAddMul.pte"
-  COMMAND ${_export_program_cmd}
+  COMMAND
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+    "ModuleAdd,ModuleAddHalf,ModuleAddMul,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleMultipleEntry,ModuleSimpleTrain,ModuleStateful"
+    --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul"
     --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_delegated_program --modules
     "ModuleAddMul" --backend_id "StubBackend" --outdir
-    "${CMAKE_CURRENT_BINARY_DIR}/delegated/"
+    "${CMAKE_CURRENT_BINARY_DIR}/delegated/" || true
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 

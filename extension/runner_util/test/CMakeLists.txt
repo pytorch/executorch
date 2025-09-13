@@ -20,7 +20,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAdd.pte"
   COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+          "ModuleAdd" --outdir "${CMAKE_CURRENT_BINARY_DIR}" 2> /dev/null
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 

@@ -39,6 +39,12 @@ add_test(kernel_runtime_context_test kernel_runtime_context_test)
 add_executable(
   operator_registry_max_kernel_num_test
   operator_registry_max_kernel_num_test.cpp
+  ../operator_registry.cpp
+  ../../core/evalue.cpp
+  ../../platform/abort.cpp
+  ../../platform/log.cpp
+  ../../platform/runtime.cpp
+  ../../platform/default/posix.cpp
 )
 target_link_libraries(
   operator_registry_max_kernel_num_test GTest::gtest GTest::gtest_main
