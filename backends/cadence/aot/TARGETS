@@ -344,6 +344,7 @@ python_unittest(
     typing = True,
     deps = [
         ":ops_registrations",
+        ":typing_stubs",
         ":type_dispatch",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot:graph_builder",

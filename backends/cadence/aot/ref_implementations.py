@@ -613,6 +613,7 @@ def quantized_conv_variant(
     layout: str,
     input_dtype: torch.dtype,
     weight_dtype: torch.dtype,
+    is_1d: bool = False,
 ) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
     """Create a quantized conv variant with type checking."""
 
@@ -643,6 +644,14 @@ def quantized_conv_variant(
             assert (
                 bias.dtype == torch.int32
             ), f"Expected bias dtype int32, got {bias.dtype}"
+
+            if is_1d:
+                assert (
+                    len(input_tensor.shape) == 3
+                ), f"1D convolution requires 3D input tensor, got {len(input_tensor.shape)}D"
+                assert (
+                    len(weight.shape) == 3
+                ), f"1D convolution requires 3D weight tensor, got {len(weight.shape)}D"
 
             # Call the appropriate base function
             match layout:
@@ -746,6 +755,26 @@ def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tens
 @impl(m, "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv1d_nchw_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nchw", torch.int8, torch.int8, is_1d=True)
+def quantized_conv1d_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv1d_nchw_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nchw", torch.uint8, torch.uint8, is_1d=True)
+def quantized_conv1d_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv1d_nhwc_asym8sxsym8s_asym8s.per_tensor")
+@quantized_conv_variant("nhwc", torch.int8, torch.int8, is_1d=True)
+def quantized_conv1d_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "quantized_conv1d_nhwc_asym8uxsym8u_asym8u.per_tensor")
+@quantized_conv_variant("nhwc", torch.uint8, torch.uint8, is_1d=True)
+def quantized_conv1d_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
 def quantized_relu_common(

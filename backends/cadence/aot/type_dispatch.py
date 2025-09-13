@@ -129,6 +129,8 @@ class CompileTimeTypeDispatchPass(ExportPass):
         type_suffix = config.type_dispatch_suffixes[dtype_key]
         base_name = config.base_name
 
+        typed_op_name = f"{base_name}_{type_suffix}"
+
         if op in [
             exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
             exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
@@ -140,17 +142,18 @@ class CompileTimeTypeDispatchPass(ExportPass):
                 else args[0].to_tensor().shape[-1]
             )
             is_depthwise = groups == input_channels
-
-            dilation = args[5]
             # pyre-ignore[16]: None has no attribute '__iter__'.
-            is_dilated = any(d > 1 for d in dilation)
+            is_dilated = any(d > 1 for d in args[5])
+            is_1d = len(args[0].to_tensor().shape) == 3
 
-            if is_dilated:
-                type_suffix = f"dilated_{type_suffix}"
-            elif is_depthwise:
-                type_suffix = f"depthwise_{type_suffix}"
-
-        typed_op_name = f"{base_name}_{type_suffix}"
+            if is_depthwise:
+                typed_op_name = f"{base_name}_depthwise_{type_suffix}"
+            elif is_dilated:
+                typed_op_name = f"{base_name}_dilated_{type_suffix}"
+            elif is_1d and groups == 1:
+                typed_op_name = (
+                    f"quantized_conv1d_{base_name.split('_')[-1]}_{type_suffix}"
+                )
 
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant
