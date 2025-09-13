@@ -239,6 +239,27 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
 endif()
 
+if(EXECUTORCH_BUILD_ASR_JNI)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_asr.cpp jni/log.cpp)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_ASR_JNI=1)
+
+  if(QNN_SDK_ROOT)
+    target_sources(
+      executorch_jni
+      PRIVATE
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/encoder.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/decoder.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/runner.cpp
+    )
+
+    target_include_directories(
+      executorch_jni
+      PRIVATE ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner
+    )
+    target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_QNN=1)
+  endif()
+endif()
+
 target_include_directories(
   executorch_jni
   PRIVATE

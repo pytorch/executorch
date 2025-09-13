@@ -508,6 +508,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 };
 } // namespace executorch::extension
 
+#ifdef EXECUTORCH_BUILD_ASR_JNI
+extern void register_natives_for_asr();
+#else
+void register_natives_for_asr() {}
+#endif
+
 #ifdef EXECUTORCH_BUILD_LLAMA_JNI
 extern void register_natives_for_llm();
 #else
@@ -526,6 +532,7 @@ void register_natives_for_training() {}
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(vm, [] {
     executorch::extension::ExecuTorchJni::registerNatives();
+    register_natives_for_asr();
     register_natives_for_llm();
     register_natives_for_runtime();
     register_natives_for_training();
