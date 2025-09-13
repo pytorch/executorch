@@ -20,7 +20,7 @@ def _create_vulkan_flow_base(
         tester_factory=VulkanTester,
         quantize=quantize_stage_factory is not None,
         quantize_stage_factory=quantize_stage_factory,
-        skip_patterns=["float16", "float64"], # Not supported in swiftshader
+        skip_patterns=["float16", "float64"],  # Not supported in swiftshader
     )
 
 

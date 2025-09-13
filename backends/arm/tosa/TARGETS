@@ -61,13 +61,25 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "arm_partitioner",
+    name = "compile_spec",
+    srcs = [
+        "compile_spec.py",
+    ],
+    deps = [
+        ":tosa",
+        ":specification",
+        "//executorch/backends/arm:arm_compile_spec",
+    ],
+)
+
+runtime.python_library(
+    name = "partitioner",
     srcs = [
         "backend.py",
         "partitioner.py",
     ],
     deps = [
-        "//executorch/backends/arm:arm_backend",
+        ":compile_spec",
         "//executorch/backends/arm:constants",
         "//executorch/backends/arm:process_node",
         "//executorch/backends/arm/debug:schema",
