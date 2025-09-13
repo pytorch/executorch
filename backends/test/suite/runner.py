@@ -15,6 +15,7 @@ import torch
 UNSUPPORTED_PORTABLE_OPS = {
     "aten::_embedding_bag",
     "aten::_adaptive_avg_pool2d",
+    "aten::adaptive_max_pool2d",
     "aten::median",
     "aten::median.dim",
     "aten::round.decimals",
