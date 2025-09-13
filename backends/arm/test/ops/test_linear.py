@@ -8,7 +8,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -276,10 +275,15 @@ def get_symmetric_a16w8_linear_quantizer(
     )
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
-@pytest.mark.xfail(
-    reason="missing int16 linear ops support; fails at TOSA reference model run with Invalid TOSA graph"
+test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
+# TODO: Remove negative large rand test as it is flaky until sorted out why: MLETORCH-1377
+test_data_all_16a8w.pop("model_linear_rank4_negative_large_rand,per_channel_quant=True")
+test_data_all_16a8w.pop(
+    "model_linear_rank4_negative_large_rand,per_channel_quant=False"
 )
+
+
+@common.parametrize("test_data", test_data_all_16a8w)
 def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     test_data, out_features, has_bias, per_channel_quantization = test_data()
