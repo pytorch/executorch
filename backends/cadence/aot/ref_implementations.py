@@ -127,14 +127,14 @@ def dequantize_per_tensor(
     return (input_tensor - zero_point).to(dtype) * scale
 
 
-@impl(m, "quantized_add")
-def quantized_add(
+@impl(m, "quantized_add.per_tensor")
+def quantized_add_per_tensor(
     X: torch.Tensor,
-    X_scale: torch.Tensor,
-    X_zero_point: torch.Tensor,
+    X_scale: float,
+    X_zero_point: int,
     Y: torch.Tensor,
-    Y_scale: torch.Tensor,
-    Y_zero_point: torch.Tensor,
+    Y_scale: float,
+    Y_zero_point: int,
     out_scale: float,
     out_zero_point: int,
 ) -> torch.Tensor:
@@ -149,17 +149,17 @@ def quantized_add(
     out = (X_scale(X - X_zero_point) + Y_scale(Y - Y_zero_point)) / out_scale + out_zero_point
 
     Args:
-        - X (Tensor): The first operand
-        - X_scale (Tensor): The ratio between the sizes of X's floating point and quantized
+        - X: The first operand
+        - X_scale: The ratio between the sizes of X's floating point and quantized
             ranges
-        - X_zero_point (Tensor): The quantized mapping of zero for X
-        - Y (Tensor): The second operand
-        - Y_scale (Tensor): The ratio between the sizes of Y's floating point and quantized
+        - X_zero_point: The quantized mapping of zero for X
+        - Y: The second operand
+        - Y_scale: The ratio between the sizes of Y's floating point and quantized
             ranges
-        - Y_zero_point (Tensor): The quantized mapping of zero for Y
-        - out_scale (float): The ratio between the sizes of the output's floating point and
+        - Y_zero_point: The quantized mapping of zero for Y
+        - out_scale: The ratio between the sizes of the output's floating point and
             quantized ranges
-        - out_zero_point (int): The quantized mapping of zero for the output
+        - out_zero_point: The quantized mapping of zero for the output
     """
     supported_dtypes = [torch.int8, torch.uint8]
     if X.dtype != Y.dtype:
