@@ -100,7 +100,7 @@ class TestRefImplementations(unittest.TestCase):
         [
             # Only these types need to be tested as per ET_FORALL_JARVIS_QUANTIZED_TYPES in
             # on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/operators.h
-            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int8),
+            ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int8),
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.uint8),
         ]
     )
@@ -121,6 +121,27 @@ class TestRefImplementations(unittest.TestCase):
         X_tensor = torch.tensor([X], dtype=dtype)
         Y_tensor = torch.tensor([Y], dtype=dtype)
         expected_output = torch.tensor([expected_value], dtype=dtype)
+
+        quantized_add = (
+            torch.ops.cadence.quantized_add_asym8sxasym8s_asym8s.per_tensor
+            if dtype == torch.int8
+            else torch.ops.cadence.quantized_add_asym8uxasym8u_asym8u.per_tensor
+        )
+        output = quantized_add(
+            X_tensor,
+            X_scale,
+            X_zero_point,
+            Y_tensor,
+            Y_scale,
+            Y_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Values don't match in {name}: got {output}, expected {expected_output}",
+        )
 
         output = torch.ops.cadence.quantized_add(
             X_tensor,
