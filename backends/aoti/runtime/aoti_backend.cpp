@@ -79,22 +79,22 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
 
-    std::string so_path = "/tmp/test.so";
-    std::string so_blob_key = "so_blob";
+    std::string so_path = "/data/users/shangdiy/executorch/aoti.so";
+    // std::string so_blob_key = "so_blob";
 
-    Result<FreeableBuffer> aoti_cuda_buffer =
-        named_data_map->get_data(so_blob_key.c_str());
+    // Result<FreeableBuffer> aoti_cuda_buffer =
+    //     named_data_map->get_data(so_blob_key.c_str());
 
-    // Create a temporary file
-    std::ofstream outfile(so_path.c_str(), std::ios::binary);
+    // // Create a temporary file
+    // std::ofstream outfile(so_path.c_str(), std::ios::binary);
 
-    // Write the ELF buffer to the temporary file
-    outfile.write(
-        (char*)aoti_cuda_buffer->data(),
-        sizeof(void*) * aoti_cuda_buffer->size());
+    // // Write the ELF buffer to the temporary file
+    // outfile.write(
+    //     (char*)aoti_cuda_buffer->data(),
+    //     sizeof(void*) * aoti_cuda_buffer->size());
 
-    // Finish writing the file to disk
-    outfile.close();
+    // // Finish writing the file to disk
+    // outfile.close();
 
     // Load the ELF using dlopen
     void* so_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
