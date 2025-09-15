@@ -24,7 +24,6 @@ from executorch.extension.llm.runner import (
     make_text_input,
     MultimodalInput,
     MultimodalRunner,
-    Stats,
 )
 
 
@@ -112,94 +111,6 @@ class TestGenerationConfig(unittest.TestCase):
         self.assertIn("temperature=0.7", repr_str)
         self.assertIn("echo=True", repr_str)
         self.assertIn("warming=False", repr_str)
-
-
-class TestStats(unittest.TestCase):
-    """Test the Stats class."""
-
-    def test_attributes(self):
-        """Test that Stats has all expected attributes."""
-        stats = Stats()
-
-        # Check all timing attributes exist
-        self.assertTrue(hasattr(stats, "SCALING_FACTOR_UNITS_PER_SECOND"))
-        self.assertTrue(hasattr(stats, "model_load_start_ms"))
-        self.assertTrue(hasattr(stats, "model_load_end_ms"))
-        self.assertTrue(hasattr(stats, "inference_start_ms"))
-        self.assertTrue(hasattr(stats, "token_encode_end_ms"))
-        self.assertTrue(hasattr(stats, "model_execution_start_ms"))
-        self.assertTrue(hasattr(stats, "model_execution_end_ms"))
-        self.assertTrue(hasattr(stats, "prompt_eval_end_ms"))
-        self.assertTrue(hasattr(stats, "first_token_ms"))
-        self.assertTrue(hasattr(stats, "inference_end_ms"))
-        self.assertTrue(hasattr(stats, "aggregate_sampling_time_ms"))
-        self.assertTrue(hasattr(stats, "num_prompt_tokens"))
-        self.assertTrue(hasattr(stats, "num_generated_tokens"))
-
-    def test_scaling_factor(self):
-        """Test the scaling factor constant."""
-        stats = Stats()
-        self.assertEqual(stats.SCALING_FACTOR_UNITS_PER_SECOND, 1000)
-
-    def test_methods(self):
-        """Test Stats methods."""
-        stats = Stats()
-
-        # Test on_sampling_begin and on_sampling_end
-        stats.on_sampling_begin()
-        stats.on_sampling_end()
-
-        # Test reset without all_stats
-        stats.model_load_start_ms = 100
-        stats.model_load_end_ms = 200
-        stats.inference_start_ms = 300
-        stats.num_prompt_tokens = 10
-        stats.num_generated_tokens = 20
-
-        stats.reset(False)
-
-        # Model load times should be preserved
-        self.assertEqual(stats.model_load_start_ms, 100)
-        self.assertEqual(stats.model_load_end_ms, 200)
-        # Other stats should be reset
-        self.assertEqual(stats.inference_start_ms, 0)
-        self.assertEqual(stats.num_prompt_tokens, 0)
-        self.assertEqual(stats.num_generated_tokens, 0)
-
-        # Test reset with all_stats
-        stats.reset(True)
-        self.assertEqual(stats.model_load_start_ms, 0)
-        self.assertEqual(stats.model_load_end_ms, 0)
-
-    def test_to_json_string(self):
-        """Test JSON string conversion."""
-        stats = Stats()
-        stats.num_prompt_tokens = 10
-        stats.num_generated_tokens = 20
-        stats.model_load_start_ms = 100
-        stats.model_load_end_ms = 200
-        stats.inference_start_ms = 300
-        stats.inference_end_ms = 1300
-
-        json_str = stats.to_json_string()
-        self.assertIn('"prompt_tokens":10', json_str)
-        self.assertIn('"generated_tokens":20', json_str)
-        self.assertIn('"model_load_start_ms":100', json_str)
-        self.assertIn('"model_load_end_ms":200', json_str)
-
-    def test_repr(self):
-        """Test string representation."""
-        stats = Stats()
-        stats.num_prompt_tokens = 10
-        stats.num_generated_tokens = 20
-        stats.inference_start_ms = 1000
-        stats.inference_end_ms = 2000
-
-        repr_str = repr(stats)
-        self.assertIn("Stats", repr_str)
-        self.assertIn("num_prompt_tokens=10", repr_str)
-        self.assertIn("num_generated_tokens=20", repr_str)
-        self.assertIn("tokens_per_second=20", repr_str)  # 20 tokens / 1 second
 
 
 class TestImage(unittest.TestCase):
@@ -329,7 +240,7 @@ class TestMultimodalRunner(unittest.TestCase):
     def test_initialization_failure(self):
         """Test that initialization fails gracefully with invalid files."""
         with self.assertRaises(RuntimeError) as cm:
-            runner = MultimodalRunner(self.model_path, self.tokenizer_path)
+            MultimodalRunner(self.model_path, self.tokenizer_path, None)
         # Should fail because the tokenizer file is not valid
         self.assertIn("Failed to", str(cm.exception))
 

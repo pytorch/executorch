@@ -25,7 +25,7 @@ except ImportError:
 
 try:
     # Import shared components from the compiled C++ extension
-    from ._llm_runner import (
+    from executorch.extension.llm.runner._llm_runner import (  # noqa: F401
         GenerationConfig,
         Image,
         make_image_input,
@@ -105,7 +105,9 @@ class MultimodalRunner:
         """
         return make_text_input(text)
 
-    def create_image_input(self, image: Union[str, Path, np.ndarray, "PILImage.Image"]):
+    def create_image_input(  # noqa: C901
+        self, image: Union[str, Path, np.ndarray, "PILImage.Image"]
+    ):
         """
         Create an image input for multimodal processing.
 
