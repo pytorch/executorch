@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 
 #include <algorithm>
@@ -15,25 +14,8 @@
 
 #include <executorch/extension/threadpool/threadpool_guard.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/runtime/platform/runtime.h>
 
 #include <cpuinfo.h>
-
-// At most one mode should be set.
-#if (                                                       \
-    defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES) && \
-    defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES))
-#error Multiple \
-            threadpool size specifiers are set.At most one of                \
-    EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES,                             \
-    and EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES may be defined.
-#endif
-
-// Default to EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES if no mode is set.
-#if !defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES) && \
-    !defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES)
-#define EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES 1
-#endif
 
 namespace executorch::extension::threadpool {
 
@@ -114,25 +96,12 @@ void ThreadPool::run(
 // get_threadpool is not thread safe due to leak_corrupted_threadpool
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
-  executorch::runtime::runtime_init();
-
   if (!cpuinfo_initialize()) {
     ET_LOG(Error, "cpuinfo initialization failed");
     return nullptr; // NOLINT(facebook-hte-NullableReturn)
   }
 
-  // Choose the number of threads according to the EXECUTORCH_THREADPOOL_
-  // options. See the description in threadpool.h.
-
-#if defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES)
-  // Use threads=cores.
-  static int num_threads = cpuinfo_get_processors_count();
-#else
-  // Set threads equal to the number of performance cores.
-  static int num_threads =
-      ::executorch::extension::cpuinfo::get_num_performant_cores();
-#endif
-
+  int num_threads = cpuinfo_get_processors_count();
   /*
    * For llvm-tsan, holding limit for the number of locks for a single thread
    * is 63 (because of comparison < 64 instead of <=). pthreadpool's worst
