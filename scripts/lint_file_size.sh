@@ -11,6 +11,11 @@ status=0
 
 green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; reset='\e[0m'
 
+# Following is the rules for the file size linting:
+# 1. For all files, the file size can't be larger than 1MB
+# 2. For images/vidoes, the files size can't be larger than 7MB
+# 3. There is an exception list defined in the script if it's really needed
+
 # List of files to skip (relative paths)
 EXCEPTIONS=(
   "examples/models/llama/params/demo_rand_params.pth"
