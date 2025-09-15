@@ -23,7 +23,7 @@ try:
 except ImportError:
     HAS_PIL = False
 
-from ._llm_runner import GenerationConfig
+from executorch.extension.llm.runner._llm_runner import GenerationConfig  # noqa: F401
 
 
 def load_image_from_file(
