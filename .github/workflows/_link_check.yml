@@ -67,7 +67,7 @@ jobs:
       ref: ${{ inputs.ref }}
       timeout: 30
       script: |
-        sleep 900
+        chmod +x ./scripts/lint_file_size.sh
         ./scripts/lint_file_size.sh $(
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
