@@ -36,9 +36,11 @@ TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
   // If only 1 input, we are not using kv cache
   bool use_kv_cache = method_meta.num_inputs() > 1;
 
+  std::vector<int64_t> cache_positions;
+
   if (use_kv_cache) {
     auto start_pos_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
-        "forward", module_, start_pos, tokens->numel()));
+        "forward", module_, start_pos, cache_positions, tokens->numel()));
 
     std::vector<runtime::EValue> inputs;
     auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);

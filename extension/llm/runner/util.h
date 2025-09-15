@@ -111,6 +111,7 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
     const char* method_name,
     Module* module,
     int64_t& start_pos,
+    std::vector<int64_t>& cache_positions_underlying_vector,
     int seq_len) {
   // Get expected shape of cache position tensor, which should be the second
   // argument
@@ -119,12 +120,16 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
   auto second_input_sizes = second_input_info.sizes();
   auto numel = second_input_sizes[0];
 
+  for (int i = 0; i < second_input_sizes.size(); ++i) {
+    ET_LOG(Error, "second_input_sizes[%d] = %d", i, second_input_sizes[i]);
+  }
+
   TensorPtr start_pos_tensor;
   if (numel > 1) {
     // `cache_position` goes from start_pos to start_pos +
     // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1)
     // = 5, cache_position_tensor should be [2, 3, 4, 5, 6].
-    std::vector<int64_t> cache_positions(seq_len);
+    cache_positions_underlying_vector.resize(seq_len);
     for (int64_t i = 0; i < seq_len; ++i) {
       cache_positions[i] = start_pos + i;
     }

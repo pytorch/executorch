@@ -100,8 +100,10 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     ET_LOG(Error, "The encoder returned an empty output.");
     return ::executorch::runtime::Error::InvalidState;
   }
+  std::vector<int64_t> cache_positions;
+
   auto cache_position_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
-      kTextModelMethod, module_, start_pos, seq_len));
+      kTextModelMethod, module_, start_pos, cache_positions, seq_len));
 
   auto prefill_result = module_->execute(
       kTextModelMethod, {encoder_output, cache_position_tensor});
