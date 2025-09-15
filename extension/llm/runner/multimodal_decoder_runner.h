@@ -48,7 +48,7 @@ class ET_EXPERIMENTAL MultimodalDecoderRunner
         &start_pos, {1}, executorch::aten::ScalarType::Long);
     // run text model
     auto outputs_res = ET_UNWRAP(
-        module_->execute(kTextModelMethod, {start_pos_tensor, embeddings}));
+        module_->execute(kTextModelMethod, {embeddings, start_pos_tensor}));
 
     ET_CHECK_MSG(
         outputs_res.size() == 1,
