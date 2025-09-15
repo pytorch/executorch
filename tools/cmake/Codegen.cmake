@@ -93,7 +93,7 @@ endfunction()
 # Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
 # functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
 function(generate_bindings_for_kernels)
-  set(options ADD_EXCEPTION_BOUNDARY)
+  set(options ADD_EXCEPTION_BOUNDARY MANUAL_REGISTRATION)
   set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML DTYPE_SELECTIVE_BUILD)
   cmake_parse_arguments(GEN "${options}" "${arg_names}" "" ${ARGN})
 
@@ -103,11 +103,17 @@ function(generate_bindings_for_kernels)
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
   message(STATUS "  ADD_EXCEPTION_BOUNDARY: ${GEN_ADD_EXCEPTION_BOUNDARY}")
   message(STATUS "  DTYPE_SELECTIVE_BUILD: ${GEN_DTYPE_SELECTIVE_BUILD}")
+  message(STATUS "  MANUAL_REGISTRATION: ${GEN_MANUAL_REGISTRATION}")
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
 
-  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  if(GEN_LIB_NAME)
+    set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+  else()
+    set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/codegen_output)
+  endif()
+  
   # By default selective build output is selected_operators.yaml
   set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
 
@@ -141,6 +147,10 @@ function(generate_bindings_for_kernels)
   )
   if(GEN_ADD_EXCEPTION_BOUNDARY)
     set(_gen_command "${_gen_command}" --add-exception-boundary)
+  endif()
+
+  if(GEN_LIB_NAME AND GEN_MANUAL_REGISTRATION)
+    list(APPEND _gen_command --lib-name=${GEN_LIB_NAME})
   endif()
 
   set(_gen_command_sources
