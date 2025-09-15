@@ -104,16 +104,17 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
 }
 
 // Returns the cache position tensor, which can be either a single start_pos
-// (when the text_decoder expects a tensor with size 1 because model will
-// populate the cache position tensor underneath), or a populated tensor for
-// cache position, for the given start_pos and seq_len.
+// (when the method_name [`text_decoder` or `forward`] expects a tensor with
+// size 1 because model will populate the cache position tensor underneath), or
+// a populated tensor for cache position, for the given start_pos and seq_len.
 inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
+    const char* method_name,
     Module* module,
     int64_t& start_pos,
     int seq_len) {
   // Get expected shape of cache position tensor, which should be the second
   // argument
-  auto method_meta = ET_UNWRAP(module->method_meta(kTextModelMethod));
+  auto method_meta = ET_UNWRAP(module->method_meta(method_name));
   auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
   auto second_input_sizes = second_input_info.sizes();
   auto numel = second_input_sizes[0];
