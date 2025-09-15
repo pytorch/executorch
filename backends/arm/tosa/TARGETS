@@ -6,8 +6,7 @@ runtime.python_library(
         "mapping.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools:serializer",
         "//caffe2:torch",
         ":specification",
     ],
@@ -19,10 +18,8 @@ runtime.python_library(
     ],
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools:serializer",
+        "fbsource//third-party/tosa_tools:tosa",
         "//executorch/backends/arm:constants",
         ":mapping",
         "//executorch/exir/dialects:lib",
@@ -44,7 +41,6 @@ runtime.python_library(
         "utils.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         ":quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
@@ -57,5 +53,34 @@ runtime.python_library(
     ],
     deps = [
        ":specification",
+    ],
+)
+
+runtime.python_library(
+    name = "compile_spec",
+    srcs = [
+        "compile_spec.py",
+    ],
+    deps = [
+        ":tosa",
+        ":specification",
+        "//executorch/backends/arm:arm_compile_spec",
+    ],
+)
+
+runtime.python_library(
+    name = "partitioner",
+    srcs = [
+        "backend.py",
+        "partitioner.py",
+    ],
+    deps = [
+        ":compile_spec",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm:process_node",
+        "//executorch/backends/arm/debug:schema",
+        "//executorch/backends/arm/operator_support:operator_support",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/exir:lib",
     ],
 )
