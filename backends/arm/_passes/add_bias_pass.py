@@ -8,6 +8,7 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import create_constant_placeholder
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -60,7 +61,9 @@ class AddBiasPass(ArmPass):
                         name=f"{node.name}_bias",
                     )
                     if node.args[0].meta["val"].dtype == torch.int16:
-                        bias_node.meta["tosa_dtype_48bit"] = True
+                        bias_node.meta[TosaSpecialDtype.meta_key()] = (
+                            TosaSpecialDtype.INT48
+                        )
                 node.update_arg(2, bias_node)
 
         if modified:

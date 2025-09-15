@@ -12,7 +12,7 @@ import serializer.tosa_serializer as ts
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import tosa_shape
 from torch._export.utils import (
@@ -113,8 +113,9 @@ def process_inputs_to_parameters(
         assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
 
     # Handle special case for INT48 tensors
-    if node.meta.get("tosa_dtype_48bit", False):
-        tosa_dtype = ts.DType.INT48
+    special_type = node.meta.get(TosaSpecialDtype.meta_key(), None)
+    if isinstance(special_type, TosaSpecialDtype):
+        tosa_dtype = special_type.get_tosa_dtype()
     else:
         tosa_dtype = tosa_arg.dtype
 

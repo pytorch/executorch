@@ -11,6 +11,7 @@ the TOSA serializer types and shapes used during initial compilation.
 
 """
 
+from enum import Enum
 from typing import Any, Optional, Sequence
 
 import serializer.tosa_serializer as ts  # type: ignore
@@ -29,6 +30,22 @@ UNSUPPORTED_DTYPES = (
     torch.int64,
     torch.long,
 )
+
+
+class TosaSpecialDtype(Enum):
+    """
+    Special TOSA data types that are not natively supported in PyTorch, to be
+    used in specific scenarios as a value in the key from meta_key().
+    """
+
+    INT48 = ts.DType.INT48
+
+    def get_tosa_dtype(self) -> ts.TosaDType.DType:
+        return self.value
+
+    @staticmethod
+    def meta_key() -> str:
+        return "tosa_special_dtype"
 
 
 def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
@@ -134,9 +151,9 @@ class TosaArg:
             argument.meta, self.tosa_spec
         )
 
-        # Handle special case of int
-        if argument.meta.get("tosa_dtype_48bit", False):
-            output_dtype = ts.DType.INT48
+        # Handle special case of types not representable in torch (i.e. i48_t)
+        if special_type := argument.meta.get(TosaSpecialDtype.meta_key(), None):
+            output_dtype = special_type.get_tosa_dtype()
 
         self.dtype = output_dtype
 

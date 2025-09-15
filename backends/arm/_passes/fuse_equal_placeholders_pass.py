@@ -8,11 +8,13 @@ from collections import defaultdict
 from typing import Set, Type
 
 import torch
+
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_param_tensor,
     is_param_node,
 )
+from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     delete_constant_placeholder,
@@ -50,7 +52,7 @@ class FuseEqualPlaceholdersPass(ExportPass):
 
             # ensure we don't merge any special case int48_t tensors with int32_t tensors
             # since int48_t tensors needs to be instantiated separately.
-            is_int48 = node.meta.get("tosa_dtype_48bit", False)
+            is_int48 = node.meta.get(TosaSpecialDtype.meta_key(), None)
             t_cpu = tensor.detach().cpu().contiguous()
             data_bytes = t_cpu.numpy().tobytes()
             key = (
