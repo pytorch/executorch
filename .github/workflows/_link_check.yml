@@ -77,5 +77,6 @@ jobs:
           echo
           echo "File size lint failed: some files exceed the 1 MB limit."
           echo "If you really need large files, consider using Git LFS or storing them elsewhere."
+          echo "If you really need to get unblocked and check in the file, can add it to the EXCEPTIONS list in scripts/lint_file_size.sh."
           exit 1
         }
