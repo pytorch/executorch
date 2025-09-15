@@ -100,6 +100,24 @@ class PyMultimodalRunner {
     }
   }
 
+  std::string generate_text(
+      const std::vector<MultimodalInput>& inputs,
+      const GenerationConfig& config) {
+    if (!runner_) {
+      throw std::runtime_error("Runner not initialized");
+    }
+
+    std::string generated_text;
+    auto cpp_token_callback = [&generated_text](const std::string& token) {
+      generated_text += token;
+    };
+    Error error =
+        runner_->generate(inputs, config, cpp_token_callback, nullptr);
+    THROW_IF_ERROR(error, "Generation failed");
+
+    return generated_text;
+  }
+
   void stop() {
     if (runner_) {
       runner_->stop();
@@ -306,6 +324,13 @@ PYBIND11_MODULE(_llm_runner, m) {
           py::arg("stats_callback") = py::none(),
           "Generate text from multimodal inputs with optional callbacks")
       .def("stop", &PyMultimodalRunner::stop, "Stop the current generation")
+      .def(
+          "generate_text",
+          &PyMultimodalRunner::generate_text,
+          py::arg("inputs"),
+          py::arg("config"),
+          "Generate text from multimodal inputs and return the complete "
+          "result")
       .def(
           "reset",
           &PyMultimodalRunner::reset,
