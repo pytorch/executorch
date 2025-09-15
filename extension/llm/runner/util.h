@@ -108,11 +108,11 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
 // size 1 because model will populate the cache position tensor underneath), or
 // a populated tensor for cache position, for the given start_pos and seq_len.
 inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
-    const char* method_name,
     Module* module,
     int64_t& start_pos,
-    std::vector<int64_t>& cache_positions_underlying_vector,
-    int seq_len) {
+    std::vector<int64_t>& cache_positions_vec,
+    int seq_len,
+    const char* method_name = "forward") {
   // Get expected shape of cache position tensor, which should be the second
   // argument
   auto method_meta = ET_UNWRAP(module->method_meta(method_name));
@@ -129,12 +129,12 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
     // `cache_position` goes from start_pos to start_pos +
     // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1)
     // = 5, cache_position_tensor should be [2, 3, 4, 5, 6].
-    cache_positions_underlying_vector.resize(seq_len);
+    cache_positions_vec.resize(seq_len);
     for (int64_t i = 0; i < seq_len; ++i) {
-      cache_positions[i] = start_pos + i;
+      cache_positions_vec[i] = start_pos + i;
     }
     return ::executorch::extension::from_blob(
-        cache_positions.data(),
+        cache_positions_vec.data(),
         {static_cast<int>(seq_len)},
         executorch::aten::ScalarType::Long);
   } else {
