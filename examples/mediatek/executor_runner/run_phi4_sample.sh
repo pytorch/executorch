@@ -49,7 +49,7 @@ chmod +x mtk_llama_executor_runner
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD
 
-./mtk_llama_executor_runner_longrope \
+./mtk_llama_executor_runner \
     --max_response=$MAX_RESPONSE \
     --prompt_token_batch_size=$PROMPT_TOKEN_BATCH_SIZE \
     --cache_size=$CACHE_SIZE \
