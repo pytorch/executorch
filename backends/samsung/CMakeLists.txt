@@ -142,7 +142,7 @@ endif()
 if(${ANDROID})
   target_link_libraries(enn_logging PRIVATE ${android_log})
   add_library(enn_backend STATIC)
-  target_link_libraries(enn_backend PRIVATE enn_logging)
+  target_link_libraries(enn_backend PRIVATE enn_logging extension_runner_util)
   executorch_target_link_options_shared_lib(enn_backend)
   target_compile_options(enn_backend PRIVATE -Wno-deprecated-declarations)
 
@@ -154,6 +154,7 @@ if(${ANDROID})
   target_link_libraries(
     enn_executor_runner PRIVATE enn_logging enn_backend gflags executorch
                                 extension_data_loader portable_ops_lib
+                                android
   )
   set_target_properties(
     enn_executor_runner PROPERTIES CXX_VISIBILITY_PRESET hidden
