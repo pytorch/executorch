@@ -108,11 +108,11 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
 // size 1 because model will populate the cache position tensor underneath), or
 // a populated tensor for cache position, for the given start_pos and seq_len.
 inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
-    const char* method_name,
     Module* module,
     int64_t& start_pos,
     std::vector<int64_t>& cache_positions_vec,
-    int seq_len) {
+    int seq_len,
+    const char* method_name = "forward") {
   // Get expected shape of cache position tensor, which should be the second
   // argument
   auto method_meta = ET_UNWRAP(module->method_meta(method_name));
