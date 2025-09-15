@@ -138,7 +138,10 @@ class SimpleADB:
                     f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
                     f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
                 ),
-                (f"{self.qnn_sdk}/lib/{self.target}/" f"libQnnHtpV{self.htp_arch}Stub.so"),
+                (
+                    f"{self.qnn_sdk}/lib/{self.target}/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnHtpPrepare.so",
                 f"{self.qnn_sdk}/lib/{self.target}/libQnnSystem.so",
                 f"{self.build_path}/{self.runner}",
