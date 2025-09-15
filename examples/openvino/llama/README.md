@@ -25,22 +25,7 @@ python -m executorch.extension.llm.export.export_llm \
 ```
 
 ### Compress Model Weights and Export
-OpenVINO backend also offers Quantization support for llama models when exporting the model. The different quantization modes that are offered are INT4 groupwise & per-channel weights compression and INT8 per-channel weights compression. It can be achieved using the `--pt2e_quantize opevnino_4wo` flag. For modifying the group size `--group_size` can be used. By default group size 128 is used to achieve optimal performance with the NPU.
-
-```
-LLAMA_CHECKPOINT=<path/to/model/folder>/consolidated.00.pth
-LLAMA_PARAMS=<path/to/model/folder>/params.json
-LLAMA_TOKENIZER=<path/to/model/folder>/tokenizer.model
-
-python -m executorch.extension.llm.export.export_llm \
-  --config llama3_2_ov_4wo.yaml \
-  +backend.openvino.device="CPU" \
-  +base.model_class="llama3_2" \
-  +pt2e_quantize opevnino_4wo \
-  +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
-  +base.params="${LLAMA_PARAMS:?}" \
-  +base.tokenizer_path="${LLAMA_TOKENIZER:?}"
-```
+OpenVINO backend also offers Quantization support for llama models when exporting the model. The different quantization modes that are offered are INT4 groupwise & per-channel weights compression and INT8 per-channel weights compression. It can be achieved by setting `pt2e_quantize` option in `llama3_2_ov_4wo.yaml` file under `quantization`. Set this parameter to `openvino_4wo` for INT4 or `openvino_8wo` for INT8 weight compression. It is set to `openvino_4wo` in `llama3_2_ov_4wo.yaml` file by default. For modifying the group size, set `group_size` option in `llama3_2_ov_4wo.yaml` file under `quantization`. By default group size 128 is used to achieve optimal performance with the NPU.
 
 ## Build OpenVINO C++ Runtime with Llama Runner:
 First, build the backend libraries by executing the script below in `<executorch_root>/backends/openvino/scripts` folder:
