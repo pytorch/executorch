@@ -177,10 +177,12 @@ class EdgeTransformAndLowerStage(Stage):
         transform_passes: (
             None | List[Callable[[str, ExportedProgram], List[PassType]]]
         ) = None,
+        post_edge_passes: list[PassType] | None = None,
         compile_config: Optional[Any] = None,
     ) -> None:
         self._partitioners = partitioners
         self._transform_passes = transform_passes
+        self._post_edge_passes = post_edge_passes
         self._compile_config = compile_config
 
     @classmethod
@@ -194,6 +196,7 @@ class EdgeTransformAndLowerStage(Stage):
             partitioners=lowering_recipe.partitioners,
             transform_passes=lowering_recipe.edge_transform_passes,
             compile_config=lowering_recipe.edge_compile_config,
+            post_edge_passes=lowering_recipe.post_edge_passes,
         )
 
     @property
@@ -242,6 +245,10 @@ class EdgeTransformAndLowerStage(Stage):
                 compile_config=self._compile_config,
                 generate_etrecord=generate_etrecord,
             )
+            if self._post_edge_passes:
+                edge_program_manager = edge_program_manager.transform(
+                    self._post_edge_passes
+                )
 
         delegation_info = get_delegation_info(
             edge_program_manager.exported_program().graph_module
@@ -502,10 +509,12 @@ class ToBackendStage(Stage):
         transform_passes: (
             None | List[Callable[[str, ExportedProgram], List[PassType]]]
         ) = None,
+        post_edge_passes: list[PassType] | None = None,
     ) -> None:
         super().__init__()
         self._partitioners = partitioners
         self._transform_passes = transform_passes
+        self._post_edge_passes = post_edge_passes
 
     @classmethod
     def from_recipe(
@@ -517,6 +526,7 @@ class ToBackendStage(Stage):
         return cls(
             partitioners=lowering_recipe.partitioners,
             transform_passes=lowering_recipe.edge_transform_passes,
+            post_edge_passes=lowering_recipe.post_edge_passes,
         )
 
     @property
@@ -568,6 +578,9 @@ class ToBackendStage(Stage):
                 # pyre-ignore
                 for partitioner in self._partitioners:
                     edge_program_manager = edge_program_manager.to_backend(partitioner)
+
+                if self._post_edge_passes:
+                    edge_program_manager.transform(self._post_edge_passes)
 
         # Get delegation info
         delegation_info = get_delegation_info(

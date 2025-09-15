@@ -129,6 +129,7 @@ class LoweringRecipe:
         None | List[Callable[[str, ExportedProgram], List[PassType]]]
     ) = None
     # pyre-ignore[11]: Type not defined
+    post_edge_passes: list[PassType] | None = None
     edge_compile_config: Optional[EdgeCompileConfig] = None
 
 
