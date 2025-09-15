@@ -238,7 +238,7 @@ class MultimodalRunner:
                 if hasattr(config, key):
                     setattr(config, key, value)
 
-        return self._runner.generate_text(inputs, config)
+        return self._runner.generate_text(inputs, config)  # type: ignore[attr-defined]
 
     def stop(self):
         """Stop the current generation process."""
