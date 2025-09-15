@@ -37,16 +37,15 @@ class TestArgValidator(unittest.TestCase):
         self.assertEqual(len(validator.violating_ops), 0)
 
     def test_edge_dialect_fails(self) -> None:
-        # torch.bfloat16 is not supported by edge::aten::_log_softmax
+        # torch.complex64 is not supported by edge::aten::add
         class M(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.m = torch.nn.LogSoftmax(dim=1)
 
             def forward(self, x):
-                return self.m(x)
+                return x + x
 
-        inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),)
+        inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.complex64),)
         egm = (
             to_edge(
                 export(M(), inputs, strict=True),
@@ -61,12 +60,13 @@ class TestArgValidator(unittest.TestCase):
         key: EdgeOpOverload = next(iter(validator.violating_ops))
         self.assertEqual(
             key.name(),
-            ops.edge.aten._log_softmax.default.name(),
+            ops.edge.aten.add.Tensor.name(),
         )
         self.assertDictEqual(
             validator.violating_ops[key][0],
             {
-                "self": torch.bfloat16,
-                "__ret_0": torch.bfloat16,
+                "self": torch.complex64,
+                "other": torch.complex64,
+                "__ret_0": torch.complex64,
             },
         )

@@ -17,7 +17,6 @@ on:
       - scripts/build_apple_llm_demo.sh
       - scripts/create_frameworks.sh
       - .ci/scripts/test_ios_ci.sh
-      - examples/demo-apps/apple_ios/**
       - extension/apple/**
       - extension/benchmark/apple/**
       - extension/module/**

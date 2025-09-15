@@ -108,14 +108,16 @@ class TestEdgeOps(unittest.TestCase):
             if isinstance(arg.type, torch.TensorType):
                 self.assertTrue(isinstance(arg.allowed_types, set))
                 self.assertEqual(
-                    arg.allowed_types, {torch.float16, torch.float32, torch.float64}
+                    arg.allowed_types,
+                    {torch.float16, torch.float32, torch.float64, torch.bfloat16},
                 )
 
         for ret in returns:
             if isinstance(ret.type, torch.TensorType):
                 self.assertTrue(isinstance(ret.allowed_types, set))
                 self.assertEqual(
-                    ret.allowed_types, {torch.float16, torch.float32, torch.float64}
+                    ret.allowed_types,
+                    {torch.float16, torch.float32, torch.float64, torch.bfloat16},
                 )
 
     def test_allowed_dtype_set(self) -> None:

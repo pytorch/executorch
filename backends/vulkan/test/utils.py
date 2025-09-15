@@ -35,7 +35,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from torch.export import export, export_for_training
+from torch.export import export
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -53,7 +53,7 @@ def get_exported_graph(
     dynamic_shapes=None,
     qmode=QuantizationMode.NONE,
 ) -> torch.fx.GraphModule:
-    export_training_graph = export_for_training(
+    export_training_graph = export(
         model, sample_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()
 
@@ -590,9 +590,7 @@ def op_ablation_test(  # noqa: C901
     logger.info("Starting fast binary search operator ablation test...")
 
     # Step 1: Export model to get edge_program and extract operators
-    export_training_graph = export_for_training(
-        model, sample_inputs, strict=True
-    ).module()
+    export_training_graph = export(model, sample_inputs, strict=True).module()
     program = export(
         export_training_graph,
         sample_inputs,

@@ -323,7 +323,6 @@ class QuantizationConfig:
         "int8",
         "8da4w",
         "8da4w-gptq",
-        "vulkan_4w",
         "4w",
     ]
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
@@ -427,6 +426,7 @@ class VulkanConfig:
     """
 
     enabled: bool = False
+    force_fp16: bool = False
 
 
 @dataclass
@@ -611,6 +611,8 @@ class LlmConfig:
         # Vulkan
         if hasattr(args, "vulkan"):
             llm_config.backend.vulkan.enabled = args.vulkan
+        if hasattr(args, "vulkan_force_fp16"):
+            llm_config.backend.vulkan.force_fp16 = args.vulkan_force_fp16
 
         # QNN
         if hasattr(args, "qnn"):

@@ -347,8 +347,7 @@ int main(int argc, char** argv) {
         snprintf(out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
         ET_LOG(Info, "Writing output to file: %s", out_filename);
         FILE* out_file = fopen(out_filename, "wb");
-        auto written_size =
-            fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+        fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
         fclose(out_file);
       }
     }

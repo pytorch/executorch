@@ -77,7 +77,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             super().__init__()
             self.text_model = llava.text_model
 
-        def forward(self, input_pos, embeddings):
+        def forward(self, embeddings, input_pos):
             return self.text_model(None, {"input_pos": input_pos}, embeddings)
 
     llava_text_model = LlavaTextModel(llava)
@@ -88,7 +88,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         max_seq_len=llava.text_model_args.max_seq_len,
         dtype=DType.fp32,
         use_kv_cache=True,
-        example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
+        example_inputs=(embeddings, torch.tensor([0], dtype=torch.int64)),
         dynamic_shapes=dynamic_shapes,
     )
 
@@ -242,6 +242,7 @@ def export_all(llava_model: LlavaModel):
                 XnnpackPartitioner(),
             ],
         },
+        constant_methods={"get_max_seq_len": llava_model.max_seq_len},
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
