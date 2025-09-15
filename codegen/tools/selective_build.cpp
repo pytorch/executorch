@@ -193,9 +193,9 @@ const executorch_flatbuffer::Program* _get_program_from_buffer(
     const py::bytes& buffer) {
   // Access the Python bytes without copying and get raw pointer/size.
   const std::string_view sv = buffer.cast<std::string_view>();
+#ifdef ET_BUNDLE_IO
   void* buf_ptr = const_cast<void*>(static_cast<const void*>(sv.data()));
   const size_t buf_len = sv.size();
-#ifdef ET_BUNDLE_IO
 
   // If this is a bundled program, extract the inner ExecuTorch program bytes.
   if (executorch::bundled_program::is_bundled_program(buf_ptr, buf_len)) {
