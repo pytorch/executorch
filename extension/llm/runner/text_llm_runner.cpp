@@ -43,8 +43,8 @@ TextLLMRunner::TextLLMRunner(
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
-      pos_(0),
-      temperature_(temperature) {
+      temperature_(temperature),
+      pos_(0) {
   // Note: This constructor assumes that text_prefiller and text_token_generator
   // already have references to the Module and TextDecoderRunner they need
 }
