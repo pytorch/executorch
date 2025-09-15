@@ -39,10 +39,8 @@ TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
   std::vector<int64_t> cache_positions;
 
   if (use_kv_cache) {
-    auto start_pos_tensor = ET_UNWRAP(
-        populate_start_pos_or_cache_position(
-            module_, start_pos, cache_positions, tokens->numel()),
-        "forward");
+    auto start_pos_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
+        module_, start_pos, cache_positions, tokens->numel(), "forward"));
 
     std::vector<runtime::EValue> inputs;
     auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
