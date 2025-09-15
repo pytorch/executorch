@@ -8,7 +8,6 @@ ANDROID_BUILD_DIR=${PROJECT_DIR}/build_samsung_android
 BUILD_ARCH=all
 CLEAN_BUILD_DIR=false
 
-
 EXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT}
 ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT}
 
@@ -47,6 +46,7 @@ function build_x86_64() {
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
         -S ${PROJECT_DIR} \
         -B ${X86_64_BUILD_DIR}
 
@@ -58,20 +58,20 @@ function build_x86_64() {
 }
 
 function build_android() {
-  if [[ -z ${EXYNOS_AI_LITECORE_ROOT} ]]; then
-    echo "Please export EXYNOS_AI_LITECORE_ROOT or set by command"
-    exit 1
-  fi
   if [[ -z ${ANDROID_NDK_ROOT} ]]; then
     echo "Please export ANDROID_NDK_ROOT or set by command"
     exit 1
   fi
 
   ANDROID_ABI=arm64-v8a
+  ANDROID_PLATFORM=android-28 # Trace requires over android-23
+
   cmake \
         -DCMAKE_INSTALL_PREFIX=${ANDROID_BUILD_DIR} \
         -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
+        -DANDROID_NDK=${ANDROID_NDK} \
         -DANDROID_ABI="${ANDROID_ABI}" \
+        -DANDROID_PLATFORM=${ANDROID_PLATFORM} \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_ENN=ON \
         -DEXYNOS_AI_LITECORE_ROOT=${EXYNOS_AI_LITECORE_ROOT} \
@@ -80,6 +80,8 @@ function build_android() {
 	      -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
         -DEXECUTORCH_BUILD_DEVTOOLS=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \

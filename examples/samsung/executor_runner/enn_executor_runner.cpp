@@ -16,6 +16,8 @@
  * files. And Enn backends is going to inference, and output results.
  */
 
+#include <executorch/backends/samsung/runtime/enn_executor.h>
+#include <executorch/backends/samsung/runtime/profile.hpp>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/inputs.h>
@@ -36,11 +38,15 @@ DEFINE_string(
     input,
     "",
     "Input file path, support multiple inputs: input_1 input_2 ...");
+DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 
+DEFINE_int32(warm_up, 0, "Pre-run before inference.");
+DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
 DEFINE_string(output_path, "", "Output Execution results to target directory.");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
+using namespace torch::executor::enn;
 
 std::vector<std::string> split(std::string str, char delimiter = ' ') {
   std::vector<std::string> result;
@@ -70,6 +76,13 @@ class DataReader {
     input_file.seekg(0);
     input_file.read(reinterpret_cast<char*>(data.data()), data.size());
     input_file.close();
+    ++index_;
+  }
+
+  void alloc(const int size) {
+    ET_CHECK(index_ < data_set_.size());
+    data_t& data = data_set_[index_];
+    data.resize(size);
     ++index_;
   }
 
@@ -105,8 +118,32 @@ void saveOutput(const exec_aten::Tensor& tensor, int32_t output_index) {
   fout.close();
 }
 
+struct EnnApiDeinit {
+  void operator()(EnnApi* ptr) const {
+    if (ptr == nullptr) {
+      return;
+    }
+
+    auto ret = ptr->EnnDeinitialize();
+    ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn Deinitialize failed.");
+  }
+};
+
+std::unique_ptr<EnnApi, EnnApiDeinit> exynos_npu_init() {
+  EnnApi* enn_api_inst = EnnApi::getEnnApiInstance();
+  auto ret = enn_api_inst->EnnInitialize();
+  ET_CHECK_MSG(ret == ENN_RET_SUCCESS, "Enn initialize failed.");
+  return std::unique_ptr<EnnApi, EnnApiDeinit>(enn_api_inst);
+}
+
 int main(int argc, char** argv) {
-  runtime_init();
+  auto before_init = std::chrono::high_resolution_clock::now();
+  std::unique_ptr<EnnApi, EnnApiDeinit> instance = exynos_npu_init();
+  auto after_init = std::chrono::high_resolution_clock::now();
+  double interval_init = std::chrono::duration_cast<std::chrono::microseconds>(
+                             after_init - before_init)
+                             .count() /
+      1000.0;
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
@@ -208,22 +245,56 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
 
+  EXYNOS_ATRACE_BEGIN("Test Runner: Load Method");
+  auto before_load = std::chrono::high_resolution_clock::now();
   Result<Method> method = program->load_method(method_name, &memory_manager);
+  auto after_load = std::chrono::high_resolution_clock::now();
+  double interval_load = std::chrono::duration_cast<std::chrono::microseconds>(
+                             after_load - before_load)
+                             .count() /
+      1000.0;
+  EXYNOS_ATRACE_END();
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       (uint32_t)method.error());
+  ET_LOG(Info, "Method loaded.");
 
+  bool _is_input_arg_existed = (FLAGS_input != "");
   auto input_files = split(FLAGS_input);
-  ET_CHECK_MSG(
-      input_files.size() == method->inputs_size(),
-      "Please check the number of given input binary files");
-  DataReader input_data_reader(input_files.size());
-  for (const auto& input_file : input_files) {
-    input_data_reader.read(input_file);
-  }
+  DataReader input_data_reader(method->inputs_size());
 
+  EXYNOS_ATRACE_BEGIN("Test Runner: prepare input");
+  if (!_is_input_arg_existed) {
+    // Allocate input tensors and set all of their elements to 1. The `inputs`
+    // variable owns the allocated memory and must live past the last call to
+    // `execute()`.
+    for (int input_index = 0; input_index < method->inputs_size();
+         ++input_index) {
+      MethodMeta method_meta = method->method_meta();
+      Result<TensorInfo> tensor_meta =
+          method_meta.input_tensor_meta(input_index);
+      input_data_reader.alloc(tensor_meta->nbytes());
+    }
+    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(
+        Info,
+        "Input list not provided. Inputs prepared with default values set.");
+  } else {
+    ET_CHECK_MSG(
+        input_files.size() == method->inputs_size(),
+        "Please check the number of given input binary files");
+    for (const auto& input_file : input_files) {
+      input_data_reader.read(input_file);
+    }
+  }
+  EXYNOS_ATRACE_END();
+  EXYNOS_ATRACE_BEGIN("Test Runner: set input");
   for (int input_index = 0; input_index < method->inputs_size();
        ++input_index) {
     MethodMeta method_meta = method->method_meta();
@@ -240,26 +311,60 @@ int main(int argc, char** argv) {
     Error ret = method->set_input(Tensor(&impl), input_index);
     ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
   }
-  // Allocate input tensors and set all of their elements to 1. The `inputs`
-  // variable owns the allocated memory and must live past the last call to
-  // `execute()`.
-  // auto inputs = util::prepare_input_tensors(*method);
+  EXYNOS_ATRACE_END();
+
+  // Warm up
+  ET_LOG(Info, "Perform %d inference for warming up", FLAGS_warm_up);
+  Error status;
+  for (int i = 0; i < FLAGS_warm_up; ++i) {
+    status = method->execute();
+  }
 
   // Run the model.
-  ET_LOG(Info, "Start inference.");
-  auto start = std::chrono::high_resolution_clock::now();
-  Error status = method->execute();
-  auto end = std::chrono::high_resolution_clock::now();
-  double elapse =
-      std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+  ET_LOG(Info, "Start 1st inference.");
+  auto before_exec = std::chrono::high_resolution_clock::now();
+  status = method->execute();
+  auto after_exec = std::chrono::high_resolution_clock::now();
+  double interval_1st_infs =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          after_exec - before_exec)
           .count() /
       1000.0;
+
+  ET_LOG(Info, "Start inference.");
+  before_exec = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < FLAGS_num_executions; ++i) {
+    status = method->execute();
+  }
+  after_exec = std::chrono::high_resolution_clock::now();
+  double interval_infs = std::chrono::duration_cast<std::chrono::microseconds>(
+                             after_exec - before_exec)
+                             .count() /
+      1000.0;
+
+  if (FLAGS_dump_statistics) {
+    auto output_file_name = "statistics.txt";
+    std::ofstream fout(output_file_name);
+    fout << "init: " + std::to_string(interval_init)
+         << "\nload: " + std::to_string(interval_load)
+         << "\n1st: " + std::to_string(interval_1st_infs)
+         << "\navg: " +
+            std::to_string((interval_infs + interval_1st_infs) / ((float)FLAGS_num_executions + 1.f))
+         << std::endl;
+    fout.close();
+  }
+
+  ET_LOG(
+      Info,
+      "%d inference took %f ms, avg %f ms",
+      FLAGS_num_executions,
+      interval_infs,
+      interval_infs / (float)FLAGS_num_executions);
   ET_CHECK_MSG(
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
       method_name,
       static_cast<int32_t>(status));
-  ET_LOG(Info, "End with elapsed time(ms): %f", elapse);
 
   // Get the outputs.
   std::vector<EValue> outputs(method->outputs_size());

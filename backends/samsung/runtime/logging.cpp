@@ -61,8 +61,10 @@ void EnnLogImpl(ENN_LOG_LEVEL log_level, const char* format, ...) {
   va_end(args);
 }
 
-#if defined(NDEBUG)
+#if EXECUTORCH_LOG_LEVEL == INFO
 ENN_LOG_LEVEL EnnLogManager::output_log_level_ = ENN_LOG_LEVEL::INFO;
+#elif EXECUTORCH_LOG_LEVEL == WARNING
+ENN_LOG_LEVEL EnnLogManager::output_log_level_ = ENN_LOG_LEVEL::WARNING;
 #else
 ENN_LOG_LEVEL EnnLogManager::output_log_level_ = ENN_LOG_LEVEL::DEBUG;
 #endif

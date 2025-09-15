@@ -41,13 +41,17 @@ EnnApi* EnnApi::getEnnApiInstance() {
   if (!enn_api.getInitialize()) {
     auto status = enn_api.loadApiLib();
     if (status == Error::Ok) {
+      ENN_LOG_INFO("Loading ENN API library Completed.")
       enn_api.initialize_ = true;
+    } else {
+      ENN_LOG_ERROR("Failed to load enn api library. %s", dlerror());
     }
   }
   return &enn_api;
 }
 
 EnnApi::~EnnApi() {
+  std::lock_guard<std::mutex> lgd(instance_mutex_);
   if (getInitialize()) {
     unloadApiLib();
   }
@@ -61,7 +65,7 @@ Error EnnApi::loadApiLib() {
   const char enn_api_lib_name[] = "libenn_public_api_cpp.so";
   libenn_public_api_ = dlopen(enn_api_lib_name, RTLD_NOW | RTLD_LOCAL);
   ET_CHECK_OR_RETURN_ERROR(
-      libenn_public_api_ != nullptr, Internal, "Lib load failed.")
+      libenn_public_api_ != nullptr, Internal, "Lib load failed.");
 
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnInitialize, this);
   ENN_LOAD_API_FUNC(libenn_public_api_, EnnSetPreferencePerfMode, this);
@@ -89,9 +93,10 @@ Error EnnApi::loadApiLib() {
 
 Error EnnApi::unloadApiLib() {
   if (dlclose(libenn_public_api_) != 0) {
-    ENN_LOG_ERROR("Failed to close enn public api library. %s", dlerror());
+    ENN_LOG_ERROR("Failed to close ENN API library. %s", dlerror());
     return Error::Internal;
-  };
+  }
+  libenn_public_api_ = nullptr;
   return Error::Ok;
 }
 
