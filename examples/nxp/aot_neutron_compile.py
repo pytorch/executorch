@@ -272,15 +272,15 @@ if __name__ == "__main__":  # noqa C901
     # 5. Delegate to Neutron
     if args.delegate:
         logging.info("Executing Neutron Partitioner and Delegate")
-        edge_program_manager = edge_program_manager.to_backend(
-            NeutronPartitioner(
-                generate_neutron_compile_spec(
-                    args.target,
-                    args.neutron_converter_flavor,
-                    operators_not_to_delegate=args.operators_not_to_delegate,
-                )
-            )
+
+        compile_spec = generate_neutron_compile_spec(
+            args.target,
+            operators_not_to_delegate=args.operators_not_to_delegate,
+            neutron_converter_flavor=args.neutron_converter_flavor,
         )
+        partitioner = NeutronPartitioner(compile_spec)
+
+        edge_program_manager = edge_program_manager.to_backend(partitioner)
         logging.debug(
             f"Lowered graph:\n{edge_program_manager.exported_program().graph}"
         )

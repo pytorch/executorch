@@ -117,6 +117,11 @@ def to_quantized_edge_program(
 
     edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
 
+    if remove_quant_io_ops:
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
+
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
@@ -124,11 +129,6 @@ def to_quantized_edge_program(
     )
     partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
     edge_program_manager = edge_program_manager.to_backend(partitioner)
-
-    if remove_quant_io_ops:
-        edge_program_manager = edge_program_manager.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
-        )
 
     return edge_program_manager
 
