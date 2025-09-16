@@ -138,9 +138,48 @@ aoti_torch_device_type_cuda() {
   return 1;
 }
 
+// Dtype constants - these return the PyTorch dtype codes
+// Currently only float32 is supported, but using robust enum-based approach
 __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float32() {
-  return 6;
+  return static_cast<int32_t>(SupportedDTypes::FLOAT32);
 }
+
+// Future dtype support (commented out for now):
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_bool() {
+//   return static_cast<int32_t>(SupportedDTypes::BOOL);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_uint8() {
+//   return static_cast<int32_t>(SupportedDTypes::UINT8);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int8() {
+//   return static_cast<int32_t>(SupportedDTypes::INT8);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int16() {
+//   return static_cast<int32_t>(SupportedDTypes::INT16);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int32() {
+//   return static_cast<int32_t>(SupportedDTypes::INT32);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int64() {
+//   return static_cast<int32_t>(SupportedDTypes::INT64);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float16() {
+//   return static_cast<int32_t>(SupportedDTypes::FLOAT16);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float64() {
+//   return static_cast<int32_t>(SupportedDTypes::FLOAT64);
+// }
+// 
+// __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_bfloat16() {
+//   return static_cast<int32_t>(SupportedDTypes::BFLOAT16);
+// }
 
 void cleanup_tensor_metadata() {
   tensor_to_sizes.clear();

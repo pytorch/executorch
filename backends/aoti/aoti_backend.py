@@ -79,36 +79,34 @@ class AotiBackend(BackendDetails):
         # print("here", edge_program.example_inputs)
         copy_edge_program = copy.deepcopy(edge_program)
 
-        # Move the edge_program from CPU to CUDA using move_to_device_pass
-        copy_edge_program = move_to_device_pass(copy_edge_program, "cuda")
-        # graph_module = copy_edge_program.graph_module
-        edge_program_module = copy_edge_program.module()
+        # Move the edge_program from CPU to CUDA for aoti compile
+        cuda_edge_program = move_to_device_pass(copy_edge_program, "cuda")
+
+        edge_program_module = cuda_edge_program.module()
         args, kwargs = copy_edge_program.example_inputs
 
-        # Deep copy args and move tensors to CUDA for aot_compile
-        def move_to_cuda(obj):
-            if isinstance(obj, torch.Tensor):
-                return obj.cuda()
-            elif isinstance(obj, (list, tuple)):
-                return type(obj)(move_to_cuda(item) for item in obj)
-            elif isinstance(obj, dict):
-                return {key: move_to_cuda(value) for key, value in obj.items()}
-            else:
-                return obj
+        # # Deep copy args and move tensors to CUDA for aot_compile
+        # def move_to_cuda(obj):
+        #     if isinstance(obj, torch.Tensor):
+        #         return obj.cuda()
+        #     elif isinstance(obj, (list, tuple)):
+        #         return type(obj)(move_to_cuda(item) for item in obj)
+        #     elif isinstance(obj, dict):
+        #         return {key: move_to_cuda(value) for key, value in obj.items()}
+        #     else:
+        #         return obj
 
-        args = move_to_cuda(copy.deepcopy(args))
-        kwargs = move_to_cuda(copy.deepcopy(kwargs))
-
-        # print("args, kwargs", args, kwargs)
-        print("len(args)", len(args))
-        print("args[0].shape", args[0].shape)
-        print("len(kwargs)", len(kwargs))
+        # args = move_to_cuda(copy.deepcopy(args))
+        # kwargs = move_to_cuda(copy.deepcopy(kwargs))
 
         output_path = os.path.join(os.getcwd(), "aoti.so")
 
         options: dict[str, typing.Any] = {
+            "aot_inductor.embed_kernel_binary": True,
+            "aot_inductor.link_libtorch": False,
             "aot_inductor.package_constants_in_so": True,
             "aot_inductor.output_path": output_path,
+            "aot_inductor.debug_compile": True,
             "aot_inductor.force_mmap_weights": False,
             "max_autotune": True,
             "max_autotune_gemm_backends": "TRITON",
@@ -125,11 +123,6 @@ class AotiBackend(BackendDetails):
                 )
 
         assert so_path == output_path, f"Expected {output_path} but got {so_path}"
-
-        check_call(
-            f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {output_path}",
-            shell=True,
-        )
 
         print("so_path", so_path)
 

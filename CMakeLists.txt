@@ -49,7 +49,6 @@
 # https://github.com/google/XNNPACK/commit/c690daa67f883e1b627aadf7684c06797e9a0684
 cmake_minimum_required(VERSION 3.29)
 project(executorch)
-# project(executorch LANGUAGES CXX CUDA)
 
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})

@@ -1580,8 +1580,6 @@ Error Method::execute() {
         "chain %" ET_PRIsize_t " has no instructions field",
         step_state_.chain_idx);
 
-    ET_LOG(Debug, "Executing chain idx: %" ET_PRIsize_t, step_state_.chain_idx);
-
     // Loop over instructions
     step_state_.instr_idx = 0;
     while (step_state_.instr_idx < chain.s_chain_->instructions()->size()) {
