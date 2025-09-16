@@ -7,7 +7,7 @@
 set -euo pipefail
 
 mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
-mlsdk_manifest_tag="dev-snapshot-2025-09-12"
+mlsdk_manifest_tag="refs/tags/dev-snapshot-2025-09-12"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 

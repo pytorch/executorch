@@ -26,44 +26,61 @@ examples/mediatek
 # Examples Build Instructions
 
 ## Environment Setup
-- Follow the instructions of **Prerequisites** and **Setup** in `backends/mediatek/scripts/README.md`.
+- Follow the instructions in `backends/mediatek/README.md` to build the backend library `libneuron_backend.so`.
 
-- Build required libraries by `backends/mediatek/scripts/mtk_build.sh` before building examples.
-
-## Build MediaTek Examples
-1. Build the backend and the examples by exedcuting the script:
+## Build MediaTek Runners
+1. Build the mediatek model runner by executing the script:
 ```bash
 ./mtk_build_examples.sh
 ```
+This will generate the required runners in `executorch/cmake-android-out/examples/mediatek/`
 
-## LLaMa Example Instructions
+## Model Export Instructions
 ##### Note: Verify that localhost connection is available before running AoT Flow
-1. Exporting Models to `.pte`
-- In the `examples/mediatek directory`, run:
+1. Download Required Files
+- Download the model files from the official Hugging Face website, and move the files to the respective folder in `examples/mediatek/models/llm_models/weights/` **EXCEPT** the `config.json` file.
+    - The `config.json` file is already included in the model folders, which may include some modifications required for the model exportation.
+- Include the calibration data (if any) under `aot_utils/llm_utils/prompts/`
+
+2. Exporting Models to `.pte`
+- In the `examples/mediatek/ directory`, run:
 ```bash
-source shell_scripts/export_llama.sh <model_name> <num_chunks> <prompt_num_tokens> <cache_size> <calibration_set_name>
+source shell_scripts/export_<model_family>.sh <model_name> <num_chunks> <prompt_num_tokens> <cache_size> <calibration_data_file> <precision> <platform>
 ```
 - Defaults:
-    - `model_name` = llama3
+    - `model_name` = Depends on model family. Check respective `shell_scripts/export_<model_family>.sh` for info.
     - `num_chunks` = 4
     - `prompt_num_tokens` = 128
-    - `cache_size` = 1024
-    - `calibration_set_name` = None
+    - `cache_size` = 512
+    - `calibration_data_file` = None
+    - `precision` = A16W4
+    - `platform` = DX4
+
 - Argument Explanations/Options:
-    - `model_name`: llama2/llama3
-    <sub>**Note: Currently Only Tested on Llama2 7B Chat and Llama3 8B Instruct.**</sub>
-    - `num_chunks`: Number of chunks to split the model into. Each chunk contains the same number of decoder layers. Will result in `num_chunks` number of `.pte` files being generated. Typical values are 1, 2 and 4.
+    - `model_name`: View list 'Available model names' below.
+    - `num_chunks`: Number of chunks to split the model into. Each chunk contains the same number of decoder layers. Typical values are 1, 2 and 4.
     - `prompt_num_tokens`: Number of tokens (> 1) consumed each forward pass for the prompt processing stage.
     - `cache_size`: Cache Size.
-    - `calibration_set_name`: Name of calibration dataset with extension that is found inside the `aot_utils/llm_utils/prompts` directory. Example: `alpaca.txt`. If `"None"`, will use dummy data to calibrate.
+    - `calibration_data_file`: Name of calibration dataset with extension that is found inside the `aot_utils/llm_utils/prompts/` directory. Example: `alpaca.txt`. If `"None"`, will use dummy data to calibrate.
+    - `precision`: Quantization precision for the model. Available options are `["A16W4", "A16W8", "A16W16", "A8W4", "A8W8"]`
+    - `platform`: The platform of the device. `DX4` for Mediatek Dimensity 9400 and `DX3` for Mediatek Dimensity 9300.
     <sub>**Note: Export script example only tested on `.txt` file.**</sub>
 
-2. `.pte` files will be generated in `examples/mediatek/pte`
-    - Users should expect `num_chunks*2` number of pte files (half of them for prompt and half of them for generation).
-    - Generation `.pte` files have "`1t`" in their names.
-    - Additionally, an embedding bin file will be generated in the weights folder where the `config.json` can be found in. [`examples/mediatek/models/llm_models/weights/<model_name>/embedding_<model_config_folder>_fp32.bin`]
+- Available model names:
+    - Llama:
+        - llama3.2-3b, llama3.2-1b, llama3, llama2
+    - Qwen:
+        - Qwen3-4B, Qwen3-1.7B, Qwen2-7B-Instruct, Qwen2.5-3B, Qwen2.5-0.5B-Instruct, Qwen2-1.5B-Instruct
+    - Gemma:
+        - gemma2, gemma3
+    - Phi:
+        - phi3.5, phi4
+
+3. `.pte` files will be generated in `examples/mediatek/pte/`
+    - Users should expect `num_chunks` number of pte files.
+    - An embedding bin file will be generated in the weights folder where the `config.json` can be found in. [`examples/mediatek/models/llm_models/weights/<model_name>/embedding_<model_config_folder>_fp32.bin`]
     - eg. For `llama3-8B-instruct`, embedding bin generated in `examples/mediatek/models/llm_models/weights/llama3-8B-instruct/`
-    - AoT flow will take roughly 2.5 hours (114GB RAM for `num_chunks=4`) to complete (Results will vary by device/hardware configurations)
+    - AoT flow will take around 30 minutes to 2.5 hours to complete (Results will vary depending on device/hardware configurations and model sizes)
 
 ### oss
 1. Exporting Model to `.pte`
@@ -74,26 +91,31 @@ bash shell_scripts/export_oss.sh <model_name>
     - `model_name`: deeplabv3/edsr/inceptionv3/inceptionv4/mobilenetv2/mobilenetv3/resnet18/resnet50/dcgan/wav2letter/vit_b_16/mobilebert/emformer_rnnt/bert/distilbert
 
 # Runtime
-## Environment Setup
-
-To set up the build environment for the `mtk_executor_runner`:
-
-1. Navigate to the `backends/mediatek/scripts` directory within the repository.
-2. Follow the detailed build steps provided in that location.
-3. Upon successful completion of the build steps, the `mtk_executor_runner` binary will be generated.
-
 ## Deploying and Running on the Device
 
 ### Pushing Files to the Device
 
-Transfer the `.pte` model files and the `mtk_executor_runner` binary to your Android device using the following commands:
+Transfer the directory containing the `.pte` model files, the `run_<model_name>_sample.sh` script, the `embedding_<model_config_folder>_fp32.bin`, the tokenizer file, the `mtk_llama_executor_runner` binary and the 3 `.so` files to your Android device using the following commands:
 
 ```bash
-adb push mtk_executor_runner <PHONE_PATH, e.g. /data/local/tmp>
-adb push <MODEL_NAME>.pte <PHONE_PATH, e.g. /data/local/tmp>
+adb push mtk_llama_executor_runner <PHONE_PATH, e.g. /data/local/tmp>
+adb push examples/mediatek/executor_runner/run_<model_name>_sample.sh <PHONE_PATH, e.g. /data/local/tmp>
+adb push embedding_<model_config_folder>_fp32.bin <PHONE_PATH, e.g. /data/local/tmp>
+adb push tokenizer.model <PHONE_PATH, e.g. /data/local/tmp>
+adb push <PTE_DIR> <PHONE_PATH, e.g. /data/local/tmp>
 ```
 
-Make sure to replace `<MODEL_NAME>` with the actual name of your model file. And, replace the `<PHONE_PATH>` with the desired detination on the device.
+Make sure to replace `<PTE_DIR>` with the actual name of your directory containing pte files. And, replace the `<PHONE_PATH>` with the desired detination on the device.
+
+At this point your phone directory should have the following files:
+- libneuron_backend.so
+- libneuronusdk_adapter.mtk.so
+- libneuron_buffer_allocator.so
+- mtk_llama_executor_runner
+- <PTE_DIR>
+- tokenizer.json / tokenizer.model(for llama3) / tokenizer.bin(for phi3 and gemma2)
+- embedding_<model_config_folder>_fp32.bin
+- run_<model_name>_sample.sh
 
 ##### Note: For oss models, please push additional files to your Android device
 ```bash
@@ -107,12 +129,13 @@ for i in input*bin; do adb push "$i" <PHONE_PATH, e.g. /data/local/tmp>; done;
 Execute the model on your Android device by running:
 
 ```bash
-adb shell "/data/local/tmp/mtk_executor_runner --model_path /data/local/tmp/<MODEL_NAME>.pte --iteration <ITER_TIMES>"
+adb shell
+cd <PHONE_PATH>
+sh run_<model_name>_sample.sh
 ```
+#### Note: The `mtk_llama_executor_runner` is applicable to the models listed in `examples/mediatek/models/llm_models/weights/`.
 
-In the command above, replace `<MODEL_NAME>` with the name of your model file and `<ITER_TIMES>` with the desired number of iterations to run the model.
-
-##### Note: For llama models, please use `mtk_llama_executor_runner`. Refer to `examples/mediatek/executor_runner/run_llama3_sample.sh` for reference.
+##### Note: For non-LLM models, please run `adb shell "/data/local/tmp/mtk_executor_runner --model_path /data/local/tmp/<MODEL_NAME>.pte --iteration <ITER_TIMES>"`. 
 ##### Note: For oss models, please use `mtk_oss_executor_runner`.
 ```bash
 adb shell "/data/local/tmp/mtk_oss_executor_runner --model_path /data/local/tmp/<MODEL_NAME>.pte --input_list /data/local/tmp/input_list.txt --output_folder /data/local/tmp/output_<MODEL_NAME>"
