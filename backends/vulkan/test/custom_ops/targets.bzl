@@ -97,4 +97,4 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("q8csw_conv2d")
     define_custom_op_test_binary("choose_qparams_per_row")
     define_custom_op_test_binary("q4gsw_linear")
-    define_custom_op_test_binary("qdq8ta_conv2d")
+    define_custom_op_test_binary("qdq8ta_conv2d_activations")
