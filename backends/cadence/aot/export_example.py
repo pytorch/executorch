@@ -39,6 +39,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 def export_model(
     model: nn.Module,
     example_inputs: Tuple[Any, ...],
+    opt_level: int = 1,
     file_name: str = "CadenceDemoModel",
     working_dir: Optional[str] = None,
 ):
@@ -99,6 +100,7 @@ def export_model(
 def export_and_run_model(
     model: nn.Module,
     example_inputs: Tuple[Any, ...],
+    opt_level: int = 1,
     file_name: str = "CadenceDemoModel",
     eps_error: float = 1e-1,
     eps_warn: float = 1e-5,
@@ -106,7 +108,7 @@ def export_and_run_model(
     # create work directory for outputs and model binary
     working_dir = tempfile.mkdtemp(dir="/tmp")
     logging.debug(f"Created work directory {working_dir}")
-    exec_prog = export_model(model, example_inputs, file_name, working_dir)
+    exec_prog = export_model(model, example_inputs, opt_level, file_name, working_dir)
     ref_outputs = model(*example_inputs)
     runtime.run_and_compare(
         executorch_prog=exec_prog,
