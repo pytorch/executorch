@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
-#include <executorch/backends/cadence/reference/operators/operators.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/operators/operators.h>
 
 template <typename T>
 inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
@@ -49,7 +49,7 @@ inline __attribute__((always_inline)) void quantized_linear_per_tensor_(
             (int32_t)weight_data[j * in_dim + k] - (int32_t)weight_zero_point;
         sum += x * w;
       }
-      out_data[i * out_dim + j] = ::impl::reference::kernels::quantize<T>(
+      out_data[i * out_dim + j] = ::impl::generic::kernels::quantize<T>(
           sum, requant_scale, out_zero_point);
     }
   }
@@ -121,8 +121,8 @@ inline __attribute__((always_inline)) void quantized_linear_per_channel_(
       // Compute the out_scale from out_multiplier and out_shift
       const float out_scale =
           -out_multiplier_data[j] * 1.0 / (1 << 31) * pow(2, out_shift_data[j]);
-      out_data[i * out_dim + j] = ::impl::reference::kernels::quantize<T>(
-          sum, out_scale, out_zero_point);
+      out_data[i * out_dim + j] =
+          ::impl::generic::kernels::quantize<T>(sum, out_scale, out_zero_point);
     }
   }
 }
