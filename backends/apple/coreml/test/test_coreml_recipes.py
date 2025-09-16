@@ -3,6 +3,7 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 
+import copy
 import unittest
 
 import coremltools as ct
@@ -152,8 +153,9 @@ class TestCoreMLRecipes(unittest.TestCase):
         # Test with different group sizes
         for group_size in [8, 16, 32]:
             with self.subTest(group_size=group_size):
+                model_to_export = copy.deepcopy(model)
                 session = export(
-                    model=model,
+                    model=model_to_export,
                     example_inputs=example_inputs,
                     export_recipe=ExportRecipe.get_recipe(
                         CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP,
@@ -166,7 +168,7 @@ class TestCoreMLRecipes(unittest.TestCase):
                     session, example_inputs, atol=1e-3
                 )
                 self._compare_eager_unquantized_model_outputs(
-                    session, model, example_inputs
+                    session, model, example_inputs, sqnr_threshold=15
                 )
 
     def test_int4_weight_only_per_group_validation(self):
@@ -219,8 +221,9 @@ class TestCoreMLRecipes(unittest.TestCase):
         # Test with different group sizes
         for group_size in [16, 32, 64]:
             with self.subTest(group_size=group_size):
+                model_to_export = copy.deepcopy(model)
                 session = export(
-                    model=model,
+                    model=model_to_export,
                     example_inputs=example_inputs,
                     export_recipe=ExportRecipe.get_recipe(
                         CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP,
@@ -501,7 +504,7 @@ class TestCoreMLRecipes(unittest.TestCase):
             (CoreMLRecipeType.TORCHAO_INT4_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),
             (
                 CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_CHANNEL,
-                ct.target.iOS18,
+                ct.target.iOS16,
                 {},
             ),
             (CoreMLRecipeType.TORCHAO_INT8_WEIGHT_ONLY_PER_GROUP, ct.target.iOS18, {}),

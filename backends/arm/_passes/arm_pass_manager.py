@@ -76,7 +76,7 @@ from executorch.backends.arm._passes import (
     FuseConstantArgsPass,
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
-    InsertCastForOpsWithInt64InputPass,
+    InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescalePass,
     InsertTableOpsPass,
     MatchArgDtypePass,
@@ -197,6 +197,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSinhPass())
         self.add_pass(DecomposeSignPass())
+        self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSAMI())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(FuseQuantizedActivationPass())
@@ -215,7 +216,6 @@ class ArmPassManager(PassManager):
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
         )
         self.add_pass(DecomposeNotEqualPass())
-        self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(DecomposeGeluPass())
@@ -277,7 +277,7 @@ class ArmPassManager(PassManager):
         )  # ConvertInt64ConstOpsToInt32Pass requires this pass to remove the assertation in Graph
         self.add_pass(ConvertInt64ConstOpsToInt32Pass())
         self.add_pass(ConvertInt64OutputOpsToInt32Pass())
-        self.add_pass(InsertCastForOpsWithInt64InputPass())
+        self.add_pass(InsertInt32CastsAfterInt64PlaceholdersPass())
         self.add_pass(DecomposeEmbeddingPass())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoundPass())
@@ -285,6 +285,7 @@ class ArmPassManager(PassManager):
         self.add_pass(CastBoolToInt8Pass())
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())
+        self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())
@@ -294,7 +295,6 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeCosineSimilarityPass())
         self.add_pass(DecomposeGluPass())
-        self.add_pass(DecomposeDivTensorModePass())
         self.add_pass(DecomposeDivPass())
         self.add_pass(DecomposeLeakyReLUPass())
         self.add_pass(DecomposeLinearVectorNormPass())

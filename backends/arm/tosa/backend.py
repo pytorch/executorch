@@ -16,7 +16,7 @@ from itertools import count
 from typing import cast, Dict, final, List, Set
 
 import serializer.tosa_serializer as ts  # type: ignore
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.common.debug import debug_fail, debug_tosa_dump
 from executorch.backends.arm.debug.schema import DebugHook
 from executorch.backends.arm.process_node import (
@@ -24,7 +24,7 @@ from executorch.backends.arm.process_node import (
     process_output,
     process_placeholder,
 )
-from executorch.backends.arm.tosa.specification import get_tosa_spec
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export.exported_program import ExportedProgram
@@ -80,37 +80,23 @@ class TOSABackend(BackendDetails):
     """
 
     @staticmethod
-    def preprocess(  # noqa: C901
+    def preprocess(edge_program: ExportedProgram, compile_specs: List[CompileSpec]):
+        return TOSABackend._preprocess(
+            edge_program, TosaCompileSpec.from_list(compile_specs)
+        )
+
+    @staticmethod
+    def _preprocess(  # noqa: C901
         edge_program: ExportedProgram,
-        compile_spec: List[CompileSpec],
+        compile_spec: TosaCompileSpec,
     ) -> PreprocessResult:
         # if a debug/test build capture output files from TOSA stage
-        artifact_path = None
-        output_format = ""
-        compile_flags = []
-        dump_debug_info = None
-        for spec in compile_spec:
-            if spec.key == "debug_artifact_path":
-                artifact_path = spec.value.decode()
-            if spec.key == "output_format":
-                output_format = spec.value.decode()
-            if spec.key == "compile_flags":
-                compile_flags.append(spec.value.decode())
-            if spec.key == "dump_debug_info":
-                dump_debug_info = spec.value.decode()
-
-        # Check that the output format is set correctly in the compile spec
-        if output_format != "tosa":
-            raise ValueError(f'Invalid output format {output_format}, must be "tosa"')
+        artifact_path = compile_spec.get_intermediate_path()
+        tosa_spec = compile_spec.tosa_spec
+        dump_debug_info = compile_spec.tosa_debug_mode
 
         # Assign to every node external id
         node_2_id = _annotate_external_ids(edge_program.graph)
-
-        tosa_spec = get_tosa_spec(compile_spec)
-        if tosa_spec is None:
-            raise ValueError(
-                "TOSA backend needs a TOSA version specified in the CompileSpec"
-            )
 
         logger.info(f"Converting ExportedProgram to TOSA: {tosa_spec}")
 
@@ -132,7 +118,7 @@ class TOSABackend(BackendDetails):
 
         debug_hook = None
         if dump_debug_info is not None:
-            debug_hook = DebugHook(ArmCompileSpecBuilder.DebugMode[dump_debug_info])
+            debug_hook = DebugHook(dump_debug_info)
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm.operators.node_visitor import get_node_visitors
@@ -192,7 +178,7 @@ class TOSABackend(BackendDetails):
             )
 
             if debug_hook is not None:
-                if debug_hook.mode == ArmCompileSpecBuilder.DebugMode.JSON:
+                if debug_hook.mode == ArmCompileSpec.DebugMode.JSON:
                     json_output = debug_hook.serialize()
                     with open(f"{artifact_path}/debug.json", "w") as f:
                         f.write(json_output)
@@ -204,8 +190,8 @@ class TOSABackend(BackendDetails):
 
     @staticmethod
     def filter_tosa_compile_specs(
-        compile_spec: List[CompileSpec],
-    ) -> List[CompileSpec]:
+        compile_spec: ArmCompileSpec,
+    ) -> TosaCompileSpec:
         """
         Filter out the CompileSpec elements relevant for the TOSA backend.
         This is needed to compose a backend targetting hardware IP with the
@@ -214,17 +200,9 @@ class TOSABackend(BackendDetails):
         flatbuffer can then be consumed by the backend targetting specific
         hardware.
         """
-        tosa_compile_spec = []
-        tosa_compile_spec.append(CompileSpec("output_format", "tosa".encode()))
 
-        # Copy everything that's TOSA generic
-        tosa_backend_compile_spec_keys = [
-            "tosa_spec",
-            "debug_artifact_path",
-        ]
-
-        for spec in compile_spec:
-            if spec.key in tosa_backend_compile_spec_keys:
-                tosa_compile_spec.append(CompileSpec(spec.key, spec.value))
-
-        return tosa_compile_spec
+        new_compile_spec = TosaCompileSpec.__new__(TosaCompileSpec)
+        new_compile_spec._set_compile_specs(
+            compile_spec.tosa_spec, [], compile_spec.get_intermediate_path()
+        )
+        return new_compile_spec

@@ -26,7 +26,6 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -145,17 +144,6 @@ function check_options() {
                 enable_vulkan_sdk=1
                 shift
                 ;;
-            --mlsdk-manifest-url)
-                # Ensure that there is a url provided.
-                if [[ -n "$2" && "${2:0:1}" != "-" ]]; then
-                    mlsdk_manifest_url="$2"
-                    shift 2
-                else
-                    echo "Error: --mlsdk-manifest-url requires a URL argument."
-                    print_usage "$@"
-                    exit 1
-                fi
-                ;;
             --setup-test-dependency)
                 echo "Installing test dependency..."
                 source $et_dir/backends/arm/scripts/install_models_for_test.sh
@@ -251,8 +239,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     echo "enable-emulation-layer=${enable_emulation_layer}"
     echo "enable-vulkan-sdk=${enable_vulkan_sdk}"
     echo "enable-vela=${enable_vela}"
-    echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
-
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
@@ -276,15 +262,21 @@ if [[ $is_script_sourced -eq 0 ]]; then
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
-        source $et_dir/backends/arm/scripts/mlsdk_utils.sh -u "${mlsdk_manifest_url}"
-        setup_model_converter ${root_dir} ${mlsdk_manifest_dir} ${enable_model_converter} ${enable_vgf_lib} ${enable_emulation_layer}
+        source $et_dir/backends/arm/scripts/mlsdk_utils.sh
+        setup_mlsdk ${root_dir} \
+                    ${mlsdk_manifest_dir} \
+                    ${enable_model_converter} \
+                    ${enable_vgf_lib} \
+                    ${enable_emulation_layer}
     fi
 
     # Create the setup_path.sh used to create the PATH variable for shell
     create_setup_path
 
     # Setup the tosa_reference_model and dependencies
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
 
     if [[ "${enable_vela}" -eq 1 ]]; then
         setup_ethos_u_tools

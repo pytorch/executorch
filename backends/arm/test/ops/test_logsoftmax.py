@@ -64,13 +64,7 @@ def test_log_softmax_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    LogSoftmax.test_data,
-    xfails={
-        "randn_neg_dim": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55."
-    },
-)
+@common.parametrize("test_data", LogSoftmax.test_data)
 @common.XfailIfNoCorstone300()
 def test_log_softmax_u55_INT(test_data):
     data, dim = test_data()

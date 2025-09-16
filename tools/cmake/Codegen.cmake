@@ -342,6 +342,12 @@ function(merge_yaml)
     DEPENDS ${GEN_FUNCTIONS_YAML} ${GEN_FALLBACK_YAML}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   )
+
+  # Mark the file as generated to allow it to be referenced from other
+  # CMakeLists in the project.
+  set_source_files_properties(
+    ${GEN_OUTPUT_DIR}/merged.yaml PROPERTIES GENERATED TRUE
+  )
 endfunction()
 
 # Append the file list in the variable named `name` in build/build_variables.bzl
