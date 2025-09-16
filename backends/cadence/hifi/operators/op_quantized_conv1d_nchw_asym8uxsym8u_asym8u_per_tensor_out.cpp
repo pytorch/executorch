@@ -17,7 +17,6 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 using ScalarType = executorch::aten::ScalarType;
 using ::executorch::aten::IntArrayRef;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -57,15 +56,9 @@ void xa_opt_quantized_conv1d_nchw_asym8uxsym8u_asym8u(
   WORD32 x_stride = stride[1];
   WORD32 x_padding = padding[1];
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 out_multiplier32[out_channels];
-  WORD32 out_shift32[out_channels];
+  WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
+  WORD32 out_shift32 = 0;
   WORD32 kernel_zero_bias = -weight_zero_point;
-  float out_scale = 1. / output_scale;
-
-  for (int i = 0; i < out_channels; i++) {
-    out_multiplier32[i] = bias_scale * out_scale * 2147483648;
-    out_shift32[i] = 0;
-  }
 
   WORD32 out_zero_bias = output_zero_point;
   WORD32 out_data_format = 1;
@@ -90,9 +83,9 @@ void xa_opt_quantized_conv1d_nchw_asym8uxsym8u_asym8u(
   WORD32 p_permute_vec[kNnlibMaxDim] = {0, 2, 1};
 
   xa_nn_transpose_8_8(
-      pin,
+      (WORD8*)pin,
       p_out_shape,
-      p_inp,
+      (WORD8*)p_inp,
       p_inp_shape,
       p_permute_vec,
       kNnlibMaxDim,
@@ -109,9 +102,9 @@ void xa_opt_quantized_conv1d_nchw_asym8uxsym8u_asym8u(
   p_out_shape1[2] = kernel_channels;
 
   xa_nn_transpose_8_8(
-      pkernel,
+      (WORD8*)pkernel,
       p_out_shape1,
-      p_kernel,
+      (WORD8*)p_kernel,
       p_inp_shape1,
       p_permute_vec,
       kNnlibMaxDim,
@@ -186,4 +179,3 @@ void quantized_conv1d_nchw_asym8uxsym8u_asym8u_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

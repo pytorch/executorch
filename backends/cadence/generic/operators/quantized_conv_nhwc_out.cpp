@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/kernels/kernels.h>
-#include <executorch/backends/cadence/reference/operators/operators.h>
+#include <executorch/backends/cadence/generic/kernels/kernels.h>
+#include <executorch/backends/cadence/generic/operators/operators.h>
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace native {
 
 using ::executorch::aten::IntArrayRef;
@@ -132,7 +132,7 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
             }
             if (quantized) {
               float val = bias_scale * acc;
-              out_line[_oc] = ::impl::reference::kernels::quantize<OT>(
+              out_line[_oc] = ::impl::generic::kernels::quantize<OT>(
                   val, inv_out_scale, out_zero_point);
             } else {
               out_line[_oc] = acc;
@@ -550,5 +550,5 @@ void quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out(
 }
 
 } // namespace native
-} // namespace reference
+} // namespace generic
 } // namespace impl

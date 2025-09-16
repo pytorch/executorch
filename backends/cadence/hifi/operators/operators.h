@@ -15,7 +15,6 @@
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -195,4 +194,3 @@ void quantized_add_asym8uxasym8u_asym8u_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence
