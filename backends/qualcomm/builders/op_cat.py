@@ -33,10 +33,11 @@ class Cat(NodeVisitor):
         list_of_tensor_wrappers = []
 
         for tensor_input in list_of_tensors:
-            input_tensor = self.get_tensor(self.get_node(tensor_input), node)
+            input_node = self.get_node(tensor_input)
+            input_tensor = self.get_tensor(input_node, node)
             list_of_tensor_wrappers.append(
                 self.define_tensor(
-                    tensor_input,
+                    input_node,
                     node,
                     input_tensor,
                     PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
