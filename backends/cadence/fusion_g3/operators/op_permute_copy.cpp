@@ -29,7 +29,6 @@ using ::executorch::runtime::KernelRuntimeContext;
  * operator need to be updated accordingly
  */
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -157,4 +156,3 @@ Tensor& permute_copy_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

@@ -1,0 +1,27 @@
+name: Test Vulkan Backend
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/test-backend-vulkan.yml
+      - .github/workflows/_test_backend.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  test-vulkan:
+    uses: ./.github/workflows/_test_backend.yml
+    with:
+      backend: vulkan
+      flows: '["vulkan", "vulkan_static_int8_per_channel"]'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 120
+      run-linux: true

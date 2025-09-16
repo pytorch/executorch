@@ -7,7 +7,6 @@ import copy
 
 import logging
 
-import os
 from collections import Counter
 from pprint import pformat
 from typing import (
@@ -42,10 +41,7 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
-    get_elf_path,
     get_output_quantization_params,
-    get_target_board,
-    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -53,6 +49,7 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
+from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
@@ -60,6 +57,7 @@ from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import Stage, StageType
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -90,7 +88,6 @@ from tabulate import tabulate
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
-from torch.utils._pytree import tree_flatten
 
 
 logger = logging.getLogger(__name__)
@@ -176,43 +173,6 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
             generate_etrecord=generate_etrecord,
-        )
-
-
-class Serialize(tester.Serialize):
-    def __init__(self, compile_spec: ArmCompileSpec, timeout):
-        super().__init__()
-        self.timeout = timeout
-        self.executorch_program_manager: ExecutorchProgramManager | None
-        self.compile_spec = compile_spec
-
-    def run(self, artifact: ExecutorchProgramManager, inputs=None) -> None:
-        super().run(artifact, inputs)
-        # Keep the entire ExecutorchProgramManager for execution.
-        self.executorch_program_manager = artifact
-
-    def run_artifact(self, inputs):
-        if self.executorch_program_manager is None:
-            raise RuntimeError(
-                "Tried running artifact from Serialize stage without running the stage."
-            )
-        inputs_flattened, _ = tree_flatten(inputs)
-        intermediate_path = self.compile_spec.get_intermediate_path()
-        target_board = get_target_board(self.compile_spec)
-        elf_path = get_elf_path(target_board)
-
-        if not os.path.exists(elf_path):
-            raise FileNotFoundError(
-                f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
-            )
-
-        return run_target(
-            self.executorch_program_manager,
-            inputs_flattened,
-            intermediate_path,
-            target_board,
-            elf_path,
-            self.timeout,
         )
 
 
@@ -303,7 +263,7 @@ class ArmTester(Tester):
         Args:
             model (torch.nn.Module): The model to test
             example_inputs (Tuple[torch.Tensor]): Example inputs to the model
-            compile_spec (List[CompileSpec]): The compile spec to use
+            compile_spec (ArmCompileSpec): The compile spec to use
         """
 
         self.transform_passes = transform_passes
@@ -374,6 +334,7 @@ class ArmTester(Tester):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        generate_etrecord: bool = False,
     ):
         if transform_passes is not None:
             raise RuntimeError(
@@ -408,7 +369,9 @@ class ArmTester(Tester):
                 to_edge_and_lower_stage.partitioners = partitioners
             if edge_compile_config is not None:
                 to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
-        return super().to_edge_transform_and_lower(to_edge_and_lower_stage)
+        return super().to_edge_transform_and_lower(
+            to_edge_and_lower_stage, generate_etrecord=generate_etrecord
+        )
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
@@ -419,7 +382,11 @@ class ArmTester(Tester):
         self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
     ):
         if serialize_stage is None:
-            serialize_stage = Serialize(self.compile_spec, timeout)
+            serialize_stage = Serialize(
+                compile_spec=self.compile_spec,
+                module=self.original_module,
+                timeout=timeout,
+            )
         assert (
             self.compile_spec.get_intermediate_path() is not None
         ), "Can't dump serialized file when compile specs do not contain an artifact path."
@@ -439,6 +406,7 @@ class ArmTester(Tester):
         qtol=0,
         error_callbacks=None,
         run_eager_mode=False,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -694,10 +662,17 @@ class ArmTester(Tester):
         rtol=1e-03,
         qtol=0,
         error_callbacks=None,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         try:
             super()._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback=statistics_callback,
             )
         except AssertionError as e:
             if error_callbacks is None:
