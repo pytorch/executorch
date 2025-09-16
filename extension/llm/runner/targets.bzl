@@ -25,7 +25,7 @@ def define_common_targets():
         aten_suffix = "_aten" if aten else ""
 
         runtime.cxx_library(
-            name = "stats",
+            name = "stats" + aten_suffix,
             exported_headers = [
                 "stats.h",
                 "util.h",
