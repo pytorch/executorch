@@ -79,7 +79,7 @@ def install_requirements(use_pytorch_nightly):
     )
 
     LOCAL_REQUIREMENTS = [
-        "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
+        # "third-party/ao",  # We need the latest kernels for fast iteration, so not relying on pypi.
     ] + (
         [
             "extension/llm/tokenizers",  # TODO(larryliu0820): Setup a pypi package for this.
