@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/cadence/reference/operators/operators.h>
+#include <executorch/backends/cadence/generic/operators/operators.h>
 
 #include <algorithm>
 
 namespace impl {
-namespace reference {
+namespace generic {
 namespace native {
 
 using ::executorch::aten::IntArrayRef;
@@ -294,5 +294,5 @@ void im2row_per_tensor_out(
 }
 
 } // namespace native
-} // namespace reference
+} // namespace generic
 } // namespace impl

@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -245,4 +244,3 @@ native_layer_norm_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence
