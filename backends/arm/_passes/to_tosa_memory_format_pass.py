@@ -260,7 +260,7 @@ class ToTosaMemoryFormatPass(ExportPass):
         output_dim_orders = output_node.meta.get("original_dim_orders")
         if output_dim_orders is None:
             raise RuntimeError(
-                f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {self.__name__}."
+                f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {ToTosaMemoryFormatPass.__name__}."
             )
 
         for output_node_input, output_dim_order in zip(outputs, output_dim_orders):  # type: ignore[arg-type]
