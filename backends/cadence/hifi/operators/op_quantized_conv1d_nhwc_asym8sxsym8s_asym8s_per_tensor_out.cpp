@@ -54,15 +54,9 @@ void xa_opt_quantized_conv1d_nhwc_asym8sxsym8s_asym8s(
   WORD32 x_stride = stride[1];
   WORD32 x_padding = padding[1];
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 out_multiplier32[out_channels];
-  WORD32 out_shift32[out_channels];
+  WORD32 out_multiplier32 = bias_scale * (1. / output_scale) * 2147483648;
+  WORD32 out_shift32 = 0;
   WORD32 kernel_zero_bias = -weight_zero_point;
-  float out_scale = 1. / output_scale;
-
-  for (int i = 0; i < out_channels; i++) {
-    out_multiplier32[i] = bias_scale * out_scale * 2147483648;
-    out_shift32[i] = 0;
-  }
 
   WORD32 out_zero_bias = output_zero_point;
   WORD32 out_data_format = 0;
@@ -78,9 +72,9 @@ void xa_opt_quantized_conv1d_nhwc_asym8sxsym8s_asym8s(
     WORD8* out_batch = p_out + _n * out_channels * out_width;
 
     xa_nn_conv1d_std_asym8xasym8(
-        out_batch,
-        in_batch,
-        p_kernel,
+        (UWORD8*)out_batch,
+        (UWORD8*)in_batch,
+        (UWORD8*)p_kernel,
         p_bias,
         1,
         input_width,
