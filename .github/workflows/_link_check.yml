@@ -60,7 +60,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' }}
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
-      runner: linux.large
+      runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-linter
       submodules: false
       fetch-depth: 0
