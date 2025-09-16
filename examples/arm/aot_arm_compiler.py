@@ -62,6 +62,8 @@ from executorch.exir import (
 
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
+from torch.export import ExportedProgram
+from torch.fx import GraphModule
 from torch.utils.data import DataLoader
 
 # Quantize model if required using the standard export quantizaion flow.
@@ -146,13 +148,13 @@ def get_model_and_inputs_from_name(
 
 
 def quantize(
-    model: torch.nn.Module,
+    model: GraphModule,
     model_name: str,
     compile_specs: EthosUCompileSpec | VgfCompileSpec | TosaCompileSpec,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
-) -> torch.nn.Module:
+) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
     export"""
     logging.info("Quantizing Model...")
@@ -741,7 +743,12 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
-def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
+def quantize_model(
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+    compile_spec,
+) -> Tuple[GraphModule, ExportedProgram]:
     model_int8 = quantize(
         model,
         args.model_name,
@@ -759,7 +766,10 @@ def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
 
 
 def to_edge_TOSA_delegate(
-    exported_program, args, model: torch.nn.Module, example_inputs
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
 ):
     # As we can target multiple output encodings, one must
     # be specified.
@@ -778,7 +788,6 @@ def to_edge_TOSA_delegate(
         model_int8, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
         )
-        model = model_int8
 
     if isinstance(compile_spec, EthosUCompileSpec):
         partitioner = EthosUPartitioner(compile_spec)
@@ -800,7 +809,12 @@ def to_edge_TOSA_delegate(
     return model_int8, edge
 
 
-def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_inputs):
+def to_edge_no_delegate(
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+):
     model_int8 = None
     if args.quantize:
         # As we can target multiple output encodings, one must
