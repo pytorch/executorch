@@ -32,7 +32,9 @@ def get_xnnpack_partitioner(dynamic_quant_only_partitioner: bool = True):
 
 
 def get_vulkan_partitioner(
-    dtype_override: Optional[str] = None, enable_dynamic_shape: bool = False
+    dtype_override: Optional[str] = None,
+    enable_dynamic_shape: bool = False,
+    force_fp16: bool = False,
 ):
     assert (
         dtype_override == "fp32" or dtype_override is None
@@ -41,7 +43,9 @@ def get_vulkan_partitioner(
         VulkanPartitioner,
     )
 
-    return VulkanPartitioner({"require_dynamic_shapes": enable_dynamic_shape})
+    return VulkanPartitioner(
+        {"require_dynamic_shapes": enable_dynamic_shape, "force_fp16": force_fp16}
+    )
 
 
 def get_mps_partitioner(use_kv_cache: bool = False):

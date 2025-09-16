@@ -49,13 +49,13 @@ Tensor& argmax_out(
   static constexpr const char op_name[] = "argmax.out";
 
   ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, op_name, CTYPE, [&] {
-    long* out_data = out.mutable_data_ptr<long>();
+    int64_t* out_data = out.mutable_data_ptr<int64_t>();
 
     const bool success = parallel_for_each_reduce_over_dim_output_index(
         in, dim, out, [&](const auto begin, const auto end) {
           for (const auto out_ix : c10::irange(begin, end)) {
-            std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
-                [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
+            std::tuple<CTYPE, int64_t> acc = reduce_over_dim<CTYPE>(
+                [](CTYPE v, int64_t ix, CTYPE acc_val, int64_t acc_ix) {
                   // the below condition as written is equivalent to
                   // !isnan(accval) && (isnan(v) || v > acc_val). See
                   // argument in op_argmin.cpp.
@@ -63,7 +63,7 @@ Tensor& argmax_out(
                     acc_val = v;
                     acc_ix = ix;
                   }
-                  return std::tuple<CTYPE, long>{acc_val, acc_ix};
+                  return std::tuple<CTYPE, int64_t>{acc_val, acc_ix};
                 },
                 in,
                 dim,

@@ -91,24 +91,22 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   }
 
   // 2. Run decoder model for prefill.
-  // `cache_position` goes from start_pos to start_pos + encoder_output.size(1).
-  // e.g. if start_pos = 2 and encoder_output.size(1) = 5,
-  // cache_position_tensor should be [2, 3, 4, 5, 6].
+
+  // Get expected shape of cache position tensor, which should be the second
+  // argument
+
   int64_t seq_len = encoder_output.toTensor().size(1);
   if (seq_len == 0) {
     ET_LOG(Error, "The encoder returned an empty output.");
     return ::executorch::runtime::Error::InvalidState;
   }
-  std::vector<int64_t> cache_positions(seq_len);
-  for (int64_t i = 0; i < seq_len; ++i) {
-    cache_positions[i] = start_pos + i;
-  }
-  auto cache_position_tensor = ::executorch::extension::from_blob(
-      cache_positions.data(),
-      {static_cast<int>(seq_len)},
-      executorch::aten::ScalarType::Long);
+  std::vector<int64_t> cache_positions;
+
+  auto cache_position_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
+      module_, start_pos, cache_positions, seq_len, kTextModelMethod));
+
   auto prefill_result = module_->execute(
-      kTextModelMethod, {cache_position_tensor, encoder_output});
+      kTextModelMethod, {encoder_output, cache_position_tensor});
   if (prefill_result.error() != ::executorch::runtime::Error::Ok) {
     return prefill_result.error();
   }

@@ -19,7 +19,11 @@ runtime.python_library(
     srcs = ["runner_utils.py"],
     deps = [
         ":conftest",
-        "//executorch/backends/arm:arm_backend",
+        "//executorch/backends/arm:arm_compile_spec",
+        "//executorch/backends/arm:ethosu",
+        "//executorch/backends/arm/tosa:compile_spec",
+        "//executorch/backends/arm:vgf",
+        "//executorch/backends/arm/tosa:specification",
         "//executorch/exir:lib",
         "//executorch/exir/backend:compile_spec_schema",
     ]
@@ -36,18 +40,36 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "arm_tester",
-    srcs = glob(["tester/*.py"]),
+    name = "arm_tester_serialize",
+    srcs = ["tester/serialize.py"],
+    deps = [
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools/backend_debug:delegation_info",
+    ]
+)
+
+runtime.python_library(
+    name = "arm_tester_lib",
+    srcs = glob(["tester/*.py"], exclude = ["tester/serialize.py"]),
     deps = [
         ":common",
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/backends/arm:ethosu_partitioner",
+        "//executorch/backends/arm:ethosu",
         "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm/tosa:mapping",
-        "//executorch/backends/arm:vgf_partitioner",
+        "//executorch/backends/arm:vgf",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
+    ]
+)
+
+
+runtime.python_library(
+    name = "arm_tester",
+    deps = [
+        "//executorch/backends/arm/test:arm_tester_lib",
+        "//executorch/backends/arm/test:arm_tester_serialize",
     ]
 )
 
