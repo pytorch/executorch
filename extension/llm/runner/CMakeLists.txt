@@ -87,10 +87,13 @@ if(EXECUTORCH_BUILD_PYBIND)
     _llm_runner SHARED ${CMAKE_CURRENT_SOURCE_DIR}/pybindings.cpp
   )
 
+  find_package_torch()
+  find_library(
+    TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
+  )
   # Link with the extension_llm_runner library and its dependencies
   target_link_libraries(
-    _llm_runner PRIVATE extension_llm_runner executorch_core extension_module
-                        extension_tensor tokenizers::tokenizers
+    _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers portable_lib
   )
 
   # Set properties for the Python extension
@@ -102,7 +105,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
 
   # Add include directories
-  target_include_directories(_llm_runner PRIVATE ${_common_include_directories})
+  target_include_directories(_llm_runner PRIVATE ${_common_include_directories} ${TORCH_INCLUDE_DIRS})
 
   install(TARGETS _llm_runner
           LIBRARY DESTINATION executorch/extension/llm/runner

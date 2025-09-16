@@ -10,6 +10,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <torch/python.h>
 
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
@@ -271,27 +272,55 @@ PYBIND11_MODULE(_llm_runner, m) {
 
   m.def(
       "make_image_input",
-      [](py::array_t<uint8_t> image_array) -> MultimodalInput {
-        // Get image dimensions
-        py::buffer_info buf = image_array.request();
-
-        if (buf.ndim != 3) {
-          throw std::runtime_error(
-              "Image array must be 3-dimensional (H, W, C)");
+      [](torch::Tensor image_tensor) -> MultimodalInput {
+        if (image_tensor.dim() == 4) {
+          if (image_tensor.size(0) != 1) {
+            throw std::runtime_error(
+                "Batch size for 4D image tensor must be 1");
+          }
+          image_tensor = image_tensor.squeeze(0);
         }
 
-        size_t height = buf.shape[0];
-        size_t width = buf.shape[1];
-        size_t channels = buf.shape[2];
+        
+        if (image_tensor.dim() != 3) {
+          throw std::runtime_error(
+              "Image tensor must be 3-dimensional (H, W, C) or 4-dimensional (1, H, W, C)");
+        }
+
+        int64_t height, width, channels;
+        // Check for memory format and permute to CHW if necessary
+        if (image_tensor.is_contiguous(at::MemoryFormat::ChannelsLast)) {
+          // Input is HWC, permute to CHW
+          height = image_tensor.size(0);
+          width = image_tensor.size(1);
+          channels = image_tensor.size(2);
+          image_tensor = image_tensor.permute({2, 0, 1});
+        } else if (image_tensor.is_contiguous(at::MemoryFormat::Contiguous)) {
+          // Input is CHW
+          channels = image_tensor.size(0);
+          height = image_tensor.size(1);
+          width = image_tensor.size(2);
+        } else {
+          throw std::runtime_error(
+              "Image tensor must be contiguous in either channels last (H, W, C) or contiguous (C, H, W) format.");
+        }
 
         if (channels != 3 && channels != 4) {
           throw std::runtime_error(
               "Image must have 3 (RGB) or 4 (RGBA) channels");
         }
 
-        // Create Image object from numpy array
-        uint8_t* data = static_cast<uint8_t*>(buf.ptr);
-        std::vector<uint8_t> image_data(data, data + height * width * channels);
+        if (image_tensor.scalar_type() != torch::kUInt8) {
+          if (image_tensor.max().item<double>() <= 1.0) {
+            image_tensor = (image_tensor * 255).to(torch::kUInt8);
+          } else {
+            image_tensor = image_tensor.to(torch::kUInt8);
+          }
+        }
+
+        image_tensor = image_tensor.contiguous();
+        uint8_t* data = image_tensor.data_ptr<uint8_t>();
+        std::vector<uint8_t> image_data(data, data + image_tensor.numel());
 
         Image image;
         image.data = std::move(image_data);
@@ -300,8 +329,8 @@ PYBIND11_MODULE(_llm_runner, m) {
         image.channels = static_cast<int32_t>(channels);
         return MultimodalInput(std::move(image));
       },
-      "Create an image input from a numpy array (H, W, C)",
-      py::arg("image_array"));
+      "Create an image input from a torch tensor (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
+      py::arg("image_tensor"));
 
   // Bind PyMultimodalRunner
   py::class_<PyMultimodalRunner>(m, "MultimodalRunner")
