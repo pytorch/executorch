@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
@@ -386,6 +387,7 @@ def get_compile_spec(
     memory_mode: Optional[str] = None,
     quantize: bool = False,
     config: Optional[str] = None,
+    debug_mode: Optional[str] = None,
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
@@ -413,6 +415,10 @@ def get_compile_spec(
 
     if intermediates is not None:
         compile_spec.dump_intermediate_artifacts_to(intermediates)
+
+    if debug_mode is not None:
+        mode = ArmCompileSpec.DebugMode[debug_mode.upper()]
+        compile_spec.dump_debug_info(mode)
 
     return compile_spec
 
@@ -601,6 +607,12 @@ def get_args():
         action="store_true",
         help="Enable the QuantizedOpFusionPass fusion step",
     )
+    parser.add_argument(
+        "--enable_debug_mode",
+        required=False,
+        choices=["json", "tosa"],
+        help="Flag to enable ATen-to-TOSA debug mode.",
+    )
     args = parser.parse_args()
 
     if args.evaluate and (
@@ -735,6 +747,7 @@ def to_edge_TOSA_delegate(
         args.memory_mode,
         args.quantize,
         args.config,
+        args.enable_debug_mode,
     )
 
     model_int8 = None
@@ -776,6 +789,7 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.memory_mode,
             args.quantize,
             args.config,
+            args.enable_debug_mode,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
@@ -824,11 +838,20 @@ if __name__ == "__main__":  # noqa: C901
     exported_program = torch.export.export(
         model, example_inputs, strict=args.strict_export
     )
+
     model = exported_program.module()
     model_fp32 = model
 
+    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
         os.makedirs(args.intermediates, exist_ok=True)
+
+        # We only support Python3.10 and above, so use a later pickle protocol
+        torch.export.save(
+            exported_program,
+            f"{args.intermediates}/{model_name}_exported_program.pt2",
+            pickle_protocol=5,
+        )
 
     # Quantize if required
     model_int8 = None
@@ -862,7 +885,6 @@ if __name__ == "__main__":  # noqa: C901
         else:
             raise e
 
-    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     output_name = f"{model_name}" + (
         f"_arm_delegate_{args.target}"
         if args.delegate is True
