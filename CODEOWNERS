@@ -12,7 +12,7 @@
 /backends/qualcomm @cccclai @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic
 /backends/test @cccclai
 /backends/transforms @kimishpatel
-/backends/vulkan @SS-JIA
+/backends/vulkan @SS-JIA @digantdesai
 /backends/xnnpack @digantdesai @mcr229
 
 /devtools @Gasoonjia
