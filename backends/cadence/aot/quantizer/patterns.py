@@ -485,3 +485,25 @@ class Conv2dReluPattern0(ConvReluBasePattern):
 class Conv2dReluPattern1(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv2d.default, torch.ops.aten.relu_.default]
+
+
+class SoftmaxPattern(QuantizationPattern):
+
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten._softmax.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        softmax_node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(softmax_node, 0)],
+            weights=[],
+            biases=[],
+            output=[(softmax_node,)],
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_softmax.default
