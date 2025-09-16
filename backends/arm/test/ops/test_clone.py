@@ -19,7 +19,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
 )
 
 aten_op = "torch.ops.aten.clone.default"
-exir_op = "executorch_exir_dialects_edge__ops_aten_clone_default"
+exir_op = "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default"
 
 input_t = Tuple[torch.Tensor]
 

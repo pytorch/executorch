@@ -7,8 +7,8 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.quant_utils as tqutils
+import executorch.backends.arm.tosa.utils as tutils
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -18,8 +18,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -67,7 +67,9 @@ class SumVisitor_INT(NodeVisitor):
             dtype=ts.DType.INT32,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().REDUCE_SUM,
             [rescaled_inputs[0].name],
             [intermediate.name],
@@ -111,7 +113,9 @@ class SumVisitor_FP(SumVisitor_INT):
         attr = ts.TosaSerializerAttribute()
         attr.ReduceSumAttribute(tensor.dim_order.index(dim))
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().REDUCE_SUM,
             [tensor.name],
             [output.name],

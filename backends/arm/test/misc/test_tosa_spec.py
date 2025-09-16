@@ -5,13 +5,8 @@
 
 import unittest
 
-from executorch.backends.arm.tosa_specification import (
-    get_tosa_spec,
-    Tosa_1_00,
-    TosaSpecification,
-)
+from executorch.backends.arm.tosa.specification import Tosa_1_00, TosaSpecification
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from parameterized import parameterized  # type: ignore[import-untyped]
 
 test_valid_strings = [
@@ -43,14 +38,6 @@ test_invalid_strings = [
     "TOSA-1.0.0+BF16+fft+int4+cf+INT",
 ]
 
-test_compile_specs = [
-    ([CompileSpec("tosa_spec", "TOSA-1.0.0+INT".encode())],),
-]
-
-test_compile_specs_no_version = [
-    ([CompileSpec("other_key", "some_value".encode())],),
-]
-
 
 class TestTosaSpecification(unittest.TestCase):
     """Tests the TOSA specification class"""
@@ -71,19 +58,6 @@ class TestTosaSpecification(unittest.TestCase):
         tosa_spec = None
         with self.assertRaises(ValueError):
             tosa_spec = TosaSpecification.create_from_string(version_string)
-
-        assert tosa_spec is None
-
-    @parameterized.expand(test_compile_specs)  # type: ignore[misc]
-    def test_create_from_compilespec(self, compile_specs: list[CompileSpec]):
-        tosa_spec = get_tosa_spec(compile_specs)
-        assert isinstance(tosa_spec, TosaSpecification)
-
-    @parameterized.expand(test_compile_specs_no_version)  # type: ignore[misc]
-    def test_create_from_invalid_compilespec(self, compile_specs: list[CompileSpec]):
-        tosa_spec = None
-        with self.assertRaises(ValueError):
-            tosa_spec = get_tosa_spec(compile_specs)
 
         assert tosa_spec is None
 

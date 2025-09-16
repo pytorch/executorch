@@ -44,7 +44,7 @@ help() {
     echo "  --memory_mode=<CONFIG>               Vela memory mode, used for setting the Timing Adapter parameters of the Corstone platforms."
     echo "                                       Valid values are Shared_Sram(for Ethos-U55, Ethos-U65, Ethos-85), Sram_Only(for Ethos-U55, Ethos-U65, Ethos-U85) or Dedicated_Sram(for Ethos-U65, Ethos-U85)."
     echo "                                       Default: Shared_Sram for the Ethos-U55 and Sram_Only for the Ethos-U85"
-    echo "  --etdump                             Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
+    echo "  --etdump                             Adds Devtools etdump support to track timing and output, etdump area will be base64 encoded in the log"
     echo "  --extra_build_flags=<FLAGS>          Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
     echo "  --output=<FOLDER>                    Output folder Default: <MODEL>/<MODEL>_<TARGET INFO>.pte"
     echo "  --et_build_root=<FOLDER>             Build output root folder to use, defaults to ${et_build_root}"
@@ -161,7 +161,7 @@ if [ "$bundleio" = true ] ; then
 fi
 
 if [ "$build_with_etdump" = true ] ; then
-    build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=ON "
+    build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=ON -DET_DUMP_INTERMEDIATE_OUTPUTS=ON "
 fi
 
 echo "Building with BundleIO/etdump/extra flags: ${build_bundleio_flags} ${build_with_etdump_flags} ${extra_build_flags}"

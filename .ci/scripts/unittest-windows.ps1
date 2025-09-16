@@ -1,35 +1,37 @@
 param (
-    [string]$editable
+    [string]$buildMode = "Release"
 )
 
 Set-PSDebug -Trace 1
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-conda create --yes --quiet -n et python=3.12
-conda activate et
+# Run native unit tests (via ctest)
+New-Item -Path "test-build" -ItemType Directory
+cd "test-build"
 
-# Activate the VS environment - this is required for Dynamo to work, as it uses MSVC.
-# There are a bunch of environment variables that it requires.
-# See https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line.
-& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64
-
-# Install test dependencies
-pip install -r .ci/docker/requirements-ci.txt
-
-if ($editable -eq 'true') {
-    install_executorch.bat --editable
-} else {
-    install_executorch.bat
-}
+cmake .. --preset windows -B . -DEXECUTORCH_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=$buildMode
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Installation was unsuccessful. Exit code: $LASTEXITCODE."
+    Write-Host "CMake configuration was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE
 }
 
-# Run pytest with coverage
-# pytest -n auto --cov=./ --cov-report=xml
-pytest -v --full-trace -c pytest-windows.ini
+cmake --build . -j8 --config $buildMode --verbose
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "CMake build was unsuccessful. Exit code: $LASTEXITCODE."
+    exit $LASTEXITCODE
+}
+
+ctest -j8 . --build-config $buildMode --output-on-failure -E "method_test|tensor_parser_test"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "CTest run was unsuccessful. Exit code: $LASTEXITCODE."
+    exit $LASTEXITCODE
+}
+
+cd ..
+
+# Run pytest
+pytest -v -c pytest-windows.ini
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Pytest invocation was unsuccessful. Exit code: $LASTEXITCODE."
     exit $LASTEXITCODE

@@ -9,7 +9,6 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -61,4 +60,3 @@ void quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -45,6 +45,8 @@ for i in range(MAX_LOGGED_MODEL_OUTPUTS):
         ]
     )
 
+CSV_FIELD_NAMES.append("Error")
+
 
 # Operators that are excluded from the counts returned by count_ops. These are used to
 # exclude operatations that are not logically relevant or delegatable to backends.
@@ -365,6 +367,15 @@ def write_csv_header(output: TextIO):
 def write_csv_row(record: TestCaseSummary, output: TextIO):
     writer = csv.DictWriter(output, CSV_FIELD_NAMES)
 
+    # Truncate error message if it's too long, keeping first and last 200 characters
+    error_message = ""
+    if record.error is not None:
+        error_str = str(record.error)
+        if len(error_str) > 400:
+            error_message = error_str[:200] + "..." + error_str[-200:]
+        else:
+            error_message = error_str
+
     row = {
         "Test ID": record.name,
         "Test Case": record.base_name,
@@ -373,6 +384,7 @@ def write_csv_row(record: TestCaseSummary, output: TextIO):
         "Params": _serialize_params(record.params),
         "Result": record.result.to_short_str(),
         "Result Detail": record.result.to_detail_str(),
+        "Error": error_message,
         "Delegated": "True" if record.is_delegated() else "False",
         "Quantize Time (s)": (
             f"{record.quantize_time.total_seconds():.3f}"

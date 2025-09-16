@@ -15,7 +15,7 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
-from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
     RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner

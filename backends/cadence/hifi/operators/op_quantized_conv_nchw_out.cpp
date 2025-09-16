@@ -12,15 +12,15 @@
 
 #define ALIGN_PTR(x, bytes) ((((unsigned)(x)) + (bytes - 1)) & (~(bytes - 1)))
 
-using Tensor = executorch::aten::Tensor;
-using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
-using ScalarType = executorch::aten::ScalarType;
-using ::executorch::aten::IntArrayRef;
-
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
+
+using ::executorch::aten::IntArrayRef;
+using ::executorch::aten::ScalarType;
+using ::executorch::aten::Tensor;
+using ::impl::HiFi::kernels::quantize;
+using ::torch::executor::KernelRuntimeContext;
 
 // This implements a generic 2d conv kernel that operates on raw pointers.
 // The version handles both quantized and fp32 convolutions.
@@ -145,7 +145,7 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
             if (quantized) {
               float val = bias_scale * acc;
               out_plane[_oh * ow + _ow] =
-                  kernels::quantize<OT>(val, inv_out_scale, out_zero_point);
+                  quantize<OT>(val, inv_out_scale, out_zero_point);
             } else {
               out_plane[_oh * ow + _ow] = acc;
             }
@@ -642,4 +642,3 @@ void quantized_conv_nchw_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

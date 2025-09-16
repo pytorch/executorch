@@ -22,6 +22,7 @@ from executorch.exir._serialize._named_data_store import (
 )
 from executorch.exir._serialize._serialize import serialize_for_executorch
 from executorch.exir._serialize.data_serializer import DataSerializer
+from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_api import (
     MethodProgramsPartitionerSpec,
     to_backend,
@@ -627,6 +628,24 @@ class ExecutorchProgram:
         return self._buffer
 
     @property
+    @experimental("This API is experimental and subject to change without notice.")
+    def data_files(self) -> Dict[str, bytes]:
+        """Returns the data files as a dictionary of filename to byte data.
+
+        Returns:
+            Dict[str, bytes]: Dictionary mapping data filenames (e.g., .ptd files) to
+                their serialized byte content.
+            Returns empty dict if no data files are available.
+        """
+        if self._pte_data is None:
+            self._get_pte_data()  # This populates _tensor_data
+
+        if self._tensor_data is None:
+            return {}
+
+        return {filename: bytes(cord) for filename, cord in self._tensor_data.items()}
+
+    @property
     def program(self) -> Program:
         return self._get_emitter_output().program
 
@@ -643,6 +662,14 @@ class ExecutorchProgram:
         if self._emitter_output:
             return self._emitter_output.method_to_delegate_debug_id_map
         return self._get_emitter_output().method_to_delegate_debug_id_map
+
+    @property
+    def instruction_id_to_num_outs_map(
+        self,
+    ) -> Dict[str, Dict[int, Union[int, List[int]]]]:
+        if self._emitter_output:
+            return self._emitter_output.instruction_id_to_num_outs_map
+        return self._get_emitter_output().instruction_id_to_num_outs_map
 
     @property
     def graph_module(self) -> torch.fx.GraphModule:
@@ -1860,6 +1887,12 @@ class ExecutorchProgramManager:
         self,
     ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
         return self._emitter_output.method_to_delegate_debug_id_map
+
+    @property
+    def instruction_id_to_num_outs_map(
+        self,
+    ) -> Dict[str, Dict[int, Union[int, List[int]]]]:
+        return self._emitter_output.instruction_id_to_num_outs_map
 
     @property
     def executorch_program(self) -> Program:

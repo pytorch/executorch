@@ -34,7 +34,7 @@ class ET_EXPERIMENTAL LlavaTextDecoderRunner
         &start_pos, {1}, executorch::aten::ScalarType::Long);
     // run text model
     auto outputs_res = ET_UNWRAP(module_->execute(
-        kTextModelMethod, {start_pos_tensor, token_embedding_outputs[0]}));
+        kTextModelMethod, {token_embedding_outputs[0], start_pos_tensor}));
 
     ET_CHECK_MSG(
         outputs_res.size() == 1,
@@ -89,7 +89,7 @@ class ET_EXPERIMENTAL LlavaTextDecoderRunner
   }
 
   inline static const std::string kTokenEmbeddingMethod = "token_embedding";
-  inline static const std::string kTextModelMethod = "text_model";
+  inline static const std::string kTextModelMethod = "text_decoder";
 };
 
 } // namespace example
