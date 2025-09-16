@@ -7,8 +7,6 @@
  */
 
 #pragma once
-#include <executorch/extension/llm/runner/constants.h>
-#include <executorch/extension/llm/runner/multimodal_prefiller.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
