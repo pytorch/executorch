@@ -65,6 +65,7 @@ class TOSAPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(
             TOSABackend.__name__, compile_spec.to_list()
         )
+        self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
         self.tosa_spec = compile_spec.tosa_spec
 
@@ -75,13 +76,13 @@ class TOSAPartitioner(Partitioner):
         logger.info("TOSAPartitioner::partition")
         partition_tags: dict[str, DelegationSpec] = {}
 
-        tosa_spec = self.tosa_spec
-
-        logger.info(f"Partitioning for {self.delegation_spec.backend_id}: {tosa_spec}")
+        logger.info(
+            f"Partitioning for {self.delegation_spec.backend_id}: {self.tosa_spec}"
+        )
 
         reporter = WhyNoPartitionReporter()
         operator_support = tosa_support_factory(
-            tosa_spec, exported_program, reporter, self.additional_checks
+            self.tosa_spec, exported_program, reporter, self.additional_checks
         )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
@@ -131,7 +132,7 @@ class TOSAPartitioner(Partitioner):
                             break
                     continue
 
-                if tosa_spec.support_float():
+                if self.tosa_spec.support_float():
                     continue
 
                 if is_partitioned(node):
@@ -163,7 +164,7 @@ class TOSAPartitioner(Partitioner):
                 )
 
         tag_constant_data(exported_program)
-        logger.info(f"The following nodes were rejected for {tosa_spec}:")
+        logger.info(f"The following nodes were rejected for {self.tosa_spec}:")
         logger.info("\n" + reporter.get_table_report())
         logger.info("(Placeholders and outputs are not included in this list)")
         return PartitionResult(
@@ -213,8 +214,7 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.logit.default,
         ] + ops_to_not_decompose_if_quant_op
 
-        tosa_spec = self.tosa_spec
-        if not tosa_spec.is_U55_subset:
+        if not self.tosa_spec.is_U55_subset:
             # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
             # and upsample_nearest2d decompose into that it will not be possible to
             # delegate those operators on U55. If we have said here to not decompose

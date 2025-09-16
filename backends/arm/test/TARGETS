@@ -40,8 +40,17 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "arm_tester",
-    srcs = glob(["tester/*.py"]),
+    name = "arm_tester_serialize",
+    srcs = ["tester/serialize.py"],
+    deps = [
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/devtools/backend_debug:delegation_info",
+    ]
+)
+
+runtime.python_library(
+    name = "arm_tester_lib",
+    srcs = glob(["tester/*.py"], exclude = ["tester/serialize.py"]),
     deps = [
         ":common",
         "//executorch/backends/xnnpack/test/tester:tester",
@@ -52,6 +61,15 @@ runtime.python_library(
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
+    ]
+)
+
+
+runtime.python_library(
+    name = "arm_tester",
+    deps = [
+        "//executorch/backends/arm/test:arm_tester_lib",
+        "//executorch/backends/arm/test:arm_tester_serialize",
     ]
 )
 
