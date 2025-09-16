@@ -20,8 +20,7 @@ runtime.python_library(
     name = "ops",
     srcs = glob(["op_*.py", "ops_*.py"]),
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools:tosa",
         ":node_visitor",
         ":operator_validation_utils",
         "//executorch/backends/arm/tosa:mapping",

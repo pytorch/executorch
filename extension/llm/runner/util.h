@@ -7,6 +7,9 @@
  */
 
 #pragma once
+#include <executorch/extension/llm/runner/constants.h>
+#include <executorch/extension/llm/runner/multimodal_prefiller.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
@@ -99,6 +102,48 @@ ET_EXPERIMENTAL size_t inline get_rss_bytes() {
   // when this changed.
   return 0;
 }
+
+// Returns the cache position tensor, which can be either a single start_pos
+// (when the method_name [`text_decoder` or `forward`] expects a tensor with
+// size 1 because model will populate the cache position tensor underneath), or
+// a populated tensor for cache position, for the given start_pos and seq_len.
+inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
+    Module* module,
+    int64_t& start_pos,
+    std::vector<int64_t>& cache_positions_vec,
+    int seq_len,
+    const char* method_name = "forward") {
+  // Get expected shape of cache position tensor, which should be the second
+  // argument
+  auto method_meta = ET_UNWRAP(module->method_meta(method_name));
+  auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
+  auto second_input_sizes = second_input_info.sizes();
+  auto numel = second_input_sizes[0];
+
+  for (int i = 0; i < second_input_sizes.size(); ++i) {
+    ET_LOG(Error, "second_input_sizes[%d] = %d", i, second_input_sizes[i]);
+  }
+
+  TensorPtr start_pos_tensor;
+  if (numel > 1) {
+    // `cache_position` goes from start_pos to start_pos +
+    // encoder_output.size(1). e.g. if start_pos = 2 and encoder_output.size(1)
+    // = 5, cache_position_tensor should be [2, 3, 4, 5, 6].
+    cache_positions_vec.resize(seq_len);
+    for (int64_t i = 0; i < seq_len; ++i) {
+      cache_positions_vec[i] = start_pos + i;
+    }
+    return ::executorch::extension::from_blob(
+        cache_positions_vec.data(),
+        {static_cast<int>(seq_len)},
+        executorch::aten::ScalarType::Long);
+  } else {
+    // Cache position is size 1.
+    return ::executorch::extension::from_blob(
+        &start_pos, {1}, executorch::aten::ScalarType::Long);
+  }
+}
+
 } // namespace llm
 } // namespace extension
 } // namespace executorch

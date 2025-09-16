@@ -176,36 +176,6 @@ define_overridable_option(
   ${_default_executorch_build_cpuinfo}
 )
 
-# Threadpool size options. At most one can be specified. Note that the default
-# is managed in threadpool.cpp to allow the user to specify an alternate mode
-# without needing to explicitly set the default to off.
-define_overridable_option(
-  EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES
-  "Set the number of threads used for CPU parallel computation equal to the number of performant CPU cores."
-  BOOL
-  OFF
-)
-define_overridable_option(
-  EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES
-  "Set the number of threads used for CPU parallel computation equal to the number of logical CPU cores."
-  BOOL
-  OFF
-)
-
-check_required_options_on(
-  IF_ON EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES REQUIRES
-  EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
-)
-check_required_options_on(
-  IF_ON EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES REQUIRES
-  EXECUTORCH_BUILD_PTHREADPOOL EXECUTORCH_BUILD_CPUINFO
-)
-
-check_conflicting_options_on(
-  IF_ON EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES CONFLICTS_WITH
-  EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES
-)
-
 # TODO(jathu): move this to platform specific presets when created
 set(_default_executorch_build_executor_runner ON)
 if(APPLE AND "${SDK_NAME}" STREQUAL "iphoneos")
