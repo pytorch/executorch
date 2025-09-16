@@ -150,13 +150,9 @@ def emit_program(
     method_to_delegate_debug_id_map = {}
     program_state = _ProgramState()
 
-    print(
-        "111111111111111111111111111111111111111111111111111111111111111111111111111111"
-    )
 
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
-        print(name)
         # create empty state
         emitter_state = _EmitterState(
             values=[],
@@ -168,8 +164,6 @@ def emit_program(
             emit_mutable_buffer_names=emit_mutable_buffer_names,
         )
 
-        print("222222222222222222222222222222222222222222222222222222222222222222222")
-
         gm = _remove_non_user_outputs(exported_program)
 
         emitter = _TopLevelEmitter(
@@ -178,15 +172,12 @@ def emit_program(
 
         emitter.run()
 
-        print("333333333333333333333333333333333333333333333333333333333333333333333")
-
         plans.append(emitter.plan())
 
         debug_handle_map[name] = emitter.debug_handle_map
         method_to_delegate_debug_id_map[name] = (
             emitter.instr_id_to_delegate_debug_id_map
         )
-    print("444444444444444444444444444444444444444444444444444444444444444444444")
 
     training_metadata = _get_training_metadata(methods)
     if len(training_metadata) > 0:
@@ -195,8 +186,6 @@ def emit_program(
     # emit any primitive getters
     if prim_getters is not None:
         plans.extend(emitter._emit_prim_getters(prim_getters))
-
-    print("333333333333333333333333333333333333333333333333333333333333333333333")
 
     return EmitterOutput(
         debug_handle_map=debug_handle_map,

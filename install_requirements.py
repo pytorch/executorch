@@ -71,7 +71,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cu126"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250811"
+NIGHTLY_VERSION = "dev20250915"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -89,8 +89,8 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.9.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
-        f"torchao==0.13.0{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchao",
+        f"torch==2.10.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        f"torchao==0.14.0{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchao",
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -151,7 +151,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
-            f"torchvision==0.24.0.{NIGHTLY_VERSION}"
+            f"torchvision==0.25.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchvision"
         ),

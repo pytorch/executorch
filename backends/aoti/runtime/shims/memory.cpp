@@ -134,15 +134,12 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     return Error::InvalidArgument;
   }
 
-  // Since storage_offset is guaranteed to be 0, use data pointer directly
-  void* adjusted_data = data;
-
   // Create ExecutorTorch tensor that wraps the existing memory
   // Note: We're NOT copying the data, just wrapping it
   auto tensor = executorch::extension::make_tensor_ptr(
       sizes, // tensor dimensions
-      adjusted_data, // existing memory (don't copy!)
-      executorch::aten::ScalarType::Float // only supported dtype
+      data, // existing memory (don't copy!)
+      dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
   );
 
   if (!tensor) {
@@ -179,7 +176,12 @@ AOTITorchError aoti_torch_empty_strided(
     return dtype_error;
   }
 
-  int64_t nbytes = numel * 4;
+  size_t element_size = dtype_to_element_size(dtype);
+  if (element_size == 0) {
+    ET_LOG(Error, "Invalid element size for dtype: %d", dtype);
+    return Error::InvalidArgument;
+  }
+  int64_t nbytes = numel * element_size;
 
   if (device_type == 1) { // cuda
     cudaError_t err = cudaMalloc(&ptr, nbytes);

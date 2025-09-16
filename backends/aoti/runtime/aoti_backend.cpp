@@ -71,6 +71,8 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
   ) const override {
     const NamedDataMap* named_data_map = context.get_named_data_map();
 
+    // std::string so_path = "/home/gasoonjia/executorch/aoti.so";
+
     std::string so_path = "/tmp/test.so";
     std::string so_blob_key = "so_blob";
 
