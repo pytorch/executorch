@@ -14,22 +14,6 @@
 
 #include <pthreadpool.h>
 
-/*
- * Threadpool Options:
- *
- * Threadpool size has a sizble affect on performance. By default, the
- * threadpool will be sized according to the number of performance cores. This
- * behavior can be overriden with the following build-time options. Note that
- * these options are mutually exclusive.
- *
- * - EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES (flag) - Sizes the threadpool
- * equal to the number of performance cores on the system. This is the default
- * behavior.
- * - EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES (flag) - Sizes the threadpool
- * equal to the number of logical cores on system. This is the historical
- * behavior.
- */
-
 namespace executorch::extension::threadpool {
 
 class ThreadPool final {

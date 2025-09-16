@@ -47,7 +47,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
 
     // Run text model
     auto outputs_res = ET_UNWRAP(module_->execute(
-        kTextModelMethod, {start_pos_tensor, image_encoder_outputs[0]}));
+        kTextModelMethod, {image_encoder_outputs[0], start_pos_tensor}));
     ET_CHECK_MSG(
         outputs_res[0].isTensor(),
         "Non Tensor Output returned from executing image prefill");
