@@ -28,7 +28,6 @@ using ::executorch::runtime::KernelRuntimeContext;
 using std::optional;
 using std::string_view;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -686,4 +685,3 @@ Tensor& div_scalar_mode_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

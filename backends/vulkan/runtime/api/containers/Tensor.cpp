@@ -238,6 +238,8 @@ utils::uvec3 calculate_image_extents(
     else if (memory_layout == utils::kPackedInt8_4H4W) {
       VK_CHECK_COND(packed_dim == 0);
       extents[axis_map.at(1)] = utils::div_up(extents[axis_map.at(1)], 4u);
+    } else {
+      VK_THROW("Unhandled packed int8 memory layout!");
     }
   }
 
