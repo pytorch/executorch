@@ -81,6 +81,11 @@ class AotiBackend(BackendDetails):
 
         # Move the edge_program from CPU to CUDA using move_to_device_pass
         copy_edge_program = move_to_device_pass(copy_edge_program, "cuda")
+
+        from torch._inductor.decomposition import conv1d_to_conv2d
+        decomp_table = {}
+        decomp_table[torch.ops.aten.conv1d.default] = conv1d_to_conv2d
+        copy_edge_program = copy_edge_program.run_decompositions(decomp_table)
         # graph_module = copy_edge_program.graph_module
         edge_program_module = copy_edge_program.module()
         args, kwargs = copy_edge_program.example_inputs
@@ -107,6 +112,7 @@ class AotiBackend(BackendDetails):
         output_path = os.path.join(os.getcwd(), "aoti.so")
 
         options: dict[str, typing.Any] = {
+            # "aot_inductor.debug_compile": True,
             "aot_inductor.embed_kernel_binary": True,
             "aot_inductor.link_libtorch": False, 
             "aot_inductor.package_constants_in_so": True,
@@ -116,7 +122,7 @@ class AotiBackend(BackendDetails):
             "max_autotune_gemm_backends": "TRITON",
             "max_autotune_conv_backends": "TRITON",
         }
-
+        # export HF_HUB_DISABLE_XET=1
         with collect_unsupported_fallback_kernels():
             so_path = torch._inductor.aot_compile(edge_program_module, args, kwargs, options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:

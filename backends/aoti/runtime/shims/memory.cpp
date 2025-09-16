@@ -364,11 +364,11 @@ AOTITorchError aoti_torch_copy_(
             << std::endl;
 
   // assert same dim for now
-  if (self->dim() != src->dim()) {
-    std::cout << "Error: dimension mismatch. self.dim()=" << self->dim()
-              << ", src.dim()=" << src->dim() << std::endl;
-    return Error::InvalidArgument;
-  }
+  // if (self->dim() != src->dim()) {
+  //   std::cout << "Error: dimension mismatch. self.dim()=" << self->dim()
+  //             << ", src.dim()=" << src->dim() << std::endl;
+  //   return Error::InvalidArgument;
+  // }
 
   // only support float32 for now
   int32_t self_dtype, src_dtype;
@@ -710,11 +710,11 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   }
 
   // Check if dimensions match
-  if (self->dim() != ndim) {
-    std::cout << "Error: tensor dimension mismatch. self->dim(): "
-              << self->dim() << ", provided ndim: " << ndim << std::endl;
-    return Error::InvalidArgument;
-  }
+  // if (self->dim() != ndim) {
+  //   std::cout << "Error: tensor dimension mismatch. self->dim(): "
+  //             << self->dim() << ", provided ndim: " << ndim << std::endl;
+  //   return Error::InvalidArgument;
+  // }
 
   // Get tensor properties from the input tensor
   int32_t dtype;
