@@ -27,6 +27,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
+    SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     find_sequential_partitions_aten,
@@ -53,6 +54,15 @@ act_qspec_asym8s = QuantizationSpec(
     dtype=torch.int8,
     quant_min=-128,
     quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
+)
+
+act_qspec_asym16s = QuantizationSpec(
+    dtype=torch.int16,
+    quant_min=-32768,
+    quant_max=32767,
     qscheme=torch.per_tensor_affine,
     is_dynamic=False,
     observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
@@ -89,6 +99,13 @@ qconfig_A8W8sym = QuantizationConfig(
     act_qspec_asym8s,
     act_qspec_asym8s,
     wgt_qspec_sym8s,
+    None,
+)
+
+qconfig_A16 = QuantizationConfig(
+    act_qspec_asym16s,
+    act_qspec_asym16s,
+    wgt_qspec_asym8s,
     None,
 )
 
@@ -282,4 +299,16 @@ class CadenceFusedConvReluQuantizer(CadenceQuantizer):
         quantizers = quantizers + get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
         quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
+class CadenceWithSoftmaxQuantizer(CadenceQuantizer):
+    """
+    Quantizer including A16 softmax
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(SoftmaxPattern(), qconfig_A16))
         super().__init__(quantizers)
