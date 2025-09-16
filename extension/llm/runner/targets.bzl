@@ -12,17 +12,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "stats",
-        exported_headers = [
-            "stats.h",
-            "util.h",
-        ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
         name = "constants",
         exported_headers = [
             "constants.h",
@@ -36,6 +25,21 @@ def define_common_targets():
         aten_suffix = "_aten" if aten else ""
 
         runtime.cxx_library(
+            name = "stats",
+            exported_headers = [
+                "stats.h",
+                "util.h",
+            ],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":constants",
+                 "//executorch/extension/module:module" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "text_decoder_runner" + aten_suffix,
             exported_headers = ["text_decoder_runner.h"],
             srcs = ["text_decoder_runner.cpp"],
@@ -43,7 +47,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                ":stats",
+                ":stats" + aten_suffix,
                 "//executorch/kernels/portable/cpu/util:arange_util" + aten_suffix,
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/llm/runner/io_manager:io_manager" + aten_suffix,
