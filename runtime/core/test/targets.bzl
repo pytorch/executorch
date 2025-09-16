@@ -42,7 +42,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
         ],
     )
-    
+
     runtime.cxx_test(
         name = "event_tracer_test",
         srcs = [
@@ -103,6 +103,16 @@ def define_common_targets():
         ],
         preprocessor_flags = [
             "-DET_ENABLE_ENUM_STRINGS"
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "version_test",
+        srcs = [
+            "version_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
         ],
     )
 
