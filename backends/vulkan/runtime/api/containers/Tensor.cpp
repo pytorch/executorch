@@ -15,6 +15,21 @@ namespace vkcompute {
 namespace api {
 
 /*
+ * For PackedInt8 memory layouts, ensure that the scalar type used for the
+ * tensor is kInt8x4. Otherwise, return the original scalar type.
+ */
+vkapi::ScalarType get_effective_scalar_type(
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout) {
+  vkapi::ScalarType effective_dtype = dtype;
+  if (utils::is_packed_int8_layout(memory_layout)) {
+    VK_CHECK_COND(dtype == vkapi::kInt8x4 || dtype == vkapi::kChar);
+    effective_dtype = vkapi::kInt8x4;
+  }
+  return effective_dtype;
+}
+
+/*
  * Used to infer the sizes of a tensor that would correspond to a given
  * VulkanImage.
  */
@@ -187,6 +202,7 @@ std::vector<int64_t> calculate_padded_sizes(
 
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
+    const utils::GPUMemoryLayout memory_layout,
     const std::vector<int64_t>& axis_map,
     const int32_t packed_dim) {
   utils::uvec3 extents({1, 1, 1});
@@ -205,6 +221,26 @@ utils::uvec3 calculate_image_extents(
     extents[axis] = utils::safe_downcast<uint32_t>(padded_sizes.at(dim));
   }
 
+  // For "regular" tensor dtypes, 4 elements along the packed dim are packed
+  // into one texel (4-component vectorized type). However, for packed int8
+  // memory layouts, an additional level of packing is employed where 4 int8
+  // elements are packed into one int32, and then 4 int32 are packed into each
+  // ivec4 texel.
+  if (utils::is_packed_int8_layout(memory_layout)) {
+    // Each int in the ivec4 contains 4 channels. The overall ivec4 contains
+    // data for a 1Hx4Wx4C block of the input tensor.
+    if (memory_layout == utils::kPackedInt8_4W4C) {
+      VK_CHECK_COND(packed_dim == 2);
+      extents[axis_map.at(0)] = utils::div_up(extents[axis_map.at(0)], 4u);
+    }
+    // Each int in the ivec4 contains 4 elements along the width dim. The
+    // overall ivec4 contains data for a 4Hx4W block of the input tensor.
+    else if (memory_layout == utils::kPackedInt8_4H4W) {
+      VK_CHECK_COND(packed_dim == 0);
+      extents[axis_map.at(1)] = utils::div_up(extents[axis_map.at(1)], 4u);
+    }
+  }
+
   // axis_map[3] indicates the WHCN index of the dimension used for batch
   // concatenation. Thus a double lookup is required to determine the image axis
   // used for batch concatenation.
@@ -215,6 +251,7 @@ utils::uvec3 calculate_image_extents(
 
   VK_CHECK_COND(extents[axis_map.at(packed_dim)] % 4 == 0);
   extents[axis_map.at(packed_dim)] /= 4;
+
   return extents;
 }
 
@@ -247,35 +284,72 @@ utils::uvec3 calculate_logical_limits(
  */
 utils::uvec3 calculate_logical_limits(
     const std::vector<int64_t>& sizes,
+    const utils::GPUMemoryLayout memory_layout,
     const std::vector<int64_t>& axis_map,
     const int32_t packed_dim) {
   return calculate_logical_limits(
       calculate_image_extents(
-          calculate_padded_sizes(sizes, packed_dim), axis_map, packed_dim),
+          calculate_padded_sizes(sizes, packed_dim),
+          memory_layout,
+          axis_map,
+          packed_dim),
       axis_map);
 }
 
 int64_t calculate_gpu_buffer_numel(
+    const std::vector<int64_t>& sizes,
+    const utils::GPUMemoryLayout memory_layout,
+    const vkapi::ScalarType dtype) {
+  size_t numel;
+
+  // Mirrors the logic in calculate_image_extents for packed int8 memory layouts
+  if (dtype == vkapi::kInt8x4) {
+    VK_CHECK_COND(utils::is_packed_int8_layout(memory_layout));
+    std::vector<int64_t> blocks_in_dim =
+        flip_and_unsqueeze<int64_t>(sizes, kTensorSizes, 0);
+    // Each ivec4 contains data for a 1Hx4Wx4C block of the input
+    if (memory_layout == utils::kPackedInt8_4W4C) {
+      blocks_in_dim[0] = utils::div_up_4(blocks_in_dim[2]);
+      blocks_in_dim[2] = utils::div_up_4(blocks_in_dim[2]);
+    }
+    // Each ivec4 contains data for a 4Hx4W block of the input
+    else if (memory_layout == utils::kPackedInt8_4H4W) {
+      blocks_in_dim[0] = utils::div_up_4(blocks_in_dim[0]);
+      blocks_in_dim[1] = utils::div_up_4(blocks_in_dim[1]);
+    } else {
+      VK_THROW("Unhandled packed int8 memory layout!");
+    }
+    // Each block is represented as an ivec4, and the base dtype of the buffer
+    // is int. Therefore, need to multiply the number of blocks by 4 to obtain
+    // the number of int elements in the data buffer.
+    numel = utils::multiply_integers(blocks_in_dim) * 4;
+  }
+  // Case for "regular" dtypes/memory layouts
+  else {
+    numel = utils::multiply_integers(sizes);
+
+    // For 8-bit types, align to the next multiple of 4. For devices that do not
+    // support 8-bit storage buffers, the tensor data will be interpreted as an
+    // array of int32 instead.
+    if (vkapi::element_size(dtype) == 1) {
+      numel = utils::align_up_4(numel);
+    }
+  }
+  return numel;
+}
+
+int64_t calculate_staging_or_gpu_buffer_numel(
     Context* const context,
     const std::vector<int64_t>& sizes,
     const utils::uvec3 image_extents,
     const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout,
     const vkapi::ScalarType dtype) {
   // For texture backed tensors, simply multiply the total number of texels by 4
   if (storage_type != utils::kBuffer) {
     return image_extents[0] * image_extents[1] * image_extents[2] * 4;
   }
-  const bool is_int8 = dtype == vkapi::kChar;
-  const bool int8_supported =
-      context->adapter_ptr()->has_full_int8_buffers_support();
-  const size_t numel = utils::multiply_integers(sizes);
-  // For int8 tensors, if the device does not support int8 buffers, then int32
-  // is used instead to represent the buffer data. Therefore the number of
-  // elements in the buffer is aligned to the next multiple of 4.
-  if (is_int8 && int8_supported) {
-    return utils::align_up_4(numel);
-  }
-  return numel;
+  return calculate_gpu_buffer_numel(sizes, memory_layout, dtype);
 }
 
 template <typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
@@ -332,9 +406,11 @@ vkapi::VulkanImage allocate_image(
     Context* const context_ptr,
     utils::uvec3& image_extents,
     const utils::StorageType storage_type,
-    const VkFormat image_format,
+    const vkapi::ScalarType dtype,
     const bool allocate_memory) {
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
+
+  const VkFormat image_format = vkcompute::vkapi::to_vkformat(dtype);
 
   vkapi::ImageSampler::Properties sampler_props{
       VK_FILTER_NEAREST,
@@ -420,6 +496,7 @@ vkapi::VulkanBuffer allocate_buffer(
 vTensorStorage::vTensorStorage(
     Context* const context,
     const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout,
     const std::vector<int64_t>& axis_map,
     const int32_t packed_dim,
     const std::vector<int64_t>& sizes,
@@ -429,20 +506,22 @@ vTensorStorage::vTensorStorage(
       storage_type_{storage_type},
       image_extents_(calculate_image_extents(
           calculate_padded_sizes(sizes, packed_dim),
+          memory_layout,
           axis_map,
           packed_dim)),
-      buffer_length_{calculate_gpu_buffer_numel(
+      buffer_length_{calculate_staging_or_gpu_buffer_numel(
           context_,
           sizes,
           image_extents_,
           storage_type,
+          memory_layout,
           dtype)},
       buffer_offset_{0},
       image_(allocate_image(
           context_,
           image_extents_,
           storage_type_,
-          to_vkformat(dtype),
+          dtype,
           allocate_memory)),
       buffer_(allocate_buffer(
           context_,
@@ -553,7 +632,7 @@ vTensor::vTensor(
     const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory,
     const utils::AxisMapLayout axis_map_layout)
-    : dtype_(dtype),
+    : dtype_(get_effective_scalar_type(dtype, memory_layout)),
       // Calculate tensor metadata
       sizes_(sizes.begin(), sizes.end()),
       packed_dim_(utils::to_packed_dim<int32_t>(memory_layout)),
@@ -576,6 +655,7 @@ vTensor::vTensor(
       storage_(std::make_shared<vTensorStorage>(
           context,
           storage_type,
+          memory_layout,
           axis_map_,
           packed_dim_,
           sizes,
@@ -785,6 +865,16 @@ vkapi::VulkanBuffer& vTensor::buffer(
 }
 
 utils::GPUMemoryLayout vTensor::estimate_memory_layout() const {
+  if (dtype_ == vkapi::kInt8x4) {
+    switch (packed_dim_) {
+      case WHCN::kChannelsDim:
+        return utils::kPackedInt8_4W4C;
+      case WHCN::kWidthDim:
+        return utils::kPackedInt8_4H4W;
+      default:
+        VK_THROW("Invalid packed dim for Tensor with kInt8x4 type");
+    }
+  }
   switch (packed_dim_) {
     case WHCN::kWidthDim:
       return utils::kWidthPacked;
@@ -914,8 +1004,8 @@ void vTensor::update_metadata() {
         flip_and_unsqueeze_ivec4(dim_order_, kTensorDimOrder, numel_);
     uniform_data_->strides_v =
         flip_and_unsqueeze_ivec4(strides_, kTensorStrides, numel_);
-    uniform_data_->logical_limits.limits =
-        calculate_logical_limits(sizes_, axis_map_, packed_dim_);
+    uniform_data_->logical_limits.limits = calculate_logical_limits(
+        sizes_, estimate_memory_layout(), axis_map_, packed_dim_);
 
     if (sizes_uniform_offset_ != kUniformOffsetUnset) {
       uniforms_.update(uniform_data_->sizes_v, sizes_uniform_offset_);
@@ -942,11 +1032,15 @@ void vTensor::update_metadata() {
 }
 
 void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
+  utils::GPUMemoryLayout est_memory_layout = estimate_memory_layout();
   if (storage_type() != utils::kBuffer) {
     // For texture storage check that the current texture is large enough for
     // the new sizes of the tensor.
     utils::uvec3 virtual_extents = calculate_image_extents(
-        calculate_padded_sizes(sizes_, packed_dim_), axis_map_, packed_dim_);
+        calculate_padded_sizes(sizes_, packed_dim_),
+        est_memory_layout,
+        axis_map_,
+        packed_dim_);
 
     bool valid_resize = virtual_extents[0] <= storage_->image_extents_[0];
     valid_resize =
@@ -958,9 +1052,10 @@ void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
         valid_resize,
         "tensor sizes requires a larger texture than the current one.");
   } else {
-    // For buffer storage check that the current buffer is large enough for the
-    // new sizes of the tensor.
-    int64_t numel = utils::multiply_integers(sizes);
+    // For buffer storage check that the current buffer is large enough for
+    // the new sizes of the tensor.
+    int64_t numel =
+        calculate_gpu_buffer_numel(sizes_, est_memory_layout, dtype_);
     bool valid_resize =
         numel + storage_->buffer_offset_ <= storage_->buffer_length_;
     VK_CHECK_COND(
