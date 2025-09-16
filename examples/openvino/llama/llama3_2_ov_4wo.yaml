@@ -2,17 +2,20 @@ base:
   metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
 
 model:
-  use_kv_cache: True
+  use_kv_cache: true
   dtype_override: fp32
-  enable_dynamic_shape: False
+  enable_dynamic_shape: false
 
 quantization:
   pt2e_quantize: "openvino_4wo"
   group_size: 128
 
+export:
+  output_name: "llama3_2_ov.pte"
+
 backend:
   openvino:
-    enabled: True
+    enabled: true
 
 debug:
-  verbose: True
+  verbose: false

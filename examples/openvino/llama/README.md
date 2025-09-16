@@ -2,13 +2,13 @@
 # Export Llama with OpenVINO Backend
 
 ## Download the Model
-Follow the [instructions](../../examples/models/llama#step-2-prepare-model) to download the required model files. Export Llama with OpenVINO backend is only verified with Llama-3.2-1B variants at this time. 
+Follow the [instructions](../../../examples/models/llama/README.md#step-2-prepare-model) to download the required model files. Export Llama with OpenVINO backend is only verified with Llama-3.2-1B variants at this time.
 
 ## Environment Setup
-Follow the [instructions](../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
+Follow the [instructions](../../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
 
 ## Export the model:
-Navigate into `<executorch_root>/examples/openvino/llama` and execute the commands below to export the model. Update the model file paths to match the location where your model is downloaded. Replace device with the target hardware you want to compile the model for (`CPU`, `GPU`, or `NPU`). The exported model will be generated in the same directory with the filename `llama3_2.pte`.
+Navigate into `<executorch_root>/examples/openvino/llama` and execute the commands below to export the model. Update the model file paths to match the location where your model is downloaded. Replace device with the target hardware you want to compile the model for (`CPU`, `GPU`, or `NPU`). The exported model will be generated in the same directory with the filename `llama3_2_ov.pte`. For modifying the output name, change `output_name` in `llama3_2_ov_4wo.yaml` file under `export`.
 
 ```
 LLAMA_CHECKPOINT=<path/to/model/folder>/consolidated.00.pth
