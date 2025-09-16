@@ -253,14 +253,14 @@ class ToTosaMemoryFormatPass(ExportPass):
         for input_node in inputs:
             input_dim_order = get_first_fake_tensor(input_node).dim_order()
             if input_dim_order in (NCHW_ORDER, NNCHW_ORDER):
-                ToTosaMemoryFormatPass.insert_output_transpose(input_node, graph_module)
+                self.insert_output_transpose(input_node, graph_module)
 
         # Transpose outputs if they are in (N)NCHW format
         outputs = output_node.args[0]
         output_dim_orders = output_node.meta.get("original_dim_orders")
         if output_dim_orders is None:
             raise RuntimeError(
-                f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {ToTosaMemoryFormatPass.__name__}."
+                f"{AnnotateDecomposedMatmulPass.__name__} is required to run at the beginning of the pass pipeline when using {self.__name__}."
             )
 
         for output_node_input, output_dim_order in zip(outputs, output_dim_orders):  # type: ignore[arg-type]
@@ -268,7 +268,7 @@ class ToTosaMemoryFormatPass(ExportPass):
                 NCHW_ORDER,
                 NNCHW_ORDER,
             ):
-                ToTosaMemoryFormatPass.insert_input_transpose(
+                self.insert_input_transpose(
                     output_node, output_node_input, graph_module
                 )
 
