@@ -97,6 +97,11 @@ def _make_wrapped_test(
 ):
     def wrapped_test(self):
         with TestContext(test_name, test_base_name, flow.name, params):
+            if flow.should_skip_test(test_name):
+                raise unittest.SkipTest(
+                    f"Skipping test due to matching flow {flow.name} skip patterns"
+                )
+
             test_kwargs = copy.copy(params) or {}
             test_kwargs["flow"] = flow
 
