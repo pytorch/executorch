@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_ACTIVATION_BLOCK_LOAD
+#define CONV2D_FP_ACTIVATION_BLOCK_LOAD
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "conv2d_fp_activation_block.glslh"
+
+VEC4_T load_fp_input_texel(const Conv2dTensorIndex tidx) {
+  return texelFetch(t_fp_input, tidx.data, 0);
+}
+
+void load_fp_input_block(
+    out FPActivationBlock block,
+    const Conv2dBlockIndex block_idx) {
+  Conv2dTensorIndex load_tidx = block_idx_to_tensor_idx(block_idx);
+  [[unroll]] for (int w = 0; w < 4; w++) {
+    block.data[w] = load_fp_input_texel(load_tidx);
+    load_tidx.data.x++;
+  }
+}
+
+#endif // CONV2D_FP_ACTIVATION_BLOCK_LOAD

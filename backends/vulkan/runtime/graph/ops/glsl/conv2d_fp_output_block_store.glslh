@@ -1,0 +1,32 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_ACTIVATION_BLOCK_STORE
+#define CONV2D_FP_ACTIVATION_BLOCK_STORE
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "conv2d_fp_activation_block.glslh"
+
+void store_fp_output_texel(
+    const Conv2dTensorIndex tidx,
+    const VEC4_T out_texel) {
+  imageStore(t_fp_output, tidx.data, out_texel);
+}
+
+void store_fp_activation_block(
+    const FPActivationBlock block,
+    const Conv2dBlockIndex block_idx) {
+  Conv2dTensorIndex store_tidx = block_idx_to_tensor_idx(block_idx);
+  [[unroll]] for (int w = 0; w < 4; w++) {
+    store_fp_output_texel(store_tidx, block.data[w]);
+    store_tidx.data.x++;
+  }
+}
+
+#endif // CONV2D_FP_ACTIVATION_BLOCK_STORE

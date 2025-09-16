@@ -1,0 +1,37 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_ACTIVATION_BLOCK
+#define CONV2D_FP_ACTIVATION_BLOCK
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct FPActivationBlock {
+  VEC4_T data[4];
+};
+
+#ifdef DEBUG_MODE
+
+#extension GL_EXT_debug_printf : require
+
+void printFPActivationBlock(const FPActivationBlock activation_block) {
+  debugPrintfEXT("fp activation_block: \\n");
+  [[unroll]] for (int w = 0; w < 4; ++w) {
+    debugPrintfEXT(
+        "  [%d]: %f, %f, %f, %f, \\n",
+        w,
+        activation_block.data[w].x,
+        activation_block.data[w].y,
+        activation_block.data[w].z,
+        activation_block.data[w].w);
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // CONV2D_FP_ACTIVATION_BLOCK
