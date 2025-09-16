@@ -13,7 +13,7 @@ green='\e[1;32m'; red='\e[1;31m'; cyan='\e[1;36m'; reset='\e[0m'
 
 # Following is the rules for the file size linting:
 # 1. For all files, the file size can't be larger than 1MB
-# 2. For images/vidoes, the files size can't be larger than 7MB
+# 2. For images/videos, the file size can't be larger than 8MB
 # 3. There is an exception list defined in the script if it's really needed
 
 # List of files to skip (relative paths)
@@ -55,7 +55,7 @@ for file in $files; do
   if [ -f "$file" ]; then
     # Set size limit depending on extension
     if [[ "$file" =~ \.(png|jpg|jpeg|gif|svg|mp3|mp4)$ ]]; then
-      MAX_SIZE=$((8 * 1024 * 1024))  # 5 MB for pictures
+      MAX_SIZE=$((8 * 1024 * 1024))  # 8 MB for pictures
     else
       MAX_SIZE=$((1 * 1024 * 1024))  # 1 MB for others
     fi
