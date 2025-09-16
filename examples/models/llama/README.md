@@ -136,7 +136,7 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
       </em>
 </p>
 
-[Please visit this section to try it on non-CPU backend, including CoreML, MPS, Qualcomm HTP or MediaTek](non_cpu_backends.md).
+[Please visit this section to try it on non-CPU backend, including CoreML, MPS, Qualcomm HTP, MediaTek, or OpenVINO](non_cpu_backends.md).
 
 # Instructions
 
