@@ -22,3 +22,6 @@ After exporting the CoreML model .pte file, please [follow the instruction to bu
 
 ### MTK
 Please [follow the instructions](https://github.com/pytorch/executorch/tree/main/examples/mediatek#llama-example-instructions) to deploy llama3 8b to an Android phones with MediaTek chip
+
+### OpenVINO
+Please follow [the instructions](../../openvino/llama/README.md) to deploy Llama 3 1B to Intel CPUs, GPUs, and NPUs.
