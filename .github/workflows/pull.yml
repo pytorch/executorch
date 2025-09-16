@@ -891,7 +891,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Setup Samsung SDK (AI Lite Core) and install enn backend
-        source .ci/scripts/setup-samsung-linux-deps.sh --token "$SECRET_SAMSUNG_AI_LITECORE_KEY"
+        source .ci/scripts/setup-samsung-linux-deps.sh --token $SECRET_SAMSUNG_AI_LITECORE_KEY
 
         # Test models serially
         models="mv2 ic3 resnet18 resnet50"
