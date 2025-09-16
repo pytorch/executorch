@@ -5,7 +5,6 @@ import random
 import re
 import time
 import unittest
-import warnings
 
 from datetime import timedelta
 from typing import Any
@@ -16,6 +15,7 @@ import torch
 UNSUPPORTED_PORTABLE_OPS = {
     "aten::_embedding_bag",
     "aten::_adaptive_avg_pool2d",
+    "aten::adaptive_max_pool2d",
     "aten::median",
     "aten::median.dim",
     "aten::round.decimals",
@@ -35,6 +35,7 @@ from executorch.backends.test.suite.reporting import (
     TestResult,
 )
 from executorch.exir import EdgeProgramManager
+from executorch.exir.dialects._ops import ops as exir_ops
 
 
 # A list of all runnable test suites and the corresponding python package.
@@ -42,6 +43,24 @@ NAMED_SUITES = {
     "models": "executorch.backends.test.suite.models",
     "operators": "executorch.backends.test.suite.operators",
 }
+
+
+def _graph_has_unsupported_patterns(program: torch.export.ExportedProgram) -> bool:
+    # Returns true if the model contains patterns that will fail when running on the ET
+    # portable kernel library.
+
+    # Check for 3d convolutions. All convs (1d, 2d, 3d) use the same op, so we need to look at
+    # the input meta to determine the rank.
+    for node in program.graph.nodes:
+        if (
+            node.op == "call_function"
+            and node.target == exir_ops.edge.aten.convolution.default
+        ):
+            in_rank = node.args[0].meta["val"].dim()
+            if in_rank != 4:
+                return True
+
+    return False
 
 
 def _get_test_seed(test_base_name: str) -> int:
@@ -163,7 +182,7 @@ def run_test(  # noqa: C901
     # Check if any undelegated ops are in the unsupported ops set.
     has_unsupported_ops = any(
         op in UNSUPPORTED_PORTABLE_OPS for op in undelegated_op_counts.keys()
-    )
+    ) or _graph_has_unsupported_patterns(edge_manager._etrecord.edge_dialect_program)
 
     # Skip the test if there are unsupported portable ops remaining.
     if has_unsupported_ops:
@@ -282,10 +301,6 @@ def build_test_filter(args: argparse.Namespace) -> TestFilter:
 
 def runner_main():
     args = parse_args()
-
-    # Suppress deprecation warnings for export_for_training, as it generates a
-    # lot of log spam. We don't really need the warning here.
-    warnings.simplefilter("ignore", category=FutureWarning)
 
     seed = args.seed or random.randint(0, 100_000_000)
     print(f"Running with seed {seed}.")

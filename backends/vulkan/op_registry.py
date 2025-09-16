@@ -301,6 +301,32 @@ def register_to_copy_dim_order_op():
     )
 
 
+@update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
+def register_clone_dim_order_op():
+    # Similar to to_dim_order_copy, _clone_dim_order can be removed as long as the
+    # operator is not changing the dtype, i.e. the operator call is modifying the dim
+    # order only. Therefore, check that the input and output dtypes are the same, if so
+    # the operator is safe to remove.
+    def check_clone_dim_order_node(node: torch.fx.Node) -> bool:
+        in_arg = node.args[0]
+        if not isinstance(in_arg, torch.fx.Node):
+            return False
+
+        in_tensor = in_arg.meta.get("val", None)
+        out_tensor = node.meta.get("val", None)
+
+        if in_tensor.dtype != out_tensor.dtype:
+            return False
+
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_clone_dim_order_node,
+    )
+
+
 @update_features(
     [
         exir_ops.edge.aten.bmm.default,
@@ -357,40 +383,6 @@ def register_linear_dqa_qw_ops():
             utils.NO_STORAGE,  # group_size (scalar)
             utils.NO_STORAGE,  # bias (prepacked)
         ],
-        supports_prepacking=True,
-    )
-
-
-@update_features(
-    [
-        exir_ops.edge.et_vk.linear_weight_int4.default,
-    ]
-)
-def register_int4_mm_op():
-    return OpFeatures(
-        inputs_storage=utils.CONTIGUOUS_ANY,
-        supports_resize=True,
-        supports_prepacking=True,
-    )
-
-
-@update_features(
-    [
-        exir_ops.edge.et_vk.linear_qta8a_qga4w.default,
-    ]
-)
-def register_dqlinear_op():
-    return OpFeatures(
-        inputs_storage=[
-            utils.CONTIGUOUS_ANY,  # input
-            utils.CONTIGUOUS_BUFFER,  # mat1 scales
-            utils.CONTIGUOUS_BUFFER,  # mat1 zeros
-            utils.NO_STORAGE,  # weight (prepacked)
-            utils.NO_STORAGE,  # group size (non tensor)
-            utils.CONTIGUOUS_BUFFER,  # mat2 scales
-            utils.CONTIGUOUS_BUFFER,  # mat2 zeros
-        ],
-        supports_resize=True,
         supports_prepacking=True,
     )
 
@@ -545,7 +537,7 @@ def register_sdpa_with_kv_cache_op():
 )
 def register_sdpa_ops():
     return OpFeatures(
-        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_resize=True,
     )
 

@@ -18,8 +18,7 @@ from executorch.backends.arm.operator_support.tosa_supported_operators import (
     tosa_support_factory,
 )
 from executorch.backends.arm.tosa.backend import TOSABackend
-from executorch.backends.arm.tosa.specification import get_tosa_spec
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -35,11 +34,18 @@ logger = logging.getLogger(__name__)
 
 
 def is_noop_clone(node: torch.fx.node.Node) -> bool:
-    return node.target == exir_ops.edge.aten.clone.default
+    return node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
 
 
-def is_noop_alias_copy(node: torch.fx.node.Node) -> bool:
+def is_noop_alias_copy(node: torch.fx.Node) -> bool:
     return node.target == exir_ops.edge.aten.alias_copy.default
+
+
+def is_noop_to_dim_order_copy(node: torch.fx.node.Node) -> bool:
+    if node.target != exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
+        return False
+    else:
+        return node.meta.get("dtype") == get_first_fake_tensor(node.args[0]).dtype  # type: ignore[arg-type]
 
 
 def is_noop_expand(node: torch.fx.node.Node) -> bool:
@@ -53,15 +59,15 @@ def is_noop_expand(node: torch.fx.node.Node) -> bool:
 class TOSAPartitioner(Partitioner):
     def __init__(
         self,
-        compile_spec: List[CompileSpec],
+        compile_spec: TosaCompileSpec,
         additional_checks: Optional[Sequence[OperatorSupportBase]] = None,
     ) -> None:
-        from executorch.backends.arm.arm_backend import is_tosa
-
-        if not is_tosa(compile_spec):
-            raise RuntimeError("compile spec is not targeting TOSA")
-        self.delegation_spec = DelegationSpec(TOSABackend.__name__, compile_spec)
+        self.delegation_spec = DelegationSpec(
+            TOSABackend.__name__, compile_spec.to_list()
+        )
+        self.tosa_spec = compile_spec.tosa_spec
         self.additional_checks = additional_checks
+        self.tosa_spec = compile_spec.tosa_spec
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:  # noqa
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -70,13 +76,13 @@ class TOSAPartitioner(Partitioner):
         logger.info("TOSAPartitioner::partition")
         partition_tags: dict[str, DelegationSpec] = {}
 
-        tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
-
-        logger.info(f"Partitioning for {self.delegation_spec.backend_id}: {tosa_spec}")
+        logger.info(
+            f"Partitioning for {self.delegation_spec.backend_id}: {self.tosa_spec}"
+        )
 
         reporter = WhyNoPartitionReporter()
         operator_support = tosa_support_factory(
-            tosa_spec, exported_program, reporter, self.additional_checks
+            self.tosa_spec, exported_program, reporter, self.additional_checks
         )
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
@@ -126,7 +132,7 @@ class TOSAPartitioner(Partitioner):
                             break
                     continue
 
-                if tosa_spec.support_float():
+                if self.tosa_spec.support_float():
                     continue
 
                 if is_partitioned(node):
@@ -145,6 +151,7 @@ class TOSAPartitioner(Partitioner):
                 is_noop_clone(node)
                 or is_noop_alias_copy(node)
                 or is_noop_expand(node)
+                or is_noop_to_dim_order_copy(node)
                 or node.target in Q_OPS
                 or node.target in DQ_OPS
                 for node in partition.nodes
@@ -157,7 +164,7 @@ class TOSAPartitioner(Partitioner):
                 )
 
         tag_constant_data(exported_program)
-        logger.info(f"The following nodes were rejected for {tosa_spec}:")
+        logger.info(f"The following nodes were rejected for {self.tosa_spec}:")
         logger.info("\n" + reporter.get_table_report())
         logger.info("(Placeholders and outputs are not included in this list)")
         return PartitionResult(
@@ -207,8 +214,7 @@ class TOSAPartitioner(Partitioner):
             torch.ops.aten.logit.default,
         ] + ops_to_not_decompose_if_quant_op
 
-        tosa_spec = get_tosa_spec(self.delegation_spec.compile_specs)
-        if not tosa_spec.is_U55_subset:
+        if not self.tosa_spec.is_U55_subset:
             # Tosa operator "RESIZE" is not supported on U55. Since upsample_bilinear2d
             # and upsample_nearest2d decompose into that it will not be possible to
             # delegate those operators on U55. If we have said here to not decompose
