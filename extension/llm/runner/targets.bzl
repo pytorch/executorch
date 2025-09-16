@@ -36,6 +36,7 @@ def define_common_targets():
             exported_deps = [
                 ":constants",
                  "//executorch/extension/module:module" + aten_suffix,
+                 "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 
