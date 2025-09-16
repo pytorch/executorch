@@ -10,15 +10,14 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
-using ::cadence::impl::HiFi::kernels::dequantize;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::HiFi::kernels::dequantize;
 
 void dequantize_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -54,7 +53,6 @@ void dequantize_per_tensor_out(
   }
 }
 
-}; // namespace native
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace native
+} // namespace HiFi
+} // namespace impl

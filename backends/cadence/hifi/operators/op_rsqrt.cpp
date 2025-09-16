@@ -15,7 +15,6 @@ using executorch::aten::RuntimeContext;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -53,4 +52,3 @@ Tensor& rsqrt_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

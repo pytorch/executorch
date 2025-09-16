@@ -17,7 +17,6 @@ using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 using ScalarType = executorch::aten::ScalarType;
 using ::executorch::aten::IntArrayRef;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -64,7 +63,7 @@ void xa_opt_quantized_conv1d_nhwc_asym8sxsym8s_asym8s(
       xa_nn_conv1d_std_getsize(kernel_width, input_width, input_channels, 8);
   scratch_size = scratch_size < 0 ? 0 : scratch_size;
   WORD32* ptr_scratch =
-      (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
+      (WORD32*)::impl::HiFi::kernels::allocate_temp_memory(ctx, scratch_size);
   pVOID p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
 
   for (int _n = 0; _n < batches; _n++) {
@@ -129,4 +128,3 @@ void quantized_conv1d_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence
