@@ -171,6 +171,7 @@ class OperatorTest(unittest.TestCase):
             if run_summary.result.is_backend_failure():
                 raise RuntimeError("Test failure.") from run_summary.error
             else:
+                raise RuntimeError("Test: " + str(run_summary))
                 # Non-backend failure indicates a bad test. Mark as skipped.
                 raise unittest.SkipTest(
                     f"Test failed for reasons other than backend failure. Error: {run_summary.error}"
