@@ -57,6 +57,7 @@ from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import Stage, StageType
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -333,6 +334,7 @@ class ArmTester(Tester):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        generate_etrecord: bool = False,
     ):
         if transform_passes is not None:
             raise RuntimeError(
@@ -367,7 +369,9 @@ class ArmTester(Tester):
                 to_edge_and_lower_stage.partitioners = partitioners
             if edge_compile_config is not None:
                 to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
-        return super().to_edge_transform_and_lower(to_edge_and_lower_stage)
+        return super().to_edge_transform_and_lower(
+            to_edge_and_lower_stage, generate_etrecord=generate_etrecord
+        )
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
@@ -402,6 +406,7 @@ class ArmTester(Tester):
         qtol=0,
         error_callbacks=None,
         run_eager_mode=False,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -657,10 +662,17 @@ class ArmTester(Tester):
         rtol=1e-03,
         qtol=0,
         error_callbacks=None,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         try:
             super()._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback=statistics_callback,
             )
         except AssertionError as e:
             if error_callbacks is None:
