@@ -2250,6 +2250,7 @@ class CommonReplacePasses:
         ReplaceMMWithAddMMPass,
         ReplaceRepeatWithCatPass,
         ReplaceFullLikeWithFullPass,
+        ReplaceAtenConvolutionWithCadenceConvolutionPass,
     ]
 
 
@@ -2282,7 +2283,6 @@ class CadenceReplaceOpsInGraph:
         RemoveNopSelectOpPass,
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
-        ReplaceAtenConvolutionWithCadenceConvolutionPass,
         ReplaceConvWithChannelLastConvPass,
         ReplaceTrivialConvWithLinear,
         ReplaceConvWithIm2RowAndLinear,

@@ -329,14 +329,14 @@ void add_quantize_and_pack_q8ta_conv2d_input_node(
       nullptr));
 }
 
-void add_unpack_and_dequantize_q8ta_conv2d_input_node(
+void add_unpack_and_dequantize_q8ta_conv2d_output_node(
     ComputeGraph& graph,
     const ValueRef packed_int8_output,
-    const ValueRef input_scale,
-    const ValueRef input_zp,
+    const ValueRef output_scale,
+    const ValueRef output_zp,
     const ValueRef fp_output) {
-  float scale = graph.extract_scalar<float>(input_scale);
-  int32_t zp = graph.extract_scalar<int32_t>(input_zp);
+  float scale = graph.extract_scalar<float>(output_scale);
+  int32_t zp = graph.extract_scalar<int32_t>(output_zp);
 
   // Get shader for quantized conv2d linear tiled
   std::string kernel_name = "unpack_and_dequantize_q8ta_conv2d_output";
@@ -822,13 +822,13 @@ void qdq8ta_conv2d_input(
       &graph,
       graph.sizes_of(fp_input),
       vkapi::kInt8x4,
-      utils::kTexture3D,
+      utils::kBuffer,
       utils::kPackedInt8_4W4C);
 
   add_quantize_and_pack_q8ta_conv2d_input_node(
       graph, fp_input, scale, zero_point, packed_int8_input);
 
-  add_unpack_and_dequantize_q8ta_conv2d_input_node(
+  add_unpack_and_dequantize_q8ta_conv2d_output_node(
       graph, packed_int8_input, scale, zero_point, fp_output);
 }
 

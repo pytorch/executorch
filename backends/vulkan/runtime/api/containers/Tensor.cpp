@@ -311,7 +311,7 @@ int64_t calculate_gpu_buffer_numel(
         flip_and_unsqueeze<int64_t>(sizes, kTensorSizes, 0);
     // Each ivec4 contains data for a 1Hx4Wx4C block of the input
     if (memory_layout == utils::kPackedInt8_4W4C) {
-      blocks_in_dim[0] = utils::div_up_4(blocks_in_dim[2]);
+      blocks_in_dim[0] = utils::div_up_4(blocks_in_dim[0]);
       blocks_in_dim[2] = utils::div_up_4(blocks_in_dim[2]);
     }
     // Each ivec4 contains data for a 4Hx4W block of the input

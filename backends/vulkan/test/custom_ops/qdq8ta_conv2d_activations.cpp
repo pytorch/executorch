@@ -133,6 +133,11 @@ std::vector<TestCase> generate_qdq8ta_conv2d_test_cases() {
       {1, 16, 14, 14},
       {1, 8, 28, 28},
 
+      // Odd tensor sizes
+      {1, 3, 15, 15},
+      {1, 13, 31, 31},
+      {1, 17, 23, 23},
+
       // Performance test cases (larger tensors)
       {1, 64, 128, 128},
       {1, 32, 64, 64},
