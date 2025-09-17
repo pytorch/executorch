@@ -38,12 +38,11 @@ class OpenvinoBackend(BackendDetails):
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
         # Apply RemoveCloneOpsTransform to eliminate unnecessary clone operations
-        remove_clone_transform = RemoveCloneOpsTransform()
-        transformed_result = remove_clone_transform(edge_program.graph_module)
+        transformed_ep = RemoveCloneOpsTransform()(edge_program.graph_module)
 
         # Update the edge_program with the transformed graph
-        if transformed_result.graph_module is not None:
-            edge_program._graph_module = transformed_result.graph_module
+        if transformed_ep.graph_module is not None:
+            edge_program._graph_module = transformed_ep.graph_module
 
         input_names = edge_program.graph_signature.user_inputs
         args = []
