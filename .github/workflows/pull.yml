@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -42,7 +42,7 @@ jobs:
 
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -67,7 +67,7 @@ jobs:
 
   test-models-linux-basic:
     name: test-models-linux-basic
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -111,7 +111,7 @@ jobs:
 
   test-models-linux:
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -165,7 +165,7 @@ jobs:
   test-llama-runner-linux:
     # Test Both linux x86 and linux aarch64
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -215,7 +215,7 @@ jobs:
 
   test-llama-runner-linux-android:
     name: test-llama-runner-linux-android
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -240,7 +240,7 @@ jobs:
 
   test-custom-ops-linux:
     name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -264,7 +264,7 @@ jobs:
 
   test-selective-build-linux:
     name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -288,7 +288,7 @@ jobs:
 
   test-llava-runner-linux:
     name: test-llava-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -319,7 +319,7 @@ jobs:
 
   test-moshi-linux:
     name: test-moshi-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -349,7 +349,7 @@ jobs:
 
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -372,7 +372,7 @@ jobs:
 
   test-binary-size-linux-gcc:
     name: test-binary-size-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -408,7 +408,7 @@ jobs:
 
   test-binary-size-linux:
     name: test-binary-size-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -480,7 +480,7 @@ jobs:
 
   unittest-arm-backend-with-no-fvp:
     name: unittest-arm-backend-with-no-fvp
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -513,7 +513,7 @@ jobs:
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -552,7 +552,7 @@ jobs:
 
   test-static-llama-qnn-linux:
     name: test-static-llama-qnn-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -585,7 +585,7 @@ jobs:
 
   test-qnn-models-linux:
     name: test-qnn-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -607,7 +607,7 @@ jobs:
 
   test-phi-3-mini-runner-linux:
     name: test-phi-3-mini-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -634,7 +634,7 @@ jobs:
 
   test-eval_llama-wikitext-linux:
     name: test-eval_llama-wikitext-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -662,7 +662,7 @@ jobs:
   # TODO(larryliu0820): Fix this issue before reenabling it: https://gist.github.com/larryliu0820/7377ecd0d79dbc06076cec8d9f2b85d2
   # test-eval_llama-mmlu-linux:
   #   name: test-eval_llama-mmlu-linux
-  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+  #   uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
   #   permissions:
   #     id-token: write
   #     contents: read
@@ -689,7 +689,7 @@ jobs:
 
   test-llama_runner_eager-linux:
     name: test-llama_runner_eager-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -716,7 +716,7 @@ jobs:
 
   test-llama-lora-linux:
     name: test-llama-lora-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -746,7 +746,7 @@ jobs:
 
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -773,7 +773,7 @@ jobs:
 
   test-openvino-linux:
     name: test-openvino-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -796,7 +796,7 @@ jobs:
 
   test-build-wasm-linux:
     name: test-build-wasm-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -824,7 +824,7 @@ jobs:
 
   unittest-wasm-bindings:
     name: unittest-wasm-bindings
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -860,7 +860,7 @@ jobs:
         npm test
 
   unittest-nxp-neutron:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -896,7 +896,7 @@ jobs:
 
   test-samsung-models-linux:
     name: test-samsung-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -931,7 +931,7 @@ jobs:
 
   test-vulkan-models-linux:
     name: test-vulkan-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -967,7 +967,7 @@ jobs:
 
   test-vulkan-operators-linux:
     name: test-vulkan-operators-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -1013,7 +1013,7 @@ jobs:
 
   nxp-build-test:
     name: nxp-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read

@@ -157,7 +157,7 @@ jobs:
 
   export-models:
     name: export-models
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -402,7 +402,7 @@ jobs:
 
   build-benchmark-app:
     name: build-benchmark-app
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -450,7 +450,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@release/2.9
     needs:
       - set-parameters
       - prepare-test-specs
@@ -496,7 +496,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Setup conda
-        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@release/2.9
         with:
           python-version: '3.10'
 
@@ -554,7 +554,7 @@ jobs:
           done
 
       - name: Upload the benchmark results (v3)
-        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@main
+        uses: pytorch/test-infra/.github/actions/upload-benchmark-results@release/2.9
         with:
           benchmark-results-dir: benchmark-results/v3
           dry-run: false
