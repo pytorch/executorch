@@ -6,16 +6,17 @@
 
 # pyre-strict
 
-
 from typing import Callable
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
-
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
+torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 
 qdtype_map: dict[ScalarType, torch.dtype] = {
     ScalarType.QINT8: torch.qint8,
@@ -38,7 +39,7 @@ def quantize_per_tensor(
 
     Args:
         - input_tensor (Tensor): input tensor
-        - scale (float): Inverse of quantization scale. Derived from the ratio
+        - scale (float): Quantization scale. Derived from the ratio
             between the min/max of the floating-point tensor and the
             min/max of the quantized range, and then inverted.
         - zero_point (int): The point which represents 0 in the quantized
@@ -64,10 +65,13 @@ def quantize_per_tensor(
             f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_quant_types}"
         )
 
-    quantized = torch.round(input_tensor * scale + zero_point).to(dtype)
-    return torch.max(
-        torch.min(quantized, torch.tensor(quant_max)),
-        torch.tensor(quant_min),
+    return torch.ops.quantized_decomposed.quantize_per_tensor(
+        input_tensor,
+        scale,
+        zero_point,
+        quant_min,
+        quant_max,
+        dtype,
     )
 
 
@@ -97,7 +101,7 @@ def dequantize_per_tensor(
             is already provided.
         - quant_max (int): The largest value in the quantized domain. Unused since scale
             is already provided.
-        - dtype (torch.dtype): The type of the output tensor. Must be a floating point type.
+        - dtype (torch.dtype): The type of the input tensor.
     """
     supported_quant_types = [
         torch.int8,
@@ -108,23 +112,15 @@ def dequantize_per_tensor(
     ]
     if input_tensor.dtype not in supported_quant_types:
         raise ValueError(f"Input dtype must be one of {supported_quant_types}")
-    supported_dequant_types = [
-        torch.float,
-        torch.float32,
-        torch.float16,
-        torch.bfloat16,
-    ]
-    if dtype not in supported_dequant_types:
-        raise ValueError(
-            f"Unsupported dtype to dequantize to. Supported dtypes must be one of {supported_dequant_types}"
-        )
+    if input_tensor.dtype != dtype:
+        raise ValueError("Input dtype must match dtype")
 
-    # Needed to prevent underflow in cases where the zero_point is larger than
-    # the quantized value.
-    if not input_tensor.dtype.is_signed:
-        input_tensor = input_tensor.to(torch.int32)
-
-    return (input_tensor - zero_point).to(dtype) * scale
+    # Use the reference implementation from torch quantized_decomposed library
+    # Unlike quantize_per_tensor, dequantize_per_tensor doesn't have a behavior
+    # difference, since there's no rounding algorithm (just arithmetic).
+    return torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input_tensor, scale, zero_point, quant_min, quant_max, dtype
+    )
 
 
 @impl(m, "quantized_add.per_tensor")
@@ -180,12 +176,10 @@ def quantized_add_per_tensor(
     dequant_X = X_scale * (X - X_zero_point)
     dequant_Y = Y_scale * (Y - Y_zero_point)
 
-    out_scale_inv = 1 / out_scale
-
     # q_min/q_max are unused args
     return quantize_per_tensor(
         dequant_X + dequant_Y,
-        out_scale_inv,
+        out_scale,
         out_zero_point,
         torch.iinfo(dtype).min,
         torch.iinfo(dtype).max,
@@ -259,8 +253,7 @@ def quantized_linear_common(
         - out_zero_point (int): The quantized mapping of zero for the output
         - offset (Tensor): Unused
     """
-    out_scale = -out_multiplier * (1 / (1 << 31)) * (2**out_shift)
-    out_scale_inv = 1 / out_scale
+    out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
 
     N, K = weight.shape
 
@@ -281,7 +274,7 @@ def quantized_linear_common(
     )
     return quantize_per_tensor(
         out,
-        out_scale_inv,
+        out_scale,
         out_zero_point,
         torch.iinfo(dtype).min,
         torch.iinfo(dtype).max,
@@ -397,6 +390,17 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor:
 @impl(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, True, torch.uint8, torch.uint8)
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "fully_connected")
+def fully_connected(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+) -> torch.Tensor:
+    if input_tensor.shape[0] != 1:
+        raise ValueError("Fully connected linear only supports batch size of 1")
+    return F.linear(input_tensor, weight, bias)
 
 
 @impl(m, "quantized_matmul")
@@ -538,7 +542,7 @@ def quantized_layer_norm_per_tensor(
         )
 
     float_input_tensor = dequantize_per_tensor(
-        input_tensor, X_scale, X_zero_point, -128, 127, torch.float32
+        input_tensor, X_scale, X_zero_point, -128, 127, input_tensor.dtype
     )
     out = torch.nn.functional.layer_norm(
         float_input_tensor, normalized_shape, weight, bias, eps=eps
@@ -546,7 +550,7 @@ def quantized_layer_norm_per_tensor(
 
     return quantize_per_tensor(
         out,
-        1 / output_scale,
+        output_scale,
         output_zero_point,
         torch.iinfo(input_tensor.dtype).min,
         torch.iinfo(input_tensor.dtype).max,
@@ -615,7 +619,7 @@ def quantized_conv_per_tensor(
 
     return quantize_per_tensor(
         float_out,
-        1.0 / output_scale,
+        output_scale,
         output_zero_point,
         torch.iinfo(input_tensor.dtype).min,
         torch.iinfo(input_tensor.dtype).max,
@@ -950,8 +954,10 @@ def quantized_relu_common(
     if X.dtype not in supported_dtypes:
         raise ValueError(f"X dtype must be one of {supported_dtypes}. Got {X.dtype}")
 
-    out_scale = -out_multiplier * (1 / (1 << 31)) * (2**out_shift)
-    dequantized_X = torch.where(X > X_zero_point, X - X_zero_point, torch.zeros_like(X))
+    out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
+    dequantized_X = torch.where(
+        X > X_zero_point, X - X_zero_point, torch.zeros_like(X)
+    ).to(torch.float32)
     return quantize_per_tensor(
         dequantized_X,
         out_scale,
@@ -1076,3 +1082,13 @@ def requantize(
         out_quant_max,
         dtype,
     )
+
+
+@impl(m, "rms_norm")
+def rms_norm(
+    X: torch.Tensor,
+    normalized_shape: tuple[int],
+    W: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
