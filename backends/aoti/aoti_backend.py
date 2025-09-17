@@ -73,31 +73,15 @@ class AotiBackend(BackendDetails):
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
 
-        print("entering  the lowerable parts in AotiBackend.preprocess....")
         named_data_store = NamedDataStore()
 
-        # print("here", edge_program.example_inputs)
-        copy_edge_program = copy.deepcopy(edge_program)
+        # copy_edge_program = copy.deepcopy(edge_program)
 
         # Move the edge_program from CPU to CUDA for aoti compile
-        cuda_edge_program = move_to_device_pass(copy_edge_program, "cuda")
+        cuda_edge_program = move_to_device_pass(edge_program, "cuda")
 
         edge_program_module = cuda_edge_program.module()
-        args, kwargs = copy_edge_program.example_inputs
-
-        # # Deep copy args and move tensors to CUDA for aot_compile
-        # def move_to_cuda(obj):
-        #     if isinstance(obj, torch.Tensor):
-        #         return obj.cuda()
-        #     elif isinstance(obj, (list, tuple)):
-        #         return type(obj)(move_to_cuda(item) for item in obj)
-        #     elif isinstance(obj, dict):
-        #         return {key: move_to_cuda(value) for key, value in obj.items()}
-        #     else:
-        #         return obj
-
-        # args = move_to_cuda(copy.deepcopy(args))
-        # kwargs = move_to_cuda(copy.deepcopy(kwargs))
+        args, kwargs = cuda_edge_program.example_inputs
 
         output_path = os.path.join(os.getcwd(), "aoti.so")
 
@@ -121,10 +105,6 @@ class AotiBackend(BackendDetails):
                     f"Missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
                     "Please add them to the AOTI backend."
                 )
-
-        assert so_path == output_path, f"Expected {output_path} but got {so_path}"
-
-        print("so_path", so_path)
 
         with open(so_path, "rb") as f:
             so_data = f.read()
