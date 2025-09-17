@@ -12,7 +12,12 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
+$if DTYPE == "half":
+  #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+  #define VEC4_T f16vec4
+$else:
+  #define VEC4_T ${texel_type(DTYPE)}
+
 
 #define op(X, A, B) ${OPERATOR}
 
@@ -65,72 +70,72 @@ void main() {
     return;
   }
 
-  vec4 outputTexel = texelFetch(t_bias, ivec2(threadOutChannel, 0), 0);
+  VEC4_T outputTexel = VEC4_T(texelFetch(t_bias, ivec2(threadOutChannel, 0), 0));
 
-  vec4 inputVec;
-  vec4 weight1OutputChannelPacked;
-  vec4 weight2OutputChannelPacked;
-  vec4 weight3OutputChannelPacked;
-  vec4 weight4OutputChannelPacked;
+  VEC4_T inputVec;
+  VEC4_T weight1OutputChannelPacked;
+  VEC4_T weight2OutputChannelPacked;
+  VEC4_T weight3OutputChannelPacked;
+  VEC4_T weight4OutputChannelPacked;
 
   // By unrolling the loop in sets of 4, this significantly reduces the number of branching instructions
   // and enables the compiler to rearrange instructions for more efficient memory retrieval and compute
   for (int inputC = 0; inputC < inputChannel; inputC += 1) {
 
-    inputVec = texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0);
+    inputVec = VEC4_T(texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0));
 
-    weight1OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0);
-    weight2OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0);
-    weight3OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0);
-    weight4OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0);
+    weight1OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0));
+    weight2OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0));
+    weight3OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0));
+    weight4OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0));
 
-    outputTexel[0] += dot(inputVec, vec4(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
-    outputTexel[1] += dot(inputVec, vec4(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
-    outputTexel[2] += dot(inputVec, vec4(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
-    outputTexel[3] += dot(inputVec, vec4(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
-
-    inputC += 1;
-
-    inputVec = texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0);
-
-    weight1OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0);
-    weight2OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0);
-    weight3OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0);
-    weight4OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0);
-
-    outputTexel[0] += dot(inputVec, vec4(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
-    outputTexel[1] += dot(inputVec, vec4(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
-    outputTexel[2] += dot(inputVec, vec4(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
-    outputTexel[3] += dot(inputVec, vec4(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
+    outputTexel[0] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
+    outputTexel[1] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
+    outputTexel[2] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
+    outputTexel[3] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
 
     inputC += 1;
 
-    inputVec = texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0);
+    inputVec = VEC4_T(texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0));
 
-    weight1OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0);
-    weight2OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0);
-    weight3OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0);
-    weight4OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0);
+    weight1OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0));
+    weight2OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0));
+    weight3OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0));
+    weight4OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0));
 
-    outputTexel[0] += dot(inputVec, vec4(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
-    outputTexel[1] += dot(inputVec, vec4(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
-    outputTexel[2] += dot(inputVec, vec4(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
-    outputTexel[3] += dot(inputVec, vec4(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
+    outputTexel[0] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
+    outputTexel[1] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
+    outputTexel[2] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
+    outputTexel[3] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
 
     inputC += 1;
 
-    inputVec = texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0);
+    inputVec = VEC4_T(texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0));
 
-    weight1OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0);
-    weight2OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0);
-    weight3OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0);
-    weight4OutputChannelPacked = texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0);
+    weight1OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0));
+    weight2OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0));
+    weight3OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0));
+    weight4OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0));
 
-    outputTexel[0] += dot(inputVec, vec4(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
-    outputTexel[1] += dot(inputVec, vec4(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
-    outputTexel[2] += dot(inputVec, vec4(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
-    outputTexel[3] += dot(inputVec, vec4(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
+    outputTexel[0] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
+    outputTexel[1] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
+    outputTexel[2] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
+    outputTexel[3] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
+
+    inputC += 1;
+
+    inputVec = VEC4_T(texelFetch(t_in, ivec3(xIdx, yIdx, inputC), 0));
+
+    weight1OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 0, threadOutChannel), 0));
+    weight2OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 1, threadOutChannel), 0));
+    weight3OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 2, threadOutChannel), 0));
+    weight4OutputChannelPacked = VEC4_T(texelFetch(t_kernel, ivec2(inputC * 4 + 3, threadOutChannel), 0));
+
+    outputTexel[0] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[0], weight2OutputChannelPacked[0], weight3OutputChannelPacked[0], weight4OutputChannelPacked[0]));
+    outputTexel[1] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[1], weight2OutputChannelPacked[1], weight3OutputChannelPacked[1], weight4OutputChannelPacked[1]));
+    outputTexel[2] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[2], weight2OutputChannelPacked[2], weight3OutputChannelPacked[2], weight4OutputChannelPacked[2]));
+    outputTexel[3] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
   }
 
-  imageStore(t_out, ivec3(xIdx, yIdx, threadOutChannel), op(outputTexel, out_min, out_max));
+  imageStore(t_out, ivec3(xIdx, yIdx, threadOutChannel), op(vec4(outputTexel), out_min, out_max));
 }
