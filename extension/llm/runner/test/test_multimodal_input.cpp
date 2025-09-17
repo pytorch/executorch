@@ -16,7 +16,6 @@ using executorch::extension::llm::make_image_input;
 using executorch::extension::llm::make_text_input;
 using executorch::extension::llm::MultimodalInput;
 
-namespace {
 class MultimodalInputTest : public Test {
  protected:
   std::string createTestText() {
@@ -28,21 +27,13 @@ class MultimodalInputTest : public Test {
   }
 
   Image createTestImage() {
-    Image img;
-    img.width = 224;
-    img.height = 224;
-    img.channels = 3;
-    img.data = std::vector<uint8_t>(224 * 224 * 3, 128); // Fill with gray
-    return img;
+    std::vector<uint8_t> data(224 * 224 * 3, 128); // Fill with gray
+    return Image(std::move(data), 224, 224, 3);
   }
 
   Image createTestImageSmall() {
-    Image img;
-    img.width = 32;
-    img.height = 32;
-    img.channels = 1;
-    img.data = std::vector<uint8_t>(32 * 32, 255); // Fill with white
-    return img;
+    std::vector<uint8_t> data(32 * 32, 255); // Fill with white
+    return Image(std::move(data), 32, 32, 1);
   }
 };
 
@@ -76,28 +67,28 @@ TEST_F(MultimodalInputTest, ImageConstructorFromImage) {
   EXPECT_FALSE(input.is_text());
   EXPECT_TRUE(input.is_image());
   EXPECT_EQ(input.get_type(), MultimodalInput::Type::IMAGE);
-  EXPECT_EQ(input.get_image().width, 224);
-  EXPECT_EQ(input.get_image().height, 224);
-  EXPECT_EQ(input.get_image().channels, 3);
-  EXPECT_EQ(input.get_image().data.size(), 224 * 224 * 3);
+  EXPECT_EQ(input.get_image().width(), 224);
+  EXPECT_EQ(input.get_image().height(), 224);
+  EXPECT_EQ(input.get_image().channels(), 3);
+  EXPECT_EQ(input.get_image().get_uint8_data().size(), 224 * 224 * 3);
 }
 
 TEST_F(MultimodalInputTest, ImageConstructorFromRvalueImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
-  size_t data_size = img.data.size();
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
+  size_t data_size = img.get_uint8_data().size();
 
   MultimodalInput input(std::move(img));
 
   EXPECT_FALSE(input.is_text());
   EXPECT_TRUE(input.is_image());
   EXPECT_EQ(input.get_type(), MultimodalInput::Type::IMAGE);
-  EXPECT_EQ(input.get_image().width, width);
-  EXPECT_EQ(input.get_image().height, height);
-  EXPECT_EQ(input.get_image().channels, channels);
-  EXPECT_EQ(input.get_image().data.size(), data_size);
+  EXPECT_EQ(input.get_image().width(), width);
+  EXPECT_EQ(input.get_image().height(), height);
+  EXPECT_EQ(input.get_image().channels(), channels);
+  EXPECT_EQ(input.get_image().get_uint8_data().size(), data_size);
 }
 
 // Test copy constructor and assignment
@@ -129,10 +120,10 @@ TEST_F(MultimodalInputTest, CopyConstructorImage) {
   MultimodalInput copy(original);
 
   EXPECT_TRUE(copy.is_image());
-  EXPECT_EQ(copy.get_image().width, 224);
-  EXPECT_EQ(copy.get_image().height, 224);
-  EXPECT_EQ(copy.get_image().channels, 3);
-  EXPECT_EQ(original.get_image().width, 224); // Original should be unchanged
+  EXPECT_EQ(copy.get_image().width(), 224);
+  EXPECT_EQ(copy.get_image().height(), 224);
+  EXPECT_EQ(copy.get_image().channels(), 3);
+  EXPECT_EQ(original.get_image().width(), 224); // Original should be unchanged
 }
 
 TEST_F(MultimodalInputTest, CopyAssignmentImage) {
@@ -143,10 +134,10 @@ TEST_F(MultimodalInputTest, CopyAssignmentImage) {
   copy = original;
 
   EXPECT_TRUE(copy.is_image());
-  EXPECT_EQ(copy.get_image().width, 224);
-  EXPECT_EQ(copy.get_image().height, 224);
-  EXPECT_EQ(copy.get_image().channels, 3);
-  EXPECT_EQ(original.get_image().width, 224); // Original should be unchanged
+  EXPECT_EQ(copy.get_image().width(), 224);
+  EXPECT_EQ(copy.get_image().height(), 224);
+  EXPECT_EQ(copy.get_image().channels(), 3);
+  EXPECT_EQ(original.get_image().width(), 224); // Original should be unchanged
 }
 
 // Test move constructor and assignment
@@ -174,32 +165,32 @@ TEST_F(MultimodalInputTest, MoveAssignmentText) {
 
 TEST_F(MultimodalInputTest, MoveConstructorImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
   MultimodalInput original(std::move(img));
   MultimodalInput moved(std::move(original));
 
   EXPECT_TRUE(moved.is_image());
-  EXPECT_EQ(moved.get_image().width, width);
-  EXPECT_EQ(moved.get_image().height, height);
-  EXPECT_EQ(moved.get_image().channels, channels);
+  EXPECT_EQ(moved.get_image().width(), width);
+  EXPECT_EQ(moved.get_image().height(), height);
+  EXPECT_EQ(moved.get_image().channels(), channels);
 }
 
 TEST_F(MultimodalInputTest, MoveAssignmentImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
   MultimodalInput original(std::move(img));
   MultimodalInput moved(createTestText()); // Start with different type
 
   moved = std::move(original);
 
   EXPECT_TRUE(moved.is_image());
-  EXPECT_EQ(moved.get_image().width, width);
-  EXPECT_EQ(moved.get_image().height, height);
-  EXPECT_EQ(moved.get_image().channels, channels);
+  EXPECT_EQ(moved.get_image().width(), width);
+  EXPECT_EQ(moved.get_image().height(), height);
+  EXPECT_EQ(moved.get_image().channels(), channels);
 }
 
 // Test getter methods with correct types
@@ -227,16 +218,13 @@ TEST_F(MultimodalInputTest, GetImageWithImageInput) {
 
   // Test const lvalue reference version
   const MultimodalInput& const_input = input;
-  EXPECT_EQ(const_input.get_image().width, 224);
-
-  // Test mutable lvalue reference version
-  Image& mutable_image = input.get_image();
-  mutable_image.width = 448;
-  EXPECT_EQ(input.get_image().width, 448);
+  EXPECT_EQ(const_input.get_image().width(), 224);
+  EXPECT_EQ(const_input.get_image().height(), 224);
+  EXPECT_EQ(const_input.get_image().channels(), 3);
 
   // Test rvalue reference version
   Image moved_image = std::move(input).get_image();
-  EXPECT_EQ(moved_image.width, 448);
+  EXPECT_EQ(moved_image.width(), 224);
 }
 
 // Test getter methods with wrong types (should throw)
@@ -296,18 +284,14 @@ TEST_F(MultimodalInputTest, TryGetImageWithImageInput) {
   const MultimodalInput& const_input = input;
   const Image* image_ptr = const_input.try_get_image();
   ASSERT_NE(image_ptr, nullptr);
-  EXPECT_EQ(image_ptr->width, 224);
-  EXPECT_EQ(image_ptr->height, 224);
-  EXPECT_EQ(image_ptr->channels, 3);
+  EXPECT_EQ(image_ptr->width(), 224);
+  EXPECT_EQ(image_ptr->height(), 224);
+  EXPECT_EQ(image_ptr->channels(), 3);
 
   // Test mutable version
   Image* mutable_image_ptr = input.try_get_image();
   ASSERT_NE(mutable_image_ptr, nullptr);
-  EXPECT_EQ(mutable_image_ptr->width, 224);
-
-  // Modify through pointer
-  mutable_image_ptr->width = 448;
-  EXPECT_EQ(input.get_image().width, 448);
+  EXPECT_EQ(mutable_image_ptr->width(), 224);
 }
 
 TEST_F(MultimodalInputTest, TryGetImageWithTextInput) {
@@ -344,22 +328,22 @@ TEST_F(MultimodalInputTest, MakeImageInputFromImage) {
   MultimodalInput input = make_image_input(img);
 
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, 224);
-  EXPECT_EQ(input.get_image().height, 224);
-  EXPECT_EQ(input.get_image().channels, 3);
+  EXPECT_EQ(input.get_image().width(), 224);
+  EXPECT_EQ(input.get_image().height(), 224);
+  EXPECT_EQ(input.get_image().channels(), 3);
 }
 
 TEST_F(MultimodalInputTest, MakeImageInputFromRvalueImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
   MultimodalInput input = make_image_input(std::move(img));
 
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, width);
-  EXPECT_EQ(input.get_image().height, height);
-  EXPECT_EQ(input.get_image().channels, channels);
+  EXPECT_EQ(input.get_image().width(), width);
+  EXPECT_EQ(input.get_image().height(), height);
+  EXPECT_EQ(input.get_image().channels(), channels);
 }
 
 // Test with different image sizes
@@ -368,10 +352,10 @@ TEST_F(MultimodalInputTest, DifferentImageSizes) {
   MultimodalInput input(small_img);
 
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, 32);
-  EXPECT_EQ(input.get_image().height, 32);
-  EXPECT_EQ(input.get_image().channels, 1);
-  EXPECT_EQ(input.get_image().data.size(), 32 * 32);
+  EXPECT_EQ(input.get_image().width(), 32);
+  EXPECT_EQ(input.get_image().height(), 32);
+  EXPECT_EQ(input.get_image().channels(), 1);
+  EXPECT_EQ(input.get_image().get_uint8_data().size(), 32 * 32);
 }
 
 // Test with empty text
@@ -424,11 +408,10 @@ TEST_F(MultimodalInputTest, AssignmentBetweenTypes) {
   // Assign image to text input
   input = MultimodalInput(img);
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, 224);
+  EXPECT_EQ(input.get_image().width(), 224);
 
   // Assign text back to image input
   input = MultimodalInput(text);
   EXPECT_TRUE(input.is_text());
   EXPECT_EQ(input.get_text(), text);
 }
-} // namespace
