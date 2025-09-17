@@ -41,7 +41,7 @@ class OpenvinoBackend(BackendDetails):
         transformed_ep = RemoveCloneOpsTransform()(edge_program.graph_module)
 
         # Update the edge_program with the transformed graph
-        if transformed_ep.graph_module is not None:
+        if transformed_ep and transformed_ep.graph_module:
             edge_program._graph_module = transformed_ep.graph_module
 
         input_names = edge_program.graph_signature.user_inputs
