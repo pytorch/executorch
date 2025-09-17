@@ -80,8 +80,8 @@ target_include_directories(
 add_library(
   custom_ops
   "quantized_linear_out.cpp"
-  "quantized_conv_nchw_out.cpp"
-  "quantized_conv_nhwc_out.cpp"
+  "quantized_conv2d_nchw_out.cpp"
+  "quantized_conv2d_nhwc_out.cpp"
   "quantized_relu_out.cpp"
   "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp"

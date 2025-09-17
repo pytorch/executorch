@@ -21,8 +21,8 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-// Optimized NCHW 1D convolution for int8 x int8 -> int8
-void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
+// Optimized NCHW 1D convolution for uint8 x uint8 -> uint8
+void xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -37,12 +37,12 @@ void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
     Tensor& out) {
   constexpr int kNnlibMaxDim = 3;
 
-  WORD8* __restrict__ p_out =
-      (WORD8* __restrict__)out.mutable_data_ptr<int8_t>();
-  WORD8* __restrict__ p_inp =
-      (WORD8* __restrict__)input.const_data_ptr<int8_t>();
-  WORD8* __restrict__ p_kernel =
-      (WORD8* __restrict__)weight.const_data_ptr<int8_t>();
+  UWORD8* __restrict__ p_out =
+      (UWORD8* __restrict__)out.mutable_data_ptr<uint8_t>();
+  UWORD8* __restrict__ p_inp =
+      (UWORD8* __restrict__)input.const_data_ptr<uint8_t>();
+  UWORD8* __restrict__ p_kernel =
+      (UWORD8* __restrict__)weight.const_data_ptr<uint8_t>();
   WORD32* __restrict__ p_bias =
       (WORD32* __restrict__)bias.const_data_ptr<int32_t>();
 
@@ -62,13 +62,13 @@ void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
 
   WORD32 out_zero_bias = output_zero_point;
   WORD32 out_data_format = 1;
-  WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
-      ctx, ((batches * input_channels * input_width) + 8) * sizeof(WORD8));
-  WORD8* ptr2 = (WORD8*)kernels::allocate_temp_memory(
+  UWORD8* ptr1 = (UWORD8*)kernels::allocate_temp_memory(
+      ctx, ((batches * input_channels * input_width) + 8) * sizeof(UWORD8));
+  UWORD8* ptr2 = (UWORD8*)kernels::allocate_temp_memory(
       ctx,
-      ((out_channels * kernel_channels * kernel_width) + 8) * sizeof(WORD8));
-  WORD8* pin = (WORD8*)ALIGN_PTR(ptr1, 8);
-  WORD8* pkernel = (WORD8*)ALIGN_PTR(ptr2, 8);
+      ((out_channels * kernel_channels * kernel_width) + 8) * sizeof(UWORD8));
+  UWORD8* pin = (UWORD8*)ALIGN_PTR(ptr1, 8);
+  UWORD8* pkernel = (UWORD8*)ALIGN_PTR(ptr2, 8);
 
   WORD32 p_inp_shape[kNnlibMaxDim];
   p_inp_shape[0] = batches;
@@ -83,9 +83,9 @@ void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
   WORD32 p_permute_vec[kNnlibMaxDim] = {0, 2, 1};
 
   xa_nn_transpose_8_8(
-      pin,
+      (WORD8*)pin,
       p_out_shape,
-      p_inp,
+      (WORD8*)p_inp,
       p_inp_shape,
       p_permute_vec,
       kNnlibMaxDim,
@@ -102,9 +102,9 @@ void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
   p_out_shape1[2] = kernel_channels;
 
   xa_nn_transpose_8_8(
-      pkernel,
+      (WORD8*)pkernel,
       p_out_shape1,
-      p_kernel,
+      (WORD8*)p_kernel,
       p_inp_shape1,
       p_permute_vec,
       kNnlibMaxDim,
@@ -118,13 +118,13 @@ void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
   pVOID p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
 
   for (int _n = 0; _n < batches; _n++) {
-    WORD8* in_batch = pin + _n * input_channels * input_width;
-    WORD8* out_batch = p_out + _n * out_channels * out_width;
+    UWORD8* in_batch = pin + _n * input_channels * input_width;
+    UWORD8* out_batch = p_out + _n * out_channels * out_width;
 
-    xa_nn_conv1d_std_asym8xasym8(
-        (UWORD8*)out_batch,
-        (UWORD8*)in_batch,
-        (UWORD8*)pkernel,
+    xa_nn_conv1d_std_asym8uxasym8u(
+        out_batch,
+        in_batch,
+        pkernel,
         p_bias,
         1,
         input_width,
@@ -144,7 +144,7 @@ void xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
   }
 }
 
-void quantized_conv1d_nchw_asym8sxsym8s_asym8s_per_tensor_out(
+void quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -161,7 +161,7 @@ void quantized_conv1d_nchw_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  xa_opt_quantized_conv1d_nchw_asym8sxsym8s_asym8s(
+  xa_opt_quantized_conv1d_ncl_asym8uxsym8u_asym8u(
       ctx,
       input,
       weight,

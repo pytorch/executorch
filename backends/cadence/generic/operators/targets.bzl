@@ -136,8 +136,8 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "quantized_conv_nchw_out",
-        srcs = ["quantized_conv_nchw_out.cpp"],
+        name = "quantized_conv2d_nchw_out",
+        srcs = ["quantized_conv2d_nchw_out.cpp"],
         exported_headers = ["operators.h", "quantized_ops.h"],
         platforms = CXX,
         deps = [
@@ -151,8 +151,8 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "quantized_conv_nhwc_out",
-        srcs = ["quantized_conv_nhwc_out.cpp"],
+        name = "quantized_conv2d_nhwc_out",
+        srcs = ["quantized_conv2d_nhwc_out.cpp"],
         exported_headers = ["operators.h", "quantized_ops.h"],
         platforms = CXX,
         deps = [
