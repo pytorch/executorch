@@ -93,7 +93,7 @@ build_aar() {
 
 main() {
   if [ -z "$ANDROID_ABIS" ]; then
-    ANDROID_ABIS=("arm64-v8a" "x86_64")
+    ANDROID_ABIS=("armeabi-v7a" "arm64-v8a" "x86" "x86_64")
   fi
   export ANDROID_ABIS
 
