@@ -268,7 +268,9 @@ def _partition_and_lower_one_graph_module(
     """
     Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.
     """
-    for tag, delegation_spec in partition_result.partition_tags.items():
+    for idx, (tag, delegation_spec) in enumerate(
+        partition_result.partition_tags.items()
+    ):
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
         node_list = _get_node_list_with_same_tag(
@@ -311,6 +313,7 @@ def _partition_and_lower_one_graph_module(
             tag,
             call_module_node,
             is_submodule,
+            idx == 0,
         )
 
         lowered_submodule = to_backend(
@@ -452,7 +455,9 @@ def _create_partitions_in_graph_module(
     is_submodule: bool,
 ) -> Dict[str, List[torch.fx.Node]]:
     backend_id_to_submodule_name = {}
-    for tag, delegation_spec in partition_result.partition_tags.items():
+    for idx, (tag, delegation_spec) in enumerate(
+        partition_result.partition_tags.items()
+    ):
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
         node_list = _get_node_list_with_same_tag(
@@ -492,6 +497,7 @@ def _create_partitions_in_graph_module(
             tag,
             call_module_node,
             is_submodule,
+            idx == 0,
         )
         call_module_node.meta["backend_id"] = delegation_spec.backend_id
         call_module_node.meta["compile_spec"] = delegation_spec.compile_specs

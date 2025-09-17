@@ -75,8 +75,6 @@ class AotiBackend(BackendDetails):
 
         named_data_store = NamedDataStore()
 
-        # copy_edge_program = copy.deepcopy(edge_program)
-
         # Move the edge_program from CPU to CUDA for aoti compile
         cuda_edge_program = move_to_device_pass(edge_program, "cuda")
 

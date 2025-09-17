@@ -682,6 +682,7 @@ def create_exported_program_from_submodule(
     tag: str,
     call_module_node: torch.fx.Node,
     is_submodule: bool,
+    is_first_partition: bool = False,
 ) -> Tuple[ExportedProgram, Dict[str, InputSpec], Dict[str, OutputSpec]]:
     """
     Creates an ExportedProgram from the given submodule using the parameters and buffers
@@ -720,6 +721,11 @@ def create_exported_program_from_submodule(
     in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
     out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
 
+    # only the example inputs of first parition equals to the example inputs of the owning program
+    submodule_exmaple_inputs = (
+        owning_program.example_inputs if is_first_partition else None
+    )
+
     return (
         ExportedProgram(
             root=submodule,
@@ -735,7 +741,7 @@ def create_exported_program_from_submodule(
                     ),
                 )
             ],
-            example_inputs=owning_program.example_inputs,
+            example_inputs=submodule_exmaple_inputs,
             constants=subgraph_constants,
             verifiers=[owning_program.verifier],
         ),
