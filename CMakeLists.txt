@@ -650,7 +650,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
 endif()
 
-
 if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
