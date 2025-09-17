@@ -105,7 +105,7 @@ class TestLlava(unittest.TestCase):
         start_pos += pte_embeds_before_img.shape[1]
 
         # pte prefill image
-        pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
+        pte_embeds_img = llava_module.run_method("vision_encoder", (resized,))[0]
         llava_module.run_method(
             "text_decoder",
             (
