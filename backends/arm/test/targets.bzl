@@ -32,6 +32,17 @@ def define_arm_tests():
         "quantizer/test_generic_annotater.py",
     ]
 
+    # Misc tests
+    test_files += [
+        "misc/test_compile_spec.py",
+        "misc/test_tosa_spec.py",
+        "misc/test_bn_relu_folding_qat.py",
+        "misc/test_custom_partition.py",
+        "misc/test_debug_hook.py",
+        # "misc/test_dim_order.py", (TODO - T238390249)
+        "misc/test_outputs_order.py",
+    ]
+
     TESTS = {}
 
     for test_file in test_files:
