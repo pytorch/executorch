@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Model Export and Lowering &mdash; ExecuTorch main documentation</title>
+  <title>Arm Ethos-U NPU Backend Tutorial &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Using ExecuTorch on Android" href="using-executorch-android.html" />
-    <link rel="prev" title="Getting Started with ExecuTorch" href="getting-started.html" />
+    <link rel="next" title="Arm VGF Backend Tutorial" href="tutorial-arm-vgf.html" />
+    <link rel="prev" title="Frequently Asked Questions" href="using-executorch-faqs.html" />
 
 
   <!-- Google Tag Manager -->
@@ -326,9 +326,9 @@
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Usage</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
@@ -338,10 +338,10 @@
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Examples</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm Ethos-U NPU Backend Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
@@ -475,13 +475,13 @@
       </li>
 
         
-      <li>Model Export and Lowering</li>
+      <li>Arm Ethos-U NPU Backend Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/using-executorch-export.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/tutorial-arm-ethos-u.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -513,264 +513,221 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="model-export-and-lowering">
-<h1>Model Export and Lowering<a class="headerlink" href="#model-export-and-lowering" title="Permalink to this heading">¶</a></h1>
-<p>The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as “exporting”, as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend. If using program-data separation, it also yields a corresponding .ptd file containing only the weights/constants from the model.</p>
+  <div class="section" id="arm-ethos-u-npu-backend-tutorial">
+<h1>Arm Ethos-U NPU Backend Tutorial<a class="headerlink" href="#arm-ethos-u-npu-backend-tutorial" title="Permalink to this heading">¶</a></h1>
+<!----This will show a grid card on the page----->
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Tutorials we recommend you complete before this:</div>
+<ul class="simple">
+<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn in this tutorial:</div>
+<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for the ExecuTorch Ethos-U backend.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This delegate is under active development, to get best results please use a recent version.
+The TOSA and Ethos-U backend support is reasonably mature and used in production by some users.
+You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>If you are already familiar with this delegate, you may want to jump directly to the examples:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm">Examples in the ExecuTorch repository</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py">A commandline compiler for example models</a></p></li>
+</ul>
+</div>
+<p>This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on Arm® Ethos™-U targets. It is based on <code class="docutils literal notranslate"><span class="pre">ethos_u_minimal_example.ipynb</span></code>, provided in Arm’s examples folder.</p>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
-<p>Exporting requires the ExecuTorch python libraries to be installed, typically by running <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">executorch</span></code>. See <a class="reference internal" href="getting-started.html#installation"><span class="std std-ref">Installation</span></a> for more information. This process assumes you have a PyTorch model, can instantiate it from Python, and can provide example input tensors to run the model.</p>
+<div class="section" id="hardware">
+<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
+<p>To successfully complete this tutorial, you will need a Linux machine with aarch64 or x86_64 processor architecture, or a macOS™ machine with Apple® Silicon.</p>
+<p>To enable development without a specific development board, we will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Arm® Corstone™-300</a>(cs300) and <a class="reference external" href="https://developer.arm.com/Processors/Corstone-320">Arm® Corstone™-300</a>(cs320)systems. Think of it as virtual hardware.</p>
 </div>
-<div class="section" id="the-export-and-lowering-process">
-<h2>The Export and Lowering Process<a class="headerlink" href="#the-export-and-lowering-process" title="Permalink to this heading">¶</a></h2>
-<p>The process to export and lower a model to the .pte format typically involves the following steps:</p>
-<ol class="arabic simple">
-<li><p>Select a backend to target.</p></li>
-<li><p>Prepare the PyTorch model, including inputs and shape specification.</p></li>
-<li><p>Export the model using torch.export.export.</p></li>
-<li><p>Optimize the model for the target backend using to_edge_transform_and_lower.</p></li>
-<li><p>Create the .pte file by calling to_executorch and serializing the output.</p></li>
-</ol>
-<br/>
-<p>Quantization - the process of using reduced precision to reduce inference time and memory footprint - is also commonly done at this stage. See <a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization Overview</span></a> for more information.</p>
+<div class="section" id="software">
+<h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
+<p>First, you will need to install ExecuTorch. Please follow the recommended tutorials to set up a working ExecuTorch development environment.</p>
+<p>In addition to this, you need to install a number of SDK dependencies for generating Ethos-U command streams. Scripts to automate this are available in the main <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm/">ExecuTorch repository</a>.
+To install Ethos-U dependencies, run</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula
+</pre></div>
 </div>
-<div class="section" id="hardware-backends">
-<h2>Hardware Backends<a class="headerlink" href="#hardware-backends" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch backends provide hardware acceleration for a specific hardware target. In order to achieve maximum performance on target hardware, ExecuTorch optimizes the model for a specific backend during the export and lowering process. This means that the resulting .pte file is specialized for the specific hardware. In order to deploy to multiple backends, such as Core ML on iOS and Arm CPU on Android, it is common to generate a dedicated .pte file for each.</p>
-<p>The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requires and level of model support. See the documentation for each hardware backend for more details.</p>
-<p>As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.</p>
-<div class="section" id="available-backends">
-<h3>Available Backends<a class="headerlink" href="#available-backends" title="Permalink to this heading">¶</a></h3>
-<p>Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>. See the appropriate backend documentation and the <a class="reference internal" href="#export-and-lowering"><span class="std std-doc">Export and Lowering</span></a> section below for more information.</p>
+<p>This will install:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="backends-xnnpack.html"><span class="doc std std-doc">XNNPACK (Mobile CPU)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-coreml.html"><span class="doc std std-doc">Core ML (iOS)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-mps.html"><span class="doc std std-doc">Metal Performance Shaders (iOS GPU)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-vulkan.html"><span class="doc std std-doc">Vulkan (Android GPU)</span></a></p></li>
-<li><p><a class="reference internal" href="backends-qualcomm.html"><span class="doc std std-doc">Qualcomm NPU</span></a></p></li>
-<li><p><a class="reference internal" href="backends-mediatek.html"><span class="doc std std-doc">MediaTek NPU</span></a></p></li>
-<li><p><a class="reference internal" href="backends-arm-ethos-u.html"><span class="doc std std-doc">Arm Ethos-U NPU</span></a></p></li>
-<li><p><a class="reference internal" href="backends-cadence.html"><span class="doc std std-doc">Cadence DSP</span></a></p></li>
+<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
+<li><p><a class="reference external" href="https://pypi.org/project/ethos-u-vela/">Ethos-U Vela graph compiler</a> for compiling TOSA flatbuffers into a Ethos-U command stream.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain">Arm GNU Toolchain</a> for cross compilation.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/documentation/100966/1128/Arm--Corstone-SSE-300-FVP">Corstone SSE-300 FVP</a> for testing on Ethos-U55 reference design.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/documentation/109760/0000/SSE-320-FVP">Corstone SSE-320 FVP</a> for testing on Ethos-U85 reference design.</p></li>
 </ul>
 </div>
 </div>
-<div class="section" id="model-preparation">
-<h2>Model Preparation<a class="headerlink" href="#model-preparation" title="Permalink to this heading">¶</a></h2>
-<p>The export process takes in a standard PyTorch model, typically a <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code>. This can be an custom model definition, or a model from an existing source, such as TorchVision or HuggingFace. See <a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started with ExecuTorch</span></a> for an example of lowering a TorchVision model.</p>
-<p>Model export is done from Python. This is commonly done through a Python script or from an interactive Python notebook, such as Jupyter or Colab. The example below shows instantiation and inputs for a simple PyTorch model. The inputs are prepared as a tuple of torch.Tensors, and the model can run with these inputs.</p>
+<div class="section" id="set-up-the-developer-environment">
+<h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this heading">¶</a></h2>
+<p>The setup.sh script generates a setup_path.sh script that you need to source whenever you restart your shell. Run:</p>
+<p>As a simple check that your environment is set up correctly, run <code class="docutils literal notranslate"><span class="pre">which</span> <span class="pre">FVP_Corstone_SSE-320</span></code> and make sure that the executable is located where you expect, in the <code class="docutils literal notranslate"><span class="pre">examples/arm</span></code> tree.</p>
+</div>
+<div class="section" id="build">
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="ahead-of-time-aot-components">
+<h3>Ahead-of-Time (AOT) components<a class="headerlink" href="#ahead-of-time-aot-components" title="Permalink to this heading">¶</a></h3>
+<p>The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code>) and produces a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> binary file, which is then consumed by the ExecuTorch Runtime. This <a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">document</span></a> goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.</p>
+<p>The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the EthosU backend. For more details, see <code class="docutils literal notranslate"><span class="pre">examples/arm/ethos_u_minimal_example.ipynb</span></code>.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">AdaptiveAvgPool2d</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
-       <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">y</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
 
-<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
-<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">16</span><span class="p">),)</span>
-<span class="n">outputs</span> <span class="o">=</span> <span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">inputs</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model output: </span><span class="si">{</span><span class="n">outputs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Note that the model is set to evaluation mode using <code class="docutils literal notranslate"><span class="pre">.eval()</span></code>. Models should always be exported in evaluation mode unless performing on-device training. This mode configures certain operations with training-specific behavior, such as batch norm or dropout, to use the inference-mode configuration.</p>
-</div>
-<div class="section" id="export-and-lowering">
-<h2>Export and Lowering<a class="headerlink" href="#export-and-lowering" title="Permalink to this heading">¶</a></h2>
-<p>To actually export and lower the model, call <code class="docutils literal notranslate"><span class="pre">export</span></code>, <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>, and <code class="docutils literal notranslate"><span class="pre">to_executorch</span></code> in sequence. This yields an ExecuTorch program which can be serialized to a file. Putting it all together, lowering the example model above using the XNNPACK delegate for mobile CPU performance can be done as follows:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dim</span><span class="p">,</span> <span class="n">export</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">Add</span><span class="p">()</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">seq</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Sequential</span><span class="p">(</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">(),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">AdaptiveAvgPool2d</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.ethosu</span><span class="w"> </span><span class="kn">import</span> <span class="n">EthosUCompileSpec</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EthosUQuantizer</span><span class="p">,</span>
+    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+
+<span class="c1"># Create a compilation spec describing the target for configuring the quantizer</span>
+<span class="c1"># Some args are used by the Arm Vela graph compiler later in the example. Refer to Arm Vela documentation for an</span>
+<span class="c1"># explanation of its flags: https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md</span>
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">EthosUCompileSpec</span><span class="p">(</span>
+            <span class="n">target</span><span class="o">=</span><span class="s2">&quot;ethos-u55-128&quot;</span><span class="p">,</span>
+            <span class="n">system_config</span><span class="o">=</span><span class="s2">&quot;Ethos_U55_High_End_Embedded&quot;</span><span class="p">,</span>
+            <span class="n">memory_mode</span><span class="o">=</span><span class="s2">&quot;Shared_Sram&quot;</span><span class="p">,</span>
+            <span class="n">extra_flags</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;--output-format=raw&quot;</span><span class="p">,</span> <span class="s2">&quot;--debug-force-regor&quot;</span><span class="p">]</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">linear</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">seq</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">flatten</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">y</span>
+<span class="c1"># Create and configure quantizer to use a symmetric quantization config globally on all nodes</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">EthosUQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+<span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">()</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">operator_config</span><span class="p">)</span>
 
-<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
-<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">16</span><span class="p">,</span><span class="mi">16</span><span class="p">),)</span>
-<span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
-        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
-    <span class="p">}</span>
-<span class="p">}</span>
+<span class="c1"># Post training quantization</span>
+<span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+<span class="n">quantized_graph_module</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span> <span class="c1"># Calibrate the graph module with the example input</span>
+<span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">quantized_graph_module</span><span class="p">)</span>
 
-<span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
-<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
-    <span class="n">exported_program</span><span class="p">,</span>
-    <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
-<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>This yields a <code class="docutils literal notranslate"><span class="pre">model.pte</span></code> file which can be run on mobile devices.</p>
-<p>To generate a <code class="docutils literal notranslate"><span class="pre">model.pte</span></code>, <code class="docutils literal notranslate"><span class="pre">model.ptd</span></code> pair with the weights inside <code class="docutils literal notranslate"><span class="pre">model.ptd</span></code>, add the following transform function to tag constants as external:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.passes.external_constants_pass</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">delegate_external_constants_pass_unlifted</span><span class="p">,</span>
+<span class="c1"># Create a new exported program using the quantized_graph_module</span>
+<span class="n">quantized_exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_graph_module</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.ethosu</span><span class="w"> </span><span class="kn">import</span> <span class="n">EthosUPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EdgeCompileConfig</span><span class="p">,</span>
+    <span class="n">ExecutorchBackendConfig</span><span class="p">,</span>
+    <span class="n">to_edge_transform_and_lower</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="c1"># Tag the unlifted ep.module().</span>
-<span class="n">tagged_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
-<span class="n">delegate_external_constants_pass_unlifted</span><span class="p">(</span>
-    <span class="n">module</span><span class="o">=</span><span class="n">tagged_module</span><span class="p">,</span>
-    <span class="n">gen_tag_fn</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="s2">&quot;model&quot;</span><span class="p">,</span> <span class="c1"># This is the filename the weights will be saved to. In this case, weights will be saved as &quot;model.ptd&quot;</span>
-<span class="p">)</span>
-<span class="c1"># Re-export to get the EP.</span>
-<span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">tagged_module</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
-<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
-    <span class="n">exported_program</span><span class="p">,</span>
-    <span class="n">transform_passes</span> <span class="o">=</span> <span class="p">[</span><span class="n">partial_function</span><span class="p">],</span>
-    <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
-<span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.export_util.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_pte_program</span>
+
+<span class="c1"># Create partitioner from compile spec</span>
+<span class="n">partitioner</span> <span class="o">=</span> <span class="n">EthosUPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+
+<span class="c1"># Lower the exported program to the Ethos-U backend</span>
+<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+            <span class="n">quantized_exported_program</span><span class="p">,</span>
+            <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
+            <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span>
+                <span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+
+<span class="c1"># Convert edge program to executorch</span>
+<span class="n">executorch_program_manager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+            <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="p">)</span>
+
+
+<span class="c1"># Save pte file</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">executorch_program_manager</span><span class="p">,</span> <span class="s2">&quot;ethos_u_minimal_example.pte&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>To save the PTD file:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch_program</span><span class="o">.</span><span class="n">write_tensor_data_to_file</span><span class="p">(</span><span class="n">output_directory</span><span class="p">)</span>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>For a quick start, you can use the script <code class="docutils literal notranslate"><span class="pre">examples/arm/aot_arm_compiler.py</span></code> to produce the pte.
+To produce a pte file equivalent to the one above, run
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">examples.arm.aot_arm_compiler</span> <span class="pre">--model_name=add</span> <span class="pre">--delegate</span> <span class="pre">--quantize</span> <span class="pre">--output=ethos_u_minimal_example.pte</span></code></p>
+</div>
+</div>
+<div class="section" id="runtime">
+<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
+<p>After the AOT compilation flow is done, the runtime can be cross compiled and linked to the produced <code class="docutils literal notranslate"><span class="pre">.pte</span></code>-file using the Arm cross-compilation toolchain. This is done in two steps:</p>
+<p>First, build and install the ExecuTorch libraries and EthosUDelegate:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># In ExecuTorch top-level, with sourced setup_path.sh
+cmake -DCMAKE_BUILD_TYPE=Release --preset arm-baremetal -B cmake-out-arm .
+cmake --build cmake-out-arm --target install -j$(nproc)
 </pre></div>
 </div>
-<p>It will be saved to the file <code class="docutils literal notranslate"><span class="pre">model.ptd</span></code>, with the file name coming from <code class="docutils literal notranslate"><span class="pre">gen_tag_fn</span></code> in the transform pass.</p>
-<div class="section" id="supporting-varying-input-sizes-dynamic-shapes">
-<h3>Supporting Varying Input Sizes (Dynamic Shapes)<a class="headerlink" href="#supporting-varying-input-sizes-dynamic-shapes" title="Permalink to this heading">¶</a></h3>
-<p>The PyTorch export process uses the example inputs provided to trace through the model and reason about the size and type of tensors at each step. Unless told otherwise, export will assume a fixed input size equal to the example inputs and will use this information to optimize the model.</p>
-<p>Many models require support for varying input sizes. To support this, export takes a <code class="docutils literal notranslate"><span class="pre">dynamic_shapes</span></code> parameter, which informs the compiler of which dimensions can vary and their bounds. This takes the form of a nested dictionary, where keys correspond to input names and values specify the bounds for each input.</p>
-<p>In the example model, inputs are provided as 4-dimensions tensors following the standard convention of batch, channels, height, and width (NCHW). An input with the shape <code class="docutils literal notranslate"><span class="pre">[1,</span> <span class="pre">3,</span> <span class="pre">16,</span> <span class="pre">16]</span></code> indicates 1 batch, 3 channels, and a height and width of 16.</p>
-<p>Suppose your model supports images with sizes between 16x16 and 1024x1024. The shape bounds can be specified as follows:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">dynamic_shapes</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="p">{</span>
-        <span class="mi">2</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;h&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
-        <span class="mi">3</span><span class="p">:</span> <span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="nb">min</span><span class="o">=</span><span class="mi">16</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="mi">1024</span><span class="p">),</span>
-    <span class="p">}</span>
-<span class="p">}</span>
-
-<span class="n">ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
+<p>Second, build and link the <code class="docutils literal notranslate"><span class="pre">arm_executor_runner</span></code> and generate kernel bindings for any non delegated ops. This is the actual program that will run on target.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># In ExecuTorch top-level, with sourced setup_path.sh
+cmake -DCMAKE_TOOLCHAIN_FILE=`pwd`/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DET_PTE_FILE_PATH=ethos_u_minimal_example.pte \
+      -DTARGET_CPU=cortex-m55 \
+      -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
+      -DMEMORY_MODE=Shared_Sram \
+      -DSYSTEM_CONFIG=Ethos_U55_High_End_Embedded \
+      -Bethos_u_minimal_example \
+      examples/arm/executor_runner
+cmake --build ethos_u_minimal_example -j$(nproc) -- arm_executor_runner
 </pre></div>
 </div>
-<p>In the above example, <code class="docutils literal notranslate"><span class="pre">&quot;x&quot;</span></code> corresponds to the parameter name in <code class="docutils literal notranslate"><span class="pre">Model.forward</span></code>. The 2 and 3 keys correpond to dimensions 2 and 3, which are height and width. As there are no specifications for batch and channel dimensions, these values are fixed according to the example inputs.</p>
-<p>ExecuTorch uses the shape bounds both to optimize the model and to plan memory for model execution. For this reason, it is advised to set the dimension upper bounds to no higher than needed, as higher bounds increase memory consumption.</p>
-<p>For more complex use cases, dynamic shape specification allows for mathematical relationships between dimensions. For more information on dynamic shape specification, see <a class="reference external" href="https://pytorch.org/docs/stable/export.html#expressing-dynamism">Expressing Dynamism</a>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>For a quick start, you can use the script <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_executor_runner.sh</span></code> to build the runner.
+To build a runner equivalent to the one above, run
+<code class="docutils literal notranslate"><span class="pre">./backends/arm/scripts/build_executor_runner.sh</span> <span class="pre">--pte=ethos_u_minimal_example.pte</span></code></p>
+</div>
+<p>The block diagram below shows, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
+<p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
 </div>
 </div>
-<div class="section" id="testing-the-model">
-<h2>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h2>
-<p>Before integrating the runtime code, it is common to test the exported model from Python. This can be used to evaluate model accuracy and sanity check behavior before moving to the target device. Note that not all hardware backends are available from Python, as they may require specialized hardware to function. See the specific backend documentation for more information on hardware requirements and the availablilty of simulators. The XNNPACK delegate used in this example is always available on host machines.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
-
-<span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
-
-<span class="n">input_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">)</span>
-<span class="n">method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
-<span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
+<div class="section" id="running-on-corstone-fvp-platforms">
+<h2>Running on Corstone FVP Platforms<a class="headerlink" href="#running-on-corstone-fvp-platforms" title="Permalink to this heading">¶</a></h2>
+<p>Finally, use the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/run_fvp.sh</span></code> utility script to run the .elf-file on simulated Arm hardware.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>backends/arm/scripts/run_fvp.sh --elf=$(find ethos_u_minimal_example -name arm_executor_runner) --target=ethos-u55-128
 </pre></div>
 </div>
-<p>Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Extension Module</span></a>. There is also an E2E demo in <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation">executorch-examples</a>.</p>
-<p>For more information, see <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.</p>
+<p>The example application is by default built with an input of ones, so the expected result of the quantized addition should be close to 2.</p>
 </div>
-<div class="section" id="advanced-topics">
-<h2>Advanced Topics<a class="headerlink" href="#advanced-topics" title="Permalink to this heading">¶</a></h2>
-<p>While many models will “just work” following the steps above, some more complex models may require additional work to export. These include models with state and models with complex control flow or auto-regressive generation.
-See the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/models/llama">Llama model</a> for example use of these techniques.</p>
-<div class="section" id="state-management">
-<h3>State Management<a class="headerlink" href="#state-management" title="Permalink to this heading">¶</a></h3>
-<p>Some types of models maintain internal state, such as KV caches in transformers. There are two ways to manage state within ExecuTorch. The first is to bring the state out as model inputs and outputs, effectively making the core model stateless. This is sometimes referred to as managing the state as IO.</p>
-<p>The second approach is to leverage mutable buffers within the model directly. A mutable buffer can be registered using the PyTorch <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_buffer">register_buffer</a> API on <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>. Storage for the buffer is managed by the framework, and any mutations to the buffer within the model are written back at the end of method execution.</p>
-<p>Mutable buffers have several limitations:</p>
-<ul class="simple">
-<li><p>Export of mutability can be fragile.</p>
-<ul>
-<li><p>Consider explicitly calling <code class="docutils literal notranslate"><span class="pre">detach()</span></code> on tensors before assigning to a buffer if you encounter export-time errors related to gradients.</p></li>
-<li><p>Ensure that any operations done on a mutable buffer are done with in-place operations (typipcally ending in <code class="docutils literal notranslate"><span class="pre">_</span></code>).</p></li>
-<li><p>Do not reassign the buffer variable. Instead, use <code class="docutils literal notranslate"><span class="pre">copy_</span></code> to update the entire buffer content.</p></li>
-</ul>
-</li>
-<li><p>Mutable buffers are not shared between multiple methods within a .pte.</p></li>
-<li><p>In-place operations are replaced with non-in place variants, and the resulting tensor is written back at the end of the method execution. This can be a performance bottleneck when using <code class="docutils literal notranslate"><span class="pre">index_put_</span></code>.</p></li>
-<li><p>Buffer mutations are not supported on all backends and may cause graph breaks and memory transfers back to CPU.</p></li>
-</ul>
-<p>Support for mutation is expiremental and may change in the future.</p>
+<div class="section" id="takeaways">
+<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
+<p>In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware.
+To learn more, check out these learning paths:</p>
+<p>https://learn.arm.com/learning-paths/embedded-and-microcontrollers/rpi-llama3/
+https://learn.arm.com/learning-paths/embedded-and-microcontrollers/visualizing-ethos-u-performance/</p>
 </div>
-<div class="section" id="dynamic-control-flow">
-<h3>Dynamic Control Flow<a class="headerlink" href="#dynamic-control-flow" title="Permalink to this heading">¶</a></h3>
-<p>Control flow is considered dynamic if the path taken is not fixed at export-time. This is commonly the case when if or loop conditions depend on the value of a Tensor, such as a generator loop that terminates when an
-end-of-sequence token is generated. Shape-dependent control flow can also be dynamic if the tensor shape depends on the input.</p>
-<p>To make dynamic if statements exportable, they can be written using <a class="reference external" href="https://docs.pytorch.org/docs/stable/generated/torch.cond.html">torch.cond</a>. Dynamic loops are not currently supported on ExecuTorch. The general approach to
-enable this type of model is to export the body of the loop as a method, and then handle loop logic from the application code. This is common for handling generator loops in auto-regressive models, such as transformer incremental
-decoding.</p>
-</div>
-<div class="section" id="multi-method-models">
-<h3>Multi-method Models<a class="headerlink" href="#multi-method-models" title="Permalink to this heading">¶</a></h3>
-<p>ExecuTorch allows for bundling of multiple methods with a single .pte file. This can be useful for more complex model architectures, such as encoder-decoder models.</p>
-<p>The include multiple methods in a .pte, each method must be exported individually with <code class="docutils literal notranslate"><span class="pre">torch.export.export</span></code>, yielding one <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> per method. These can be passed as a dictionary into <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code>:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">encode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
-<span class="n">decode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
-<span class="n">lowered</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">({</span>
-    <span class="s2">&quot;encode&quot;</span><span class="p">:</span> <span class="n">encode_ep</span><span class="p">,</span>
-    <span class="s2">&quot;decode&quot;</span><span class="p">:</span> <span class="n">decode_ep</span><span class="p">,</span>
-<span class="p">})</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<div class="section" id="faqs">
+<h2>FAQs<a class="headerlink" href="#faqs" title="Permalink to this heading">¶</a></h2>
+<p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Arm</span> <span class="ow">is</span> <span class="n">a</span> <span class="n">registered</span> <span class="n">trademark</span> <span class="n">of</span> <span class="n">Arm</span> <span class="n">Limited</span> <span class="p">(</span><span class="ow">or</span> <span class="n">its</span> <span class="n">subsidiaries</span> <span class="ow">or</span> <span class="n">affiliates</span><span class="p">)</span><span class="o">.</span>
 </pre></div>
 </div>
-<p>At runtime, the method name can be passed to <code class="docutils literal notranslate"><span class="pre">load_method</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> on the <code class="docutils literal notranslate"><span class="pre">Module</span></code> class.</p>
-<p>Multi-method .ptes have several caveats:</p>
-<ul class="simple">
-<li><p>Methods are individually memory-planned. Activation memory is not current re-used between methods. For advanced use cases, a <a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">custom memory plan</span></a> or <a class="reference external" href="https://docs.pytorch.org/executorch/stable/runtime-overview.html#operating-system-considerations">custom memory allocators</a> can be used to overlap the allocations.</p></li>
-<li><p>Mutable buffers are not shared between methods.</p></li>
-<li><p>PyTorch export does not currently allow for exporting methods on a module other than <code class="docutils literal notranslate"><span class="pre">forward</span></code>. To work around this, it is common to create wrapper <code class="docutils literal notranslate"><span class="pre">nn.Modules</span></code> for each method.</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
-<span class="k">class</span><span class="w"> </span><span class="nc">EncodeWrapper</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">DecodeWrapper</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="c1"># ...</span>
-
-<span class="n">encode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">EncodeWrapper</span><span class="p">(</span><span class="n">model</span><span class="p">),</span> <span class="o">...</span><span class="p">)</span>
-<span class="n">decode_ep</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">DecodeWrapper</span><span class="p">(</span><span class="n">model</span><span class="p">),</span> <span class="o">...</span><span class="p">)</span>
-<span class="c1"># ...</span>
-</pre></div>
-</div>
-</div>
-</div>
-<div class="section" id="next-steps">
-<h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
-<p>The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See <a class="reference external" href="https://pytorch.org/docs/main/export.html">torch.export</a> and <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API Reference</span></a> for more information.</p>
-<p>For advanced use cases, see the following:</p>
-<ul class="simple">
-<li><p><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization Overview</span></a> for information on quantizing models to reduce inference time and memory footprint.</p></li>
-<li><p><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory Planning</span></a> for information on controlling memory placement and planning.</p></li>
-<li><p><a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">Custom Compiler Passes</span></a> for information on writing custom compiler passes.</p></li>
-<li><p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Export IR Specification</span></a> for information on the intermediate representation generated by export.</p></li>
-</ul>
 </div>
 </div>
 
@@ -782,10 +739,10 @@ decoding.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="using-executorch-android.html" class="btn btn-neutral float-right" title="Using ExecuTorch on Android" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="tutorial-arm-vgf.html" class="btn btn-neutral float-right" title="Arm VGF Backend Tutorial" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="getting-started.html" class="btn btn-neutral" title="Getting Started with ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="using-executorch-faqs.html" class="btn btn-neutral" title="Frequently Asked Questions" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -819,26 +776,21 @@ decoding.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Model Export and Lowering</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#the-export-and-lowering-process">The Export and Lowering Process</a></li>
-<li><a class="reference internal" href="#hardware-backends">Hardware Backends</a><ul>
-<li><a class="reference internal" href="#available-backends">Available Backends</a></li>
+<li><a class="reference internal" href="#">Arm Ethos-U NPU Backend Tutorial</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
+<li><a class="reference internal" href="#hardware">Hardware</a></li>
+<li><a class="reference internal" href="#software">Software</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#model-preparation">Model Preparation</a></li>
-<li><a class="reference internal" href="#export-and-lowering">Export and Lowering</a><ul>
-<li><a class="reference internal" href="#supporting-varying-input-sizes-dynamic-shapes">Supporting Varying Input Sizes (Dynamic Shapes)</a></li>
+<li><a class="reference internal" href="#set-up-the-developer-environment">Set Up the Developer Environment</a></li>
+<li><a class="reference internal" href="#build">Build</a><ul>
+<li><a class="reference internal" href="#ahead-of-time-aot-components">Ahead-of-Time (AOT) components</a></li>
+<li><a class="reference internal" href="#runtime">Runtime:</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#testing-the-model">Testing the Model</a></li>
-<li><a class="reference internal" href="#advanced-topics">Advanced Topics</a><ul>
-<li><a class="reference internal" href="#state-management">State Management</a></li>
-<li><a class="reference internal" href="#dynamic-control-flow">Dynamic Control Flow</a></li>
-<li><a class="reference internal" href="#multi-method-models">Multi-method Models</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
+<li><a class="reference internal" href="#running-on-corstone-fvp-platforms">Running on Corstone FVP Platforms</a></li>
+<li><a class="reference internal" href="#takeaways">Takeaways</a></li>
+<li><a class="reference internal" href="#faqs">FAQs</a></li>
 </ul>
 </li>
 </ul>

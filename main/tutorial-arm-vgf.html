@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Arm® Backend Tutorial &mdash; ExecuTorch main documentation</title>
+  <title>Arm VGF Backend Tutorial &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -43,7 +43,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Backend Overview" href="backends-overview.html" />
-    <link rel="prev" title="Frequently Asked Questions" href="using-executorch-faqs.html" />
+    <link rel="prev" title="Arm Ethos-U NPU Backend Tutorial" href="tutorial-arm-ethos-u.html" />
 
 
   <!-- Google Tag Manager -->
@@ -341,7 +341,8 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm® Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm VGF Backend Tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backends</span></p>
 <ul>
@@ -351,6 +352,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
@@ -473,13 +475,13 @@
       </li>
 
         
-      <li>Arm® Backend Tutorial</li>
+      <li>Arm VGF Backend Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/tutorial-arm.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/tutorial-arm-vgf.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -511,8 +513,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="arm-backend-tutorial">
-<h1>Arm® Backend Tutorial<a class="headerlink" href="#arm-backend-tutorial" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="arm-vgf-backend-tutorial">
+<h1>Arm VGF Backend Tutorial<a class="headerlink" href="#arm-vgf-backend-tutorial" title="Permalink to this heading">¶</a></h1>
 <!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
@@ -534,7 +536,7 @@ Tutorials we recommend you complete before this:</div>
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
 What you will learn in this tutorial:</div>
-<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm backends.</p>
+<p class="sd-card-text">In this tutorial you will learn how to export a simple PyTorch model for the ExecuTorch VGF backend.</p>
 </div>
 </div>
 </div>
@@ -543,7 +545,6 @@ What you will learn in this tutorial:</div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
 <p>This delegate is under active development, to get best results please use a recent version.
-The TOSA and Ethos(tm) backend support is reasonably mature and used in production by some users.
 The VGF backend support is in early development and you may encounter issues.
 You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.</p>
 </div>
@@ -552,409 +553,181 @@ You may encounter some rough edges and features which may be documented or plann
 <p>If you are already familiar with this delegate, you may want to jump directly to the examples:</p>
 <ul class="simple">
 <li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm">Examples in the ExecuTorch repository</a></p></li>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos_u_minimal_example.ipynb">Compilation for Ethos-U</a></p></li>
 <li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/aot_arm_compiler.py">A commandline compiler for example models</a></p></li>
 </ul>
 </div>
+<p>This tutorial serves as an introduction to using ExecuTorch to deploy PyTorch models on VGF targets. The tutorial is based on <code class="docutils literal notranslate"><span class="pre">vgf_minimal_example.ipyb</span></code>, provided in Arm®’s example folder.</p>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
-<p>Let’s make sure you have everything you need before you get started.</p>
 <div class="section" id="hardware">
 <h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
-<p>To successfully complete this tutorial, you will need a Linux or MacOS host machine with Arm aarch64 or x86_64 processor architecture.</p>
-<p>The target device will be an emulated platform to enable development without a specific development board. This tutorial has guidance for both Ethos-U targets and VGF via the ML SDK for Vulkan®.</p>
-<p>For Ethos-U and Cortex-M, We will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Corstone-300</a>(cs300) and <a class="reference external" href="https://developer.arm.com/Processors/Corstone-320">Corstone-320</a>(cs320)systems. Since we will be using the FVP (think of it as virtual hardware), we won’t be requiring any real embedded hardware for this tutorial.</p>
-<p>For VGF we will be using the <a class="reference external" href="https://github.com/arm/ai-ml-sdk-for-vulkan/">ML SDK for Vulkan(R)</a>) to emulate the program consumer.</p>
+<p>To successfully complete this tutorial, you will need a Linux machine with aarch64 or x86_64 processor architecture, or a macOS™ machine with Apple® Silicon.</p>
+<p>To enable development without a specific development board, we will be using the <a class="reference external" href="https://github.com/arm/ai-ml-sdk-for-vulkan/">ML SDK for Vulkan®</a> to emulate the program consumer.</p>
 </div>
 <div class="section" id="software">
 <h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <p>First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven’t already, to set up a working ExecuTorch development environment. For the VGF backend it’s recommended you <a class="reference external" href="https://docs.pytorch.org/executorch/stable/using-executorch-building-from-source.html">install from source</a>, or from a <a class="reference external" href="https://download.pytorch.org/whl/nightly/executorch/">nightly</a>.</p>
-<p>In addition to this, you need to install a number of SDK dependencies for generating Ethos-U command streams or VGF files. There are scripts which automate this, which are found in the main <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm/">ExecuTorch repository</a>.</p>
+<p>Additionally, you need to install a number of SDK dependencies for generating VGF files. For glslc, prefer installing it via your package manager. If this is not possible, and for other dependencies, there are scripts to automate installation available in the main <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm/">ExecuTorch repository</a>. glscl will then be installed via the Vulkan SDK.</p>
+<p>To install VGF dependencies, run</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula<span class="w"> </span>--disable-ethos-u-deps<span class="w"> </span>--enable-mlsdk-deps
+</pre></div>
+</div>
+<p>This will install:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
+<li><p><a class="reference external" href="https://github.com/arm/ai-ml-sdk-model-converter">ML SDK Model Converter</a> for converting TOSA flatbuffers to VGF files.</p></li>
+<li><p><a class="reference external" href="https://www.vulkan.org">Vulkan API (If needed)</a> Should be set up locally for GPU execution support.</p></li>
+<li><p><a class="reference external" href="https://github.com/arm/ai-ml-emulation-layer-for-vulkan">ML Emulation Layer for Vulkan</a> for testing on Vulkan API.</p></li>
+</ul>
 </div>
 </div>
 <div class="section" id="set-up-the-developer-environment">
 <h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this heading">¶</a></h2>
-<p>In this section, we will do a one-time setup of the platform support files needed to run ExecuTorch programs in this tutorial. It is recommended to run the script in a conda or venv environment.</p>
-<p>With a checkout of the ExecuTorch repository, we will use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion.</p>
-<p>For Ethos-U run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula
+<p>The <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script has generated a <code class="docutils literal notranslate"><span class="pre">setup_path.sh</span></code> script that you need to source whenever you restart your shell. Do this by running</p>
+<p><code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">examples/arm/ethos-u-scratch/setup_path.sh</span></code></p>
+<p>As a simple check that your environment is set up correctly, run</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>which<span class="w"> </span>model-converter
 </pre></div>
 </div>
-<p>For VGF run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./examples/arm/setup.sh<span class="w"> </span>--i-agree-to-the-contained-eula<span class="w"> </span>--disable-ethos-u-deps<span class="w"> </span>--enable-mlsdk-deps
-</pre></div>
+<p>Make sure the executable is located where you expect, in the <code class="docutils literal notranslate"><span class="pre">examples/arm</span></code> tree.</p>
 </div>
-<p>It is possible to install both sets of dependencies if you omit the disable options.</p>
-<div class="section" id="notes">
-<h3>Notes:<a class="headerlink" href="#notes" title="Permalink to this heading">¶</a></h3>
-<div class="admonition warning">
-<p class="admonition-title">Warning</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">setup.sh</span></code> script has generated a <code class="docutils literal notranslate"><span class="pre">setup_path.sh</span></code> script that you need to source whenever you restart your shell.</p>
-</div>
-<p>i.e. run
-<code class="docutils literal notranslate"><span class="pre">source</span>&#160; <span class="pre">executorch/examples/arm/ethos-u-scratch/setup_path.sh</span></code></p>
-<p>To confirm your environment is set up correctly and will enable you to generate .pte’s for your target:</p>
-<p>For Ethos-U run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Check for Vela, which converts TOSA to Ethos-U command streams.</span>
-which<span class="w"> </span>vela
-</pre></div>
-</div>
-<p>For VGF run:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Check for model-converter, which converts TOSA to ML-SDK VGF format.</span>
-which<span class="w"> </span>model-converter
-</pre></div>
-</div>
-<p>To ensure there’s no environment pollution you should confirm these binaries reside within your executorch checkout, under the examples/arm tree. Other versions may present compatibility issues, so this should be corrected by modifying your environment variables such as ${PATH} appropriately.</p>
-</div>
-</div>
-<div class="section" id="convert-the-pytorch-model-to-the-pte-file">
-<h2>Convert the PyTorch Model to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> File<a class="headerlink" href="#convert-the-pytorch-model-to-the-pte-file" title="Permalink to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary file produced by ExecuTorch Ahead-of-Time (AoT) pipeline by taking in a PyTorch Model (a torch.nn.Module), exporting it, running a variety of passes, and finally serializing it to a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format. This binary file is typically consumed by the ExecuTorch Runtime. This <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md">document</a> goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.</p>
-<p>In this section, we will primarily focus on the AoT flow with the end goal of producing a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. There are a set of export configurations to target different backends at runtime. For each, the AoT flow will produce a unique <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. We will explore a couple of different configurations producing different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files, particularly interesting for our Corstone-300 system and available processing elements.</p>
-<p>Before we get started, let’s first talk about the PyTorch modules we will be using.</p>
-<div class="section" id="pytorch-example-modules">
-<h3>PyTorch Example Modules<a class="headerlink" href="#pytorch-example-modules" title="Permalink to this heading">¶</a></h3>
-<p>We will use a couple of simple PyTorch Modules to explore the end-to-end flow. These modules will be used in various different ways throughout the tutorial, referring to them by their <code class="docutils literal notranslate"><span class="pre">&lt;class_name&gt;</span></code>.</p>
-<div class="section" id="softmaxmodule">
-<h4>SoftmaxModule<a class="headerlink" href="#softmaxmodule" title="Permalink to this heading">¶</a></h4>
-<p>This is a very simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html#torch.nn.Softmax">Softmax</a> operator.</p>
+<div class="section" id="build">
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="ahead-of-time-aot-components">
+<h3>Ahead-of-Time (AOT) components<a class="headerlink" href="#ahead-of-time-aot-components" title="Permalink to this heading">¶</a></h3>
+<p>The ExecuTorch Ahead-of-Time (AOT) pipeline takes a PyTorch Model (a <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code>) and produces a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> binary file, which is then typically consumed by the ExecuTorch Runtime. This <a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">document</span></a> goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.</p>
+<p>The example below shows how to quantize a model consisting of a single addition, and export it it through the AOT flow using the VGF backend. For more details, se <code class="docutils literal notranslate"><span class="pre">examples/arm/vgf_minimal_example.ipynb</span></code>.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">SoftmaxModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Softmax</span><span class="p">()</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">z</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">z</span>
-</pre></div>
-</div>
-<p>Running it using the Python environment (on the same development Linux machine), you get the expected output.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">m</span> <span class="o">=</span> <span class="n">SoftmaxModule</span><span class="p">()</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">m</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">2</span><span class="p">))</span>
-<span class="go">tensor([[0.5000, 0.5000],</span>
-<span class="go">        [0.5000, 0.5000]])</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="addmodule">
-<h4>AddModule<a class="headerlink" href="#addmodule" title="Permalink to this heading">¶</a></h4>
-<p>Let’s write another simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.add.html#torch.add">Add</a> operator.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">AddModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">x</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">Add</span><span class="p">()</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfCompileSpec</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">VgfQuantizer</span><span class="p">,</span>
+    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+
+<span class="c1"># Create a compilation spec describing the target for configuring the quantizer</span>
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">VgfCompileSpec</span><span class="p">(</span><span class="s2">&quot;TOSA-1.0+INT&quot;</span><span class="p">)</span>
+
+<span class="c1"># Create and configure quantizer to use a symmetric quantization config globally on all nodes</span>
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">VgfQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+<span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">operator_config</span><span class="p">)</span>
+
+<span class="c1"># Post training quantization</span>
+<span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+<span class="n">quantized_graph_module</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span> <span class="c1"># Calibrate the graph module with the example input</span>
+<span class="n">quantized_graph_module</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">quantized_graph_module</span><span class="p">)</span>
+
+
+<span class="c1"># Create a new exported program using the quantized_graph_module</span>
+<span class="n">quantized_exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_graph_module</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EdgeCompileConfig</span><span class="p">,</span>
+    <span class="n">ExecutorchBackendConfig</span><span class="p">,</span>
+    <span class="n">to_edge_transform_and_lower</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.export_util.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_pte_program</span>
+
+<span class="c1"># Create partitioner from compile spec</span>
+<span class="n">partitioner</span> <span class="o">=</span> <span class="n">VgfPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">)</span>
+
+<span class="c1"># Lower the exported program to the VGF backend</span>
+<span class="n">edge_program_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+            <span class="n">quantized_exported_program</span><span class="p">,</span>
+            <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">partitioner</span><span class="p">],</span>
+            <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span>
+                <span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="p">),</span>
+<span class="p">)</span>
+
+<span class="c1"># Convert edge program to executorch</span>
+<span class="n">executorch_program_manager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+            <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">extract_delegate_segments</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="p">)</span>
+
+
+<span class="c1"># Save pte file</span>
+<span class="n">cwd_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+<span class="n">pte_base_name</span> <span class="o">=</span> <span class="s2">&quot;simple_example&quot;</span>
+<span class="n">pte_name</span> <span class="o">=</span> <span class="n">pte_base_name</span> <span class="o">+</span> <span class="s2">&quot;.pte&quot;</span>
+<span class="n">pte_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cwd_dir</span><span class="p">,</span> <span class="n">pte_name</span><span class="p">)</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">executorch_program_manager</span><span class="p">,</span> <span class="n">pte_name</span><span class="p">)</span>
+<span class="k">assert</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">pte_path</span><span class="p">),</span> <span class="s2">&quot;Build failed; no .pte-file found&quot;</span>
 </pre></div>
 </div>
-<p>Running it in python shows that 1 + 1 produces 2 as exepected:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">m</span> <span class="o">=</span> <span class="n">AddModule</span><span class="p">()</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">m</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">))</span> <span class="c1"># integer types for non-quantized Ethos-U delegation</span>
-<span class="go">tensor([2, 2, 2, 2, 2], dtype=torch.int32)</span>
-</pre></div>
-</div>
-<p>Keep the inputs and outputs to these modules in mind. When you will lower and run this through alternate means as opposed to running on this Linux machine, you will use the same inputs, and expect the outputs to match with the one shown here.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>you need to be aware of data types for running networks on the Ethos-U as it is an integer only co-processor. For this example you use integer types explicitly, for typical use of such a flow networks are built and trained in floating point, and then are quantized from floating point to integer for efficient inference.</p>
+<p>For a quick start, you can use the script <code class="docutils literal notranslate"><span class="pre">examples/arm/aot_arm_compiler.py</span></code> to produce the pte.
+To produce a pte file equivalent to the one above, run
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">examples.arm.aot_arm_compiler</span> <span class="pre">--model_name=add</span> <span class="pre">--delegate</span> <span class="pre">--quantize</span> <span class="pre">--output=simple_example.pte</span> <span class="pre">--target=vgf</span></code></p>
 </div>
 </div>
-<div class="section" id="mobilenetv2-module">
-<h4>MobileNetV2 Module<a class="headerlink" href="#mobilenetv2-module" title="Permalink to this heading">¶</a></h4>
-<p><a class="reference external" href="https://arxiv.org/abs/1801.04381">MobileNetV2</a> is a commonly used network for edge and mobile devices.
-It’s also available as a default model in <a class="reference external" href="https://github.com/pytorch/vision">torchvision</a>, so you can load it with the sample code below.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">mobilenet_v2</span>  <span class="c1"># @manual</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<div class="section" id="runtime">
+<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
+</div>
+</div>
+<div class="section" id="build-executor-runtime">
+<h2>Build executor runtime<a class="headerlink" href="#build-executor-runtime" title="Permalink to this heading">¶</a></h2>
+<p>After the AOT compilation flow is done, we can build the executor runner target. For this tutorial, the default runner can be used. Build it with the following configuration:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># In ExecuTorch top-level, with sourced setup_path.sh</span>
+cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_VGF<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-Bcmake-out<span class="w"> </span>.
 
-<span class="n">mv2</span> <span class="o">=</span> <span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="sb">`</span>
 </pre></div>
 </div>
-<p>For more details, refer to the code snippet <a class="reference external" href="https://github.com/pytorch/executorch/blob/2354945d47f67f60d9a118ea1a08eef8ba2364b5/examples/models/mobilenet_v2/model.py#L18">here</a>.</p>
-</div>
-</div>
-<div class="section" id="non-delegated-workflow">
-<h3>Non-delegated Workflow<a class="headerlink" href="#non-delegated-workflow" title="Permalink to this heading">¶</a></h3>
-<p>In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.</p>
-<p>It’s expected that on platforms with dedicated acceleration like the Ethos-U55, that the non-delegated flow is used for two primary cases:</p>
-<ol class="arabic simple">
-<li><p>When the network is designed to be very small and best suited to run on the Cortex-M alone.</p></li>
-<li><p>When the network has a mix of operations that can target the NPU and those that can’t, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU.</p></li>
-</ol>
-<p>In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library you will skip specifying the backend during the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> generation.</p>
-<p>Following script will serve as a helper utility to help generating the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This is available in the <code class="docutils literal notranslate"><span class="pre">examples/arm</span></code> directory.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;softmax&quot;</span>
-<span class="c1"># This should produce ./softmax_arm_ethos-u55-128.pte</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="delegated-workflow">
-<h3>Delegated Workflow<a class="headerlink" href="#delegated-workflow" title="Permalink to this heading">¶</a></h3>
-<p>Working with Arm, you introduced a new Arm backend delegate for ExecuTorch. This backend is under active development and has a limited set of features available as of writing this.</p>
-<p>By including a following step during the ExecuTorch AoT export pipeline to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, you can enable this backend delegate.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.arm_backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_ethosu_compile_spec</span>
-
-<span class="n">graph_module_edge</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
-    <span class="n">ArmPartitioner</span><span class="p">(</span><span class="n">generate_ethosu_compile_spec</span><span class="p">(</span><span class="s2">&quot;ethos-u55-128&quot;</span><span class="p">)))</span>
-</pre></div>
-</div>
-<p>Similar to the non-delegate flow, the same script will server as a helper utility to help generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. Notice the <code class="docutils literal notranslate"><span class="pre">--delegate</span></code> option to enable the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> call.</p>
-<p>For Ethos targets:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span><span class="w"> </span>--delegate
-<span class="c1"># This targets the default of ethos-u55-128, see --help for further targets</span>
-<span class="c1"># should produce ./add_arm_delegate_ethos-u55-128.pte</span>
-</pre></div>
-</div>
-<p>For basic post-training quantization:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate<span class="w"> </span>--quantize
-<span class="c1"># This targets the default of ethos-u55-128, see --help for further targets</span>
-<span class="c1"># should produce ./mv2_arm_delegate_ethos-u55-128.pte</span>
-</pre></div>
-</div>
-<p>For VGF targets:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span><span class="w"> </span>--target<span class="o">=</span>vgf<span class="w"> </span>--delegate
-<span class="c1"># should produce ./add_arm_delegate_vgf.pte</span>
-</pre></div>
-</div>
-<p>For basic post-training quantization:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--target<span class="o">=</span>vgf<span class="w"> </span>--delegate<span class="w"> </span>--quantize
-<span class="c1"># should produce ./mv2_arm_delegate_vgf.pte</span>
-</pre></div>
-</div>
-<p>To capture intermediates such as VGF for lower level integration, invoke with the “-i” option:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--target<span class="o">=</span>vgf<span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="w"> </span>-i<span class="w"> </span>./mv2_output
-<span class="c1"># should produce ./mv2_arm_delegate_vgf.pte and intermediates in ./mv2_out/</span>
-</pre></div>
-</div>
-<br />
-<p>At the end of this, you should have a number of different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files.</p>
-<ul class="simple">
-<li><p>the SoftmaxModule, without any backend delegates.</p></li>
-<li><p>the AddModule, targeting the Arm Ethos-U backend.</p></li>
-<li><p>the Quantized MV2Model, targeting the Arm Ethos-U backend.</p></li>
-<li><p>the AddModule, targeting the VGF backend.</p></li>
-<li><p>the Quantized MV2Model, targeting the VGF backend.</p></li>
-</ul>
-<p>Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a target.</p>
-</div>
-</div>
-<div class="section" id="getting-a-bare-metal-executable">
-<h2>Getting a Bare-Metal Executable<a class="headerlink" href="#getting-a-bare-metal-executable" title="Permalink to this heading">¶</a></h2>
-<p>In this section, you will go over steps that you need to go through to build the runtime application. This then run on the target device. In the executorch repository you have a functioning script which does the exact same steps. It is located at <code class="docutils literal notranslate"><span class="pre">executorch/examples/arm/run.sh</span></code>. You will use that to build necessary pieces and finally run the previously generated PTE file on an FVP.</p>
-<p>By default the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will use <code class="docutils literal notranslate"><span class="pre">arm_test/</span></code> as an build and output folder and you will find the build artifacts under it. This can be controlled/overrided with the <code class="docutils literal notranslate"><span class="pre">--et_build_root</span></code> and the <code class="docutils literal notranslate"><span class="pre">--output</span></code> flags if needed.</p>
-<p>e.g. running <code class="docutils literal notranslate"><span class="pre">examples/arm/run.sh</span> <span class="pre">--model_name=add</span> <span class="pre">--target=ethos-u85-128</span></code> will produce a pte and elf file like this:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>arm_test/add/add_arm_delegate_ethos-u85-128.pte
-arm_test/add/cmake-out/arm_executor_runner
-</pre></div>
-</div>
-<p>Also before you get started, make sure that you have completed ExecuTorch cmake build setup, and the instructions to setup the development environment described <a class="reference internal" href="#set-up-the-developer-environment"><span class="std std-doc">earlier</span></a>.</p>
 <p>The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
 <p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">generate_pte_file</span></code> function in <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script produces the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files based on the models provided through <code class="docutils literal notranslate"><span class="pre">--model_name</span></code> input argument</p>
 </div>
-<div class="section" id="generating-executorch-libraries">
-<h3>Generating ExecuTorch Libraries<a class="headerlink" href="#generating-executorch-libraries" title="Permalink to this heading">¶</a></h3>
-<p>ExecuTorch’s CMake build system produces a set of build pieces which are critical to building the ExecuTorch runtime with-in the bare-metal environment you have for Corstone FVPs from Ethos-U SDK.</p>
-<p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">This</span></a> document provides a detailed overview of each individual build piece. For running either variant of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, you will need a core set of libraries. Here is a list,</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">libportable_ops_lib.a</span></code></p></li>
-</ul>
-<p>To run a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with the Arm backend delegate call instructions, you will need the Arm backend delegate runtime library, that is,</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch_delegate_ethos_u.a</span></code></p></li>
-</ul>
-<p>These libraries are generated by the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/build_executorch.sh</span></code> script called from the <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script.</p>
-</div>
-<div class="section" id="building-the-executor-runner-bare-metal-application">
-<h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
-<p>The SDK dir is the same one prepared <span class="xref myst">earlier</span>. And, you will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
-<p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment you have for Corstone-300/Corstone-320 platforms. The build also generates a kernel registration library for the relevant operators which could not be delegated to the EthosU, see the <a class="reference external" href="https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html">Kernel Library Selective Build documentation</a>.</p>
-<p>This step is executed by the build_executor_runner.sh script, which is invoked from the run.sh in the backends/arm/scripts folder.</p>
-<div class="admonition tip">
-<p class="admonition-title">Tip</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script takes in <code class="docutils literal notranslate"><span class="pre">--target</span></code> option, which provides a way to provide a specific target, Corstone-300(ethos-u55-128) or Corstone-320(ethos-u85-128)</p>
-</div>
-</div>
-</div>
-<div class="section" id="running-on-corstone-fvp-platforms">
-<h2>Running on Corstone FVP Platforms<a class="headerlink" href="#running-on-corstone-fvp-platforms" title="Permalink to this heading">¶</a></h2>
-<p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf. <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> will run the FVP for you via the <code class="docutils literal notranslate"><span class="pre">backends/arm/scripts/run_fvp.sh</span></code> script.</p>
-<div class="section" id="automatic-fvp-selection">
-<h3>Automatic FVP Selection<a class="headerlink" href="#automatic-fvp-selection" title="Permalink to this heading">¶</a></h3>
-<ul class="simple">
-<li><p>To run a specific test model with the compiler flag and target</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh<span class="w"> </span>--model_name<span class="o">=</span>mv2<span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="w"> </span>--target<span class="o">=</span>ethos-u85-128
+<div class="section" id="deploying-and-running-on-device">
+<h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
+<p>Since we are using the Vulkan emulation layer, we can run the the executor runner with the VGF delegate on the host machine:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>-model_path<span class="w"> </span>simple_example.pte
 </pre></div>
 </div>
-<ul class="simple">
-<li><p>To run a specific test model and target</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh<span class="w"> </span>--model_name<span class="o">=</span>mv2<span class="w"> </span>--delegate<span class="w"> </span>--target<span class="o">=</span>ethos-u85-128
-</pre></div>
-</div>
-<ul class="simple">
-<li><p>To run all the test models iteratively in a loop , simply run</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./run.sh
-</pre></div>
-</div>
-<p>Note that you could use <code class="docutils literal notranslate"><span class="pre">build_executor_runner.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">run_fvp.sh</span></code> scripts in tandem by passing the relevant  –target argument (e.g., –target=ethos-u55-128), the correct FVP binary will be chosen automatically. For more details, see the <a class="reference external" href="https://docs.pytorch.org/executorch/main/backends-arm-ethos-u.html#runtime-integration">section on Runtime Integration</a>.</p>
-</div>
-<div class="section" id="manual-fvp-binary-selection">
-<h3>Manual FVP Binary Selection<a class="headerlink" href="#manual-fvp-binary-selection" title="Permalink to this heading">¶</a></h3>
-<ul>
-<li><p>If you build for the Ethos delegate U55/U65 target (e.g., using –target=ethos-u55-128 or –target=ethos-u65-256 with <code class="docutils literal notranslate"><span class="pre">build_executor_runner.sh</span></code> and <code class="docutils literal notranslate"><span class="pre">run_fvp.sh</span></code>), you should use the corresponding FVP binary:</p>
-<ul>
-<li><p>For U55:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U55
-</pre></div>
-</div>
-</li>
-<li><p>For U65:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/ethos-u-scratch/FVP-corstone300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U65
-</pre></div>
-</div>
-</li>
-</ul>
-</li>
-<li><p>And say if you are not building for an Ethos target, use:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples/arm/ethos-u-scratch/FVP-corstone320/models/Linux64_GCC-9.3/FVP_Corstone_SSE-320
-</pre></div>
-</div>
-</li>
-</ul>
-<p>Following is an example usage:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>examples/arm/executor_runner/
-
-<span class="nv">elf</span><span class="o">=</span><span class="k">$(</span>find<span class="w"> </span><span class="si">${</span><span class="nv">ethos_u_build_dir</span><span class="si">}</span><span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;arm_executor_runner&quot;</span><span class="k">)</span>
-
-FVP_Corstone_SSE-320<span class="w">                                    </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps4_board.subsystem.ethosu.num_macs<span class="o">=</span><span class="m">128</span><span class="w">         </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps4_board.visualisation.disable-visualisation<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>vis_hdlcd.disable_visualisation<span class="o">=</span><span class="m">1</span><span class="w">                </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps4_board.telnetterminal0.start_telnet<span class="o">=</span><span class="m">0</span><span class="w">        </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps4_board.uart0.out_file<span class="o">=</span><span class="s1">&#39;-&#39;</span><span class="w">                    </span><span class="se">\</span>
-<span class="w">    </span>-C<span class="w"> </span>mps4_board.uart0.shutdown_on_eot<span class="o">=</span><span class="m">1</span><span class="w">               </span><span class="se">\</span>
-<span class="w">    </span>-a<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">elf</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">                                         </span><span class="se">\</span>
-<span class="w">    </span>--timelimit<span class="w"> </span><span class="m">120</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span><span class="w"> </span><span class="c1"># seconds- after which sim will kill itself</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="verification-of-successful-fvp-execution">
-<h3>Verification of Successful FVP Execution<a class="headerlink" href="#verification-of-successful-fvp-execution" title="Permalink to this heading">¶</a></h3>
-<p>After running the FVP command, either automatically or manually, you should see output similar to the following on your shell if the execution is successful:</p>
-<div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="go">I [executorch:arm_executor_runner.cpp:364] Model in 0x70000000 $</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:366] Model PTE file loaded. Size: 4425968 bytes.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:376] Model buffer loaded, has 1 methods</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:384] Running method forward</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:395] Setup Method allocator pool. Size: 62914560 bytes.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:412] Setting up planned buffer 0, size 752640.</span>
-<span class="go">I [executorch:ArmBackendEthosU.cpp:79] ArmBackend::init 0x70000070</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:445] Method loaded.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:447] Preparing inputs...</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:461] Input prepared.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:463] Starting the model execution...</span>
-<span class="go">I [executorch:ArmBackendEthosU.cpp:118] ArmBackend::execute 0x70000070</span>
-<span class="go">I [executorch:ArmBackendEthosU.cpp:298] Tensor input/output 0 will be permuted</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:120] NPU Inferences : 1</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:121] Profiler report, CPU cycles per operator:</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:125] ethos-u : cycle_cnt : 1498202 cycles</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:132] Operator(s) total: 1498202 CPU cycles</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:138] Inference runtime: 6925114 CPU cycles total</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:140] NOTE: CPU cycle values and ratio calculations require FPGA and identical CPU/NPU frequency</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:149] Inference CPU ratio: 99.99 %</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:153] Inference NPU ratio: 0.01 %</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:162] cpu_wait_for_npu_cntr : 729 CPU cycles</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:167] Ethos-U PMU report:</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:168] ethosu_pmu_cycle_cntr : 5920305</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr0 : 359921</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr1 : 0</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr2 : 0</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:171] ethosu_pmu_cntr3 : 503</span>
-<span class="go">I [executorch:arm_perf_monitor.cpp:178] Ethos-U PMU Events:[ETHOSU_PMU_EXT0_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT1_RD_DATA_BEAT_RECEIVED, ETHOSU_PMU_EXT0_WR_DATA_BEAT_WRITTEN, ETHOSU_PMU_NPU_IDLE]</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:470] model_pte_loaded_size:     4425968 bytes.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:484] method_allocator_used:     1355722 / 62914560  free: 61558838 ( used: 2 % )</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:491] method_allocator_planned:  752640 bytes</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:493] method_allocator_loaded:   966 bytes</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:494] method_allocator_input:    602116 bytes</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:495] method_allocator_executor: 0 bytes</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:498] temp_allocator_used:       0 / 1048576 free: 1048576 ( used: 0 % )</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:152] Model executed successfully.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:156] 1 outputs:</span>
-<span class="go">Output[0][0]: -0.749744</span>
-<span class="go">Output[0][1]: -0.019224</span>
-<span class="go">Output[0][2]: 0.134570</span>
-<span class="go">...(Skipped)</span>
-<span class="go">Output[0][996]: -0.230691</span>
-<span class="go">Output[0][997]: -0.634399</span>
-<span class="go">Output[0][998]: -0.115345</span>
-<span class="go">Output[0][999]: 1.576386</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:177] Program complete, exiting.</span>
-<span class="go">I [executorch:arm_executor_runner.cpp:179]</span>
-</pre></div>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">run.sh</span></code> script provides various options to select a particular FVP target, use desired models, select portable kernels and can be explored using the <code class="docutils literal notranslate"><span class="pre">--help</span></code> argument</p>
-</div>
-</div>
-</div>
-<div class="section" id="running-on-the-vgf-backend-with-the-standard-executor-runner-for-linux">
-<h2>Running on the VGF backend with the standard executor_runner for Linux<a class="headerlink" href="#running-on-the-vgf-backend-with-the-standard-executor-runner-for-linux" title="Permalink to this heading">¶</a></h2>
-<p>Follow typical <a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a> flow to build the linux target, ensuring that the VGF delegate is enabled.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DEXECUTORCH_BUILD_VGF<span class="o">=</span>ON
-</pre></div>
-</div>
-<p>A full example buld line is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="n">bash</span> \
-    <span class="o">-</span><span class="n">DCMAKE_INSTALL_PREFIX</span><span class="o">=</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span> \
-    <span class="o">-</span><span class="n">DCMAKE_BUILD_TYPE</span><span class="o">=</span><span class="n">Release</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_MODULE</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_TENSOR</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_XNNPACK</span><span class="o">=</span><span class="n">OFF</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_VULKAN</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_VGF</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_ENABLE_LOGGING</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL</span><span class="o">=</span><span class="n">ON</span> \
-    <span class="o">-</span><span class="n">DPYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> \
-    <span class="o">-</span><span class="n">Bcmake</span><span class="o">-</span><span class="n">out</span> <span class="o">.</span>
-<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j25</span> <span class="o">--</span><span class="n">target</span> <span class="n">install</span> <span class="o">--</span><span class="n">config</span> <span class="n">Release</span>
-</pre></div>
-</div>
-<p>You can then invoke the executor runner on the host machine, which will use the VGF delegate, and requires the vulkan layer drivers we installed with setup.sh.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>-model_path<span class="w"> </span>add_arm_delegate_vgf.pte
-</pre></div>
-</div>
+<p>The example application is by default built with an input of ones, so the expected result of the quantized addition should be close to 2.</p>
 </div>
 <div class="section" id="takeaways">
 <h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
-<p>In this tutorial you have learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.</p>
-<p>To recap, there are two major flows:</p>
-<ul class="simple">
-<li><p>A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch.</p></li>
-<li><p>A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware.</p></li>
-</ul>
-<p>Both of these flows continue to evolve, enabling more use-cases and better performance.</p>
+<p>In this tutorial you have learned how to use ExecuTorch to export a PyTorch model to an executable that can run on an embedded target, and then run that executable on simulated hardware.</p>
 </div>
 <div class="section" id="faqs">
 <h2>FAQs<a class="headerlink" href="#faqs" title="Permalink to this heading">¶</a></h2>
-<!----
-Describe what common errors users may see and how to resolve them.
-
-* TODO - Binary size and operator Selection
-* TODO - Cross-compilation targeting baremetal
-* TODO - Debugging on FVP
------>
+<p><em>glslc is not found when configuring the executor runner</em>.</p>
+<p>The Vulkan sdk is likely not in your path, check whether setup_path.sh contains something like
+<code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">PATH=$(pwd)/examples/arm/ethos-u-scratch/vulkan_sdk/1.4.321.1/x86_64/bin:$PATH</span></code>.
+If not, add it and source the file.</p>
 <p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Arm</span> <span class="ow">is</span> <span class="n">a</span> <span class="n">registered</span> <span class="n">trademark</span> <span class="n">of</span> <span class="n">Arm</span> <span class="n">Limited</span> <span class="p">(</span><span class="ow">or</span> <span class="n">its</span> <span class="n">subsidiaries</span> <span class="ow">or</span> <span class="n">affiliates</span><span class="p">)</span><span class="o">.</span>
+</pre></div>
+</div>
 </div>
 </div>
 
@@ -969,7 +742,7 @@ Describe what common errors users may see and how to resolve them.
         <a href="backends-overview.html" class="btn btn-neutral float-right" title="Backend Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="using-executorch-faqs.html" class="btn btn-neutral" title="Frequently Asked Questions" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="tutorial-arm-ethos-u.html" class="btn btn-neutral" title="Arm Ethos-U NPU Backend Tutorial" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -1003,39 +776,20 @@ Describe what common errors users may see and how to resolve them.
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Arm® Backend Tutorial</a><ul>
+<li><a class="reference internal" href="#">Arm VGF Backend Tutorial</a><ul>
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
 <li><a class="reference internal" href="#hardware">Hardware</a></li>
 <li><a class="reference internal" href="#software">Software</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#set-up-the-developer-environment">Set Up the Developer Environment</a><ul>
-<li><a class="reference internal" href="#notes">Notes:</a></li>
+<li><a class="reference internal" href="#set-up-the-developer-environment">Set Up the Developer Environment</a></li>
+<li><a class="reference internal" href="#build">Build</a><ul>
+<li><a class="reference internal" href="#ahead-of-time-aot-components">Ahead-of-Time (AOT) components</a></li>
+<li><a class="reference internal" href="#runtime">Runtime:</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file">Convert the PyTorch Model to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> File</a><ul>
-<li><a class="reference internal" href="#pytorch-example-modules">PyTorch Example Modules</a><ul>
-<li><a class="reference internal" href="#softmaxmodule">SoftmaxModule</a></li>
-<li><a class="reference internal" href="#addmodule">AddModule</a></li>
-<li><a class="reference internal" href="#mobilenetv2-module">MobileNetV2 Module</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#non-delegated-workflow">Non-delegated Workflow</a></li>
-<li><a class="reference internal" href="#delegated-workflow">Delegated Workflow</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#getting-a-bare-metal-executable">Getting a Bare-Metal Executable</a><ul>
-<li><a class="reference internal" href="#generating-executorch-libraries">Generating ExecuTorch Libraries</a></li>
-<li><a class="reference internal" href="#building-the-executor-runner-bare-metal-application">Building the executor_runner Bare-Metal Application</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#running-on-corstone-fvp-platforms">Running on Corstone FVP Platforms</a><ul>
-<li><a class="reference internal" href="#automatic-fvp-selection">Automatic FVP Selection</a></li>
-<li><a class="reference internal" href="#manual-fvp-binary-selection">Manual FVP Binary Selection</a></li>
-<li><a class="reference internal" href="#verification-of-successful-fvp-execution">Verification of Successful FVP Execution</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#running-on-the-vgf-backend-with-the-standard-executor-runner-for-linux">Running on the VGF backend with the standard executor_runner for Linux</a></li>
+<li><a class="reference internal" href="#build-executor-runtime">Build executor runtime</a></li>
+<li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and running on device</a></li>
 <li><a class="reference internal" href="#takeaways">Takeaways</a></li>
 <li><a class="reference internal" href="#faqs">FAQs</a></li>
 </ul>
