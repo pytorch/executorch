@@ -197,6 +197,7 @@ class _ExtendedHeader:
 
         magic = data[0:4]
         length = int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER)
+        print(f"length: {length}")
         program_size = int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER)
         segment_base_offset = int.from_bytes(data[16:24], byteorder=_HEADER_BYTEORDER)
         segment_data_size = (
@@ -226,6 +227,7 @@ class _ExtendedHeader:
         Note that this will ignore self.magic and self.length and will always
         write the proper magic/length.
         """
+        print(f"to_bytes: length: {self.EXPECTED_LENGTH}")
         data: bytes = (
             # Extended header magic. This lets consumers detect whether the
             # header was inserted or not. Always use the proper magic value
@@ -576,7 +578,7 @@ def serialize_pte_binary(
     return pte_data
 
 
-def _restore_segments(program: Program, segment_data: bytes) -> Program:
+def _restore_segments(program: Program, segment_data: bytes) -> Tuple[Program, NamedDataStoreOutput]:
     """Moves segments from `segment_data` into `program`.
 
     This should recreate the original Program that the segments were extracted
@@ -640,13 +642,28 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
         program.constant_buffer = buffers
         program.constant_segment.segment_index = 0
         program.constant_segment.offsets = []
+    
+    buffers: List[BufferEntry] = []
+    pte_data: Dict[str, int] = {}
+    if program.named_data is not None and len(program.named_data) > 0:
+        for i in range(len(program.named_data)):
+            print(f"named data: {i} {program.named_data[i].key}")
+            segment_index = program.named_data[i].segment_index
+            if segment_index >= len(segments):
+                raise ValueError(
+                    f"Named data {i} segment index {segment_index} >= num segments {len(segments)}"
+                )
+            buffers.append(BufferEntry(buffer=segments[segment_index], alignment=16))
+            pte_data[program.named_data[i].key] = len(buffers) - 1
+        program.named_data = []
 
+    named_data_store_output = NamedDataStoreOutput(buffers, pte_data, {})
     # Clear out the segments list since the original Program didn't have one.
     program.segments = []
-    return program
+    return program, named_data_store_output
 
 
-def deserialize_pte_binary(program_data: bytes) -> Program:
+def deserialize_pte_binary(program_data: bytes) -> Tuple[Program, NamedDataStoreOutput]:
     """Returns a Program deserialized from the given runtime binary data."""
     program_size = len(program_data)
     segment_base_offset = 0
@@ -663,10 +680,11 @@ def deserialize_pte_binary(program_data: bytes) -> Program:
         _program_flatbuffer_to_json(program_data[:program_size])
     )
 
+    named_data_store_output = NamedDataStoreOutput([], {}, {})
     if segment_base_offset != 0:
         # Move segment data back into the Program.
-        program = _restore_segments(
+        program, named_data_store_output = _restore_segments(
             program=program, segment_data=program_data[segment_base_offset:]
         )
 
-    return program
+    return program, named_data_store_output
