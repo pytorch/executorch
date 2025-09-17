@@ -1,6 +1,7 @@
 # System files
 .DS_Store
 
+
 # Python environment and cache
 .hypothesis
 .mypy_cache/
