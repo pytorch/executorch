@@ -8,6 +8,7 @@
 
 from typing import final, List
 
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -36,6 +37,14 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
+        # Apply RemoveCloneOpsTransform to eliminate unnecessary clone operations
+        remove_clone_transform = RemoveCloneOpsTransform()
+        transformed_result = remove_clone_transform(edge_program.graph_module)
+
+        # Update the edge_program with the transformed graph
+        if transformed_result.graph_module is not None:
+            edge_program._graph_module = transformed_result.graph_module
+
         input_names = edge_program.graph_signature.user_inputs
         args = []
         for node in edge_program.graph.nodes:
@@ -47,7 +56,9 @@ class OpenvinoBackend(BackendDetails):
             compile_options[spec.key] = spec.value.decode()
 
         compiled = openvino_compile(
-            edge_program.module(), *args, options=compile_options
+            edge_program.module(),
+            *args,
+            options=compile_options
         )
         model_bytes = compiled.export_model()
 
