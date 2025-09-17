@@ -170,6 +170,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries extension_llm_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
+
   if(QNN_SDK_ROOT)
     target_sources(
       executorch_jni

@@ -23,6 +23,67 @@ MAX_CASES = 50
 
 
 def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
+    # Constraint to limit tensor size product to < 4000 with fully randomized shapes
+    import random
+
+    # Global cache to store generated shapes per tensor to ensure consistency
+    _shape_cache: dict[str, list[int]] = {}
+
+    def generate_random_shape_with_product_limit(
+        rank: int, max_product: int = 3999, seed_base: int = 42
+    ) -> list[int]:
+        """Generate a random shape with given rank ensuring product < max_product"""
+        random.seed(seed_base + rank)
+
+        # Start with all dimensions as 1
+        shape = [1] * rank
+        remaining_product = max_product - 1  # Leave room since we start with product=1
+
+        # Randomly distribute the remaining capacity across dimensions
+        for i in range(rank):
+            if remaining_product <= 1:
+                break
+
+            # Calculate maximum size this dimension can have without exceeding limit
+            current_product = 1
+            for j in range(rank):
+                if j != i:
+                    current_product *= shape[j]
+
+            max_size_for_dim = min(
+                remaining_product // current_product, 50
+            )  # Cap at 50
+            if max_size_for_dim > shape[i]:
+                # Randomly choose a size between current and max
+                new_size = random.randint(shape[i], max_size_for_dim)
+                shape[i] = new_size
+                remaining_product = max_product // (current_product * new_size)
+                remaining_product = max(1, remaining_product)
+
+        # Final random shuffle of the dimensions to make it more random
+        random.shuffle(shape)
+        return shape
+
+    def random_size_constraint(deps: object, r: int, d: int) -> int:
+        """Generate random sizes ensuring total product < 4000"""
+        # Create a unique key for this tensor configuration
+        cache_key = f"{r}_{d}"
+
+        if cache_key not in _shape_cache:
+            # Generate a new random shape for this rank
+            shape = generate_random_shape_with_product_limit(
+                r, max_product=3999, seed_base=42 + r * 10
+            )
+            _shape_cache[cache_key] = shape
+
+        # Return the size for dimension d, ensuring we don't go out of bounds
+        cached_shape = _shape_cache[cache_key]
+        return cached_shape[d] if d < len(cached_shape) else 1
+
+    max_size_constraint = cp.Size.Le(
+        lambda deps, r, d: random_size_constraint(deps, r, d)
+    )
+
     tensor_constraints = (
         [
             cp.Dtype.In(
@@ -39,7 +100,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             cp.Value.Le(lambda deps, dtype, struct: 2**4),
             cp.Rank.Ge(lambda deps: 1),
             cp.Size.Ge(lambda deps, r, d: 1),
-            cp.Size.Le(lambda deps, r, d: 2**9),
+            max_size_constraint,
             cp.Rank.Le(lambda deps: 2**3),
         ]
         if op_name
@@ -62,7 +123,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             cp.Value.Le(lambda deps, dtype, struct: 2**4),
             cp.Rank.Ge(lambda deps: 1),
             cp.Size.Ge(lambda deps, r, d: 1),
-            cp.Size.Le(lambda deps, r, d: 2**9),
+            max_size_constraint,
             cp.Rank.Le(lambda deps: 2**3),
         ]
     )
@@ -76,7 +137,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
-                    cp.Size.Le(lambda deps, r, d: 2**9),
+                    max_size_constraint,
                 ]
             else:
                 tensor_constraints = [
@@ -94,7 +155,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
-                    cp.Size.Le(lambda deps, r, d: 2**9),
+                    max_size_constraint,
                 ]
         case "embedding.default":
             tensor_constraints = [
@@ -104,7 +165,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 cp.Value.Le(lambda deps, dtype, struct: 2**4),
                 cp.Rank.Ge(lambda deps: 1),
                 cp.Size.Ge(lambda deps, r, d: 1),
-                cp.Size.Le(lambda deps, r, d: 2**9),
+                max_size_constraint,
             ]
         case "sigmoid.default":
             tensor_constraints.extend(
