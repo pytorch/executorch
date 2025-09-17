@@ -38,6 +38,10 @@ def _is_dequant_node(node: torch.fx.Node) -> bool:
     ]
 
 
+def is_not_qdq_node(node: torch.fx.Node) -> bool:
+    return not (_is_quant_node(node) or _is_dequant_node(node))
+
+
 class Target(Enum):
     IGNORE = "ignore"  # No target platform. Any target specific restrictions will be ignored.
 
