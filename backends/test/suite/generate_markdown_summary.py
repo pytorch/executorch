@@ -151,11 +151,17 @@ def generate_markdown(csv_path: str, exit_code: int = 0):  # noqa (C901)
     results = aggregate_results(csv_path)
 
     # Generate Summary section
-    total_rows = results.counts.total
     print("# Summary\n")
-    print(f"- **Pass**: {results.counts.passes}/{total_rows}")
-    print(f"- **Fail**: {results.counts.fails}/{total_rows}")
-    print(f"- **Skip**: {results.counts.skips}/{total_rows}")
+    total_excluding_skips = results.counts.passes + results.counts.fails
+    pass_fraction = results.counts.passes / total_excluding_skips
+    fail_fraction = results.counts.fails / total_excluding_skips
+    print(
+        f"- **Pass**: {results.counts.passes}/{total_excluding_skips} ({pass_fraction*100:.2f}%)"
+    )
+    print(
+        f"- **Fail**: {results.counts.fails}/{total_excluding_skips} ({fail_fraction*100:.2f}%)"
+    )
+    print(f"- **Skip**: {results.counts.skips}")
 
     if results.counts_by_params:
         print("\n## Results by Parameters\n")
@@ -170,7 +176,7 @@ def generate_markdown(csv_path: str, exit_code: int = 0):  # noqa (C901)
             parsed_params[params_str] = params_dict
             all_param_keys.update(params_dict.keys())
 
-        if parsed_params:
+        if parsed_params and len(parsed_params) > 1:
             # Sort parameter keys for consistent column ordering
             sorted_param_keys = sorted(all_param_keys)
 
