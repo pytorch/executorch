@@ -34,6 +34,9 @@ class PatternNode:
 
 
 class OpenvinoOperatorsSupport(OperatorSupportBase):
+    extended_support_dict = {
+        "torch.ops.dim_order_ops._clone_dim_order.default": None,
+    }
 
     def __init__(
         self,
@@ -77,7 +80,9 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
         if node.name in self._enabled_ops_by_name:
             return True
 
-        supported_ops = OperatorSupport(options)._support_dict
+        supported_ops = (
+            OperatorSupport(options)._support_dict | self.extended_support_dict
+        )
         if op_type == "getitem":
             return True
 
