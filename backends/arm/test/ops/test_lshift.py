@@ -176,7 +176,7 @@ def test_bitwise_left_shift_tensor_tosa_INT(test_data):
 
 
 @common.parametrize("test_data", LshiftTensor.test_data)
-@XfailIfNoCorstone300
+@common.XfailIfNoCorstone300
 def test_bitwise_left_shift_tensor_u55_INT(test_data):
     pipeline = EthosU55PipelineINT[scalar_input_t](
         LshiftTensor(),
@@ -189,7 +189,7 @@ def test_bitwise_left_shift_tensor_u55_INT(test_data):
 
 
 @common.parametrize("test_data", LshiftTensor.test_data)
-@XfailIfNoCorstone320
+@common.XfailIfNoCorstone320
 def test_bitwise_left_shift_tensor_u85_INT(test_data):
     pipeline = EthosU85PipelineINT[scalar_input_t](
         LshiftTensor(),

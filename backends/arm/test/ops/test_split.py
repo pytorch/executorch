@@ -143,6 +143,7 @@ x_fails = {
     (Split.test_data | Split.test_data_list),
     x_fails,
 )
+@common.XfailIfNoCorstone300
 def test_split_with_sizes_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
         Split(),
@@ -158,6 +159,7 @@ def test_split_with_sizes_u55_INT(test_data: input_t1):
     (Split.test_data | Split.test_data_list),
     x_fails,
 )
+@common.XfailIfNoCorstone320
 def test_split_with_sizes_u85_INT(test_data: input_t1):
 
     pipeline = EthosU85PipelineINT[input_t1](

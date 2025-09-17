@@ -66,6 +66,7 @@ def test_relu_tosa_INT(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_relu_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
         Relu(),
@@ -77,6 +78,7 @@ def test_relu_u55_INT(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_relu_u85_INT(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
         Relu(),

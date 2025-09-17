@@ -262,6 +262,7 @@ class Add(torch.nn.Module):
 
 
 @common.parametrize("test_data", Add.inputs)
+@common.XfailIfNoCorstone300
 def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
         Add(), test_data, [], [], use_to_edge_transform_and_lower=True

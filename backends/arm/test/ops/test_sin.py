@@ -61,6 +61,7 @@ def test_sin_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_sin_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sin(),
@@ -72,6 +73,7 @@ def test_sin_u55_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_sin_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sin(),

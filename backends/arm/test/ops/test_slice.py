@@ -85,6 +85,7 @@ x_fails = {
 
 
 @common.parametrize("test_data", test_data_suite, x_fails)
+@common.XfailIfNoCorstone300
 def test_slice_tensor_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
         Slice(),
@@ -96,6 +97,7 @@ def test_slice_tensor_u55_INT(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite, x_fails)
+@common.XfailIfNoCorstone320
 def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
         Slice(),

@@ -96,7 +96,7 @@ def test_bitwise_right_shift_tensor_tosa_INT_scalar(test_data):
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-@XfailIfNoCorstone300
+@common.XfailIfNoCorstone300
 def test_bitwise_right_shift_tensor_u55_INT_scalar(test_data):
     pipeline = EthosU55PipelineINT[scalar_input_t](
         RshiftScalar(),
@@ -112,7 +112,7 @@ def test_bitwise_right_shift_tensor_u55_INT_scalar(test_data):
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-@XfailIfNoCorstone320
+@common.XfailIfNoCorstone320
 def test_bitwise_right_shift_tensor_u85_INT_scalar(test_data):
     pipeline = EthosU85PipelineINT[scalar_input_t](
         RshiftScalar(),

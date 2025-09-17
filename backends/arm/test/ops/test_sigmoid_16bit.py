@@ -125,6 +125,7 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
     "test_data",
     test_data_suite,
 )
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(),
@@ -141,6 +142,7 @@ def test_sigmoid_u55_INT(test_data):
     "test_data",
     test_data_suite,
 )
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
