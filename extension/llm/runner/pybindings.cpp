@@ -219,15 +219,42 @@ PYBIND11_MODULE(_llm_runner, m) {
 
   // Bind Image class
   py::class_<Image>(m, "Image")
-      .def(py::init<>())
-      .def_readwrite("data", &Image::data)
-      .def_readwrite("width", &Image::width)
-      .def_readwrite("height", &Image::height)
-      .def_readwrite("channels", &Image::channels)
+      .def(
+          py::init<std::vector<uint8_t>&&, int32_t, int32_t, int32_t>(),
+          py::arg("data"),
+          py::arg("width"),
+          py::arg("height"),
+          py::arg("channels"))
+      .def(
+          py::init<std::vector<float>&&, int32_t, int32_t, int32_t>(),
+          py::arg("data"),
+          py::arg("width"),
+          py::arg("height"),
+          py::arg("channels"))
+      .def("is_uint8", &Image::is_uint8)
+      .def("is_float", &Image::is_float)
+      .def_property_readonly("width", &Image::width)
+      .def_property_readonly("height", &Image::height)
+      .def_property_readonly("channels", &Image::channels)
+      .def_property_readonly(
+          "uint8_data",
+          static_cast<const std::vector<uint8_t>& (Image::*)() const&>(
+              &Image::get_uint8_data))
+      .def_property_readonly(
+          "float_data",
+          static_cast<const std::vector<float>& (Image::*)() const&>(
+              &Image::get_float_data))
       .def("__repr__", [](const Image& img) {
-        return "<Image height=" + std::to_string(img.height) +
-            " width=" + std::to_string(img.width) +
-            " channels=" + std::to_string(img.channels) + ">";
+        std::string dtype = "unknown";
+        if (img.is_uint8()) {
+          dtype = "uint8";
+        } else if (img.is_float()) {
+          dtype = "float32";
+        }
+        return "<Image height=" + std::to_string(img.height()) +
+            " width=" + std::to_string(img.width()) +
+            " channels=" + std::to_string(img.channels()) + " dtype=" + dtype +
+            ">";
       });
 
   // Bind MultimodalInput
@@ -281,7 +308,6 @@ PYBIND11_MODULE(_llm_runner, m) {
           image_tensor = image_tensor.squeeze(0);
         }
 
-        
         if (image_tensor.dim() != 3) {
           throw std::runtime_error(
               "Image tensor must be 3-dimensional (H, W, C) or 4-dimensional (1, H, W, C)");
@@ -322,12 +348,11 @@ PYBIND11_MODULE(_llm_runner, m) {
         uint8_t* data = image_tensor.data_ptr<uint8_t>();
         std::vector<uint8_t> image_data(data, data + image_tensor.numel());
 
-        Image image;
-        image.data = std::move(image_data);
-        image.width = static_cast<int32_t>(width);
-        image.height = static_cast<int32_t>(height);
-        image.channels = static_cast<int32_t>(channels);
-        return MultimodalInput(std::move(image));
+        return MultimodalInput(Image(
+            std::move(image_data),
+            static_cast<int32_t>(width),
+            static_cast<int32_t>(height),
+            static_cast<int32_t>(channels)));
       },
       "Create an image input from a torch tensor (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
       py::arg("image_tensor"));
