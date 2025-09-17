@@ -564,16 +564,12 @@ void quantized_conv2d_impl(
     ValueRef packed_weight_sums = prepack_standard(
         graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
 
-    // Allocate quantized + packed im2col matrix for input
-    const int64_t num_blocks_M = utils::div_up_4(input_im2col_sizes.at(0));
-    const int64_t num_blocks_K = utils::div_up_4(input_im2col_sizes.at(1));
-
     TmpTensor input_int_im2col(
         &graph,
-        {num_blocks_M, num_blocks_K * 4},
-        vkapi::kInt,
+        input_im2col_sizes,
+        vkapi::kInt8x4,
         utils::kBuffer,
-        utils::kWidthPacked);
+        utils::kPackedInt8_4H4W);
 
     add_quantize_and_pack_im2col_node(
         graph,
