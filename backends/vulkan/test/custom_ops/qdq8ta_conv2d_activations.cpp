@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <random>
 #include <vector>
 #include "utils.h"
 
@@ -58,15 +57,13 @@ TestCase create_test_case_from_config(
       input_dtype,
       storage_type,
       utils::kChannelsPacked, // Use channels packed for conv2d tensors
-      DataGenType::RANDINT8);
+      DataGenType::RANDOM);
 
-  // Randomized quantization parameters following q8csw_conv2d.cpp pattern
-  // Generate random scale value
-  float scale_val = 1.0;
+  float scale_val = 0.007112;
   ValueSpec scale(scale_val);
 
   // Generate random zero point within quantization range
-  int32_t zero_point_val = 0;
+  int32_t zero_point_val = -2;
   ValueSpec zero_point(zero_point_val);
 
   // Output tensor (float) - same shape as input [N, C, H, W]
