@@ -72,7 +72,6 @@ def test_relu_u55_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -84,7 +83,6 @@ def test_relu_u85_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 

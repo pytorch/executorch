@@ -78,26 +78,30 @@ def test_slice_tensor_tosa_INT_nhwc(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+x_fails = {
+    "ones_slice_3": "MLETORCH-1402: Slice operator has incorrect number of inputs",
+    "ones_slice_4": "MLETORCH-1402: Slice operator has incorrect number of inputs",
+}
+
+
+@common.parametrize("test_data", test_data_suite, x_fails)
 def test_slice_tensor_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
         Slice(),
         test_data(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite, x_fails)
 def test_slice_tensor_u85_INT(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
         Slice(),
         test_data(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -190,7 +194,6 @@ def test_slice_tensor_16a8w_u55_INT16(test_data: torch.Tensor):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(
@@ -218,7 +221,6 @@ def test_slice_tensor_16a8w_u85_INT16(test_data: torch.Tensor):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(

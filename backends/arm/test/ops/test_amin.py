@@ -112,7 +112,6 @@ def test_amin_u85_INT(test_data: Amin.input_t):
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

@@ -103,7 +103,6 @@ def test_amax_u85_INT(test_data: Amax.input_t):
         Amax(dim, keep_dims),
         data,
         Amax.aten_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

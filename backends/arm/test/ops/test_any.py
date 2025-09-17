@@ -177,7 +177,6 @@ def test_any_u85_INT(test_data: input_t1):
         test_input(),
         op.aten_op,
         op.exir_op,
-        run_on_fvp=True,
         atol=0,
         rtol=0,
         qtol=0,

@@ -66,7 +66,6 @@ def test_adaptive_avg_pool2d_u55_INT(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
@@ -79,7 +78,6 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
@@ -301,7 +299,6 @@ def test_mean_dim_u55_INT(test_data):
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.add_stage_after(
@@ -321,7 +318,6 @@ def test_mean_dim_u85_INT(test_data):
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.run()

@@ -167,7 +167,6 @@ def test_sigmoid_u85_INT(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
     pipeline.run()
@@ -184,7 +183,6 @@ def test_sigmoid_u85_INT_add_sigmoid(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("quantize", get_32bit_sigmoid_quantizer())
     pipeline.run()

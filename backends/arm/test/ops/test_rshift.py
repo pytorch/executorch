@@ -103,7 +103,6 @@ def test_bitwise_right_shift_tensor_u55_INT_scalar(test_data):
         test_data(),
         RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
 
@@ -120,7 +119,6 @@ def test_bitwise_right_shift_tensor_u85_INT_scalar(test_data):
         test_data(),
         RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -188,7 +186,6 @@ def test_bitwise_right_shift_tensor_u55_INT(test_data):
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
 
@@ -205,7 +202,6 @@ def test_bitwise_right_shift_tensor_u85_INT(test_data):
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

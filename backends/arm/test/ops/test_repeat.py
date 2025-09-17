@@ -95,7 +95,6 @@ def test_repeat_u55_INT(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -108,7 +107,6 @@ def test_repeat_u85_INT(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
