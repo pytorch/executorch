@@ -22,7 +22,7 @@ namespace HiFi {
 namespace native {
 
 // Specialized depthwise NCHW convolution for int8 x int8 -> int8
-void xa_opt_quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s(
+void xa_opt_quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -162,7 +162,7 @@ void xa_opt_quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s(
       kNnlibMaxDim);
 }
 
-void quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
+void quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -179,7 +179,7 @@ void quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  xa_opt_quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s(
+  xa_opt_quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s(
       ctx,
       input,
       weight,
