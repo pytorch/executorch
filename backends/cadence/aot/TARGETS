@@ -130,6 +130,7 @@ runtime.python_library(
     deps = [
         "fbcode//caffe2:torch",
         "fbcode//executorch/exir:scalar_type",
+        "fbcode//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
 )
 
