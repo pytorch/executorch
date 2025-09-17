@@ -1,4 +1,4 @@
-name: Test QNN Backend
+name: Test ARM Backend
 
 on:
   schedule:
@@ -8,7 +8,7 @@ on:
       - ciflow/nightly/*
   pull_request:
     paths:
-      - .github/workflows/test-backend-qnn.yml
+      - .github/workflows/test-backend-arm.yml
       - .github/workflows/_test_backend.yml
   workflow_dispatch:
 
@@ -17,12 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-qnn:
+  test-arm:
     uses: ./.github/workflows/_test_backend.yml
     with:
-      backend: qnn
-      flows: '["qnn", "qnn_16a16w", "qnn_16a8w", "qnn_16a4w", "qnn_16a4w_block", "qnn_8a8w"]'
+      backend: arm
+      flows: '["arm_tosa"]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
-      runner-linux: linux.8xlarge.memory
