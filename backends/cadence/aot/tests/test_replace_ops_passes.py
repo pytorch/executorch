@@ -1666,7 +1666,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     out_multiplier,
                     out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nhwc.default,
+                op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
                 args=args,
             )
         else:
@@ -1680,7 +1680,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     out_multiplier,
                     out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nchw.default,
+                op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
                 args=args,
             )
 
@@ -1688,7 +1688,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Create a graph with a single convolution node.
         gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.default), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
@@ -1698,7 +1698,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
@@ -1714,7 +1715,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.default), 1
         )
 
         # Apply replacement pass.
@@ -1723,7 +1724,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
