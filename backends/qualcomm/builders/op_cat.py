@@ -29,15 +29,15 @@ class Cat(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        list_of_tensors = cast(List[torch.fx.Node], node.args[0])
-        list_of_tensor_wrappers = []
+        input_nodes = cast(List[torch.fx.Node], node.args[0])
+        input_tensor_wrappers = []
 
-        for tensor_input in list_of_tensors:
-            input_node = self.get_node(tensor_input)
-            input_tensor = self.get_tensor(input_node, node)
-            list_of_tensor_wrappers.append(
+        for input_node in input_nodes:
+            source_input_node = self.get_node(input_node)
+            input_tensor = self.get_tensor(source_input_node, node)
+            input_tensor_wrappers.append(
                 self.define_tensor(
-                    input_node,
+                    source_input_node,
                     node,
                     input_tensor,
                     PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
@@ -45,7 +45,7 @@ class Cat(NodeVisitor):
                 )
             )
 
-        if len(list_of_tensors) != len(list_of_tensor_wrappers):
+        if len(input_nodes) != len(input_tensor_wrappers):
             warnings.warn(
                 "[QNN Delegate Op Builder]: The number or input tensors is not equal to the number of input tensor wrappers.",
                 stacklevel=1,
@@ -77,7 +77,7 @@ class Cat(NodeVisitor):
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpConcat.op_name,
         )
-        concat_op.AddInputTensors(list_of_tensor_wrappers)
+        concat_op.AddInputTensors(input_tensor_wrappers)
         concat_op.AddOutputTensors([output_tensor_wrapper])
 
         concat_op.AddScalarParam(
