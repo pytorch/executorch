@@ -1,0 +1,6 @@
+accelerate
+gguf
+setuptools
+transformers
+executorch
+torch
