@@ -1,0 +1,25 @@
+From f6a7d867212336b3e344c21240a2a03671bffd65 Mon Sep 17 00:00:00 2001
+From: Per Held <per.held@arm.com>
+Date: Wed, 17 Sep 2025 13:46:05 +0200
+Subject: Remove hello_world from applications
+
+---
+ applications/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/applications/CMakeLists.txt b/applications/CMakeLists.txt
+index a017575..130f0f7 100644
+--- a/applications/CMakeLists.txt
++++ b/applications/CMakeLists.txt
+@@ -21,7 +21,7 @@ add_subdirectory(driver_unit_tests)
+ 
+ add_subdirectory(freertos)
+ 
+-add_subdirectory(hello_world)
++#add_subdirectory(hello_world)
+ 
+ add_subdirectory(threadx_demo)
+ 
+-- 
+2.43.0
+
