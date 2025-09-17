@@ -13,11 +13,19 @@ import tempfile
 
 from pathlib import Path
 
+from types import NoneType
 from typing import Any, cast, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.constants import (
+    NHWC_INVERSE_ORDER,
+    NHWC_ORDER,
+    NNHWC_INVERSE_ORDER,
+    NNHWC_ORDER,
+)
 
 from executorch.backends.arm.ethosu import EthosUCompileSpec
 from executorch.backends.arm.test.conftest import is_option_enabled
@@ -157,6 +165,36 @@ def get_output_quantization_params(
     return quant_params
 
 
+def torch_tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
+    dtype = _torch_to_numpy_dtype_dict[tensor.dtype]
+    array = tensor.detach().numpy().astype(dtype)
+    dim_order = tensor.dim_order()
+    if dim_order == NHWC_ORDER:
+        a = array.transpose(NHWC_ORDER)
+        return a
+    elif dim_order == NNHWC_ORDER:
+        return array.transpose(NNHWC_ORDER)
+    else:
+        return array
+
+
+def numpy_to_torch_tensor(array: np.ndarray, output_node: Node) -> torch.Tensor:
+    output_tensor = get_first_fake_tensor(output_node)
+    shape = output_tensor.shape
+    dim_order = output_tensor.dim_order()
+    if dim_order == NHWC_ORDER:
+        shape_with_dim_order = [shape[i] for i in NHWC_ORDER]
+        tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
+        return tensor.permute(NHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
+    elif dim_order == NNHWC_ORDER:
+        shape_with_dim_order = [shape[i] for i in NNHWC_ORDER]
+        tensor = torch.from_numpy(array).reshape(shape_with_dim_order)
+        return tensor.permute(NNHWC_INVERSE_ORDER).to(memory_format=torch.channels_last)
+    else:
+        tensor = torch.from_numpy(array).reshape(shape)
+        return tensor
+
+
 class TosaReferenceModelDispatch(TorchFunctionMode):
     """A context manager for executing call_delegate nodes using the reference model"""
 
@@ -168,7 +206,8 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
         tosa_buffer = lowered_backend_module.processed_bytes
         compile_spec = TosaCompileSpec.from_list(lowered_backend_module.compile_specs)
 
-        return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs)
+        output_node = lowered_backend_module.original_module.graph.output_node()
+        return run_tosa_graph(tosa_buffer, compile_spec.tosa_spec, inputs, output_node)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         super().__exit__(exc_type, exc_val, exc_tb)
@@ -190,6 +229,22 @@ class TosaReferenceModelDispatch(TorchFunctionMode):
                 )
 
         kwargs = kwargs or {}
+
+        # This is a hack since Q/DQ ops does not handle channels last input correctly: the simplest and most robust
+        # workaround is to simply run them in channels first format and then convert back to channels last.
+        if func in (
+            torch.ops.quantized_decomposed.quantize_per_tensor.out,
+            torch.ops.quantized_decomposed.dequantize_per_tensor.out,
+            torch.ops.quantized_decomposed.quantize_per_channel.out,
+            torch.ops.quantized_decomposed.dequantize_per_channel.out,
+        ):
+
+            input_dim_order = args[0].dim_order()
+            if input_dim_order in (NHWC_ORDER, NNHWC_ORDER):
+                args = [args[0].to(memory_format=torch.contiguous_format), *args[1:]]
+                res = func(*args, **kwargs)
+                return res.to(memory_format=torch.channels_last)
+
         return func(*args, **kwargs)
 
 
@@ -244,14 +299,13 @@ def get_output_from_file(
     output_np = []
     output_node = exported_program.graph_module.graph.output_node()
     for i, node in enumerate(output_node.args[0]):
-        output_shape = node.meta["val"].shape
         output_dtype = node.meta["val"].dtype
         tosa_ref_output = np.fromfile(
             os.path.join(intermediate_path, f"{output_base_name}-{i}.bin"),
             _torch_to_numpy_dtype_dict[output_dtype],
         )
 
-        output_np.append(torch.from_numpy(tosa_ref_output).reshape(output_shape))
+        output_np.append(numpy_to_torch_tensor(tosa_ref_output, node))
     return tuple(output_np)
 
 
@@ -437,11 +491,14 @@ def prep_data_for_save(
     quant_param: Optional[QuantizationParams] = None,
 ):
     if isinstance(data, torch.Tensor):
-        data_np = np.array(data.detach(), order="C").astype(
-            _torch_to_numpy_dtype_dict[data.dtype]
-        )
+        data_np = torch_tensor_to_numpy(data)
+    elif isinstance(data, (int, float, bool, NoneType)):
+        return np.array(data)
     else:
-        data_np = np.array(data)
+        raise RuntimeError(
+            f"Input dtype {type(data)} could not be converted to numpy array."
+        )
+
     if quant_param is not None:
         assert quant_param.node_name in input_name, (
             f"The quantization params name '{quant_param.node_name}' does not "
@@ -455,30 +512,8 @@ def prep_data_for_save(
                 f"{quant_param.dtype}".replace("torch.", "")
             )  # Use string format of dtype to convert to numpy dtype
         )
+
     return data_np
-
-
-def save_npy(
-    path: str,
-    data,
-    input_name: str,
-    quant_param: Optional[QuantizationParams] = None,
-) -> str:
-    """Serializes and saves 'data' as a .npy file, possibly quantizing it before.
-
-    Parameters:
-        path: the directory where to save the data.
-        data: the data to save.
-        input_name: the name of the file, without file-ending.
-        quant_param: the parameters to use for quantization.
-    Returns:
-        the full file path of the output.
-    """
-    data_np = prep_data_for_save(data, input_name, quant_param)
-    file_path = os.path.join(path, input_name + ".npy")
-    np.save(file_path, data_np, allow_pickle=False)
-
-    return file_path
 
 
 def save_bytes(
@@ -691,9 +726,12 @@ def run_tosa_graph(
     graph: Any,
     tosa_version: TosaSpecification,
     inputs: list[torch.Tensor],
+    output_node: Node,
 ) -> list[torch.Tensor]:
     """Runs the TOSA reference model with inputs and returns the result."""
-    inputs_np = [input.numpy() for input in inputs]
+
+    # Convert tensors to numpy arrays with correct dim_order
+    inputs_np = [torch_tensor_to_numpy(input_tensor) for input_tensor in inputs]
 
     if isinstance(tosa_version, Tosa_1_00):
         import tosa_reference_model as reference_model
@@ -715,7 +753,13 @@ def run_tosa_graph(
         status == reference_model.GraphStatus.TOSA_VALID
     ), "Non-valid TOSA given to reference model."
 
-    return [torch.from_numpy(output) for output in outputs_np]
+    # Convert output numpy arrays to tensors with same dim_order as the output nodes
+    result = [
+        numpy_to_torch_tensor(output_array, node)
+        for output_array, node in zip(outputs_np, output_node.args[0])
+    ]
+
+    return result
 
 
 def get_target_board(compile_spec: ArmCompileSpec) -> str | None:
