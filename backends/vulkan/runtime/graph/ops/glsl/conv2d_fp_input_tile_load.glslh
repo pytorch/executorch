@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_FP_INPUT_TILE_LOAD
+#define CONV2D_FP_INPUT_TILE_LOAD
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_fp_input_tile.glslh"
+
+VEC4_T load_fp_input_texel(const Conv2dTensorIndex tidx) {
+  return texelFetch(t_fp_input, tidx.data, 0);
+}
+
+void load_fp_input_tile(
+    out FPInputTile tile,
+    const Conv2dBlockIndex block_idx) {
+#if TILE_M == 4 && TILE_K4 == 1
+  Conv2dTensorIndex load_tidx = block_idx_to_tensor_idx(block_idx);
+  [[unroll]] for (int w = 0; w < TILE_M; w++) {
+    tile.data[w][0] = load_fp_input_texel(load_tidx);
+    load_tidx.data.x++;
+  }
+#else
+  not_implemented;
+#endif
+}
+
+#endif // CONV2D_FP_INPUT_TILE_LOAD
