@@ -21,14 +21,28 @@ test_executorch_cuda_build() {
     echo "Building ExecutorTorch with CUDA ${cuda_version} support..."
     echo "ExecutorTorch will automatically detect CUDA and install appropriate PyTorch wheel"
 
+    # Check available resources before starting
+    echo "=== System Information ==="
+    echo "Available memory: $(free -h | grep Mem | awk '{print $2}')"
+    echo "Available disk space: $(df -h . | tail -1 | awk '{print $4}')"
+    echo "CPU cores: $(nproc)"
+    echo "CUDA version check:"
+    nvcc --version || echo "nvcc not found"
+    nvidia-smi || echo "nvidia-smi not found"
+
     # Set CMAKE_ARGS to enable CUDA build - ExecutorTorch will handle PyTorch installation automatically
     export CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
 
-    # Install ExecutorTorch with CUDA support - this will automatically:
-    # 1. Detect CUDA version using nvcc
-    # 2. Install appropriate PyTorch wheel for the detected CUDA version
-    # 3. Build ExecutorTorch with CUDA support
-    ./install_executorch.sh
+    echo "=== Starting ExecutorTorch Installation ==="
+    # Install ExecutorTorch with CUDA support with timeout and error handling
+    timeout 5400 ./install_executorch.sh || {
+        local exit_code=$?
+        echo "ERROR: install_executorch.sh failed with exit code: $exit_code"
+        if [ $exit_code -eq 124 ]; then
+            echo "ERROR: Installation timed out after 90 minutes"
+        fi
+        exit $exit_code
+    }
 
     echo "SUCCESS: ExecutorTorch CUDA build completed"
 

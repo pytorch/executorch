@@ -172,7 +172,7 @@ def _get_pytorch_cuda_url(cuda_version):
 
 # url for the PyTorch ExecuTorch depending on, which will be set by _determine_torch_url().
 # please do not directly rely on it, but use _determine_torch_url() instead.
-_torch_url = None
+_torch_url = ""
 
 
 def _determine_torch_url():
@@ -186,7 +186,7 @@ def _determine_torch_url():
     global _torch_url
 
     # Return cached URL if already determined
-    if _torch_url is not None:
+    if _torch_url:
         return _torch_url
 
     # Check if CUDA delegate is enabled
