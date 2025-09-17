@@ -642,7 +642,7 @@ struct PyModule final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_name + " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
         }
@@ -992,7 +992,7 @@ struct PyMethod final {
             at_tensor.dim() == 4) {
           dim_order = decltype(dim_order)({0, 2, 3, 1});
         } else {
-          auto error_msg = "Input " + std::to_string(i) + "for method " +
+          auto error_msg = "Input " + std::to_string(i) + " for method " +
               method_->method_meta().name() +
               " should be contiguous or channels-last.";
           throw std::runtime_error(error_msg);
