@@ -41,10 +41,42 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
     Image image = input.get_image();
-    auto image_tensor = executorch::extension::from_blob(
-        image.data.data(),
-        {3, image.height, image.width},
-        ::executorch::aten::ScalarType::Byte);
+
+    auto method_meta = ET_UNWRAP(
+        module_->method_meta(kImageEncoderMethod),
+        "Failed to get method_meta for %s",
+        kImageEncoderMethod);
+
+    ET_CHECK_MSG(
+        method_meta.num_inputs() > 0,
+        "Image encoder should have at least 1 input");
+    auto input_meta = ET_UNWRAP(
+        method_meta.input_tensor_meta(0),
+        "Cannot get input tensor meta at index 0");
+    auto expected_dtype = input_meta.scalar_type();
+
+    if (expected_dtype == ::executorch::aten::ScalarType::Float) {
+      ET_CHECK_MSG(
+          image.is_float(),
+          "Model expects float image data, but image has uint8_t data.");
+    } else if (expected_dtype == ::executorch::aten::ScalarType::Byte) {
+      ET_CHECK_MSG(
+          image.is_uint8(),
+          "Model expects uint8_t image data, but image has float data.");
+    } else {
+      ET_LOG(
+          Error,
+          "Unsupported image encoder input dtype: %s",
+          ::executorch::runtime::toString(expected_dtype));
+      return ::executorch::runtime::Error::NotSupported;
+    }
+
+    // The model might expect a 4D tensor (NCHW), but toTensor() returns a 3D
+    // tensor (CHW). Add a batch dimension of 1 if needed.
+    auto expected_dims = input_meta.sizes();
+    auto image_tensor = ET_UNWRAP(
+        image.toTensor(/*with_batch*/ expected_dims.size() == 4),
+        "Failed to convert image to tensor");
 
     // Run image encoder
     auto image_encoder_outputs =

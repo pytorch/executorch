@@ -1009,7 +1009,7 @@ EXAMPLE_SEGMENT_DATA_SIZE: int = 0x5544554433223322
 EXAMPLE_HEADER_DATA: bytes = (
     # Magic bytes
     b"eh00"
-    # uint32_t header size (little endian)
+    # uint32_t header size (little endian). 0x20 --> 32 bytes.
     + b"\x20\x00\x00\x00"
     # uint64_t program size
     + b"\x44\x33\x44\x33\x22\x11\x22\x11"
@@ -1017,6 +1017,22 @@ EXAMPLE_HEADER_DATA: bytes = (
     + b"\x88\x77\x88\x77\x66\x55\x66\x55"
     # uint64_t segment data size
     + b"\x22\x33\x22\x33\x44\x55\x44\x55"
+    # Padding; provide at least NUM_HEAD_BYTES for the header.
+    + b"\x99" * (_ExtendedHeader.NUM_HEAD_BYTES - 32)
+)
+
+# Minimum fields in an extended header (no segment data size).
+EXAMPLE_HEADER_DATA_MIN: bytes = (
+    # Magic bytes
+    b"eh00"
+    # uint32_t header size (little endian). 0x18 --> 24 bytes.
+    + b"\x18\x00\x00\x00"
+    # uint64_t program size
+    + b"\x44\x33\x44\x33\x22\x11\x22\x11"
+    # uint64_t segment base offset
+    + b"\x88\x77\x88\x77\x66\x55\x66\x55"
+    # Padding; provide at least NUM_HEAD_BYTES for the header.
+    + b"\x99" * (_ExtendedHeader.NUM_HEAD_BYTES - 24)
 )
 
 
@@ -1028,7 +1044,7 @@ class TestExtendedHeader(unittest.TestCase):
             segment_data_size=EXAMPLE_SEGMENT_DATA_SIZE,
         )
         self.assertTrue(eh.is_valid())
-        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA)
+        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA[0:32])
 
     def test_to_bytes_with_non_defaults(self) -> None:
         eh = _ExtendedHeader(
@@ -1045,11 +1061,11 @@ class TestExtendedHeader(unittest.TestCase):
 
         # But still produces a valid output header, since to_bytes() ignores
         # magic and length.
-        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA)
+        self.assertEqual(eh.to_bytes(), EXAMPLE_HEADER_DATA[0:32])
 
     def test_from_bytes_valid(self) -> None:
         # Parse the serialized extended header.
-        eh = _ExtendedHeader.from_bytes(EXAMPLE_HEADER_DATA)
+        eh = _ExtendedHeader.from_bytes(EXAMPLE_HEADER_DATA[0:32])
 
         # This is a valid header: good magic and length.
         self.assertTrue(eh.is_valid())
@@ -1059,6 +1075,20 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
         self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
+
+    def test_from_bytes_minimum(self) -> None:
+        # Parse the serialized extended header.
+        eh = _ExtendedHeader.from_bytes(EXAMPLE_HEADER_DATA_MIN)
+
+        # This is a valid header: good magic and length.
+        self.assertTrue(eh.is_valid())
+
+        self.assertEqual(eh.magic, _ExtendedHeader.EXPECTED_MAGIC)
+        self.assertEqual(eh.length, _ExtendedHeader.MINIMUM_LENGTH)
+        self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
+        self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
+        # Does not contain segment_data_size; should be 0
+        self.assertEqual(eh.segment_data_size, 0)
 
     def test_from_bytes_with_more_data_than_necessary(self) -> None:
         # Pass in more data than necessary to parse the header.
@@ -1167,4 +1197,5 @@ class TestExtendedHeader(unittest.TestCase):
         self.assertEqual(eh.length, 16)
         self.assertEqual(eh.program_size, EXAMPLE_PROGRAM_SIZE)
         self.assertEqual(eh.segment_base_offset, EXAMPLE_SEGMENT_BASE_OFFSET)
-        self.assertEqual(eh.segment_data_size, EXAMPLE_SEGMENT_DATA_SIZE)
+        # Length cut short; segment_data_size parsed as 0.
+        self.assertEqual(eh.segment_data_size, 0)

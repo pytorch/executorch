@@ -268,7 +268,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       for (int i = 0; i < image_size; i++) {
         image_data[i] = image_data_jint[i];
       }
-      llm::Image image_runner{image_data, width, height, channels};
+      llm::Image image_runner{std::move(image_data), width, height, channels};
       prefill_inputs_.emplace_back(
           llm::MultimodalInput{std::move(image_runner)});
     }
