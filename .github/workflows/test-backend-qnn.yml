@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: 0 2 * * *
   push:
+    branches:
+      - release/*
     tags:
       - ciflow/nightly/*
   pull_request:
@@ -25,3 +27,4 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true
+      runner-linux: linux.8xlarge.memory

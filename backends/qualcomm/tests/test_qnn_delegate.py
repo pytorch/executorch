@@ -232,7 +232,7 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
-        modules = [Cat2(), Cat3(), Cat4()]  # noqa: F405
+        modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
         sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
         for i, module in enumerate(modules):
             with self.subTest(i=i):
@@ -1699,7 +1699,7 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_cat(self):
-        modules = [Cat2(), Cat3(), Cat4()]  # noqa: F405
+        modules = [Cat2(), Cat3(), Cat4(), Cat5()]  # noqa: F405
         sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
         for i, module in enumerate(modules):
             with self.subTest(i=i):

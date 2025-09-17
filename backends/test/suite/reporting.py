@@ -1,4 +1,5 @@
 import csv
+import json
 
 from collections import Counter
 from dataclasses import dataclass, field
@@ -343,7 +344,9 @@ def _sum_op_counts(counter: Counter | None) -> int | None:
 
 def _serialize_params(params: dict[str, Any] | None) -> str:
     if params is not None:
-        return str(dict(sorted(params.items())))
+        # Convert values to strings - JSON conversion doesn't like dtypes.
+        str_params = {k: str(v) for k, v in params.items()}
+        return json.dumps(str_params)
     else:
         return ""
 

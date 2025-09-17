@@ -6,8 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llava/runner/llava_runner.h>
+#include <executorch/extension/llm/runner/image.h>
+#include <executorch/extension/llm/runner/multimodal_input.h>
+#include <executorch/extension/llm/runner/multimodal_runner.h>
 #include <gflags/gflags.h>
+#include <pytorch/tokenizers/llama2c_tokenizer.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
@@ -44,7 +47,10 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
-using executorch::extension::llm::Image;
+using ::executorch::extension::llm::Image;
+using ::executorch::extension::llm::make_image_input;
+using ::executorch::extension::llm::make_text_input;
+using ::executorch::extension::llm::MultimodalInput;
 
 void load_image(const std::string& image_path, Image& image) {
   int width, height, channels;
@@ -75,24 +81,20 @@ void load_image(const std::string& image_path, Image& image) {
       new_height,
       0,
       channels);
-  // transpose to CHW
-  image.data.resize(channels * new_width * new_height);
+  std::vector<uint8_t> chw_data(channels * new_width * new_height);
   for (int i = 0; i < new_width * new_height; ++i) {
     for (int c = 0; c < channels; ++c) {
-      image.data[c * new_width * new_height + i] =
-          resized_data[i * channels + c];
+      chw_data[c * new_width * new_height + i] = resized_data[i * channels + c];
     }
   }
-  image.width = new_width;
-  image.height = new_height;
-  image.channels = channels;
+  image = Image(std::move(chw_data), new_width, new_height, channels);
   // convert to tensor
   ET_LOG(
       Info,
       "image Channels: %" PRId32 ", Height: %" PRId32 ", Width: %" PRId32,
-      image.channels,
-      image.height,
-      image.width);
+      image.channels(),
+      image.height(),
+      image.width());
   stbi_image_free(data);
 }
 
@@ -127,14 +129,54 @@ int32_t main(int32_t argc, char** argv) {
         ->_unsafe_reset_threadpool(num_performant_cores);
   }
 #endif
-  // create llama runner
-  example::LlavaRunner runner(model_path, tokenizer_path, temperature);
+  // Load tokenizer
+  std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
+      std::make_unique<tokenizers::Llama2cTokenizer>();
+  tokenizer->load(tokenizer_path);
+  if (tokenizer == nullptr) {
+    ET_LOG(Error, "Failed to load tokenizer from: %s", tokenizer_path);
+    return 1;
+  }
 
+  // Create multimodal runner
+  std::unique_ptr<::executorch::extension::llm::MultimodalRunner> runner =
+      ::executorch::extension::llm::create_multimodal_runner(
+          model_path, std::move(tokenizer));
+  if (runner == nullptr) {
+    ET_LOG(Error, "Failed to create multimodal runner");
+    return 1;
+  }
+
+  // Load runner
+  auto load_error = runner->load();
+  if (load_error != ::executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to load multimodal runner");
+    return 1;
+  }
+
+  // Prepare inputs
+  static const char* kPresetPrompt =
+      "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
   Image image;
   load_image(image_path, image);
-  std::vector<Image> images = {image};
+  std::vector<MultimodalInput> inputs = {
+      make_text_input(std::string(kPresetPrompt)),
+      make_image_input(image),
+      make_text_input(std::string(prompt)),
+  };
 
-  // generate
-  runner.generate(std::move(images), prompt, seq_len);
+  ::executorch::extension::llm::GenerationConfig config;
+  config.temperature = temperature;
+  config.echo = true;
+
+  // Generate
+  ET_LOG(Info, "Starting generation...");
+  auto error = runner->generate(inputs, config);
+  if (error != ::executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to generate with multimodal runner");
+    return 1;
+  }
+
+  printf("\n");
   return 0;
 }

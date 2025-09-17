@@ -199,29 +199,29 @@ class TestTypeDispatchPasses(unittest.TestCase):
                 "int8_nchw",
                 torch.int8,
                 (1, 3, 8, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nchw",
                 torch.uint8,
                 (1, 3, 8, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor,
             ),
             (
                 "int8_nhwc",
                 torch.int8,
                 (1, 8, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nhwc",
                 torch.uint8,
                 (1, 8, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor,
             ),
         ]
     )
@@ -256,29 +256,29 @@ class TestTypeDispatchPasses(unittest.TestCase):
                 "int8_nchw_dilated",
                 torch.int8,
                 (1, 3, 8, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nchw_dilated",
                 torch.uint8,
                 (1, 3, 8, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
             ),
             (
                 "int8_nhwc_dilated",
                 torch.int8,
                 (1, 8, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nhwc_dilated",
                 torch.uint8,
                 (1, 8, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor,
             ),
         ]
     )
@@ -313,29 +313,29 @@ class TestTypeDispatchPasses(unittest.TestCase):
                 "int8_nchw_1d",
                 torch.int8,
                 (1, 3, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_nchw_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nchw_1d",
                 torch.uint8,
                 (1, 3, 8),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_nchw_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor,
             ),
             (
                 "int8_nhwc_1d",
                 torch.int8,
                 (1, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_nhwc_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nhwc_1d",
                 torch.uint8,
                 (1, 8, 3),  # x_shape
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv1d_nhwc_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor,
             ),
         ]
     )
@@ -410,32 +410,32 @@ class TestTypeDispatchPasses(unittest.TestCase):
                 torch.int8,
                 (1, 3, 8, 8),  # x_shape
                 (3, 1, 3, 3),  # w_shape (groups=3, input_channels=3)
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nchw_depthwise",
                 torch.uint8,
                 (1, 3, 8, 8),  # x_shape
                 (3, 1, 3, 3),  # w_shape (groups=3, input_channels=3)
-                exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor,
             ),
             (
                 "int8_nhwc_depthwise",
                 torch.int8,
                 (1, 8, 8, 3),  # x_shape
                 (3, 3, 3, 1),  # w_shape (groups=3, input_channels=3)
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
             ),
             (
                 "uint8_nhwc_depthwise",
                 torch.uint8,
                 (1, 8, 8, 3),  # x_shape
                 (3, 3, 3, 1),  # w_shape (groups=3, input_channels=3)
-                exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
-                exir_ops.edge.cadence.quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor,
             ),
         ]
     )

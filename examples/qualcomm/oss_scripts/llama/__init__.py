@@ -501,6 +501,7 @@ class Smollm3_3B(LLMModelConfig):
     ptq = QuantDtype.use_16a4w_block
     group_size = 32
     masked_softmax = True
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False

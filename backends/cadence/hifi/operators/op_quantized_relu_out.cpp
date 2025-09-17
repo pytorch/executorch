@@ -13,7 +13,6 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -118,4 +117,3 @@ void quantized_relu_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

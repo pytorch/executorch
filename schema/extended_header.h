@@ -22,7 +22,8 @@ namespace runtime {
 struct ExtendedHeader {
   /**
    * To find the header, callers should provide at least this many bytes of the
-   * head of the serialized Program data.
+   * head of the serialized Program data. Keep this in sync with NUM_HEAD_BYTES
+   * in //executorch/exir/_serialize/program.py
    */
   static constexpr size_t kNumHeadBytes = 64;
 

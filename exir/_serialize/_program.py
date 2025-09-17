@@ -136,8 +136,7 @@ class _ExtendedHeader:
 
     # The magic bytes that should be at the beginning of the header.
     EXPECTED_MAGIC: ClassVar[bytes] = b"eh00"
-    # The length of the header in bytes.
-    EXPECTED_LENGTH: ClassVar[int] = (
+    MINIMUM_LENGTH: ClassVar[int] = (
         # Header magic
         4
         # Header length
@@ -146,9 +145,18 @@ class _ExtendedHeader:
         + 8
         # Segment base offset
         + 8
+    )
+    # The length of the header in bytes.
+    EXPECTED_LENGTH: ClassVar[int] = (
+        MINIMUM_LENGTH
         # Segment data size
         + 8
     )
+
+    # To find the header, callers should provide at least this many bytes of
+    # the head of the serialized Program data. Keep this in sync with
+    # kNumHeadBytes in //executorch/schema/extended_header.cpp
+    NUM_HEAD_BYTES: ClassVar[int] = 64
 
     # Instance attributes. @dataclass will turn these into ctor args.
 
@@ -187,21 +195,29 @@ class _ExtendedHeader:
                 + f"< {_ExtendedHeader.EXPECTED_LENGTH}"
             )
 
+        magic = data[0:4]
+        length = int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER)
+        program_size = int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER)
+        segment_base_offset = int.from_bytes(data[16:24], byteorder=_HEADER_BYTEORDER)
+        segment_data_size = (
+            int.from_bytes(data[24:32], byteorder=_HEADER_BYTEORDER)
+            if length > _ExtendedHeader.MINIMUM_LENGTH
+            else 0
+        )
+
         return _ExtendedHeader(
-            magic=data[0:4],
-            length=int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER),
-            program_size=int.from_bytes(data[8:16], byteorder=_HEADER_BYTEORDER),
-            segment_base_offset=int.from_bytes(
-                data[16:24], byteorder=_HEADER_BYTEORDER
-            ),
-            segment_data_size=int.from_bytes(data[24:32], byteorder=_HEADER_BYTEORDER),
+            magic=magic,
+            length=length,
+            program_size=program_size,
+            segment_base_offset=segment_base_offset,
+            segment_data_size=segment_data_size,
         )
 
     def is_valid(self) -> bool:
         """Returns true if the extended header appears to be well-formed."""
         return (
             self.magic == _ExtendedHeader.EXPECTED_MAGIC
-            and self.length >= _ExtendedHeader.EXPECTED_LENGTH
+            and self.length >= _ExtendedHeader.MINIMUM_LENGTH
         )
 
     def to_bytes(self) -> bytes:

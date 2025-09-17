@@ -31,6 +31,11 @@ on:
         required: false
         type: boolean
         default: false
+      runner-linux:
+        description: 'Runner type for Linux jobs'
+        required: false
+        type: string
+        default: linux.4xlarge.memory
 
 jobs:
   test-backend-linux:
@@ -44,7 +49,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     with:
       ref: ${{ inputs.ref }}
-      runner: linux.4xlarge.memory
+      runner: ${{ inputs.runner-linux }}
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: recursive
       timeout: ${{ inputs.timeout }}

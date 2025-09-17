@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: 0 2 * * *
   push:
+    branches:
+      - release/*
     tags:
       - ciflow/nightly/*
   pull_request:

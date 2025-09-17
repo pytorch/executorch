@@ -249,15 +249,6 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             handles.inputs->io[i].elem_size);
         return Error::InvalidProgram;
       }
-      supported = executorch::runtime::is_contiguous_dim_order(
-          tensor_in.dim_order().data(), tensor_in.dim());
-      if (!supported) {
-        ET_LOG(
-            Error,
-            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
-            i);
-        return Error::InvalidProgram;
-      }
 
       // Select a compatible copy routine including checking for input layouts
       // which require permutation.

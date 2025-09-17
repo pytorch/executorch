@@ -906,9 +906,9 @@ class TestRefImplementations(unittest.TestCase):
 
         convs = [
             (
-                torch.ops.cadence.quantized_conv_nchw.per_tensor
+                torch.ops.cadence.quantized_conv2d_nchw.per_tensor
                 if memory_format == torch.contiguous_format
-                else torch.ops.cadence.quantized_conv_nhwc.per_tensor
+                else torch.ops.cadence.quantized_conv2d_nhwc.per_tensor
             )
         ]
 
@@ -916,30 +916,30 @@ class TestRefImplementations(unittest.TestCase):
         if input_tensor.dtype == torch.int8 and weight.dtype == torch.int8:
             if memory_format == torch.contiguous_format:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor,
                 ]
 
             else:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
                 ]
         elif input_tensor.dtype == torch.uint8 and weight.dtype == torch.uint8:
             if memory_format == torch.contiguous_format:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor,
                 ]
 
             else:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor,
                 ]
 
         convs.extend(optimized_convs)
