@@ -15,6 +15,7 @@ Supported models:
 import argparse
 import copy
 import os
+import platform
 
 import shutil
 
@@ -450,6 +451,22 @@ def export_model_to_pure_aoti(model, example_inputs):
 
     output_path = os.path.join(os.getcwd(), "aoti.so")
 
+    # Determine the target device based on platform and availability
+    target_device = "cpu"  # Default to CPU
+
+    # Try to use GPU if available
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and platform.system() == "Darwin":
+        # On macOS with MPS support
+        target_device = "mps"
+        print(f"Using Metal/MPS device for AOT compilation")
+    elif torch.cuda.is_available():
+        # CUDA device available
+        target_device = "cuda"
+        print(f"Using CUDA device for AOT compilation")
+    else:
+        print(f"No GPU available, falling back to CPU")
+
+    # Base options
     options: dict[str, Any] = {
         "aot_inductor.package_constants_in_so": True,
         "aot_inductor.output_path": output_path,
@@ -457,9 +474,14 @@ def export_model_to_pure_aoti(model, example_inputs):
         "aot_inductor.repro_level": 3,
         "aot_inductor.debug_intermediate_value_printer": "2",
         "max_autotune": True,
-        "max_autotune_gemm_backends": "TRITON",
-        "max_autotune_conv_backends": "TRITON",
     }
+
+    # Device-specific options
+    if target_device == "cuda":
+        options.update({
+            "max_autotune_gemm_backends": "TRITON",
+            "max_autotune_conv_backends": "TRITON",
+        })
 
     so_path = torch._inductor.aot_compile(aten_dialect_module, example_inputs, options=options)  # type: ignore[arg-type]
 

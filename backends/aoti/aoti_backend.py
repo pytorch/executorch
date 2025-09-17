@@ -7,6 +7,7 @@
 import contextlib
 import copy
 import os
+import platform
 import typing
 
 from subprocess import check_call
@@ -73,16 +74,33 @@ class AotiBackend(BackendDetails):
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
 
-        print("entering  the lowerable parts in AotiBackend.preprocess....")
+        print("entering the lowerable parts in AotiBackend.preprocess....")
         named_data_store = NamedDataStore()
 
-        # print("here", edge_program.example_inputs)
+        # Determine the target device based on platform and availability
+        target_device = "cpu"  # Default to CPU
+        blob_suffix = "cpu"
+
+        # Try to use GPU if available
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and platform.system() == "Darwin":
+            # On macOS with MPS support
+            target_device = "mps"
+            blob_suffix = "metal"
+            print(f"Using Metal/MPS device for AOT compilation")
+        elif torch.cuda.is_available():
+            # CUDA device available
+            target_device = "cuda"
+            blob_suffix = "cuda"
+            print(f"Using CUDA device for AOT compilation")
+        else:
+            print(f"No GPU available, falling back to CPU")
+
+        # Make a deep copy to avoid modifying the original
         copy_edge_program = copy.deepcopy(edge_program)
 
-        # Move the edge_program from CPU to CUDA for aoti compile
-        cuda_edge_program = move_to_device_pass(copy_edge_program, "cuda")
-
-        edge_program_module = cuda_edge_program.module()
+        # Move the edge_program to the appropriate device
+        copy_edge_program = move_to_device_pass(copy_edge_program, target_device)
+        edge_program_module = copy_edge_program.module()
         args, kwargs = copy_edge_program.example_inputs
 
         # # Deep copy args and move tensors to CUDA for aot_compile
@@ -101,17 +119,23 @@ class AotiBackend(BackendDetails):
 
         output_path = os.path.join(os.getcwd(), "aoti.so")
 
+        # Base options for all devices
         options: dict[str, typing.Any] = {
-            "aot_inductor.embed_kernel_binary": True,
-            "aot_inductor.link_libtorch": False,
             "aot_inductor.package_constants_in_so": True,
             "aot_inductor.output_path": output_path,
-            "aot_inductor.debug_compile": True,
             "aot_inductor.force_mmap_weights": False,
             "max_autotune": True,
-            "max_autotune_gemm_backends": "TRITON",
-            "max_autotune_conv_backends": "TRITON",
         }
+
+        # Device-specific optimizations
+        if target_device == "cuda":
+            options.update({
+                "aot_inductor.embed_kernel_binary": True,
+                "aot_inductor.link_libtorch": False,
+                "aot_inductor.debug_compile": True,
+                "max_autotune_gemm_backends": "TRITON",
+                "max_autotune_conv_backends": "TRITON",
+            })
 
         with collect_unsupported_fallback_kernels():
             so_path = torch._inductor.aot_compile(edge_program_module, args, kwargs, options=options)  # type: ignore[arg-type]
@@ -124,12 +148,27 @@ class AotiBackend(BackendDetails):
 
         assert so_path == output_path, f"Expected {output_path} but got {so_path}"
 
+        # Only run patchelf on non-macOS platforms
+        if platform.system() != "Darwin":
+            if target_device == "cuda":
+                check_call(
+                    f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cuda.so --remove-needed libc10_cuda.so --remove-needed libtorch_cpu.so --add-needed libcudart.so {output_path}",
+                    shell=True,
+                )
+            else:
+                check_call(
+                    f"patchelf --remove-needed libtorch.so --remove-needed libc10.so --remove-needed libtorch_cpu.so {output_path}",
+                    shell=True,
+                )
+
         print("so_path", so_path)
 
         with open(so_path, "rb") as f:
             so_data = f.read()
 
-        named_data_store.add_named_data("so_blob", so_data, 1, "aoti_cuda_blob")
+        # Use device-specific blob name
+        named_data_store.add_named_data("so_blob", so_data, 1, f"aoti_{blob_suffix}_blob")
+
 
         return PreprocessResult(
             processed_bytes=b"",

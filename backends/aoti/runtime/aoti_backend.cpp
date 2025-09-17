@@ -26,9 +26,13 @@
 
 // Include our shim layer headers
 #include "aoti_model_container.h"
+#include "shims/device_support.h"
 #include "shims/memory.h"
 #include "shims/tensor_attribute.h"
 #include "shims/utils.h"
+#ifdef AOTI_METAL
+#include "shims/shim_mps.h"
+#endif
 
 namespace executorch {
 namespace backends {
@@ -154,12 +158,16 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
 
     AOTInductorModelContainerHandle container_handle = nullptr;
 
+    // Get the appropriate device string based on available hardware and compile options
+    const char* device_str = get_aoti_backend_device_string();
+
     AOTIRuntimeError err = AOTInductorModelContainerCreateWithDevice(
-        &container_handle, 1, "cuda", nullptr);
+        &container_handle, 1, device_str, nullptr);
     if (err != Error::Ok) {
+      ET_LOG(Error, "Failed to initialize AOTInductorModelContainer with device: %s", device_str);
       return err;
     }
-    printf("container_handle = %p\n", container_handle);
+    ET_LOG(Info, "Successfully initialized container_handle = %p with device: %s", container_handle, device_str);
 
     AOTIDelegateHandle* handle = new AOTIDelegateHandle();
     handle->so_handle = so_handle;
@@ -234,7 +242,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
           sizes_vec.data(),
           nullptr, // use default strides
           static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
+          get_aoti_backend_device_type(), // Use the appropriate device type
           0, // device_index = 0
           &gpu_input_handle);
 
@@ -244,6 +252,14 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       }
 
       gpu_inputs[i] = gpu_input_handle;
+
+      // Log the CPU tensor data before copying to GPU
+      void* cpu_data = cpu_tensor->mutable_data_ptr();
+      if (cpu_data && cpu_tensor->numel() > 0) {
+        float* cpu_float_data = (float*)cpu_data;
+        ET_LOG(Debug, "CPU input %d data before copy: [%.3f, %.3f, %.3f, ...] (numel=%zd)",
+               i, cpu_float_data[0], cpu_float_data[1], cpu_float_data[2], cpu_tensor->numel());
+      }
 
       // Copy data from CPU to GPU
       Error copy_err = aoti_torch_copy_(gpu_inputs[i], cpu_tensor, 0);
@@ -274,7 +290,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
           sizes_vec.data(),
           nullptr, // use default strides
           static_cast<int32_t>(scalar_type),
-          1, // device_type = cuda
+          get_aoti_backend_device_type(), // Use the appropriate device type
           0, // device_index = 0
           &gpu_output_handle);
 
@@ -288,6 +304,19 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     }
 
     ET_LOG(Debug, "AOTIBackend output generated");
+
+    // Log tensor handles before passing to AOTI container
+    ET_LOG(Debug, "Passing to AOTInductorModelContainerRun:");
+    for (int i = 0; i < n_inputs; i++) {
+      void* gpu_input_data = gpu_inputs[i]->mutable_data_ptr();
+      ET_LOG(Debug, "  gpu_inputs[%d] = %p, data_ptr = %p",
+             i, gpu_inputs[i], gpu_input_data);
+    }
+    for (int i = 0; i < n_outputs; i++) {
+      void* gpu_output_data = gpu_outputs[i]->mutable_data_ptr();
+      ET_LOG(Debug, "  gpu_outputs[%d] = %p, data_ptr = %p",
+             i, gpu_outputs[i], gpu_output_data);
+    }
 
     // Run AOTI container with GPU tensors
     AOTIRuntimeError error = AOTInductorModelContainerRun(

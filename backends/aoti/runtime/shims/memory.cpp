@@ -21,6 +21,12 @@
 #include "tensor_attribute.h"
 #include "utils.h"
 
+#include <cstdint> // Ensure we have int64_t, int32_t definitions
+
+#ifdef AOTI_METAL
+#include "metal_helper.h"
+#endif
+
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -164,7 +170,7 @@ AOTITorchError aoti_torch_empty_strided(
     int32_t device_type,
     int32_t device_index,
     AOTITensorHandle* ret_new_tensor) {
-  // This requires us to reserve CUDA memory and put it into a ETensor
+  // This requires us to reserve device memory and put it into a ETensor
   void* ptr;
   int64_t numel = 1;
   for (int i = 0; i < ndim; i++) {
@@ -184,18 +190,34 @@ AOTITorchError aoti_torch_empty_strided(
   int64_t nbytes = numel * element_size;
 
   if (device_type == 1) { // cuda
+#ifdef AOTI_CUDA
     cudaError_t err = cudaMalloc(&ptr, nbytes);
     if (err != cudaSuccess) {
       ET_LOG(
           Error,
-          "failed to allocate %ld bytes: %s",
+          "failed to allocate %ld bytes on CUDA: %s",
           nbytes,
           cudaGetErrorString(err));
       return Error::MemoryAllocationFailed;
     }
+    ET_LOG(Debug, "Allocated %ld bytes on CUDA device", nbytes);
+#else
+    ET_LOG(Error, "CUDA support not enabled but requested CUDA device");
+    return Error::InvalidArgument;
+#endif
+  } else if (device_type == 2) { // Metal/MPS
+#ifdef AOTI_METAL
+    ptr = metal_allocate_buffer(nbytes);
+    if (!ptr) {
+      ET_LOG(Error, "Failed to allocate %ld bytes on Metal device", nbytes);
+      return Error::MemoryAllocationFailed;
+    }
+#else
+    ET_LOG(Error, "Metal support not enabled but requested Metal device");
+    return Error::InvalidArgument;
+#endif
   } else if (device_type == 0) { // cpu
-    // Ensure 16-byte alignment for CPU memory to match CUDA requirements
-    // do we need to do this in cuda backend?
+    // Ensure 16-byte alignment for CPU memory to match device requirements
     int result = posix_memalign(&ptr, 16, nbytes);
     if (result != 0) {
       ET_LOG(Error, "Failed to allocate aligned CPU memory");
@@ -205,10 +227,11 @@ AOTITorchError aoti_torch_empty_strided(
       ET_LOG(Error, "Failed to call posix_memalign");
       return Error::MemoryAllocationFailed;
     }
+    ET_LOG(Debug, "Allocated %ld bytes on CPU", nbytes);
   } else {
     ET_LOG(
         Error,
-        "Need to implement empty_strided for non-CUDA non-CPU device type %d",
+        "Unsupported device type %d",
         device_type);
     return Error::NotImplemented;
   }
@@ -246,43 +269,54 @@ AOTITorchError aoti_torch_empty_strided(
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
-  // Check ownership before cleaning up metadata
-  auto ownership_it = is_tensor_own_memory.find(tensor);
-  bool owns_memory = (ownership_it != is_tensor_own_memory.end())
-      ? ownership_it->second
-      : false;
-
-  // Clean up ALL metadata maps immediately to prevent use-after-free
-  tensor_to_sizes.erase(tensor);
-  tensor_to_strides.erase(tensor);
-  is_tensor_own_memory.erase(tensor);
-
-  if (!owns_memory) {
-    // Don't free memory since the tensor doesn't own it
-    return Error::Ok;
-  }
-
+  // Find tensor in the set
   for (auto it = tensors.begin(); it != tensors.end(); ++it) {
     if (it->get() == tensor) {
-      // Get the tensor before erasing
       auto tensor_ptr = *it;
 
-      void* data_ptr = tensor_ptr->mutable_data_ptr();
+      // Check ownership before cleaning up
+      auto ownership_it = is_tensor_own_memory.find(tensor);
+      bool owns_memory = (ownership_it != is_tensor_own_memory.end())
+          ? ownership_it->second
+          : false;
 
-      // Determine if it's GPU memory
-      cudaPointerAttributes attributes;
-      cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
+      // Clean up ownership metadata
+      is_tensor_own_memory.erase(tensor);
 
-      // et tensor does not own data; need to free them manually.
-      if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
-        // This is GPU memory - free with proper synchronization
-        cudaDeviceSynchronize(); // Wait for all operations to complete BEFORE
-                                 // freeing
-        cudaFree(data_ptr);
-      } else {
+      if (owns_memory) {
+        // et tensor owns the memory; need to free it manually
+        void* data_ptr = tensor_ptr->mutable_data_ptr();
+
+#ifdef AOTI_CUDA
+        // Determine if it's CUDA GPU memory
+        cudaPointerAttributes attributes;
+        cudaError_t err = cudaPointerGetAttributes(&attributes, data_ptr);
+
+        if (err == cudaSuccess && attributes.type == cudaMemoryTypeDevice) {
+          // This is CUDA GPU memory - free with proper synchronization
+          cudaDeviceSynchronize(); // Wait for all operations to complete BEFORE
+                                   // freeing
+          cudaFree(data_ptr);
+          tensors.erase(it);
+          return Error::Ok;
+        }
+#endif
+
+#ifdef AOTI_METAL
+        // Check if it's Metal GPU memory
+        if (metal_is_device_pointer(data_ptr)) {
+          // This is Metal GPU memory - the Metal helper will handle cleanup
+          // Metal buffers are automatically managed by ARC when the buffer is released
+          tensors.erase(it);
+          return Error::Ok;
+        }
+#endif
+
         // This is CPU memory - free immediately
         free(data_ptr);
       }
+      // else: Don't free memory since the tensor doesn't own it
+
       // Remove from set (this will call the destructor if it's the last
       // reference)
       tensors.erase(it);
@@ -293,6 +327,7 @@ AOTITorchError aoti_torch_delete_tensor_object(AOTITensorHandle tensor) {
   return Error::InvalidArgument;
 }
 
+#ifdef AOTI_CUDA
 AOTITorchError checkCudaError(cudaError_t err, const char* msg) {
   if (err != cudaSuccess) {
     ET_LOG(Error, "%s (%s)", msg, cudaGetErrorString(err));
@@ -300,6 +335,7 @@ AOTITorchError checkCudaError(cudaError_t err, const char* msg) {
   }
   return Error::Ok;
 }
+#endif
 
 AOTITorchError aoti_torch_copy_(
     AOTITensorHandle self,
@@ -403,6 +439,10 @@ AOTITorchError aoti_torch_copy_(
   }
 
   // Determine device locations
+  bool srcIsDevice = false;
+  bool dstIsDevice = false;
+
+#ifdef AOTI_CUDA
   cudaPointerAttributes srcAttributes, dstAttributes;
   cudaError_t err;
 
@@ -420,14 +460,26 @@ AOTITorchError aoti_torch_copy_(
     return cuda_err;
   }
 
-  bool srcIsDevice = srcAttributes.type == cudaMemoryTypeDevice;
-  bool dstIsDevice = dstAttributes.type == cudaMemoryTypeDevice;
+  srcIsDevice = srcAttributes.type == cudaMemoryTypeDevice;
+  dstIsDevice = dstAttributes.type == cudaMemoryTypeDevice;
+#endif
+
+#ifdef AOTI_METAL
+  // Check if pointers are Metal device pointers
+  if (!srcIsDevice) {
+    srcIsDevice = metal_is_device_pointer(const_cast<void*>(src->data_ptr()));
+  }
+  if (!dstIsDevice) {
+    dstIsDevice = metal_is_device_pointer(self->mutable_data_ptr());
+  }
+#endif
 
   size_t total_bytes = src->nbytes();
 
   if (same_schema) {
     // Simple copy since layouts match
     if (srcIsDevice && dstIsDevice) {
+#ifdef AOTI_CUDA
       err = cudaMemcpy(
           self->mutable_data_ptr(),
           src->data_ptr(),
@@ -437,7 +489,22 @@ AOTITorchError aoti_torch_copy_(
       if (cuda_err != Error::Ok) {
         return cuda_err;
       }
+#endif
+#ifdef AOTI_METAL
+      // For Metal, use the helper function for device-to-device copy
+      int result = metal_copy_memory(
+          self->mutable_data_ptr(),
+          src->data_ptr(),
+          total_bytes,
+          true,  // src is device
+          true); // dst is device
+      if (result != 0) {
+        ET_LOG(Error, "Failed to copy from Metal device to device");
+        return Error::Internal;
+      }
+#endif
     } else if (srcIsDevice && !dstIsDevice) {
+#ifdef AOTI_CUDA
       err = cudaMemcpy(
           self->mutable_data_ptr(),
           src->data_ptr(),
@@ -447,7 +514,22 @@ AOTITorchError aoti_torch_copy_(
       if (cuda_err != Error::Ok) {
         return cuda_err;
       }
+#endif
+#ifdef AOTI_METAL
+      // For Metal, use the helper function for device-to-host copy
+      int result = metal_copy_memory(
+          self->mutable_data_ptr(),
+          src->data_ptr(),
+          total_bytes,
+          true,   // src is device
+          false); // dst is host
+      if (result != 0) {
+        ET_LOG(Error, "Failed to copy from Metal device to host");
+        return Error::Internal;
+      }
+#endif
     } else if (!srcIsDevice && dstIsDevice) {
+#ifdef AOTI_CUDA
       err = cudaMemcpy(
           self->mutable_data_ptr(),
           src->data_ptr(),
@@ -457,6 +539,20 @@ AOTITorchError aoti_torch_copy_(
       if (cuda_err != Error::Ok) {
         return cuda_err;
       }
+#endif
+#ifdef AOTI_METAL
+      // For Metal, use the helper function for host-to-device copy
+      int result = metal_copy_memory(
+          self->mutable_data_ptr(),
+          src->data_ptr(),
+          total_bytes,
+          false, // src is host
+          true); // dst is device
+      if (result != 0) {
+        ET_LOG(Error, "Failed to copy from host to Metal device");
+        return Error::Internal;
+      }
+#endif
     } else {
       std::memcpy(self->mutable_data_ptr(), src->data_ptr(), total_bytes);
     }
@@ -477,6 +573,7 @@ AOTITorchError aoti_torch_copy_(
 
     if (srcIsDevice) {
       src_host_data = new float[total_elements];
+#ifdef AOTI_CUDA
       err = cudaMemcpy(
           src_host_data, src->data_ptr(), total_bytes, cudaMemcpyDeviceToHost);
       cuda_err = checkCudaError(err, "Failed to copy src to host");
@@ -484,9 +581,23 @@ AOTITorchError aoti_torch_copy_(
         delete[] src_host_data;
         return cuda_err;
       }
+#endif
+#ifdef AOTI_METAL
+      int result = metal_copy_memory(
+          src_host_data,
+          src->data_ptr(),
+          total_bytes,
+          true,   // src is device
+          false); // dst is host
+      if (result != 0) {
+        ET_LOG(Error, "Failed to copy src from Metal device to host");
+        delete[] src_host_data;
+        return Error::Internal;
+      }
+#endif
       need_free_src = true;
     } else {
-      src_host_data = static_cast<float*>(src->data_ptr());
+      src_host_data = static_cast<float*>(const_cast<void*>(src->data_ptr()));
     }
 
     if (dstIsDevice) {
@@ -530,6 +641,7 @@ AOTITorchError aoti_torch_copy_(
 
     // Copy result back to device if needed
     if (dstIsDevice) {
+#ifdef AOTI_CUDA
       err = cudaMemcpy(
           self->mutable_data_ptr(),
           dst_host_data,
@@ -544,6 +656,24 @@ AOTITorchError aoti_torch_copy_(
           delete[] dst_host_data;
         return cuda_err;
       }
+#endif
+#ifdef AOTI_METAL
+      int result = metal_copy_memory(
+          self->mutable_data_ptr(),
+          dst_host_data,
+          total_bytes,
+          false, // src is host
+          true); // dst is device
+      if (result != 0) {
+        ET_LOG(Error, "Failed to copy result to Metal device");
+        // Clean up temporary buffers before returning
+        if (need_free_src)
+          delete[] src_host_data;
+        if (need_free_dst)
+          delete[] dst_host_data;
+        return Error::Internal;
+      }
+#endif
     }
 
     // Clean up temporary buffers
@@ -556,23 +686,35 @@ AOTITorchError aoti_torch_copy_(
   // Verify the copy by checking first element
   float src_first, dst_first;
   if (srcIsDevice) {
+#ifdef AOTI_CUDA
     err = cudaMemcpy(
         &src_first, src->data_ptr(), sizeof(float), cudaMemcpyDeviceToHost);
     cuda_err = checkCudaError(err, "Failed to copy first src element");
     if (cuda_err != Error::Ok) {
       return cuda_err;
     }
+#endif
+#ifdef AOTI_METAL
+    // For Metal, we can directly access since it uses shared memory
+    src_first = static_cast<const float*>(src->data_ptr())[0];
+#endif
   } else {
     src_first = static_cast<const float*>(src->data_ptr())[0];
   }
 
   if (dstIsDevice) {
+#ifdef AOTI_CUDA
     err = cudaMemcpy(
         &dst_first, self->data_ptr(), sizeof(float), cudaMemcpyDeviceToHost);
     cuda_err = checkCudaError(err, "Failed to copy first dst element");
     if (cuda_err != Error::Ok) {
       return cuda_err;
     }
+#endif
+#ifdef AOTI_METAL
+    // For Metal, we can directly access since it uses shared memory
+    dst_first = static_cast<const float*>(self->data_ptr())[0];
+#endif
   } else {
     dst_first = static_cast<const float*>(self->data_ptr())[0];
   }
@@ -662,6 +804,11 @@ void cleanup_memory() {
   if (!tensors.empty()) {
     ET_LOG(Error, "Warning: tensors not empty during cleanup");
   }
+
+#ifdef AOTI_METAL
+  // Clean up Metal resources
+  metal_cleanup_resources();
+#endif
 }
 
 } // extern "C"

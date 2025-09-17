@@ -58,8 +58,21 @@ def python_is_compatible():
     return True
 
 
+# Use different URLs based on platform
+def get_torch_nightly_url():
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    if system == "darwin" and machine in ("arm64", "aarch64"):
+        return "https://download.pytorch.org/whl/nightly/cpu"
+    elif system == "linux" and "cuda" in os.environ.get("ET_BACKEND", "").lower():
+        return "https://download.pytorch.org/whl/nightly/cu126"
+    else:
+        # Default to CPU
+        return "https://download.pytorch.org/whl/nightly/cpu"
+
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cu126"
+TORCH_NIGHTLY_URL = get_torch_nightly_url()
 
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly

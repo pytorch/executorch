@@ -8,7 +8,10 @@
 
 #pragma once
 
+#ifdef SUPPORT_CUDA
 #include <cuda_runtime.h>
+#endif
+
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -66,7 +69,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     AOTITensorHandle* ret_new_tensor);
 
 // Utility functions
+#ifdef SUPPORT_CUDA
 AOTITorchError checkCudaError(cudaError_t err, const char* msg);
+#endif
 void cleanup_memory();
 
 } // extern "C"

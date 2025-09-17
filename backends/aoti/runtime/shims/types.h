@@ -8,7 +8,10 @@
 
 #pragma once
 
+#ifdef AOTI_CUDA
 #include <cuda_runtime.h>
+#endif
+
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
 #include <cstdint>

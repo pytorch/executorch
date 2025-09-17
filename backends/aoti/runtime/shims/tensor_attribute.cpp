@@ -103,15 +103,21 @@ AOTITorchError aoti_torch_get_storage_size(
 AOTITorchError aoti_torch_get_device_type(
     AOTITensorHandle tensor,
     int32_t* ret_device_type) {
-  // All tensors in aoti-cuda delegate are on CUDA
+#if defined(AOTI_CUDA)
   *ret_device_type = aoti_torch_device_type_cuda();
+#elif defined(AOTI_METAL)
+  *ret_device_type = aoti_torch_device_type_mps();
+#else
+  // Default to CPU if not identified as CUDA or Metal
+  *ret_device_type = aoti_torch_device_type_cpu();
+#endif
   return Error::Ok;
 }
 
 AOTITorchError aoti_torch_get_device_index(
     AOTITensorHandle tensor,
     int32_t* ret_device_index) {
-  // Let's assume all tensors AOTI using are on CUDA:0
+  // Let's assume all tensors AOTI using are on CUDA:0 / MPS:0
   *ret_device_index = 0;
   return Error::Ok;
 }
@@ -138,6 +144,12 @@ aoti_torch_device_type_cuda() {
   return 1;
 }
 
+__attribute__((__visibility__("default"))) int32_t
+aoti_torch_device_type_mps() {
+  // Let's use 2 for Metal/MPS
+  return 2;
+}
+
 // Dtype constants - these return the PyTorch dtype codes
 // Currently only float32 is supported, but using robust enum-based approach
 __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float32() {
@@ -148,35 +160,35 @@ __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float32() {
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_bool() {
 //   return static_cast<int32_t>(SupportedDTypes::BOOL);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_uint8() {
 //   return static_cast<int32_t>(SupportedDTypes::UINT8);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int8() {
 //   return static_cast<int32_t>(SupportedDTypes::INT8);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int16() {
 //   return static_cast<int32_t>(SupportedDTypes::INT16);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int32() {
 //   return static_cast<int32_t>(SupportedDTypes::INT32);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_int64() {
 //   return static_cast<int32_t>(SupportedDTypes::INT64);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float16() {
 //   return static_cast<int32_t>(SupportedDTypes::FLOAT16);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_float64() {
 //   return static_cast<int32_t>(SupportedDTypes::FLOAT64);
 // }
-// 
+//
 // __attribute__((__visibility__("default"))) int32_t aoti_torch_dtype_bfloat16() {
 //   return static_cast<int32_t>(SupportedDTypes::BFLOAT16);
 // }

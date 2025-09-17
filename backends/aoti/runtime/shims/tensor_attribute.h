@@ -8,7 +8,10 @@
 
 #pragma once
 
+#ifdef SUPPORT_CUDA
 #include <cuda_runtime.h>
+#endif
+
 #include <unordered_map>
 #include <vector>
 #include "types.h"
@@ -61,6 +64,7 @@ AOTITorchError aoti_torch_get_dim(AOTITensorHandle tensor, int64_t* ret_dim);
 // Utility functions for device and layout information
 int32_t aoti_torch_device_type_cpu();
 int32_t aoti_torch_device_type_cuda();
+int32_t aoti_torch_device_type_mps();
 int32_t aoti_torch_layout_strided();
 int32_t aoti_torch_dtype_float32();
 

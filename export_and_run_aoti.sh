@@ -3,20 +3,23 @@
 # Script to export and run AOTI with different modes
 # Usage:
 #   ./export_and_run_aoti.sh <model_arg> [mode]
-#   ./export_and_run_aoti.sh <model_arg> --mode=<mode> [--debug] [--dump]
+#   ./export_and_run_aoti.sh <model_arg> --mode=<mode> [--debug] [--dump] [--device=<device>]
 #
 # Examples:
-#   ./export_and_run_aoti.sh conv2d                         # Uses default mode (reinstall_all)
-#   ./export_and_run_aoti.sh conv2d inference               # Uses inference mode
-#   ./export_and_run_aoti.sh conv2d --mode=inference        # Alternative syntax
-#   ./export_and_run_aoti.sh conv2d --mode=inference --dump # With AOTI intermediate output dumping
-#   ./export_and_run_aoti.sh conv2d --mode=inference --debug --dump # With both debug and dump
+#   ./export_and_run_aoti.sh conv2d                            # Uses default mode (reinstall_all)
+#   ./export_and_run_aoti.sh conv2d inference                  # Uses inference mode
+#   ./export_and_run_aoti.sh conv2d --mode=inference           # Alternative syntax
+#   ./export_and_run_aoti.sh conv2d --device=metal             # Use Metal/MPS backend (Mac only)
+#   ./export_and_run_aoti.sh conv2d --device=cuda              # Use CUDA backend
+#   ./export_and_run_aoti.sh conv2d --mode=inference --dump    # With AOTI intermediate output dumping
+#   ./export_and_run_aoti.sh conv2d --mode=inference --debug --device=metal  # With debug on Metal
 #
 # Available modes: reinstall_all (default), reinstall_aot, reinstall_runtime, inference, export_aoti_only
 # Flags:
-#   --debug: Enable debug mode with extensive logging
-#   --dump:  Enable AOTI intermediate output dumping to aoti_intermediate_output.txt
-# model_arg: argument to pass to export_aoti.py
+#   --debug:           Enable debug mode with extensive logging
+#   --dump:            Enable AOTI intermediate output dumping to aoti_intermediate_output.txt
+#   --device=<device>: Specify device backend (cuda, metal, or cpu)
+# model_arg:           argument to pass to export_aoti.py
 
 set -e  # Exit on any error
 
@@ -25,8 +28,9 @@ MODE="reinstall_all"
 MODEL_ARG="$1"
 DEBUG_MODE=false
 DUMP_MODE=false
+DEVICE=""
 
-# Parse arguments for mode and debug flag
+# Parse arguments for mode and flags
 for arg in "$@"; do
     case $arg in
         --mode=*)
@@ -39,6 +43,10 @@ for arg in "$@"; do
             ;;
         --dump)
             DUMP_MODE=true
+            shift
+            ;;
+        --device=*)
+            DEVICE="${arg#*=}"
             shift
             ;;
         reinstall_all|reinstall_aot|reinstall_runtime|inference|export_aoti_only)
@@ -106,6 +114,35 @@ cleanup_temp_files() {
 # Run cleanup at the start
 cleanup_temp_files
 
+# Validate device if specified
+if [[ -n "$DEVICE" ]]; then
+    case "$DEVICE" in
+        cuda|metal|cpu)
+            echo "Selected device: $DEVICE"
+            ;;
+        *)
+            echo "Error: Unknown device '$DEVICE'"
+            echo "Available devices: cuda, metal, cpu"
+            exit 1
+            ;;
+    esac
+else
+    # Auto-detect device if not specified
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # On macOS, prefer Metal
+        DEVICE="metal"
+        echo "Auto-detected device on macOS: $DEVICE"
+    elif command -v nvidia-smi &> /dev/null; then
+        # NVIDIA GPU available
+        DEVICE="cuda"
+        echo "Auto-detected device: $DEVICE"
+    else
+        # Default to CPU
+        DEVICE="cpu"
+        echo "No GPU detected, using device: $DEVICE"
+    fi
+fi
+
 # Function definitions for each step
 install_executorch() {
     echo "Installing executorch..."
@@ -134,27 +171,42 @@ build_runtime() {
     mkdir -p cmake-out
     cd cmake-out
 
+    # Common CMake flags
+    CMAKE_ARGS="-DEXECUTORCH_BUILD_AOTI=ON \
+                -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+                -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
+                -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+                -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON"
+
+    # Add debug flags if needed
     if [[ "$DEBUG_MODE" == true ]]; then
         echo "Building with debug configuration..."
-        cmake -DEXECUTORCH_BUILD_AOTI=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-              -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
-              -DEXECUTORCH_LOG_LEVEL=Debug \
-              -DCMAKE_BUILD_TYPE=Debug \
-              -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-              ..
+        CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_LOG_LEVEL=Debug -DCMAKE_BUILD_TYPE=Debug"
     else
         echo "Building with release configuration..."
-        cmake -DEXECUTORCH_BUILD_AOTI=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-              -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
-              -DEXECUTORCH_LOG_LEVEL=Info \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-              -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-              ..
+        CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_LOG_LEVEL=Info -DCMAKE_BUILD_TYPE=Release"
     fi
+
+    # Add device-specific flags
+    if [[ "$DEVICE" == "metal" ]]; then
+        # On macOS with Metal, explicitly define AOTI_METAL
+        CMAKE_ARGS="$CMAKE_ARGS -DAOTI_METAL=ON"
+        if [[ "$(uname)" != "Darwin" ]]; then
+            echo "Warning: Metal is only supported on macOS. Forcing CPU fallback."
+            DEVICE="cpu"
+        fi
+    elif [[ "$DEVICE" == "cuda" ]]; then
+        # For CUDA, ensure CUDA is available
+        CMAKE_ARGS="$CMAKE_ARGS -DAOTI_CUDA=ON"
+        if ! command -v nvidia-smi &> /dev/null; then
+            echo "Warning: CUDA requested but no NVIDIA GPU detected. Forcing CPU fallback."
+            DEVICE="cpu"
+        fi
+    fi
+
+    # Execute cmake with all arguments
+    echo "Running cmake with device: $DEVICE"
+    eval cmake $CMAKE_ARGS ..
 
     cd ..
     cmake --build cmake-out -j9
@@ -162,7 +214,17 @@ build_runtime() {
 
 run_inference() {
     echo "Running executor_runner with debug logging enabled..."
-    ./cmake-out/executor_runner --model_path aoti_model.pte --data_path aoti_cuda_blob.ptd
+
+    # Use device-specific blob name based on the selected device
+    local blob_name="aoti_cpu_blob.ptd"  # Default to CPU
+    if [[ "$DEVICE" == "cuda" ]]; then
+        blob_name="aoti_cuda_blob.ptd"
+    elif [[ "$DEVICE" == "metal" ]]; then
+        blob_name="aoti_metal_blob.ptd"
+    fi
+
+    echo "Using blob file: $blob_name for $DEVICE device"
+    ./cmake-out/executor_runner --model_path aoti_model.pte --data_path $blob_name
 }
 
 compare_outputs() {
