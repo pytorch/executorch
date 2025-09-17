@@ -8,7 +8,6 @@ def define_common_targets():
         ],
         compiler_flags = ["-Wno-global-constructors"],
         deps = [
-            "//executorch/examples/models/llava/runner:runner",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/extension/threadpool:cpuinfo_utils",
             "//executorch/extension/threadpool:threadpool",
