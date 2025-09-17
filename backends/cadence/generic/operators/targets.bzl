@@ -4,64 +4,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 def define_common_targets():
     # Individual operator targets with optimized dependencies
 
-    # Basic operators (need broadcast_util and scalar_utils)
-    runtime.cxx_library(
-        name = "op_add",
-        srcs = ["op_add.cpp"],
-        platforms = CXX,
-        deps = [
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "op_full",
-        srcs = ["op_full.cpp"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    # Simple operators (only need kernel_includes)
-    runtime.cxx_library(
-        name = "op_embedding",
-        srcs = ["op_embedding.cpp"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "op_view_copy",
-        srcs = ["op_view_copy.cpp"],
-        platforms = CXX,
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ],
-        visibility = [
-            "//executorch/backends/cadence/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    # Operators that need the operators.h header and basic runtime
     runtime.cxx_library(
         name = "im2row_out",
         srcs = ["im2row_out.cpp"],
