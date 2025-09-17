@@ -43,9 +43,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     Image image = input.get_image();
 
     auto method_meta = ET_UNWRAP(
-        module_->method_meta(kVisionEncoderMethod),
+        module_->method_meta(kImageEncoderMethod),
         "Failed to get method_meta for %s",
-        kVisionEncoderMethod);
+        kImageEncoderMethod);
 
     ET_CHECK_MSG(
         method_meta.num_inputs() > 0,
