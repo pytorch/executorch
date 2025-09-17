@@ -43,9 +43,9 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     Image image = input.get_image();
 
     auto method_meta = ET_UNWRAP(
-        module_->method_meta(kImageEncoderMethod),
+        module_->method_meta(kVisionEncoderMethod),
         "Failed to get method_meta for %s",
-        kImageEncoderMethod);
+        kVisionEncoderMethod);
 
     ET_CHECK_MSG(
         method_meta.num_inputs() > 0,
@@ -80,7 +80,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
 
     // Run image encoder
     auto image_encoder_outputs =
-        ET_UNWRAP(module_->execute(kImageEncoderMethod, image_tensor));
+        ET_UNWRAP(module_->execute(kVisionEncoderMethod, image_tensor));
 
     encoder_output = image_encoder_outputs[0];
   } else if (input.is_audio()) {
@@ -175,8 +175,8 @@ Result<uint64_t> MultimodalPrefiller::prefill(
       ET_UNWRAP(module_->method_names(), "Failed to get method names");
 
   // Load image_encoder method if exists.
-  if (methods.find(kImageEncoderMethod) != methods.end()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kImageEncoderMethod));
+  if (methods.find(kVisionEncoderMethod) != methods.end()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kVisionEncoderMethod));
   }
 
   if (methods.find(kAudioEncoderMethod) != methods.end()) {
@@ -203,8 +203,8 @@ bool MultimodalPrefiller::is_method_loaded() {
     ET_CHECK_MSG(false, "Failed to get method names");
   }
   std::unordered_set<std::string> methods = methods_res.get();
-  if (methods.find(kImageEncoderMethod) != methods.end()) {
-    return module_->is_method_loaded(kImageEncoderMethod);
+  if (methods.find(kVisionEncoderMethod) != methods.end()) {
+    return module_->is_method_loaded(kVisionEncoderMethod);
   }
   return true;
 }
