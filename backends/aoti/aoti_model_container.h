@@ -8,9 +8,9 @@
 
 #pragma once
 
+#include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
-#include "cuda/runtime/shims/memory.h"
 
 namespace executorch {
 namespace backends {

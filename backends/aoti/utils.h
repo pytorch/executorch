@@ -10,8 +10,8 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 namespace executorch {
 namespace backends {

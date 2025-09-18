@@ -25,8 +25,8 @@
 #include <vector>
 
 // Include our shim layer headers
-#include "../../aoti_model_container.h"
-#include "../../common_shims.h"
+#include <executorch/backends/aoti/aoti_model_container.h>
+#include <executorch/backends/aoti/common_shims.h>
 
 namespace executorch {
 namespace backends {

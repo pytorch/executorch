@@ -19,7 +19,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
 find_package(CUDAToolkit REQUIRED)

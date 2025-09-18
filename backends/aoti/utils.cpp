@@ -34,7 +34,8 @@ size_t dtype_to_element_size(int32_t dtype) {
 // Map int32_t dtype to ExecutorTorch ScalarType (robust version of hardcoded
 // ScalarType::Float)
 executorch::aten::ScalarType dtype_to_scalar_type(int32_t dtype) {
-  // Convert based on known PyTorch dtype codes (without CUDA-specific dependency)
+  // Convert based on known PyTorch dtype codes (without CUDA-specific
+  // dependency)
   switch (dtype) {
     case 6: // PyTorch's float32 dtype code
       return executorch::aten::ScalarType::Float;

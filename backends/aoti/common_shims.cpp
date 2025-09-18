@@ -106,7 +106,6 @@ AOTITorchError aoti_torch_get_storage_size(
   throw std::runtime_error("Cannot get storage size on ETensor");
 }
 
-
 AOTITorchError aoti_torch_get_device_index(
     AOTITensorHandle tensor,
     int32_t* ret_device_index) {

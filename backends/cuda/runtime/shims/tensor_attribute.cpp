@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/aoti/cuda/runtime/shims/tensor_attribute.h>
+#include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
 
 namespace executorch {
 namespace backends {
