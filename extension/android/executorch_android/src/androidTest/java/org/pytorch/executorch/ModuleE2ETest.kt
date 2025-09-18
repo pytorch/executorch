@@ -18,11 +18,13 @@ import java.io.IOException
 import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
+import org.junit.Assert.assertArrayEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TensorImageUtils.bitmapToFloat32Tensor
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
+import org.junit.Assert.assertEquals
 
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
@@ -70,6 +72,7 @@ class ModuleE2ETest {
 
         val module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"))
         val expectedBackends = arrayOf("XnnpackBackend")
+        assertArrayEquals(expectedBackends, module.getMethodMetadata("forward").backends)
     }
 
     @Test
