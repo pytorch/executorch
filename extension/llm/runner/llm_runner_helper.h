@@ -121,21 +121,4 @@ ET_EXPERIMENTAL std::unique_ptr<MultimodalRunner> create_multimodal_runner(
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
     std::optional<const std::string> data_path = std::nullopt);
 
-/**
- * @brief Creates a MultimodalRunner instance with a shared tokenizer
- *
- * This overload allows using a tokenizer that is shared/owned by Python or
- * other code. The tokenizer must remain valid for the lifetime of the runner.
- *
- * @param model_path Path to the model file
- * @param tokenizer Shared pointer to an initialized tokenizer instance
- * @param data_path Optional path to additional .ptd required by the model
- * @return std::unique_ptr<MultimodalRunner> Initialized MultimodalRunner
- * instance, or nullptr on failure
- */
-ET_EXPERIMENTAL std::unique_ptr<MultimodalRunner> create_multimodal_runner(
-    const std::string& model_path,
-    std::shared_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path = std::nullopt);
-
 } // namespace executorch::extension::llm
