@@ -23,7 +23,7 @@ from subprocess import check_call
 from typing import Any, Dict, Tuple
 
 import torch
-from executorch.backends.aoti.cuda.cuda_partitioner import CudaPartitioner
+from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 
 # from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower

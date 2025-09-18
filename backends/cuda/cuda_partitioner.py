@@ -9,7 +9,7 @@
 from typing import Callable, Dict, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.aoti.cuda.cuda_backend import CudaBackend  # usort: skip
+from executorch.backends.cuda.cuda_backend import CudaBackend  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
