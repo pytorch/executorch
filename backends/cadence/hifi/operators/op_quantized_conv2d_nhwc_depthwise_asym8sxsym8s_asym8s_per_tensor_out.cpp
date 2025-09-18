@@ -21,8 +21,8 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-// Optimized NHWC convolution for int8 x int8 -> int8
-void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
+// Specialized depthwise NHWC convolution for int8 x int8 -> int8
+void xa_opt_quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s(
     KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -38,7 +38,6 @@ void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
     int32_t output_zero_point,
     Tensor& out) {
   bool conv1d = input.dim() == 3;
-  constexpr int kNnlibMaxDim = 4;
 
   WORD8* __restrict__ p_out =
       (WORD8* __restrict__)out.mutable_data_ptr<int8_t>();
@@ -54,7 +53,6 @@ void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
   WORD32 input_channels = input.size(1);
   WORD32 kernel_height = conv1d ? 1 : weight.size(2);
   WORD32 kernel_width = conv1d ? weight.size(2) : weight.size(3);
-  WORD32 kernel_channels = weight.size(1);
   WORD32 out_channels = weight.size(0);
   WORD32 out_height = conv1d ? 1 : out.size(2);
   WORD32 out_width = conv1d ? out.size(2) : out.size(3);
@@ -64,11 +62,12 @@ void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
   WORD32 y_stride = stride[0];
   WORD32 x_padding = padding[1];
   WORD32 y_padding = padding[0];
-  WORD32 dilation_width = dilation[1];
-  WORD32 dilation_height = dilation[0];
 
   WORD32 input_zero_bias = -in_zero_point;
-  WORD32 kernel_zero_bias = -weight_zero_point;
+  WORD32 out_zero_bias = output_zero_point;
+  WORD32 inp_precision = 8;
+
+  WORD32 channels_multiplier = out_channels / input_channels;
 
   WORD32 out_multiplier32[out_channels];
   WORD32 out_shift32[out_channels];
@@ -80,61 +79,43 @@ void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
     out_shift32[i] = 0;
   }
 
-  WORD32 out_zero_bias = output_zero_point;
-  WORD32 inp_precision = 8;
-  WORD32 kernel_precision = 8;
-  pVOID p_scratch = nullptr;
-  WORD32* ptr_scratch;
-
-  WORD32 scratch_size = 0;
-
-  ET_CHECK_MSG(groups == 1, "Only groups=1 supported for regular convolution");
-  WORD32 out_data_format = 1;
-
-  scratch_size = xa_nn_conv2d_getsize(
+  WORD32 scratch_size = xa_nn_conv2d_depthwise_getsize(
       input_height,
       input_width,
       input_channels,
       kernel_height,
       kernel_width,
-      kernel_channels,
-      dilation_height,
-      dilation_width,
-      y_stride,
-      y_padding,
+      channels_multiplier,
       x_stride,
+      y_stride,
       x_padding,
+      y_padding,
       out_height,
       out_width,
-      out_channels,
       inp_precision,
-      kernel_precision,
-      out_data_format);
+      0); // NHWC
 
   scratch_size = scratch_size < 0 ? 0 : scratch_size;
 
-  ptr_scratch = (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
-
-  p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
+  WORD32* ptr_scratch =
+      (WORD32*)kernels::allocate_temp_memory(ctx, scratch_size);
+  pVOID p_scratch = (pVOID)ALIGN_PTR(ptr_scratch, 8);
 
   for (int _n = 0; _n < batches; _n++) {
     WORD8* in_batch = p_inp + _n * input_channels * input_height * input_width;
     WORD8* out_batch = p_out + _n * out_channels * out_height * out_width;
 
-    xa_nn_conv2d_per_chan_sym8sxasym8s(
+    xa_nn_conv2d_depthwise_per_chan_sym8sxasym8s(
         out_batch,
-        in_batch,
         p_kernel,
+        in_batch,
         p_bias,
         input_height,
         input_width,
         input_channels,
         kernel_height,
         kernel_width,
-        kernel_channels,
-        dilation_height,
-        dilation_width,
-        out_channels,
+        channels_multiplier,
         x_stride,
         y_stride,
         x_padding,
@@ -145,12 +126,13 @@ void xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
         out_multiplier32,
         out_shift32,
         out_zero_bias,
-        out_data_format,
+        0, // NHWC
+        0, // NHWC
         p_scratch);
   }
 }
 
-void quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
+void quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -167,7 +149,7 @@ void quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  xa_opt_quantized_conv_nhwc_asym8sxsym8s_asym8s(
+  xa_opt_quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s(
       ctx,
       input,
       weight,

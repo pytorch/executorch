@@ -22,6 +22,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeGlu,
     DecomposeLinalgVectorNorm,
     DecomposeMinMaxDim,
     DecomposeRoll,
@@ -200,6 +201,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeGlu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
