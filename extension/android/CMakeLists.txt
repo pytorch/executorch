@@ -169,7 +169,9 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries extension_llm_runner)
-  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_LLM=1)
+  target_compile_definitions(
+    executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_LLM=1
+  )
 
   if(QNN_SDK_ROOT)
     target_sources(
@@ -222,8 +224,10 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_AUDIO)
-  target_sources(executorch_jni PRIVATE jni/jni_layer_asr.cpp jni/log.cpp)
-  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_AUDIO=1)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
+  target_compile_definitions(
+    executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_AUDIO=1
+  )
 
   if(QNN_SDK_ROOT)
     target_sources(

@@ -16,12 +16,13 @@
 #include <memory>
 #include <string>
 
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/runtime/core/error.h>
 
 namespace executorch {
 namespace extension {
-namespace llm {
+namespace audio {
 
 class ET_EXPERIMENTAL ASRRunner {
  public:
@@ -45,17 +46,20 @@ class ET_EXPERIMENTAL ASRRunner {
    * Generate text from raw audio.
    *
    * @param seq_len Length of input sequence
-   * @param inputs A vector containing one element: a vector of bytes that
+   * @param audio processed audio input, which contains a vector of bytes that
    * encodes a float tensor in little-endian byte order
    * @param token_callback Callback function called for each generated token
+   * @param stats_callback Callback function for generation statistics
    * @return Error::Ok if successful, an error otherwise
    */
   virtual runtime::Error transcribe(
       int32_t seq_len,
-      std::vector<std::vector<char>>& inputs,
-      std::function<void(const std::string&)> token_callback = {}) = 0;
+      ::executorch::extension::llm::Audio& audio,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const ::executorch::extension::llm::Stats&)>
+          stats_callback = {}) = 0;
 };
 
-} // namespace llm
+} // namespace audio
 } // namespace extension
 } // namespace executorch

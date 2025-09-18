@@ -14,6 +14,7 @@
  */
 
 #include <executorch/examples/qualcomm/oss_scripts/whisper/runner/runner.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/runtime/platform/log.h>
 #include <gflags/gflags.h>
 #include <fstream>
@@ -110,7 +111,14 @@ int main(int argc, char** argv) {
       }
     };
     // generate tokens
-    runner.transcribe(FLAGS_seq_len, multi_turns_input_buffers[iter], callback);
+    executorch::extension::llm::Audio audio{
+        std::vector<uint8_t>(
+            multi_turns_input_buffers[iter][0].begin(),
+            multi_turns_input_buffers[iter][0].end()),
+        1,
+        80,
+        3000};
+    runner.transcribe(FLAGS_seq_len, audio, callback);
     auto output_file_name =
         FLAGS_output_folder_path + "/output_" + std::to_string(iter) + ".txt";
     std::ofstream fout(output_file_name);

@@ -11,6 +11,7 @@ import com.facebook.jni.HybridData;
 import com.facebook.jni.annotations.DoNotStrip;
 import java.io.File;
 import org.pytorch.executorch.ExecuTorchRuntime;
+import org.pytorch.executorch.extension.llm.LlmCallback;
 import org.pytorch.executorch.annotations.Experimental;
 
 /**
@@ -50,8 +51,9 @@ public class ASRModule {
   public native int transcribe(
       int seqLen,
       byte[][] inputs,
-      ASRCallback callback);
-
+      LlmCallback callback,
+      int n_bins,
+      int n_frames);
 
   /** Force loading the module. Otherwise the model is loaded during first generate(). */
   @DoNotStrip

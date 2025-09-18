@@ -13,7 +13,9 @@
 
 #include <executorch/examples/qualcomm/oss_scripts/whisper/runner/decoder.h>
 #include <executorch/examples/qualcomm/oss_scripts/whisper/runner/encoder.h>
-#include <executorch/extension/llm/runner/asr_runner.h>
+#include <executorch/extension/audio/runner/asr_runner.h>
+#include <executorch/extension/llm/runner/audio.h>
+#include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/runtime/core/error.h>
 #include <pytorch/tokenizers/tokenizer.h>
@@ -25,7 +27,7 @@
 
 namespace example {
 
-class WhisperRunner : public executorch::extension::llm::ASRRunner {
+class WhisperRunner : public executorch::extension::audio::ASRRunner {
  public:
   explicit WhisperRunner(
       const std::string& model_path,
@@ -52,8 +54,10 @@ class WhisperRunner : public executorch::extension::llm::ASRRunner {
   executorch::runtime::Error load();
   executorch::runtime::Error transcribe(
       int32_t seq_len,
-      std::vector<std::vector<char>>& inputs,
-      std::function<void(const std::string&)> token_callback = {});
+      executorch::extension::llm::Audio& audio,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const executorch::extension::llm::Stats&)>
+          stats_callback = {});
 
  private:
   executorch::runtime::Error print_performance();

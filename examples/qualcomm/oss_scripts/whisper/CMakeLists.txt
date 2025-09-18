@@ -14,7 +14,7 @@ set(_qnn_whisper_runner__srcs
     ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp
     ${CMAKE_CURRENT_LIST_DIR}/runner/runner.h
     ${EXECUTORCH_ROOT}/extension/llm/sampler/sampler.cpp
-    ${EXECUTORCH_ROOT}/extension/llm/runner/asr_runner.h
+    ${EXECUTORCH_ROOT}/extension/audio/runner/asr_runner.h
 )
 
 # build qnn whisper runner

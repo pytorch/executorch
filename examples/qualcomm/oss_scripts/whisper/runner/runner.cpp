@@ -112,29 +112,24 @@ uint64_t WhisperRunner::logits_to_token(
     const executorch::aten::Tensor& logits_tensor) {
   return sampler_->sample(logits_tensor.data_ptr<float>());
 }
-/**
- * @param inputs: A vector containing one element: a vector of bytes that
- * encodes a float tensor in little-endian byte order.
- *
- */
 Error WhisperRunner::transcribe(
     int32_t seq_len,
-    std::vector<std::vector<char>>& inputs,
-    std::function<void(const std::string&)> token_callback) {
+    executorch::extension::llm::Audio& audio,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const executorch::extension::llm::Stats&)>
+        stats_callback) {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     stats_.model_load_end_ms = time_in_ms();
   }
-  ET_CHECK_MSG(inputs.size() == 1, "The input size of whisper should be one.");
-
   ET_LOG(Info, "Start Encoding");
   stats_.encoder_inference_start_ms = time_in_ms();
   auto input_features_tensor_ptr = from_blob(
-      inputs[0].data(),
+      audio.data.data(),
       // (1, processor.feature_extractor.feature_size,
       // processor.feature_extractor.nb_max_frames)
-      {1, 80, 3000},
+      {audio.batch_size, audio.n_bins, audio.n_frames}, // {1, 80, 3000}
       ScalarType::Float);
   Result<Tensor> encoder_out = encoder_->encode(input_features_tensor_ptr);
   auto encoder_out_tensor_ptr = make_tensor_ptr(encoder_out.get());
