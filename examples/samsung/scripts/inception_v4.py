@@ -18,7 +18,7 @@ from executorch.backends.samsung.utils.export_utils import (
     quantize_module,
     to_edge_transform_and_lower_to_enn,
 )
-from executorch.examples.models.mobilenet_v2 import MV2Model
+from executorch.examples.models.inception_v4 import InceptionV4Model
 from executorch.examples.samsung.utils import save_tensors
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
@@ -27,7 +27,7 @@ from executorch.extension.export_util.utils import save_pte_program
 def get_dataset(dataset_path, data_size):
     from torchvision import datasets, transforms
 
-    image_shape = (256, 256)
+    image_shape = (299, 299)
     crop_size = 224
     shuffle = True
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. ",
-        default="./mobilenetV2",
+        default="./inception_v4",
         type=str,
     )
 
@@ -127,9 +127,9 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     # build pte
-    pte_filename = "mobilenetV2_enn"
-    instance = MV2Model(False)
-    model = MV2Model().get_eager_model().eval()
+    pte_filename = "inception_v4"
+    instance = InceptionV4Model()
+    model = InceptionV4Model().get_eager_model().eval()
     assert args.calibration_number
     if args.dataset:
         inputs, targets, input_list = get_dataset(

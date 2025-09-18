@@ -12,10 +12,6 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class Conv1dToConv2d(ExportPass):
-    """
-    Convert conv1d to conv2d because exynos doesn't support conv1d
-    """
-
     def __init__(self, edge_program: ExportedProgram):
         super().__init__()
         self.edge_program = edge_program

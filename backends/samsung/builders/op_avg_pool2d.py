@@ -54,8 +54,7 @@ class AvgPool2dVisitor(NodeVisitor):
 
         if len(node.args) > 4:
             ceil_mode = cast(bool, node.args[4])
-            if ceil_mode:
-                raise AssertionError("Not support ceil_mode = True.")
+            assert not ceil_mode, "Not support ceil_mode = True."
 
         if len(node.args) > 5:
             params["count_include_pad"] = cast(bool, node.args[5])
@@ -64,12 +63,8 @@ class AvgPool2dVisitor(NodeVisitor):
 
         if len(node.args) > 6:
             divisor_override = cast(int, node.args[6])
-            if divisor_override != kernel_size[0] * kernel_size[1]:
-                raise AssertionError(
-                    "Not supported divisor_override which is not equal to pooling region."
-                )
-
+            assert (
+                divisor_override == kernel_size[0] * kernel_size[1]
+            ), "Not supported divisor_override which is not equal to pooling region."
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-        vals_to_ids[node] = output_id
-
         enn_graph.define_op(node.name, "AVGPOOL2D", [input_id], [output_id], params)

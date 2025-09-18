@@ -6,8 +6,7 @@
 
 import argparse
 import os
-
-import torch
+from typing import List, Optional, Tuple
 
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer import Precision
@@ -18,48 +17,67 @@ from executorch.backends.samsung.utils.export_utils import (
     quantize_module,
     to_edge_transform_and_lower_to_enn,
 )
-from executorch.examples.models.mobilenet_v2 import MV2Model
+from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.samsung.utils import save_tensors
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
 
+from torchsr import transforms
 
-def get_dataset(dataset_path, data_size):
-    from torchvision import datasets, transforms
 
-    image_shape = (256, 256)
-    crop_size = 224
-    shuffle = True
+def get_dataset(
+    root_dir: str,
+    calinum=100,
+    transform_compose: Optional[transforms.Compose] = None,
+) -> Tuple:
+    """
+    Generate test data from B100 dataset for quantization model
 
-    def get_data_loader():
-        preprocess = transforms.Compose(
+    :param root_dir: Dir of dataset. The real dataset should be in root_dir/SRBenchmarks/benchmark/
+    :param dataset_name: data_set name
+    :param testnum: Number of test data. Default 500
+    :param transform_compose: Transforms to be applied to data.
+        Default:
+        transform_compose = transforms.Compose(
+            [transforms.ToTensor()] # Convert Pillows Image to tensor
+        )
+    :type root_dir: str
+    :type calinum: int
+    :type testnum: int
+    :type transform_compose: transforms.Compose | None
+    :return: (example_input, cali_data, test_data)
+    """
+
+    class SrResize:
+        def __init__(self, expected_size: List[List[int]]):
+            self.expected_size = expected_size
+
+        def __call__(self, x):
+            return (
+                x[0].resize(self.expected_size[0]),
+                x[1].resize(self.expected_size[1]),
+            )
+
+    class SrUnsqueeze:
+        def __call__(self, x):
+            return (
+                x[0].unsqueeze(0),
+                x[1].unsqueeze(0),
+            )
+
+    if not transform_compose:
+        transform_compose = transforms.Compose(
             [
-                transforms.Resize(image_shape),
-                transforms.CenterCrop(crop_size),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
+                SrResize([[448, 448], [224, 224]]),
+                transforms.ToTensor(),  # Convert Pillows Image to tensor
+                SrUnsqueeze(),
             ]
         )
-        imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
-        return torch.utils.data.DataLoader(
-            imagenet_data,
-            shuffle=shuffle,
-        )
+    from torchsr.datasets import B100
 
-    # prepare input data
-    inputs, targets, input_list = [], [], ""
-    data_loader = get_data_loader()
-    for index, data in enumerate(data_loader):
-        if index >= data_size:
-            break
-        feature, target = data
-        inputs.append((feature,))
-        targets.append(target)
-        input_list += f"input_{index}_0.bin\n"
-
-    return inputs, targets, input_list
+    dataset = B100(root=root_dir, transform=transform_compose, scale=2)
+    example_data = [(dataset[i][1],) for i in range(min(calinum, len(dataset)))]
+    return example_data
 
 
 if __name__ == "__main__":
@@ -76,11 +94,7 @@ if __name__ == "__main__":
         "-d",
         "--dataset",
         default=None,
-        help=(
-            "path to the validation folder of ImageNet dataset. "
-            "e.g. --dataset imagenet-mini/val "
-            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
-        ),
+        help=("path to the validation folder of B100"),
         type=str,
     )
 
@@ -117,7 +131,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. ",
-        default="./mobilenetV2",
+        default="./edsr",
         type=str,
     )
 
@@ -127,19 +141,17 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     # build pte
-    pte_filename = "mobilenetV2_enn"
-    instance = MV2Model(False)
-    model = MV2Model().get_eager_model().eval()
+    pte_filename = "edsr"
+    instance = EdsrModel()
+    model = EdsrModel().get_eager_model().eval()
     assert args.calibration_number
     if args.dataset:
-        inputs, targets, input_list = get_dataset(
-            dataset_path=f"{args.dataset}",
-            data_size=args.calibration_number,
+        inputs = get_dataset(
+            root_dir=f"{args.dataset}",
+            calinum=args.calibration_number,
         )
     else:
         inputs = [instance.get_example_inputs() for _ in range(args.calibration_number)]
-        target = None
-        input_list = None
 
     test_in = inputs[0]
     float_out = model(*test_in)

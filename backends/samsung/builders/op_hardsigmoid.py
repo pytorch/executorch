@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import Dict
 
 import torch
@@ -14,8 +15,8 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
-class UnsqueezeVisitor(NodeVisitor):
-    target = "aten.unsqueeze_copy.default"
+class HardSigmoidVisitor(NodeVisitor):
+    target = "aten.hardsigmoid.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -28,8 +29,7 @@ class UnsqueezeVisitor(NodeVisitor):
     ) -> None:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-
-        params = {"new_shape": [*node.meta["val"].shape]}
-        enn_graph.define_op(node.name, "RESHAPE", [input_id], [output_id], params)
+        params = {}
+        self._update_params_qdtype(node, params)
+        enn_graph.define_op(node.name, "HardSigmoid", [input_id], [output_id], params)
