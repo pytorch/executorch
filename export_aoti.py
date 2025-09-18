@@ -23,7 +23,7 @@ from subprocess import check_call
 from typing import Any, Dict, Tuple
 
 import torch
-from executorch.backends.aoti.aoti_partitioner import AotiPartitioner
+from executorch.backends.aoti.cuda.cuda_partitioner import CudaPartitioner
 
 # from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge, to_edge_transform_and_lower
@@ -402,7 +402,7 @@ def export_model_to_et_aoti(
         # Q: maybe need to turn on fallback_random?
 
         edge_program = to_edge_transform_and_lower(
-            aten_dialect, partitioner=[AotiPartitioner([])]
+            aten_dialect, partitioner=[CudaPartitioner([])]
         )
 
     # edge_program = to_edge(aten_dialect)

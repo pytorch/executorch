@@ -1,21 +1,18 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    # Common AOTI functionality (non-CUDA)
     runtime.cxx_library(
-        name = "aoti_backend",
+        name = "aoti_common",
         srcs = [
-            "aoti_backend.cpp",
             "aoti_model_container.cpp",
-            "shims/memory.cpp",
-            "shims/tensor_attribute.cpp",
-            "shims/utils.cpp",
+            "common_shims.cpp",
+            "utils.cpp",
         ],
         headers = [
             "aoti_model_container.h",
-            "shims/memory.h",
-            "shims/tensor_attribute.h",
-            "shims/types.h",
-            "shims/utils.h",
+            "common_shims.h",
+            "utils.h",
         ],
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
@@ -27,6 +24,5 @@ def define_common_targets():
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "//caffe2/torch/csrc/inductor:aoti_torch",
-            "//caffe2/torch/csrc/inductor:aoti_torch_cuda",
         ],
     )

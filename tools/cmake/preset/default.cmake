@@ -161,9 +161,8 @@ define_overridable_option(
 )
 
 define_overridable_option(
-  EXECUTORCH_BUILD_AOTI "Build the AOTI backend" BOOL OFF
+  EXECUTORCH_BUILD_CUDA "Build the AOTI CUDA backend" BOOL OFF
 )
-
 
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_default_executorch_build_pthreadpool OFF)
@@ -323,7 +322,7 @@ check_required_options_on(
 )
 
 check_required_options_on(
-  IF_ON EXECUTORCH_BUILD_AOTI REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
+  IF_ON EXECUTORCH_BUILD_CUDA REQUIRES EXECUTORCH_BUILD_EXTENSION_TENSOR
 )
 
 check_conflicting_options_on(

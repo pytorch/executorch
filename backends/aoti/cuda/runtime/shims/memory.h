@@ -9,12 +9,12 @@
 #pragma once
 
 #include <cuda_runtime.h>
+#include <executorch/backends/aoti/common_shims.h>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "types.h"
 
 namespace executorch {
 namespace backends {

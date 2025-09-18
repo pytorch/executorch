@@ -66,7 +66,7 @@ def collect_unsupported_fallback_kernels():
 
 
 @final
-class AotiBackend(BackendDetails):
+class CudaBackend(BackendDetails):
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,

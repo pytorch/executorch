@@ -25,10 +25,8 @@
 #include <vector>
 
 // Include our shim layer headers
-#include "aoti_model_container.h"
-#include "shims/memory.h"
-#include "shims/tensor_attribute.h"
-#include "shims/utils.h"
+#include "../../aoti_model_container.h"
+#include "../../common_shims.h"
 
 namespace executorch {
 namespace backends {
@@ -52,11 +50,11 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-class AOTIBackend final : public ::executorch::runtime::BackendInterface {
+class CudaBackend final : public ::executorch::runtime::BackendInterface {
  public:
   // Once in program
-  AOTIBackend() {
-    ET_LOG(Info, "AOTIBackend ctor");
+  CudaBackend() {
+    ET_LOG(Info, "CudaBackend ctor");
   }
 
   bool is_available() const override {
@@ -172,11 +170,11 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       BackendExecutionContext& context,
       DelegateHandle* handle_,
       Span<EValue*> args) const override {
-    ET_LOG(Debug, "AOTIBackend execute");
+    ET_LOG(Debug, "CudaBackend execute");
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
-    ET_LOG(Debug, "AOTIBackend Handle generated");
+    ET_LOG(Debug, "CudaBackend Handle generated");
 
     size_t n_inputs;
     AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);
@@ -185,7 +183,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     AOTInductorModelContainerGetNumOutputs(
         handle->container_handle, &n_outputs);
 
-    ET_LOG(Debug, "AOTIBackend n_outputs %zd generated", n_outputs);
+    ET_LOG(Debug, "CudaBackend n_outputs %zd generated", n_outputs);
 
     if (n_inputs + n_outputs != args.size()) {
       ET_LOG(
@@ -211,7 +209,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     std::vector<AOTITensorHandle> gpu_outputs(
         n_outputs); // GPU tensors for kernel output
 
-    ET_LOG(Debug, "AOTIBackend input/output vectors generated");
+    ET_LOG(Debug, "CudaBackend input/output vectors generated");
 
     // Process input tensors: ExecutorTorch provides CPU tensors, create GPU
     // copies
@@ -255,7 +253,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       ET_LOG(Debug, "Successfully copied input %d from CPU to GPU", i);
     }
 
-    ET_LOG(Debug, "AOTIBackend GPU inputs generated");
+    ET_LOG(Debug, "CudaBackend GPU inputs generated");
 
     // Process output tensors: create GPU counterparts for ExecutorTorch CPU
     // tensors
@@ -287,7 +285,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       ET_LOG(Debug, "Created GPU output tensor %d", i);
     }
 
-    ET_LOG(Debug, "AOTIBackend output generated");
+    ET_LOG(Debug, "CudaBackend output generated");
 
     // Run AOTI container with GPU tensors
     AOTIRuntimeError error = AOTInductorModelContainerRun(
@@ -307,7 +305,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       return Error::Internal;
     }
 
-    ET_LOG(Debug, "AOTIBackend running done");
+    ET_LOG(Debug, "CudaBackend running done");
 
     // Copy GPU output results back to CPU output tensors
     for (int i = 0; i < n_outputs; i++) {
@@ -332,7 +330,7 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
       aoti_torch_delete_tensor_object(gpu_outputs[i]);
     }
 
-    ET_LOG(Debug, "AOTIBackend execution completed successfully");
+    ET_LOG(Debug, "CudaBackend execution completed successfully");
 
     return Error::Ok;
   }
@@ -360,16 +358,15 @@ class AOTIBackend final : public ::executorch::runtime::BackendInterface {
     free(handle);
     cleanup_memory();
     cleanup_tensor_metadata();
-    cleanup_aoti_tensor_output();
-    ET_LOG(Debug, "AOTIBackend handle %p destroy", handle_);
+    ET_LOG(Debug, "CudaBackend handle %p destroy", handle_);
   }
 };
 
 } // namespace aoti
 
 namespace {
-auto cls = aoti::AOTIBackend();
-executorch::runtime::Backend backend{"AotiBackend", &cls};
+auto cls = aoti::CudaBackend();
+executorch::runtime::Backend backend{"CudaBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
 } // namespace

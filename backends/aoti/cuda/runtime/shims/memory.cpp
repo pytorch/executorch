@@ -6,7 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "memory.h"
+#include <executorch/backends/aoti/cuda/runtime/shims/memory.h>
+#include <executorch/backends/aoti/cuda/runtime/shims/tensor_attribute.h>
+#include <executorch/backends/aoti/cuda/runtime/utils.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
 #include <cstdio>
@@ -18,8 +21,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include "tensor_attribute.h"
-#include "utils.h"
 
 namespace executorch {
 namespace backends {

@@ -21,48 +21,34 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-find_package(CUDAToolkit REQUIRED)
-
 # Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
-set(_aoti_sources
-    runtime/aoti_backend.cpp
-    runtime/aoti_model_container.cpp
-    runtime/shims/memory.cpp
-    runtime/shims/tensor_attribute.cpp
-    runtime/shims/utils.cpp)
-add_library(aoti_backend STATIC ${_aoti_sources})
+# Common AOTI functionality (non-CUDA)
+set(_aoti_common_sources aoti_model_container.cpp common_shims.cpp utils.cpp)
+add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
-  aoti_backend
-  PUBLIC
-    ${CUDAToolkit_INCLUDE_DIRS}
-    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
-    $<INSTALL_INTERFACE:include>
-    # PyTorch AOTI headers from ExecutorTorch's torch detection
-    ${TORCH_INCLUDE_DIRS}
+  aoti_common
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+         # PyTorch AOTI headers from ExecutorTorch's torch detection
+         ${TORCH_INCLUDE_DIRS}
 )
-target_compile_options(aoti_backend PUBLIC -fexceptions -frtti -fPIC)
+target_compile_options(aoti_common PUBLIC -fexceptions -frtti -fPIC)
 # Ensure symbols are exported properly
-target_link_options(aoti_backend PUBLIC -Wl,--export-dynamic)
+target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
 
-# Link against CUDA::cudart, PyTorch libraries and standard libraries
+# Link against PyTorch libraries and standard libraries
 target_link_libraries(
-  aoti_backend
-  PUBLIC
-    extension_tensor
-    CUDA::cudart
-    ${CMAKE_DL_LIBS}
-    # Link PyTorch libraries for AOTI CUDA functions
-    ${TORCH_LIBRARIES}
+  aoti_common
+  PUBLIC extension_tensor ${CMAKE_DL_LIBS}
+         # Link PyTorch libraries for AOTI functions
+         ${TORCH_LIBRARIES}
 )
-# If you need other CUDA libraries, link them similarly:
-# target_link_libraries(aoti_backend PUBLIC CUDA::cublas CUDA::cufft ...)
-# If you have a custom function, keep it
-executorch_target_link_options_shared_lib(aoti_backend)
+executorch_target_link_options_shared_lib(aoti_common)
+
 install(
-  TARGETS aoti_backend
+  TARGETS aoti_common
   EXPORT ExecuTorchTargets
   DESTINATION lib
 )

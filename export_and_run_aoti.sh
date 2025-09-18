@@ -136,7 +136,7 @@ build_runtime() {
 
     if [[ "$DEBUG_MODE" == true ]]; then
         echo "Building with debug configuration..."
-        cmake -DEXECUTORCH_BUILD_AOTI=ON \
+        cmake -DEXECUTORCH_BUILD_CUDA=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
               -DEXECUTORCH_LOG_LEVEL=Debug \
@@ -146,7 +146,7 @@ build_runtime() {
               ..
     else
         echo "Building with release configuration..."
-        cmake -DEXECUTORCH_BUILD_AOTI=ON \
+        cmake -DEXECUTORCH_BUILD_CUDA=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=ON \
               -DEXECUTORCH_LOG_LEVEL=Info \

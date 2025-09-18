@@ -9,7 +9,7 @@
 from typing import Callable, Dict, final, List, Optional, Tuple
 
 import torch
-from executorch.backends.aoti.aoti_backend import AotiBackend  # usort: skip
+from executorch.backends.aoti.cuda.cuda_backend import CudaBackend  # usort: skip
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -21,9 +21,9 @@ from torch.export.exported_program import ExportedProgram
 
 
 @final
-class AotiPartitioner(Partitioner):
+class CudaPartitioner(Partitioner):
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
-        self.delegation_spec = DelegationSpec(AotiBackend.__name__, compile_spec)
+        self.delegation_spec = DelegationSpec(CudaBackend.__name__, compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """

@@ -156,7 +156,6 @@ def emit_program(
     instruction_id_to_num_outs_map = {}
     program_state = _ProgramState()
 
-
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
         # create empty state

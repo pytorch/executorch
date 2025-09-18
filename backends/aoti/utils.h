@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
-#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <cstdint>
+#include <cstddef>
 
 namespace executorch {
 namespace backends {
@@ -19,15 +19,22 @@ namespace aoti {
 
 // Common using declarations for ExecutorTorch types
 using executorch::runtime::Error;
-using executorch::runtime::etensor::Tensor;
 
 extern "C" {
 
 // Common AOTI type aliases
-// Note: AOTITensorHandle is aliased to Tensor* for ExecutorTorch compatibility
-using AOTITensorHandle = Tensor*;
-using AOTIRuntimeError = Error;
 using AOTITorchError = Error;
+
+// Map int32_t dtype to number of bytes per element (reusing ExecutorTorch's
+// elementSize function)
+size_t dtype_to_element_size(int32_t dtype);
+
+// Map int32_t dtype to ExecutorTorch ScalarType (robust version of hardcoded
+// ScalarType::Float)
+executorch::aten::ScalarType dtype_to_scalar_type(int32_t dtype);
+
+// Storage offset validation utility function
+AOTITorchError validate_storage_offset(int64_t storage_offset);
 
 } // extern "C"
 

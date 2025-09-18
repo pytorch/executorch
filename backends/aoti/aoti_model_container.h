@@ -10,7 +10,7 @@
 
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/error.h>
-#include "shims/memory.h"
+#include "cuda/runtime/shims/memory.h"
 
 namespace executorch {
 namespace backends {
