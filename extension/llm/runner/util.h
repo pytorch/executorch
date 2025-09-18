@@ -8,12 +8,13 @@
 
 #pragma once
 #include <executorch/extension/llm/runner/constants.h>
-#include <executorch/extension/llm/runner/multimodal_prefiller.h>
+#include <executorch/extension/module/module.h>
 #include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <stdio.h>
 #include <time.h>
 #include <cctype>
+#include <vector>
 #if defined(__linux__) || defined(__ANDROID__) || defined(__unix__)
 #include <sys/resource.h>
 #endif

@@ -4,12 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+"""Provide PyTorch-to-TOSA mapping helpers.
 
-#
-# PyTorch to Tosa mapping - simple mapping functions and multi-type extraction
-# of key information. These are used by the initial compile stage which captures
-# the standardised TOSA representation.
-#
+Use these utilities to translate PyTorch dtypes and FX node metadata into
+the TOSA serializer types and shapes used during initial compilation.
+
+"""
 
 from typing import Any, Optional, Sequence
 
@@ -32,6 +32,19 @@ UNSUPPORTED_DTYPES = (
 
 
 def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
+    """Map a ``torch.dtype`` to a ``ts.DType``.
+
+    Args:
+        data_type (torch.dtype): PyTorch dtype to convert.
+        tosa_spec (TosaSpecification): Active spec (reserved for future checks).
+
+    Returns:
+        Any: Matching ``ts.DType`` enum value.
+
+    Raises:
+        ValueError: If the dtype is unsupported or unknown.
+
+    """
     if data_type in UNSUPPORTED_DTYPES:
         raise ValueError(f"Unsupported type: {data_type}")
 
@@ -57,6 +70,20 @@ def map_dtype(data_type: torch.dtype, tosa_spec: TosaSpecification) -> Any:
 # TODO: other types, can be
 # SymInt, FakeTensor, a List[Union[FakeTensor, SymInt]], or None
 def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
+    """Extract dtype, shape, and dimension order from FX metadata.
+
+    Args:
+        meta (dict): FX node ``meta`` containing a ``val`` FakeTensor (or tuple).
+        tosa_spec (TosaSpecification): Active TOSA spec for dtype mapping.
+
+    Returns:
+        tuple: ``(dtype, shape, dim_order)`` where ``dtype`` is ``ts.DType``,
+        ``shape`` is ``Tuple[int, ...]``, and ``dim_order`` is ``Tuple[int, ...]``.
+
+    Raises:
+        ValueError: If ``meta['val']`` is not a ``FakeTensor``.
+
+    """
     assert meta.get("val") is not None
     val = meta["val"]
     if type(val) is tuple:
@@ -77,23 +104,66 @@ def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
     return (dtype, shape, dim_order)
 
 
-# Class to capture arguments and turn into tensor references for TOSA OPs
 class TosaArg:
+    """Capture and normalize TOSA operator arguments.
+
+    Use this to convert FX nodes, sequences, and numeric literals into a
+    consistent structure suitable for TOSA serialization.
+
+    Attributes:
+        name (str): Node name when argument is a ``torch.fx.Node``; empty otherwise.
+        dtype (ts.DType | None): Inferred dtype when available.
+        shape (tuple[int, ...] | None): Inferred shape when available.
+        dim_order (tuple[int, ...] | None): Dimension order, defaulting to ``range(len(shape))``.
+        special (list | None): Captured list when the argument is a sequence.
+        number (float | int | None): Captured numeric value when given.
+        tosa_spec (TosaSpecification): Active specification used for mapping.
+
+    """
+
     def __process_node(self, argument: torch.fx.Node):
+        """Parse a ``torch.fx.Node`` and populate tensor attributes.
+
+        Args:
+            argument (torch.fx.Node): FX node to inspect.
+
+        """
         self.name: str = argument.name
         self.dtype, self.shape, self.dim_order = extract_tensor_meta(
             argument.meta, self.tosa_spec
         )
 
     def __process_list(self, argument):
+        """Capture a sequence argument as ``special``.
+
+        Args:
+            argument (Sequence): Sequence to store.
+
+        """
         self.special: list = list(argument)
 
     def __process_number(self, argument: float | int):
+        """Capture a numeric argument as ``number``.
+
+        Args:
+            argument (float | int): Numeric value.
+
+        """
         self.number: float | int = argument
 
     def __init__(
         self, argument: Any, tosa_spec: Optional[TosaSpecification] = None
     ) -> None:
+        """Initialize the argument wrapper and populate fields.
+
+        Args:
+            argument (Any): One of ``torch.fx.Node``, ``Sequence``, ``int``, ``float``, ``torch.dtype``, or ``None``.
+            tosa_spec (Optional[TosaSpecification]): Active specification; required.
+
+        Raises:
+            RuntimeError: If ``argument`` is of an unsupported type.
+
+        """
         if tosa_spec is None:
             raise ValueError("tosa_spec is None")
         elif not isinstance(tosa_spec, TosaSpecification):
@@ -127,6 +197,12 @@ class TosaArg:
         )
 
     def __repr__(self):
+        """Return a compact representation of populated attributes.
+
+        Returns:
+            str: Readable list of set attributes.
+
+        """
         attrs = []
         if hasattr(self, "name"):
             if self.name is not None:

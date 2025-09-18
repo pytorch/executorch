@@ -149,7 +149,7 @@ run_and_verify() {
 
     # verify result.txt
     RESULT=$(cat result.txt)
-    EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with"
+    EXPECTED_PREFIX="ASSISTANT: The image captures a basketball game in progress, with"
 
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"
