@@ -611,7 +611,7 @@ curl<span class="w"> </span>-O<span class="w"> </span>https://ossci-android.s3.a
 </ol>
 <p>An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires <code class="docutils literal notranslate"><span class="pre">fbjni</span></code> and <code class="docutils literal notranslate"><span class="pre">soloader</span></code>, and currently requires users to explicitly declare the dependency. Therefore, two more <code class="docutils literal notranslate"><span class="pre">dependencies</span></code> in gradle rule is required:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-<span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
+<span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="section" id="example-usage">
@@ -626,7 +626,7 @@ curl<span class="w"> </span>-O<span class="w"> </span>https://ossci-android.s3.a
 <span class="n">dependencies</span> <span class="p">{</span>
     <span class="n">implementation</span><span class="p">(</span><span class="n">files</span><span class="p">(</span><span class="s2">&quot;libs/executorch.aar&quot;</span><span class="p">))</span>
     <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.soloader:soloader:0.10.5&quot;</span><span class="p">)</span>
-    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.5.1&quot;</span><span class="p">)</span>
+    <span class="n">implementation</span><span class="p">(</span><span class="s2">&quot;com.facebook.fbjni:fbjni:0.7.0&quot;</span><span class="p">)</span>
 <span class="p">}</span>
 </pre></div>
 </div>
