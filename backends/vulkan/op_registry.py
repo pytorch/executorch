@@ -239,7 +239,7 @@ def register_binary_op():
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
         exir_ops.edge.et_vk.clamp_with_binary_add.default,
-        exir_ops.edge.et_vk.clamp_with_binary_sub.default
+        exir_ops.edge.et_vk.clamp_with_binary_sub.default,
         exir_ops.edge.et_vk.clamp_with_binary_mul.default,
         exir_ops.edge.et_vk.clamp_with_binary_div.default
     ]

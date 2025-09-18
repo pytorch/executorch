@@ -54,7 +54,7 @@ class FuseClampsPass(ExportPass):
                             preceding_op.op == "call_function"
                             and preceding_op.target in self.FUSEABLE_CLAMPS
                         ):
-                             # Ensure the shapes match
+                            # Ensure the shapes match
                             if "val" not in clamp_2_node.args[0].meta or "val" not in preceding_op.args[0].meta:
                                 continue
                             if len(clamp_2_node.args[0].meta["val"].shape) != len(preceding_op.args[0].meta["val"].shape):
@@ -65,16 +65,16 @@ class FuseClampsPass(ExportPass):
 
                             min_max = [None, None]
 
-                            if min_max1[0] == None and min_max2[0] != None:
+                            if min_max1[0] is None and min_max2[0] is not None:
                                 min_max[0] = min_max2[0]
-                            elif min_max1[0] != None and min_max2[0] == None:
+                            elif min_max1[0] is not None and min_max2[0] is None:
                                 min_max[0] = min_max1[0]
                             else:
                                 min_max[0] = min(min_max1[0], min_max2[0])
                             
-                            if min_max1[1] == None and min_max2[1] != None:
+                            if min_max1[1] is None and min_max2[1] is not None:
                                 min_max[1] = min_max2[1]
-                            elif min_max1[1] != None and min_max2[1] == None:
+                            elif min_max1[1] is not None and min_max2[1] is None:
                                 min_max[1] = min_max1[1]
                             else:
                                 min_max[1] = max(min_max1[1], min_max2[1])

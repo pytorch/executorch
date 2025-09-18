@@ -78,7 +78,7 @@ class FuseClampBinaryOpPass(ExportPass):
                                     continue
                                 
                                 # Get the texture to do the binary op
-                                texture = binary_op_node.args[(arg_idx + 1)%2]
+                                texture = binary_op_node.args[(arg_idx + 1) % 2]
 
                                 # Fuse only if the texture exists before the preceding op
                                 if not self.exists_before(graph_module, texture, preceding_op):
@@ -110,8 +110,6 @@ class FuseClampBinaryOpPass(ExportPass):
                                     new_op = exir_ops.edge.et_vk.clamp_with_binary_mul.default
                                 if binary_op_node.target == exir_ops.edge.aten.div.Tensor:
                                     new_op = exir_ops.edge.et_vk.clamp_with_binary_div.default
-
-                                assert(new_op != None)
 
                                 # Create and insert node of custom op `clamp_with_binary_op`
                                 with graph_module.graph.inserting_before(preceding_op):
