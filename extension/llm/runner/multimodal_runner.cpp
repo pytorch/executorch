@@ -116,6 +116,13 @@ Error MultimodalRunner::generate(
   // Process multimodal inputs in order
   for (size_t i = 0; i < inputs.size(); ++i) {
     const MultimodalInput& input = inputs[i];
+    ET_LOG(
+        Info,
+        "Prefilling input %zu/%zu, type: %s",
+        i,
+        inputs.size(),
+        input.is_text() ? "text" : (input.is_image() ? "image" : "unknown"));
+    stats_->token_encode_end_ms = time_in_ms();
     if (config.echo && i == inputs.size() - 1 && input.is_text()) {
       wrapped_callback(input.get_text());
     }
