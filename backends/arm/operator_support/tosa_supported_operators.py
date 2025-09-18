@@ -134,7 +134,6 @@ def tosa_support_factory(
     ]
 
     if not tosa_spec.support_float():
-        negative_checks.append(NeedsDecompositionCheck(reporter))
         negative_checks.append(CheckProperQuantization(reporter))
     if tosa_spec.is_U55_subset:
         negative_checks.append(EthosU55NotSupported(reporter))
@@ -154,7 +153,8 @@ def tosa_support_factory(
 class TOSAProINTSupportList(OperatorSupportBase):
     """
     TOSA_PRO_INT_SupportList:
-        Ops supported in INT profile via native TOSA ops, decomposition/transformation, pre-compute, or TableOps
+        Ops supported in INT profile via native TOSA ops, decomposition/transformation, pre-compute, or TableOps.
+        Note that ops supported via pre-quantization decompositions are not included here.
     """
 
     def is_node_supported(
@@ -175,57 +175,6 @@ class TOSAProFPSupportList(OperatorSupportBase):
     ) -> bool:
 
         return node.op == "call_function" and node.target in TOSA_PRO_FP_SupportList
-
-
-class NeedsDecompositionCheck(OperatorSupportBase):
-    """
-    Targeted operators need to be decomposed prior to quantization in order to get a pair of q-dq-nodes surrounding
-    the operator, and to get optimal quantization parameters for each operator. This check will reject operators
-    that need to be decomposed.
-    """
-
-    def __init__(self, reporter: WhyNoPartitionReporter):
-        self.reporter = reporter
-
-    def is_node_supported(
-        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
-    ) -> bool:
-
-        if node.op != "call_function":
-            return True
-
-        needs_decomp_dict = {
-            exir_ops.edge.aten.div.Tensor: None,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default: "BatchNorm2D with track_running_stats==True not immediately following a convolution is not supported for quantized TOSA backends.",
-            exir_ops.edge.aten.native_layer_norm.default: None,
-            exir_ops.edge.aten.native_group_norm.default: None,
-            exir_ops.edge.aten._softmax.default: None,
-            exir_ops.edge.aten._log_softmax.default: None,
-            exir_ops.edge.aten.var.correction: None,
-            exir_ops.edge.aten.var.dim: None,
-            exir_ops.edge.aten.add.Scalar: None,
-            exir_ops.edge.aten.sqrt.default: None,
-            exir_ops.edge.aten.sub.Scalar: None,
-            exir_ops.edge.aten.mul.Scalar: None,
-            exir_ops.edge.aten.ne.Tensor: None,
-            exir_ops.edge.aten.ne.Scalar: None,
-            exir_ops.edge.aten.div.Scalar: None,
-            exir_ops.edge.aten.leaky_relu.default: None,
-            exir_ops.edge.aten.round.default: None,
-            exir_ops.edge.aten.addmm.default: None,
-            exir_ops.edge.aten.glu.default: None,
-            exir_ops.edge.aten.logit.default: None,
-        }
-
-        if node.target in needs_decomp_dict:
-            reject_message = needs_decomp_dict[node.target]
-            if reject_message is None:
-                reject_message = "Op needs to be decomposed into other ops before quantization to get quantized properly."
-
-            self.reporter.report_reject(node, reject_message)
-            return False
-        else:
-            return True
 
 
 class CheckProperQuantization(OperatorSupportBase):
