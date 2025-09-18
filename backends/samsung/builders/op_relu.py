@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import Dict
 
 import torch
@@ -30,5 +31,7 @@ class ReluVisitor(NodeVisitor):
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
+        params = {}
+        self._update_params_qdtype(node, params)
 
-        enn_graph.define_op(node.name, "RELU", [input_id], [output_id])
+        enn_graph.define_op(node.name, "RELU", [input_id], [output_id], params)

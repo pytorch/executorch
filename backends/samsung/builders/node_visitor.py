@@ -14,6 +14,7 @@ from executorch.backends.samsung.builders.utils import (
     get_tensor_type,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
+from executorch.backends.samsung.utils.constants import QuantConstants
 from executorch.backends.transforms.utils import is_param_node
 from torch.export import ExportedProgram
 
@@ -61,17 +62,25 @@ class NodeVisitor:
 
         dims = [1] if len(tensor.size()) == 0 else list(tensor.size())
 
+        quant_attrs = node.meta.get("quantize_attrs")
         enn_tensor_id = enn_graph.define_tensor(
             node.name,
             dims,
             data_type,
             tensor_type.name,
             const_data,
+            quant_param=quant_attrs,
         )
         assert enn_tensor_id is not None
         vals_to_ids[node] = enn_tensor_id
 
         return enn_tensor_id
+
+    def _update_params_qdtype(self, node: torch.fx.Node, params: Dict):
+        if qdtype := node.meta.get("quantize_attrs", {}).get(
+            QuantConstants.QUANT_KEY.quant_dtype
+        ):
+            params["quant_dtype"] = EnnGraph._affine_meta_param(qdtype)
 
 
 _node_visitor_dict = {}
@@ -92,6 +101,7 @@ def register_node_visitor(visitor):
         raise TypeError(
             f"target of vistor should be str|Tuple[str]|List[str], not{type(visitor.target)}"
         )
+    return visitor
 
 
 def get_node_visitors(*args) -> Dict[str, NodeVisitor]:

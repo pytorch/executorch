@@ -35,5 +35,5 @@ class SoftmaxVisitor(NodeVisitor):
 
         axis = cast(int, node.args[1])
         params = {"axis": axis}
-
+        self._update_params_qdtype(node, params)
         enn_graph.define_op(node.name, "SOFTMAX", [input_id], [output_id], params)
