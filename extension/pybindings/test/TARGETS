@@ -17,6 +17,9 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//caffe2:torch_fx",
+        "//executorch/devtools/bundled_program:config",
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/exir:lib",
         "//executorch/exir:pass_manager",
         "//executorch/exir:scalar_type",
