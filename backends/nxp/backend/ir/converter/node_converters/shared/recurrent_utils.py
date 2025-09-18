@@ -18,12 +18,12 @@ def ensure_correct_tensor_formatting(
          or RNN operator.
 
         The LSTM/RNN may be using channels last tensors, because of the surrounding operators. LSTM/RNN requires its own
-         format, however I think the input tensors should be marked as 'FORMATLESS', because the main inputs of TFLite
-         and ONNX version of the operators have the same shape.
+         format, however I think the input tensors should be marked as 'FORMATLESS', because the main inputs of the
+         NeutronIR and the ExecuTorch version of the operators have the same shape.
         I believe that the cleanest and most robust way to solve this, is to mark LSTM/RNN as an operator which can
          change the formats of its tensors, and solve any format related issues in this module.
 
-    :param t_op: TFLite operator with inputs and outputs corresponding to the ONNX LSTM/RNN operator.
+    :param t_op: NeutronIR operator with inputs and outputs corresponding to the ExecuTorch LSTM/RNN operator.
     :param builder: ModelBuilder object.
     :param ops: OpsList object, with operators to add to the model. May already contain some operators.
     """

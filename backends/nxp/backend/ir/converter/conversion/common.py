@@ -76,7 +76,7 @@ def assign_2d_strides(options: StridedOptions, strides: Optional[List[int]]):
          If 'strides' is None, assign 1s.
 
     :param options: TFLite AveragePool2D, Conv2D, MaxPool2D or TransposeConv options object.
-    :param strides: An optional list of ONNX strides attribute.
+    :param strides: An optional list of ExecuTorch strides attribute.
     """
 
     if strides is None:
@@ -90,8 +90,8 @@ def assign_2d_strides(options: StridedOptions, strides: Optional[List[int]]):
 
     else:
         logger.e(
-            logger.Code.INVALID_ONNX_OPERATOR_ATTRIBUTE,
-            f"ONNX operator has invalid 'strides' attribute! ('{strides}')",
+            logger.Code.INVALID_OPERATOR_ATTRIBUTE,
+            f"ExecuTorch operator has invalid 'strides' attribute! ('{strides}')",
         )
 
 
