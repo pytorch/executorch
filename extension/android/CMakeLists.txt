@@ -30,7 +30,7 @@ endif()
 # libc++ dependencies are consistent. WARNING # Users need to use the SAME fbjni
 # version here and in app gradle dependency for runtime compatibility!
 if(NOT FBJNI_VERSION)
-  set(FBJNI_VERSION 0.5.1)
+  set(FBJNI_VERSION 0.7.0)
 endif()
 
 set(FBJNI_AAR_URL
