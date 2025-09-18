@@ -4,7 +4,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "nxp_backend",
         srcs = ["NeutronBackend.cpp"],
-        headers = ["NeutronDriver.h", "NeutronErrors.h"],
+        exported_headers = ["NeutronDriver.h", "NeutronErrors.h"],
         compatible_with = ["ovr_config//cpu:arm32-embedded", "@fbsource//arvr/firmware/projects/smartglasses/config:embedded-mcu-rtos"],
         # Neutron runtime needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
