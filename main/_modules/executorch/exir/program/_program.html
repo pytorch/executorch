@@ -2193,7 +2193,7 @@
         <span class="k">return</span> <span class="n">epm</span>
 
     <span class="nd">@et_logger</span><span class="p">(</span><span class="s2">&quot;to_executorch&quot;</span><span class="p">)</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">to_executorch</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_executorch</span><span class="p">(</span>  <span class="c1"># noqa (FLAKE8) C901</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgramManager&quot;</span><span class="p">:</span>
@@ -2257,11 +2257,9 @@
                 <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span>
             <span class="c1"># TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work</span>
             <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run&quot;</span><span class="p">):</span>
-                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>  <span class="c1"># pyre-ignore[16]</span>
-                    <span class="n">new_gm</span><span class="p">,</span> <span class="n">new_signature</span>
-                <span class="p">)</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">new_gm</span><span class="p">,</span> <span class="n">new_signature</span><span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[29]</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
 
             <span class="c1"># WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.</span>
             <span class="c1"># THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.</span>
@@ -2270,6 +2268,15 @@
 
             <span class="n">_copy_module</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
             <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
+        <span class="c1"># After running memory planning on all entry points we can run the cross entry point memory planning</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">memory_planning_pass</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run_multimethod&quot;</span><span class="p">):</span>
+                    <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run_multimethod</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run_multimethod&quot;</span><span class="p">):</span>
+                <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run_multimethod</span><span class="p">()</span>
 
         <span class="n">et_pm</span> <span class="o">=</span> <span class="n">ExecutorchProgramManager</span><span class="p">(</span>
             <span class="n">execution_programs</span><span class="p">,</span>
