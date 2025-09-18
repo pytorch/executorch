@@ -153,10 +153,6 @@ class QuantInfo:
 class QuantInfoManager:
     QUANT_INFO_MAP = {
         Precision.A8W8: (QuantInfo(torch.int8, "INT8"), QuantInfo(torch.int8, "INT8")),
-        Precision.A8W16: (
-            QuantInfo(torch.int8, "INT8"),
-            QuantInfo(torch.int16, "INT16"),
-        ),
     }
     FP_INFO = (
         QuantInfo(torch.float32, "FLOAT32"),

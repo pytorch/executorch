@@ -26,7 +26,6 @@ from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_manager import PassType
 from executorch.exir.program._program import (
-    _get_updated_graph_signature,
     to_edge_transform_and_lower,
 )
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -46,6 +45,7 @@ def get_edge_compile_config():
             exir_ops.edge.aten._safe_softmax.default,
             exir_ops.edge.aten.layer_norm.default,
             exir_ops.edge.aten.matmul.default,
+            exir_ops.edge.aten.hardsigmoid.default,
         ],
     )
 
@@ -58,22 +58,6 @@ def get_enn_pass_list(edge_program: ExportedProgram) -> List[PassType]:
         RemoveCloneOpsTransform(),
         FuseConvActPass(),
     ]
-
-
-def ahead_transform(
-    edge_program: ExportedProgram, custom_passes: List[PassType] = None
-) -> ExportedProgram:
-    if custom_passes and len(custom_passes) > 0:
-        raise NotImplementedError("Custom passes is not supported !")
-    else:
-        graph_module = edge_program.graph_module
-        [_pass(graph_module) for _pass in get_enn_pass_list(edge_program)]
-    edge_program._graph_signature = _get_updated_graph_signature(
-        edge_program.graph_signature,
-        edge_program.graph_module,
-    )
-    edge_program._validate()
-    return edge_program
 
 
 def quantize_module(

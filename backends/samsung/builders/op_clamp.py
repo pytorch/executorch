@@ -39,10 +39,8 @@ class ClampVisitor(NodeVisitor):
         if len(node.args) > 2 and node.args[2] is not None:
             output_max = cast(float, node.args[2])
 
-        params = {}
+        params = {"minimum": output_min, "maximum": output_max}
         self._update_params_qdtype(node, params)
-        params["minimum"] = output_min
-        params["maximum"] = output_max
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 

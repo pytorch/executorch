@@ -18,7 +18,7 @@ from executorch.backends.samsung.utils.export_utils import (
     quantize_module,
     to_edge_transform_and_lower_to_enn,
 )
-from executorch.examples.models.mobilenet_v2 import MV2Model
+from executorch.examples.models.resnet import ResNet50Model
 from executorch.examples.samsung.utils import save_tensors
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. ",
-        default="./mobilenetV2",
+        default="./resnet50",
         type=str,
     )
 
@@ -127,9 +127,9 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     # build pte
-    pte_filename = "mobilenetV2_enn"
-    instance = MV2Model(False)
-    model = MV2Model().get_eager_model().eval()
+    pte_filename = "resnet50"
+    instance = ResNet50Model()
+    model = ResNet50Model().get_eager_model().eval()
     assert args.calibration_number
     if args.dataset:
         inputs, targets, input_list = get_dataset(

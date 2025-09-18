@@ -6,8 +6,10 @@
 
 import argparse
 import os
+from typing import Optional
 
 import torch
+import torchvision.transforms.v2 as vision_transform_v2
 
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
 from executorch.backends.samsung.quantizer import Precision
@@ -18,48 +20,51 @@ from executorch.backends.samsung.utils.export_utils import (
     quantize_module,
     to_edge_transform_and_lower_to_enn,
 )
-from executorch.examples.models.mobilenet_v2 import MV2Model
+from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet50Model
 from executorch.examples.samsung.utils import save_tensors
 from executorch.exir import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import save_pte_program
+from torchvision.datasets import VOCSegmentation
 
 
-def get_dataset(dataset_path, data_size):
-    from torchvision import datasets, transforms
-
-    image_shape = (256, 256)
-    crop_size = 224
-    shuffle = True
-
-    def get_data_loader():
-        preprocess = transforms.Compose(
+def get_dataset(
+    data_dir: str,
+    calinum=100,
+    input_transform_compose: Optional[vision_transform_v2.Compose] = None,
+    target_transform_compose: Optional[vision_transform_v2.Compose] = None,
+):
+    if not input_transform_compose:
+        input_transform_compose = vision_transform_v2.Compose(
             [
-                transforms.Resize(image_shape),
-                transforms.CenterCrop(crop_size),
-                transforms.ToTensor(),
-                transforms.Normalize(
+                vision_transform_v2.Resize([224, 224]),
+                vision_transform_v2.ToImage(),
+                vision_transform_v2.ToDtype(torch.float32, scale=True),
+                vision_transform_v2.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
                 ),
+                vision_transform_v2.Lambda(lambda x: x.unsqueeze(0)),  # Add batch dim
             ]
         )
-        imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
-        return torch.utils.data.DataLoader(
-            imagenet_data,
-            shuffle=shuffle,
+    if not target_transform_compose:
+        target_transform_compose = vision_transform_v2.Compose(
+            [
+                vision_transform_v2.Resize([224, 224]),
+                vision_transform_v2.ToImage(),
+                vision_transform_v2.ToDtype(torch.long, scale=False),
+                vision_transform_v2.Lambda(lambda x: x.unsqueeze(0)),  # Add batch dim
+            ]
         )
-
-    # prepare input data
-    inputs, targets, input_list = [], [], ""
-    data_loader = get_data_loader()
-    for index, data in enumerate(data_loader):
-        if index >= data_size:
-            break
-        feature, target = data
-        inputs.append((feature,))
-        targets.append(target)
-        input_list += f"input_{index}_0.bin\n"
-
-    return inputs, targets, input_list
+    voc_dataset = VOCSegmentation(
+        data_dir,
+        "2012",
+        "val",
+        transform=input_transform_compose,
+        target_transform=target_transform_compose,
+    )
+    example_input = [
+        (voc_dataset[i][0],) for i in range(min(calinum, len(voc_dataset)))
+    ]
+    return example_input
 
 
 if __name__ == "__main__":
@@ -76,11 +81,7 @@ if __name__ == "__main__":
         "-d",
         "--dataset",
         default=None,
-        help=(
-            "path to the validation folder of ImageNet dataset. "
-            "e.g. --dataset imagenet-mini/val "
-            "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
-        ),
+        help=("path to the validation folder of VOC dataset. "),
         type=str,
     )
 
@@ -117,7 +118,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. ",
-        default="./mobilenetV2",
+        default="./deeplab_v3",
         type=str,
     )
 
@@ -127,19 +128,17 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     # build pte
-    pte_filename = "mobilenetV2_enn"
-    instance = MV2Model(False)
-    model = MV2Model().get_eager_model().eval()
+    pte_filename = "deeplab_v3"
+    instance = DeepLabV3ResNet50Model()
+    model = DeepLabV3ResNet50Model().get_eager_model().eval()
     assert args.calibration_number
     if args.dataset:
-        inputs, targets, input_list = get_dataset(
-            dataset_path=f"{args.dataset}",
-            data_size=args.calibration_number,
+        inputs = get_dataset(
+            data_dir=f"{args.dataset}",
+            calinum=args.calibration_number,
         )
     else:
         inputs = [instance.get_example_inputs() for _ in range(args.calibration_number)]
-        target = None
-        input_list = None
 
     test_in = inputs[0]
     float_out = model(*test_in)

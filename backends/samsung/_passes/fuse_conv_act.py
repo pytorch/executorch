@@ -17,7 +17,6 @@ def map_hardtan_relux(tanhnode: torch.fx.node.Node) -> Optional[str]:
     assert (
         tanhnode.target == exir_ops.edge.aten.hardtanh.default
     ), "Must be a hardtanh node"
-    # Not support ReLU1 now
     if not tanhnode.args[1] == 0.0:
         return None
     if tanhnode.args[2] == 6.0:
