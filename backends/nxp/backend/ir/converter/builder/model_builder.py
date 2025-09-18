@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -795,29 +795,8 @@ class ModelBuilder:
 
     def append_new_tensor(self, t_tensor: tflite_model.Tensor, overwrite: bool = False):
         """Append the TFLite tensor 't_tensor' to the 'SubGraph.tensors' and register it."""
-
-        if t_tensor.name in self._tensor_name_map.keys():
-            """Tensor has already been added. Sometimes however, ONNX models
-            will have tensors in their 'inputs' or 'outputs', which don't
-            belong there and are in fact static. I this case we need to
-            overwrite the existing tensors."""
-
-            if overwrite:
-                self._remove_tensor_with_name(t_tensor.name)
-
-                # If the tenor previously appeared in ONNX 'inputs' or 'outputs',
-                # the old version MUST be removed from there.
-                self._remove_input_with_name(t_tensor.name)
-                self._remove_output_with_name(t_tensor.name)
-
-                self.get_tensors().append(t_tensor)
-                self._tensor_name_map[t_tensor.name] = t_tensor
-            else:
-                logger.w(f"Tensor '{t_tensor.name}' is already in the tensors!")
-
-        else:
-            self._tensor_name_map[t_tensor.name] = t_tensor
-            self.get_tensors().append(t_tensor)
+        self._tensor_name_map[t_tensor.name] = t_tensor
+        self.get_tensors().append(t_tensor)
 
     def append_new_buffer(self, buffer: tflite_model.Buffer):
         """Append the 'buffer' to the 'model.buffers'."""

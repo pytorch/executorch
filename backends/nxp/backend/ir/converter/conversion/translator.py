@@ -1,6 +1,5 @@
-#
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -12,7 +11,7 @@ Module contains functions for context-free conversion of various
 things from ONNX to TFLite.
 """
 
-from typing import Any, Collection, List, Optional, Sequence, Tuple
+from typing import Any, Collection, List, Optional, Sequence
 
 import executorch.backends.nxp.backend.ir.lib.tflite.Padding as tflPadding
 import executorch.backends.nxp.backend.ir.logger as logger
@@ -21,10 +20,6 @@ import executorch.backends.nxp.backend.ir.tflite_generator.tflite_model as tflit
 import numpy as np
 import torch
 from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
-from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
-from executorch.backends.nxp.backend.ir.tflite_generator.meta.types import (
-    TensorFlowDataType,
-)
 
 
 def permute_static_tensor(tensor: tflite_model.Tensor, perm: list[int]):
@@ -88,21 +83,6 @@ def get_tflite_tensor_shape_with_explicit_padding(
                 )
 
     return padded_shape
-
-
-def convert_tensor_format_to_tflite(tensor_format: TensorFormat) -> TensorFormat:
-    """Convert the format of a tensor from ONNX to TFLite.
-    :return: The tensor_format converted to TFLite.
-    """
-    if tensor_format is TensorFormat.CHANNELS_FIRST:
-        return TensorFormat.CHANNELS_LAST
-
-    elif tensor_format not in (TensorFormat.FORMATLESS, TensorFormat.NONE):
-        logger.d(
-            f"translator.convert_tensor_format(): Got unexpected format '{tensor_format}'."
-        )
-
-    return tensor_format
 
 
 def dims_to_channels_first(channels_last_dimensions: List[int]) -> List[int]:
@@ -319,30 +299,6 @@ def _is_same_padding(
     return True
 
 
-def permutations_are_inverse(
-    permutation1: Sequence[int], permutation2: Sequence[int]
-) -> bool:
-    """Determine if given Transpose permutations are inverse of each other.
-    i.e. when applied back to back, there will be no effect.
-
-    Example:
-      0 3 1 2
-      0 2 3 1
-    """
-
-    if len(permutation1) != len(permutation2):
-        logger.e(
-            logger.Code.INTERNAL_ERROR,
-            "translator.permutations_are_inverse(): permutations have different size!",
-        )
-
-    for i, perm2 in enumerate(permutation2):
-        if i != permutation1[perm2]:
-            return False
-
-    return True
-
-
 def combine_permutations(
     permutation1: Sequence[int], permutation2: Sequence[int]
 ) -> List[int]:
@@ -433,97 +389,10 @@ def _get_explicit_tflite_padding_for_same_lower(
     ]  # In case of odd padding, the excess is added at the start
     end_padding = padding
 
-    onnx_explicit_padding = start_padding + end_padding
+    executorch_explicit_padding = start_padding + end_padding
 
-    # Return explicit ONNX padding converted to TFLite padding
-    return onnx_pads_to_tflite_explicit_padding(onnx_explicit_padding)
-
-
-def convert_padding(
-    o_auto_pad: str,
-    o_pads: List[int],
-    tflite_input_shape: List[int],
-    tflite_output_shape: List[int],
-    o_kernel_shape: List[int],
-    o_strides: Optional[List[int]],
-    o_dilations: Optional[List[int]] = None,
-) -> Tuple[tflPadding.Padding, Optional[List[List[int]]]]:
-    """Convert ONNX operator attributes 'pads' and 'auto_pad' to TFLite.
-
-    :param o_auto_pad: ONNX operator attribute 'auto_pad'
-    :param o_pads: ONNX operator attribute 'pads'
-    :param tflite_input_shape: The shape of the main input tensor in the TFLite format.
-    :param tflite_output_shape: The shape of the main output tensor in the TFLite format.
-    :param o_kernel_shape: ONNX operator attribute 'kernel_shape'
-    :param o_strides: ONNX operator attribute 'strides'
-    :param o_dilations: ONNX operator attribute 'dilations'
-
-    :return: A tuple.
-                The first element is the converted TFLite padding.
-                The second is None, if conversion is finished. Or it is a list of ints representing the explicit
-                padding in TFLite format (compatible with the 'Pad' operator), which needs to be provided by a
-                'Pad' operator. Caller must add this operator using model_builder!
-    """
-
-    if o_auto_pad == "SAME_UPPER":
-        return tflPadding.Padding.SAME, None
-
-    elif o_auto_pad == "SAME_LOWER":
-        if _same_upper_equals_same_lower(
-            tflite_input_shape,
-            tflite_output_shape,
-            o_kernel_shape,
-            o_strides,
-            o_dilations,
-        ):
-            return tflPadding.Padding.SAME, None
-
-        else:
-            logger.d(
-                "'SAME_LOWER' auto_pad cannot be exactly represented in TFLite as padding 'SAME' or 'VALID'. "
-                "Inserting an extra 'Pad' operator."
-            )
-            tflite_explicit_padding = _get_explicit_tflite_padding_for_same_lower(
-                tflite_input_shape,
-                tflite_output_shape,
-                o_kernel_shape,
-                o_strides,
-                o_dilations,
-            )
-            return tflPadding.Padding.VALID, tflite_explicit_padding
-
-    elif o_auto_pad == "VALID":
-        return tflPadding.Padding.VALID, None
-
-    # auto_pad is NOTSET -> use explicit padding
-    elif o_pads is None or all(val == 0 for val in o_pads):
-        # No padding in any direction
-        return tflPadding.Padding.VALID, None
-
-    elif _is_same_padding(
-        o_pads,
-        tflite_input_shape,
-        tflite_output_shape,
-        o_kernel_shape,
-        o_strides,
-        o_dilations,
-    ):
-        # Explicit padding can be represented with TFLite 'SAME' padding.
-        return tflPadding.Padding.SAME, None
-
-    else:
-        # 'pads' cannot be converted directly. Return 'VALID' and the required explicit padding and caller must
-        # implement conversion by adding a 'Pad' operator.
-
-        logger.d(
-            "Explicit ONNX 'pads' cannot be represented directly as 'SAME' or 'VALID'. "
-            "Inserting an extra 'Pad' operator."
-        )
-
-        # ONNX 'pads' uses different format than TFLite 'Pad' operator. Convert the explicit padding.
-        tflite_explicit_padding = onnx_pads_to_tflite_explicit_padding(o_pads)
-
-        return tflPadding.Padding.VALID, tflite_explicit_padding
+    # Return explicit ExecuTorch padding converted to NeutronIR padding
+    return executorch_pads_to_tflite_explicit_padding(executorch_explicit_padding)
 
 
 def convert_data_to_channels_first(array: np.ndarray) -> np.ndarray:
@@ -558,17 +427,6 @@ def convert_data_to_channels_last(array: np.ndarray) -> np.ndarray:
     return np.moveaxis(array, 1, -1)  # Move the second axis (C), to the end
 
 
-def channels_first_shape_to_channels_last(
-    channels_first_shape: tflite_model.Shape,
-) -> tflite_model.Shape:
-    """Create a channels last version of a channels first 'tflite_model.Shape' object."""
-
-    dims = channels_first_shape.vector.copy()
-    dims = dims_to_channels_last(dims)
-
-    return tflite_model.Shape(dims)
-
-
 def channels_last_shape_to_channels_first(
     nhwc_shape: tflite_model.Shape,
 ) -> tflite_model.Shape:
@@ -576,16 +434,6 @@ def channels_last_shape_to_channels_first(
 
     dims = nhwc_shape.vector.copy()
     dims = dims_to_channels_first(dims)
-
-    return tflite_model.Shape(dims)
-
-
-def convert_onnx_dimensions_to_tflite_shape(o_dims: List[int]) -> tflite_model.Shape:
-    """Convert list of ints representing the shape of an ONNX channels first Tensor to a TFLite 'Shape' object."""
-
-    dims = list(o_dims)  # Copy just in case
-
-    dims = dims_to_channels_last(dims)
 
     return tflite_model.Shape(dims)
 
@@ -632,33 +480,6 @@ def create_channels_first_to_channels_last_permutation(
         return np.asarray(perm, np.int32)
 
 
-def create_axis_to_last_perm(axis, num_dims):
-    """Create a numpy array representing the transpose permutations needed, to
-    make the 'axis' dimension, the last dimension.
-    """
-
-    dims = list(range(num_dims))
-
-    if axis == num_dims - 1:
-        return dims
-    elif axis >= num_dims or axis < 0:
-        logger.e(
-            logger.Code.INTERNAL_ERROR,
-            f"translator.create_axis_to_last_perm({axis},{num_dims}). Inputs don't make sense!",
-        )
-
-    # Remember axis dimension
-    axis_dim = dims[axis]
-
-    # Move dimensions after 'axis' to the left
-    dims[axis:-1] = dims[axis + 1 : -1]
-
-    # Add axis dimension to the end
-    dims.append(axis_dim)
-
-    return np.asarray(dims, np.int32)
-
-
 def apply_permutation_to(target: List[Any], permutation: Collection[int]) -> List:
     """Permute a list according to a permutation. Uses the same permutation format as the TFLite Transpose operator.
 
@@ -692,36 +513,6 @@ def create_inverse_permutation(permutation: List[int]) -> List[int]:
         )
 
     return [permutation.index(perm) for perm in range(len(permutation))]
-
-
-def get_max_value_for_type(dtype: np.dtype) -> any:
-    """Return the maximum possible value for given numpy type."""
-    if dtype.kind in ("i", "u"):
-        return np.iinfo(dtype).max
-
-    elif dtype.kind == "f":
-        return np.finfo(dtype).max
-
-    else:
-        logger.e(
-            logger.Code.INTERNAL_ERROR,
-            f"translator.get_max_value_for_type(): unexpected type {dtype.name}.",
-        )
-
-
-def get_min_value_for_type(dtype: np.dtype) -> any:
-    """Return the minimum possible value for given numpy type."""
-    if dtype.kind in ("i", "u"):
-        return np.iinfo(dtype).min
-
-    elif dtype.kind == "f":
-        return np.finfo(dtype).min
-
-    else:
-        logger.e(
-            logger.Code.INTERNAL_ERROR,
-            f"translator.get_min_value_for_type(): unexpected type {dtype.name}.",
-        )
 
 
 def convert_data_type(torch_type: torch.TensorType) -> TensorType:
@@ -890,72 +681,5 @@ def tf_lite_type_to_numpy(tfl_type: TensorType) -> np.ScalarType:  # noqa C901
     else:
         logger.e(
             logger.Code.CONVERSION_IMPOSSIBLE,
-            f"Cannot convert TFLite type '{tfl_type}' to numpy dtype.",
+            f"Cannot convert NeutronIR type '{tfl_type}' to numpy dtype.",
         )
-
-
-def tflite_type_to_tensor_flow_data_type(tfl_type: TensorType) -> TensorFlowDataType:
-    """Convert TFLite TensorType to the internal type of TensorFlow."""
-    match tfl_type:
-        case TensorType.FLOAT16:
-            # There seems to be no counterpart in the TF DataType.
-            logger.e(
-                logger.Code.INTERNAL_ERROR,
-                "tflite_type_to_tensor_flow_data_type(): float16.",
-            )
-        case TensorType.FLOAT32:
-            return TensorFlowDataType.DT_FLOAT.value
-        case TensorType.FLOAT64:
-            return TensorFlowDataType.DT_DOUBLE.value
-
-        case TensorType.INT4:
-            return TensorFlowDataType.DT_INT4.value
-        case TensorType.INT8:
-            return TensorFlowDataType.DT_INT8.value
-        case TensorType.INT16:
-            return TensorFlowDataType.DT_INT16.value
-        case TensorType.INT32:
-            return TensorFlowDataType.DT_INT32.value
-        case TensorType.INT64:
-            return TensorFlowDataType.DT_INT64.value
-
-        case TensorType.UINT8:
-            return TensorFlowDataType.DT_UINT8.value
-        case TensorType.UINT16:
-            return TensorFlowDataType.DT_UINT16.value
-        case TensorType.UINT32:
-            return TensorFlowDataType.DT_UINT32.value
-        case TensorType.UINT64:
-            return TensorFlowDataType.DT_UINT64.value
-
-        case TensorType.COMPLEX64:
-            return TensorFlowDataType.DT_COMPLEX64.value
-        case TensorType.COMPLEX128:
-            return TensorFlowDataType.DT_COMPLEX128.value
-
-        case TensorType.STRING:
-            return TensorFlowDataType.DT_STRING.value
-
-        case TensorType.BOOL:
-            return TensorFlowDataType.DT_BOOL.value
-
-        case TensorType.RESOURCE:
-            return TensorFlowDataType.DT_RESOURCE.value
-        case TensorType.VARIANT:
-            return TensorFlowDataType.DT_VARIANT.value
-
-        case _:
-            # All TFLite types are covered. Must be an invalid type.
-            logger.e(
-                logger.Code.INTERNAL_ERROR,
-                f"tflite_type_to_tensor_flow_data_type(): invalid TFLite type `{tfl_type}`.",
-            )
-
-
-def infer_kernel_shape(weight_tensor: tflite_model.Tensor) -> list[int]:
-    """Returns the kernel shape inferred from the weight tensor.
-
-    Weight tensors shape expected in TFlite Format, where the 0th index is output channels count, last is input channels
-    count.
-    """
-    return weight_tensor.shape.vector[1:-1]

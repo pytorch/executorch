@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -85,7 +85,6 @@ class Code(Enum):
     PREPROCESSING_ERROR = 4
 
     UNSUPPORTED_OPERATOR = 21
-    UNSUPPORTED_ONNX_TYPE = 22
     UNSUPPORTED_OPERATOR_ATTRIBUTES = 23
     NOT_IMPLEMENTED = 24
 
@@ -96,7 +95,6 @@ class Code(Enum):
     INVALID_ONNX_MODEL = 35
 
     CONVERSION_IMPOSSIBLE = 41
-    SHAPE_INFERENCE_ERROR = 42
     IO_PRESERVATION_ERROR = 43
 
     INVALID_INPUT = 51
@@ -142,8 +140,6 @@ class BasicLoggingContext(LoggingContext):
     """
 
     GLOBAL = LoggingContext("global")
-    SHAPE_INFERENCE = LoggingContext("shape_inference")
-    ONNX_PARSER = LoggingContext("onnx_parser")
     OPERATOR_CONVERSION = LoggingContext("operator_conversion")
     TFLITE_GENERATOR = LoggingContext("tflite_generator")
     QDQ_QUANTIZER = LoggingContext("qdq_quantizer")
