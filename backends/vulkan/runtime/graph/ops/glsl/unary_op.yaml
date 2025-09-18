@@ -3,6 +3,7 @@ unary_op:
     OPERATOR: clamp(X, A, B)
     DTYPE: float
     STORAGE: texture3d
+    BINARY_OP: A
   generate_variant_forall:
     DTYPE:
       - VALUE: half
@@ -15,6 +16,18 @@ unary_op:
       OPERATOR: abs(X)
     - NAME: clamp
       OPERATOR: clamp(X, A, B)
+    - NAME: clamp_add
+      OPERATOR: clamp(X, A, B)
+      BINARY_OP: A + B
+    - NAME: clamp_sub
+      OPERATOR: clamp(X, A, B)
+      BINARY_OP: A - B
+    - NAME: clamp_mul
+      OPERATOR: clamp(X, A, B)
+      BINARY_OP: A * B
+    - NAME: clamp_div
+      OPERATOR: clamp(X, A, B)
+      BINARY_OP: A / B
     - NAME: clamp_int32
       OPERATOR: clamp(X, A, B)
       DTYPE: int32

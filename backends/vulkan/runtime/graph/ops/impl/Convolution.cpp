@@ -131,7 +131,8 @@ vkapi::ShaderInfo get_conv2d_shader(
     const ValueRef weight,
     const bool clamp_out = false,
     const bool stride_equals_dilation = false,
-    const bool stride_1_padding_0 = false) {
+    const bool stride_1_padding_0 = false,
+    const std::string& op_name = "") {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
@@ -155,6 +156,19 @@ vkapi::ShaderInfo get_conv2d_shader(
         kernel_name = "conv2d";
       } else {
         kernel_name = stride_1_padding_0 ? "conv2d_pw_s1p0" : "conv2d_pw";
+      }
+
+      // For now, binary op fusing is only supported for Conv2D PW s1p0
+      if (stride_1_padding_0) {
+        if (op_name == "conv_add") {
+          kernel_name += "_add";
+        } else if (op_name == "conv_sub") {
+          kernel_name += "_sub";
+        } else if (op_name == "conv_mul") {
+          kernel_name += "_mul";
+        } else if (op_name == "conv_div") {
+          kernel_name += "_div";
+        }
       }
       break;
     case Conv2dMethod::SlidingWindow:
@@ -445,8 +459,10 @@ void add_conv2d_node(
     const ValueRef groups,
     const ValueRef out_min,
     const ValueRef out_max,
+    const ValueRef binary_op_other,
     const ValueRef out,
-    const bool clamp_out) {
+    const bool clamp_out,
+    const std::string& op_name) {
   const bool transposed_val = graph.get_bool(transposed);
 
   float out_min_val = 0.0f;
@@ -509,7 +525,8 @@ void add_conv2d_node(
       weight_data,
       clamp_out,
       stride_equals_dilation,
-      stride_1_padding_0);
+      stride_1_padding_0,
+      op_name);
 
   utils::uvec3 wg_size = create_conv2d_global_wg_size(
       graph, method, out, weight_data, stride_equals_dilation);
@@ -591,13 +608,27 @@ void add_conv2d_node(
     };
   }
 
+  ValueRef arg_binary_op_other = binary_op_other;
+  if (binary_op_other != kDummyValueRef) {
+    arg_binary_op_other =
+        prepack_standard_like(graph, binary_op_other, out, true);
+
+    check_conv_args(graph, arg_binary_op_other, out);
+  }
+
+  std::vector<ArgGroup> args = {
+      {out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}};
+  std::vector<ArgGroup> args_with_binary_op = {
+      {out, vkapi::kWrite},
+      {{in, arg_weight, arg_bias, arg_binary_op_other}, vkapi::kRead}};
+
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       shader,
       conv2d_global_wg_size,
       conv2d_local_wg_size,
       // Inputs and Outputs
-      {{out, vkapi::kWrite}, {{in, arg_weight, arg_bias}, vkapi::kRead}},
+      binary_op_other == kDummyValueRef ? args : args_with_binary_op,
       // Shader params buffers
       param_buffers,
       // Push Constants
@@ -710,7 +741,10 @@ void add_conv1d_node(
       resize_conv1d_node));
 }
 
-void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+void conv(
+    ComputeGraph& graph,
+    const std::vector<ValueRef>& args,
+    const std::string& op_name) {
   int64_t in_ndim = graph.dim_of(args[0]);
   if (in_ndim == 4) {
     if (args.size() == 10) {
@@ -728,8 +762,29 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           args[8],
           /*out_min = */ kDummyValueRef,
           /*out_max = */ kDummyValueRef,
+          /*binary_op_other = */ kDummyValueRef,
           args[9],
-          false);
+          false,
+          op_name);
+    } else if (args.size() == 11) {
+      // conv2d with binary op
+      return add_conv2d_node(
+          graph,
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[6],
+          args[7],
+          args[8],
+          /*out_min = */ kDummyValueRef,
+          /*out_max = */ kDummyValueRef,
+          args[9],
+          args[10],
+          false,
+          op_name);
     } else {
       // conv2d with clamp
       return add_conv2d_node(
@@ -745,8 +800,10 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
           args[8],
           args[9],
           args[10],
+          /*binary_op_other = */ kDummyValueRef,
           args[11],
-          true);
+          true,
+          op_name);
     }
   } else {
     if (args.size() == 10) {
@@ -783,10 +840,25 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   }
 }
 
+#define DEFINE_CONV_BINARY_OP_FN(op_name)                                \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return conv(graph, args, #op_name);                                  \
+  }
+
+DEFINE_CONV_BINARY_OP_FN(conv_no_op);
+DEFINE_CONV_BINARY_OP_FN(conv_add);
+DEFINE_CONV_BINARY_OP_FN(conv_sub);
+DEFINE_CONV_BINARY_OP_FN(conv_mul);
+DEFINE_CONV_BINARY_OP_FN(conv_div);
+
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.convolution.default, conv);
-  VK_REGISTER_OP(conv_with_clamp.default, conv);
-  VK_REGISTER_OP(et_vk.conv_with_clamp.default, conv);
+  VK_REGISTER_OP(aten.convolution.default, conv_no_op);
+  VK_REGISTER_OP(conv_with_clamp.default, conv_no_op);
+  VK_REGISTER_OP(et_vk.conv_with_clamp.default, conv_no_op);
+  VK_REGISTER_OP(et_vk.conv_with_binary_add.default, conv_add);
+  VK_REGISTER_OP(et_vk.conv_with_binary_sub.default, conv_sub);
+  VK_REGISTER_OP(et_vk.conv_with_binary_mul.default, conv_mul);
+  VK_REGISTER_OP(et_vk.conv_with_binary_div.default, conv_div);
 }
 
 } // namespace vkcompute

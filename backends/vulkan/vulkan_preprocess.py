@@ -13,7 +13,10 @@ from typing import Any, Dict, final, List
 import executorch.backends.vulkan.utils as utils
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
-from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
+from executorch.backends.transforms.fuse_conv_with_clamp import FuseConvClampPass
+from executorch.backends.transforms.fuse_conv_with_binary_op import FuseConvBinaryOpPass
+from executorch.backends.transforms.fuse_clamp_with_binary_op import FuseClampBinaryOpPass
+from executorch.backends.transforms.fuse_clamps import FuseClampsPass
 from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 from executorch.backends.transforms.view_copy_to_squeeze_unsqueeze import (
     ViewCopyToSqueezeUnsqueezePass,
@@ -167,7 +170,10 @@ class VulkanBackend(BackendDetails):
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
                 FuseBatchNormPass(program),
-                FuseClampPass(),
+                FuseClampsPass(),
+                FuseConvClampPass(),
+                FuseConvBinaryOpPass(),
+                FuseClampBinaryOpPass(),
             ],
         )
 

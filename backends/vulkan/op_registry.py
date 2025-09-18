@@ -238,6 +238,10 @@ def register_binary_op():
         exir_ops.edge.aten.tanh.default,
         exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.et_vk.clamp_with_binary_add.default,
+        exir_ops.edge.et_vk.clamp_with_binary_sub.default
+        exir_ops.edge.et_vk.clamp_with_binary_mul.default,
+        exir_ops.edge.et_vk.clamp_with_binary_div.default
     ]
 )
 def register_unary_op():
@@ -471,6 +475,10 @@ def register_2d_pool_op():
     [
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.et_vk.conv_with_clamp.default,
+        exir_ops.edge.et_vk.conv_with_binary_add.default,
+        exir_ops.edge.et_vk.conv_with_binary_sub.default,
+        exir_ops.edge.et_vk.conv_with_binary_mul.default,
+        exir_ops.edge.et_vk.conv_with_binary_div.default,
     ]
 )
 def register_convolution_op():
@@ -487,6 +495,7 @@ def register_convolution_op():
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # output_min (non tensor)
             utils.NO_STORAGE,  # output_max (non tensor)
+            utils.NO_STORAGE,  # other (prepacked)
         ],
         supports_resize=True,
         supports_prepacking=True,
