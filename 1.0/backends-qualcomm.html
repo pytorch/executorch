@@ -1,0 +1,1466 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Qualcomm AI Engine Backend &mdash; ExecuTorch 1.0 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="MediaTek Backend" href="backends-mediatek.html" />
+    <link rel="prev" title="Arm® VGF Backend" href="backends-arm-vgf.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
+                  <span class="dropdown-title">Contributor Awards - 2024</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
+                  <span class="dropdown-title">ExecuTorch Docs</span>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                  <p>Stay up-to-date with the latest updates</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
+                  <span class="dropdown-title">Contact Us</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>1.0 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Qualcomm AI Engine Backend</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/backends-qualcomm.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="qualcomm-ai-engine-backend">
+<h1>Qualcomm AI Engine Backend<a class="headerlink" href="#qualcomm-ai-engine-backend" title="Permalink to this heading">¶</a></h1>
+<p>In this tutorial we will walk you through the process of getting started to
+build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.</p>
+<p>Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation.</p>
+<!----This will show a grid card on the page----->
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn in this tutorial:</div>
+<ul class="simple">
+<li><p class="sd-card-text">In this tutorial you will learn how to lower and deploy a model for Qualcomm AI Engine Direct.</p></li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Tutorials we recommend you complete before this:</div>
+<ul class="simple">
+<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started.html"><span class="doc std std-doc">Getting Started</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="what-s-qualcomm-ai-engine-direct">
+<h2>What’s Qualcomm AI Engine Direct?<a class="headerlink" href="#what-s-qualcomm-ai-engine-direct" title="Permalink to this heading">¶</a></h2>
+<p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct</a>
+is designed to provide unified, low-level APIs for AI development.</p>
+<p>Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
+Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found <a class="reference external" href="https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html">here</a>.</p>
+<p>Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.</p>
+</div>
+<div class="section" id="prerequisites-hardware-and-software">
+<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="host-os">
+<h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
+<p>The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
+at the moment of updating this tutorial.
+In addition, it is also confirmed to work on Windows Subsystem for Linux (WSL) with Ubuntu 22.04.
+Usually, we verified the backend on the same OS version which QNN is verified with.
+The version is documented in QNN SDK.</p>
+<div class="section" id="windows-wsl-setup">
+<h4>Windows (WSL) Setup<a class="headerlink" href="#windows-wsl-setup" title="Permalink to this heading">¶</a></h4>
+<p>To install Ubuntu 22.04 on WSL, run the following command in PowerShell or Windows Terminal:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>wsl<span class="w"> </span>--install<span class="w"> </span>-d<span class="w"> </span>ubuntu<span class="w"> </span><span class="m">22</span>.04
+</pre></div>
+</div>
+<p>This command will install WSL and set up Ubuntu 22.04 as the default Linux distribution.</p>
+<p>For more details and troubleshooting, refer to the official Microsoft WSL installation guide:
+👉 <a class="reference external" href="https://learn.microsoft.com/en-us/windows/wsl/install">Install WSL | Microsoft Learn</a></p>
+</div>
+</div>
+<div class="section" id="hardware">
+<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
+<p>You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:</p>
+<ul class="simple">
+<li><p>SA8295</p></li>
+<li><p>SM8450 (Snapdragon 8 Gen 1)</p></li>
+<li><p>SM8475 (Snapdragon 8 Gen 1+)</p></li>
+<li><p>SM8550 (Snapdragon 8 Gen 2)</p></li>
+<li><p>SM8650 (Snapdragon 8 Gen 3)</p></li>
+<li><p>SM8750 (Snapdragon 8 Elite)</p></li>
+<li><p>SSG2115P</p></li>
+<li><p>SSG2125P</p></li>
+<li><p>SXR1230P</p></li>
+<li><p>SXR2230P</p></li>
+<li><p>SXR2330P</p></li>
+</ul>
+<p>This example is verified with SM8550 and SM8450.</p>
+</div>
+<div class="section" id="software">
+<h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Follow ExecuTorch recommended Python version.</p></li>
+<li><p>A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.</p></li>
+<li><p><a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>. This example is verified with NDK 26c.</p></li>
+<li><p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct SDK</a></p>
+<ul>
+<li><p>Click the “Get Software” button to download a version of QNN SDK.</p></li>
+<li><p>However, at the moment of updating this tutorial, the above website doesn’t provide QNN SDK newer than 2.22.6.</p></li>
+<li><p>The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.</p></li>
+<li><p><a class="reference external" href="https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.28.0.241029.zip">QNN 2.28.0</a></p></li>
+</ul>
+</li>
+</ul>
+<p>The directory with installed Qualcomm AI Engine Direct SDK looks like:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>├── benchmarks
+├── bin
+├── docs
+├── examples
+├── include
+├── lib
+├── LICENSE.pdf
+├── NOTICE.txt
+├── NOTICE_WINDOWS.txt
+├── QNN_NOTICE.txt
+├── QNN_README.txt
+├── QNN_ReleaseNotes.txt
+├── ReleaseNotes.txt
+├── ReleaseNotesWindows.txt
+├── sdk.yaml
+└── share
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="setting-up-your-developer-environment">
+<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="conventions">
+<h3>Conventions<a class="headerlink" href="#conventions" title="Permalink to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT</span></code> refers to the root of Qualcomm AI Engine Direct SDK,
+i.e., the directory containing <code class="docutils literal notranslate"><span class="pre">QNN_README.txt</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">$ANDROID_NDK_ROOT</span></code> refers to the root of Android NDK.</p>
+<p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT</span></code> refers to the root of executorch git repository.</p>
+</div>
+<div class="section" id="setup-environment-variables">
+<h3>Setup environment variables<a class="headerlink" href="#setup-environment-variables" title="Permalink to this heading">¶</a></h3>
+<p>We set <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> to make sure the dynamic linker can find QNN libraries.</p>
+<p>Further, we set <code class="docutils literal notranslate"><span class="pre">PYTHONPATH</span></code> because it’s easier to develop and import ExecuTorch
+Python APIs.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span>/lib/x86_64-linux-clang/:<span class="nv">$LD_LIBRARY_PATH</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/..
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="build">
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
+<p>An example script for the below building instructions is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.
+We recommend to use the script because the ExecuTorch build-command can change from time to time.
+The above script is actively used. It is updated more frequently than this tutorial.
+An example usage is</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+./backends/qualcomm/scripts/build.sh
+<span class="c1"># or</span>
+./backends/qualcomm/scripts/build.sh<span class="w"> </span>--release
+</pre></div>
+</div>
+<div class="section" id="aot-ahead-of-time-components">
+<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
+<p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+mkdir<span class="w"> </span>build-x86
+<span class="nb">cd</span><span class="w"> </span>build-x86
+<span class="c1"># Note that the below command might change.</span>
+<span class="c1"># Please refer to the above build.sh for latest workable commands.</span>
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_DEVTOOLS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_ENABLE_EVENT_TRACER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3
+
+<span class="c1"># nproc is used to detect the number of available CPU.</span>
+<span class="c1"># If it is not applicable, please feel free to use the number you want.</span>
+cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PWD</span><span class="w"> </span>--target<span class="w"> </span><span class="s2">&quot;PyQnnManagerAdaptor&quot;</span><span class="w"> </span><span class="s2">&quot;PyQnnWrapperAdaptor&quot;</span><span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
+
+<span class="c1"># install Python APIs to correct import path</span>
+<span class="c1"># The filename might vary depending on your Python and host version.</span>
+cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
+cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
+
+<span class="c1"># Workaround for .fbs files in exir/_serialize</span>
+cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/program.fbs<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/exir/_serialize/program.fbs
+cp<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/schema/scalar_type.fbs<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/exir/_serialize/scalar_type.fbs
+</pre></div>
+</div>
+</div>
+<div class="section" id="runtime">
+<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
+<p>An example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
+<p>Commands to build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for Android:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+mkdir<span class="w"> </span>build-android
+<span class="nb">cd</span><span class="w"> </span>build-android
+<span class="c1"># build executorch &amp; qnn_executorch_backend</span>
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_DEVTOOLS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_TENSOR<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_EVENT_TRACER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK_ROOT</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-30
+
+<span class="c1"># nproc is used to detect the number of available CPU.</span>
+<span class="c1"># If it is not applicable, please feel free to use the number you want.</span>
+cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PWD</span><span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
+
+cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK_ROOT</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_PLATFORM<span class="o">=</span>android-30<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/lib/cmake/ExecuTorch;</span><span class="nv">$PWD</span><span class="s2">/third-party/gflags;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE<span class="o">=</span>BOTH<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bexamples/qualcomm
+
+cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
+
+<span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/executor_runner/qnn_executor_runner</span>
+ls<span class="w"> </span>examples/qualcomm
+</pre></div>
+</div>
+<p><strong>Note:</strong> If you want to build for release, add <code class="docutils literal notranslate"><span class="pre">-DCMAKE_BUILD_TYPE=Release</span></code> to the <code class="docutils literal notranslate"><span class="pre">cmake</span></code> command options.</p>
+</div>
+</div>
+<div class="section" id="deploying-and-running-on-device">
+<h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="aot-compile-a-model">
+<h3>AOT compile a model<a class="headerlink" href="#aot-compile-a-model" title="Permalink to this heading">¶</a></h3>
+<p>Refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py">this script</a> for the exact flow.
+We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
+</pre></div>
+</div>
+<p>You might see something like below:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">context</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">device</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span>
+
+<span class="n">opcode</span>         <span class="n">name</span>                      <span class="n">target</span>                       <span class="n">args</span>                           <span class="n">kwargs</span>
+<span class="o">-------------</span>  <span class="o">------------------------</span>  <span class="o">---------------------------</span>  <span class="o">-----------------------------</span>  <span class="o">--------</span>
+<span class="n">placeholder</span>    <span class="n">arg684_1</span>                  <span class="n">arg684_1</span>                     <span class="p">()</span>                             <span class="p">{}</span>
+<span class="n">get_attr</span>       <span class="n">lowered_module_0</span>          <span class="n">lowered_module_0</span>             <span class="p">()</span>                             <span class="p">{}</span>
+<span class="n">call_function</span>  <span class="n">executorch_call_delegate</span>  <span class="n">executorch_call_delegate</span>     <span class="p">(</span><span class="n">lowered_module_0</span><span class="p">,</span> <span class="n">arg684_1</span><span class="p">)</span>   <span class="p">{}</span>
+<span class="n">call_function</span>  <span class="n">getitem</span>                   <span class="o">&lt;</span><span class="n">built</span><span class="o">-</span><span class="ow">in</span> <span class="n">function</span> <span class="n">getitem</span><span class="o">&gt;</span>  <span class="p">(</span><span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>  <span class="p">{}</span>
+<span class="n">call_function</span>  <span class="n">getitem_1</span>                 <span class="o">&lt;</span><span class="n">built</span><span class="o">-</span><span class="ow">in</span> <span class="n">function</span> <span class="n">getitem</span><span class="o">&gt;</span>  <span class="p">(</span><span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="p">{}</span>
+<span class="n">output</span>         <span class="n">output</span>                    <span class="n">output</span>                       <span class="p">([</span><span class="n">getitem_1</span><span class="p">,</span> <span class="n">getitem</span><span class="p">],)</span>        <span class="p">{}</span>
+</pre></div>
+</div>
+<p>The compiled model is <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code>.</p>
+</div>
+<div class="section" id="test-model-inference-on-qnn-htp-emulator">
+<h3>Test model inference on QNN HTP emulator<a class="headerlink" href="#test-model-inference-on-qnn-htp-emulator" title="Permalink to this heading">¶</a></h3>
+<p>We can test model inferences before deploying it to a device by HTP emulator.</p>
+<p>Let’s build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for a x64 host:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># assuming the AOT component is built.</span>
+<span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86
+cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/lib/cmake/ExecuTorch;</span><span class="nv">$PWD</span><span class="s2">/third-party/gflags;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE<span class="o">=</span>BOTH<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-Bexamples/qualcomm
+
+cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
+
+<span class="c1"># qnn_executor_runner can be found under examples/qualcomm/executor_runner</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/executor_runner/qnn_executor_runner</span>
+ls<span class="w"> </span>examples/qualcomm/executor_runner
+</pre></div>
+</div>
+<p>To run the HTP emulator, the dynamic linker needs to access QNN libraries and <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.
+We set the below two paths to <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> environment variable:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT/lib/x86_64-linux-clang/</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/build-x86/lib/</span></code></p></li>
+</ol>
+<p>The first path is for QNN libraries including HTP emulator. It has been configured in the AOT compilation section.</p>
+<p>The second path is for <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.</p>
+<p>So, we can run <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code> by:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86
+<span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86/lib/:<span class="nv">$LD_LIBRARY_PATH</span>
+examples/qualcomm/executor_runner/qnn_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>../deeplab_v3/dlv3_qnn.pte
+</pre></div>
+</div>
+<p>We should see some outputs like the below. Note that the emulator can take some time to finish.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>I<span class="w"> </span><span class="m">00</span>:00:00.354662<span class="w"> </span>executorch:qnn_executor_runner.cpp:213<span class="o">]</span><span class="w"> </span>Method<span class="w"> </span>loaded.
+I<span class="w"> </span><span class="m">00</span>:00:00.356460<span class="w"> </span>executorch:qnn_executor_runner.cpp:261<span class="o">]</span><span class="w"> </span>ignoring<span class="w"> </span>error<span class="w"> </span>from<span class="w"> </span>set_output_data_ptr<span class="o">()</span>:<span class="w"> </span>0x2
+I<span class="w"> </span><span class="m">00</span>:00:00.357991<span class="w"> </span>executorch:qnn_executor_runner.cpp:261<span class="o">]</span><span class="w"> </span>ignoring<span class="w"> </span>error<span class="w"> </span>from<span class="w"> </span>set_output_data_ptr<span class="o">()</span>:<span class="w"> </span>0x2
+I<span class="w"> </span><span class="m">00</span>:00:00.357996<span class="w"> </span>executorch:qnn_executor_runner.cpp:265<span class="o">]</span><span class="w"> </span>Inputs<span class="w"> </span>prepared.
+
+I<span class="w"> </span><span class="m">00</span>:01:09.328144<span class="w"> </span>executorch:qnn_executor_runner.cpp:414<span class="o">]</span><span class="w"> </span>Model<span class="w"> </span>executed<span class="w"> </span>successfully.
+I<span class="w"> </span><span class="m">00</span>:01:09.328159<span class="w"> </span>executorch:qnn_executor_runner.cpp:421<span class="o">]</span><span class="w"> </span>Write<span class="w"> </span>etdump<span class="w"> </span>to<span class="w"> </span>etdump.etdp,<span class="w"> </span><span class="nv">Size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">424</span>
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>backend<span class="w"> </span>parameters
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>context
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>device
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>backend
+</pre></div>
+</div>
+</div>
+<div class="section" id="run-model-inference-on-an-android-smartphone-with-qualcomm-socs">
+<h3>Run model inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this heading">¶</a></h3>
+<p><em><strong>Step 1</strong></em>. We need to push required QNN libraries to the device.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># make sure you have write-permission on below path.</span>
+<span class="nv">DEVICE_DIR</span><span class="o">=</span>/data/local/tmp/executorch_qualcomm_tutorial/
+adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;mkdir -p </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2">&quot;</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV73Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV75Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+</pre></div>
+</div>
+<p><em><strong>Step 2</strong></em>.  We also need to indicate dynamic linkers on Android and Hexagon
+where to find these libraries by setting <code class="docutils literal notranslate"><span class="pre">ADSP_LIBRARY_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code>.
+So, we can run <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> like</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>./deeplab_v3/dlv3_qnn.pte<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build-android/examples/qualcomm/executor_runner/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build-android/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;cd </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
+<span class="s2">           &amp;&amp; export LD_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
+<span class="s2">           &amp;&amp; export ADSP_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
+<span class="s2">           &amp;&amp; ./qnn_executor_runner --model_path ./dlv3_qnn.pte&quot;</span>
+</pre></div>
+</div>
+<p>You should see something like below:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.257354</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">213</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.323502</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">262</span><span class="p">]</span> <span class="n">ignoring</span> <span class="n">error</span> <span class="kn">from</span><span class="w"> </span><span class="nn">set_output_data_ptr</span><span class="p">():</span> <span class="mh">0x2</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.357496</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">262</span><span class="p">]</span> <span class="n">ignoring</span> <span class="n">error</span> <span class="kn">from</span><span class="w"> </span><span class="nn">set_output_data_ptr</span><span class="p">():</span> <span class="mh">0x2</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.357555</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">265</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.364824</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">414</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.364875</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">425</span><span class="p">]</span> <span class="n">Write</span> <span class="n">etdump</span> <span class="n">to</span> <span class="n">etdump</span><span class="o">.</span><span class="n">etdp</span><span class="p">,</span> <span class="n">Size</span> <span class="o">=</span> <span class="mi">424</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">]</span> <span class="p">[</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]:</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span> <span class="n">parameters</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">]</span> <span class="p">[</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]:</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">context</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">]</span> <span class="p">[</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]:</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span>
+</pre></div>
+</div>
+<p>The model is merely executed. If we want to feed real inputs and get model outputs, we can use</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--download<span class="w"> </span>-s<span class="w"> </span>&lt;device_serial&gt;
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">&lt;device_serial&gt;</span></code> can be found by <code class="docutils literal notranslate"><span class="pre">adb</span> <span class="pre">devices</span></code> command.</p>
+<p>After the above command, pre-processed inputs and outputs are put in <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/deeplab_v3</span></code> and <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/deeplab_v3/outputs</span></code> folder.</p>
+<p>The command-line arguments are written in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/utils.py#L139">utils.py</a>.
+The model, inputs, and output location are passed to <code class="docutils literal notranslate"><span class="pre">qnn_executorch_runner</span></code> by <code class="docutils literal notranslate"><span class="pre">--model_path</span></code>, <code class="docutils literal notranslate"><span class="pre">--input_list_path</span></code>, and <code class="docutils literal notranslate"><span class="pre">--output_folder_path</span></code>.</p>
+</div>
+</div>
+<div class="section" id="supported-model-list">
+<h2>Supported model list<a class="headerlink" href="#supported-model-list" title="Permalink to this heading">¶</a></h2>
+<p>Please refer to <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/examples/qualcomm/scripts/</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/</span></code> to the list of supported models.</p>
+</div>
+<div class="section" id="how-to-support-a-custom-model-in-htp-backend">
+<h2>How to Support a Custom Model in HTP Backend<a class="headerlink" href="#how-to-support-a-custom-model-in-htp-backend" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="step-by-step-implementation-guide">
+<h3>Step-by-Step Implementation Guide<a class="headerlink" href="#step-by-step-implementation-guide" title="Permalink to this heading">¶</a></h3>
+<p>Please reference <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py">the simple example</a> and <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts">more compilated examples</a> for reference</p>
+<div class="section" id="step-1-prepare-your-model">
+<h4>Step 1: Prepare Your Model<a class="headerlink" href="#step-1-prepare-your-model" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="c1"># Initialize your custom model</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">YourModelClass</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>  <span class="c1"># Your custom PyTorch model</span>
+
+<span class="c1"># Create example inputs (adjust shape as needed)</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),)</span>  <span class="c1"># Example input tensor</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="step-2-optional-quantize-your-model">
+<h4>Step 2: [Optional] Quantize Your Model<a class="headerlink" href="#step-2-optional-quantize-your-model" title="Permalink to this heading">¶</a></h4>
+<p>Choose between quantization approaches, post training quantization (PTQ) or quantization aware training (QAT):</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.quantizer.quantizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">QnnQuantizer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchao.quantization.pt2e.quantize_pt2e</span><span class="w"> </span><span class="kn">import</span> <span class="n">prepare_pt2e</span><span class="p">,</span> <span class="n">prepare_qat_pt2e</span><span class="p">,</span> <span class="n">convert_pt2e</span>
+
+<span class="n">quantizer</span> <span class="o">=</span> <span class="n">QnnQuantizer</span><span class="p">()</span>
+<span class="n">m</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+
+<span class="c1"># PTQ (Post-Training Quantization)</span>
+<span class="k">if</span> <span class="n">quantization_type</span> <span class="o">==</span> <span class="s2">&quot;ptq&quot;</span><span class="p">:</span>
+    <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+    <span class="c1"># Calibration loop would go here</span>
+    <span class="n">prepared_model</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># QAT (Quantization-Aware Training)</span>
+<span class="k">elif</span> <span class="n">quantization_type</span> <span class="o">==</span> <span class="s2">&quot;qat&quot;</span><span class="p">:</span>
+    <span class="n">prepared_model</span> <span class="o">=</span> <span class="n">prepare_qat_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+    <span class="c1"># Training loop would go here</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">training_steps</span><span class="p">):</span>
+        <span class="n">prepared_model</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Convert to quantized model</span>
+<span class="n">quantized_model</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">prepared_model</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">QNNQuantizer</span></code> is configurable, with the default setting being <strong>8a8w</strong>. For advanced users, refer to the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/quantizer/quantizer.py"><code class="docutils literal notranslate"><span class="pre">QnnQuantizer</span></code></a> documentation for details.</p>
+<div class="section" id="supported-quantization-schemes">
+<h5>Supported Quantization Schemes<a class="headerlink" href="#supported-quantization-schemes" title="Permalink to this heading">¶</a></h5>
+<ul class="simple">
+<li><p><strong>8a8w</strong> (default)</p></li>
+<li><p><strong>16a16w</strong></p></li>
+<li><p><strong>16a8w</strong></p></li>
+<li><p><strong>16a4w</strong></p></li>
+<li><p><strong>16a4w_block</strong></p></li>
+</ul>
+</div>
+<div class="section" id="customization-options">
+<h5>Customization Options<a class="headerlink" href="#customization-options" title="Permalink to this heading">¶</a></h5>
+<ul class="simple">
+<li><p><strong>Per-node annotation</strong>: Use <code class="docutils literal notranslate"><span class="pre">custom_quant_annotations</span></code>.</p></li>
+<li><p><strong>Per-module (<code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>) annotation</strong>: Use <code class="docutils literal notranslate"><span class="pre">submodule_qconfig_list</span></code>.</p></li>
+</ul>
+</div>
+<div class="section" id="additional-features">
+<h5>Additional Features<a class="headerlink" href="#additional-features" title="Permalink to this heading">¶</a></h5>
+<ul class="simple">
+<li><p><strong>Node exclusion</strong>: Discard specific nodes via <code class="docutils literal notranslate"><span class="pre">discard_nodes</span></code>.</p></li>
+<li><p><strong>Blockwise quantization</strong>: Configure block sizes with <code class="docutils literal notranslate"><span class="pre">block_size_map</span></code>.</p></li>
+</ul>
+<p>For practical examples, see <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/tests/test_qnn_delegate.py"><code class="docutils literal notranslate"><span class="pre">test_qnn_delegate.py</span></code></a>.</p>
+</div>
+</div>
+<div class="section" id="step-3-configure-compile-specs">
+<h4>Step 3: Configure Compile Specs<a class="headerlink" href="#step-3-configure-compile-specs" title="Permalink to this heading">¶</a></h4>
+<p>During this step, you will need to specify the target SoC, data type, and other QNN compiler spec.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.qualcomm.utils.utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">generate_qnn_executorch_compiler_spec</span><span class="p">,</span>
+    <span class="n">generate_htp_compiler_spec</span><span class="p">,</span>
+    <span class="n">QcomChipset</span><span class="p">,</span>
+    <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># HTP Compiler Configuration</span>
+<span class="n">backend_options</span> <span class="o">=</span> <span class="n">generate_htp_compiler_spec</span><span class="p">(</span>
+    <span class="n">use_fp16</span><span class="o">=</span><span class="ow">not</span> <span class="n">quantized</span><span class="p">,</span>  <span class="c1"># False for quantized models</span>
+<span class="p">)</span>
+
+<span class="c1"># QNN Compiler Spec</span>
+<span class="n">compile_spec</span> <span class="o">=</span> <span class="n">generate_qnn_executorch_compiler_spec</span><span class="p">(</span>
+    <span class="n">soc_model</span><span class="o">=</span><span class="n">QcomChipset</span><span class="o">.</span><span class="n">SM8650</span><span class="p">,</span>  <span class="c1"># Your target SoC</span>
+    <span class="n">backend_options</span><span class="o">=</span><span class="n">backend_options</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="step-4-lower-and-export-the-model">
+<h4>Step 4: Lower and Export the Model<a class="headerlink" href="#step-4-lower-and-export-the-model" title="Permalink to this heading">¶</a></h4>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Lower to QNN backend</span>
+<span class="n">delegated_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower_to_qnn</span><span class="p">(</span>
+    <span class="n">quantized_model</span> <span class="k">if</span> <span class="n">quantized</span> <span class="k">else</span> <span class="n">model</span><span class="p">,</span>
+    <span class="n">example_inputs</span><span class="p">,</span>
+    <span class="n">compile_spec</span>
+<span class="p">)</span>
+
+<span class="c1"># Export to ExecuTorch format</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">delegated_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the compiled model</span>
+<span class="n">model_name</span> <span class="o">=</span> <span class="s2">&quot;custom_model_qnn.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">model_name</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model successfully exported to </span><span class="si">{</span><span class="n">model_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="what-is-coming">
+<h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Improve the performance for llama3-8B-Instruct and support batch prefill.</p></li>
+<li><p>We will support pre-compiled binaries from <a class="reference external" href="https://aihub.qualcomm.com/">Qualcomm AI Hub</a>.</p></li>
+</ul>
+</div>
+<div class="section" id="faq">
+<h2>FAQ<a class="headerlink" href="#faq" title="Permalink to this heading">¶</a></h2>
+<p>If you encounter any issues while reproducing the tutorial, please file a github
+issue on ExecuTorch repo and tag use <code class="docutils literal notranslate"><span class="pre">#qcom_aisw</span></code> tag</p>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="backends-mediatek.html" class="btn btn-neutral float-right" title="MediaTek Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="backends-arm-vgf.html" class="btn btn-neutral" title="Arm® VGF Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Qualcomm AI Engine Backend</a><ul>
+<li><a class="reference internal" href="#what-s-qualcomm-ai-engine-direct">What’s Qualcomm AI Engine Direct?</a></li>
+<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
+<li><a class="reference internal" href="#host-os">Host OS</a><ul>
+<li><a class="reference internal" href="#windows-wsl-setup">Windows (WSL) Setup</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#hardware">Hardware:</a></li>
+<li><a class="reference internal" href="#software">Software:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a><ul>
+<li><a class="reference internal" href="#conventions">Conventions</a></li>
+<li><a class="reference internal" href="#setup-environment-variables">Setup environment variables</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#build">Build</a><ul>
+<li><a class="reference internal" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) components:</a></li>
+<li><a class="reference internal" href="#runtime">Runtime:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and running on device</a><ul>
+<li><a class="reference internal" href="#aot-compile-a-model">AOT compile a model</a></li>
+<li><a class="reference internal" href="#test-model-inference-on-qnn-htp-emulator">Test model inference on QNN HTP emulator</a></li>
+<li><a class="reference internal" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs">Run model inference on an Android smartphone with Qualcomm SoCs</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#supported-model-list">Supported model list</a></li>
+<li><a class="reference internal" href="#how-to-support-a-custom-model-in-htp-backend">How to Support a Custom Model in HTP Backend</a><ul>
+<li><a class="reference internal" href="#step-by-step-implementation-guide">Step-by-Step Implementation Guide</a><ul>
+<li><a class="reference internal" href="#step-1-prepare-your-model">Step 1: Prepare Your Model</a></li>
+<li><a class="reference internal" href="#step-2-optional-quantize-your-model">Step 2: [Optional] Quantize Your Model</a><ul>
+<li><a class="reference internal" href="#supported-quantization-schemes">Supported Quantization Schemes</a></li>
+<li><a class="reference internal" href="#customization-options">Customization Options</a></li>
+<li><a class="reference internal" href="#additional-features">Additional Features</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#step-3-configure-compile-specs">Step 3: Configure Compile Specs</a></li>
+<li><a class="reference internal" href="#step-4-lower-and-export-the-model">Step 4: Lower and Export the Model</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#what-is-coming">What is coming?</a></li>
+<li><a class="reference internal" href="#faq">FAQ</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/newsletter">Newsletter</a>
+             </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/staff">Staff</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/contact-us">Contact Us</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

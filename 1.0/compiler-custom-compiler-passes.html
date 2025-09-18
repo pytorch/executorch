@@ -1,0 +1,1489 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Custom Compiler Passes and Partitioners &mdash; ExecuTorch 1.0 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Memory Planning" href="compiler-memory-planning.html" />
+    <link rel="prev" title="Backend Dialect" href="compiler-backend-dialect.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
+                  <span class="dropdown-title">Contributor Awards - 2024</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
+                  <span class="dropdown-title">ExecuTorch Docs</span>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                  <p>Stay up-to-date with the latest updates</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
+                  <span class="dropdown-title">Contact Us</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>1.0 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Custom Compiler Passes and Partitioners</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/compiler-custom-compiler-passes.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="custom-compiler-passes-and-partitioners">
+<h1>Custom Compiler Passes and Partitioners<a class="headerlink" href="#custom-compiler-passes-and-partitioners" title="Permalink to this heading">¶</a></h1>
+<div class="section" id="passes">
+<h2>Passes<a class="headerlink" href="#passes" title="Permalink to this heading">¶</a></h2>
+<p>Passes can be roughly categorized into a couple of axes:</p>
+<p>Axis A:</p>
+<ol class="arabic simple">
+<li><p>Creating one-to-X mapping (for example, decomposition)</p></li>
+<li><p>Creating many-to-one mapping (for example, fusion)</p></li>
+</ol>
+<p>Axis B:</p>
+<ol class="arabic simple">
+<li><p>Performing forwards iteration (for example, shape propagation)</p></li>
+<li><p>Performing backwards iteration (for example, dead code elimination)</p></li>
+</ol>
+<p>Axis C:</p>
+<ol class="arabic simple">
+<li><p>Dependent on local node information (eg. out-variant conversion)</p></li>
+<li><p>Dependent on global graph information (eg. memory planning)</p></li>
+</ol>
+<p>Our projection on the frequency of these use cases are:</p>
+<ol class="arabic simple">
+<li><p>A.1, B.1, C.1</p></li>
+<li><p>A.2</p></li>
+<li><p>B.2, C.2</p></li>
+</ol>
+<div class="section" id="level-1">
+<h3>Level 1<a class="headerlink" href="#level-1" title="Permalink to this heading">¶</a></h3>
+<p>For level 1 uses cases (creating one-to-X mappings, performing forwards iterations,
+and looking at local node information), we can utilize a helper class called
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/pass_base.py#L44"><code class="docutils literal notranslate"><span class="pre">ExportPass</span></code></a>.
+This is an
+<a class="reference external" href="https://pytorch.org/docs/stable/fx.html#the-interpreter-pattern">interpreter-based</a>
+way where we execute each node and recreate the graph except with
+transformations specified. This allows us to preserve the IR Spec by ensuring
+that all nodes created while in the pass meet the IR Spec including ensuring that
+metadata such as stack trace, FakeTensor values, and torch.nn.Module hierarchy
+are preserved and updated depending on the transformations made.</p>
+<p>To implement this pass, we can create a subclass of
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/pass_base.py#L44"><code class="docutils literal notranslate"><span class="pre">ExportPass</span></code></a>
+and implement the exposed functions.  When called with a graph module, it will
+run the graph module and create a new graph containing the changes specified by
+the pass. This means that the graph module passed in must be runnable on CPU,
+and this invariant will be maintained after the pass is run.</p>
+<div class="section" id="one-to-one-pass">
+<h4>One-to-One Pass<a class="headerlink" href="#one-to-one-pass" title="Permalink to this heading">¶</a></h4>
+<p>An example for one-to-one mappings, if we wanted to replace an op A with another op B,
+we can run the given
+<code class="docutils literal notranslate"><span class="pre">fx.GraphModule</span></code>, and every time we see op A, return op B.</p>
+<p>Consider the following example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">ReplaceInPlaceReluWithOutOfPlaceReluPass</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    relu_ is the in-place version. Replace it with relu, which is the</span>
+<span class="sd">    out-of-place version</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">call_operator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu_</span><span class="o">.</span><span class="n">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span><span class="n">Op</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu</span><span class="o">.</span><span class="n">default</span><span class="p">),</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span>
+
+<span class="c1"># To create a pass</span>
+<span class="n">replace_pass</span> <span class="o">=</span> <span class="n">ReplaceInPlaceReluWithOutOfPlaceReluPass</span><span class="p">()</span>
+<span class="c1"># To run a pass</span>
+<span class="n">new_graph_module</span> <span class="o">=</span> <span class="n">replace_pass</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span><span class="o">.</span><span class="n">graph_module</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">super().call_operator(op,</span> <span class="pre">args,</span> <span class="pre">kwargs,</span> <span class="pre">meta)</span></code> call creates a
+<code class="docutils literal notranslate"><span class="pre">call_function</span></code> FX node, and returns the result of running the operator with the
+given arguments.</p>
+</div>
+<div class="section" id="one-to-x-pass">
+<h4>One-to-X Pass<a class="headerlink" href="#one-to-x-pass" title="Permalink to this heading">¶</a></h4>
+<p>If we wanted to do one-to-X mappings, like replacing op A with 2 other ops B and
+C, we would then make 2 calls to <code class="docutils literal notranslate"><span class="pre">super().call_operator</span></code> to create 2 FX nodes,
+one with op B and another with op C, and return the result of running op C.</p>
+<p>For example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">ReplaceAddWithMulSub</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Original:</span>
+<span class="sd">        def f(x, y):</span>
+<span class="sd">            return x + y</span>
+
+<span class="sd">    After pass:</span>
+<span class="sd">        def f(x, y):</span>
+<span class="sd">            z = x * y</span>
+<span class="sd">            return z - y</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">call_operator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span>
+
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">args</span>
+
+        <span class="n">mul_res</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
+            <span class="n">args</span><span class="p">,</span>
+            <span class="p">{},</span>
+            <span class="n">meta</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sub</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">mul_res</span><span class="p">,</span> <span class="n">y</span><span class="p">),</span>
+            <span class="p">{},</span>
+            <span class="n">meta</span>
+        <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="one-to-none-pass">
+<h4>One-to-None Pass<a class="headerlink" href="#one-to-none-pass" title="Permalink to this heading">¶</a></h4>
+<p>If we wanted to remove an op, we can just return the value passed into the
+function:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">RemoveDetachPass</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">call_operator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">op</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">detach</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">detach_copy</span><span class="o">.</span><span class="n">default</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span>
+
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+        <span class="k">return</span> <span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="utilizing-local-information">
+<h4>Utilizing Local Information<a class="headerlink" href="#utilizing-local-information" title="Permalink to this heading">¶</a></h4>
+<p>An example of utilizing local node information is, if we wanted to convert all the
+scalars within the graph to tensors, we
+can run the given <code class="docutils literal notranslate"><span class="pre">fx.GraphModule</span></code>, and for every argument that contains a scalar,
+we convert it to a tensor. It might look something like:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">args_map</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">fn</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">kwargs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">args</span><span class="p">)</span>
+    <span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="c1"># Update the argument based on the function passed</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">schema</span><span class="p">):</span>
+        <span class="n">args</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="n">schema</span><span class="p">)</span>
+
+    <span class="c1"># Update each argument in the schema</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">schema</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">op</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">arguments</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">schema</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">:</span>
+            <span class="n">update</span><span class="p">(</span><span class="n">schema</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">schema</span><span class="o">.</span><span class="n">kwarg_only</span> <span class="ow">and</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="p">):</span>
+            <span class="n">update</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ScalarToTensorPass</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">call_operator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">try_coerce</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">bool</span><span class="p">))</span>
+                <span class="ow">and</span> <span class="nb">type</span><span class="p">(</span><span class="n">arg</span><span class="o">.</span><span class="n">type</span><span class="p">)</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">TensorType</span>
+                <span class="k">else</span> <span class="n">value</span>
+            <span class="p">)</span>
+
+        <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">args_map</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">try_coerce</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call_operator</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="level-2">
+<h3>Level 2<a class="headerlink" href="#level-2" title="Permalink to this heading">¶</a></h3>
+<p>For creating many-to-one mappings, we can utilize FX’s <a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/subgraph_rewriter.py#L77">subgraph
+rewriter</a>.
+Given a <code class="docutils literal notranslate"><span class="pre">pattern</span></code>, it creates a subgraph of operators matching to the pattern,
+and then replaces each matched subgraph with the <code class="docutils literal notranslate"><span class="pre">replacement</span></code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>This is an inplace operation.
+</pre></div>
+</div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">pattern</span></code> and <code class="docutils literal notranslate"><span class="pre">replacement</span></code> inputs must be callable functions written with
+the same ops that are used in the EXIR graph you are matching with (ATen ops)
+so that the subgraph rewriter can find the correct pattern in the graph. Inputs
+to the pattern/replacement callables will be treated as wildcards.</p>
+<p>Consider the following example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx</span><span class="w"> </span><span class="kn">import</span> <span class="n">subgraph_rewriter</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">replace_patterns</span><span class="p">(</span><span class="n">graph_module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">pattern</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">replacement</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sub</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+<span class="n">replaced_patterns</span> <span class="o">=</span> <span class="n">subgraph_rewriter</span><span class="o">.</span><span class="n">replace_pattern_with_filters</span><span class="p">(</span>
+    <span class="n">traced_module</span><span class="p">,</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">replacement</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<p>The subgraph rewriter returns a list of <code class="docutils literal notranslate"><span class="pre">ReplacedPatterns</span></code>:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ReplacedPatterns</span><span class="p">:</span>
+    <span class="c1"># Node from which the match was found</span>
+    <span class="n">anchor</span><span class="p">:</span> <span class="n">Node</span>
+    <span class="c1"># Maps nodes in the pattern subgraph to nodes in the larger graph</span>
+    <span class="n">nodes_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Node</span><span class="p">,</span> <span class="n">Node</span><span class="p">]</span>
+    <span class="c1"># List of nodes that were added into the graph</span>
+    <span class="n">replacements</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span>
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>The nodes created by the subgraph rewriter will not have the metadata that
+is normally in EXIR nodes (`stack_trace`, `val`, `nn_module_stack`).
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="level-3">
+<h3>Level 3<a class="headerlink" href="#level-3" title="Permalink to this heading">¶</a></h3>
+<p>For the third way of creating a pass, we can utilize the most basic
+<a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/infra/pass_base.py#L22"><code class="docutils literal notranslate"><span class="pre">PassBase</span></code></a>.
+To create a pass, we can subclass this and implement the function <code class="docutils literal notranslate"><span class="pre">call</span></code> with
+the pass contents. Additionally, we can implement the functions <code class="docutils literal notranslate"><span class="pre">requires</span></code> and
+<code class="docutils literal notranslate"><span class="pre">ensures</span></code> which will be called before and after the function <code class="docutils literal notranslate"><span class="pre">call</span></code>. Note that
+these functions can also be overridden in <code class="docutils literal notranslate"><span class="pre">ExportPass</span></code>. To run a pass on a graph
+module, we can pass the graph module directly to an instance of the class.</p>
+<p>Consider the following example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">ReplaceAddPass</span><span class="p">(</span><span class="n">PassBase</span><span class="p">):</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">replace_op</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">replace_op</span> <span class="o">=</span> <span class="n">replace_op</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">:</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">replace_op</span>
+
+    <span class="c1"># Optional to implement, will be called before call()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">requires</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">:</span>
+                <span class="k">return</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No torch.add ops!&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Optional to implement, will be called after call()</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ensures</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+<span class="c1"># To create a pass</span>
+<span class="n">replace_add_with_div</span> <span class="o">=</span> <span class="n">ReplaceAddPass</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">div</span><span class="p">)</span>
+<span class="c1"># To run a pass</span>
+<span class="n">replace_add_with_div</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="pass-manager">
+<h2>Pass Manager<a class="headerlink" href="#pass-manager" title="Permalink to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">PassManager</span></code> is a class used to run multiple passes on a given graph
+module. When initializing a <code class="docutils literal notranslate"><span class="pre">PassManager</span></code> instance, we pass in a list of passes
+that we want to run and set a couple of flags. To run the collection of passes
+on a graph module, we can pass the graph module directly to the <code class="docutils literal notranslate"><span class="pre">PassManager</span></code>
+instance.</p>
+<p>An example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.pass_manager</span><span class="w"> </span><span class="kn">import</span> <span class="n">PassManager</span>
+
+<span class="n">pm</span> <span class="o">=</span> <span class="n">PassManager</span><span class="p">(</span>
+    <span class="n">passes</span><span class="o">=</span><span class="p">[</span><span class="n">replace_add_with_div</span><span class="p">,</span> <span class="n">replace_div_with_mul</span><span class="p">],</span>
+    <span class="n">run_checks_after_each_pass</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">suppress_check_failures</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">graph_module_out</span> <span class="o">=</span> <span class="n">pm</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>To add a common set of checks that are run after each pass, we can call the
+function <code class="docutils literal notranslate"><span class="pre">set_checks(check:</span> <span class="pre">Callable)</span></code> which takes in a callable function as
+input. If the <code class="docutils literal notranslate"><span class="pre">run_checks_after_each_pass</span></code> flag is set, the <code class="docutils literal notranslate"><span class="pre">check</span></code> will be
+called after each pass is run on the graph module.</p>
+<p>An example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">pm</span> <span class="o">=</span> <span class="n">PassManager</span><span class="p">(</span><span class="n">passes</span><span class="o">=</span><span class="p">[</span><span class="n">replace_add_with_div</span><span class="p">,</span> <span class="n">replace_div_with_mul</span><span class="p">])</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">check_div_target</span><span class="p">(</span><span class="n">graph_module</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">!=</span> <span class="n">torch</span><span class="o">.</span><span class="n">div</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Target should be div!&quot;</span><span class="p">)</span>
+
+<span class="n">pm</span><span class="o">.</span><span class="n">add_checks</span><span class="p">(</span><span class="n">check_div_target</span><span class="p">)</span>
+
+<span class="n">pm</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>    <span class="c1"># raises ValueError after replace_div_with_mul pass</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="partitioner">
+<h2>Partitioner<a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
+<p>There are a couple of common FX-graph based partitioners we can use to partition
+the graph. However, these do not necessarily produce a graph that is compliant
+with IR Spec, so be careful when using them.</p>
+<div class="section" id="subgraph-matcher">
+<h3>Subgraph Matcher<a class="headerlink" href="#subgraph-matcher" title="Permalink to this heading">¶</a></h3>
+<p>For finding subgraphs within a graph that match a specific pattern, we can
+utilize FX’s
+<a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/utils/matcher_utils.py#L51"><code class="docutils literal notranslate"><span class="pre">SubgraphMatcher</span></code></a>.</p>
+<p>Class Attributes:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pattern</span> <span class="pre">(Graph)</span></code>: The targeted matching pattern. Placeholder nodes in the
+graph will be treated as wildcards when matching.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">match_output</span> <span class="pre">(bool)</span></code>: If True, output node in the pattern graph will be
+treated as a part of the targeted pattern.  If False, output node is ignored
+during match.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">match_placeholder</span> <span class="pre">(bool)</span></code>: If True, placeholder node in the pattern graph
+will be treated as a part of the targeted pattern. If False, placeholder
+nodes will be used a wildcard.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">remove_overlapping_matches</span> <span class="pre">(bool)</span></code>: If True, in the case of overlapping
+matches, only the first match will be returned.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ignore_literals</span> <span class="pre">(bool)</span></code>: If True, will not check if literals are equal and
+will instead treat them as wildcards.</p></li>
+</ul>
+<p>Consider the following example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx.passes.utils.matcher_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">SubgraphMatcher</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">LargeModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_weight</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_bias</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">addmm</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_bias</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_weight</span><span class="p">)</span>
+
+<span class="n">large_model_graph</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">LargeModel</span><span class="p">(),</span> <span class="n">large_inputs</span><span class="p">))</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">PatternModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_weight_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_bias_1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">addmm</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_bias_1</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_weight_1</span><span class="p">)</span>
+
+<span class="n">pattern_graph</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">PatternModel</span><span class="p">(),</span> <span class="n">pattern_inputs</span><span class="p">))</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span>
+
+<span class="n">subgraph_matcher</span> <span class="o">=</span> <span class="n">SubgraphMatcher</span><span class="p">(</span><span class="n">pattern_graph</span><span class="p">)</span>
+<span class="n">match_result</span> <span class="o">=</span> <span class="n">subgraph_matcher</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">large_model_graph</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">match</span></code> function returns a list of <code class="docutils literal notranslate"><span class="pre">InternalMatch</span></code>:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">InternalMatch</span><span class="p">():</span>
+    <span class="c1"># Nodes from which the match was found</span>
+    <span class="n">anchors</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span>
+    <span class="c1"># Maps nodes in the pattern subgraph to nodes in the larger graph</span>
+    <span class="n">nodes_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Node</span><span class="p">,</span> <span class="n">Node</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="c1"># Nodes in target graph that are matched placeholder in pattern</span>
+    <span class="n">placeholder_nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="c1"># Nodes in matched subgraph returned by output</span>
+    <span class="n">returning_nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="capability-based-partitioner">
+<h3>Capability Based Partitioner<a class="headerlink" href="#capability-based-partitioner" title="Permalink to this heading">¶</a></h3>
+<p>To find the largest subgraphs of nodes that support a specific invariant, we can
+utilize FX’s
+<a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/infra/partitioner.py#L34C1-L34C1"><code class="docutils literal notranslate"><span class="pre">CapabilityBasedPartitioner</span></code></a>.</p>
+<p>Class Attributes</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">graph_module</span> <span class="pre">(torch.fx.GraphModule)</span></code>: The graph module we are partitioning on.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">operator_support</span> <span class="pre">(OperatorSupportBase)</span></code>: The object used to determine if a
+node in the graph is supported in the partition.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">allows_single_node_partition</span> <span class="pre">(bool)</span></code>: If True, allows single node
+partitions to be formed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">non_compute_ops</span> <span class="pre">(Optional[Sequence[str]])</span></code>: A set of ops that are
+considered to be “non-compute” (ex <code class="docutils literal notranslate"><span class="pre">torch.ops.aten.view</span></code> and
+<code class="docutils literal notranslate"><span class="pre">_operator.getitem</span></code>, so that the partitioner will not create graphs that only
+contain these non-compute ops</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">allowed_single_node_partition_ops</span> <span class="pre">(Optional[Sequence[str]])</span></code>: A set of ops
+that are allowed to be in a single node partition.</p></li>
+</ul>
+<p>The
+<a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/operator_support.py#L28"><code class="docutils literal notranslate"><span class="pre">OperatorSupportBase</span></code></a>
+class is used by
+the partitioner to determine if a specific node in the graph belongs in the
+partition. This is done by overriding the <code class="docutils literal notranslate"><span class="pre">is_node_supported</span></code> function. You can
+chain multiple <code class="docutils literal notranslate"><span class="pre">OperatorSuppportBase</span></code> by using
+<a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/operator_support.py#L150"><code class="docutils literal notranslate"><span class="pre">chain</span></code></a>(which
+returns False if any of the OperatorSupportBase return False) and
+<a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/operator_support.py#L164"><code class="docutils literal notranslate"><span class="pre">any_chain</span></code></a>
+(which returns True if any of the OperatorSupportBase returns True).</p>
+<p>Consider the following example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx.passes.infra.partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">CapabilityBasedPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.fx.passes.operator_support</span><span class="w"> </span><span class="kn">import</span> <span class="n">any_chain</span><span class="p">,</span> <span class="n">OperatorSupportBase</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">AddMulOperatorSupport</span><span class="p">(</span><span class="n">OperatorSupportBase</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_node_supported</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">submodules</span><span class="p">,</span> <span class="n">node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="p">]</span>
+
+<span class="n">capability_partitioner</span> <span class="o">=</span> <span class="n">CapabilityBasedPartitioner</span><span class="p">(</span>
+    <span class="n">graph_module</span><span class="p">,</span>
+    <span class="n">op_support</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Returns a list of partitions (list of nodes that belong in each partition)</span>
+<span class="n">partition_list</span> <span class="o">=</span> <span class="n">capability_partitioner</span><span class="o">.</span><span class="n">propose_partitions</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>If you look at the capability based partitioner, you may also find a
+<code class="docutils literal notranslate"><span class="pre">fuse_partition</span></code> function which will return a modified graph with the partitions
+as submodules, and calls to these submodules in the toplevel graph through
+<code class="docutils literal notranslate"><span class="pre">call_module</span></code> nodes. However, this is not compliant to the IR Spec because we do
+not allow <code class="docutils literal notranslate"><span class="pre">call_module</span></code> nodes.</p>
+</div>
+<div class="section" id="combined">
+<h3>Combined<a class="headerlink" href="#combined" title="Permalink to this heading">¶</a></h3>
+<p>We also provide a combined helper function:
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/canonical_partitioners/pattern_op_partitioner.py#L59"><code class="docutils literal notranslate"><span class="pre">generate_pattern_op_partitions</span></code></a></p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">graph_module</span> <span class="pre">(fx.GraphModule)</span></code>: Module that we want to partition</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">patterns</span> <span class="pre">(List[torch.fx.Graph])</span></code>: A list of patterns in the form of
+torch.fx.Graph. These graphs can be obtained through the <code class="docutils literal notranslate"><span class="pre">graph</span></code> field from a
+GraphModule obtained by exir.capture (recommended) or symbolic tracing (which
+might not result in an accurate edge dialect graph), or by manual crafting a
+graph module.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">op_support</span> <span class="pre">(OperatorSupportBase)</span></code>: A OperatorSupportBase that can be created
+in the following ways:</p>
+<ul>
+<li><p>Subclassing it directly and implementing <code class="docutils literal notranslate"><span class="pre">is_node_supported()</span></code></p></li>
+<li><p>Getting the result of <code class="docutils literal notranslate"><span class="pre">create_op_support()</span></code></p></li>
+<li><p>Getting the result of <code class="docutils literal notranslate"><span class="pre">create_pattern_support()</span></code></p></li>
+<li><p>Multiple OperatorSupportBase classes chained together with <code class="docutils literal notranslate"><span class="pre">chain()</span></code> or <code class="docutils literal notranslate"><span class="pre">any_chain()</span></code></p></li>
+</ul>
+</li>
+</ul>
+<p>Returns</p>
+<ul class="simple">
+<li><p>A list of partitions (largest possible subgraphs) containing nodes are
+supported by the union of the given OperatorSupportBase object and the
+given pattern graphs.</p></li>
+</ul>
+</div>
+<div class="section" id="source-partitioner">
+<h3>Source Partitioner<a class="headerlink" href="#source-partitioner" title="Permalink to this heading">¶</a></h3>
+<p>For more complicated use cases in which users want to partition based on higher
+level modules (<code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> or <code class="docutils literal notranslate"><span class="pre">torch.nn.functional.Linear</span></code>) which are now
+decomposed into their operators (<code class="docutils literal notranslate"><span class="pre">aten.permute</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.addmm</span></code>), we have the
+following <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/utils/source_matcher_utils.py#L51">helper function</a>:</p>
+<p><code class="docutils literal notranslate"><span class="pre">get_source_partitions(graph:</span> <span class="pre">torch.fx.Graph,</span> <span class="pre">wanted_sources:</span> <span class="pre">List[Any])</span> <span class="pre">-&gt;</span> <span class="pre">Dict[Any,</span> <span class="pre">SourcePartition]</span></code></p>
+<p>Args:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">graph</span></code>: The graph we want to partition</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">wanted_sources</span></code>: List of sources of nodes that were decomposed from this
+source. This can be a function (ex. <code class="docutils literal notranslate"><span class="pre">torch.nn.functional.linear</span></code>) or a leaf
+module type (ex. <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code>)</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>Dictionary mapping sources (ex. <code class="docutils literal notranslate"><span class="pre">torch.nn.modules.linear.Linear</span></code>) to a list of
+<code class="docutils literal notranslate"><span class="pre">SourcePartitions</span></code> that correspond to the list of nodes that were flattened from
+a module of that type.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SourcePartition</span><span class="p">():</span>
+    <span class="c1"># Nodes in a particular partition</span>
+    <span class="n">nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span>
+    <span class="c1"># Module type</span>
+    <span class="n">module_type</span><span class="p">:</span> <span class="n">Type</span>
+    <span class="c1"># Nodes in the graph that are needed as inputs to the partition</span>
+    <span class="n">input_nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="c1"># Nodes in the partition that are being used by nodes outside of the partition</span>
+    <span class="n">output_nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="c1"># Parameters that are being used</span>
+    <span class="n">params</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>An example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">M</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear1</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relu</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linear2</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear1</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relu</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">linear2</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">3</span><span class="p">),)</span>
+<span class="n">edge_graph</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">M</span><span class="p">(),</span> <span class="n">inputs</span><span class="p">))</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">edge_graph</span><span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">graph():</span>
+<span class="sd">    %arg0 : [#users=1] = placeholder[target=arg0]</span>
+<span class="sd">    %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]</span>
+<span class="sd">    %permute_default : [#users=1] = call_function[target=torch.ops.aten.permute_copy.default](args = (%_param_constant0,), kwargs = {})</span>
+<span class="sd">    %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]</span>
+<span class="sd">    %addmm_default : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant1, %arg0, %t_default), kwargs = {})</span>
+<span class="sd">    %_param_constant0_1 : [#users=1] = get_attr[target=_param_constant0]</span>
+<span class="sd">    %permute_default_1 : [#users=1] = call_function[target=torch.ops.aten.permute_copy.default](args = (%_param_constant0_1,), kwargs = {})</span>
+<span class="sd">    %_param_constant1_1 : [#users=1] = get_attr[target=_param_constant1]</span>
+<span class="sd">    %addmm_default_1 : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant1_1, %addmm_default, %t_default_1), kwargs = {})</span>
+<span class="sd">    %relu_default : [#users=1] = call_function[target=torch.ops.aten.relu.default](args = (%addmm_default_1,), kwargs = {})</span>
+<span class="sd">    %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]</span>
+<span class="sd">    %permute_default_2 : [#users=1] = call_function[target=torch.ops.aten.permute_copy.default](args = (%_param_constant2,), kwargs = {})</span>
+<span class="sd">    %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]</span>
+<span class="sd">    %addmm_default_2 : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant3, %relu_default, %t_default_2), kwargs = {})</span>
+<span class="sd">    return [addmm_default_2]</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="n">module_partitions</span> <span class="o">=</span> <span class="n">get_source_partitions</span><span class="p">(</span><span class="n">edge_graph</span><span class="p">,</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">ReLU</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">module_partitions</span><span class="p">)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">{&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;: [</span>
+<span class="sd">    ModulePartition(nodes=[_param_constant0, t_default, _param_constant1, addmm_default], module_type=&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;, input_nodes=[arg0], output_nodes=[addmm_default], params=[&quot;_param_constant0&quot;, &quot;_param_constant1&quot;]),</span>
+<span class="sd">    ModulePartition(nodes=[_param_constant0_1, t_default_1, _param_constant1_1, addmm_default_1], module_type=&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;, input_nodes=[addmm_default], output_nodes=[addmm_default_1], params=[&quot;_param_constant0_1&quot;, &quot;_param_constant1_1&quot;]),</span>
+<span class="sd">    ModulePartition(nodes=[_param_constant2, t_default_2, _param_constant3, addmm_default_2], module_type=&lt;class &#39;torch.nn.modules.linear.Linear&#39;&gt;, input_nodes=[relu_default], output_nodes=[addmm_default_2], params=[&quot;_param_constant2&quot;, &quot;_param_constant3&quot;])],</span>
+
+<span class="sd"> &lt;class &#39;torch.nn.modules.activation.ReLU&#39;&gt;: [</span>
+<span class="sd">    ModulePartition(nodes=[relu_default], module_type=&lt;class &#39;torch.nn.modules.activation.ReLU&#39;&gt;, input_nodes=[addmm_default_1], output_nodes=[relu_default], params=[])]}</span>
+<span class="sd">&quot;&quot;&quot;</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="compiler-memory-planning.html" class="btn btn-neutral float-right" title="Memory Planning" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="compiler-backend-dialect.html" class="btn btn-neutral" title="Backend Dialect" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Custom Compiler Passes and Partitioners</a><ul>
+<li><a class="reference internal" href="#passes">Passes</a><ul>
+<li><a class="reference internal" href="#level-1">Level 1</a><ul>
+<li><a class="reference internal" href="#one-to-one-pass">One-to-One Pass</a></li>
+<li><a class="reference internal" href="#one-to-x-pass">One-to-X Pass</a></li>
+<li><a class="reference internal" href="#one-to-none-pass">One-to-None Pass</a></li>
+<li><a class="reference internal" href="#utilizing-local-information">Utilizing Local Information</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#level-2">Level 2</a></li>
+<li><a class="reference internal" href="#level-3">Level 3</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#pass-manager">Pass Manager</a></li>
+<li><a class="reference internal" href="#partitioner">Partitioner</a><ul>
+<li><a class="reference internal" href="#subgraph-matcher">Subgraph Matcher</a></li>
+<li><a class="reference internal" href="#capability-based-partitioner">Capability Based Partitioner</a></li>
+<li><a class="reference internal" href="#combined">Combined</a></li>
+<li><a class="reference internal" href="#source-partitioner">Source Partitioner</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/newsletter">Newsletter</a>
+             </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/staff">Staff</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/contact-us">Contact Us</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

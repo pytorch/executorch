@@ -1,0 +1,1364 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Managing Tensor Memory in C++ &mdash; ExecuTorch 1.0 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Detailed C++ Runtime APIs Tutorial" href="running-a-model-cpp-tutorial.html" />
+    <link rel="prev" title="Running an ExecuTorch Model Using the Module Extension in C++" href="extension-module.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
+                  <span class="dropdown-title">Contributor Awards - 2024</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
+                  <span class="dropdown-title">ExecuTorch Docs</span>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                  <p>Stay up-to-date with the latest updates</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
+                  <span class="dropdown-title">Contact Us</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>1.0 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Managing Tensor Memory in C++</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/extension-tensor.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="managing-tensor-memory-in-c">
+<h1>Managing Tensor Memory in C++<a class="headerlink" href="#managing-tensor-memory-in-c" title="Permalink to this heading">¶</a></h1>
+<p><strong>Author:</strong> <a class="reference external" href="https://github.com/shoumikhin">Anthony Shoumikhin</a></p>
+<p>Tensors are fundamental data structures in ExecuTorch, representing multi-dimensional arrays used in computations for neural networks and other numerical algorithms. In ExecuTorch, the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/portable_type/tensor.h">Tensor</a> class doesn’t own its metadata (sizes, strides, dim_order) or data, keeping the runtime lightweight. Users are responsible for supplying all these memory buffers and ensuring that the metadata and data outlive the <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instance. While this design is lightweight and flexible, especially for tiny embedded systems, it places a significant burden on the user. If your environment requires minimal dynamic allocations, a small binary footprint, or limited C++ standard library support, you’ll need to accept that trade-off and stick with the regular <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> type.</p>
+<p>Imagine you’re working with a <a class="reference internal" href="extension-module.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">Module</span></code></span></a> interface, and you need to pass a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> to the <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method. You would need to declare and maintain at least the sizes array and data separately, sometimes the strides too, often leading to the following pattern:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">aten</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="n">SizesType</span><span class="w"> </span><span class="n">sizes</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">};</span>
+<span class="n">DimOrderType</span><span class="w"> </span><span class="n">dim_order</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">};</span>
+<span class="n">StridesType</span><span class="w"> </span><span class="n">strides</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">};</span>
+<span class="kt">float</span><span class="w"> </span><span class="n">data</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">};</span>
+<span class="n">TensorImpl</span><span class="w"> </span><span class="nf">tensor_impl</span><span class="p">(</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">,</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">size</span><span class="p">(</span><span class="n">sizes</span><span class="p">),</span>
+<span class="w">    </span><span class="n">sizes</span><span class="p">,</span>
+<span class="w">    </span><span class="n">data</span><span class="p">,</span>
+<span class="w">    </span><span class="n">dim_order</span><span class="p">,</span>
+<span class="w">    </span><span class="n">strides</span><span class="p">);</span>
+<span class="c1">// ...</span>
+<span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">Tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tensor_impl</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>You must ensure <code class="docutils literal notranslate"><span class="pre">sizes</span></code>, <code class="docutils literal notranslate"><span class="pre">dim_order</span></code>, <code class="docutils literal notranslate"><span class="pre">strides</span></code>, and <code class="docutils literal notranslate"><span class="pre">data</span></code> stay valid. This makes code maintenance difficult and error-prone. Users have struggled to manage lifetimes, and many have created their own ad-hoc managed tensor abstractions to hold all the pieces together, leading to a fragmented and inconsistent ecosystem.</p>
+<div class="section" id="introducing-tensorptr">
+<h2>Introducing TensorPtr<a class="headerlink" href="#introducing-tensorptr" title="Permalink to this heading">¶</a></h2>
+<p>To alleviate these issues, ExecuTorch provides <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>, a smart pointer that manages the lifecycle of both the tensor’s data and its dynamic metadata.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>, users no longer need to worry about metadata lifetimes separately. Data ownership is determined based on whether it is passed by pointer or moved into the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> as an <code class="docutils literal notranslate"><span class="pre">std::vector</span></code>. Everything is bundled in one place and managed automatically, enabling you to focus on actual computations.</p>
+<p>Here’s how you can use it:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">executorch</span><span class="o">::</span><span class="nn">extension</span><span class="p">;</span>
+
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                                </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">});</span><span class="w"> </span><span class="c1">// data</span>
+<span class="c1">// ...</span>
+<span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The data is now owned by the tensor instance because it’s provided as a vector. To create a non-owning <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>, just pass the data by pointer. The <code class="docutils literal notranslate"><span class="pre">type</span></code> is deduced automatically based on the data vector (<code class="docutils literal notranslate"><span class="pre">float</span></code>). <code class="docutils literal notranslate"><span class="pre">strides</span></code> and <code class="docutils literal notranslate"><span class="pre">dim_order</span></code> are computed automatically to default values based on the <code class="docutils literal notranslate"><span class="pre">sizes</span></code> if not specified explicitly as additional arguments.</p>
+<p><code class="docutils literal notranslate"><span class="pre">EValue</span></code> in <code class="docutils literal notranslate"><span class="pre">Module::forward()</span></code> accepts <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> directly, ensuring seamless integration. <code class="docutils literal notranslate"><span class="pre">EValue</span></code> can now be constructed implicitly with a smart pointer to any type that it can hold. This allows <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to be dereferenced implicitly when passed to <code class="docutils literal notranslate"><span class="pre">forward()</span></code>, and <code class="docutils literal notranslate"><span class="pre">EValue</span></code> will hold the <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> that the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> points to.</p>
+</div>
+<div class="section" id="api-overview">
+<h2>API Overview<a class="headerlink" href="#api-overview" title="Permalink to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> is literally an alias for <code class="docutils literal notranslate"><span class="pre">std::shared_ptr&lt;Tensor&gt;</span></code>, so you can work with it easily without duplicating the data and metadata. Each <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> instance may either own its data or reference external data.</p>
+<div class="section" id="creating-tensors">
+<h3>Creating Tensors<a class="headerlink" href="#creating-tensors" title="Permalink to this heading">¶</a></h3>
+<p>There are several ways to create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>.</p>
+<div class="section" id="creating-scalar-tensors">
+<h4>Creating Scalar Tensors<a class="headerlink" href="#creating-scalar-tensors" title="Permalink to this heading">¶</a></h4>
+<p>You can create a scalar tensor, i.e. a tensor with zero dimensions or with one of the sizes being zero.</p>
+<p><em>Providing A Single Data Value</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="mf">3.14</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The resulting tensor will contain a single value <code class="docutils literal notranslate"><span class="pre">3.14</span></code> of type double, which is deduced automatically.</p>
+<p><em>Providing A Single Data Value with a Type</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Now the integer <code class="docutils literal notranslate"><span class="pre">42</span></code> will be cast to float and the tensor will contain a single value <code class="docutils literal notranslate"><span class="pre">42</span></code> of type float.</p>
+</div>
+<div class="section" id="owning-data-from-a-vector">
+<h4>Owning Data from a Vector<a class="headerlink" href="#owning-data-from-a-vector" title="Permalink to this heading">¶</a></h4>
+<p>When you provide sizes and data vectors, <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> takes ownership of both the data and the sizes.</p>
+<p><em>Providing Data Vector</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                                 </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">});</span><span class="w">  </span><span class="c1">// data (float)</span>
+</pre></div>
+</div>
+<p>The type is deduced automatically as <code class="docutils literal notranslate"><span class="pre">ScalarType::Float</span></code> from the data vector.</p>
+<p><em>Providing Data Vector with a Type</em></p>
+<p>If you provide data of one type but specify a different scalar type, the data will be cast to the given type.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">},</span><span class="w">          </span><span class="c1">// data (int)</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Double</span><span class="p">);</span><span class="w">         </span><span class="c1">// double scalar type</span>
+</pre></div>
+</div>
+<p>In this example, even though the data vector contains integers, we specify the scalar type as <code class="docutils literal notranslate"><span class="pre">Double</span></code>. The integers are cast to double, and the new data vector is owned by the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>. Since the <code class="docutils literal notranslate"><span class="pre">sizes</span></code> argument is skipped in this example, the tensor is one-dimensional with a size equal to the length of the data vector. Note that the reverse cast, from a floating-point type to an integral type, is not allowed because that loses precision. Similarly, casting other types to <code class="docutils literal notranslate"><span class="pre">Bool</span></code> is disallowed.</p>
+<p><em>Providing Data Vector as <code class="docutils literal notranslate"><span class="pre">std::vector&lt;uint8_t&gt;</span></code></em></p>
+<p>You can also provide raw data in the form of a <code class="docutils literal notranslate"><span class="pre">std::vector&lt;uint8_t&gt;</span></code>, specifying the sizes and scalar type. The data will be reinterpreted according to the provided type.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* raw data */</span><span class="p">;</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                 </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">data</span><span class="p">),</span><span class="w">        </span><span class="c1">// data as uint8_t vector</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Int</span><span class="p">);</span><span class="w">       </span><span class="c1">// int scalar type</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">data</span></code> vector must be large enough to accommodate all the elements according to the provided sizes and scalar type.</p>
+</div>
+<div class="section" id="non-owning-data-from-raw-pointer">
+<h4>Non-Owning Data from Raw Pointer<a class="headerlink" href="#non-owning-data-from-raw-pointer" title="Permalink to this heading">¶</a></h4>
+<p>You can create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> that references existing data without taking ownership.</p>
+<p><em>Providing Raw Data</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="kt">float</span><span class="w"> </span><span class="n">data</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">};</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">              </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="n">data</span><span class="p">,</span><span class="w">                </span><span class="c1">// raw data pointer</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">);</span><span class="w">  </span><span class="c1">// float scalar type</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> does not own the data, so you must ensure the <code class="docutils literal notranslate"><span class="pre">data</span></code> remains valid.</p>
+<p><em>Providing Raw Data with Custom Deleter</em></p>
+<p>If you want the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to manage the lifetime of the data, you can provide a custom deleter.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">double</span><span class="p">[</span><span class="mi">6</span><span class="p">]{</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0</span><span class="p">};</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                               </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="n">data</span><span class="p">,</span><span class="w">                                 </span><span class="c1">// data pointer</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Double</span><span class="p">,</span><span class="w">                   </span><span class="c1">// double scalar type</span>
+<span class="w">    </span><span class="n">TensorShapeDynamism</span><span class="o">::</span><span class="n">DYNAMIC_BOUND</span><span class="p">,</span><span class="w">   </span><span class="c1">// default dynamism</span>
+<span class="w">    </span><span class="p">[](</span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">ptr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">delete</span><span class="p">[]</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">double</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">ptr</span><span class="p">);</span><span class="w"> </span><span class="p">});</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> will call the custom deleter when it is destroyed, i.e., when the smart pointer is reset and no more references to the underlying <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> exist.</p>
+</div>
+<div class="section" id="sharing-existing-tensor">
+<h4>Sharing Existing Tensor<a class="headerlink" href="#sharing-existing-tensor" title="Permalink to this heading">¶</a></h4>
+<p>Since <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> is a <code class="docutils literal notranslate"><span class="pre">std::shared_ptr&lt;Tensor&gt;</span></code>, you can easily create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> that shares an existing <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>. Any changes made to the shared data are reflected across all instances sharing the same data.</p>
+<p><em>Sharing Existing TensorPtr</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">});</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor_copy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tensor</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Now <code class="docutils literal notranslate"><span class="pre">tensor</span></code> and <code class="docutils literal notranslate"><span class="pre">tensor_copy</span></code> point to the same data and metadata.</p>
+</div>
+<div class="section" id="viewing-existing-tensor">
+<h4>Viewing Existing Tensor<a class="headerlink" href="#viewing-existing-tensor" title="Permalink to this heading">¶</a></h4>
+<p>You can create a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> from an existing <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>, copying its properties and referencing the same data.</p>
+<p><em>Viewing Existing Tensor</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Tensor</span><span class="w"> </span><span class="n">original_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* some existing tensor */</span><span class="p">;</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="n">original_tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Now the newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> references the same data as the original tensor, but has its own metadata copy, so it can interpret or “view” the data differently, but any modifications to the data will be reflected in the original <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> as well.</p>
+</div>
+</div>
+<div class="section" id="cloning-tensors">
+<h3>Cloning Tensors<a class="headerlink" href="#cloning-tensors" title="Permalink to this heading">¶</a></h3>
+<p>To create a new <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> that owns a copy of the data from an existing tensor:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Tensor</span><span class="w"> </span><span class="n">original_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* some existing tensor */</span><span class="p">;</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">clone_tensor_ptr</span><span class="p">(</span><span class="n">original_tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> has its own copy of the data, so it can modify and manage it independently.
+Likewise, you can create a clone of an existing <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">original_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span><span class="cm">/* ... */</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">clone_tensor_ptr</span><span class="p">(</span><span class="n">original_tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Note that, regardless of whether the original <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> owns the data or not, the newly created <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> will own a copy of the data.</p>
+</div>
+<div class="section" id="resizing-tensors">
+<h3>Resizing Tensors<a class="headerlink" href="#resizing-tensors" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">TensorShapeDynamism</span></code> enum specifies the mutability of a tensor’s shape:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">STATIC</span></code>: The tensor’s shape cannot be changed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code>: The tensor’s shape can be changed but cannot contain more elements than it originally had at creation based on the initial sizes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code>: The tensor’s shape can be changed arbitrarily. Currently, <code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code> is an alias for <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code>.</p></li>
+</ul>
+<p>When resizing a tensor, you must respect its dynamism setting. Resizing is only allowed for tensors with <code class="docutils literal notranslate"><span class="pre">DYNAMIC</span></code> or <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code> shapes, and you cannot resize <code class="docutils literal notranslate"><span class="pre">DYNAMIC_BOUND</span></code> tensors to contain more elements than they had initially.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">make_tensor_ptr</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w">                      </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="mi">6</span><span class="p">},</span><span class="w">          </span><span class="c1">// data</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Int</span><span class="p">,</span>
+<span class="w">    </span><span class="n">TensorShapeDynamism</span><span class="o">::</span><span class="n">DYNAMIC_BOUND</span><span class="p">);</span>
+<span class="c1">// Initial sizes: {2, 3}</span>
+<span class="c1">// Number of elements: 6</span>
+
+<span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">});</span>
+<span class="c1">// The tensor sizes are now {2, 2}</span>
+<span class="c1">// Number of elements is 4 &lt; initial 6</span>
+
+<span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
+<span class="c1">// The tensor sizes are now {1, 3}</span>
+<span class="c1">// Number of elements is 3 &lt; initial 6</span>
+
+<span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">});</span>
+<span class="c1">// The tensor sizes are now {3, 2}</span>
+<span class="c1">// Number of elements is 6 == initial 6</span>
+
+<span class="n">resize_tensor_ptr</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">6</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">});</span>
+<span class="c1">// The tensor sizes are now {6, 1}</span>
+<span class="c1">// Number of elements is 6 == initial 6</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="convenience-helpers">
+<h2>Convenience Helpers<a class="headerlink" href="#convenience-helpers" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch provides several helper functions to create tensors conveniently.</p>
+<div class="section" id="creating-non-owning-tensors-with-for-blob-and-from-blob">
+<h3>Creating Non-Owning Tensors with <code class="docutils literal notranslate"><span class="pre">for_blob</span></code> and <code class="docutils literal notranslate"><span class="pre">from_blob</span></code><a class="headerlink" href="#creating-non-owning-tensors-with-for-blob-and-from-blob" title="Permalink to this heading">¶</a></h3>
+<p>These helpers allow you to create tensors that do not own the data.</p>
+<p><em>Using <code class="docutils literal notranslate"><span class="pre">from_blob()</span></code></em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="kt">float</span><span class="w"> </span><span class="n">data</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">};</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span>
+<span class="w">    </span><span class="n">data</span><span class="p">,</span><span class="w">                </span><span class="c1">// data pointer</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">3</span><span class="p">},</span><span class="w">                 </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">);</span><span class="w">  </span><span class="c1">// float scalar type</span>
+</pre></div>
+</div>
+<p><em>Using <code class="docutils literal notranslate"><span class="pre">for_blob()</span></code> with Fluent Syntax</em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="kt">double</span><span class="w"> </span><span class="n">data</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0</span><span class="p">,</span><span class="w"> </span><span class="mf">5.0</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0</span><span class="p">};</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">for_blob</span><span class="p">(</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w"> </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Double</span><span class="p">)</span>
+<span class="w">                  </span><span class="p">.</span><span class="n">strides</span><span class="p">({</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">})</span>
+<span class="w">                  </span><span class="p">.</span><span class="n">dynamism</span><span class="p">(</span><span class="n">TensorShapeDynamism</span><span class="o">::</span><span class="n">STATIC</span><span class="p">)</span>
+<span class="w">                  </span><span class="p">.</span><span class="n">make_tensor_ptr</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><em>Using Custom Deleter with <code class="docutils literal notranslate"><span class="pre">from_blob()</span></code></em></p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="kt">int</span><span class="o">*</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">int</span><span class="p">[</span><span class="mi">3</span><span class="p">]{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">};</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span>
+<span class="w">    </span><span class="n">data</span><span class="p">,</span><span class="w">             </span><span class="c1">// data pointer</span>
+<span class="w">    </span><span class="p">{</span><span class="mi">3</span><span class="p">},</span><span class="w">              </span><span class="c1">// sizes</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Int</span><span class="p">,</span><span class="w">  </span><span class="c1">// int scalar type</span>
+<span class="w">    </span><span class="p">[](</span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">ptr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">delete</span><span class="p">[]</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">ptr</span><span class="p">);</span><span class="w"> </span><span class="p">});</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> will call the custom deleter when it is destroyed.</p>
+</div>
+<div class="section" id="creating-empty-tensors">
+<h3>Creating Empty Tensors<a class="headerlink" href="#creating-empty-tensors" title="Permalink to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">empty()</span></code> creates an uninitialized tensor with sizes specified.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">empty</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">empty_like()</span></code> creates an uninitialized tensor with the same sizes as an existing <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">TensorPtr</span><span class="w"> </span><span class="n">original_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* some existing tensor */</span><span class="p">;</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">empty_like</span><span class="p">(</span><span class="n">original_tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>And <code class="docutils literal notranslate"><span class="pre">empty_strided()</span></code> creates an uninitialized tensor with sizes and strides specified.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">empty_strided</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="creating-tensors-filled-with-specific-values">
+<h3>Creating Tensors Filled with Specific Values<a class="headerlink" href="#creating-tensors-filled-with-specific-values" title="Permalink to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">full()</span></code>, <code class="docutils literal notranslate"><span class="pre">zeros()</span></code> and <code class="docutils literal notranslate"><span class="pre">ones()</span></code> create a tensor filled with a provided value, zeros or ones respectively.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor_full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">full</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span><span class="w"> </span><span class="mf">42.0f</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor_zeros</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">zeros</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">tensor_ones</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ones</span><span class="p">({</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">});</span>
+</pre></div>
+</div>
+<p>Similarly to <code class="docutils literal notranslate"><span class="pre">empty()</span></code>, there are extra helper functions <code class="docutils literal notranslate"><span class="pre">full_like()</span></code>, <code class="docutils literal notranslate"><span class="pre">full_strided()</span></code>, <code class="docutils literal notranslate"><span class="pre">zeros_like()</span></code>, <code class="docutils literal notranslate"><span class="pre">zeros_strided()</span></code>, <code class="docutils literal notranslate"><span class="pre">ones_like()</span></code> and <code class="docutils literal notranslate"><span class="pre">ones_strided()</span></code> to create filled tensors with the same properties as an existing <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> or with custom strides.</p>
+</div>
+<div class="section" id="creating-random-tensors">
+<h3>Creating Random Tensors<a class="headerlink" href="#creating-random-tensors" title="Permalink to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">rand()</span></code> creates a tensor filled with random values between 0 and 1.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor_rand</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">rand</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">randn()</span></code> creates a tensor filled with random values from a normal distribution.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor_randn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">randn</span><span class="p">({</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">randint()</span></code> creates a tensor filled with random integers between min (inclusive) and max (exclusive) integers specified.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor_randint</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">});</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id1">
+<h3>Creating Scalar Tensors<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h3>
+<p>In addition to <code class="docutils literal notranslate"><span class="pre">make_tensor_ptr()</span></code> with a single data value, you can create a scalar tensor with <code class="docutils literal notranslate"><span class="pre">scalar_tensor()</span></code>.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">auto</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">scalar_tensor</span><span class="p">(</span><span class="mf">3.14f</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">scalar_tensor()</span></code> function expects a value of type <code class="docutils literal notranslate"><span class="pre">Scalar</span></code>. In ExecuTorch, <code class="docutils literal notranslate"><span class="pre">Scalar</span></code> can represent <code class="docutils literal notranslate"><span class="pre">bool</span></code>, <code class="docutils literal notranslate"><span class="pre">int</span></code>, or floating-point types, but not types like <code class="docutils literal notranslate"><span class="pre">Half</span></code> or <code class="docutils literal notranslate"><span class="pre">BFloat16</span></code>, etc. for which you’d need to use <code class="docutils literal notranslate"><span class="pre">make_tensor_ptr()</span></code> to skip the <code class="docutils literal notranslate"><span class="pre">Scalar</span></code> type.</p>
+</div>
+</div>
+<div class="section" id="notes-on-evalue-and-lifetime-management">
+<h2>Notes on EValue and Lifetime Management<a class="headerlink" href="#notes-on-evalue-and-lifetime-management" title="Permalink to this heading">¶</a></h2>
+<p>The <a class="reference internal" href="extension-module.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">Module</span></code></span></a> interface expects data in the form of <code class="docutils literal notranslate"><span class="pre">EValue</span></code>, a variant type that can hold a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or other scalar types. When you pass a <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to a function expecting an <code class="docutils literal notranslate"><span class="pre">EValue</span></code>, you can dereference the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> to get the underlying <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">TensorPtr</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* create a TensorPtr */</span>
+<span class="c1">//...</span>
+<span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">tensor</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Or even a vector of <code class="docutils literal notranslate"><span class="pre">EValues</span></code> for multiple parameters.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">TensorPtr</span><span class="w"> </span><span class="n">tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* create a TensorPtr */</span>
+<span class="n">TensorPtr</span><span class="w"> </span><span class="n">tensor2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="cm">/* create another TensorPtr */</span>
+<span class="c1">//...</span>
+<span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">({</span><span class="n">tensor</span><span class="p">,</span><span class="w"> </span><span class="n">tensor2</span><span class="p">});</span>
+</pre></div>
+</div>
+<p>However, be cautious: <code class="docutils literal notranslate"><span class="pre">EValue</span></code> will not hold onto the dynamic data and metadata from the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code>. It merely holds a regular <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>, which does not own the data or metadata but refers to them using raw pointers. You need to ensure that the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> remains valid for as long as the <code class="docutils literal notranslate"><span class="pre">EValue</span></code> is in use.</p>
+<p>This also applies when using functions like <code class="docutils literal notranslate"><span class="pre">set_input()</span></code> or <code class="docutils literal notranslate"><span class="pre">set_output()</span></code> that expect <code class="docutils literal notranslate"><span class="pre">EValue</span></code>.</p>
+</div>
+<div class="section" id="interoperability-with-aten">
+<h2>Interoperability with ATen<a class="headerlink" href="#interoperability-with-aten" title="Permalink to this heading">¶</a></h2>
+<p>If your code is compiled with the preprocessor flag <code class="docutils literal notranslate"><span class="pre">USE_ATEN_LIB</span></code> enabled, all the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> APIs will use <code class="docutils literal notranslate"><span class="pre">at::</span></code> APIs under the hood. E.g. <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> becomes a <code class="docutils literal notranslate"><span class="pre">std::shared_ptr&lt;at::Tensor&gt;</span></code>. This allows for seamless integration with <a class="reference external" href="https://pytorch.org/cppdocs">PyTorch ATen</a> library.</p>
+<div class="section" id="api-equivalence-table">
+<h3>API Equivalence Table<a class="headerlink" href="#api-equivalence-table" title="Permalink to this heading">¶</a></h3>
+<p>Here’s a table matching <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> creation functions with their corresponding ATen APIs:</p>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>ATen</p></th>
+<th class="head"><p>ExecuTorch</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::tensor(data,</span> <span class="pre">type)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">make_tensor_ptr(data,</span> <span class="pre">type)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::tensor(data,</span> <span class="pre">type).reshape(sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">make_tensor_ptr(sizes,</span> <span class="pre">data,</span> <span class="pre">type)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">tensor.clone()</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">clone_tensor_ptr(tensor)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">tensor.resize_(new_sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">resize_tensor_ptr(tensor,</span> <span class="pre">new_sizes)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::scalar_tensor(value)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">scalar_tensor(value)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::from_blob(data,</span> <span class="pre">sizes,</span> <span class="pre">type)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">from_blob(data,</span> <span class="pre">sizes,</span> <span class="pre">type)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::empty(sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">empty(sizes)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::empty_like(tensor)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">empty_like(tensor)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::empty_strided(sizes,</span> <span class="pre">strides)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">empty_strided(sizes,</span> <span class="pre">strides)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::full(sizes,</span> <span class="pre">value)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">full(sizes,</span> <span class="pre">value)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::full_like(tensor,</span> <span class="pre">value)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">full_like(tensor,</span> <span class="pre">value)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::full_strided(sizes,</span> <span class="pre">strides,</span> <span class="pre">value)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">full_strided(sizes,</span> <span class="pre">strides,</span> <span class="pre">value)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::zeros(sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">zeros(sizes)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::zeros_like(tensor)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">zeros_like(tensor)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::zeros_strided(sizes,</span> <span class="pre">strides)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">zeros_strided(sizes,</span> <span class="pre">strides)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::ones(sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ones(sizes)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::ones_like(tensor)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ones_like(tensor)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::ones_strided(sizes,</span> <span class="pre">strides)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ones_strided(sizes,</span> <span class="pre">strides)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::rand(sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">rand(sizes)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::rand_like(tensor)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">rand_like(tensor)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::randn(sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">randn(sizes)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::randn_like(tensor)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">randn_like(tensor)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">at::randint(low,</span> <span class="pre">high,</span> <span class="pre">sizes)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">randint(low,</span> <span class="pre">high,</span> <span class="pre">sizes)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">at::randint_like(tensor,</span> <span class="pre">low,</span> <span class="pre">high)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">randint_like(tensor,</span> <span class="pre">low,</span> <span class="pre">high)</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="section" id="best-practices">
+<h2>Best Practices<a class="headerlink" href="#best-practices" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><em>Manage Lifetimes Carefully</em>: Even though <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> handles memory management, ensure that any non-owned data (e.g., when using <code class="docutils literal notranslate"><span class="pre">from_blob()</span></code>) remains valid while the tensor is in use.</p></li>
+<li><p><em>Use Convenience Functions</em>: Utilize helper functions for common tensor creation patterns to write cleaner and more readable code.</p></li>
+<li><p><em>Be Aware of Data Ownership</em>: Know whether your tensor owns its data or references external data to avoid unintended side effects or memory leaks.</p></li>
+<li><p><em>Ensure <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> Outlives <code class="docutils literal notranslate"><span class="pre">EValue</span></code></em>: When passing tensors to modules that expect <code class="docutils literal notranslate"><span class="pre">EValue</span></code>, ensure that the <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> remains valid as long as the <code class="docutils literal notranslate"><span class="pre">EValue</span></code> is in use.</p></li>
+</ul>
+</div>
+<div class="section" id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">TensorPtr</span></code> in ExecuTorch simplifies tensor memory management by bundling the data and dynamic metadata into a smart pointer. This design eliminates the need for users to manage multiple pieces of data and ensures safer and more maintainable code.</p>
+<p>By providing interfaces similar to PyTorch’s ATen library, ExecuTorch simplifies the adoption of the new API, allowing developers to transition without a steep learning curve.</p>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="running-a-model-cpp-tutorial.html" class="btn btn-neutral float-right" title="Detailed C++ Runtime APIs Tutorial" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="extension-module.html" class="btn btn-neutral" title="Running an ExecuTorch Model Using the Module Extension in C++" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Managing Tensor Memory in C++</a><ul>
+<li><a class="reference internal" href="#introducing-tensorptr">Introducing TensorPtr</a></li>
+<li><a class="reference internal" href="#api-overview">API Overview</a><ul>
+<li><a class="reference internal" href="#creating-tensors">Creating Tensors</a><ul>
+<li><a class="reference internal" href="#creating-scalar-tensors">Creating Scalar Tensors</a></li>
+<li><a class="reference internal" href="#owning-data-from-a-vector">Owning Data from a Vector</a></li>
+<li><a class="reference internal" href="#non-owning-data-from-raw-pointer">Non-Owning Data from Raw Pointer</a></li>
+<li><a class="reference internal" href="#sharing-existing-tensor">Sharing Existing Tensor</a></li>
+<li><a class="reference internal" href="#viewing-existing-tensor">Viewing Existing Tensor</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#cloning-tensors">Cloning Tensors</a></li>
+<li><a class="reference internal" href="#resizing-tensors">Resizing Tensors</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#convenience-helpers">Convenience Helpers</a><ul>
+<li><a class="reference internal" href="#creating-non-owning-tensors-with-for-blob-and-from-blob">Creating Non-Owning Tensors with <code class="docutils literal notranslate"><span class="pre">for_blob</span></code> and <code class="docutils literal notranslate"><span class="pre">from_blob</span></code></a></li>
+<li><a class="reference internal" href="#creating-empty-tensors">Creating Empty Tensors</a></li>
+<li><a class="reference internal" href="#creating-tensors-filled-with-specific-values">Creating Tensors Filled with Specific Values</a></li>
+<li><a class="reference internal" href="#creating-random-tensors">Creating Random Tensors</a></li>
+<li><a class="reference internal" href="#id1">Creating Scalar Tensors</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#notes-on-evalue-and-lifetime-management">Notes on EValue and Lifetime Management</a></li>
+<li><a class="reference internal" href="#interoperability-with-aten">Interoperability with ATen</a><ul>
+<li><a class="reference internal" href="#api-equivalence-table">API Equivalence Table</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#best-practices">Best Practices</a></li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/newsletter">Newsletter</a>
+             </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/staff">Staff</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/contact-us">Contact Us</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

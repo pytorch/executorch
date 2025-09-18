@@ -1,0 +1,1171 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>New Contributor Guide &mdash; ExecuTorch 1.0 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
+                  <span class="dropdown-title">Contributor Awards - 2024</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
+                  <span class="dropdown-title">ExecuTorch Docs</span>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                  <p>Stay up-to-date with the latest updates</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
+                  <span class="dropdown-title">Contact Us</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>1.0 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>New Contributor Guide</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/new-contributor-guide.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="new-contributor-guide">
+<h1>New Contributor Guide<a class="headerlink" href="#new-contributor-guide" title="Permalink to this heading">¶</a></h1>
+<p>Welcome to <strong>ExecuTorch</strong> — a runtime for efficient deployment of PyTorch AI models to edge devices, including mobile phones, wearables, and embedded systems. ExecuTorch is proudly open-source and welcomes contributions from developers of all backgrounds.</p>
+<p>If you’re new to ExecuTorch, open-source projects, or GitHub, this guide is for you. We’re excited to have you on board!</p>
+<p>If you have any questions, issues, comments, or just want to say hello to our community, please feel free to introduce yourselves on our <strong><a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord Server</a></strong>. We’d love to speak with you.</p>
+<hr class="docutils" />
+<div class="section" id="prerequisites">
+<h2>🔑 Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="git">
+<h3>Git<a class="headerlink" href="#git" title="Permalink to this heading">¶</a></h3>
+<p>This guide assumes a basic knowledge of Git, and how to run Git commands in your terminal. If you’ve never used Git before, you can read <a class="reference external" href="https://www.freecodecamp.org/news/learn-the-basics-of-git-in-under-10-minutes-da548267cc91/">this quick guide</a>, <a class="reference external" href="https://rogerdudler.github.io/git-guide/">git guide</a>, <a class="reference external" href="https://towardsdatascience.com/git-commands-cheat-sheet-software-developer-54f6aedc1c46/">cheat sheet</a>, the <a class="reference external" href="https://docs.github.com/en/get-started/git-basics/set-up-git">Setup Git</a> page from GitHub’s documentation, or watch one of the many tutorials on YouTube.</p>
+<p>Git is a powerful version control system for coding projects — it enables you to collaborate, record code changes, and avoid losing hours of work when you make a mistake. It is essential for projects like ExecuTorch with large codebases and many collaborators. Without it, the complexity of tracking everyone’s changes, reviewing their code, and identifying bugs, quickly becomes unmanageable.</p>
+<p>Git is an industry standard in the coding world, and particularly in open-source. It can take a while to get used to at first, but we promise you it’s well worth the effort! We believe that learning Git can make you a significantly stronger and more effective developer.</p>
+</div>
+<div class="section" id="a-github-account">
+<h3>A GitHub Account<a class="headerlink" href="#a-github-account" title="Permalink to this heading">¶</a></h3>
+<p>We also assume that you have a GitHub account. If you don’t, please <a class="reference external" href="https://github.com/signup">register here</a>, <a class="reference external" href="https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-personal-account-on-github/managing-email-preferences/verifying-your-email-address#verifying-your-email-address">verify your email address</a> (required for the steps below to work!), then <a class="reference external" href="https://github.com/login">login</a> to your new account before proceeding further.</p>
+</div>
+</div>
+<hr class="docutils" />
+<div class="section" id="your-first-contribution">
+<h2>🧑‍💻 Your First Contribution<a class="headerlink" href="#your-first-contribution" title="Permalink to this heading">¶</a></h2>
+<p>The first step towards making a contribution is finding something you want to work on. If you’re new to ExecuTorch or the wider world of open-source, it might seem hard to know where to start.</p>
+<p>To help you out with this, we’ve gathered together some beginner-friendly suggestions.  These are self-contained pieces of work — “issues” in GitHub parlance — specifically designed to help people new to ExecuTorch get started contributing code. We call these “good first issues”, and you can view all of them here: <a class="reference external" href="https://github.com/orgs/pytorch/projects/102/views/1">New Contributors Projects and Issues</a>.</p>
+<p>Here’s what the list looks like at the time of writing — you can see that they all have a purple <code class="docutils literal notranslate"><span class="pre">good</span> <span class="pre">first</span> <span class="pre">issue</span></code> label in the right-hand column:</p>
+<p><img alt="" src="_images/good_first_issues.png" /></p>
+<p>Please check it out and see if anything interests you! New issues are added to this list all the time.</p>
+<p>Once you’ve found an issue you like the look of, read our <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md">Contribution Guide</a>. This comprehensive manual will help you:</p>
+<ul class="simple">
+<li><p>build ExecuTorch on your machine.</p></li>
+<li><p>understand the structure of the ExecuTorch codebase.</p></li>
+<li><p>format, test, and document your code according to ExecuTorch best practices.</p></li>
+<li><p>and finally, submit your code for review, so it can be polished, approved, and merged into the main codebase.</p></li>
+</ul>
+<p>If that seems like a lot of information, please read on — we’ll walk you through your first contribution right now.</p>
+</div>
+<hr class="docutils" />
+<div class="section" id="contributing-code-step-by-step">
+<h2>📤 Contributing Code, Step-By-Step<a class="headerlink" href="#contributing-code-step-by-step" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="prepare-your-workspace">
+<h3>Prepare Your Workspace<a class="headerlink" href="#prepare-your-workspace" title="Permalink to this heading">¶</a></h3>
+<p>Before you can start writing any code, you need to get a copy of ExecuTorch codebase onto your GitHub account, and download it onto your dev machine. You’ll want to build it, too — otherwise, you won’t be able to test your solution.</p>
+<ol class="arabic">
+<li><p>Fork the main ExecuTorch repository into your GitHub account. This creates a clone of the repository in your own space, so you can modify it freely. To do this, visit the <a class="reference external" href="https://github.com/pytorch/executorch">main repository page</a> and click <code class="docutils literal notranslate"><span class="pre">Fork</span></code>:</p>
+<p><img alt="" src="_images/how_to_fork1.png" /></p>
+<p>This will take you to another page. Click <code class="docutils literal notranslate"><span class="pre">Create</span> <span class="pre">fork</span></code>:</p>
+<p><img alt="" src="_images/how_to_fork2.png" /></p>
+</li>
+<li><p>Clone your fork locally. This downloads a copy of your fork onto your dev machine, ready for you to make your changes.</p>
+<p>In the example below, we clone using HTTP, but any of the provided methods on the <code class="docutils literal notranslate"><span class="pre">Local</span></code> tab are fine. For HTTP, copy the URL given here:</p>
+<p><img alt="" src="_images/how_to_clone.png" /></p>
+<p>Then go to your terminal, enter the directory you want to clone the fork to, and run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pytorch/executorch.git
+</pre></div>
+</div>
+<p>This will create an <code class="docutils literal notranslate"><span class="pre">executorch</span></code> folder in your directory containing your forked codebase.</p>
+</li>
+<li><p>Set the <code class="docutils literal notranslate"><span class="pre">upstream</span></code> pointing to the main ExecuTorch repository. This will allow you to easily synchronize with the latest development.</p>
+<p>Assuming you’re in the same directory you cloned into, run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch<span class="w"> </span><span class="c1"># enter the cloned project</span>
+git<span class="w"> </span>remote<span class="w"> </span>add<span class="w"> </span>upstream<span class="w"> </span>https://github.com/pytorch/executorch.git
+</pre></div>
+</div>
+<p>To see if it worked, run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>remote<span class="w"> </span>-v
+</pre></div>
+</div>
+<p>Depending on how you cloned your repo (HTTP, SSH, etc.), this should print something like:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>origin<span class="w">  </span>https://github.com/<span class="o">{</span>YOUR_GITHUB_USERNAME<span class="o">}</span>/executorch.git<span class="w"> </span><span class="o">(</span>fetch<span class="o">)</span>
+origin<span class="w">  </span>https://github.com/<span class="o">{</span>YOUR_GITHUB_USERNAME<span class="o">}</span>/executorch.git<span class="w"> </span><span class="o">(</span>push<span class="o">)</span>
+upstream<span class="w">        </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">(</span>fetch<span class="o">)</span>
+upstream<span class="w">        </span>https://github.com/pytorch/executorch.git<span class="w"> </span><span class="o">(</span>push<span class="o">)</span>
+</pre></div>
+</div>
+<p>What does this mean? Well:</p>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">origin</span></code> entries show your forked GitHub repository. They tell you that when you run <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">pull</span></code> or <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">push</span></code>, your changes will go from/to your GitHub fork.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">upstream</span></code> entries show the main ExecuTorch repository. If you want to sync the latest changes from there, you can run <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">fetch</span> <span class="pre">upstream</span></code>.</p></li>
+</ul>
+<p>Let’s sync from both your fork <em>and</em> the main ExecuTorch branch, getting the latest changes from each of them. To do this, run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>fetch<span class="w"> </span>--all<span class="w"> </span>--prune
+</pre></div>
+</div>
+</li>
+<li><p>If you just cloned your fork, your GitHub repository will tell you your branch is up-to-date:</p>
+<p><img alt="" src="_images/synced_fork.png" /></p>
+<p>However, ExecuTorch updates frequently — if it’s been a while you visited your fork, you might not have the latest version anymore. It’s important to keep your fork as up-to-date as possible. Otherwise, the code changes you’re making might fix your issue for an old version of the codebase, but <em>not</em> fix it for the current version.</p>
+<p>GitHub will tell you if your fork is out-of-date. To synchronise the necessary changes, click <code class="docutils literal notranslate"><span class="pre">Sync</span> <span class="pre">fork</span></code>, then <code class="docutils literal notranslate"><span class="pre">Update</span> <span class="pre">branch</span></code> as shown:</p>
+<p><img alt="" src="_images/unsynced_fork.png" /></p>
+</li>
+<li><p>Now you have the latest fork on your GitHub account, it’s time to download it onto your dev machine. For this, you can run the following commands in your terminal:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>fetch<span class="w"> </span>--all<span class="w"> </span>--prune<span class="w">   </span><span class="c1"># pull all branches from GitHub</span>
+git<span class="w"> </span>checkout<span class="w"> </span>main<span class="w">         </span><span class="c1"># enter your local main branch</span>
+git<span class="w"> </span>merge<span class="w"> </span>upstream/main<span class="w">   </span><span class="c1"># merge latest state from GitHub parent repo</span>
+git<span class="w"> </span>push<span class="w">                  </span><span class="c1"># push updated local main to your GitHub fork</span>
+</pre></div>
+</div>
+</li>
+<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc std std-doc">Build the project</span></a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing">run the tests</a>.</p>
+<p>Unfortunately, this step is too long to detail here. If you get stuck at any point, please feel free to ask for help on our <a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord server</a> — we’re always eager to help newcomers get onboarded.</p>
+</li>
+</ol>
+<p>One final note before we finish this section. It’s very important to get your tests running at this stage, for two reasons:</p>
+<ul class="simple">
+<li><p>If they work, it’s a great sign that you’ve got things set up correctly.</p></li>
+<li><p>As we’ll discuss later, you’ll want to run the tests <em>after</em> making your changes to ensure you haven’t broken existing functionality. Running them <em>before</em> making your changes gives you a baseline you can compare with later test results.</p></li>
+</ul>
+</div>
+<div class="section" id="implement-your-changes">
+<h3>Implement your changes<a class="headerlink" href="#implement-your-changes" title="Permalink to this heading">¶</a></h3>
+<p>Great job — you’re all set up. Now you can actually start coding!</p>
+<ol class="arabic">
+<li><p>Before making any changes, we recommend creating a new branch. To do this, just run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>YOUR_NEW_BRANCH_NAME
+</pre></div>
+</div>
+<p>You can follow this naming convention: <code class="docutils literal notranslate"><span class="pre">type/&lt;short-name&gt;</span></code>, where the types are: <code class="docutils literal notranslate"><span class="pre">bugfix</span></code>, <code class="docutils literal notranslate"><span class="pre">feature</span></code>, <code class="docutils literal notranslate"><span class="pre">docs</span></code>, <code class="docutils literal notranslate"><span class="pre">tests</span></code>, etc. — or use something similarly descriptive. By way of example, here are a few branch names that were actually merged to ExecuTorch:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/9794">bugfix/op_eq</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/9759">error-handling-log-intermediate-output-delegate</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/9762">add-datasink-try-before-set-tests</a></p></li>
+</ul>
+<p>Creating a new branch means that any changes you make will be isolated to your branch, allowing you to work on multiple issues in parallel. It also means that, if your fork gets behind the main repository and you have to synchronise, you won’t need to deal with any merge conflicts — accidentally blocking your <code class="docutils literal notranslate"><span class="pre">main</span></code> branch can be very time-consuming.</p>
+</li>
+<li><p>Make your changes. For bugfixes, we recommend a test-driven workflow:</p>
+<ul class="simple">
+<li><p>Find a test case that demonstrates your bug.</p></li>
+<li><p>Verify that your new test case fails on the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch.</p></li>
+<li><p>Add that example as an automated test, and assert the expected failing results. If you can, try to make this test as minimal as possible to reduce interference with some other issue.</p></li>
+</ul>
+<p>Once you have a failing test, you can keep working on the issue and running the test until it passes.</p>
+<p><strong>Note:</strong> Even if you do not find the solution, sending a PR with a test covering the issue is a valid contribution. From this point, we can help you find the solution, or even finish it with you.</p>
+</li>
+<li><p>After every set of edits, checkpoint and commit your code changes with a “commit” message that describes the changes you made. For example, in terminal:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>add<span class="w"> </span>my_changed_file1<span class="w"> </span>my_new_test_case<span class="w"> </span><span class="c1"># Pick the files you changed</span>
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Fixed bug X and added a passing test case&quot;</span><span class="w"> </span><span class="c1"># Describe your change</span>
+</pre></div>
+</div>
+<p>Try to make your commit messages as descriptive as possible. This helps to maintain a clear project history. Not only will this help your own development, but it will make your code vastly easier for other developers to review and maintain.</p>
+<p>Here are some example commit messages that were merged to ExecuTorch:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/9991/commits/df2f451e5e8fc217231975d7a0065a8cc36709cb">Delete examples/demo-apps/apple_ios/ExecuTorchDemo directory</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/9951/commits/3fdd8cab8c58db0be666f3454c41f73ad5964743">[ET-VK][ez] Allow logit linear layer to be lowered to Vulkan</a></p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/9935/commits/773a34725afea6c0bf1b99d02a9cefb91c4960e1">Allow emitting mutable buffer names in schema</a></p></li>
+</ul>
+</li>
+<li><p>When you are done making changes and the test case you added is passing, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md#testing">run the same tests</a> you ran earlier (at the end of the <a class="reference internal" href="#prepare-your-workspace"><span class="std std-doc">Prepare Your Workspace</span></a> section).</p>
+<p>If any tests fail now which were working before, it means your changes have broken some existing functionality. You’ll need to dig back into your code to figure out what’s gone wrong.</p>
+</li>
+<li><p>Once your new test <em>and</em> the old tests are all working as intended, upload/push these changes to your fork:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Make sure you&#39;ve committed all your changes first, then run:</span>
+git<span class="w"> </span>push
+</pre></div>
+</div>
+</li>
+</ol>
+</div>
+<div class="section" id="submit-a-pr">
+<h3>Submit a PR<a class="headerlink" href="#submit-a-pr" title="Permalink to this heading">¶</a></h3>
+<p>Once you’ve successfully finished local development, it’s time to send out your pull request. This is the final phase — here, we’ll help you finetune your changes to get merged into the main repository.</p>
+<ol class="arabic">
+<li><p>After pushing your last edit to remote, your GitHub fork will show your new changed branch — click <code class="docutils literal notranslate"><span class="pre">Compare</span> <span class="pre">&amp;</span> <span class="pre">pull</span> <span class="pre">request</span></code>:</p>
+<p><img alt="" src="_images/how_to_pr1.png" /></p>
+<p>Alternatively, you can click the same <code class="docutils literal notranslate"><span class="pre">Compare</span> <span class="pre">&amp;</span> <span class="pre">pull</span> <span class="pre">request</span></code> button on the main ExecuTorch repo:</p>
+<p><img alt="" src="_images/how_to_pr2.png" /></p>
+<p>Another way still is via the <code class="docutils literal notranslate"><span class="pre">Pull</span> <span class="pre">request</span></code> tab on the main repo — we won’t go into that here though, as it takes a few more steps.</p>
+</li>
+<li><p>This will take you to a page where you can format your PR and explain your changes. You’ll see all the required details in our PR template. You should choose a title describing the proposed fix and fill in all the required details.</p>
+<p><img alt="" src="_images/how_to_pr3.png" /></p>
+<p>In the description, you’ll describe all the changes you’ve made.</p>
+</li>
+<li><p>If you want to submit your PR right away, you can go ahead and click the Green <code class="docutils literal notranslate"><span class="pre">Create</span> <span class="pre">pull</span> <span class="pre">request</span></code> button. However, please note that this will immediately notify all reviewers. We strongly recommend creating a Draft PR first. This will allow you to perform some extra checks first:</p>
+<ul class="simple">
+<li><p>You can get some early feedback on your PR without notifying everybody.</p></li>
+<li><p>It prevents anyone from accidentally merging your unfinished PR.</p></li>
+<li><p>Creating it will start CI (<a class="reference external" href="https://en.wikipedia.org/wiki/Continuous_integration">“Continuous Integration”</a>) checks to verify that all tests pass under various configurations. If some tests fail, you can fix them before creating the final PR.</p></li>
+</ul>
+<p>To do submit a draft, click the arrow next to the <code class="docutils literal notranslate"><span class="pre">Create</span> <span class="pre">Pull</span> <span class="pre">Request</span></code> button, then click <code class="docutils literal notranslate"><span class="pre">Create</span> <span class="pre">draft</span> <span class="pre">pull</span> <span class="pre">request</span></code> in the dropdown menu:</p>
+<p><img alt="" src="_images/how_to_draft_pr1.png" /></p>
+<p>This will change the green button’s text to <code class="docutils literal notranslate"><span class="pre">Draft</span> <span class="pre">pull</span> <span class="pre">request</span></code>:</p>
+<p><img alt="" src="_images/how_to_draft_pr2.png" /></p>
+<p>Click it to create your draft PR.</p>
+</li>
+<li><p>This will take you to your Draft PR page. It might look something like this:</p>
+<p><img alt="" src="_images/how_to_draft_pr3.png" /></p>
+<p>As you scroll down, you might see a number of comments and automated checks, some of which may come with alarming red warning signs and the word “Failure”! There’s no need to panic, though — they are here to help. Let’s go through some common checks one-by-one.</p>
+<ul>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">pytorch-bot</span></code> will probably be the first comment. It runs regular CI checks. When your PR is passing, this comment will automatically update to let you know.</p>
+<p><img alt="" src="_images/ci1.png" /></p>
+</li>
+<li><p>If this is your very first contribution to a Meta Open Source project, and you’ve not signed Meta’s contributor license agreement (CLA), you may have a comment like this from <code class="docutils literal notranslate"><span class="pre">facebook-github-bot</span></code>:</p>
+<p><img alt="" src="_images/cla1.png" /></p>
+<p>You will need to sign the linked CLA to contribute your code. Once your signature has been processed, the bot will let you know in another comment:</p>
+<p><img alt="" src="_images/cla2.png" /></p>
+</li>
+<li><p>You may see a comment from <code class="docutils literal notranslate"><span class="pre">github-actions</span></code> requesting a “release notes” label:</p>
+<p><img alt="" src="_images/release_notes.png" /></p>
+<p>As the comment says, you can add a label by commenting on the PR with an instruction to pytorchbot. You can see a list of all our labels <a class="reference external" href="https://github.com/pytorch/executorch/labels/">here</a>. Pick the one which fits your PR best, then add it as a comment using the syntax <code class="docutils literal notranslate"><span class="pre">&#64;pytorchbot</span> <span class="pre">label</span> <span class="pre">&quot;YOUR</span> <span class="pre">LABEL</span> <span class="pre">HERE&quot;</span></code>. For example:</p>
+<p><img alt="" src="_images/how_to_label1.png" /></p>
+<p>After you’ve submitted your comment, <code class="docutils literal notranslate"><span class="pre">pytorchbot</span></code> will add your chosen label to the PR:</p>
+<p><img alt="" src="_images/how_to_label2.png" /></p>
+<p>and the <code class="docutils literal notranslate"><span class="pre">github-actions</span></code> comment requesting a label will disappear.</p>
+</li>
+<li><p>At the end of your Draft PR, you’ll see something like this:</p>
+<p><img alt="" src="_images/end_of_draft_pr1.png" /></p>
+<p>This is a summary of all the CI checks and requirements which need to be satisfied before your PR can be merged. Ensure that all tests are passing. If not, click on a failing test to see what went wrong and make the required changes.</p>
+<p>Once you’re happy with your draft, you can click the <code class="docutils literal notranslate"><span class="pre">Ready</span> <span class="pre">for</span> <span class="pre">review</span></code> button to create your PR:</p>
+<p><img alt="" src="_images/end_of_draft_pr2.png" /></p>
+</li>
+</ul>
+</li>
+<li><p>Now you’ve created your PR, it’s time for your changes to be reviewed by the ExecuTorch community and maintainers.</p>
+<p>You’ll need approval from one of our core contributors for your request to be merged. They may have questions or suggestions for you to address or respond to. Be aware that the review process may take a couple of iterations… Nevertheless, we hope that you’ll find this feedback helpful. Code reviews can be a fantastic way to learn more about ExecuTorch and coding best practices from other contributors.</p>
+<p>Those reviewers/maintainers are here to finetune your contribution and eventually catch some issues before we merge the PR. We aim for this process to be pleasing on both sides: we try to give and get the best.</p>
+<p>Once the reviewers are happy, they’ll approve your PR, indicating that they’re happy for it to be merged. This will send you a notification and display as follows on your PR page:</p>
+<p><img alt="" src="_images/pr_approval1.png" /></p>
+<p>And in the PR comments:</p>
+<p><img alt="" src="_images/pr_approval2.png" /></p>
+</li>
+<li><p>Once you’ve received the required approval from a core contributor, you’re very nearly done. We just need to make sure all the CI checks have passed, some of which need approval from a maintainer to start:</p>
+<p><img alt="" src="_images/how_to_merge1.png" /></p>
+<p>Once all checks these have all been approved, ran, and passed, you can go ahead and merge your PR. If there’s a grey <code class="docutils literal notranslate"><span class="pre">Update</span> <span class="pre">branch</span></code> button instead of a green <code class="docutils literal notranslate"><span class="pre">Merge</span> <span class="pre">pull</span> <span class="pre">request</span></code> button, click that first:</p>
+<p><img alt="" src="_images/how_to_merge2.png" /></p>
+<p>After a moment, the branch should update with the latest changes, and you’ll see the final green <code class="docutils literal notranslate"><span class="pre">Merge</span> <span class="pre">pull</span> <span class="pre">request</span></code> button:</p>
+<p><img alt="" src="_images/how_to_merge3.png" /></p>
+<p>Click it to merge your changes into the main codebase. Congratulations — you’re now an official ExecuTorch contributor!</p>
+</li>
+</ol>
+<p>Great job making it to the end of our guide — we hope you enjoy contributing. Once again, please check out our <strong><a class="reference external" href="https://discord.com/invite/Dh43CKSAdc">Discord Server</a></strong> if you want to say hello, ask any questions, or talk about any and all things ExecuTorch. We look forward to receiving your contributions!</p>
+</div>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">New Contributor Guide</a><ul>
+<li><a class="reference internal" href="#prerequisites">🔑 Prerequisites</a><ul>
+<li><a class="reference internal" href="#git">Git</a></li>
+<li><a class="reference internal" href="#a-github-account">A GitHub Account</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#your-first-contribution">🧑‍💻 Your First Contribution</a></li>
+<li><a class="reference internal" href="#contributing-code-step-by-step">📤 Contributing Code, Step-By-Step</a><ul>
+<li><a class="reference internal" href="#prepare-your-workspace">Prepare Your Workspace</a></li>
+<li><a class="reference internal" href="#implement-your-changes">Implement your changes</a></li>
+<li><a class="reference internal" href="#submit-a-pr">Submit a PR</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/newsletter">Newsletter</a>
+             </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/staff">Staff</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/contact-us">Contact Us</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

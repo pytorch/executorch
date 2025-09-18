@@ -1,0 +1,1306 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Kernel Registration &mdash; ExecuTorch 1.0 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Kernel Library Selective Build" href="kernel-library-selective-build.html" />
+    <link rel="prev" title="Overview of ExecuTorch’s Kernel Libraries" href="kernel-library-overview.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
+                  <span class="dropdown-title">Contributor Awards - 2024</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
+                  <span class="dropdown-title">ExecuTorch Docs</span>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                  <p>Stay up-to-date with the latest updates</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
+                  <span class="dropdown-title">Contact Us</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>1.0 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Kernel Registration</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/kernel-library-custom-aten-kernel.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="kernel-registration">
+<h1>Kernel Registration<a class="headerlink" href="#kernel-registration" title="Permalink to this heading">¶</a></h1>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
+<p>At the last stage of <a class="reference internal" href="export-overview.html"><span class="doc std std-doc">ExecuTorch model exporting</span></a>, we lower the operators in the dialect to the <em>out variants</em> of the <a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">core ATen operators</span></a>. Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual <em>kernels</em>, i.e., the C++ functions that do the heavy-lifting calculations and return results.</p>
+</div>
+<div class="section" id="kernel-libraries">
+<h2>Kernel Libraries<a class="headerlink" href="#kernel-libraries" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="first-party-kernel-libraries">
+<h3>First-party kernel libraries:<a class="headerlink" href="#first-party-kernel-libraries" title="Permalink to this heading">¶</a></h3>
+<p><strong><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/portable">Portable kernel library</a></strong> is the in-house default kernel library that covers most of the core ATen operators. It’s easy to use/read and is written in portable C++17. However it’s not optimized for performance, because it’s not specialized for any certain target. Therefore we provide kernel registration APIs for ExecuTorch users to easily register their own optimized kernels.</p>
+<p><strong><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/optimized">Optimized kernel library</a></strong> specializes on performance for some of the operators, leveraging existing third party libraries such as <a class="reference external" href="https://gitlab.com/libeigen/eigen">EigenBLAS</a>. This works best along with the portable kernel library, with a good balance on portability and performance. One example of combining these two libraries can be found <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/configurations/CMakeLists.txt">here</a>.</p>
+<p><strong><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/quantized">Quantized kernel library</a></strong> implements operators for quantization and dequantization. These are out of core ATen operators but are vital to most of the production use cases.</p>
+</div>
+<div class="section" id="custom-kernel-libraries">
+<h3>Custom kernel libraries:<a class="headerlink" href="#custom-kernel-libraries" title="Permalink to this heading">¶</a></h3>
+<p><strong>Custom kernels implementing core ATen ops</strong>. Even though we don’t have an internal example for custom kernels for core ATen ops, the optimized kernel library can be viewed as a good example. We have optimized <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/kernels/optimized/cpu/op_add.cpp"><code class="docutils literal notranslate"><span class="pre">add.out</span></code></a> and a portable <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/kernels/portable/cpu/op_add.cpp"><code class="docutils literal notranslate"><span class="pre">add.out</span></code></a>. When user is combining these two libraries, we provide APIs to choose which kernel to use for <code class="docutils literal notranslate"><span class="pre">add.out</span></code>. In order to author and use custom kernels implementing core ATen ops, using the <span class="xref myst">YAML based approach</span> is recommended, because it provides full fledged support on</p>
+<ol class="arabic simple">
+<li><p>combining kernel libraries and define fallback kernels;</p></li>
+<li><p>using selective build to minimize the kernel size.</p></li>
+</ol>
+<p>A <strong><a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/llm/custom_ops">Custom operator</a></strong> is any operator that an ExecuTorch user defines outside of PyTorch’s <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/native_functions.yaml"><code class="docutils literal notranslate"><span class="pre">native_functions.yaml</span></code></a>.</p>
+</div>
+</div>
+<div class="section" id="operator-kernel-contract">
+<h2>Operator &amp; Kernel Contract<a class="headerlink" href="#operator-kernel-contract" title="Permalink to this heading">¶</a></h2>
+<p>All the kernels mentioned above, whether they are in-house or customized, should comply with the following requirements:</p>
+<ul class="simple">
+<li><p>Match the calling convention derived from operator schema. The kernel registration API will generate headers for the custom kernels as references.</p></li>
+<li><p>Satisfy the dtype constraints defined in edge dialect. For tensors with certain dtypes as arguments, the result of a custom kernel needs to match the expected dtypes. The constraints are available in edge dialect ops.</p></li>
+<li><p>Give correct result. We will provide a testing framework to automatically test the custom kernels.</p></li>
+</ul>
+</div>
+<div class="section" id="apis">
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
+<p>These are the APIs available to register kernels/custom kernels/custom ops into ExecuTorch:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#yaml-entry-api-high-level-architecture"><span class="std std-doc">YAML Entry API</span></a></p>
+<ul>
+<li><p><a class="reference internal" href="#yaml-entry-api-for-core-aten-op-out-variant"><span class="std std-doc">for core ATen op with custom kernels</span></a></p></li>
+<li><p><a class="reference internal" href="#yaml-entry-api-for-custom-ops"><span class="std std-doc">for custom ops</span></a></p></li>
+<li><p><a class="reference internal" href="#cmake-macros"><span class="std std-doc">CMake Macros</span></a></p></li>
+</ul>
+</li>
+<li><p>C++ API</p>
+<ul>
+<li><p><a class="reference internal" href="#c-api-for-custom-ops"><span class="std std-doc">for custom ops</span></a></p></li>
+<li><p><a class="reference internal" href="#compile-and-link-the-custom-kernel"><span class="std std-doc">CMake Example</span></a></p></li>
+</ul>
+</li>
+</ul>
+<p>If it’s not clear which API to use, please see <a class="reference internal" href="#custom-ops-api-best-practices"><span class="std std-doc">Best Practices</span></a>.</p>
+<div class="section" id="yaml-entry-api-high-level-architecture">
+<h3>YAML Entry API High Level Architecture<a class="headerlink" href="#yaml-entry-api-high-level-architecture" title="Permalink to this heading">¶</a></h3>
+<p><img alt="" src="_images/kernel-library-custom-aten-kernel.png" /></p>
+<p>ExecuTorch users are asked to provide:</p>
+<ol class="arabic simple">
+<li><p>the custom kernel library with C++ implementations</p></li>
+<li><p>a YAML file associated with the library that describes what operators are being implemented by this library. For partial kernels, the yaml file also contains information on the dtypes and dim orders supported by the  kernel. More details in the API section.</p></li>
+</ol>
+</div>
+<div class="section" id="yaml-entry-api-workflow">
+<h3>YAML Entry API Workflow<a class="headerlink" href="#yaml-entry-api-workflow" title="Permalink to this heading">¶</a></h3>
+<p>At build time, the yaml files associated with kernel libraries will be passed to the <em>kernel resolver</em> along with the model op info (see selective build doc) and the outcome is a mapping between a combination of operator names and tensor metadata, to kernel symbols. Then codegen tools will use this mapping to generate C++ bindings that connect the kernels to ExecuTorch runtime. ExecuTorch users need to link this generated library into their application to use these kernels.</p>
+<p>At static object initialization time, kernels will be registered into the ExecuTorch kernel registry.</p>
+<p>At runtime initialization stage, ExecuTorch will use the operator name and argument metadata as a key to lookup for the kernels. For example, with “aten::add.out” and inputs being float tensors with dim order (0, 1, 2, 3), ExecuTorch will go into the kernel registry and lookup for a kernel that matches the name and the input metadata.</p>
+</div>
+<div class="section" id="yaml-entry-api-for-core-aten-op-out-variant">
+<h3>YAML Entry API for Core ATen Op Out Variant<a class="headerlink" href="#yaml-entry-api-for-core-aten-op-out-variant" title="Permalink to this heading">¶</a></h3>
+<p>Top level attributes:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">op</span></code> (if the operator appears in <code class="docutils literal notranslate"><span class="pre">native_functions.yaml</span></code>) or <code class="docutils literal notranslate"><span class="pre">func</span></code> for custom operator. The value for this key needs to be the full operator name (including overload name) for <code class="docutils literal notranslate"><span class="pre">op</span></code> key, or a full operator schema (namespace, operator name, operator overload name and schema string), if we are describing a custom operator. For schema syntax please refer to this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">instruction</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kernels</span></code>: defines kernel information. It consists of <code class="docutils literal notranslate"><span class="pre">arg_meta</span></code> and <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>, which are bound together to describe “for input tensors with these metadata, use this kernel”.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">type_alias</span></code>(optional): we are giving aliases to possible dtype options. <code class="docutils literal notranslate"><span class="pre">T0:</span> <span class="pre">[Double,</span> <span class="pre">Float]</span></code> means <code class="docutils literal notranslate"><span class="pre">T0</span></code> can be one of <code class="docutils literal notranslate"><span class="pre">Double</span></code> or <code class="docutils literal notranslate"><span class="pre">Float</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dim_order_alias</span></code>(optional): similar to <code class="docutils literal notranslate"><span class="pre">type_alias</span></code>, we are giving names to possible dim order options.</p></li>
+</ul>
+<p>Attributes under <code class="docutils literal notranslate"><span class="pre">kernels</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">arg_meta</span></code>: a list of “tensor arg name” entries. The values for these keys are dtypes and dim orders aliases, that are implemented by the corresponding <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>. This being <code class="docutils literal notranslate"><span class="pre">null</span></code> means the kernel will be used for all types of input.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>: the expected name of the C++ function that will implement this operator. You can put whatever you want to here, but you should follow the convention of replacing the <code class="docutils literal notranslate"><span class="pre">.</span></code> in the overload name with an underscore, and lowercasing all characters. In this example, <code class="docutils literal notranslate"><span class="pre">add.out</span></code> uses the C++ function named <code class="docutils literal notranslate"><span class="pre">add_out</span></code>. <code class="docutils literal notranslate"><span class="pre">add.Scalar_out</span></code> would become <code class="docutils literal notranslate"><span class="pre">add_scalar_out</span></code>, with a lowercase <code class="docutils literal notranslate"><span class="pre">S</span></code>. We support namespace for kernels, but note that we will be inserting a <code class="docutils literal notranslate"><span class="pre">native::</span></code> to the last level of namespace. So <code class="docutils literal notranslate"><span class="pre">custom::add_out</span></code> in the <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code> will point to <code class="docutils literal notranslate"><span class="pre">custom::native::add_out</span></code>.</p></li>
+</ul>
+<p>Some examples of operator entry:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
+</pre></div>
+</div>
+<p>An out variant of a core ATen operator with a default kernel</p>
+<p>ATen operator with a dtype/dim order specialized kernel (works for <code class="docutils literal notranslate"><span class="pre">Double</span></code> dtype and dim order needs to be (0, 1, 2, 3))</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">type_alias</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">T0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Double</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">dim_order_alias</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">D0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[[</span><span class="nv">0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">3</span><span class="p p-Indicator">]]</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">self</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">other</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="w"> </span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">out</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="yaml-entry-api-for-custom-ops">
+<h3>YAML Entry API for Custom Ops<a class="headerlink" href="#yaml-entry-api-for-custom-ops" title="Permalink to this heading">¶</a></h3>
+<p>As mentioned above, this option provides more support in terms of selective build and features such as merging operator libraries.</p>
+<p>First we need to specify the operator schema as well as a <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section. So instead of <code class="docutils literal notranslate"><span class="pre">op</span></code> we use <code class="docutils literal notranslate"><span class="pre">func</span></code> with the operator schema. As an example, here’s a yaml entry for a custom op:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">func</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::allclose_out</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section is the same as the one defined in core ATen ops. For operator schema, we are reusing the DSL defined in this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">README.md</a>, with a few differences:</p>
+<div class="section" id="out-variants-only">
+<h4>Out variants only<a class="headerlink" href="#out-variants-only" title="Permalink to this heading">¶</a></h4>
+<p>ExecuTorch only supports out-style operators, where:</p>
+<ul class="simple">
+<li><p>The caller provides the output Tensor or Tensor list in the final position with the name <code class="docutils literal notranslate"><span class="pre">out</span></code>.</p></li>
+<li><p>The C++ function modifies and returns the same <code class="docutils literal notranslate"><span class="pre">out</span></code> argument.</p>
+<ul>
+<li><p>If the return type in the YAML file is <code class="docutils literal notranslate"><span class="pre">()</span></code> (which maps to void), the C++ function should still modify <code class="docutils literal notranslate"><span class="pre">out</span></code> but does not need to return anything.</p></li>
+</ul>
+</li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">out</span></code> argument must be keyword-only, which means it needs to follow an argument named <code class="docutils literal notranslate"><span class="pre">*</span></code> like in the <code class="docutils literal notranslate"><span class="pre">add.out</span></code> example below.</p></li>
+<li><p>Conventionally, these out operators are named using the pattern <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;.out</span></code> or <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;.&lt;overload&gt;_out</span></code>.</p></li>
+</ul>
+<p>Since all output values are returned via an <code class="docutils literal notranslate"><span class="pre">out</span></code> parameter, ExecuTorch ignores the actual C++ function return value. But, to be consistent, functions should always return <code class="docutils literal notranslate"><span class="pre">out</span></code> when the return type is non-<code class="docutils literal notranslate"><span class="pre">void</span></code>.</p>
+</div>
+<div class="section" id="can-only-return-tensor-or">
+<h4>Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code><a class="headerlink" href="#can-only-return-tensor-or" title="Permalink to this heading">¶</a></h4>
+<p>ExecuTorch only supports operators that return a single <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>, or the unit type <code class="docutils literal notranslate"><span class="pre">()</span></code> (which maps to <code class="docutils literal notranslate"><span class="pre">void</span></code>). It does not support returning any other types, including lists, optionals, tuples, or scalars like <code class="docutils literal notranslate"><span class="pre">bool</span></code>.</p>
+</div>
+<div class="section" id="supported-argument-types">
+<h4>Supported argument types<a class="headerlink" href="#supported-argument-types" title="Permalink to this heading">¶</a></h4>
+<p>ExecuTorch does not support all of the argument types that core PyTorch supports. Here’s a list of the argument types we currently support:</p>
+<ul class="simple">
+<li><p>Tensor</p></li>
+<li><p>int</p></li>
+<li><p>bool</p></li>
+<li><p>float</p></li>
+<li><p>str</p></li>
+<li><p>Scalar</p></li>
+<li><p>ScalarType</p></li>
+<li><p>MemoryFormat</p></li>
+<li><p>Device</p></li>
+<li><p>Optional<Type></p></li>
+<li><p>List<Type></p></li>
+<li><p>List&lt;Optional<Type>&gt;</p></li>
+<li><p>Optional&lt;List<Type>&gt;</p></li>
+</ul>
+</div>
+<div class="section" id="cmake-macros">
+<h4>CMake Macros<a class="headerlink" href="#cmake-macros" title="Permalink to this heading">¶</a></h4>
+<p>We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on CMake.</p>
+<p><code class="docutils literal notranslate"><span class="pre">generate_bindings_for_kernels(FUNCTIONS_YAML</span> <span class="pre">functions_yaml</span> <span class="pre">CUSTOM_OPS_YAML</span> <span class="pre">custom_ops_yaml)</span></code> takes a yaml file for core ATen op out variants and also a yaml file for custom ops, generate C++ bindings for kernel registration. It also depends on the selective build artifact generated by <code class="docutils literal notranslate"><span class="pre">gen_selected_ops()</span></code>, see selective build doc for more information. Then <code class="docutils literal notranslate"><span class="pre">gen_operators_lib</span></code> will package those bindings to be a C++ library. As an example:</p>
+<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># SELECT_OPS_LIST: aten::add.out,aten::mm.out</span>
+<span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+<span class="c"># Look for functions.yaml associated with portable libs and generate C++ bindings</span>
+<span class="nb">generate_bindings_for_kernels</span><span class="p">(</span><span class="s">FUNCTIONS_YAML</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/kernels/portable/functions.yaml</span><span class="p">)</span>
+
+<span class="c"># Prepare a C++ library called &quot;generated_lib&quot; with _kernel_lib being the portable library, executorch is a dependency of it.</span>
+<span class="nb">gen_operators_lib</span><span class="p">(</span><span class="s2">&quot;generated_lib&quot;</span><span class="w"> </span><span class="s">KERNEL_LIBS</span><span class="w"> </span><span class="o">${</span><span class="nv">_kernel_lib</span><span class="o">}</span><span class="w"> </span><span class="s">DEPS</span><span class="w"> </span><span class="s">executorch</span><span class="p">)</span>
+
+<span class="c"># Link &quot;generated_lib&quot; into the application:</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">executorch_binary</span><span class="w"> </span><span class="s">generated_lib</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We also provide the ability to merge two yaml files, given a precedence. <code class="docutils literal notranslate"><span class="pre">merge_yaml(FUNCTIONS_YAML</span> <span class="pre">functions_yaml</span> <span class="pre">FALLBACK_YAML</span> <span class="pre">fallback_yaml</span> <span class="pre">OUTPUT_DIR</span> <span class="pre">out_dir)</span></code> merges functions_yaml and fallback_yaml into a single yaml, if there’s duplicate entries in functions_yaml and fallback_yaml, this macro will always take the one in functions_yaml.</p>
+<p>Example:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="c1"># functions.yaml</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::opt_add_out</span>
+</pre></div>
+</div>
+<p>And out fallback:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="c1"># fallback.yaml</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
+</pre></div>
+</div>
+<p>The merged yaml will have the entry in functions.yaml.</p>
+</div>
+</div>
+<div class="section" id="c-api-for-custom-ops">
+<h3>C++ API for Custom Ops<a class="headerlink" href="#c-api-for-custom-ops" title="Permalink to this heading">¶</a></h3>
+<p>Unlike the YAML entry API, the C++ API only uses C++ macros <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> and <code class="docutils literal notranslate"><span class="pre">WRAP_TO_ATEN</span></code> for kernel registration, also without selective build support. It makes this API faster in terms of development speed, since users don’t have to do YAML authoring and build system tweaking.</p>
+<p>Please refer to <a class="reference internal" href="#custom-ops-api-best-practices"><span class="std std-doc">Custom Ops Best Practices</span></a> on which API to use.</p>
+<p>Similar to <a class="reference external" href="https://pytorch.org/cppdocs/library.html#library_8h_1a0bd5fb09d25dfb58e750d712fc5afb84"><code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code></a> in PyTorch, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> takes the operator name and the C++ function name and register them into ExecuTorch runtime.</p>
+<div class="section" id="prepare-custom-kernel-implementation">
+<h4>Prepare custom kernel implementation<a class="headerlink" href="#prepare-custom-kernel-implementation" title="Permalink to this heading">¶</a></h4>
+<p>Define your custom operator schema for both functional variant (used in AOT compilation) and out variant (used in ExecuTorch runtime). The schema needs to follow PyTorch ATen convention (see <code class="docutils literal notranslate"><span class="pre">native_functions.yaml</span></code>). For example:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="l l-Scalar l-Scalar-Plain">custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -&gt; Tensor</span>
+<span class="l l-Scalar l-Scalar-Plain">custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
+</pre></div>
+</div>
+<p>Then write your custom kernel according to the schema using ExecuTorch types, along with APIs to register to ExecuTorch runtime:</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// custom_linear.h/custom_linear.cpp</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/kernel/kernel_includes.h&gt;</span>
+<span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">custom_linear_out</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">optional</span><span class="o">&lt;</span><span class="n">Tensor</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="c1">// calculation</span>
+<span class="w">   </span><span class="k">return</span><span class="w"> </span><span class="n">out</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="use-a-c-macro-to-register-it-into-executorch">
+<h4>Use a C++ macro to register it into ExecuTorch<a class="headerlink" href="#use-a-c-macro-to-register-it-into-executorch" title="Permalink to this heading">¶</a></h4>
+<p>Append the following line in the example above:</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// custom_linear.h/custom_linear.cpp</span>
+<span class="c1">// opset namespace myop</span>
+<span class="n">EXECUTORCH_LIBRARY</span><span class="p">(</span><span class="n">myop</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;custom_linear.out&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">custom_linear_out</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Now we need to write some wrapper for this op to show up in PyTorch, but don’t worry we don’t need to rewrite the kernel. Create a separate .cpp for this purpose:</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// custom_linear_pytorch.cpp</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;custom_linear.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;torch/library.h&gt;</span>
+
+<span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="nf">custom_linear</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bias</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// initialize out</span>
+<span class="w">    </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">empty</span><span class="p">({</span><span class="n">weight</span><span class="p">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)});</span>
+<span class="w">    </span><span class="c1">// wrap kernel in custom_linear.cpp into ATen kernel</span>
+<span class="w">    </span><span class="n">WRAP_TO_ATEN</span><span class="p">(</span><span class="n">custom_linear_out</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)(</span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">out</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">out</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="c1">// standard API to register ops into PyTorch</span>
+<span class="n">TORCH_LIBRARY</span><span class="p">(</span><span class="n">myop</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">m</span><span class="p">.</span><span class="n">def</span><span class="p">(</span><span class="s">&quot;custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -&gt; Tensor&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">custom_linear</span><span class="p">);</span>
+<span class="w">    </span><span class="n">m</span><span class="p">.</span><span class="n">def</span><span class="p">(</span><span class="s">&quot;custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -&gt; Tensor(a!)&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">WRAP_TO_ATEN</span><span class="p">(</span><span class="n">custom_linear_out</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">));</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="compile-and-link-the-custom-kernel">
+<h4>Compile and link the custom kernel<a class="headerlink" href="#compile-and-link-the-custom-kernel" title="Permalink to this heading">¶</a></h4>
+<p>Link it into ExecuTorch runtime: In our <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> that builds the binary/application, we need to add custom_linear.h/cpp into the binary target. We can build a dynamically loaded library (.so or .dylib) and link it as well.</p>
+<p>Here’s an example to do it:</p>
+<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># For executorch_target_link_options_shared_lib</span>
+<span class="nb">include</span><span class="p">(</span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/tools/cmake/Utils.cmake</span><span class="p">)</span>
+
+<span class="c"># Add a custom op library</span>
+<span class="nb">add_library</span><span class="p">(</span><span class="s">custom_op_lib</span><span class="w"> </span><span class="s">SHARED</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_SOURCE_DIR</span><span class="o">}</span><span class="s">/custom_op.cpp</span><span class="p">)</span>
+
+<span class="c"># Include the header</span>
+<span class="nb">target_include_directory</span><span class="p">(</span><span class="s">custom_op_lib</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="o">${</span><span class="nv">CMAKE_CURRENT_SOURCE_DIR</span><span class="o">}</span><span class="s">/include</span><span class="p">)</span>
+
+<span class="c"># Link ExecuTorch library</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">custom_op_lib</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">executorch</span><span class="p">)</span>
+
+<span class="c"># Define a binary target</span>
+<span class="nb">add_executable</span><span class="p">(</span><span class="s">custom_op_runner</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">main.cpp</span><span class="p">)</span>
+
+<span class="c"># Link this library with --whole-archive !! IMPORTANT !! this is to avoid the operators being stripped by linker</span>
+<span class="nb">executorch_target_link_options_shared_lib</span><span class="p">(</span><span class="s">custom_op_lib</span><span class="p">)</span>
+
+<span class="c"># Link custom op lib</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">custom_op_runner</span><span class="w"> </span><span class="s">PUBLIC</span><span class="w"> </span><span class="s">custom_op_lib</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Link it into the PyTorch runtime: We need to package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into our python environment. One way of doing this is:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">load_library</span><span class="p">(</span><span class="s2">&quot;libcustom_linear.so/dylib&quot;</span><span class="p">)</span>
+
+<span class="c1"># Now we have access to the custom op, backed by kernel implemented in custom_linear.cpp.</span>
+<span class="n">op</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">myop</span><span class="o">.</span><span class="n">custom_linear</span><span class="o">.</span><span class="n">default</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="using-a-custom-operator-in-a-model">
+<h4>Using a Custom Operator in a Model<a class="headerlink" href="#using-a-custom-operator-in-a-model" title="Permalink to this heading">¶</a></h4>
+<p>The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
+all instances of <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> and replace them with <code class="docutils literal notranslate"><span class="pre">CustomLinear</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w">  </span><span class="nf">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span>
+                <span class="n">module</span><span class="p">,</span>
+                <span class="n">name</span><span class="p">,</span>
+                <span class="n">CustomLinear</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span>  <span class="n">child</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">child</span><span class="o">.</span><span class="n">bias</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The remaining steps are the same as the normal flow. Now you can run this module in eager mode as well as export to ExecuTorch.</p>
+</div>
+</div>
+<div class="section" id="custom-ops-api-best-practices">
+<h3>Custom Ops API Best Practices<a class="headerlink" href="#custom-ops-api-best-practices" title="Permalink to this heading">¶</a></h3>
+<p>Given that we have 2 kernel registration APIs for custom ops, which API should we use? Here are some pros and cons for each API:</p>
+<ul class="simple">
+<li><p>C++ API:</p>
+<ul>
+<li><p>Pros:</p>
+<ul>
+<li><p>Only C++ code changes are needed</p></li>
+<li><p>Resembles PyTorch custom ops C++ API</p></li>
+<li><p>Low maintenance cost</p></li>
+</ul>
+</li>
+<li><p>Cons:</p>
+<ul>
+<li><p>No selective build support</p></li>
+<li><p>No centralized bookkeepping</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Yaml entry API:</p>
+<ul>
+<li><p>Pros:</p>
+<ul>
+<li><p>Has selective build support</p></li>
+<li><p>Provides a centralized place for custom ops</p>
+<ul>
+<li><p>It shows what ops are being registered and what kernels are bound to these ops, for an application</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Cons:</p>
+<ul>
+<li><p>User needs to create and maintain yaml files</p></li>
+<li><p>Relatively inflexible to change the op definition</p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>Overall if we are building an application and it uses custom ops, during the development phase it’s recommended to use the C++ API since it’s low-cost to use and flexible to change. Once the application moves to production phase where the custom ops definitions and the build systems are quite stable and binary size is to be considered, it is recommended to use the Yaml entry API.</p>
+</div>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="kernel-library-selective-build.html" class="btn btn-neutral float-right" title="Kernel Library Selective Build" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="kernel-library-overview.html" class="btn btn-neutral" title="Overview of ExecuTorch’s Kernel Libraries" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Kernel Registration</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#kernel-libraries">Kernel Libraries</a><ul>
+<li><a class="reference internal" href="#first-party-kernel-libraries">First-party kernel libraries:</a></li>
+<li><a class="reference internal" href="#custom-kernel-libraries">Custom kernel libraries:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#operator-kernel-contract">Operator &amp; Kernel Contract</a></li>
+<li><a class="reference internal" href="#apis">APIs</a><ul>
+<li><a class="reference internal" href="#yaml-entry-api-high-level-architecture">YAML Entry API High Level Architecture</a></li>
+<li><a class="reference internal" href="#yaml-entry-api-workflow">YAML Entry API Workflow</a></li>
+<li><a class="reference internal" href="#yaml-entry-api-for-core-aten-op-out-variant">YAML Entry API for Core ATen Op Out Variant</a></li>
+<li><a class="reference internal" href="#yaml-entry-api-for-custom-ops">YAML Entry API for Custom Ops</a><ul>
+<li><a class="reference internal" href="#out-variants-only">Out variants only</a></li>
+<li><a class="reference internal" href="#can-only-return-tensor-or">Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code></a></li>
+<li><a class="reference internal" href="#supported-argument-types">Supported argument types</a></li>
+<li><a class="reference internal" href="#cmake-macros">CMake Macros</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#c-api-for-custom-ops">C++ API for Custom Ops</a><ul>
+<li><a class="reference internal" href="#prepare-custom-kernel-implementation">Prepare custom kernel implementation</a></li>
+<li><a class="reference internal" href="#use-a-c-macro-to-register-it-into-executorch">Use a C++ macro to register it into ExecuTorch</a></li>
+<li><a class="reference internal" href="#compile-and-link-the-custom-kernel">Compile and link the custom kernel</a></li>
+<li><a class="reference internal" href="#using-a-custom-operator-in-a-model">Using a Custom Operator in a Model</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#custom-ops-api-best-practices">Custom Ops API Best Practices</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/newsletter">Newsletter</a>
+             </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/staff">Staff</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/contact-us">Contact Us</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

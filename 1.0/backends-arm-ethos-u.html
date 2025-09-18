@@ -1,0 +1,1293 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Arm® Ethos™-U NPU Backend &mdash; ExecuTorch 1.0 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Arm® VGF Backend" href="backends-arm-vgf.html" />
+    <link rel="prev" title="Vulkan Backend" href="backends-vulkan.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
+                  <span class="dropdown-title">Contributor Awards - 2024</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
+                  <span class="dropdown-title">ExecuTorch Docs</span>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
+                  <span class="dropdown-title">Newsletter</span>
+                  <p>Stay up-to-date with the latest updates</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tac">
+                  <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/staff">
+                  <span class="dropdown-title">Staff</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
+                  <span class="dropdown-title">Contact Us</span>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>1.0 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
+<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Arm® Ethos™-U NPU Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Arm® Ethos™-U NPU Backend</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/backends-arm-ethos-u.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="arm-ethos-u-npu-backend">
+<h1>Arm® Ethos™-U NPU Backend<a class="headerlink" href="#arm-ethos-u-npu-backend" title="Permalink to this heading">¶</a></h1>
+<p>The Arm® Ethos™-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
+<a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55">Arm® Ethos™-U55 NPU</a>, <a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65">Arm® Ethos™-U55 NPU</a>, and
+<a class="reference external" href="https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85">Arm® Ethos™-U85 NPU</a>, leveraging <a class="reference external" href="https://www.mlplatform.org/tosa/">TOSA</a> and the
+<a class="reference external" href="https://pypi.org/project/ethos-u-vela/">ethos-u-vela</a> graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
+please refer to the <a class="reference external" href="https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a>.</p>
+<div class="section" id="features">
+<h2>Features<a class="headerlink" href="#features" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Wide operator support for delegating large parts of models to highly optimized and low power Ethos-U NPUs.</p></li>
+<li><p>A quantizer that optimizes quantization for the NPU target.</p></li>
+<li><p>Example runtime integration for easy hardware bringup.</p></li>
+</ul>
+</div>
+<div class="section" id="target-requirements">
+<h2>Target Requirements<a class="headerlink" href="#target-requirements" title="Permalink to this heading">¶</a></h2>
+<p>The target system must include an Ethos-U NPU.</p>
+</div>
+<div class="section" id="development-requirements">
+<h2>Development Requirements<a class="headerlink" href="#development-requirements" title="Permalink to this heading">¶</a></h2>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>All requirements can be downloaded using <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span> <span class="pre">--i-agree-to-the-contained-eula</span></code> and added to the path using
+set(CMAKE_INSTALL_PREFIX “${CMAKE_BINARY_DIR}”)
+<code class="docutils literal notranslate"><span class="pre">source</span> <span class="pre">examples/arm/ethos-u-scratch/setup_path.sh</span></code>. Note that this means accepting the End-User License Agreements (EULA:s) required for using the downloaded software.</p>
+</div>
+<p>For the AOT flow, compilation of a model to <code class="docutils literal notranslate"><span class="pre">.pte</span></code> format using the Ethos-U backend, the requirements are:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.mlplatform.org/tosa/software.html">TOSA Serialization Library</a> for serializing the Exir IR graph into TOSA IR.</p></li>
+<li><p><a class="reference external" href="https://pypi.org/project/ethos-u-vela/">Ethos-U Vela graph compiler</a> for compiling TOSA flatbuffers into an Ethos-U command stream.</p></li>
+</ul>
+<p>And for building and running the example application available in <code class="docutils literal notranslate"><span class="pre">examples/arm/executor_runner/</span></code>:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://developer.arm.com/Tools%20and%20Software/GNU%20Toolchain">Arm GNU Toolchain</a> for cross compilation.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/documentation/100966/1128/Arm--Corstone-SSE-300-FVP">Arm® Corstone™ SSE-300 FVP</a> for testing on a Arm® Cortex®-M55+Ethos-U55 reference design.</p></li>
+<li><p><a class="reference external" href="https://developer.arm.com/documentation/109760/0000/SSE-320-FVP">Arm® Corstone™ SSE-320 FVP</a> for testing on a Arm® Cortex®-M85+Ethos-U85 reference design.</p></li>
+</ul>
+<p>Fixed Virtual Platforms (FVPs) are freely available emulators provided by Arm for easy embedded development without the need for a physical development board.</p>
+</div>
+<div class="section" id="using-the-arm-ethos-u-backend">
+<h2>Using the Arm Ethos-U backend<a class="headerlink" href="#using-the-arm-ethos-u-backend" title="Permalink to this heading">¶</a></h2>
+<p>The main configuration point for the lowering is the <code class="docutils literal notranslate"><span class="pre">EthosUCompileSpec</span></code> consumed by the partitioner and quantizer.
+The full user-facing API is documented below.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUCompileSpec</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">system_config</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">memory_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">extra_flags</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">config_ini</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="s1">&#39;Arm/vela.ini&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Compile spec for Ethos-U NPU</p>
+<p>Attributes:</p>
+<ul class="simple">
+<li><p><strong>target</strong>: Ethos-U accelerator configuration, e.g. ethos-u55-128.</p></li>
+<li><p><strong>system_config</strong>: System configuration to select from the Vela configuration file.</p></li>
+<li><p><strong>memory_mode</strong>: Memory mode to select from the Vela configuration file.</p></li>
+<li><p><strong>extra_flags</strong>: Extra flags for the Vela compiler.</p></li>
+<li><p><strong>config_ini</strong>: Vela configuration file(s) in Python ConfigParser .ini file format.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">dump_debug_info</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">debug_mode</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">common</span><span class="o">.</span><span class="n">arm_compile_spec</span><span class="o">.</span><span class="n">ArmCompileSpec</span><span class="o">.</span><span class="n">DebugMode</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Dump debugging information into the intermediates path.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">dump_intermediate_artifacts_to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Sets a path for dumping intermediate results during lowering such as tosa and pte.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">get_intermediate_path</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Returns the path for dumping intermediate results during lowering such as tosa and pte.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUCompileSpec</span><span class="o">.</span><span class="n">get_output_format</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Returns a constant string that is the output format of the class.</p>
+<div class="section" id="partitioner-api">
+<h3>Partitioner API<a class="headerlink" href="#partitioner-api" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUPartitioner</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="n">executorch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">arm</span><span class="o">.</span><span class="n">ethosu</span><span class="o">.</span><span class="n">compile_spec</span><span class="o">.</span><span class="n">EthosUCompileSpec</span><span class="p">,</span> <span class="n">additional_checks</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">passes</span><span class="o">.</span><span class="n">operator_support</span><span class="o">.</span><span class="n">OperatorSupportBase</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</pre></div>
+</div>
+<p>Partitions subgraphs supported by the Arm Ethos-U backend.</p>
+<p>Attributes:</p>
+<ul class="simple">
+<li><p><strong>compile_spec</strong>: List of CompileSpec objects for Ethos-U backend.</p></li>
+<li><p><strong>additional_checks</strong>: Optional sequence of additional operator support checks.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUPartitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ep</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">node</span><span class="o">.</span><span class="n">Node</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]]]:</span>
+</pre></div>
+</div>
+<p>Returns a list of operator names that should not be decomposed. When these ops are
+registered and the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> is invoked through to_edge_transform_and_lower it will be
+guaranteed that the program that the backend receives will not have any of these ops
+decomposed.</p>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>List[torch._ops.OpOverload]</strong>: a list of operator names that should not be decomposed.</p></li>
+<li><p><strong>Optional[Callable[[torch.fx.Node], bool]]]</strong>: an optional callable, acting as a filter, that users can provide
+which will be called for each node in the graph that users can use as a filter for certain
+nodes that should be continued to be decomposed even though the op they correspond to is
+in the list returned by ops_to_not_decompose.</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUPartitioner</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">exported_program</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">ExportedProgram</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">backend</span><span class="o">.</span><span class="n">partitioner</span><span class="o">.</span><span class="n">PartitionResult</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Returns the input exported program with newly created sub-Modules encapsulating
+specific portions of the input “tagged” for delegation.</p>
+<p>The specific implementation is free to decide how existing computation in the
+input exported program should be delegated to one or even more than one specific
+backends.</p>
+<p>The contract is stringent in that:</p>
+<ul class="simple">
+<li><p>Each node that is intended to be delegated must be tagged</p></li>
+<li><p>No change in the original input exported program (ExportedProgram) representation can take
+place other than adding sub-Modules for encapsulating existing portions of the
+input exported program and the associated metadata for tagging.</p></li>
+</ul>
+<p>Args:</p>
+<ul class="simple">
+<li><p><strong>exported_program</strong>: An ExportedProgram in Edge dialect to be partitioned for backend delegation.</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p><strong>PartitionResult</strong>: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.</p></li>
+</ul>
+</div>
+<div class="section" id="quantizer">
+<h3>Quantizer<a class="headerlink" href="#quantizer" title="Permalink to this heading">¶</a></h3>
+<p>Since the Ethos-U backend is integer-only, all ops intended to run on the NPU needs to be quantized. The Ethos-U quantizer supports
+<a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html">Post Training Quantization (PT2E)</a>  and
+<a class="reference external" href="https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_qat.html">Quantization-Aware Training (QAT)</a> quantization.</p>
+<p>Currently, the symmetric <code class="docutils literal notranslate"><span class="pre">int8</span></code> config defined by <code class="docutils literal notranslate"><span class="pre">executorch.backends.arm.quantizer.arm_quantizer.get_symmetric_quantization_config</span></code> is
+the main config available to use with the Ethos-U quantizer.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">EthosUQuantizer</span><span class="p">(</span><span class="n">compile_spec</span><span class="p">:</span> <span class="s1">&#39;EthosUCompileSpec&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;None&#39;</span>
+</pre></div>
+</div>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;QuantizationConfig&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Set quantization_config for submodules that are not already annotated by name or type filters.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_io</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">):</span>
+</pre></div>
+</div>
+<p>Set quantization_config for input and output nodes.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="s1">&#39;str&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;Optional[QuantizationConfig]&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Set quantization_config for a submodule with name: <code class="docutils literal notranslate"><span class="pre">module_name</span></code>, for example:
+quantizer.set_module_name(“blocks.sub”), it will quantize all supported operator/operator
+patterns in the submodule with this module name with the given <code class="docutils literal notranslate"><span class="pre">quantization_config</span></code></p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">set_module_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_type</span><span class="p">:</span> <span class="s1">&#39;Callable&#39;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">:</span> <span class="s1">&#39;QuantizationConfig&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;TOSAQuantizer&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Set quantization_config for a submodule with type: <code class="docutils literal notranslate"><span class="pre">module_type</span></code>, for example:
+quantizer.set_module_name(Sub) or quantizer.set_module_name(nn.Linear), it will quantize all supported operator/operator
+patterns in the submodule with this module type with the given <code class="docutils literal notranslate"><span class="pre">quantization_config</span></code></p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">EthosUQuantizer</span><span class="o">.</span><span class="n">transform_for_annotation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">model</span><span class="p">:</span> <span class="s1">&#39;GraphModule&#39;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;GraphModule&#39;</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>An initial pass for transforming the graph to prepare it for annotation.</p>
+</div>
+</div>
+<div class="section" id="runtime-integration">
+<h2>Runtime Integration<a class="headerlink" href="#runtime-integration" title="Permalink to this heading">¶</a></h2>
+<p>An example runtime application is available in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/executor_runner/">examples/arm/executor_runner</a>, and the steps requried for building and deploying it on a FVP it is explained in the previously mentioned <a class="reference external" href="https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html">Arm Ethos-U Backend Tutorial</a>.
+The example application is recommended to use for testing basic functionality of your lowered models, as well as a starting point for developing runtime integrations for your own targets.
+For an in-depth explanation of the architecture of the executor_runner and the steps required for doing such an integration, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md">Ethos-U porting guide</a>.</p>
+<div class="section" id="ethos-u-memory-modes">
+<h3>Ethos-U memory modes<a class="headerlink" href="#ethos-u-memory-modes" title="Permalink to this heading">¶</a></h3>
+<p>The Ethos-U NPU provides two distinct memory interfaces:</p>
+<ul class="simple">
+<li><p>One interface for <strong>low-latency, high-bandwidth memory</strong>.</p>
+<ul>
+<li><p>On all Ethos-U NPUs(Ethos-U55, Ethos-U65, Ethos-U85), the low-latency memory is usually the SRAM of the SoC.</p></li>
+</ul>
+</li>
+<li><p>One interface for <strong>higher-latency, lower-bandwidth memory</strong>, typically external (off-chip) memory.</p>
+<ul>
+<li><p>On a low-power microcontroller, the external memory is usually Flash.</p></li>
+<li><p>On systems with Arm® Cortex™-A and a rich operating system, the external memory is typically DRAM.</p></li>
+</ul>
+</li>
+</ul>
+<p>When running an inference, the Ethos-U compiler and Ethos-U driver make use of three logical memory regions:</p>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer - a contiguous block of memory used by the NPU to store the intermediate tensors produced and consumed during inference.</p></li>
+<li><p>Neural Network - a contiguous block of memory holding constant data such as weights, biases, quantization parameters required to run an inference.</p></li>
+<li><p>Ethos-U fast scratch buffer - a contiguous block of memory, assumed to reside in on-chip memory in order to hide the higher latency/lower bandwidth of external memory. Only applicable for Ethos-U65 and Ethos-U85 on systems
+with Cortex-A and the external memory is assumed to be DRAM.</p></li>
+</ul>
+<p>The placement of the scratch buffer and the Neural Network determine the memory mode to be used in the <code class="docutils literal notranslate"><span class="pre">EthosUCompileSpec</span></code> and when building the executor_runner. Three different memory modes are supported:</p>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Memory Mode</p></th>
+<th class="head"><p>Ethos-U Scratch Buffer Placement</p></th>
+<th class="head"><p>Neural Network Placement</p></th>
+<th class="head"><p>When to Use</p></th>
+<th class="head"><p>Trade-off</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>SRAM-Only</strong></p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>When the ML model, the Ethos-U scratch buffer and the wider software stack fit within the SRAM of the SoC</p></td>
+<td><p>Limited by SRAM size; often not feasible for larger NNs</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Shared-SRAM</strong></p></td>
+<td><p>On-chip SRAM</p></td>
+<td><p>External memory (Flash/DRAM)</p></td>
+<td><p>Most common mode on Cortex-M and Ethos-U systems; balances good performance and SRAM usage</p></td>
+<td><p>Requires enough SRAM to hold the largest intermediate tensor</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Dedicated-SRAM</strong></p></td>
+<td><p>External memory</p></td>
+<td><p>External memory (Flash/DRAM)</p></td>
+<td><p>Most common mode for Cortex-A and Ethos-U systems. For very large models where the peak intermediates cannot fit in SRAM</p></td>
+<td><p>Need high-bandwidth external memory to deliver good performance</p></td>
+</tr>
+</tbody>
+</table>
+<p>Here is an in-depth explanation of the different modes:</p>
+<div class="section" id="sram-only-memory-mode">
+<h4>1. Sram-Only Memory Mode<a class="headerlink" href="#sram-only-memory-mode" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the SRAM.</p></li>
+<li><p>Neural Network resides in the SRAM.</p></li>
+<li><p>Ethos-U fast scratch buffer is not used.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Provides the best performance since all the memory traffic passes via the low-latency/high-bandwidth memory.</p></li>
+<li><p>The performance uplift is especially noticeable on memory-bound workloads on the external interface.</p></li>
+<li><p>Available on Ethos-U55, Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>Embedded SoCs often have limited SRAM and NNs are becoming larger. This memory mode may be unsuitable for a system running a big model relative to the amount of SRAM available on the SoC.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Sram Only configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="_images/backend-arm-ethos-u-sram_only.png" /></p>
+</div>
+<div class="section" id="shared-sram-memory-mode">
+<h4>2. Shared-Sram Memory Mode<a class="headerlink" href="#shared-sram-memory-mode" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the SRAM.</p></li>
+<li><p>Neural Network resides in the External memory.</p></li>
+<li><p>Ethos-U fast scratch buffer is not used.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Intermediate tensors are stored in the SRAM, leveraging its low-latency and high-bandwidth.</p></li>
+<li><p>The Ethos-U compiler can prefetch weights from the external memory to the SRAM ahead of time so that when the NPU needs the data, it will already be avaialbe in the on-chip memory.</p></li>
+<li><p>In this mode, the external interface is Read-Only, the on-chip memory interface is Read/Write</p></li>
+<li><p>Shared-Sram offers great balance between performance and low SRAM usage.</p></li>
+<li><p>Available on Ethos-U55, Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>You need to have enough space in the SRAM to hold the peak intermediate tensor.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="_images/backend-arm-ethos-u-shared_sram.png" /></p>
+</div>
+<div class="section" id="dedicated-sram-memory-mode">
+<h4>3. Dedicated-Sram Memory Mode<a class="headerlink" href="#dedicated-sram-memory-mode" title="Permalink to this heading">¶</a></h4>
+<ul class="simple">
+<li><p>Ethos-U scratch buffer resides in the External memory.</p></li>
+<li><p>Neural Network resides in the External memory.</p></li>
+<li><p>Ethos-U fast scratch buffer resides in the on-chip memory.</p></li>
+<li><p>Characteristics:</p>
+<ul>
+<li><p>Used when the peak intermediate tensor is too big to fit into the on-chip memory.</p></li>
+<li><p>Enables silicon acceleration of large models.</p></li>
+<li><p>The NPU stores the results from the intermediate computations in the external memory.</p></li>
+<li><p>The dedicated SRAM acts as a software managed cache, improving performance by pre-fetching frequently accessed tensors to the on-chip memory.</p></li>
+<li><p>Available on Ethos-U65 and Ethos-U85.</p></li>
+</ul>
+</li>
+<li><p>Limitations:</p>
+<ul>
+<li><p>The SRAM space must be dedicated exculisely to the Ethos-U(the host processor should not access it).</p></li>
+<li><p>Not available on Ethos-U55.
+Below, you can see a visual representation of the placement of the two logical memory regions for the Shared_Sram configuration.</p></li>
+</ul>
+</li>
+</ul>
+<p><img alt="" src="_images/backend-arm-ethos-u-dedicated_sram.png" /></p>
+<p>The memory modes are defined within the <a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/ethosu/config_files/Arm/vela.ini?ref_type=heads">vela.ini file</a>. When you install
+ExecuTorch for the Ethos-U backend, you automatically install the compiler containing the vela.ini file so you can directly create a compile specification with these memory modes.</p>
+</div>
+<div class="section" id="interpreting-the-output-from-the-ethos-u-compiler-regarding-the-memory-footprint">
+<h4>Interpreting the output from the Ethos-U compiler regarding the memory footprint<a class="headerlink" href="#interpreting-the-output-from-the-ethos-u-compiler-regarding-the-memory-footprint" title="Permalink to this heading">¶</a></h4>
+<p>As part of the <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower</span></code> step, you will see a memory footprint information presented as:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span> <span class="n">SRAM</span> <span class="n">used</span>                               <span class="mf">2467.27</span> <span class="n">KiB</span>
+<span class="n">Total</span> <span class="n">Off</span><span class="o">-</span><span class="n">chip</span> <span class="n">Flash</span> <span class="n">used</span>                       <span class="mf">12.20</span> <span class="n">KiB</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">Total</span> <span class="pre">SRAM</span> <span class="pre">used</span></code> indicates the peak SRAM utilization needed by the NPU in order to perform an inference. In the snippet above, the Ethos-U compiler requires 2467.27 KiB of SRAM in order to schedule the inference.
+Therefore, from an application standpoint, you need to ensure you have at least 2467.27 KiB of SRAM on the SoC to run this model. The Ethos-U compiler provides a scheduling algorithm allowing to
+lower the peak SRAM usage within reasonable limits, you need to add the <code class="docutils literal notranslate"><span class="pre">--optimise</span> <span class="pre">Size</span></code> or <code class="docutils literal notranslate"><span class="pre">--arena-cache-size</span></code> CLI options for to the compile spec. You can read more about the options of the
+Ethos-U compiler in the documentation <a class="reference external" href="https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md#optimise">here</a>. If the peak SRAM usage remains too high in
+Shared Sram memory mode, you would need to us the Dedicated Sram mode in order to store the Neural Network and the Ethos-U scratch buffer in the external memory.
+The main advantage of the Dedicated_Sram memory mode is that you can run large models and still benefit from the low-latency/high-bandwidth of the SRAM, used as a cache.
+It is important to highlight that when you specify a memory mode in the compile spec, in the runtime, the user is expected to place the scratch buffer and NN in the correct memory location.
+In other words, when you specify for ex. Shared Sram memory mode, the runtime application logic should place the ethos-U scratch buffer in the on-chip memory and the NN in the external memory for optimal performance.
+You can see how  this coupling between the memory mode and runtime application is done in the
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/arm/ethos-u-porting-guide.md">Ethos-U porting guide</a></p>
+</div>
+</div>
+<div class="section" id="bundled-io-and-etdump">
+<h3>Bundled.io and ETdump<a class="headerlink" href="#bundled-io-and-etdump" title="Permalink to this heading">¶</a></h3>
+<p>The arm_executor_runner supports <a class="reference external" href="https://docs.pytorch.org/executorch/0.4/bundled-io.html">bundled-io</a> and <a class="reference external" href="https://docs.pytorch.org/executorch/stable/etdump.html">ETdump</a> debugging tools.</p>
+<p>To enable bundled-io, set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_DEVTOOLS</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">DET_BUNDLE_IO</span></code> when building the executor_runner. Currently using bundled-io requires specifying your
+non delegated Aten ops manually by setting <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code>. To enable ETdump, set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_ARM_ETDUMP</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">DEXECUTORCH_ENABLE_EVENT_TRACER</span></code>
+when building the executor_runner.</p>
+</div>
+</div>
+<div class="section" id="memory-formats">
+<h2>Memory formats<a class="headerlink" href="#memory-formats" title="Permalink to this heading">¶</a></h2>
+<p>Tensors of rank 4 and higher have two differing <a class="reference external" href="https://pytorch.org/blog/tensor-memory-format-matters/">memory format</a> standards used.
+Pytorch defaults to contiguous/ channels first/ NCHW memory formats, compared to TOSA which only supports channels last/NHWC memory format.
+To support this, the backend inserts a transpose in the beginning if the incoming memory format is contiguous, and correspondingly a
+transpose in the end if the outgoing memory format is contiguous. Note that this means that you may avoid transposing the data unneccessarily if the runtime integration and
+full network is converted to use channels last. A word of caution must be given here however - changing memory format has been noted to have side effects such as
+unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.</p>
+</div>
+<div class="section" id="see-also">
+<h2>See Also<a class="headerlink" href="#see-also" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><span class="xref myst">Arm Ethos-U Backend Tutorial</span></p></li>
+</ul>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="backends-arm-vgf.html" class="btn btn-neutral float-right" title="Arm® VGF Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="backends-vulkan.html" class="btn btn-neutral" title="Vulkan Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Arm® Ethos™-U NPU Backend</a><ul>
+<li><a class="reference internal" href="#features">Features</a></li>
+<li><a class="reference internal" href="#target-requirements">Target Requirements</a></li>
+<li><a class="reference internal" href="#development-requirements">Development Requirements</a></li>
+<li><a class="reference internal" href="#using-the-arm-ethos-u-backend">Using the Arm Ethos-U backend</a><ul>
+<li><a class="reference internal" href="#partitioner-api">Partitioner API</a></li>
+<li><a class="reference internal" href="#quantizer">Quantizer</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime-integration">Runtime Integration</a><ul>
+<li><a class="reference internal" href="#ethos-u-memory-modes">Ethos-U memory modes</a><ul>
+<li><a class="reference internal" href="#sram-only-memory-mode">1. Sram-Only Memory Mode</a></li>
+<li><a class="reference internal" href="#shared-sram-memory-mode">2. Shared-Sram Memory Mode</a></li>
+<li><a class="reference internal" href="#dedicated-sram-memory-mode">3. Dedicated-Sram Memory Mode</a></li>
+<li><a class="reference internal" href="#interpreting-the-output-from-the-ethos-u-compiler-regarding-the-memory-footprint">Interpreting the output from the Ethos-U compiler regarding the memory footprint</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#bundled-io-and-etdump">Bundled.io and ETdump</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#memory-formats">Memory formats</a></li>
+<li><a class="reference internal" href="#see-also">See Also</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/newsletter">Newsletter</a>
+             </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/staff">Staff</a>
+            </li>
+            <li>
+               <a href="https://pytorch.org/contact-us">Contact Us</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

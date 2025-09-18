@@ -1,0 +1,117 @@
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+.progress-bar-wrapper {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  position: sticky;
+  top: 0;
+  background: white;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  z-index: 2;
+}
+
+.progress-bar-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+
+  @media (max-width: 768px) {
+     font-size: 12px;
+   }
+}
+
+.progress-bar-item::before {
+  position: absolute;
+  content: "";
+  border-bottom: 2px solid #ccc;
+  width: 100%;
+  top: 20px;
+  left: -50%;
+  z-index: 2;
+}
+
+.progress-bar-item::after {
+  position: absolute;
+  content: "";
+  border-bottom: 2px solid #ccc;
+  width: 100%;
+  top: 20px;
+  left: 50%;
+  z-index: 2;
+}
+
+.progress-bar-item .step-number {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border-color: #812CE5;
+  border-style: solid;
+  border-width: 1px;
+  color: #812CE5;
+  background: #fff;
+  margin-bottom: 6px;
+}
+
+.progress-bar-item.active {
+  font-weight: bold;
+}
+
+.progress-bar-item.completed .step-number {
+  background-color: #812CE5;
+  color: white;
+}
+
+.progress-bar-item.completed::after {
+  position: absolute;
+  content: "";
+  border-bottom: 2px solid #812CE5;
+  width: 100%;
+  top: 20px;
+  left: 50%;
+  z-index: 3;
+}
+
+.progress-bar-item:first-child::before {
+  content: none;
+}
+
+.progress-bar-item:last-child::after {
+  content: none;
+}
+
+.progress-bar-item a:link {
+    color: #262626 !important;
+}
+
+.step-caption:first-child {
+    margin-left: 10px;
+}
+
+.step-caption {
+    text-align: center;
+}
+
+.step-caption a:link {
+    color: #262626 !important;
+}
+
+.step-caption a:hover {
+    color: #ee4c2c;
+    text-decoration: underline;
+}
