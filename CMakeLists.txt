@@ -143,9 +143,13 @@ endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
-set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
-)
+if(WIN32)
+  set(CMAKE_CXX_FLAGS_RELEASE "/Gy /Gw ${CMAKE_CXX_FLAGS_RELEASE}")
+else()
+  set(CMAKE_CXX_FLAGS_RELEASE
+      "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
+  )
+endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -571,6 +575,11 @@ if(EXECUTORCH_BUILD_QNN)
   list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
+if(EXECUTORCH_BUILD_ENN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
+  list(APPEND _executorch_backends enn_backend)
+endif()
+
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
   list(APPEND _executorch_backends xnnpack_backend)
@@ -699,9 +708,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/csrc/cpu)
   unset(EXECUTORCH_INCLUDE_DIRS)
 
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
@@ -819,6 +826,10 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs qnn_executorch_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_ENN)
+    list(APPEND _dep_libs enn_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
@@ -919,6 +930,19 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
    OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
    OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
 )
+  # Use optimized kernels when available.
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    set(_selected_kernel_functions_yaml
+        ${CMAKE_CURRENT_BINARY_DIR}/configurations/merged.yaml
+    )
+    set(_selected_kernel_libs "optimized_kernels" "optimized_portable_kernels")
+  else()
+    set(_selected_kernel_functions_yaml
+        ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    )
+    set(_selected_kernel_libs "portable_kernels")
+  endif()
+
   gen_selected_ops(
     LIB_NAME
     "executorch_selected_kernels"
@@ -938,7 +962,7 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     LIB_NAME
     "executorch_selected_kernels"
     FUNCTIONS_YAML
-    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    ${_selected_kernel_functions_yaml}
     CUSTOM_OPS_YAML
     ""
     DTYPE_SELECTIVE_BUILD
@@ -949,13 +973,19 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     LIB_NAME
     "executorch_selected_kernels"
     KERNEL_LIBS
-    "portable_kernels"
+    ${_selected_kernel_libs}
     DEPS
     executorch_core
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   list(APPEND _executorch_kernels executorch_selected_kernels)
+
+  install(
+    TARGETS executorch_selected_kernels
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+  )
 else()
   # No selective build - link the full library.
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)

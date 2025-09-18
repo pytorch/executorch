@@ -16,6 +16,7 @@
 #include <bitset>
 #include <cctype>
 #include <cstring>
+#include <sstream>
 
 namespace vkcompute {
 namespace vkapi {
@@ -45,6 +46,8 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
       queue_families{},
       num_compute_queues(0),
       supports_int16_shader_types(false),
+      supports_int64_shader_types(false),
+      supports_float64_shader_types(false),
       has_unified_memory(false),
       has_timestamps(false),
       timestamp_period(0),
@@ -96,6 +99,12 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
 
   if (features2.features.shaderInt16 == VK_TRUE) {
     supports_int16_shader_types = true;
+  }
+  if (features2.features.shaderInt64 == VK_TRUE) {
+    supports_int64_shader_types = true;
+  }
+  if (features2.features.shaderFloat64 == VK_TRUE) {
+    supports_float64_shader_types = true;
   }
 
   // Check if there are any memory types have both the HOST_VISIBLE and the

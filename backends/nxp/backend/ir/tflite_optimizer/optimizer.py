@@ -17,12 +17,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.combine_h
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
     FuseActivationFunctions,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_fully_connected_and_add_operators import (
-    FuseFullyConnectedAndAddOperators,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.keep_one_empty_buffer import (
-    KeepOneEmptyBuffer,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
     MoveActivationBeforeConcatenation,
 )
@@ -33,20 +27,14 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_unused_tensors_and_buffers import (
-    RemoveUnusedTensorsAndBuffers,
-)
 
 
 class Optimization(Enum):
-    KEEP_ONE_EMPTY_BUFFER = 0
     FUSE_ACTIVATION_FUNCTIONS = 1
-    FUSE_FULLY_CONNECTED_AND_ADD = 2
 
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
-    REMOVE_UNUSED_TENSORS = 10
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
@@ -80,22 +68,13 @@ class Optimizer:
         self._builder = builder
 
         self.optimization_map = {
-            Optimization.KEEP_ONE_EMPTY_BUFFER: KeepOneEmptyBuffer(
-                builder, conversion_config
-            ),
             Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_FULLY_CONNECTED_AND_ADD: FuseFullyConnectedAndAddOperators(
                 builder, conversion_config
             ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
                 builder, conversion_config
             ),
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
                 builder, conversion_config
             ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(

@@ -34,8 +34,9 @@ from executorch.backends.xnnpack.test.tester.tester import (
 from torch.export.graph_signature import ExportGraphSignature, InputKind
 
 try:
+    from torchao.quantization.granularity import PerGroup
     from torchao.quantization.quant_api import (
-        int8_dynamic_activation_int4_weight,
+        Int8DynamicActivationIntxWeightConfig,
         quantize_,
     )
     from torchao.utils import unwrap_tensor_subclass
@@ -391,7 +392,14 @@ class TestLinear(unittest.TestCase):
         """
         Helper function to test groupwise dynamic quantized linear op with different configurations.
         """
-        quantize_(mod, int8_dynamic_activation_int4_weight(group_size=group_size))
+        quantize_(
+            mod,
+            Int8DynamicActivationIntxWeightConfig(
+                # pyre-ignore[16]
+                weight_dtype=torch.int4,
+                weight_granularity=PerGroup(group_size),
+            ),
+        )
         unwrap_tensor_subclass(mod)
         DynamicallyQuantizedPartitioner = XnnpackPartitioner(
             config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,

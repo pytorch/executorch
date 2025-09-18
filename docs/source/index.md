@@ -51,6 +51,7 @@ ExecuTorch provides support for:
 - [MPS](backends-mps)
 - [Vulkan](backends-vulkan)
 - [ARM Ethos-U](backends-arm-ethos-u)
+- [ARM VGF](backends-arm-vgf)
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
@@ -148,7 +149,8 @@ using-executorch-faqs
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
 Building an ExecuTorch iOS Demo App <https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
-tutorial-arm.md
+tutorial-arm-ethos-u
+tutorial-arm-vgf
 ```
 
 ```{toctree}
@@ -163,6 +165,7 @@ backends-coreml
 backends-mps
 backends-vulkan
 backends-arm-ethos-u
+backends-arm-vgf
 backends-qualcomm
 backends-mediatek
 backends-cadence

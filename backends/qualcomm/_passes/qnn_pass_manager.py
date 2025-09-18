@@ -13,8 +13,8 @@ from executorch.backends.qualcomm._passes import (
     AnnotateQuantAttrs,
     AnnotateStack,
     AnnotateUnbind,
+    CanonicalizeConv,
     ConvertBmmToMatmul,
-    ConvertConv1dToConv2d,
     ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
@@ -22,6 +22,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeGlu,
     DecomposeLinalgVectorNorm,
     DecomposeMinMaxDim,
     DecomposeRoll,
@@ -82,6 +83,7 @@ def get_capture_program_passes():
         (AnnotateQuantAttrs, True),
         (AnnotateStack, True),
         (AnnotateUnbind, True),
+        (CanonicalizeConv, True),
         (ConvertBmmToMatmul, False),
         (DecomposeAny, True),
         (DecomposeColIm, True),
@@ -199,6 +201,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeGlu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
@@ -215,7 +218,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
-        self.add_pass(ConvertConv1dToConv2d(exported_program))
+        self.add_pass(CanonicalizeConv(exported_program))
         if convert_linear_to_conv2d:
             self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())

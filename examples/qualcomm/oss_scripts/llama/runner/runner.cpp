@@ -122,14 +122,19 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama2;
   } else if (decoder_model_version == "llama3") {
     decoder_model_version_ = DecoderModelVersion::kLlama3;
+  } else if (decoder_model_version == "gemma3") {
+    decoder_model_version_ = DecoderModelVersion::kGemma3;
+    cache_mode_ = CacheMode::HybridCache;
+  } else if (decoder_model_version == "phi_4_mini") {
+    decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
   } else if (decoder_model_version == "qwen3") {
     decoder_model_version_ = DecoderModelVersion::kQwen3;
-  } else if (decoder_model_version == "phi_4_mini") {
-    decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else if (decoder_model_version == "smollm2_135m") {
     decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
+  } else if (decoder_model_version == "smollm3") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm3;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -177,8 +182,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
     eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
   } else {
-    tokenizer_ =
-        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
+    tokenizer_ = llm::load_tokenizer(tokenizer_path_);
     if (tokenizer_ == nullptr) {
       ET_LOG(
           Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
@@ -190,7 +194,15 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
+  } else if (
+      decoder_model_version_ == DecoderModelVersion::kQwen3 ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm3) {
+    eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
+  } else if (decoder_model_version_ == DecoderModelVersion::kGemma3) {
+    eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   }
+
   // Try avoid getMetadataHelper as it is time consuming.
   Result<MethodMeta> method_meta =
       module_->method_meta(token_generator_method_name);
@@ -204,7 +216,6 @@ Error Runner<T>::load() {
   ET_CHECK_OK_OR_RETURN_ERROR(decoder_runner_->load(method_names));
 
   ET_LOG(Info, "Reading metadata from model");
-
   // retrieve any method meta, can be either prefill or kv
   int64_t num_layers =
       ET_UNWRAP(module_->get("get_n_layers")).toScalar().to<int64_t>();
@@ -243,6 +254,13 @@ Error Runner<T>::load() {
         std::min(token_generator_ar_len, prompt_processor_ar_len);
   max_ar_len = std::max(token_generator_ar_len, prompt_processor_ar_len);
 
+  // Load the sliding window size if the model supports it.
+  // This is used to configure the attention mask for models with window
+  // attention
+  int32_t sliding_window = context_len_;
+  if (module_->method_names()->count("get_sliding_window") > 0) {
+    sliding_window = ET_UNWRAP(module_->get("get_sliding_window")).toInt();
+  }
   kv_manager_ = std::make_unique<KVManager<T>>(
       kv_updater_,
       typename KVManager<T>::Metadata{
@@ -263,8 +281,16 @@ Error Runner<T>::load() {
           num_layers,
           prompt_processor_ar_len,
           vocab_size,
-          use_int64_token});
+          use_int64_token,
+          sliding_window,
+          cache_mode_});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
+    // TODO: sliding window attention will be supported in future.
+    if (sliding_window < context_len_) {
+      ET_CHECK_MSG(
+          false,
+          "Lookahead decoding (eval_mode == 2) is not yet supported for sliding window attention.");
+    }
     token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
@@ -280,7 +306,8 @@ Error Runner<T>::load() {
             use_int64_token,
             ngram_,
             window_,
-            gcap_},
+            gcap_,
+            sliding_window},
         &stats_);
   } else {
     token_generator_ = std::make_unique<TokenGenerator<T>>(
@@ -295,7 +322,9 @@ Error Runner<T>::load() {
             num_layers,
             token_generator_ar_len,
             vocab_size,
-            use_int64_token},
+            use_int64_token,
+            sliding_window,
+            cache_mode_},
         &stats_);
   }
 
@@ -324,17 +353,6 @@ Error Runner<T>::generate(
     const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
-}
-
-template <typename T>
-Error Runner<T>::generate_from_pos(
-    const std::string& prompt,
-    int64_t start_pos,
-    const llm::GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  // TODO: currently only support start_pos == 0
   return generate_from_prompt_or_file(
       prompt, false, config, token_callback, stats_callback);
 }
@@ -405,7 +423,8 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.first_token_ms = time_in_ms();
   stats_.prompt_eval_end_ms = time_in_ms();
 
-  // print the first token from prefill. No prev_token so use cur_token for it.
+  // print the first token from prefill. No prev_token so use cur_token for
+  // it.
   if (token_callback) {
     token_callback(
         ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));

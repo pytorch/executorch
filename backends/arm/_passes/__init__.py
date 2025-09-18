@@ -8,14 +8,18 @@ from . import arm_pass_utils  # noqa
 from .arm_pass import ArmPass  # noqa  # usort: skip
 from .add_bias_pass import AddBiasPass  # noqa
 from .annotate_decomposed_matmul import AnnotateDecomposedMatmulPass  # noqa
+from .annotate_output_dim_order_pass import AnnotateOutputDimOrderPass  # noqa
 from .broadcast_args_pass import BroadcastArgsPass  # noqa
 from .cast_bool_to_int8_pass import CastBoolToInt8Pass  # noqa
 from .cast_int64_pass import CastInt64BuffersToInt32Pass  # noqa
 from .cast_to_int32_pass import CastToInt32Pass  # noqa
 from .conv1d_unsqueeze_pass import Conv1dUnsqueezePass  # noqa
 from .convert_any_default_dim_dims_pass import ConvertAnyDefaultDimDimsPass  # noqa
+from .convert_elu_params import ConvertELUParamsPass  # noqa
 from .convert_expand_copy_to_repeat import ConvertExpandCopyToRepeatPass  # noqa
 from .convert_full_like_to_full_pass import ConvertFullLikeToFullPass  # noqa
+from .convert_int64_const_ops_to_int32 import ConvertInt64ConstOpsToInt32Pass  # noqa
+from .convert_int64_output_ops_to_int32 import ConvertInt64OutputOpsToInt32Pass  # noqa
 from .convert_int_pow_to_mul import ConvertIntPowToMuls  # noqa
 from .convert_minmax_pass import ConvertMinMaxPass  # noqa
 from .convert_split_to_slice import ConvertSplitToSlicePass  # noqa
@@ -34,6 +38,8 @@ from .decompose_cosh_pass import DecomposeCoshPass  # noqa
 from .decompose_cosine_similarity_pass import DecomposeCosineSimilarityPass  # noqa
 from .decompose_cumsum_pass import DecomposeCumsumPass  # noqa
 from .decompose_div_pass import DecomposeDivPass  # noqa
+from .decompose_div_tensor_mode import DecomposeDivTensorModePass  # noqa
+from .decompose_elu_pass import DecomposeEluPass  # noqa
 from .decompose_embedding_pass import DecomposeEmbeddingPass  # noqa  # noqa
 from .decompose_expm1_pass import DecomposeExpm1Pass  # noqa
 from .decompose_gelu_pass import DecomposeGeluPass  # noqa
@@ -69,15 +75,15 @@ from .fuse_batchnorm2d_pass import FuseBatchnorm2DPass  # noqa
 from .fuse_constant_ops_pass import ComputeConstantOpsAOT, FuseConstantArgsPass  # noqa
 from .fuse_equal_placeholders_pass import FuseEqualPlaceholdersPass  # noqa
 from .fuse_quantized_activation_pass import FuseQuantizedActivationPass  # noqa
-from .insert_int64_input_cast_pass import (  # noqa  # noqa
-    InsertCastForOpsWithInt64InputPass,
+from .insert_int32_casts_after_int64_placeholders import (  # noqa
+    InsertInt32CastsAfterInt64PlaceholdersPass,
 )
 from .insert_rescales_pass import InsertRescalePass  # noqa
 from .insert_table_ops import InsertTableOpsPass  # noqa
 from .match_arg_dtype_pass import MatchArgDtypePass  # noqa
 from .match_arg_ranks_pass import MatchArgRanksPass  # noqa
 from .mm_to_bmm_pass import ConvertMmToBmmPass  # noqa
-from .remove_clone_pass import RemoveClonePass  # noqa
+from .remove_noop_pass import RemoveNoopPass  # noqa
 from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,

@@ -22,6 +22,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceAddMMWithLinearPass,
     ReplaceAtenApproxGeluWithApproxGeluPass,
     ReplaceAtenConvolutionWithCadenceConvolutionPass,
+    ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
     ReplaceConvWithChannelLastConvPass,
@@ -1665,7 +1666,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     out_multiplier,
                     out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nhwc.default,
+                op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
                 args=args,
             )
         else:
@@ -1679,7 +1680,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     out_multiplier,
                     out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nchw.default,
+                op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
                 args=args,
             )
 
@@ -1687,7 +1688,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Create a graph with a single convolution node.
         gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.default), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
@@ -1697,7 +1698,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
@@ -1713,7 +1715,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.default), 1
         )
 
         # Apply replacement pass.
@@ -1722,7 +1724,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
@@ -2044,4 +2047,39 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(
             len(avg_pool2d_nodes),
             0,
+        )
+
+
+class TestReplaceLinalgSvdPass(unittest.TestCase):
+    @expand(
+        [
+            ("2x2", (2, 2)),
+            ("3x3", (3, 3)),
+            ("4x5", (4, 5)),
+            ("10x10", (10, 10)),
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_linalg_svd_with_cadence_linalg_svd(
+        self, _: str, shape: Tuple[int, int]
+    ) -> None:
+        x = torch.randn(shape, dtype=torch.float32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten._linalg_svd.default,
+            args=(x, False, True),
+            kwargs={"driver": None},
+        )
+
+        p = ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        # Assert that the aten linalg_svd op was replaced with cadence linalg_svd op
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten._linalg_svd.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.linalg_svd.default),
+            1,
         )

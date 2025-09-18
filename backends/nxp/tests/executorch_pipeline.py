@@ -12,11 +12,11 @@ from executorch import exir
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
-from executorch.backends.nxp.backend.ir.edge_passes.remove_io_quant_ops_pass import (
-    RemoveIOQuantOpsPass,
-)
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
+)
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
@@ -88,7 +88,7 @@ def to_quantized_edge_program(
         [tuple[ModelInputSpec, ...]], list[tuple[torch.Tensor, ...]]
     ] = get_random_calibration_inputs,
     target="imxrt700",
-    neutron_converter_flavor="SDK_25_03",
+    neutron_converter_flavor="SDK_25_06",
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
 ) -> EdgeProgramManager:
@@ -96,9 +96,10 @@ def to_quantized_edge_program(
 
     example_input = calibration_inputs[0]
 
-    exir_program_aten = torch.export.export_for_training(
-        model, example_input, strict=True
-    )
+    # Make sure the model is in the evaluation mode.
+    model.eval()
+
+    exir_program_aten = torch.export.export(model, example_input, strict=True)
 
     exir_program_aten__module_quant = _quantize_model(
         exir_program_aten.module(), calibration_inputs
@@ -147,5 +148,9 @@ def to_edge_program(
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_spec))
 
     example_input = calibration_inputs[0]
+
+    # Make sure the model is in the evaluation mode.
+    model.eval()
+
     exir_program = torch.export.export(model, example_input)
     return exir.to_edge(exir_program)

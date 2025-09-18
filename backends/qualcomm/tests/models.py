@@ -274,6 +274,15 @@ class Cat4(torch.nn.Module):
         return torch.cat((y, y, x, x), axis=2)
 
 
+class Cat5(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.const_tensor = torch.randn(1, 1, 2, 2)
+
+    def forward(self, x, y):
+        return torch.cat((x, y, self.const_tensor), axis=2)
+
+
 class CausalMask(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -589,10 +598,16 @@ class Conv2dSingle(torch.nn.Module):
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, dilation=1):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose1d(
-            in_channels=1, out_channels=3, kernel_size=3, stride=2, padding=1, bias=bias
+            in_channels=1,
+            out_channels=3,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            dilation=dilation,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -600,7 +615,7 @@ class ConvTranspose1dSingle(torch.nn.Module):
 
 
 class ConvTranspose2dSingle(torch.nn.Module):
-    def __init__(self, bias=True):
+    def __init__(self, bias=True, dilation=1):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose2d(
             in_channels=1,
@@ -608,6 +623,7 @@ class ConvTranspose2dSingle(torch.nn.Module):
             kernel_size=3,
             stride=2,
             padding=1,
+            dilation=dilation,
             bias=bias,
         )
 
@@ -637,6 +653,40 @@ class Conv2dDownUpSample(torch.nn.Module):
 
     def forward(self, x):
         return self.conv_transpose(self.conv(x))
+
+
+class Conv2dFlip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=16,
+            out_channels=16,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False,
+        )
+        self.dims = [1, 3]
+
+    def forward(self, x):
+        x = self.conv(x)
+        return torch.flip(x, self.dims)
+
+
+class Conv2dSliceCopy(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=4,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x[:, 2:, :, :]
 
 
 class Conv2dSumReduceDim(torch.nn.Module):
@@ -805,6 +855,15 @@ class ExpM1(torch.nn.Module):
 
     def forward(self, x):
         return torch.special.expm1(x)
+
+
+class Flip(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dims = [0, 2]
+
+    def forward(self, x):
+        return torch.flip(x, self.dims)
 
 
 class Floor(torch.nn.Module):
@@ -1032,6 +1091,15 @@ class IndexPut(torch.nn.Module):
         return k_out + 0
 
 
+class IndexSelect(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x, indices):
+        return torch.index_select(x, self.dim, indices)
+
+
 class InstanceNorm2d(torch.nn.Module):
     def __init__(self, n_features, affine=True):
         super().__init__()
@@ -1162,6 +1230,14 @@ class Log(torch.nn.Module):
 
     def forward(self, x):
         return torch.log(x)
+
+
+class LogicalAnd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.logical_and(x != 0, y != 0).float()
 
 
 class LogicalNot(torch.nn.Module):
@@ -1823,6 +1899,16 @@ class SumIntList(torch.nn.Module):
         return torch.sum(x, dim=(2, 3), keepdim=True)
 
 
+class SwapAxes(torch.nn.Module):
+    def __init__(self, axis0, axis1):
+        super().__init__()
+        self.axis0 = axis0
+        self.axis1 = axis1
+
+    def forward(self, x):
+        return torch.swapaxes(x, axis0=self.axis0, axis1=self.axis1)
+
+
 class Tanh(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1847,6 +1933,16 @@ class Unbind(torch.nn.Module):
 
     def forward(self, x):
         return torch.unbind(x)
+
+
+class Unflatten(torch.nn.Module):
+    def __init__(self, dim, sizes):
+        super().__init__()
+        self.dim = dim
+        self.sizes = sizes
+
+    def forward(self, x):
+        return torch.unflatten(x, dim=self.dim, sizes=self.sizes)
 
 
 class Unfold(torch.nn.Module):

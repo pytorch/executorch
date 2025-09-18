@@ -14,21 +14,17 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
-from executorch.backends.arm._passes import ArmPassManager
+from executorch.backends.arm.ethosu import EthosUCompileSpec
 
 from executorch.backends.arm.quantizer import QuantizationConfig
-from executorch.backends.arm.tosa_specification import get_tosa_spec, TosaSpecification
-
-from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
-from .quantization_annotator import annotate_graph
-from executorch.backends.arm.arm_backend import (
-    is_ethosu,
-    is_vgf,
-)  # usort: skip
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.common.arm_compile_spec import (
+    ArmCompileSpec,
+)  # isort: skip
+from executorch.backends.arm.vgf import VgfCompileSpec
 
 from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e import (
@@ -48,6 +44,9 @@ from torchao.quantization.pt2e.quantizer import (
     QuantizationSpec,
     Quantizer,
 )
+
+from .arm_quantizer_utils import is_annotated, mark_node_as_annotated
+from .quantization_annotator import annotate_graph
 
 __all__ = [
     "TOSAQuantizer",
@@ -105,14 +104,26 @@ def get_symmetric_quantization_config(
     # Determine the right observer/fake-quant constructor
     if is_qat:
         if is_per_channel:
-            weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+            weight_observer_or_fake_quant_ctr = FakeQuantize.with_args(
+                observer=PerChannelMinMaxObserver,
+                quant_min=weight_qmin,
+                quant_max=weight_qmax,
+                dtype=torch.qint8,
+                qscheme=torch.per_channel_symmetric,
+                reduce_range=False,
+                ch_axis=0,
+                **extra_args,
+            )
         else:
             # Set plain fake-quant with true min/max
-            weight_observer_or_fake_quant_ctr = FakeQuantize
+            weight_observer_or_fake_quant_ctr = FakeQuantize.with_args(**extra_args)
     else:
         # PTQ: set min/max observer
         weight_observer_or_fake_quant_ctr = (
             PerChannelMinMaxObserver if is_per_channel else MinMaxObserver
+        )
+        weight_observer_or_fake_quant_ctr = weight_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
         )
 
     weight_quantization_spec = QuantizationSpec(
@@ -122,9 +133,7 @@ def get_symmetric_quantization_config(
         qscheme=weight_qscheme,
         ch_axis=0,
         is_dynamic=False,
-        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr.with_args(
-            **extra_args
-        ),
+        observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
     )
 
     bias_quantization_spec = None
@@ -141,6 +150,86 @@ def get_symmetric_quantization_config(
             act_quantization_spec,
             weight_quantization_spec,
             bias_quantization_spec,
+        )
+    return quantization_config
+
+
+@functools.lru_cache
+def get_symmetric_a16w8_quantization_config(
+    is_per_channel: bool = True,
+    is_qat: bool = False,
+    is_dynamic: bool = False,
+    weight_qmin: int = -127,
+    weight_qmax: int = 127,
+):
+    """
+    16A8W quantization config: 16-bit activations, 8-bit weights.
+
+    This configuration provides better accuracy than 8A8W while maintaining
+    reasonable memory usage through 8-bit weights.
+
+    Args:
+        is_per_channel: Whether to use per-channel quantization for weights
+        is_qat: Whether this is for Quantization Aware Training
+        is_dynamic: Whether to use dynamic quantization
+        weight_qmin: Minimum quantization value for weights
+        weight_qmax: Maximum quantization value for weights
+
+    Returns:
+        QuantizationConfig with 16-bit activations and 8-bit weights
+    """
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
+    # Setup observer/fake-quant for 16-bit activations
+    if is_qat:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = FakeQuantize
+            dynamic_quant_observer = MovingAverageMinMaxObserver.with_args(
+                averaging_constant=1
+            )
+            extra_args["observer"] = dynamic_quant_observer
+        else:
+            act_observer_or_fake_quant_ctr = FusedMovingAvgObsFakeQuantize  # type: ignore[assignment]
+    else:
+        if is_dynamic:
+            act_observer_or_fake_quant_ctr = PlaceholderObserver  # type: ignore[assignment]
+        else:
+            # HistogramObserver works well for 16-bit range
+            act_observer_or_fake_quant_ctr = HistogramObserver  # type: ignore[assignment]
+
+    # 16-bit activation quantization spec
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int16,
+        quant_min=torch.iinfo(torch.int16).min,  # -32768
+        quant_max=torch.iinfo(torch.int16).max,  # 32767
+        qscheme=torch.per_tensor_symmetric,
+        is_dynamic=is_dynamic,
+        observer_or_fake_quant_ctr=act_observer_or_fake_quant_ctr.with_args(
+            **extra_args,
+        ),
+    )
+
+    # Instead of reconstructing quantization_config, just clone and update as needed
+    # Clone the quantization_config from get_symmetric_quantization_config and update activation spec
+    base_config = get_symmetric_quantization_config(
+        is_per_channel=is_per_channel,
+        is_qat=is_qat,
+        is_dynamic=is_dynamic,
+    )
+    # Replace activation quantization spec with 16-bit version
+    if is_dynamic:
+        quantization_config = QuantizationConfig(
+            act_quantization_spec,  # 16-bit input activations
+            None,
+            base_config.weight,  # 8-bit weights from base config
+            None,
+        )
+    else:
+        quantization_config = QuantizationConfig(
+            act_quantization_spec,  # 16-bit input activations
+            act_quantization_spec,  # 16-bit output activations
+            base_config.weight,  # 8-bit weights from base config
+            None,
         )
     return quantization_config
 
@@ -220,27 +309,16 @@ def _get_not_module_type_or_name_filter(
 class TOSAQuantizer(Quantizer):
 
     def __init__(
-        self, compile_spec_or_tosa_spec: Union[TosaSpecification, List[CompileSpec]]
+        self, compile_spec_or_tosa_spec: TosaSpecification | ArmCompileSpec
     ) -> None:
 
         super().__init__()
         if isinstance(compile_spec_or_tosa_spec, TosaSpecification):
             self.tosa_spec = compile_spec_or_tosa_spec
             self.compile_spec = None
-        elif isinstance(compile_spec_or_tosa_spec, list):
+        elif isinstance(compile_spec_or_tosa_spec, ArmCompileSpec):
             self.compile_spec = compile_spec_or_tosa_spec
-            # find entry that is 'tosa_spec'
-            for cs in compile_spec_or_tosa_spec:
-                if cs.key == "tosa_spec":
-                    spec_val = (
-                        cs.value.decode() if isinstance(cs.value, bytes) else cs.value
-                    )
-                    self.tosa_spec = TosaSpecification.create_from_string(spec_val)
-                    break
-            else:
-                raise ValueError(
-                    "compile_spec list did not contain a 'tosa_spec' entry"
-                )
+            self.tosa_spec = self.compile_spec.tosa_spec
         else:
             raise TypeError(
                 f"TOSAQuantizer constructor expects "
@@ -290,6 +368,9 @@ class TOSAQuantizer(Quantizer):
         """An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
         """
+
+        # TODO: Fix the need to lazily import this.
+        from executorch.backends.arm._passes import ArmPassManager
 
         return ArmPassManager(self.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
             graph_module=model
@@ -383,18 +464,10 @@ class TOSAQuantizer(Quantizer):
 
 
 class EthosUQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: list[CompileSpec]) -> None:
-        if not is_ethosu(compile_spec):
-            raise RuntimeError("compile spec is not targeting Ethos-U")
-
-        tosa_spec = get_tosa_spec(compile_spec)
-        super().__init__(tosa_spec)
+    def __init__(self, compile_spec: EthosUCompileSpec) -> None:
+        super().__init__(compile_spec)
 
 
 class VgfQuantizer(TOSAQuantizer):
-    def __init__(self, compile_spec: list[CompileSpec]) -> None:
-        if not is_vgf(compile_spec):
-            raise RuntimeError("compile spec is not targeting VGF")
-
-        tosa_spec = get_tosa_spec(compile_spec)
-        super().__init__(tosa_spec)
+    def __init__(self, compile_spec: VgfCompileSpec) -> None:
+        super().__init__(compile_spec)

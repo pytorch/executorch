@@ -65,8 +65,8 @@ Error MultimodalRunner::load() {
 Error MultimodalRunner::generate(
     const std::vector<MultimodalInput>& inputs,
     const GenerationConfig& config,
-    std::function<void(const std::string&)>& token_callback,
-    std::function<void(const Stats&)>& stats_callback) {
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
   if (inputs.empty()) {
     ET_LOG(Error, "MultimodalInput vector cannot be empty");
     return Error::InvalidArgument;
@@ -104,7 +104,11 @@ Error MultimodalRunner::generate(
 
   uint64_t prefill_next_token = 0;
   // Process multimodal inputs in order
-  for (const MultimodalInput& input : inputs) {
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    const MultimodalInput& input = inputs[i];
+    if (config.echo && i == inputs.size() - 1 && input.is_text()) {
+      wrapped_callback(input.get_text());
+    }
     prefill_next_token = ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
   }
 
