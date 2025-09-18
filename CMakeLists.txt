@@ -600,6 +600,11 @@ if(EXECUTORCH_BUILD_CUDA)
   list(APPEND _executorch_backends aoti_cuda)
 endif()
 
+if(EXECUTORCH_BUILD_METAL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/metal)
+  list(APPEND _executorch_backends metal_backend)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
 endif()
