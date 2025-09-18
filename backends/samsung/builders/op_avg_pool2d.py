@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import cast, Dict, List
 
 import torch
@@ -49,10 +50,12 @@ class AvgPool2dVisitor(NodeVisitor):
         params["stride_w"] = stride[1]
         params["padding"] = "EXPLICIT"
         params["explicit_padding"] = explicit_padding
+        self._update_params_qdtype(node, params)
 
         if len(node.args) > 4:
             ceil_mode = cast(bool, node.args[4])
-            assert not ceil_mode, "Not support ceil_mode = True."
+            if ceil_mode:
+                raise AssertionError("Not support ceil_mode = True.")
 
         if len(node.args) > 5:
             params["count_include_pad"] = cast(bool, node.args[5])
@@ -61,10 +64,12 @@ class AvgPool2dVisitor(NodeVisitor):
 
         if len(node.args) > 6:
             divisor_override = cast(int, node.args[6])
-            assert (
-                divisor_override == kernel_size[0] * kernel_size[1]
-            ), "Not supported divisor_override which is not equal to pooling region."
+            if divisor_override != kernel_size[0] * kernel_size[1]:
+                raise AssertionError(
+                    "Not supported divisor_override which is not equal to pooling region."
+                )
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
+        vals_to_ids[node] = output_id
 
         enn_graph.define_op(node.name, "AVGPOOL2D", [input_id], [output_id], params)
