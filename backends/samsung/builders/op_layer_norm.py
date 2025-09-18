@@ -44,10 +44,7 @@ class LayerNormVisitor(NodeVisitor):
         bias_id = self.define_tensor(bias_node, enn_graph, vals_to_ids)
         all_input_tensors.append(bias_id)
 
-        if len(node.args) > 4:
-            epsilon = node.args[4]
-        else:
-            epsilon = 1e-5
+        epsilon = node.args[4] if len(node.args) > 4 else 1e-5
         params = {"epsilon": epsilon}
         self._update_params_qdtype(node, params)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)

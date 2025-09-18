@@ -29,18 +29,13 @@ class HardTanhVisitor(NodeVisitor):
     ) -> None:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-        params = {}
-        self._update_params_qdtype(node, params)
-        # default value of output_min and output_max
-        output_min = -1
-        output_max = 1
-        if len(node.args) > 1:
-            output_min = cast(float, node.args[1])
-        if len(node.args) > 2:
-            output_max = cast(float, node.args[2])
 
-        params["minimum"] = output_min
-        params["maximum"] = output_max
+        # default value of output_min and output_max
+        output_min = cast(float, node.args[1]) if len(node.args) > 1 else -1
+        output_max = cast(float, node.args[2]) if len(node.args) > 2 else 1
+
+        params = {"minimum": output_min, "maximum": output_max}
+        self._update_params_qdtype(node, params)
 
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 

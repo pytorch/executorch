@@ -25,19 +25,6 @@ def get_compile_spec(
     assert not required, f"Require {spec_name} but it doesn't exist."
 
 
-def get_enn_decompositions():
-    source_decompositions = torch_core_aten_decompositions()
-    # The below super ops are supported by ENN
-    remove_decompositions = [
-        torch.ops.aten.pixel_shuffle.default,
-    ]
-
-    for item in remove_decompositions:
-        source_decompositions.pop(item)
-
-    return source_decompositions
-
-
 def is_graph_input(exported_program: ExportedProgram, node: torch.fx.Node) -> bool:
     return node.op == "placeholder" and not is_param_node(exported_program, node)
 
