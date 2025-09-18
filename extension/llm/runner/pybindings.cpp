@@ -277,6 +277,14 @@ PYBIND11_MODULE(_llm_runner, m) {
             }
             return py::none();
           })
+      .def(
+          "get_image",
+          [](const MultimodalInput& input) -> py::object {
+            if (input.is_image()) {
+              return py::cast(input.get_image());
+            }
+            return py::none();
+          })
       .def("__repr__", [](const MultimodalInput& input) -> std::string {
         if (input.is_text()) {
           return "<MultimodalInput type=text content=\"" +
@@ -336,23 +344,27 @@ PYBIND11_MODULE(_llm_runner, m) {
               "Image must have 3 (RGB) or 4 (RGBA) channels");
         }
 
-        if (image_tensor.scalar_type() != torch::kUInt8) {
-          if (image_tensor.max().item<double>() <= 1.0) {
-            image_tensor = (image_tensor * 255).to(torch::kUInt8);
-          } else {
-            image_tensor = image_tensor.to(torch::kUInt8);
-          }
-        }
-
         image_tensor = image_tensor.contiguous();
-        uint8_t* data = image_tensor.data_ptr<uint8_t>();
-        std::vector<uint8_t> image_data(data, data + image_tensor.numel());
-
-        return MultimodalInput(Image(
-            std::move(image_data),
-            static_cast<int32_t>(width),
-            static_cast<int32_t>(height),
-            static_cast<int32_t>(channels)));
+        if (image_tensor.scalar_type() == torch::kUInt8) {
+          uint8_t* data = image_tensor.data_ptr<uint8_t>();
+          std::vector<uint8_t> image_data(data, data + image_tensor.numel());
+          return MultimodalInput(Image(
+              std::move(image_data),
+              static_cast<int32_t>(width),
+              static_cast<int32_t>(height),
+              static_cast<int32_t>(channels)));
+        } else if (image_tensor.scalar_type() == torch::kFloat) {
+          float* data = image_tensor.data_ptr<float>();
+          std::vector<float> image_data(data, data + image_tensor.numel());
+          return MultimodalInput(Image(
+              std::move(image_data),
+              static_cast<int32_t>(width),
+              static_cast<int32_t>(height),
+              static_cast<int32_t>(channels)));
+        } else {
+          throw std::runtime_error(
+              "Unsupported image tensor dtype. Only uint8 and float32 are supported.");
+        }
       },
       "Create an image input from a torch tensor (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
       py::arg("image_tensor"));
