@@ -58,8 +58,8 @@ def python_is_compatible():
     return True
 
 
-# The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
+# The pip repository that hosts torch packages.
+TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
@@ -89,7 +89,7 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.9.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        "torch==2.9.0" if use_pytorch_nightly else "torch",
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -105,7 +105,7 @@ def install_requirements(use_pytorch_nightly):
             "requirements-dev.txt",
             *TORCH_PACKAGE,
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            TORCH_URL,
         ],
         check=True,
     )
@@ -149,12 +149,8 @@ def install_requirements(use_pytorch_nightly):
 def install_optional_example_requirements(use_pytorch_nightly):
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
-        (
-            f"torchvision==0.24.0.{NIGHTLY_VERSION}"
-            if use_pytorch_nightly
-            else "torchvision"
-        ),
-        f"torchaudio==2.8.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torchaudio",
+        ("torchvision==0.24.0" if use_pytorch_nightly else "torchvision"),
+        "torchaudio==2.9.0" if use_pytorch_nightly else "torchaudio",
     ]
     # Then install domain libraries
     subprocess.run(
@@ -165,7 +161,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "install",
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            TORCH_URL,
         ],
         check=True,
     )
@@ -180,7 +176,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "-r",
             "requirements-examples.txt",
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            TORCH_URL,
             "--upgrade-strategy",
             "only-if-needed",
         ],
