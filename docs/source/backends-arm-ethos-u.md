@@ -273,5 +273,14 @@ non delegated Aten ops manually by setting `EXECUTORCH_SELECT_OPS_LIST`. To enab
 when building the executor_runner.
 
 
+## Memory formats
+
+Tensors of rank 4 and higher have two differing [memory format](https://pytorch.org/blog/tensor-memory-format-matters/) standards used.
+Pytorch defaults to contiguous/ channels first/ NCHW memory formats, compared to TOSA which only supports channels last/NHWC memory format.
+To support this, the backend inserts a transpose in the beginning if the incoming memory format is contiguous, and correspondingly a
+transpose in the end if the outgoing memory format is contiguous. Note that this means that you may avoid transposing the data unneccessarily if the runtime integration and
+full network is converted to use channels last. A word of caution must be given here however - changing memory format has been noted to have side effects such as
+unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.
+
 ## See Also
 - [Arm Ethos-U Backend Tutorial](tutorial-arm.md)
