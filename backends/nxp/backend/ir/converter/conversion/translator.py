@@ -8,7 +8,7 @@
     translator
 
 Module contains functions for context-free conversion of various
-things from ONNX to TFLite.
+things from ExecuTorch to NeutronIR.
 """
 
 from typing import Any, Collection, List, Optional, Sequence
@@ -23,9 +23,9 @@ from executorch.backends.nxp.backend.ir.lib.tflite.TensorType import TensorType
 
 
 def permute_static_tensor(tensor: tflite_model.Tensor, perm: list[int]):
-    """Take a static TFLite tensor and permute its shape and data according to the permutation in 'perm'.
+    """Take a static NeutronIR tensor and permute its shape and data according to the permutation in 'perm'.
 
-    :param tensor: Static TFLite tensor to permute.
+    :param tensor: Static NeutronIR tensor to permute.
     :param perm: Permutation to apply to the tensor.
     """
 
@@ -48,7 +48,7 @@ def permute_static_tensor(tensor: tflite_model.Tensor, perm: list[int]):
 def get_tflite_tensor_shape_with_explicit_padding(
     tflite_shape: List[int], explicit_padding: List[List[int]]
 ) -> List[int]:
-    """Get the resulting shape of a tensor with shape 'tflite_shape' (in TFLite format), after 'explicit_padding' is
+    """Get the resulting shape of a tensor with shape 'tflite_shape' (in NeutronIR format), after 'explicit_padding' is
     applied to it.
     """
 
@@ -57,7 +57,7 @@ def get_tflite_tensor_shape_with_explicit_padding(
     ):
         logger.e(
             logger.Code.INTERNAL_ERROR,
-            f"Cannot apply padding '{explicit_padding}' to TFLite shape '{tflite_shape}'!",
+            f"Cannot apply padding '{explicit_padding}' to NeutronIR shape '{tflite_shape}'!",
         )
 
     total_padding = [
@@ -86,8 +86,8 @@ def get_tflite_tensor_shape_with_explicit_padding(
 
 
 def dims_to_channels_first(channels_last_dimensions: List[int]) -> List[int]:
-    """Convert a list of ints which represent dimensions in the channels last (TFLite) format to the channels first
-    (ONNX) format.
+    """Convert a list of ints which represent dimensions in the channels last (NeutronIR) format to the channels first
+    (ExecuTorch) format.
     """
     assert len(channels_last_dimensions) > 0, "Dimensions list is empty!"
 
@@ -102,8 +102,8 @@ def dims_to_channels_first(channels_last_dimensions: List[int]) -> List[int]:
 
 
 def dims_to_channels_last(channels_first_dimensions: List[int]) -> List[int]:
-    """Convert a list of ints which represent dimensions in the channels first (ONNX) format to the channels last
-    (TFLite) format.
+    """Convert a list of ints which represent dimensions in the channels first (ExecuTorch) format to the channels last
+    (NeutronIR) format.
     """
     assert len(channels_first_dimensions) > 0, "Dimensions list is empty!"
 
@@ -151,7 +151,7 @@ def _same_upper_equals_same_lower(
     o_strides: Optional[List[int]] = None,
     o_dilations: Optional[List[int]] = None,
 ) -> bool:
-    """Determine if in a given particular setting, the values of the ONNX `auto_pads` attribute SAME_UPPER and
+    """Determine if in a given particular setting, the values of the ExecuTorch `auto_pads` attribute SAME_UPPER and
     SAME_LOWER represent the exact same padding.
     """
 
@@ -173,7 +173,7 @@ def _tflite_padding_compute_output_size(
     """
     Calculates the output shape of the tensor with particular setting as tflite would. Implementation corresponds to
     tensorflow/lite/kernels/padding.h:ComputeOutSize()
-    :param padding: TFLite Padding value - 'Same' or 'Valid'
+    :param padding: NeutronIR Padding value - 'Same' or 'Valid'
     :param tflite_spatial_input_shape: input tensor shape
     :param tflite_kernel_shape: convolution kernel shape
     :param strides: strides (default is 1)
@@ -209,7 +209,7 @@ def tflite_compute_padding_with_offset(
     dilations: Optional[List[int]] = None,
 ) -> (List[int], List[int]):
     """
-    Calculate padding and offset for each dimension for particular convolution setting as TFLite.
+    Calculate padding and offset for each dimension for particular convolution setting as NeutronIR.
     Implementation corresponds to tensorflow/lite/kernels/padding.h:ComputePaddingWithOffset()
     :param tflite_input_shape: tensorflow lite input shape
     :param tflite_kernel_shape: tensorflow lite kernel shape
@@ -252,14 +252,14 @@ def _is_same_padding(
     o_strides: Optional[List[int]] = None,
     o_dilations: Optional[List[int]] = None,
 ) -> bool:
-    """Determine if given ONNX 'pads' padding can be represented exactly with the TFLite 'SAME' padding type.
+    """Determine if given ExecuTorch 'pads' padding can be represented exactly with the NeutronIR 'SAME' padding type.
 
-    :param o_pads: ONNX 'pads' attribute.
-    :param tflite_input_shape: The shape of the main input of the operator in TFLite format.
-    :param tflite_output_shape: The shape of the main output of the operator in TFLite format.
-    :param o_kernel_shape: ONNX 'kernel_shape' attribute.
-    :param o_strides: ONNX 'strides' attribute. Can be omitted.
-    :param o_dilations: ONNX 'dilations' attribute. Can be omitted.
+    :param o_pads: ExecuTorch 'pads' attribute.
+    :param tflite_input_shape: The shape of the main input of the operator in NeutronIR format.
+    :param tflite_output_shape: The shape of the main output of the operator in NeutronIR format.
+    :param o_kernel_shape: ExecuTorch 'kernel_shape' attribute.
+    :param o_strides: ExecuTorch 'strides' attribute. Can be omitted.
+    :param o_dilations: ExecuTorch 'dilations' attribute. Can be omitted.
     """
 
     if len(tflite_input_shape) == 0 or len(tflite_output_shape) == 0:
@@ -269,7 +269,7 @@ def _is_same_padding(
             f"'{tflite_input_shape}' and output shape '{tflite_output_shape}'.",
         )
 
-    # Calculate if the output shape corresponds to Same padding setting in TFLite
+    # Calculate if the output shape corresponds to Same padding setting in NeutronIR
     tflite_spatial_input_shape = tflite_input_shape[1:-1]
     tmp_spatial_output_shape = _tflite_padding_compute_output_size(
         tflPadding.Padding.SAME,
@@ -282,10 +282,10 @@ def _is_same_padding(
         return False
 
     # For every dimension, the padding is added to the start and end of the dimension.
-    # TFLite padding 'SAME' tries to split it evenly, but in case of odd padding, 'SAME' adds the excess 1 at the end.
-    # TFLite represents this in the offset. The offset is added to the end of particular dimension,
+    # NeutronIR padding 'SAME' tries to split it evenly, but in case of odd padding, 'SAME' adds the excess 1 at the end.
+    # NeutronIR represents this in the offset. The offset is added to the end of particular dimension,
     # i.e. bottom for H dim, right for W dim and so on.
-    # ONNX represents this in 'pads' as [x1_begin, x2_begin,... , x1_end, x2_end,...].
+    # ExecuTorch represents this in 'pads' as [x1_begin, x2_begin,... , x1_end, x2_end,...].
     padding, offset = tflite_compute_padding_with_offset(
         tflite_input_shape, o_kernel_shape, tflite_output_shape, o_strides, o_dilations
     )
@@ -331,31 +331,35 @@ def shape_from_numpy(numpy_array):
     return tflite_model.Shape(dims)
 
 
-def onnx_explicit_padding_to_tflite(onnx_pads: list[int]) -> list[list[int]]:
-    """Convert the attribute or input 'pads' of the ONNX 'Pad' operator to the 'paddings' input of the TFLite 'Pad'
+def executorch_explicit_padding_to_tflite(
+    executorch_pads: list[int],
+) -> list[list[int]]:
+    """Convert the attribute or input 'pads' of the ExecuTorch 'Pad' operator to the 'paddings' input of the NeutronIR 'Pad'
      class of operators.
 
     This function does NOT take tensor formats into consideration.
     """
 
-    start_padding = onnx_pads[
-        : len(onnx_pads) // 2
+    start_padding = executorch_pads[
+        : len(executorch_pads) // 2
     ]  # Padding at the start of each dimension
-    end_padding = onnx_pads[
-        len(onnx_pads) // 2 :
+    end_padding = executorch_pads[
+        len(executorch_pads) // 2 :
     ]  # Padding at the end of each dimension
 
     return list(zip(start_padding, end_padding))
 
 
-def onnx_pads_to_tflite_explicit_padding(onnx_pads: List[int]) -> List[List[int]]:
-    """Convert an ONNX attribute 'pads' of operators such as Conv, MaxPool or AveragePool, to a list of ints which is
-    compatible with the TFLite 'Pad' operator.
+def executorch_pads_to_tflite_explicit_padding(
+    executorch_pads: List[int],
+) -> List[List[int]]:
+    """Convert an ExecuTorch attribute 'pads' of operators such as Conv, MaxPool or AveragePool, to a list of ints which is
+    compatible with the NeutronIR 'Pad' operator.
     """
 
-    tflite_padding = onnx_explicit_padding_to_tflite(onnx_pads)
+    tflite_padding = executorch_explicit_padding_to_tflite(executorch_pads)
 
-    # TFLite also allows padding to the 'batch' and 'channels'. ONNX does not
+    # NeutronIR also allows padding to the 'batch' and 'channels'. ExecuTorch does not
     tflite_padding.insert(0, [0, 0])
     tflite_padding.append([0, 0])
 
@@ -369,15 +373,15 @@ def _get_explicit_tflite_padding_for_same_lower(
     o_strides: Optional[List[int]] = None,
     o_dilations: Optional[List[int]] = None,
 ) -> List[List[int]]:
-    """Get the TFLite explicit padding required to represent ONNX 'SAME_LOWER' auto_pad for a particular setting.
+    """Get the NeutronIR explicit padding required to represent ExecuTorch 'SAME_LOWER' auto_pad for a particular setting.
 
-    :param tflite_input_shape: TFLite (NHWC) shape of the input tensor of the operator.
-    :param tflite_output_shape: TFLite (NHWC) shape of the output tensor of the operator.
-    :param o_kernel_shape: ONNX 'kernel_shape' attribute.
-    :param o_strides: Optional ONNX 'o_strides' attribute.
-    :param o_dilations: Optional ONNX 'o_dilations' attribute.
+    :param tflite_input_shape: NeutronIR (NHWC) shape of the input tensor of the operator.
+    :param tflite_output_shape: NeutronIR (NHWC) shape of the output tensor of the operator.
+    :param o_kernel_shape: ExecuTorch 'kernel_shape' attribute.
+    :param o_strides: Optional ExecuTorch 'o_strides' attribute.
+    :param o_dilations: Optional ExecuTorch 'o_dilations' attribute.
 
-    :return: A TFLite style explicit padding, compatible with the TFLite 'Pad' operator.
+    :return: A NeutronIR style explicit padding, compatible with the NeutronIR 'Pad' operator.
     """
 
     padding, offset = tflite_compute_padding_with_offset(
@@ -396,8 +400,8 @@ def _get_explicit_tflite_padding_for_same_lower(
 
 
 def convert_data_to_channels_first(array: np.ndarray) -> np.ndarray:
-    """Convert a numpy array representing the data of a tensor from the channels last format (TFLite), to channels
-        first format (ONNX).
+    """Convert a numpy array representing the data of a tensor from the channels last format (NeutronIR), to channels
+        first format (ExecuTorch).
 
     :param array: Numpy array holding the tensor's data.
     :return: The transformed data.
@@ -412,8 +416,8 @@ def convert_data_to_channels_first(array: np.ndarray) -> np.ndarray:
 
 
 def convert_data_to_channels_last(array: np.ndarray) -> np.ndarray:
-    """Convert a numpy array representing the data of a tensor from the channels first format (ONNX), to channels last
-        format (TFLite).
+    """Convert a numpy array representing the data of a tensor from the channels first format (ExecuTorch), to channels last
+        format (NeutronIR).
 
     :param array: Numpy array holding the tensor's data.
     :return: The transformed data.
@@ -442,9 +446,9 @@ def create_channels_last_to_channels_first_permutation(
     rank: int, return_list: bool = False
 ) -> np.ndarray | list[int]:
     """Return a numpy array with data that describes the permutation, which would change a tensor from the channels
-    last (TFLite) format to the channels first (ONNX) format.
+    last (NeutronIR) format to the channels first (ExecuTorch) format.
 
-    This permutation is compatible with the TFLite `Transpose` operator.
+    This permutation is compatible with the NeutronIR `Transpose` operator.
 
     :param rank: The rank of the required permutation.
     :param return_list: If True, the function returns a list of ints. If False, a numpy array is returned.
@@ -463,9 +467,9 @@ def create_channels_first_to_channels_last_permutation(
     rank: int, return_list: bool = False
 ) -> np.ndarray | list[int]:
     """Return a numpy array with data that describes the permutation, which would change a tensor from the channels
-    first (ONNX) format to the channels last (TFLite) format.
+    first (ExecuTorch) format to the channels last (NeutronIR) format.
 
-    This permutation is compatible with the TFLite `Transpose` operator.
+    This permutation is compatible with the NeutronIR `Transpose` operator.
 
     :param rank: The rank of the required permutation.
     :param return_list: If True, the function returns a list of ints. If False, a numpy array is returned.
@@ -481,7 +485,7 @@ def create_channels_first_to_channels_last_permutation(
 
 
 def apply_permutation_to(target: List[Any], permutation: Collection[int]) -> List:
-    """Permute a list according to a permutation. Uses the same permutation format as the TFLite Transpose operator.
+    """Permute a list according to a permutation. Uses the same permutation format as the NeutronIR Transpose operator.
 
     :param target: A list of any types, to permute. Must be same size as the permutation.
     :param permutation: The permutation to apply to the target.
@@ -499,7 +503,7 @@ def apply_permutation_to(target: List[Any], permutation: Collection[int]) -> Lis
 
 def create_inverse_permutation(permutation: List[int]) -> List[int]:
     """Create and return a permutation, that is the inverse of the given 'permutation' parameter.
-        Uses the same permutation format as the TFLite Transpose operator.
+        Uses the same permutation format as the NeutronIR Transpose operator.
 
     :param permutation: The permutation to create the inverse of.
     :return: Inverse permutation.
@@ -516,7 +520,7 @@ def create_inverse_permutation(permutation: List[int]) -> List[int]:
 
 
 def convert_data_type(torch_type: torch.TensorType) -> TensorType:
-    """Convert Torch DataType to TFLite TensorType"""
+    """Convert Torch DataType to NeutronIR TensorType"""
 
     if torch_type == torch.float32:
         return TensorType.FLOAT32
@@ -544,7 +548,7 @@ def convert_data_type(torch_type: torch.TensorType) -> TensorType:
 
 
 def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.ScalarType:
-    """Convert Torch DataType to TFLite TensorType"""
+    """Convert Torch DataType to NeutronIR TensorType"""
 
     if torch_type == torch.float32:
         return np.dtype(np.float32)
@@ -569,10 +573,10 @@ def torch_type_to_numpy_type(torch_type: torch.TensorType) -> np.ScalarType:
 
 
 def numpy_type_to_tf_lite(numpy_type: np.dtype) -> TensorType:  # noqa C901
-    """Convert the numpy data type to a corresponding TFLite 'TensorType'.
+    """Convert the numpy data type to a corresponding NeutronIR 'TensorType'.
 
     :param numpy_type: Numpy dtype to convert.
-    :return: Corresponding TFLite TensorType.
+    :return: Corresponding NeutronIR TensorType.
     """
     numpy_type = numpy_type.type
 
@@ -626,12 +630,12 @@ def numpy_type_to_tf_lite(numpy_type: np.dtype) -> TensorType:  # noqa C901
     else:
         logger.e(
             logger.Code.CONVERSION_IMPOSSIBLE,
-            f"Cannot convert numpy data type '{numpy_type}' to TFLite.",
+            f"Cannot convert numpy data type '{numpy_type}' to NeutronIR.",
         )
 
 
 def tf_lite_type_to_numpy(tfl_type: TensorType) -> np.ScalarType:  # noqa C901
-    """Convert TFLite TensorType to numpy dtype"""
+    """Convert NeutronIR TensorType to numpy dtype"""
 
     if tfl_type == TensorType.FLOAT32:
         return np.dtype(np.float32)

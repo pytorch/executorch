@@ -1,4 +1,4 @@
-# Copyright 2023 NXP
+# Copyright 2023-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -158,7 +158,7 @@ def ensure_reshape_transposition(builder, ops: OpsList) -> list[int]:
     new_shape = output_tensor.shape.vector
 
     if input_format.is_channels_last() and not output_format.is_channels_last():
-        # The dimensions of the tensor lose their meaning! Insert a transpose op, to change input to match ONNX.
+        # The dimensions of the tensor lose their meaning! Insert a transpose op, to change input to match ExecuTorch.
 
         permutation = list(
             translator.create_channels_last_to_channels_first_permutation(input_rank)
@@ -170,7 +170,7 @@ def ensure_reshape_transposition(builder, ops: OpsList) -> list[int]:
 
     elif not input_format.is_channels_last() and output_format.is_channels_last():
         # The Reshape introduces format to the tensor (2D -> 4D  for example)
-        # The ONNX Reshape outputs a 'channels first' tensor. This has to stay the same, and then a Transpose operator
+        # The `view_copy` outputs a 'channels first' tensor. This has to stay the same, and then a Transpose operator
         # must be added, to change the tensor to 'channels last'.
 
         permutation = list(

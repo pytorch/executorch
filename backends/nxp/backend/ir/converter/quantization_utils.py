@@ -38,7 +38,7 @@ def propagate_quantization(
     """
     Propagates quantization parameters from from_tensor to to_tensor. If to_tensor already has the params set
     checks the consistency.
-    :raises: logger.Error - INVALID_ONNX_MODEL
+    :raises: logger.Error - INVALID_INPUT_MODEL
     """
 
     if (
@@ -55,7 +55,7 @@ def propagate_quantization(
     # noinspection PyTypeChecker
     if not _validate_or_set_quant_params(to_tensor, from_tensor.quantization):
         logger.e(
-            logger.Code.INVALID_ONNX_MODEL,
+            logger.Code.INVALID_INPUT_MODEL,
             f'Mismatched quantization parameters between tensors "{from_tensor.name}" and "{to_tensor.name}"',
         )
 
@@ -69,16 +69,16 @@ def set_quantization_parameters_to_tensor(
     """Create a TFLite QuantizationParameters object, initialize it from given parameters and add it to the
     'tflite_tensor'.
     :param tflite_tensor: The TFLite tensor in the model, to add the quantization to.
-    :param scale: The data of the tensor, which is an input of a quantized ONNX operator and represents the
+    :param scale: The data of the tensor, which is an input of a quantized ExecuTorch operator and represents the
                   quantization scale.
-    :param zero_point: The data of the tensor, which is an input of a quantized ONNX operator and represents the
+    :param zero_point: The data of the tensor, which is an input of a quantized ExecuTorch operator and represents the
                        quantization zero point.
     :param quantized_dimension: The quantized dimension attribute of TFLite QuantizationParameters.
     """
     if (scale is None) or (zero_point is None):
         logger.e(
             logger.Code.NOT_IMPLEMENTED,
-            "Conversion of ONNX quantized operators is only supported when "
+            "Conversion of ExecuTorch quantized operators is only supported when "
             "the quantization parameters are static!",
         )
 
@@ -92,8 +92,8 @@ def set_quantization_parameters_to_tensor(
 
         if scale.size != zero_point.size:
             logger.e(
-                logger.Code.INVALID_ONNX_MODEL,
-                f"The per channel quantization parameters of ONNX tensor "
+                logger.Code.INVALID_INPUT_MODEL,
+                f"The per channel quantization parameters of ExecuTorch tensor "
                 f"'{tflite_tensor.name}' are of different sizes! ('{scale.size}'"
                 f" != '{zero_point.size}')",
             )
@@ -101,8 +101,8 @@ def set_quantization_parameters_to_tensor(
         quantized_dimension_size = tflite_tensor.shape.get(quantized_dimension)
         if scale.size != quantized_dimension_size:
             logger.e(
-                logger.Code.INVALID_ONNX_MODEL,
-                f"The ONNX per channel quantization parameter vectors do not "
+                logger.Code.INVALID_INPUT_MODEL,
+                f"The ExecuTorch per channel quantization parameter vectors do not "
                 f"match the size of the quantized dimension! ('{scale.size}' != "
                 f"'{quantized_dimension_size}')",
             )
@@ -113,8 +113,8 @@ def set_quantization_parameters_to_tensor(
     else:
         # Combination of per tensor and per channel quantization parameters
         logger.e(
-            logger.Code.INVALID_ONNX_MODEL,
-            f"ONNX tensor '{tflite_tensor.name}' uses a combination of per "
+            logger.Code.INVALID_INPUT_MODEL,
+            f"ExecuTorch node '{tflite_tensor.name}' uses a combination of per "
             f"tensor and per channel quantization parameters. Conversion to "
             f"TFLite is not possible!",
         )
@@ -126,7 +126,7 @@ def set_quantization_parameters_to_tensor(
     )
     if not _validate_or_set_quant_params(tflite_tensor, quant):
         logger.e(
-            logger.Code.INVALID_ONNX_MODEL,
+            logger.Code.INVALID_INPUT_MODEL,
             f'Mismatched quantization parameters between tensors: "{tflite_tensor.name}" already '
             f"has the quantization params set",
         )

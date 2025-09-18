@@ -1494,7 +1494,7 @@ class ModelBuilder:
             # Prepend a partial identity, to keep leading dimensions unchanged.
             revert_perm = list(range(rank_diff)) + list(revert_perm)
 
-            # Now add a permutation to convert the extended ONNX shape to a TFLite shape
+            # Now add a permutation to convert the extended ExecuTorch shape to a TFLite shape
             to_tflite_perm = (
                 translator.create_channels_first_to_channels_last_permutation(
                     output_rank
@@ -1558,20 +1558,20 @@ class ModelBuilder:
 
             original_shape = translator.dims_to_channels_first(
                 shape
-            )  # Same shape as in the ONNX model
+            )  # Same shape as in the ExecuTorch model
 
             # Prepend 1s to the shape
-            extended_onnx_shape = [1] * rank_diff + original_shape
+            extended_executorch_shape = [1] * rank_diff + original_shape
 
             # Convert the full shape to TFLite format
-            tflite_shape = translator.dims_to_channels_last(extended_onnx_shape)
+            tflite_shape = translator.dims_to_channels_last(extended_executorch_shape)
             tensor.shape = tflite_model.Shape(tflite_shape)
 
             # Statically transpose the data
             data = translator.convert_data_to_channels_first(
                 data
-            )  # To the same shape as in the ONNX model
-            data = data.reshape(extended_onnx_shape)  # Extend with leading 1s
+            )  # To the same shape as in the ExecuTorch model
+            data = data.reshape(extended_executorch_shape)  # Extend with leading 1s
             tensor.tmp_buffer.data = translator.convert_data_to_channels_last(
                 data
             )  # Convert to TFLite format
@@ -1579,16 +1579,16 @@ class ModelBuilder:
             assert tflite_shape == list(tensor.tmp_buffer.data.shape)
 
         else:
-            # The tensor is the same as in the ONNX model.
+            # The tensor is the same as in the ExecuTorch model.
 
-            extended_onnx_shape = [1] * rank_diff + shape
+            extended_executorch_shape = [1] * rank_diff + shape
 
             # Convert the full shape to TFLite format
-            tflite_shape = translator.dims_to_channels_last(extended_onnx_shape)
+            tflite_shape = translator.dims_to_channels_last(extended_executorch_shape)
             tensor.shape = tflite_model.Shape(tflite_shape)
 
             # Statically transpose the data
-            data = data.reshape(extended_onnx_shape)  # Extend with leading 1s
+            data = data.reshape(extended_executorch_shape)  # Extend with leading 1s
             tensor.tmp_buffer.data = translator.convert_data_to_channels_last(
                 data
             )  # Convert to TFLite format
