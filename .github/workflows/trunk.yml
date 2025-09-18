@@ -448,7 +448,7 @@ jobs:
         # Follow the steps required before running the notebooks
         # Try to mirror these as closely as possible
         ${CONDA_RUN} source .ci/scripts/utils.sh
-        ${CONDA_RUN} install_executorch "--use-pt-pinned-commit"
+        ${CONDA_RUN} python install_executorch.py "--use-pt-pinned-commit"
 
         ${CONDA_RUN} sh .ci/scripts/setup-arm-baremetal-tools.sh
         ${CONDA_RUN} source examples/arm/ethos-u-scratch/setup_path.sh
