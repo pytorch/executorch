@@ -445,10 +445,8 @@ jobs:
         bash .ci/scripts/setup-conda.sh
         eval "$(conda shell.bash hook)"
 
-        # Follow the steps required before running the notebooks
-        # Try to mirror these as closely as possible
-        ${CONDA_RUN} source .ci/scripts/utils.sh
-        ${CONDA_RUN} python install_executorch.py "--use-pt-pinned-commit"
+        # Setup environment - this builds ExecuTorch and the runner
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "cmake"
 
         ${CONDA_RUN} sh .ci/scripts/setup-arm-baremetal-tools.sh
         ${CONDA_RUN} source examples/arm/ethos-u-scratch/setup_path.sh
