@@ -40,8 +40,6 @@ jobs:
           fi
           if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar" | grep "200 OK"; then
             echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar"
-            echo "Will skip build/upload"
-            exit 1
           fi
 
   build-aar:
