@@ -365,6 +365,10 @@ PYBIND11_MODULE(_llm_runner, m) {
           py::init<const std::string&>(),
           py::arg("text"),
           "Create a MultimodalInput with text")
+    .def(
+      py::init<const std::vector<uint64_t>&>(),
+      py::arg("tokens"),
+      "Create a MultimodalInput with pre-tokenized tokens (List[int])")
       .def(
           py::init<const std::vector<uint64_t>&>(),
           py::arg("tokens"),
