@@ -110,10 +110,14 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto audio_encoder_outputs = audio_encoder_result.get();
 
     encoder_output = audio_encoder_outputs[0];
-  } else if (input.is_text()) {
-    auto& text = input.get_text();
-    std::vector<uint64_t> tokens =
-        ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
+  } else if (input.is_text() || input.is_tokens()) {
+    std::vector<uint64_t> tokens;
+    if (input.is_text()) {
+      auto& text = input.get_text();
+      tokens = ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
+    } else {
+      tokens = input.get_tokens();
+    }
 
     auto text_tensor = executorch::extension::from_blob(
         tokens.data(),
