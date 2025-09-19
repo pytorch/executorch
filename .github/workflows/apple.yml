@@ -38,7 +38,7 @@ jobs:
         id: set_version
         shell: bash
         run: |
-          VERSION="0.8.0.$(TZ='PST8PDT' date +%Y%m%d)"
+          VERSION="1.0.0"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   build-demo-ios:
@@ -185,7 +185,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [build-frameworks-ios, set-version]
     timeout-minutes: 30
-    environment: ${{ github.ref == 'refs/heads/main' && 'cherry-pick-bot' || '' }}
+    environment: ${{ github.ref == 'refs/heads/release/1.0' && 'cherry-pick-bot' || '' }}
     permissions:
       id-token: write
       contents: write
@@ -210,7 +210,7 @@ jobs:
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
       - name: Only push to S3 when running the workflow manually from main branch
-        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/release/1.0' }}
         shell: bash
         run: |
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
