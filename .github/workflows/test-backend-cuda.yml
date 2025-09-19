@@ -1,0 +1,68 @@
+# Test ExecutorTorch CUDA AOTI Export Functionality
+# This workflow tests whether ExecutorTorch can successfully export models using CUDA AOTI
+# across different CUDA versions (12.6, 12.8, 12.9) for a subset of models:
+# linear, conv2d, add, and resnet18
+#
+# The test focuses on export-only functionality and verifies that no errors are raised
+# during the AOTI export process.
+
+name: Test CUDA AOTI Export
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: false
+
+jobs:
+  test-cuda-aoti-export:
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda-version: ["12.6", "12.8", "12.9"]
+
+    name: test-executorch-cuda-aoti-export-${{ matrix.cuda-version }}
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      timeout: 120
+      runner: linux.g5.4xlarge.nvidia.gpu
+      gpu-arch-type: cuda
+      gpu-arch-version: ${{ matrix.cuda-version }}
+      submodules: recursive
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        if [ -n "$CONDA_ENV" ]; then
+          conda activate "${CONDA_ENV}"
+        fi
+
+        # Test ExecutorTorch CUDA AOTI export - ExecutorTorch will automatically detect CUDA version
+        # and install the appropriate PyTorch wheel when CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test-cuda-export-aoti.sh "${{ matrix.cuda-version }}"
+
+  # This job will fail if any of the CUDA AOTI export tests fail
+  check-all-cuda-aoti-exports:
+    needs: test-cuda-aoti-export
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check if all CUDA AOTI export tests succeeded
+        run: |
+          if [[ "${{ needs.test-cuda-aoti-export.result }}" != "success" ]]; then
+            echo "ERROR: One or more ExecutorTorch CUDA AOTI export tests failed!"
+            echo "CUDA AOTI export test results: ${{ needs.test-cuda-aoti-export.result }}"
+            exit 1
+          else
+            echo "SUCCESS: All ExecutorTorch CUDA AOTI export tests (12.6, 12.8, 12.9) completed successfully!"
+          fi

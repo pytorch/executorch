@@ -34,6 +34,16 @@ tokenizer.json
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
+# AOTI temporary files
+*.cubin
+*kernel_metadata.json
+*kernel.cpp
+*wrapper_metadata.json
+*wrapper.cpp
+*wrapper.json
+
+aoti_debug_data*
+
 # Editor temporaries
 *.idea
 *.sw[a-z]
