@@ -10,7 +10,6 @@ package org.pytorch.executorch
 import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import java.io.File
@@ -24,7 +23,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.pytorch.executorch.TensorImageUtils.bitmapToFloat32Tensor
 import org.pytorch.executorch.TestFileUtils.getTestFilePath
-import org.junit.Assert.assertEquals
 
 /** Unit tests for [Module]. */
 @RunWith(AndroidJUnit4::class)
