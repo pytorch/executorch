@@ -1,9 +1,9 @@
-# Test ExecutorTorch CUDA Build Compatibility
-# This workflow tests whether ExecutorTorch can be successfully built with CUDA support
+# Test ExecuTorch CUDA Build Compatibility
+# This workflow tests whether ExecuTorch can be successfully built with CUDA support
 # across different CUDA versions (12.6, 12.8, 12.9) using the command:
 # CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
 #
-# Note: ExecutorTorch automatically detects the system CUDA version using nvcc and
+# Note: ExecuTorch automatically detects the system CUDA version using nvcc and
 # installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.
 
 name: Test CUDA Builds
@@ -36,16 +36,13 @@ jobs:
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: ${{ matrix.cuda-version }}
-      docker-image: nvidia/cuda:${{ matrix.cuda-version }}.0-devel-ubuntu22.04
+      use-custom-docker-registry: false
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
 
-        # This is needed to get the prebuilt PyTorch wheel from S3
-        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
-
-        # Test ExecutorTorch CUDA build - ExecutorTorch will automatically detect CUDA version
+        # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
         # and install the appropriate PyTorch wheel when CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
@@ -58,9 +55,9 @@ jobs:
       - name: Check if all CUDA builds succeeded
         run: |
           if [[ "${{ needs.test-cuda-builds.result }}" != "success" ]]; then
-            echo "ERROR: One or more ExecutorTorch CUDA builds failed!"
+            echo "ERROR: One or more ExecuTorch CUDA builds failed!"
             echo "CUDA build results: ${{ needs.test-cuda-builds.result }}"
             exit 1
           else
-            echo "SUCCESS: All ExecutorTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
+            echo "SUCCESS: All ExecuTorch CUDA builds (12.6, 12.8, 12.9) completed successfully!"
           fi

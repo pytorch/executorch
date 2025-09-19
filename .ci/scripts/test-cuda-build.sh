@@ -7,13 +7,10 @@
 
 set -exu
 
-# Source the conda setup
-bash .ci/scripts/setup-conda.sh
+# The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
-
-# Set up CONDA_RUN variable if not already set
-# This is needed for compatibility with pytorch/test-infra workflows
-export CONDA_RUN="${CONDA_RUN:-conda run --no-capture-output -p ${CONDA_PREFIX:-$HOME/miniconda3/envs/ci}}"
+CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+conda activate "${CONDA_ENV}"
 
 CUDA_VERSION=${1:-"12.6"}
 
@@ -55,13 +52,13 @@ test_executorch_cuda_build() {
     echo "=== Verifying ExecutorTorch CUDA Installation ==="
 
     # Test that ExecutorTorch was built successfully
-    ${CONDA_RUN} python -c "
+    python -c "
 import executorch
 print('SUCCESS: ExecutorTorch imported successfully')
 "
 
     # Test CUDA availability and show details
-    ${CONDA_RUN} python -c "
+    python -c "
 try:
     import torch
     print('INFO: PyTorch version:', torch.__version__)
