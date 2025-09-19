@@ -134,10 +134,10 @@ test_model_with_xnnpack() {
   # Delegation and test with pybindings
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
-    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize --test_with_pybindings
+    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize --test_after_export
   else
     SUFFIX="fp32"
-    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --test_with_pybindings
+    "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --test_after_export
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
