@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.pass_base import ExportPass
 
@@ -21,6 +23,8 @@ class DecomposeCosineSimilarityPass(ExportPass):
       denom  = mul(n1c, n2c)
       out    = div(dot, denom)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_cosine_similarity:
