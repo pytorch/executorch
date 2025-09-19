@@ -297,6 +297,19 @@ class MultipleOutputsModule(torch.nn.Module):
     can_delegate = True
 
 
+class QuantLinearTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define a simple linear layer
+        self.linear = torch.nn.Linear(61, 37)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    example_input = (torch.randn([8, 61], dtype=torch.float32),)
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
@@ -306,6 +319,9 @@ models = {
     "qops": QuantOpTest,
     "softmax": SoftmaxModule,
     "MultipleOutputsModule": MultipleOutputsModule,
+    # TODO: Remove this from here, once we have dedicated MCU test pipeline ready. This is an interim solution.
+    # See https://github.com/pytorch/executorch/discussions/13944
+    "qlinear": QuantLinearTest,
 }
 
 calibration_data = {
@@ -330,6 +346,7 @@ calibration_data = {
         torch.randn(32, 2, 1) * 1000,
     ),
     "softmax": (torch.randn(32, 2, 2),),
+    "qlinear": (torch.randn(37, 61),),
 }
 
 evaluators = {
