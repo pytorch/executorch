@@ -7,8 +7,8 @@
 
 set -exu
 
-# shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+bash .ci/scripts/setup-conda.sh
+eval "$(conda shell.bash hook)"
 
 CUDA_VERSION=${1:-"12.6"}
 
@@ -50,13 +50,13 @@ test_executorch_cuda_build() {
     echo "=== Verifying ExecutorTorch CUDA Installation ==="
 
     # Test that ExecutorTorch was built successfully
-    python -c "
+    ${CONDA_RUN} python -c "
 import executorch
 print('SUCCESS: ExecutorTorch imported successfully')
 "
 
     # Test CUDA availability and show details
-    python -c "
+    ${CONDA_RUN} python -c "
 try:
     import torch
     print('INFO: PyTorch version:', torch.__version__)

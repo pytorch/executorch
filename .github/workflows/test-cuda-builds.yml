@@ -42,15 +42,12 @@ jobs:
       script: |
         set -eux
 
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        if [ -n "$CONDA_ENV" ]; then
-          conda activate "${CONDA_ENV}"
-        fi
+        # This is needed to get the prebuilt PyTorch wheel from S3
+        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
 
         # Test ExecutorTorch CUDA build - ExecutorTorch will automatically detect CUDA version
         # and install the appropriate PyTorch wheel when CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
+        source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
   check-all-cuda-builds:
