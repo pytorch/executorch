@@ -402,7 +402,7 @@ class QuantFusion(ExportPass):
                 pattern.partition_types(),
             )
             for fused_partition in fused_partitions:
-                anchors = pattern.get_anchors(graph_module, fused_partition)
+                anchors, op_node = pattern.get_anchors(graph_module, fused_partition)
                 if not anchors or anchors.empty:
                     continue
                 if any(self.is_fused(p.nodes) for p in fused_partition):
@@ -443,11 +443,15 @@ class QuantFusion(ExportPass):
                 bias_inputs = [node.args[0] for node in dequants_biases]
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
-                # The node is the first index of the list and first of the tuple
-                anchor_output_node = anchors.output[0][0]
+                # Check if there's a quantization node after the operation
+                node = op_node
 
-                assert len(anchor_output_node.users) == 1
-                quant_node = list(anchor_output_node.users.keys())[0]
+                if len(anchor_output_node.users) == 1:
+                    potential_quant = list(anchor_output_node.users.keys())[0]
+                    # Check if it's actually a quantization node
+                    if (hasattr(potential_quant, 'target') and
+                        potential_quant.target == torch.ops.quantized_decomposed.quantize_per_tensor.default):
+                        node = potential_quant
 
                 with graph_module.graph.inserting_after(anchor_output_node):
                     args = tuple(
@@ -459,7 +463,7 @@ class QuantFusion(ExportPass):
                             graph_module,
                             inputs_inputs,
                             dequants_inputs,
-                            quant_node,
+                            node,
                         )
                     elif isinstance(pattern, CatPattern):
                         args, kwargs = get_args_and_kwargs_cat(
@@ -493,7 +497,7 @@ class QuantFusion(ExportPass):
                             weights_inputs,
                             dequants_weights,
                             bias_inputs,
-                            quant_node,
+                            node,
                             anchor_output_node,
                         )
                     elif isinstance(pattern, LinearPattern):
@@ -504,7 +508,7 @@ class QuantFusion(ExportPass):
                             weights_inputs,
                             dequants_weights,
                             bias_inputs,
-                            quant_node,
+                            node,
                         )
                     elif isinstance(pattern, LayerNormPattern):
                         args, kwargs = get_args_and_kwargs_layer_norm(
@@ -512,13 +516,13 @@ class QuantFusion(ExportPass):
                             inputs_inputs,
                             dequants_inputs,
                             other_inputs,
-                            quant_node,
+                            node,
                         )
                     elif isinstance(pattern, (BmmPattern, MatmulPattern)):
                         args, kwargs = get_args_and_kwargs_matmul(
                             inputs_inputs,
                             dequants_inputs,
-                            quant_node,
+                            node,
                         )
                     elif isinstance(pattern, AddmmPattern):
                         # Transpose the weight tensor
@@ -534,22 +538,25 @@ class QuantFusion(ExportPass):
                             [transposed_weights],
                             dequants_weights,
                             bias_inputs,
-                            quant_node,
+                            node,
                         )
                     elif isinstance(pattern, ReluPatterns):
                         args, kwargs = get_args_and_kwargs_relu(
                             graph_module,
                             inputs_inputs,
                             dequants_inputs,
-                            quant_node,
+                            node,
                         )
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
                         args,
                         kwargs,
                     )
-                    fused.meta = quant_node.meta
-                    quant_node.replace_all_uses_with(fused)
+
+                    fused.meta = node.meta
+                    node.replace_all_uses_with(fused)
+                    if node.op == "output":
+                        _ = graph_module.graph.output((fused,))
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
