@@ -41,6 +41,18 @@ class ModelTest:
 
 
 def run_tests(model_tests: List[ModelTest]) -> None:
+    # Test that we can import the portable_lib module - verifies RPATH is correct
+    print("Testing portable_lib import...")
+    try:
+        from executorch.extension.pybindings._portable_lib import (  # noqa: F401
+            _load_for_executorch,
+        )
+
+        print("✓ Successfully imported _load_for_executorch from portable_lib")
+    except ImportError as e:
+        print(f"✗ Failed to import portable_lib: {e}")
+        raise
+
     # Why are we doing this envvar shenanigans? Since we build the testers, which
     # uses buck, we cannot run as root. This is a sneaky of getting around that
     # test.
