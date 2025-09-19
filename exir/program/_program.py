@@ -1681,7 +1681,7 @@ class EdgeProgramManager:
         return epm
 
     @et_logger("to_executorch")
-    def to_executorch(
+    def to_executorch(  # noqa (FLAKE8) C901
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgramManager":
@@ -1697,6 +1697,7 @@ class EdgeProgramManager:
             after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
+
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
             if config.do_quant_fusion_and_const_prop:
@@ -1745,11 +1746,9 @@ class EdgeProgramManager:
                 memory_planning_pass = config.memory_planning_pass
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
-                new_gm_res = memory_planning_pass.run(  # pyre-ignore[16]
-                    new_gm, new_signature
-                )
+                new_gm_res = memory_planning_pass.run(new_gm, new_signature)
             else:
-                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
+                new_gm_res = memory_planning_pass(new_gm)
 
             # WARNING: DO NOT ADD ANY MORE PASSES AFTER MEMORY PLANNING PASS.
             # THERE ARE A LOT OF ASSUMPTIONS IN THE STACK THAT MEMORY PLANNING IS THE LAST PASS BEFORE THE EMITTER.
@@ -1758,6 +1757,15 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+        # After running memory planning on all entry points we can run the cross entry point memory planning
+        if isinstance(config.memory_planning_pass, dict):
+            for memory_planning_pass in config.memory_planning_pass.values():
+                if hasattr(memory_planning_pass, "run_multimethod"):
+                    memory_planning_pass.run_multimethod()
+        else:
+            memory_planning_pass = config.memory_planning_pass
+            if hasattr(memory_planning_pass, "run_multimethod"):
+                memory_planning_pass.run_multimethod()
 
         et_pm = ExecutorchProgramManager(
             execution_programs,
