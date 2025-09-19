@@ -11,6 +11,7 @@
 #pragma once
 #include <executorch/runtime/platform/compiler.h>
 #include <cstdint>
+#include <variant>
 #include <vector>
 
 #include <executorch/extension/tensor/tensor.h>
