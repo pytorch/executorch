@@ -900,12 +900,14 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    secrets: inherit
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      secrets-env: SAMSUNG_AI_LITECORE_KEY
       script: |
         set -ex
 
@@ -916,6 +918,7 @@ jobs:
         # Setup python
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
+        SAMSUNG_AI_LITECORE_KEY="${SECRET_SAMSUNG_AI_LITECORE_KEY}"
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         source .ci/scripts/setup-samsung-linux-deps.sh
 
