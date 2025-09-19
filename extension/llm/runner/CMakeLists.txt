@@ -104,7 +104,12 @@ if(EXECUTORCH_BUILD_PYBIND)
                CXX_VISIBILITY_PRESET "hidden"
                INTERPROCEDURAL_OPTIMIZATION TRUE
   )
-
+  if(APPLE)
+    set(RPATH "@loader_path/../../pybindings")
+  else()
+    set(RPATH "$ORIGIN/../../pybindings")
+  endif()
+  set_target_properties(_llm_runner PROPERTIES INSTALL_RPATH ${RPATH})
   # Add include directories
   target_include_directories(
     _llm_runner PRIVATE ${_common_include_directories} ${TORCH_INCLUDE_DIRS}

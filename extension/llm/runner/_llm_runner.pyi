@@ -7,6 +7,7 @@ This file provides type annotations for the ExecuTorch LLM Runner Python binding
 from typing import Callable, List, Optional, Union
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 
 class GenerationConfig:
@@ -123,26 +124,111 @@ class Stats:
 class Image:
     """Container for image data."""
 
-    data: List[int]
-    """Raw image data as a list of uint8 values."""
-
-    width: int
-    """Image width in pixels."""
-
-    height: int
-    """Image height in pixels."""
-
-    channels: int
-    """Number of color channels (3 for RGB, 4 for RGBA)."""
-
     def __init__(self) -> None:
         """Initialize an empty Image."""
+        ...
+
+    def __init__(self, data: List[int], width: int, height: int, channels: int) -> None:
+        """Initialize an Image with uint8 data."""
+        ...
+
+    def __init__(
+        self, data: List[float], width: int, height: int, channels: int
+    ) -> None:
+        """Initialize an Image with float data."""
+        ...
+
+    def is_uint8(self) -> bool:
+        """Check if image data is uint8 format."""
+        ...
+
+    def is_float(self) -> bool:
+        """Check if image data is float format."""
+        ...
+
+    @property
+    def width(self) -> int:
+        """Image width in pixels."""
+        ...
+
+    @property
+    def height(self) -> int:
+        """Image height in pixels."""
+        ...
+
+    @property
+    def channels(self) -> int:
+        """Number of color channels (3 for RGB, 4 for RGBA)."""
+        ...
+
+    @property
+    def uint8_data(self) -> List[int]:
+        """Raw image data as uint8 values."""
+        ...
+
+    @property
+    def float_data(self) -> List[float]:
+        """Raw image data as float values."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+class Audio:
+    """Container for preprocessed audio data."""
+
+    data: List[int]
+    """Raw audio data as a list of uint8 values."""
+
+    batch_size: int
+    """Batch size of the audio data."""
+
+    n_bins: int
+    """Number of frequency bins (for spectrograms)."""
+
+    n_frames: int
+    """Number of time frames."""
+
+    def __init__(self) -> None:
+        """Initialize an empty Audio."""
+        ...
+
+    def __init__(
+        self, data: List[int], batch_size: int, n_bins: int, n_frames: int
+    ) -> None:
+        """Initialize Audio with preprocessed data."""
+        ...
+
+    def __repr__(self) -> str: ...
+
+class RawAudio:
+    """Container for raw audio data."""
+
+    data: List[int]
+    """Raw audio data as a list of uint8 values."""
+
+    batch_size: int
+    """Batch size of the audio data."""
+
+    n_channels: int
+    """Number of audio channels (1 for mono, 2 for stereo)."""
+
+    n_samples: int
+    """Number of audio samples."""
+
+    def __init__(self) -> None:
+        """Initialize an empty RawAudio."""
+        ...
+
+    def __init__(
+        self, data: List[int], batch_size: int, n_channels: int, n_samples: int
+    ) -> None:
+        """Initialize RawAudio with raw data."""
         ...
 
     def __repr__(self) -> str: ...
 
 class MultimodalInput:
-    """Container for multimodal input data (text, image, etc.)."""
+    """Container for multimodal input data (text, image, audio, etc.)."""
 
     def __init__(self, text: str) -> None:
         """
@@ -162,6 +248,24 @@ class MultimodalInput:
         """
         ...
 
+    def __init__(self, audio: Audio) -> None:
+        """
+        Create a MultimodalInput with preprocessed audio.
+
+        Args:
+            audio: The input audio data
+        """
+        ...
+
+    def __init__(self, raw_audio: RawAudio) -> None:
+        """
+        Create a MultimodalInput with raw audio.
+
+        Args:
+            raw_audio: The input raw audio data
+        """
+        ...
+
     def is_text(self) -> bool:
         """Check if this input contains text."""
         ...
@@ -170,12 +274,47 @@ class MultimodalInput:
         """Check if this input contains an image."""
         ...
 
+    def is_audio(self) -> bool:
+        """Check if this input contains preprocessed audio."""
+        ...
+
+    def is_raw_audio(self) -> bool:
+        """Check if this input contains raw audio."""
+        ...
+
     def get_text(self) -> Optional[str]:
         """
         Get the text content if this is a text input.
 
         Returns:
             The text string if this is a text input, None otherwise
+        """
+        ...
+
+    def get_image(self) -> Optional[Image]:
+        """
+        Get the image content if this is an image input.
+
+        Returns:
+            The Image object if this is an image input, None otherwise
+        """
+        ...
+
+    def get_audio(self) -> Optional[Audio]:
+        """
+        Get the audio content if this is an audio input.
+
+        Returns:
+            The Audio object if this is an audio input, None otherwise
+        """
+        ...
+
+    def get_raw_audio(self) -> Optional[RawAudio]:
+        """
+        Get the raw audio content if this is a raw audio input.
+
+        Returns:
+            The RawAudio object if this is a raw audio input, None otherwise
         """
         ...
 
@@ -270,17 +409,47 @@ def make_text_input(text: str) -> MultimodalInput:
     """
     ...
 
-def make_image_input(image_array: NDArray[np.uint8]) -> MultimodalInput:
+def make_image_input(image_tensor: torch.Tensor) -> MultimodalInput:
     """
-    Create an image input from a numpy array.
+    Create an image input from a torch tensor.
 
     Args:
-        image_array: Numpy array with shape (H, W, C) where C is 3 (RGB) or 4 (RGBA)
+        image_tensor: Torch tensor with shape (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)
 
     Returns:
         A MultimodalInput containing the image
 
     Raises:
-        RuntimeError: If the array has invalid dimensions or number of channels
+        RuntimeError: If the tensor has invalid dimensions or number of channels
+    """
+    ...
+
+def make_audio_input(audio_tensor: torch.Tensor) -> MultimodalInput:
+    """
+    Create a preprocessed audio input from a torch tensor.
+
+    Args:
+        audio_tensor: Torch tensor with shape (batch_size, n_bins, n_frames)
+
+    Returns:
+        A MultimodalInput containing the preprocessed audio
+
+    Raises:
+        RuntimeError: If the tensor has invalid dimensions or dtype
+    """
+    ...
+
+def make_raw_audio_input(audio_tensor: torch.Tensor) -> MultimodalInput:
+    """
+    Create a raw audio input from a torch tensor.
+
+    Args:
+        audio_tensor: Torch tensor with shape (batch_size, n_channels, n_samples)
+
+    Returns:
+        A MultimodalInput containing the raw audio
+
+    Raises:
+        RuntimeError: If the tensor has invalid dimensions or dtype
     """
     ...

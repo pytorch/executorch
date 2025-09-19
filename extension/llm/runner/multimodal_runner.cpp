@@ -121,7 +121,7 @@ Error MultimodalRunner::generate(
         "Prefilling input %zu/%zu, type: %s",
         i,
         inputs.size(),
-        input.is_text() ? "text" : (input.is_image() ? "image" : "unknown"));
+        input.type_name());
     stats_->token_encode_end_ms = time_in_ms();
     if (config.echo && i == inputs.size() - 1 && input.is_text()) {
       wrapped_callback(input.get_text());

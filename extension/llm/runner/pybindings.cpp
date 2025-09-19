@@ -12,6 +12,7 @@
 #include <pybind11/stl.h>
 #include <torch/python.h>
 
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
 #include <executorch/extension/llm/runner/multimodal_input.h>
 #include <executorch/extension/llm/runner/multimodal_runner.h>
@@ -257,23 +258,110 @@ PYBIND11_MODULE(_llm_runner, m) {
             ">";
       });
 
+  // Bind Audio class
+  py::class_<Audio>(m, "Audio")
+      .def(py::init<>())
+      .def(
+          py::init<std::vector<uint8_t>&&, int32_t, int32_t, int32_t>(),
+          py::arg("data"),
+          py::arg("batch_size"),
+          py::arg("n_bins"),
+          py::arg("n_frames"),
+          "Create preprocessed audio data (uint8)")
+      .def(
+          py::init<std::vector<float>&&, int32_t, int32_t, int32_t>(),
+          py::arg("data"),
+          py::arg("batch_size"),
+          py::arg("n_bins"),
+          py::arg("n_frames"),
+          "Create preprocessed audio data (float32)")
+      .def("is_uint8", &Audio::is_uint8)
+      .def("is_float", &Audio::is_float)
+      .def_property_readonly(
+          "uint8_data",
+          static_cast<const std::vector<uint8_t>& (Audio::*)() const&>(
+              &Audio::get_uint8_data))
+      .def_property_readonly(
+          "float_data",
+          static_cast<const std::vector<float>& (Audio::*)() const&>(
+              &Audio::get_float_data))
+      .def_property_readonly("batch_size", &Audio::get_batch_size)
+      .def_property_readonly("n_bins", &Audio::get_n_bins)
+      .def_property_readonly("n_frames", &Audio::get_n_frames)
+      .def("toTensor", &Audio::toTensor)
+      .def("__repr__", [](const Audio& audio) {
+        std::string dtype = "unknown";
+        if (audio.is_uint8()) {
+          dtype = "uint8";
+        } else if (audio.is_float()) {
+          dtype = "float32";
+        }
+        return "<Audio batch_size=" + std::to_string(audio.get_batch_size()) +
+            " n_bins=" + std::to_string(audio.get_n_bins()) +
+            " n_frames=" + std::to_string(audio.get_n_frames()) +
+            " dtype=" + dtype + ">";
+      });
+
+  // Bind RawAudio class
+  py::class_<RawAudio>(m, "RawAudio")
+      .def(py::init<>())
+      .def(
+          py::init<std::vector<uint8_t>&&, int32_t, int32_t, int32_t>(),
+          py::arg("data"),
+          py::arg("batch_size"),
+          py::arg("n_channels"),
+          py::arg("n_samples"),
+          "Create raw audio data")
+      .def_readwrite("data", &RawAudio::data)
+      .def_readwrite("batch_size", &RawAudio::batch_size)
+      .def_readwrite("n_channels", &RawAudio::n_channels)
+      .def_readwrite("n_samples", &RawAudio::n_samples)
+      .def("__repr__", [](const RawAudio& audio) {
+        return "<RawAudio batch_size=" + std::to_string(audio.batch_size) +
+            " n_channels=" + std::to_string(audio.n_channels) +
+            " n_samples=" + std::to_string(audio.n_samples) + ">";
+      });
+
   // Bind MultimodalInput
   py::class_<MultimodalInput>(m, "MultimodalInput")
       .def(
           py::init<const std::string&>(),
           py::arg("text"),
           "Create a MultimodalInput with text")
+    .def(
+      py::init<const std::vector<uint64_t>&>(),
+      py::arg("tokens"),
+      "Create a MultimodalInput with pre-tokenized tokens (List[int])")
       .def(
           py::init<const Image&>(),
           py::arg("image"),
           "Create a MultimodalInput with an image")
+      .def(
+          py::init<const Audio&>(),
+          py::arg("audio"),
+          "Create a MultimodalInput with preprocessed audio")
+      .def(
+          py::init<const RawAudio&>(),
+          py::arg("raw_audio"),
+          "Create a MultimodalInput with raw audio")
       .def("is_text", &MultimodalInput::is_text)
+  .def("is_tokens", &MultimodalInput::is_tokens)
       .def("is_image", &MultimodalInput::is_image)
+      .def("is_audio", &MultimodalInput::is_audio)
+      .def("is_raw_audio", &MultimodalInput::is_raw_audio)
       .def(
           "get_text",
           [](const MultimodalInput& input) -> py::object {
             if (input.is_text()) {
               return py::cast(input.get_text());
+            }
+            return py::none();
+          })
+      .def(
+          "get_tokens",
+          [](const MultimodalInput& input) -> py::object {
+            if (input.is_tokens()) {
+              return py::cast(input.get_tokens());
             }
             return py::none();
           })
@@ -285,6 +373,22 @@ PYBIND11_MODULE(_llm_runner, m) {
             }
             return py::none();
           })
+      .def(
+          "get_audio",
+          [](const MultimodalInput& input) -> py::object {
+            if (input.is_audio()) {
+              return py::cast(input.get_audio());
+            }
+            return py::none();
+          })
+      .def(
+          "get_raw_audio",
+          [](const MultimodalInput& input) -> py::object {
+            if (input.is_raw_audio()) {
+              return py::cast(input.get_raw_audio());
+            }
+            return py::none();
+          })
       .def("__repr__", [](const MultimodalInput& input) -> std::string {
         if (input.is_text()) {
           return "<MultimodalInput type=text content=\"" +
@@ -292,11 +396,31 @@ PYBIND11_MODULE(_llm_runner, m) {
               (input.get_text().length() > 50 ? "..." : "") + "\">";
         } else if (input.is_image()) {
           return "<MultimodalInput type=image>";
+        } else if (input.is_tokens()) {
+          return "<MultimodalInput type=tokens>";
+        } else if (input.is_audio()) {
+          return "<MultimodalInput type=audio>";
+        } else if (input.is_raw_audio()) {
+          return "<MultimodalInput type=raw_audio>";
         }
         return "<MultimodalInput type=unknown>";
       });
 
   // Bind helper functions using lambdas
+  m.def(
+      "make_token_input",
+      [](py::sequence tokens) -> MultimodalInput {
+        std::vector<uint64_t> vec;
+        vec.reserve(py::len(tokens));
+        for (auto item : tokens) {
+          uint64_t v = py::cast<uint64_t>(item);
+          vec.push_back(v);
+        }
+        return MultimodalInput(std::move(vec));
+      },
+      "Create a token input from a Python sequence of ints",
+      py::arg("tokens"));
+
   m.def(
       "make_text_input",
       [](const std::string& text) -> MultimodalInput {
@@ -368,6 +492,72 @@ PYBIND11_MODULE(_llm_runner, m) {
       },
       "Create an image input from a torch tensor (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
       py::arg("image_tensor"));
+
+  m.def(
+      "make_audio_input",
+      [](torch::Tensor audio_tensor) -> MultimodalInput {
+        if (audio_tensor.dim() != 3) {
+          throw std::runtime_error(
+              "Audio tensor must be 3-dimensional (batch_size, n_bins, n_frames)");
+        }
+
+        int64_t batch_size = audio_tensor.size(0);
+        int64_t n_bins = audio_tensor.size(1);
+        int64_t n_frames = audio_tensor.size(2);
+
+        audio_tensor = audio_tensor.contiguous();
+        if (audio_tensor.scalar_type() == torch::kUInt8) {
+          uint8_t* data = audio_tensor.data_ptr<uint8_t>();
+          std::vector<uint8_t> audio_data(data, data + audio_tensor.numel());
+          return MultimodalInput(Audio(
+              std::move(audio_data),
+              static_cast<int32_t>(batch_size),
+              static_cast<int32_t>(n_bins),
+              static_cast<int32_t>(n_frames)));
+        } else if (audio_tensor.scalar_type() == torch::kFloat) {
+          float* data = audio_tensor.data_ptr<float>();
+          std::vector<float> audio_data(data, data + audio_tensor.numel());
+          return MultimodalInput(Audio(
+              std::move(audio_data),
+              static_cast<int32_t>(batch_size),
+              static_cast<int32_t>(n_bins),
+              static_cast<int32_t>(n_frames)));
+        } else {
+          throw std::runtime_error(
+              "Unsupported audio tensor dtype. Only uint8 and float32 are supported for preprocessed audio.");
+        }
+      },
+      "Create a preprocessed audio input from a torch tensor (batch_size, n_bins, n_frames)",
+      py::arg("audio_tensor"));
+
+  m.def(
+      "make_raw_audio_input",
+      [](torch::Tensor audio_tensor) -> MultimodalInput {
+        if (audio_tensor.dim() != 3) {
+          throw std::runtime_error(
+              "Raw audio tensor must be 3-dimensional (batch_size, n_channels, n_samples)");
+        }
+
+        int64_t batch_size = audio_tensor.size(0);
+        int64_t n_channels = audio_tensor.size(1);
+        int64_t n_samples = audio_tensor.size(2);
+
+        audio_tensor = audio_tensor.contiguous();
+        if (audio_tensor.scalar_type() == torch::kUInt8) {
+          uint8_t* data = audio_tensor.data_ptr<uint8_t>();
+          std::vector<uint8_t> audio_data(data, data + audio_tensor.numel());
+          return MultimodalInput(RawAudio{
+              std::move(audio_data),
+              static_cast<int32_t>(batch_size),
+              static_cast<int32_t>(n_channels),
+              static_cast<int32_t>(n_samples)});
+        } else {
+          throw std::runtime_error(
+              "Unsupported raw audio tensor dtype. Only uint8 is supported for raw audio.");
+        }
+      },
+      "Create a raw audio input from a torch tensor (batch_size, n_channels, n_samples)",
+      py::arg("audio_tensor"));
 
   // Bind PyMultimodalRunner
   py::class_<PyMultimodalRunner>(m, "MultimodalRunner")
