@@ -7,60 +7,21 @@
 
 import argparse
 import os
-import platform
-import re
 import subprocess
 import sys
 
+from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
-def python_is_compatible():
-    # Scrape the version range from pyproject.toml, which should be in the current directory.
-    version_specifier = None
-    with open("pyproject.toml", "r") as file:
-        for line in file:
-            if line.startswith("requires-python"):
-                match = re.search(r'"([^"]*)"', line)
-                if match:
-                    version_specifier = match.group(1)
-                    break
+# This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
+TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 
-    if not version_specifier:
-        print(
-            "WARNING: Skipping python version check: version range not found",
-            file=sys.stderr,
-        )
-        return False
-
-    # Install the packaging module if necessary.
-    try:
-        import packaging
-    except ImportError:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "packaging"], check=True
-        )
-    # Compare the current python version to the range in version_specifier. Exits
-    # with status 1 if the version is not compatible, or with status 0 if the
-    # version is compatible or the logic itself fails.
-    try:
-        import packaging.specifiers
-        import packaging.version
-
-        python_version = packaging.version.parse(platform.python_version())
-        version_range = packaging.specifiers.SpecifierSet(version_specifier)
-        if python_version not in version_range:
-            print(
-                f'ERROR: ExecuTorch does not support python version {python_version}: must satisfy "{version_specifier}"',
-                file=sys.stderr,
-            )
-            return False
-    except Exception as e:
-        print(f"WARNING: Skipping python version check: {e}", file=sys.stderr)
-    return True
-
-
-# The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
-
+# Supported CUDA versions - modify this to add/remove supported versions
+# Format: tuple of (major, minor) version numbers
+SUPPORTED_CUDA_VERSIONS = [
+    (12, 6),
+    (12, 8),
+    (12, 9),
+]
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
@@ -71,7 +32,10 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250906"
+#
+# NOTE: If you're changing, make the corresponding supported CUDA versions in
+# SUPPORTED_CUDA_VERSIONS above if needed.
+NIGHTLY_VERSION = "dev20250915"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -84,12 +48,15 @@ def install_requirements(use_pytorch_nightly):
         )
         sys.exit(1)
 
+    # Determine the appropriate PyTorch URL based on CUDA delegate status
+    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE, SUPPORTED_CUDA_VERSIONS)
+
     # pip packages needed by exir.
     TORCH_PACKAGE = [
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.9.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        f"torch==2.10.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
     ]
 
     # Install the requirements for core ExecuTorch package.
@@ -105,7 +72,7 @@ def install_requirements(use_pytorch_nightly):
             "requirements-dev.txt",
             *TORCH_PACKAGE,
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            torch_url,
         ],
         check=True,
     )
@@ -147,10 +114,13 @@ def install_requirements(use_pytorch_nightly):
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
+    # Determine the appropriate PyTorch URL based on CUDA delegate status
+    torch_url = determine_torch_url(TORCH_NIGHTLY_URL_BASE, SUPPORTED_CUDA_VERSIONS)
+
     print("Installing torch domain libraries")
     DOMAIN_LIBRARIES = [
         (
-            f"torchvision==0.24.0.{NIGHTLY_VERSION}"
+            f"torchvision==0.25.0.{NIGHTLY_VERSION}"
             if use_pytorch_nightly
             else "torchvision"
         ),
@@ -165,7 +135,7 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "install",
             *DOMAIN_LIBRARIES,
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            torch_url,
         ],
         check=True,
     )
@@ -180,22 +150,11 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "-r",
             "requirements-examples.txt",
             "--extra-index-url",
-            TORCH_NIGHTLY_URL,
+            torch_url,
             "--upgrade-strategy",
             "only-if-needed",
         ],
         check=True,
-    )
-
-
-# Prebuilt binaries for Intel-based macOS are no longer available on PyPI; users must compile from source.
-# PyTorch stopped building macOS x86_64 binaries since version 2.3.0 (January 2024).
-def is_intel_mac_os():
-    # Returns True if running on Intel macOS.
-    return platform.system().lower() == "darwin" and platform.machine().lower() in (
-        "x86",
-        "x86_64",
-        "i386",
     )
 
 
