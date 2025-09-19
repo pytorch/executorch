@@ -91,3 +91,4 @@ elif [[ "${TASK_NAME}" == "smollm2_135m" ]]; then
 else
     echo "Unsupported task: $TASK_NAME"
     exit 1
+fi
