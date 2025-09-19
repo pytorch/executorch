@@ -36,7 +36,7 @@ jobs:
       runner: linux.g5.4xlarge.nvidia.gpu
       gpu-arch-type: cuda
       gpu-arch-version: ${{ matrix.cuda-version }}
-      use-custom-docker-registry: false
+      docker-image: nvidia/cuda:${{ matrix.cuda-version }}.0-devel-ubuntu22.04
       submodules: recursive
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |

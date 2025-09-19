@@ -7,8 +7,13 @@
 
 set -exu
 
+# Source the conda setup
 bash .ci/scripts/setup-conda.sh
 eval "$(conda shell.bash hook)"
+
+# Set up CONDA_RUN variable if not already set
+# This is needed for compatibility with pytorch/test-infra workflows
+export CONDA_RUN="${CONDA_RUN:-conda run --no-capture-output -p ${CONDA_PREFIX:-$HOME/miniconda3/envs/ci}}"
 
 CUDA_VERSION=${1:-"12.6"}
 
