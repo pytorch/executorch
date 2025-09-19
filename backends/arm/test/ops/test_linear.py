@@ -9,6 +9,7 @@
 from typing import Tuple
 
 import pytest
+
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -310,10 +311,11 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT)
+@common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 linear operations. See: https://github.com/pytorch/executorch/issues/13947"
+    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See See: https://github.com/pytorch/executorch/issues/13947"",
+    strict=False,
 )
 def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
@@ -343,10 +345,11 @@ def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.parametrize("test_data", test_data_all_16a8w)
 @common.XfailIfNoCorstone320
 @pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 linear operations. See: https://github.com/pytorch/executorch/issues/13947"
+    reason="Ethos-U85 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering",
+    strict=False,
 )
 def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""

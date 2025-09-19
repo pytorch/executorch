@@ -130,6 +130,7 @@ runtime.python_library(
     deps = [
         "fbcode//caffe2:torch",
         "fbcode//executorch/exir:scalar_type",
+        "fbcode//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
 )
 
@@ -143,7 +144,19 @@ executorch_generated_lib(
     visibility = ["PUBLIC"],
     deps = [
         "//executorch/backends/cadence/generic/kernels:cadence_kernels",
-        "//executorch/backends/cadence/generic/operators:cadence_generic_ops",
+        # Individual operator targets instead of combined cadence_generic_ops
+        "//executorch/backends/cadence/generic/operators:op_requantize_out",
+        "//executorch/backends/cadence/generic/operators:im2row_out",
+        "//executorch/backends/cadence/generic/operators:dequantize_per_tensor",
+        "//executorch/backends/cadence/generic/operators:quantize_per_tensor",
+        "//executorch/backends/cadence/generic/operators:quantized_add_out",
+        "//executorch/backends/cadence/generic/operators:quantized_conv2d_nchw_out",
+        "//executorch/backends/cadence/generic/operators:quantized_conv2d_nhwc_out",
+        "//executorch/backends/cadence/generic/operators:quantized_fully_connected_out",
+        "//executorch/backends/cadence/generic/operators:quantized_layer_norm",
+        "//executorch/backends/cadence/generic/operators:quantized_linear_out",
+        "//executorch/backends/cadence/generic/operators:quantized_matmul_out",
+        "//executorch/backends/cadence/generic/operators:quantized_relu_out",
         "//executorch/kernels/portable:executorch_all_ops",
         "//executorch/kernels/portable:operators",
     ],
