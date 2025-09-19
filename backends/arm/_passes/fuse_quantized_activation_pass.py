@@ -5,6 +5,8 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import Q_OPS
@@ -14,6 +16,8 @@ from torch.fx import Node
 
 
 class FuseQuantizedActivationPass(ExportPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     @staticmethod
     def _is_fuseable_quantized_activation(node: Node):
         """Fuse activations that have a 0 lower bound and quantized with a qmin zero-point"""

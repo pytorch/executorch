@@ -3,10 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import ExportPass
 from torch._ops import OpOverload
 
 
@@ -55,6 +58,8 @@ class DecomposeRoundPass(ArmPass):
         %ceil = ceil(%minus_half)
         %result = where(%is_non_negative, %floor, %ceil)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in (exir_ops.edge.aten.round.default, torch.ops.aten.round.default):
