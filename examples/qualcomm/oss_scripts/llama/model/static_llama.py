@@ -75,9 +75,10 @@ class LlamaAttention(nn.Module):
         self.enable_masked_softmax = getattr(config, "enable_masked_softmax", False)
         self.use_qk_norm = config.use_qk_norm
         self.qk_norm_before_rope = config.qk_norm_before_rope
+        # If None, assume each layer uses rope
         self.use_rope = (
-            config.no_rope_layer_interval
-            and (layer_idx + 1) % config.no_rope_layer_interval
+            config.no_rope_layer_interval is None
+            or (layer_idx + 1) % config.no_rope_layer_interval
         )
 
         if self.use_qk_norm:

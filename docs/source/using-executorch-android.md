@@ -83,7 +83,7 @@ To add the AAR file to your app:
 An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
 ```
 implementation("com.facebook.soloader:soloader:0.10.5")
-implementation("com.facebook.fbjni:fbjni:0.5.1")
+implementation("com.facebook.fbjni:fbjni:0.7.0")
 ```
 
 ### Example usage
@@ -100,7 +100,7 @@ And include it in gradle:
 dependencies {
     implementation(files("libs/executorch.aar"))
     implementation("com.facebook.soloader:soloader:0.10.5")
-    implementation("com.facebook.fbjni:fbjni:0.5.1")
+    implementation("com.facebook.fbjni:fbjni:0.7.0")
 }
 ```
 

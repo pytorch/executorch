@@ -62,16 +62,16 @@ class CompileTimeTypeDispatchPass(ExportPass):
             weight_arg_idx=2,
             variant="default",
         ),
-        exir_ops.edge.cadence.quantized_conv_nchw.per_tensor: OpConfig(
-            "quantized_conv_nchw",
+        exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: OpConfig(
+            "quantized_conv2d_nchw",
             type_dispatch_suffixes={
                 (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
                 (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
             },
             weight_arg_idx=1,
         ),
-        exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor: OpConfig(
-            "quantized_conv_nhwc",
+        exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: OpConfig(
+            "quantized_conv2d_nhwc",
             type_dispatch_suffixes={
                 (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
                 (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
@@ -132,13 +132,13 @@ class CompileTimeTypeDispatchPass(ExportPass):
         typed_op_name = f"{base_name}_{type_suffix}"
 
         if op in [
-            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
         ]:
             groups = args[6]
             input_channels = (
                 args[0].to_tensor().shape[1]
-                if op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
+                if op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
                 else args[0].to_tensor().shape[-1]
             )
             is_depthwise = groups == input_channels
@@ -151,9 +151,11 @@ class CompileTimeTypeDispatchPass(ExportPass):
             elif is_dilated:
                 typed_op_name = f"{base_name}_dilated_{type_suffix}"
             elif is_1d and groups == 1:
-                typed_op_name = (
-                    f"quantized_conv1d_{base_name.split('_')[-1]}_{type_suffix}"
-                )
+                if "nchw" in base_name:
+                    layout_suffix = "ncl"
+                else:
+                    layout_suffix = "nlc"
+                typed_op_name = f"quantized_conv1d_{layout_suffix}_{type_suffix}"
 
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant

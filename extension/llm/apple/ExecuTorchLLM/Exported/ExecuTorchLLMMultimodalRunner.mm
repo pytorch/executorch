@@ -172,12 +172,12 @@ withTokenCallback:(nullable void (^)(NSString *))callback
       case ExecuTorchLLMMultimodalInputTypeImage: {
         ExecuTorchLLMImage *image = input.image;
         std::vector<uint8_t> data((uint8_t *)image.data.bytes, (uint8_t *)image.data.bytes + image.data.length);
-        nativeInputs.emplace_back(llm::MultimodalInput(llm::Image{
-          .data = std::move(data),
-          .width = (int32_t)image.width,
-          .height = (int32_t)image.height,
-          .channels = (int32_t)image.channels
-        }));
+        nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
+          std::move(data),
+          (int32_t)image.width,
+          (int32_t)image.height,
+          (int32_t)image.channels
+        )));
         break;
       }
       default: {
