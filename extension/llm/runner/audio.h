@@ -124,35 +124,35 @@ class ET_EXPERIMENTAL Audio final {
    */
   executorch::runtime::Result<executorch::extension::TensorPtr> toTensor(
       bool with_batch = false) const {
-      std::vector<executorch::aten::SizesType> sizes = {
-          get_batch_size(), get_n_bins(), get_n_frames()};
-      if (with_batch) {
-        sizes.insert(sizes.begin(), 1);
-      }
-      if (is_float()) {
-        return executorch::extension::from_blob(
-            const_cast<float*>(get_float_data().data()),
-            sizes,
-            ::executorch::aten::ScalarType::Float);
-      } else if (is_uint8()) {
-        return executorch::extension::from_blob(
-            const_cast<uint8_t*>(get_uint8_data().data()),
-            sizes,
-            ::executorch::aten::ScalarType::Byte);
-      }
-      ET_LOG(
-          Error,
-          "Shouldn't reach here, audio data is not initialized with uint8_t or float vector.");
-      return ::executorch::runtime::Error::NotSupported;
+    std::vector<executorch::aten::SizesType> sizes = {
+        get_batch_size(), get_n_bins(), get_n_frames()};
+    if (with_batch) {
+      sizes.insert(sizes.begin(), 1);
     }
+    if (is_float()) {
+      return executorch::extension::from_blob(
+          const_cast<float*>(get_float_data().data()),
+          sizes,
+          ::executorch::aten::ScalarType::Float);
+    } else if (is_uint8()) {
+      return executorch::extension::from_blob(
+          const_cast<uint8_t*>(get_uint8_data().data()),
+          sizes,
+          ::executorch::aten::ScalarType::Byte);
+    }
+    ET_LOG(
+        Error,
+        "Shouldn't reach here, audio data is not initialized with uint8_t or float vector.");
+    return ::executorch::runtime::Error::NotSupported;
+  }
 
-   private:
-    // Members
-    std::variant<std::vector<uint8_t>, std::vector<float>> data_;
-    int32_t batch_size_;
-    int32_t n_bins_;
-    int32_t n_frames_;
-  };
+ private:
+  // Members
+  std::variant<std::vector<uint8_t>, std::vector<float>> data_;
+  int32_t batch_size_;
+  int32_t n_bins_;
+  int32_t n_frames_;
+};
 
 } // namespace llm
 } // namespace extension
