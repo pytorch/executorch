@@ -49,6 +49,7 @@ def main(args) -> None:
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        target=args.target,
     )
     binaries_trace = generate_optrace(
         args.artifact,
