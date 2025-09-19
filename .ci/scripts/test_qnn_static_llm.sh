@@ -37,8 +37,9 @@ which "${PYTHON_EXECUTABLE}"
 # Although static llama CI does not require graphviz, it is required by test_qnn_delegate.py
 pip install graphviz
 
-#  set +e TODO: uncomment this~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+set +e
 
+echo "Executing task: $TASK_NAME"
 if [[ "${TASK_NAME}" == "stories_110m" ]]; then
     # Download stories llama110m artifacts
     download_stories_model_artifacts
