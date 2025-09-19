@@ -103,6 +103,26 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
+    runtime.python_library(
+        name = "combine_prim_ops_headers_lib",
+        srcs = ["combine_prim_ops_headers.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = ["//executorch/..."],
+    )
+
+    runtime.python_binary(
+        name = "combine_prim_ops_headers",
+        main_module = "executorch.codegen.tools.combine_prim_ops_headers",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":combine_prim_ops_headers_lib",
+        ],
+        _is_external_target = True,
+    )
+
     runtime.python_test(
         name = "test_gen_all_oplist",
         srcs = [
@@ -151,6 +171,27 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":gen_selected_op_variants_lib",
             "fbsource//third-party/pypi/expecttest:expecttest",
+        ],
+        _is_external_target = True,
+    )
+
+    runtime.python_library(
+        name = "gen_selected_prim_ops_lib",
+        srcs = ["gen_selected_prim_ops.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = ["//executorch/..."],
+        external_deps = ["torchgen"],
+    )
+
+    runtime.python_binary(
+        name = "gen_selected_prim_ops",
+        main_module = "executorch.codegen.tools.gen_selected_prim_ops",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_selected_prim_ops_lib",
         ],
         _is_external_target = True,
     )
