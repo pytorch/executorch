@@ -116,6 +116,12 @@ Error MultimodalRunner::generate(
   // Process multimodal inputs in order
   for (size_t i = 0; i < inputs.size(); ++i) {
     const MultimodalInput& input = inputs[i];
+    ET_LOG(
+        Info,
+        "Prefilling input %zu/%zu, type: %s",
+        i,
+        inputs.size(),
+        input.type_name());
     if (config.echo && i == inputs.size() - 1 && input.is_text()) {
       wrapped_callback(input.get_text());
     }
