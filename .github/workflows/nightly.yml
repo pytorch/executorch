@@ -21,13 +21,13 @@ jobs:
     environment: ${{ (github.event_name == 'schedule') && 'update-commit-hash' || '' }}
     steps:
       - name: update-pytorch-commit-hash
-        uses: pytorch/test-infra/.github/actions/update-commit-hash@main
+        uses: pytorch/test-infra/.github/actions/update-commit-hash@release/2.9
         if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch
           branch: main
           pin-folder: .ci/docker/ci_commit_pins
-          test-infra-ref: main
+          test-infra-ref: release/2.9
           updatebot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
 
@@ -38,7 +38,7 @@ jobs:
       ref: ${{ github.sha }}
 
   backend-test-linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     strategy:
       fail-fast: false
       matrix:
@@ -61,7 +61,7 @@ jobs:
         source .ci/scripts/test_backend_linux.sh "${{ matrix.suite }}" "${{ matrix.flow }}" "${RUNNER_ARTIFACT_DIR}"
 
   backend-test-macos:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.9
     permissions:
       id-token: write
       contents: read

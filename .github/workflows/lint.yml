@@ -21,7 +21,7 @@ jobs:
     uses: ./.github/workflows/_get-changed-files.yml
 
   lintrunner-mypy:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     needs: [get-changed-files]
     permissions:
       id-token: write
@@ -75,7 +75,7 @@ jobs:
         exit $RC
 
   lintrunner:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     needs: [get-changed-files]
     permissions:
       id-token: write
@@ -132,7 +132,7 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
   android-java-format:
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read

@@ -58,7 +58,7 @@ jobs:
           mkdir "${GITHUB_WORKSPACE}"
 
       - name: Setup SSH (Click me for login details)
-        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        uses: pytorch/test-infra/.github/actions/setup-ssh@release/2.9
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
 
@@ -66,11 +66,11 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Linux
-        uses: pytorch/test-infra/.github/actions/setup-linux@main
+        uses: pytorch/test-infra/.github/actions/setup-linux@release/2.9
 
       - name: Build docker image
         id: build-docker-image
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
+        uses: pytorch/test-infra/.github/actions/calculate-docker-image@release/2.9
         with:
           docker-image-name: ci-image:${{ matrix.docker-image-name }}
           always-rebuild: true
@@ -78,5 +78,5 @@ jobs:
           force-push: true
 
       - name: Teardown Linux
-        uses: pytorch/test-infra/.github/actions/teardown-linux@main
+        uses: pytorch/test-infra/.github/actions/teardown-linux@release/2.9
         if: always()

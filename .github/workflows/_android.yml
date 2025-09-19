@@ -7,7 +7,7 @@ on:
 jobs:
   build-llm-demo:
     name: build-llm-demo
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@release/2.9
     permissions:
       id-token: write
       contents: read
@@ -71,7 +71,7 @@ jobs:
       API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)
-        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        uses: pytorch/test-infra/.github/actions/setup-ssh@release/2.9
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
           instructions: |
@@ -82,7 +82,7 @@ jobs:
           submodules: false
 
       - name: Setup conda
-        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@release/2.9
         with:
           python-version: '3.10'
 
