@@ -63,7 +63,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-t",
-        "--test_with_pybindings",
+        "--test_after_export",
         action="store_true",
         required=False,
         default=False,
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     model_name = f"{args.model_name}_xnnpack_{quant_tag}"
     save_pte_program(exec_prog, model_name, args.output_dir)
 
-    if args.test_with_pybindings:
+    if args.test_after_export:
         logging.info("Testing the pte with pybind")
         from executorch.extension.pybindings.portable_lib import (
             _load_for_executorch_from_buffer,
