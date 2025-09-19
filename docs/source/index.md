@@ -93,7 +93,7 @@ ExecuTorch provides support for:
 - [Exporting LLMs](llm/export-llm.md)
 - [Exporting custom LLMs](llm/export-custom-llm.md)
 - [Running with C++](llm/run-with-c-plus-plus.md)
-- [Running on Android (XNNPack)](llm/llama-demo-android.md)
+- [Running on Android (XNNPack)](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android)
 - [Running on Android (QNN)](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
 - [Running on iOS](llm/run-on-ios.md)
 #### Backend Development
@@ -251,7 +251,7 @@ Getting Started <llm/getting-started>
 Exporting LLMs with export_llm <llm/export-llm>
 Exporting custom LLMs <llm/export-custom-llm>
 Running with C++ <llm/run-with-c-plus-plus>
-Running on Android <XNNPack> <llm/llama-demo-android>
+Running on Android <XNNPack> <https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android>
 Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
 Running on iOS <llm/run-on-ios>
 ```
