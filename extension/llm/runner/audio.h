@@ -39,100 +39,121 @@ struct ET_EXPERIMENTAL RawAudio {
  * Mel spectrograms are typically represented as floating point values. For raw
  * or quantized audio, uint8_t may be used instead.
  */
-class ET_EXPERIMENTAL Audio {
+class ET_EXPERIMENTAL Audio final {
  public:
   // Default constructor
-  Audio() : batch_size(0), n_bins(0), n_frames(0) {}
+  Audio() : batch_size_(0), n_bins_(0), n_frames_(0) {}
 
   // Constructor for uint8_t data
   Audio(
-      std::vector<uint8_t>&& data_,
-      int32_t batch_size_,
-      int32_t n_bins_,
-      int32_t n_frames_)
-      : data(std::move(data_)),
-        batch_size(batch_size_),
-        n_bins(n_bins_),
-        n_frames(n_frames_) {}
+      std::vector<uint8_t>&& data,
+      int32_t batch_size,
+      int32_t n_bins,
+      int32_t n_frames)
+      : data_(std::move(data)),
+        batch_size_(batch_size),
+        n_bins_(n_bins),
+        n_frames_(n_frames) {
+    ET_CHECK_MSG(
+        data_.index() == 0 &&
+            std::get<std::vector<uint8_t>>(data_).size() ==
+                static_cast<size_t>(batch_size * n_bins * n_frames),
+        "data.size() (%zu) does not match batch_size * n_bins * n_frames (%d)",
+        std::get<std::vector<uint8_t>>(data_).size(),
+        batch_size * n_bins * n_frames);
+  }
 
   // Constructor for float data
   Audio(
-      std::vector<float>&& data_,
-      int32_t batch_size_,
-      int32_t n_bins_,
-      int32_t n_frames_)
-      : data(std::move(data_)),
-        batch_size(batch_size_),
-        n_bins(n_bins_),
-        n_frames(n_frames_) {}
+      std::vector<float>&& data,
+      int32_t batch_size,
+      int32_t n_bins,
+      int32_t n_frames)
+      : data_(std::move(data)),
+        batch_size_(batch_size),
+        n_bins_(n_bins),
+        n_frames_(n_frames) {
+    ET_CHECK_MSG(
+        data_.index() == 1 &&
+            std::get<std::vector<float>>(data_).size() ==
+                static_cast<size_t>(batch_size * n_bins * n_frames),
+        "data.size() (%zu) does not match batch_size * n_bins * n_frames (%d)",
+        std::get<std::vector<float>>(data_).size(),
+        batch_size * n_bins * n_frames);
+  }
 
   // Type checkers
   bool is_uint8() const {
-    return std::holds_alternative<std::vector<uint8_t>>(data);
+    return std::holds_alternative<std::vector<uint8_t>>(data_);
   }
 
   bool is_float() const {
-    return std::holds_alternative<std::vector<float>>(data);
+    return std::holds_alternative<std::vector<float>>(data_);
   }
 
   // Data access
   const std::vector<uint8_t>& get_uint8_data() const& {
-    return std::get<std::vector<uint8_t>>(data);
+    return std::get<std::vector<uint8_t>>(data_);
   }
 
   std::vector<uint8_t>& get_uint8_data() & {
-    return std::get<std::vector<uint8_t>>(data);
+    return std::get<std::vector<uint8_t>>(data_);
   }
 
   const std::vector<float>& get_float_data() const& {
-    return std::get<std::vector<float>>(data);
+    return std::get<std::vector<float>>(data_);
   }
 
   std::vector<float>& get_float_data() & {
-    return std::get<std::vector<float>>(data);
+    return std::get<std::vector<float>>(data_);
   }
 
   int32_t get_batch_size() const {
-    return batch_size;
+    return batch_size_;
   }
   int32_t get_n_bins() const {
-    return n_bins;
+    return n_bins_;
   }
   int32_t get_n_frames() const {
-    return n_frames;
+    return n_frames_;
   }
   /**
    * Convert the audio data to a TensorPtr, with optional batch dimension.
    * The tensor will have shape (batch_size, n_bins, n_frames) or (1,
    * batch_size, n_bins, n_frames) if with_batch is true.
    */
-  executorch::runtime::Result<executorch::extension::TensorPtr> toTensor()
-      const {
-    std::vector<executorch::aten::SizesType> sizes = {
-        get_batch_size(), get_n_bins(), get_n_frames()};
-    if (is_float()) {
-      return executorch::extension::from_blob(
-          const_cast<float*>(get_float_data().data()),
-          sizes,
-          ::executorch::aten::ScalarType::Float);
-    } else if (is_uint8()) {
-      return executorch::extension::from_blob(
-          const_cast<uint8_t*>(get_uint8_data().data()),
-          sizes,
-          ::executorch::aten::ScalarType::Byte);
+  executorch::runtime::Result<executorch::extension::TensorPtr> toTensor(
+      bool with_batch = false) {
+    const {
+      std::vector<executorch::aten::SizesType> sizes = {
+          get_batch_size(), get_n_bins(), get_n_frames()};
+      if (with_batch) {
+        sizes.insert(sizes.begin(), 1);
+      }
+      if (is_float()) {
+        return executorch::extension::from_blob(
+            const_cast<float*>(get_float_data().data()),
+            sizes,
+            ::executorch::aten::ScalarType::Float);
+      } else if (is_uint8()) {
+        return executorch::extension::from_blob(
+            const_cast<uint8_t*>(get_uint8_data().data()),
+            sizes,
+            ::executorch::aten::ScalarType::Byte);
+      }
+      ET_LOG(
+          Error,
+          "Shouldn't reach here, audio data is not initialized with uint8_t or float vector.");
+      return ::executorch::runtime::Error::NotSupported;
     }
-    ET_LOG(
-        Error, "Audio data is not initialized with uint8_t or float vector.");
-    return ::executorch::runtime::Error::NotSupported;
-  }
 
- private:
-  // Members
-  std::variant<std::vector<uint8_t>, std::vector<float>> data;
-  int32_t batch_size;
-  int32_t n_bins;
-  int32_t n_frames;
-};
+   private:
+    // Members
+    std::variant<std::vector<uint8_t>, std::vector<float>> data_;
+    int32_t batch_size_;
+    int32_t n_bins_;
+    int32_t n_frames_;
+  };
 
 } // namespace llm
 } // namespace extension

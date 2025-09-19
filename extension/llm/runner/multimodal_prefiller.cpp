@@ -96,7 +96,11 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     // Use Audio::toTensor() for tensor creation
     auto audio_tensor =
         ET_UNWRAP(audio.toTensor(), "Failed to convert audio to tensor");
-
+    ET_LOG(
+        Info,
+        "Audio tensor dim: %zu, dtype: %s",
+        audio_tensor->dim(),
+        ::executorch::runtime::toString(audio_tensor->scalar_type()));
     // Run audio encoder
     auto audio_encoder_result =
         module_->execute(kAudioEncoderMethod, audio_tensor);
