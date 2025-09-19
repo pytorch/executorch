@@ -550,13 +550,15 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
-  test-static-llama-qnn-linux:
+  test-static-llm-qnn-linux:
     name: test-static-llama-qnn-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
     strategy:
+      matrix:
+        task: [stories_110m, stories_260k_bc, smollm2_135m]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -581,7 +583,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
         # Test static llama weight sharing and accuracy
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llm.sh ${{ matrix.task }}
 
   test-qnn-models-linux:
     name: test-qnn-models-linux
