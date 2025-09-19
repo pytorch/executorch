@@ -430,7 +430,6 @@ def compile(
         kv_config = ModelArgs(**json.load(f))
 
     # TODO: support batch inputs if necessary
-    kv_config.n_layers = 1
     kv_config.max_batch_size = 1
     kv_config.max_seq_len = args.max_seq_len
     kv_config.use_kv_cache = True
@@ -584,7 +583,7 @@ def compile(
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
             state_dict,
-            strict=False,
+            strict=True,
             assign=True,
         )
     end_load_ts = time.time()
