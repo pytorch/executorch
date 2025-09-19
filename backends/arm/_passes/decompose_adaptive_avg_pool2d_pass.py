@@ -4,12 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 from math import ceil, floor
+from typing import Set, Type
 
 import torch
 
 from executorch.backends.arm._passes import ArmPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 edge_ops = (exir_ops.edge.aten._adaptive_avg_pool2d.default,)
 aten_ops = (torch.ops.aten.adaptive_avg_pool2d.default,)
@@ -40,6 +42,8 @@ class DecomposeAdaptiveAvgPool2dPass(ArmPass):
 
     The output is of size output_size_h x output_size_w for any input.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in (edge_ops + aten_ops):
