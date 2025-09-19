@@ -123,8 +123,7 @@ class ET_EXPERIMENTAL Audio final {
    * batch_size, n_bins, n_frames) if with_batch is true.
    */
   executorch::runtime::Result<executorch::extension::TensorPtr> toTensor(
-      bool with_batch = false) {
-    const {
+      bool with_batch = false) const {
       std::vector<executorch::aten::SizesType> sizes = {
           get_batch_size(), get_n_bins(), get_n_frames()};
       if (with_batch) {
