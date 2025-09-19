@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <executorch/extension/tensor/tensor.h>
+
 namespace executorch {
 namespace extension {
 namespace llm {
@@ -29,11 +31,103 @@ struct ET_EXPERIMENTAL RawAudio {
 };
 
 /**
- * Pre-processed audio inputs, ready to feed directly into an audio
- * encoder.
+ * Pre-processed audio inputs, ready to feed directly into an audio encoder.
+ *
+ * The data can be either uint8_t or float. If the audio has gone through a Mel
+ * transform, we expect the data type to be float (i.e., std::vector<float>), as
+ * Mel spectrograms are typically represented as floating point values. For raw
+ * or quantized audio, uint8_t may be used instead.
  */
-struct ET_EXPERIMENTAL Audio {
-  std::vector<uint8_t> data;
+class ET_EXPERIMENTAL Audio {
+ public:
+  // Default constructor
+  Audio() : batch_size(0), n_bins(0), n_frames(0) {}
+
+  // Constructor for uint8_t data
+  Audio(
+      std::vector<uint8_t>&& data_,
+      int32_t batch_size_,
+      int32_t n_bins_,
+      int32_t n_frames_)
+      : data(std::move(data_)),
+        batch_size(batch_size_),
+        n_bins(n_bins_),
+        n_frames(n_frames_) {}
+
+  // Constructor for float data
+  Audio(
+      std::vector<float>&& data_,
+      int32_t batch_size_,
+      int32_t n_bins_,
+      int32_t n_frames_)
+      : data(std::move(data_)),
+        batch_size(batch_size_),
+        n_bins(n_bins_),
+        n_frames(n_frames_) {}
+
+  // Type checkers
+  bool is_uint8() const {
+    return std::holds_alternative<std::vector<uint8_t>>(data);
+  }
+
+  bool is_float() const {
+    return std::holds_alternative<std::vector<float>>(data);
+  }
+
+  // Data access
+  const std::vector<uint8_t>& get_uint8_data() const& {
+    return std::get<std::vector<uint8_t>>(data);
+  }
+
+  std::vector<uint8_t>& get_uint8_data() & {
+    return std::get<std::vector<uint8_t>>(data);
+  }
+
+  const std::vector<float>& get_float_data() const& {
+    return std::get<std::vector<float>>(data);
+  }
+
+  std::vector<float>& get_float_data() & {
+    return std::get<std::vector<float>>(data);
+  }
+
+  int32_t get_batch_size() const {
+    return batch_size;
+  }
+  int32_t get_n_bins() const {
+    return n_bins;
+  }
+  int32_t get_n_frames() const {
+    return n_frames;
+  }
+  /**
+   * Convert the audio data to a TensorPtr, with optional batch dimension.
+   * The tensor will have shape (batch_size, n_bins, n_frames) or (1,
+   * batch_size, n_bins, n_frames) if with_batch is true.
+   */
+  executorch::runtime::Result<executorch::extension::TensorPtr> toTensor()
+      const {
+    std::vector<executorch::aten::SizesType> sizes = {
+        get_batch_size(), get_n_bins(), get_n_frames()};
+    if (is_float()) {
+      return executorch::extension::from_blob(
+          const_cast<float*>(get_float_data().data()),
+          sizes,
+          ::executorch::aten::ScalarType::Float);
+    } else if (is_uint8()) {
+      return executorch::extension::from_blob(
+          const_cast<uint8_t*>(get_uint8_data().data()),
+          sizes,
+          ::executorch::aten::ScalarType::Byte);
+    }
+    ET_LOG(
+        Error, "Audio data is not initialized with uint8_t or float vector.");
+    return ::executorch::runtime::Error::NotSupported;
+  }
+
+ private:
+  // Members
+  std::variant<std::vector<uint8_t>, std::vector<float>> data;
   int32_t batch_size;
   int32_t n_bins;
   int32_t n_frames;
