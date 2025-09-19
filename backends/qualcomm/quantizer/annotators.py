@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+import copy
 import numbers
 import operator
 from functools import partial
@@ -893,16 +895,35 @@ def annotate_elu(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.embedding.default, torch.ops.aten.gather.default])
 def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
+    # block quantization
+    if quantization_config.block_size is not None:
+        weight_qspec = copy.deepcopy(quantization_config.weight)
+        weight_qspec.observer_or_fake_quant_ctr.p.keywords.update(
+            {"block_size": quantization_config.block_size}
+        )
+        output_qspec = copy.deepcopy(quantization_config.weight)
+        output_qspec.observer_or_fake_quant_ctr.p.keywords.update(
+            {"block_size": (1, ) + quantization_config.block_size}
+        )
+
     weight = node.args[0]
 
     input_qspec_map = {}
-    input_qspec_map[weight] = quantization_config.input_activation
 
-    node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+    if quantization_config.block_size is not None:
+        input_qspec_map[weight] = weight_qspec
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=SharedQuantizationSpec((weight, node)),
+        output_qspec=output_qspec,
         _annotated=True,
     )
+    else:
+        input_qspec_map[weight] = quantization_config.input_activation
+        node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=SharedQuantizationSpec((weight, node)),
+            _annotated=True,
+        )
 
 
 @register_annotator([torch.ops.aten.index.Tensor])
