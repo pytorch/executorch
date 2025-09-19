@@ -7,7 +7,7 @@
 
 # pyre-unsafe
 
-from typing import cast
+from typing import cast, Set, Type
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -35,6 +35,8 @@ class MatchArgRanksPass(ExportPass):
         input1 = shape(1, 1, 2)
         input2 = shape(1, 3, 1)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program):
         super().__init__()
