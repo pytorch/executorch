@@ -8,6 +8,7 @@
 import os
 import re
 import subprocess
+import sys
 
 
 def _is_cuda_enabled():
