@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Tuple
 
-import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -105,10 +104,7 @@ def test_acos_vgf_FP(test_data: Tuple):
         tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
     )
-    try:
-        pipeline.run()
-    except FileNotFoundError as e:
-        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+    pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
@@ -122,7 +118,4 @@ def test_acos_vgf_INT(test_data: Tuple):
         tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
     )
-    try:
-        pipeline.run()
-    except FileNotFoundError as e:
-        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+    pipeline.run()

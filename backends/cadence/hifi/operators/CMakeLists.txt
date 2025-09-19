@@ -96,8 +96,8 @@ add_library(
   "op_quantize_per_tensor.cpp"
   "op_quantized_relu_out.cpp"
   "op_dequantize_per_tensor.cpp"
-  "op_quantized_conv_nchw_out.cpp"
-  "op_quantized_conv_nhwc_out.cpp"
+  "op_quantized_conv2d_nchw_out.cpp"
+  "op_quantized_conv2d_nhwc_out.cpp"
   "op_quantized_fully_connected_out"
 )
 target_include_directories(

@@ -36,6 +36,7 @@ build_android_native_library() {
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
+    -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
     --preset "android-${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-26 \
     -DEXECUTORCH_ENABLE_EVENT_TRACER="${EXECUTORCH_ANDROID_PROFILING:-OFF}" \

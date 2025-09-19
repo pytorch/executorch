@@ -274,6 +274,15 @@ class Cat4(torch.nn.Module):
         return torch.cat((y, y, x, x), axis=2)
 
 
+class Cat5(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.const_tensor = torch.randn(1, 1, 2, 2)
+
+    def forward(self, x, y):
+        return torch.cat((x, y, self.const_tensor), axis=2)
+
+
 class CausalMask(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1890,6 +1899,16 @@ class SumIntList(torch.nn.Module):
         return torch.sum(x, dim=(2, 3), keepdim=True)
 
 
+class SwapAxes(torch.nn.Module):
+    def __init__(self, axis0, axis1):
+        super().__init__()
+        self.axis0 = axis0
+        self.axis1 = axis1
+
+    def forward(self, x):
+        return torch.swapaxes(x, axis0=self.axis0, axis1=self.axis1)
+
+
 class Tanh(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -1914,6 +1933,16 @@ class Unbind(torch.nn.Module):
 
     def forward(self, x):
         return torch.unbind(x)
+
+
+class Unflatten(torch.nn.Module):
+    def __init__(self, dim, sizes):
+        super().__init__()
+        self.dim = dim
+        self.sizes = sizes
+
+    def forward(self, x):
+        return torch.unflatten(x, dim=self.dim, sizes=self.sizes)
 
 
 class Unfold(torch.nn.Module):

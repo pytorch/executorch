@@ -83,7 +83,7 @@ void quantized_linear_per_tensor_out(
     const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nhwc_out(
+void quantized_conv2d_nhwc_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -101,7 +101,7 @@ void quantized_conv_nhwc_out(
     const ::executorch::aten::Tensor& out_shift,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nchw_out(
+void quantized_conv2d_nchw_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -119,7 +119,7 @@ void quantized_conv_nchw_out(
     const ::executorch::aten::Tensor& out_shift,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nchw_per_tensor_out(
+void quantized_conv2d_nchw_per_tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -137,7 +137,7 @@ void quantized_conv_nchw_per_tensor_out(
     int64_t out_shift,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nhwc_per_tensor_out(
+void quantized_conv2d_nhwc_per_tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,

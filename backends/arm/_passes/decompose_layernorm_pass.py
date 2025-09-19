@@ -6,12 +6,13 @@
 # pyre-unsafe
 
 import operator
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 def get_layer_norm_decomposition(op) -> tuple:
@@ -55,6 +56,8 @@ class DecomposeLayerNormPass(ArmPass):
 
     Source: https://pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:

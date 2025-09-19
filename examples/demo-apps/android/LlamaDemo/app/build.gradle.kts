@@ -57,7 +57,7 @@ dependencies {
   implementation("androidx.appcompat:appcompat:1.6.1")
   implementation("androidx.camera:camera-core:1.3.0-rc02")
   implementation("androidx.constraintlayout:constraintlayout:2.2.0-alpha12")
-  implementation("com.facebook.fbjni:fbjni:0.5.1")
+  implementation("com.facebook.fbjni:fbjni:0.7.0")
   implementation("com.google.code.gson:gson:2.8.6")
   implementation(files("libs/executorch.aar"))
   implementation("com.google.android.material:material:1.12.0")

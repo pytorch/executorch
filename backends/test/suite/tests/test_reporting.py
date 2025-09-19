@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from csv import DictReader
@@ -102,14 +103,16 @@ class Reporting(unittest.TestCase):
         self.assertEqual(records[2]["Test Case"], "test2")
         self.assertEqual(records[2]["Flow"], "flow1")
         self.assertEqual(records[2]["Result"], "Pass")
-        self.assertEqual(records[2]["Params"], str({"dtype": torch.float32}))
+        self.assertEqual(records[2]["Params"], json.dumps({"dtype": "torch.float32"}))
 
         # Validate fourth record: test2, backend2, EXPORT_FAIL with use_dynamic_shapes param
         self.assertEqual(records[3]["Test ID"], "test2_backend2_flow1")
         self.assertEqual(records[3]["Test Case"], "test2")
         self.assertEqual(records[3]["Flow"], "flow1")
         self.assertEqual(records[3]["Result"], "Skip")
-        self.assertEqual(records[3]["Params"], str({"use_dynamic_shapes": True}))
+        self.assertEqual(
+            records[3]["Params"], json.dumps({"use_dynamic_shapes": "True"})
+        )
 
     def test_count_ops(self):
         """

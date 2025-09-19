@@ -6,7 +6,8 @@
 # pyre-unsafe
 
 import traceback
-from typing import Optional
+from abc import abstractmethod
+from typing import List, Optional, Set, Type
 
 import torch
 from executorch.exir.pass_base import ExportPass, NodeMetadata
@@ -18,6 +19,36 @@ class ArmPass(ExportPass):
     def __init__(self, exported_program: Optional[torch.export.ExportedProgram] = None):
         super(ArmPass, self).__init__()
         self.exported_program = exported_program
+
+    @property
+    @abstractmethod
+    def _passes_required_after(self) -> Set[Type[ExportPass]]:
+        """The subclass defines passes that must run after it"""
+        pass
+
+    @staticmethod
+    def get_required_passes(pass_) -> List[str]:
+        """
+        Returns the list of passes that must be run after this pass, sorted by name.
+        """
+        if hasattr(pass_, "_passes_required_after"):
+            return sorted([ArmPass.get_name(p) for p in pass_._passes_required_after])
+        else:
+            return []
+
+    @staticmethod
+    def get_name(pass_) -> str:
+        """
+        Returns the name of the pass.
+        """
+        if isinstance(pass_, ExportPass):
+            return pass_.__class__.__name__
+        elif hasattr(pass_, "__name__"):
+            return pass_.__name__
+        else:
+            raise ValueError(
+                f"Cannot get name for pass: {pass_}. It must be an instance of ExportPass or have a __name__ attribute."
+            )
 
     def call_operator(self, op, args, kwargs, meta, updated: Optional[bool] = False):
         if not updated:

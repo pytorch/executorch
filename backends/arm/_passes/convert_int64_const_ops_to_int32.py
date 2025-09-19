@@ -7,6 +7,7 @@
 
 
 import logging
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
@@ -29,6 +30,8 @@ class ConvertInt64ConstOpsToInt32Pass(ExportPass):
       4. `torch.linspace`
       5. `torch.tensor`
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     torch_ops = [
         torch.ops.aten.full.default,

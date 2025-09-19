@@ -6,7 +6,10 @@
 from typing import Tuple
 
 import torch
-from executorch.backends.arm._passes import ToTosaMemoryFormatPass
+from executorch.backends.arm._passes import (
+    AnnotateOutputDimOrderPass,
+    ToTosaMemoryFormatPass,
+)
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -177,7 +180,10 @@ def test_to_tosa_memory_format_tosa_INT(module):
         ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
         pass_list=[RemoveGetItemPass],
-        passes_with_exported_program=[ToTosaMemoryFormatPass],
+        passes_with_exported_program=[
+            AnnotateOutputDimOrderPass,
+            ToTosaMemoryFormatPass,
+        ],
     )
     pipeline.pop_stage(
         "run_method_and_compare_outputs"

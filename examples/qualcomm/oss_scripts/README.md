@@ -15,6 +15,7 @@ The following models can be categorized based on their primary use cases.
 
 2. Vision Model:
    - conv_former
+   - convnext_small
    - cvt
    - deit
    - dino_v2
@@ -26,6 +27,7 @@ The following models can be categorized based on their primary use cases.
    - fbnet
    - focalnet
    - gMLP_image_classification
+   - maxvit_t
    - mobilevit1
    - mobilevit_v2
    - pvt
@@ -34,6 +36,8 @@ The following models can be categorized based on their primary use cases.
    - squeezenet
    - ssd300_vgg16
    - swin_transformer
+   - swin_v2_t
+   - vit_b_16
 
 ## Prerequisite
 Please follow another [README](../README.md) first to set up environment.
@@ -51,7 +55,7 @@ If you want to export the model without running it, please add `--compile_only` 
       ```bash
       python albert.py -m ${SOC_MODEL} -b path/to/build-android/ -s ${DEVICE_SERIAL} -d path/to/wikisent2
 
-2. `conv_former`,`cvt`,`deit`,`dino_v2`,`efficientnet`,`fbnet`, `focalnet`, `gMLP_image_classification`,  `mobilevit1`,`mobilevit_v2`, `pvt`, `squeezenet`, `swin_transformer` :
+2. `conv_former`, `convnext_small`, `cvt`, `deit`, `dino_v2`, `efficientnet`, `fbnet`, `focalnet`, `gMLP_image_classification`, `maxvit_t`, `mobilevit1`, `mobilevit_v2`, `pvt`, `squeezenet`, `swin_transformer`, `swin_v2_t`, `vit_b_16` :
    - Required Dataset : ImageNet 
        
       Download [dataset](https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000) first, and place it in a valid folder.

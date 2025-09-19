@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -27,6 +29,8 @@ class ConvertMmToBmmPass(ExportPass):
     2) Convert MM node to BMM.
     3) Squeeze output tensor to rank 2.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False

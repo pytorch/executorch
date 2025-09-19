@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.pass_base import ExportPass
 
@@ -27,6 +29,8 @@ class DecomposeLinearVectorNormPass(ExportPass):
           In this case we need to wrap p into Tensor and we need to know
           dtype prior, but we dont know this from FX graph.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     torch_linalg_vector_norm = (torch.ops.aten.linalg_vector_norm.default,)
 

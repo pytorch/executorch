@@ -33,7 +33,13 @@ et_cxx_test(
 #
 # et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
 
-et_cxx_test(logging_test SOURCES logging_test.cpp)
+# No weak function symbols Windows/MSVC, thus PAL intercept is not supported.
+if(NOT WIN32)
+  et_cxx_test(logging_test SOURCES logging_test.cpp stub_platform.cpp)
+  set_source_files_properties(
+    logging_test.cpp PROPERTIES COMPILE_DEFINITIONS "ET_MIN_LOG_LEVEL=Debug"
+  )
+endif()
 
 # TODO: Re-enable this test on OSS
 #

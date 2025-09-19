@@ -674,7 +674,7 @@ def annotate_pad(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.reshape.default])
+@register_annotator([torch.ops.aten.reshape.default, torch.ops.aten.unflatten.int])
 def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -879,7 +879,7 @@ def annotate_unsqueeze_copy(
         annotate_single_in_share_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.transpose.int])
+@register_annotator([torch.ops.aten.transpose.int, torch.ops.aten.swapaxes.default])
 def annotate_transpose(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):

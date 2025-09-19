@@ -224,12 +224,12 @@ def export_all(llava_model: LlavaModel):
 
     lowered_and_edge = to_edge_transform_and_lower(
         {
-            "image_encoder": image_encoder_ep,
+            "vision_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
             "text_decoder": text_model_ep,
         },
         partitioner={
-            "image_encoder": [XnnpackPartitioner()],
+            "vision_encoder": [XnnpackPartitioner()],
             "text_decoder": [
                 # First partition the DQLinear nodes, then partition the rest of the nodes,
                 # to avoid multiple DQLinear nodes in the same partition,
@@ -254,7 +254,7 @@ def export_all(llava_model: LlavaModel):
             ],
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
-                "image_encoder": ConstraintBasedSymShapeEvalPass(),
+                "vision_encoder": ConstraintBasedSymShapeEvalPass(),
                 "text_decoder": ConstraintBasedSymShapeEvalPass(),
                 "token_embedding": HintBasedSymShapeEvalPass(),
             },

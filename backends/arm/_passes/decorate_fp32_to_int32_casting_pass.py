@@ -6,10 +6,13 @@
 # pyre-unsafe
 
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def _get_decorated_ops(op):
@@ -39,6 +42,8 @@ class DecorateFp32toInt32CastingPass(ArmPass):
         decorated_x = where(is_non_negative, floor_x, ceil_x)
         output = to_dim_order_copy(decorated_x, dtype=torch.int32)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targets = [
         exir_ops.edge.dim_order_ops._to_dim_order_copy.default,

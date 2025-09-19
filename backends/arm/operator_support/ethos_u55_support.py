@@ -236,18 +236,20 @@ class EthosU55ViewCheck(OperatorSupportBase):
             shape = input_node.meta["val"].shape
             rank = len(shape)
             if not -rank <= dim < rank:
-                raise IndexError(
-                    f"Dim {dim} is outside of the range for tensor '{node.target}' of "
-                    f"rank {rank}"
+                self.reporter.report_reject(
+                    node,
+                    (f"Dimension {dim} out of range for rank {rank}."),
                 )
+                return False
             dim = dim % rank
 
             size = shape[dim]
             if not -size <= index < size:
-                raise IndexError(
-                    f"Index {index} is outside of the range for dim {dim} with size "
-                    f"{size} for tensor {node.target}"
+                self.reporter.report_reject(
+                    node,
+                    (f"Index {index} out of range for dim {dim} with size {size}."),
                 )
+                return False
             index = index % size
 
             # Shape after squeeze. This may get converted into a view which may become

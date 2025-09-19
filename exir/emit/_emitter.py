@@ -93,7 +93,8 @@ from executorch.exir.tensor import (
 from executorch.exir.types import LeafValueSpec, ValueSpec
 from torch._subclasses.fake_tensor import FakeTensor
 
-from torch.export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram, ExportGraphSignature
+from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 
 from typing_extensions import TypeAlias
@@ -209,11 +210,11 @@ _DelegateDebugIdentifierMap: TypeAlias = Union[
 ]
 
 
-# pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
     """An abstract interpreter (https://wiki.mozilla.org/Abstract_Interpretation) used to emit the
     given traced torch.fx.GraphModule to the flatbuffer schema."""
 
+    # pyre-ignore[13]: Attribute `node` is never initialized.
     node: torch.fx.Node
 
     def __init__(
@@ -1632,6 +1633,28 @@ class _TopLevelEmitter(_Emitter):
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
+
+            def _is_buffer(node: Node, graph_signature: ExportGraphSignature) -> bool:
+                """
+                Check if the node is buffer according to the provided graph signature.
+                If it is one return its fqn as well
+                """
+                if node.op == "placeholder":
+                    if isinstance(node.target, str):
+                        if node.target in graph_signature.inputs_to_buffers:
+                            return True
+                return False
+
+            # If the spec does not appear in the mutable section of the graph signature it still might
+            # overall be considered a mutable buffer if it has already been memory planned. This would
+            # suggest that the same abstract buffer is mutable in another entry point so we should
+            # compel it to be considered mutable in all entry points at emission just as the user did with
+            # memory planning.
+            is_mutable_buffer |= (
+                _is_buffer(self.node, self.exported_program.graph_signature)
+                and spec.mem_id is not None
+                and spec.mem_offset is not None
+            )
 
             # If the placeholder has a constant_tag, it is external to the PTE file
             # and requires a fqn and location=TensorDataLocation.EXTERNAL

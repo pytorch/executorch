@@ -6,7 +6,7 @@
 # pyre-unsafe
 
 import logging
-from typing import cast
+from typing import cast, Set, Type
 
 import torch
 
@@ -49,6 +49,8 @@ class ConvertExpandCopyToRepeatPass(ExportPass):
     """
     Replace expand copy with repeat since it is a repeat that can only repeat singleton dimensions.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     expand_copy = exir_ops.edge.aten.expand_copy.default
     repeat = exir_ops.edge.aten.repeat.default

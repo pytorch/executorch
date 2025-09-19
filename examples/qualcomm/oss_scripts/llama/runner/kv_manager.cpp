@@ -242,9 +242,8 @@ void KVManager<T>::update_attention_mask(
         std::fill_n(
             cur_ptr, std::abs(n_past + ar_len) - avalible_cache_len, neg_val);
       }
-
-      cur_ptr += metadata_.context_len;
     }
+    cur_ptr += metadata_.context_len;
   }
 }
 

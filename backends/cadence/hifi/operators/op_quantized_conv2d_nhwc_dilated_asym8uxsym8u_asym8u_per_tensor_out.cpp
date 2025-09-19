@@ -19,18 +19,18 @@ namespace impl {
 namespace HiFi {
 namespace native {
 
-// Dilated fallback implementation for int8 x int8 -> int8 quantized 2d conv
-// kernel for NHWC layout. This variant is optimized for asymmetric int8 inputs,
-// weights, and outputs. The input is of shape [n x h x w x c] The weight is of
-// shape [oc x wh x ww x wc] The output is of shape [n x oh x ow x oc] The bias
-// is of shape [oc]
+// Dilated fallback implementation for uint8 x uint8 -> uint8 quantized 2d conv
+// kernel for NHWC layout. This variant is optimized for asymmetric uint8
+// inputs, weights, and outputs. The input is of shape [n x h x w x c] The
+// weight is of shape [oc x wh x ww x wc] The output is of shape [n x oh x ow x
+// oc] The bias is of shape [oc]
 template <bool quantized = true>
-__attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
+__attribute__((noinline)) void conv2d_nhwc_dilated_asym8uxsym8u_asym8u_core(
     // All the arrays
-    const int8_t* __restrict__ p_in,
-    const int8_t* __restrict__ p_weight,
+    const uint8_t* __restrict__ p_in,
+    const uint8_t* __restrict__ p_weight,
     const int32_t* __restrict__ p_bias,
-    int8_t* __restrict__ p_out,
+    uint8_t* __restrict__ p_out,
     // The array sizes
     int32_t n,
     int32_t h,
@@ -54,11 +54,11 @@ __attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
     // Group for depthwise conv
     int16_t groups,
     // Quantization parameters
-    int8_t in_zero_point = 0,
+    uint8_t in_zero_point = 0,
     int32_t weight_zero_point = 0,
     float bias_scale = 1,
     float out_scale = 1,
-    int8_t out_zero_point = 0) {
+    uint8_t out_zero_point = 0) {
   float inv_out_scale = 1. / out_scale;
 
   // Compute the number of in and out channels per group
@@ -67,11 +67,11 @@ __attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
 
   // Iterate over all the output batches (i.e., n)
   for (int _n = 0; _n < n; ++_n) {
-    const int8_t* in_batch = p_in + _n * h * w * c;
-    int8_t* out_batch = p_out + _n * oh * ow * oc;
+    const uint8_t* in_batch = p_in + _n * h * w * c;
+    uint8_t* out_batch = p_out + _n * oh * ow * oc;
     for (int _h = 0, _oh = 0; _oh < oh; _h += s0, ++_oh) {
       for (int _w = 0, _ow = 0; _ow < ow; _w += s1, ++_ow) {
-        int8_t* out_line = out_batch + (_oh * ow + _ow) * oc;
+        uint8_t* out_line = out_batch + (_oh * ow + _ow) * oc;
         // Compute separable convolution for each group
         for (int _g = 0; _g < groups; ++_g) {
           // Identify the input and output channels involved in the computation
@@ -80,7 +80,7 @@ __attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
           int soc = _g * ocpg;
           // Populate all the output channels in the group
           for (int _oc = soc; _oc < soc + ocpg; ++_oc) {
-            const int8_t* weight_batch = p_weight + _oc * wh * ww * wc;
+            const uint8_t* weight_batch = p_weight + _oc * wh * ww * wc;
             // We compute one output channel at a time. The computation can be
             // thought of as a stencil computation: we iterate over an input of
             // size h x w x icpg, with a stencil of size wh x ww x icpg, to
@@ -97,9 +97,9 @@ __attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
                 int input_w = _w + d1 * _ww - p1;
                 if ((input_h >= 0) && (input_h < h) && (input_w >= 0) &&
                     (input_w < w)) {
-                  const int8_t* in_line =
+                  const uint8_t* in_line =
                       in_batch + input_h * w * c + input_w * c;
-                  const int8_t* weight_line =
+                  const uint8_t* weight_line =
                       weight_batch + _wh * ww * wc + _ww * wc;
                   for (int _ic = sic; _ic < sic + icpg; ++_ic) {
                     float lhs = static_cast<float>(in_line[_ic]) -
@@ -114,7 +114,7 @@ __attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
             // Quantize the accumulated result
             float val = bias_scale * acc;
             out_line[_oc] =
-                kernels::quantize<int8_t>(val, inv_out_scale, out_zero_point);
+                kernels::quantize<uint8_t>(val, inv_out_scale, out_zero_point);
           }
         }
       }
@@ -122,7 +122,7 @@ __attribute__((noinline)) void conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
   }
 }
 
-void quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out(
+void quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -154,11 +154,11 @@ void quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out(
   const int oh = conv1d ? 1 : out.size(1);
   const int ow = conv1d ? out.size(1) : out.size(2);
 
-  conv2d_nhwc_dilated_asym8sxsym8s_asym8s_core(
-      input.const_data_ptr<int8_t>(),
-      weight.const_data_ptr<int8_t>(),
+  conv2d_nhwc_dilated_asym8uxsym8u_asym8u_core(
+      input.const_data_ptr<uint8_t>(),
+      weight.const_data_ptr<uint8_t>(),
       bias.const_data_ptr<int32_t>(),
-      out.mutable_data_ptr<int8_t>(),
+      out.mutable_data_ptr<uint8_t>(),
       n,
       h,
       w,
@@ -176,11 +176,11 @@ void quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out(
       dilation[0],
       dilation[1],
       groups,
-      static_cast<int8_t>(in_zero_point),
+      static_cast<uint8_t>(in_zero_point),
       weight_zero_point,
       bias_scale,
       output_scale,
-      static_cast<int8_t>(output_zero_point));
+      static_cast<uint8_t>(output_zero_point));
 }
 
 } // namespace native
