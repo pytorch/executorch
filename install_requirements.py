@@ -18,11 +18,11 @@ TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 
 # Supported CUDA versions - modify this to add/remove supported versions
 # Format: tuple of (major, minor) version numbers
-SUPPORTED_CUDA_VERSIONS = [
+SUPPORTED_CUDA_VERSIONS = (
     (12, 6),
     (12, 8),
     (12, 9),
-]
+)
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
