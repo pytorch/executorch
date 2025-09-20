@@ -94,6 +94,8 @@ Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The p
   </tr>
 </table>
 
+[Please visit this section to try it on OpenVINO backend](../../openvino/llama/README.md).
+
 ## Llama 3/3.1 8B
 Since Llama 3 8B model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized (PTQ) model.
 
