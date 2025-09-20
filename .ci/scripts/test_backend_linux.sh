@@ -15,6 +15,11 @@ REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.csv"
 echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
+# The generic Linux job chooses to use base env, not the one setup by the image
+eval "$(conda shell.bash hook)"
+CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+conda activate "${CONDA_ENV}"
+
 export PYTHON_EXECUTABLE=python
 
 # CMake options to use, in addition to the defaults.
