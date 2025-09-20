@@ -869,6 +869,21 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
+  # Set RPATH to find PyTorch libraries relative to the installation location
+  # This goes from executorch/extension/pybindings up to site-packages, then to
+  # torch/lib
+  if(APPLE)
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                              INSTALL_RPATH "@loader_path/../../../torch/lib"
+    )
+  else()
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+    )
+  endif()
+
   install(
     TARGETS portable_lib
     EXPORT ExecuTorchTargets
