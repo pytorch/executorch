@@ -19,10 +19,13 @@
 namespace impl {
 namespace HiFi {
 namespace native {
+
 namespace {
+
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
+using ::impl::HiFi::kernels::quantize;
 
 // Add checks for dtype quant min/max bounds.
 template <typename T>
@@ -92,22 +95,19 @@ void quantize_per_tensor_out(
   const size_t numel = out.numel();
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-    impl::HiFi::kernels::quantize<uint8_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<uint8_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Char) {
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
     xa_nn_elm_quantize_f32_asym8s(
         out_data, input_data, scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Short) {
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
-    impl::HiFi::kernels::quantize<int16_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<int16_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else if (
       out.scalar_type() == ScalarType::Bits16 ||
       out.scalar_type() == ScalarType::UInt16) {
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-    impl::HiFi::kernels::quantize<uint16_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<uint16_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_KERNEL_CHECK_MSG(
         ctx,
@@ -119,6 +119,51 @@ void quantize_per_tensor_out(
   }
 }
 
-} // namespace native
-} // namespace HiFi
-} // namespace impl
+void quantize_per_tensor_asym8u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
+  quantize<uint8_t>(out_data, input_data, 1. / scale, zero_point, numel);
+}
+
+void quantize_per_tensor_asym16s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  int16_t* out_data = out.mutable_data_ptr<int16_t>();
+  quantize<int16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+}
+
+void quantize_per_tensor_asym16u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
+  quantize<uint16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+}
+
+}; // namespace native
+}; // namespace HiFi
+}; // namespace impl
