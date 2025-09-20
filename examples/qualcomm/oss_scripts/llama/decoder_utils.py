@@ -221,7 +221,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                 with open(f"{self.args.artifact}/{performance_output_path}", "r") as f:
                     self.inference_speed = float(f.read())
         
-        
+        logging.info(f"Finish 1 iteration~~~~~~~~~~~~~~")
         if self.enable_x86_64:
             qnn_sdk = os.getenv("QNN_SDK_ROOT")
             target = "x86_64-linux-clang"

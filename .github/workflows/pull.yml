@@ -561,7 +561,7 @@ jobs:
         task: [stories_110m, stories_260k_bc, smollm2_135m]
       fail-fast: false
     with:
-      runner: linux.2xlarge
+      runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
