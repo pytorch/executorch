@@ -1,16 +1,21 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/schema/program_generated.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <executorch/runtime/platform/assert.h>
-#include <executorch/schema/program_generated.h>
+#ifdef ET_BUNDLE_IO
+#include <executorch/devtools/bundled_program/bundled_program.h>
+#include <stdexcept>
+#endif
 
 namespace py = pybind11;
 
@@ -186,8 +191,39 @@ get_kernel_tensor_metadatas_from_execution_plan(
 
 const executorch_flatbuffer::Program* _get_program_from_buffer(
     const py::bytes& buffer) {
+  // Access the Python bytes without copying and get raw pointer/size.
+  const std::string_view sv = buffer.cast<std::string_view>();
+  void* buf_ptr = const_cast<void*>(static_cast<const void*>(sv.data()));
+  const size_t buf_len = sv.size();
+#ifdef ET_BUNDLE_IO
+
+  // If this is a bundled program, extract the inner ExecuTorch program bytes.
+  if (executorch::bundled_program::is_bundled_program(buf_ptr, buf_len)) {
+    const void* program_data = nullptr;
+    size_t program_size = 0;
+
+    const auto status = executorch::bundled_program::get_program_data(
+        buf_ptr, // serialized BundledProgram start
+        buf_len, // total size of the BundledProgram blob
+        &program_data, // [out] pointer to inner .pte bytes
+        &program_size // [out] size of inner .pte bytes
+    );
+
+    if (status != ::executorch::runtime::Error::Ok || program_data == nullptr ||
+        program_size == 0) {
+      throw std::runtime_error(
+          "bundled_program::get_program_data() failed or returned empty data");
+    }
+
+    // program_data points directly at the flatbuffer-encoded Program region.
+    return executorch_flatbuffer::GetProgram(
+        reinterpret_cast<const uint8_t*>(program_data));
+  }
+#endif
+  // Otherwise treat the buffer as a raw .pte (flatbuffer Program with optional
+  // extended header).
   return executorch_flatbuffer::GetProgram(
-      buffer.cast<std::string_view>().data());
+      reinterpret_cast<const uint8_t*>(sv.data()));
 }
 
 py::list _get_program_operators(const executorch_flatbuffer::Program* program) {
