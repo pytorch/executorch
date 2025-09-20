@@ -438,11 +438,11 @@ class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
-        if get_edge_overload_packet(op) != exir_ops.edge.aten.convolution:
+        if get_edge_overload_packet(op) != exir_ops.edge.cadence.convolution:
             return super().call_operator(op, args, kwargs, meta)
 
         # Check if the bias is already concrete
-        assert len(args) == 9
+        assert len(args) == 8
         if args[2] is not None:
             return super().call_operator(op, args, kwargs, meta)
 
