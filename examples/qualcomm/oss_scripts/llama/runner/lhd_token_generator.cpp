@@ -61,6 +61,16 @@ void LhdTokenGenerator<T>::init_attention_mask(int32_t n_past) {
 
   this->kv_manager_->init_attention_mask(
       this->attention_mask_.data, attention_map, metadata_.ar_len, n_past);
+  // Initialize window attention mask with current position
+  if (metadata_.cache_mode == CacheMode::HybridCache) {
+    this->kv_manager_->init_attention_mask(
+        this->window_attention_mask_.data,
+        attention_map,
+        metadata_.ar_len,
+        n_past,
+        metadata_.sliding_window,
+        position_offset_);
+  }
 }
 
 template <typename T>
@@ -378,6 +388,15 @@ Result<int64_t> LhdTokenGenerator<T>::generate(
     // Update attention mask with current position
     this->kv_manager_->update_attention_mask(
         this->attention_mask_.data, metadata_.ar_len, prev_pos, n_update);
+    if (metadata_.cache_mode == CacheMode::HybridCache) {
+      this->kv_manager_->update_attention_mask(
+          this->window_attention_mask_.data,
+          metadata_.ar_len,
+          prev_pos,
+          n_update,
+          metadata_.sliding_window,
+          position_offset_);
+    }
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (this->eos_ids_->count(cur_token) > 0) {

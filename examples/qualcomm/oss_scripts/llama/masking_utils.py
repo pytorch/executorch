@@ -93,24 +93,26 @@ class BaseAttentionMask(ABC):
         pass
 
     @abstractmethod
-    def smart_mask_update(self, pos, n_updates):
+    def smart_mask_update(self, pos, n_updates, lade_pos_offset):
         """
         Update the attention mask by smart mask update method after model forward.
 
         Args:
             pos (int): Current position in the sequence.
             n_updates (int): Number of new tokens to update.
+            lade_pos_offset (List[int]): Position offset of lookahead attention mask.
         """
         pass
 
     @abstractmethod
-    def shift_pointer_update(self, pos, n_updates):
+    def shift_pointer_update(self, pos, n_updates, lade_pos_offset):
         """
         Update the attention mask by shift pointer update method after model forward.
 
         Args:
             pos (int): Current position in the sequence.
             n_updates (int): Number of tokens to shift.
+            lade_pos_offset (List[int]): Position offset of lookahead attention mask.
         """
         pass
 
@@ -124,7 +126,7 @@ class CausalAttentionMask(BaseAttentionMask):
     def mask(self):
         return self._mask
 
-    def smart_mask_update(self, pos, n_updates):
+    def smart_mask_update(self, pos, n_updates, _):
         """
         Smart Mask mechanism for attention mask updating
 
@@ -159,7 +161,7 @@ class CausalAttentionMask(BaseAttentionMask):
         end_pos = pos + n_updates
         self.mask[:, :, start_pos:end_pos] = 0
 
-    def shift_pointer_update(self, pos, n_updates):
+    def shift_pointer_update(self, pos, n_updates, _):
         """
         Shift Pointer mechanism for attention mask updating
 
@@ -173,7 +175,7 @@ class CausalAttentionMask(BaseAttentionMask):
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ● ●
 
-        After 1st update (e.g., pos=0, n_updates=5, sliding_window=3):
+        After 1st update (e.g., pos=0, n_updates=5):
             Newly added tokens are unmasked (set to 0).
 
             0 ○ ○ ○ ○ ○ ● ● ● ● ● ● ○ ○ ○ ○
@@ -213,7 +215,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
     def mask(self):
         return self._mask
 
-    def smart_mask_update(self, pos, n_updates):
+    def smart_mask_update(self, pos, n_updates, lade_pos_offset):
         """
         Smart Mask mechanism for attention mask updating
 
@@ -237,7 +239,8 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
 
-        After 2nd update (e.g., pos=5, n_updates=5):
+
+        After 2nd update (e.g., pos=5, n_updates=5, sliding_window=3):
             Sliding window shifts again, masking older positions and activate new postion.
 
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
@@ -252,16 +255,18 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
         self.mask[:, :, start_pos:end_pos] = 0
 
         for i in range(self.ar_len):
-            # Calculate how many cached tokens are still avalible for this row
-            avalible_cache_len = self.sliding_window - (i + 1)
+            # Calculate how many cached tokens are still available for this row
+            available_cache_len = self.sliding_window - (
+                (i + 1) if lade_pos_offset is None else (lade_pos_offset[i] + 1)
+            )
 
             # If the current position exceeds available cache, mask the overflow
-            if end_pos > avalible_cache_len:
+            if end_pos > available_cache_len:
                 # Mask tokens that are no longer within the sliding window
                 # TODO: [Optional]: it can be optimized by computing the exact start index
-                self.mask[:, i, : end_pos - avalible_cache_len] = -255.0
+                self.mask[:, i, : end_pos - available_cache_len] = -255.0
 
-    def shift_pointer_update(self, pos, n_updates):
+    def shift_pointer_update(self, pos, n_updates, lade_pos_offset):
         """
         Shift Pointer mechanism for attention mask updating
 
@@ -283,7 +288,7 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
             3 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○
             4 ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ●
 
-         After 2nd update (e.g., pos=5, n_updates=5):
+        After 2nd update (e.g., pos=5, n_updates=5, sliding_window=3):
 
             0 ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○ ○
             1 ○ ○ ○ ○ ○ ○ ○ ○ ○ ● ● ● ○ ○ ○
@@ -297,14 +302,16 @@ class SlidingWindowAttentionMask(BaseAttentionMask):
         self.mask[:, :, start_pos:end_pos] = 0
 
         for i in range(self.ar_len):
-            avalible_cache_len = self.sliding_window - (i + 1)
-            if abs(start_pos + self.ar_len) > avalible_cache_len:
+            available_cache_len = self.sliding_window - (
+                (i + 1) if lade_pos_offset is None else (lade_pos_offset[i] + 1)
+            )
+            if abs(start_pos + self.ar_len) > available_cache_len:
                 self.mask[
                     :,
                     i,
                     start_pos : start_pos
                     + abs(start_pos + self.ar_len)
-                    - avalible_cache_len,
+                    - available_cache_len,
                 ] = -255.0
 
 
@@ -312,13 +319,13 @@ class AttentionMask:
     def __init__(self, masks: Union[BaseAttentionMask, List[BaseAttentionMask]]):
         self.masks = masks if isinstance(masks, list) else [masks]
 
-    def smart_mask_update(self, pos, n_updates):
+    def smart_mask_update(self, pos, n_updates, lade_pos_offset=None):
         for mask in self.masks:
-            mask.smart_mask_update(pos, n_updates)
+            mask.smart_mask_update(pos, n_updates, lade_pos_offset)
 
-    def shift_pointer_update(self, pos, n_updates):
+    def shift_pointer_update(self, pos, n_updates, lade_pos_offset=None):
         for mask in self.masks:
-            mask.shift_pointer_update(pos, n_updates)
+            mask.shift_pointer_update(pos, n_updates, lade_pos_offset)
 
     def __iter__(self):
         return iter([mask.mask for mask in self.masks])
