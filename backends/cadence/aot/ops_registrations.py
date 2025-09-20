@@ -29,10 +29,62 @@ lib.define(
 )
 
 lib.define(
+    "quantize_per_tensor_asym8s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym8s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym8u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym8u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym16s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym16s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym16u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym16u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "dequantize_per_tensor(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
 )
 lib.define(
     "dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -541,8 +593,104 @@ def quantize_per_tensor_meta(
     return input.new_empty(input.size(), dtype=dtype)
 
 
+@register_fake("cadence::quantize_per_tensor_asym8s")
+def quantize_per_tensor_asym8s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym8u")
+def quantize_per_tensor_asym8u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym16s")
+def quantize_per_tensor_asym16s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym16u")
+def quantize_per_tensor_asym16u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
 @register_fake("cadence::dequantize_per_tensor")
 def dequantize_per_tensor_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym8s")
+def dequantize_per_tensor_asym8s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym8u")
+def dequantize_per_tensor_asym8u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym16s")
+def dequantize_per_tensor_asym16s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym16u")
+def dequantize_per_tensor_asym16u_meta(
     input: torch.Tensor,
     scale: float,
     zero_point: int,
