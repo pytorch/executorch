@@ -71,6 +71,7 @@ def define_common_targets():
         "ModuleDynamicCatUnallocatedIO",
         "ModuleSimpleTrain",
         "ModuleStateful",
+        "ModuleSharedState",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.
