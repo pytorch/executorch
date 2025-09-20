@@ -1092,3 +1092,19 @@ def rms_norm(
     eps: float,
 ) -> torch.Tensor:
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
+
+
+@impl(m, "rope")
+def rope(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+) -> torch.Tensor:
+    if pos is not None:
+        raise ValueError("pos is not supported")
+    x0, x1 = input_tensor[..., ::2], input_tensor[..., 1::2]
+    rotated = torch.cat(
+        [x0 * cos_tensor - x1 * sin_tensor, x0 * sin_tensor + x1 * cos_tensor], dim=-1
+    )
+    return rotated
