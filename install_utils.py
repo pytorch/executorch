@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import functools
 import os
 import platform
 import re
@@ -101,14 +102,11 @@ def _get_pytorch_cuda_url(cuda_version, torch_nightly_url_base):
     return f"{torch_nightly_url_base}/{cuda_suffix}"
 
 
-# Global variable for caching torch URL
-_torch_url_cache = ""
-
-
+@functools.lru_cache(maxsize=1)
 def determine_torch_url(torch_nightly_url_base, supported_cuda_versions):
     """
     Determine the appropriate PyTorch installation URL based on CUDA availability and CMAKE_ARGS.
-    Uses caching to avoid redundant CUDA detection and print statements.
+    Uses @functools.lru_cache to avoid redundant CUDA detection and print statements.
 
     Args:
         torch_nightly_url_base: Base URL for PyTorch nightly packages
@@ -117,17 +115,10 @@ def determine_torch_url(torch_nightly_url_base, supported_cuda_versions):
     Returns:
         URL string for PyTorch packages
     """
-    global _torch_url_cache
-
-    # Return cached URL if already determined
-    if _torch_url_cache:
-        return _torch_url_cache
-
     # Check if CUDA delegate is enabled
     if not _is_cuda_enabled():
         print("CUDA delegate not enabled, using CPU-only PyTorch")
-        _torch_url_cache = f"{torch_nightly_url_base}/cpu"
-        return _torch_url_cache
+        return f"{torch_nightly_url_base}/cpu"
 
     print("CUDA delegate enabled, detecting CUDA version...")
 
@@ -141,8 +132,6 @@ def determine_torch_url(torch_nightly_url_base, supported_cuda_versions):
     torch_url = _get_pytorch_cuda_url(cuda_version, torch_nightly_url_base)
     print(f"Using PyTorch URL: {torch_url}")
 
-    # Cache the result
-    _torch_url_cache = torch_url
     return torch_url
 
 

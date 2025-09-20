@@ -8,9 +8,9 @@
 set -exu
 
 # The generic Linux job chooses to use base env, not the one setup by the image
-# eval "$(conda shell.bash hook)"
-# CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-# conda activate "${CONDA_ENV}"
+eval "$(conda shell.bash hook)"
+CONDA_ENV=$(conda info --envs | awk '/base/ {print $2}')
+conda activate "${CONDA_ENV}"
 
 CUDA_VERSION=${1:-"12.6"}
 
