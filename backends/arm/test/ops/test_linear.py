@@ -311,10 +311,10 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_all_16a8w)
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
-    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See See: https://github.com/pytorch/executorch/issues/13947"",
+    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See: https://github.com/pytorch/executorch/issues/13947",
     strict=False,
 )
 def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
@@ -345,10 +345,10 @@ def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_all_16a8w)
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
 @common.XfailIfNoCorstone320
 @pytest.mark.xfail(
-    reason="Ethos-U85 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering",
+    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See: https://github.com/pytorch/executorch/issues/13947",
     strict=False,
 )
 def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
