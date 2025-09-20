@@ -148,8 +148,6 @@ jobs:
           extension/android/executorch_android/src/main/java/org/pytorch/executorch/extension/llm/*.java \
           extension/android/executorch_android/src/main/java/org/pytorch/executorch/annotations/*.java \
           extension/android/executorch_android/src/androidTest/java/org/pytorch/executorch/*.java \
-          examples/demo-apps/android/LlamaDemo/app/src/main/java/com/example/executorchllamademo/*.java \
-          examples/demo-apps/android/LlamaDemo/app/src/androidTest/java/com/example/executorchllamademo/*.java \
           extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java \
           extension/benchmark/android/benchmark/app/src/androidTest/java/org/pytorch/minibench/*.java)
         if [ -n "$FILES_NEEDS_FORMAT" ]; then
