@@ -200,9 +200,11 @@ different than the ones we used while tracing, we will run into an error:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1808, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 245, in _check_input_constraints_pre_hook
+        _check_input_constraints_for_module(self, args, kwargs)
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1095, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 83, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 225, in _check_input_constraints_for_module
         _check_input_constraints_for_graph(
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 462, in _check_input_constraints_for_graph
         _check_symint(
@@ -324,9 +326,11 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1808, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 245, in _check_input_constraints_pre_hook
+        _check_input_constraints_for_module(self, args, kwargs)
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1095, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 83, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 225, in _check_input_constraints_for_module
         _check_input_constraints_for_graph(
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 462, in _check_input_constraints_for_graph
         _check_symint(
@@ -348,9 +352,11 @@ Now let's try running the model with different shapes:
         return inner()
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1808, in inner
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1044, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 245, in _check_input_constraints_pre_hook
+        _check_input_constraints_for_module(self, args, kwargs)
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 1095, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 83, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 225, in _check_input_constraints_for_module
         _check_input_constraints_for_graph(
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 462, in _check_input_constraints_for_graph
         _check_symint(
@@ -1402,7 +1408,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 13.399 seconds)
+   **Total running time of the script:** (0 minutes 13.136 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
