@@ -336,7 +336,7 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) to for full instructions on building the iOS etLLM Demo App.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 
