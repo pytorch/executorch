@@ -108,6 +108,9 @@ void quantize_per_tensor_out(
       out.scalar_type() == ScalarType::UInt16) {
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
     quantize<uint16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  } else if (out.scalar_type() == ScalarType::Int) {
+    int32_t* out_data = out.mutable_data_ptr<int32_t>();
+    quantize<int32_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_KERNEL_CHECK_MSG(
         ctx,
@@ -162,6 +165,21 @@ void quantize_per_tensor_asym16u_out(
   size_t numel = out.numel();
   uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
   quantize<uint16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+}
+
+void quantize_per_tensor_asym32s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  int32_t* out_data = out.mutable_data_ptr<int32_t>();
+  quantize<int32_t>(out_data, input_data, 1. / scale, zero_point, numel);
 }
 
 }; // namespace native
