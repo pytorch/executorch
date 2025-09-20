@@ -42,6 +42,7 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
+    DecomposeConv2dWithInt16ActivationPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -183,6 +184,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(DecomposeGroupedConv())
+
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
@@ -196,9 +198,14 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program))
+        # If we have a conv2d with int16 activation split up into a convolution
+        # and an addition, to work-around the lack of support for int48 in torch
+        # needs to happen before AddBiasPass, but after the table ops are inserted
+        # to be able to validate that conv2d has right dtype arguments.
+        self.add_pass(DecomposeConv2dWithInt16ActivationPass())
         self.add_pass(AddBiasPass(exported_program))
 
-        self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
