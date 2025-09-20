@@ -1,3 +1,8 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_arm_tests")
 
@@ -58,6 +63,7 @@ runtime.python_library(
         "//executorch/backends/arm/quantizer:lib",
         "//executorch/backends/arm/tosa:mapping",
         "//executorch/backends/arm:vgf",
+        "//executorch/backends/arm:_factory"
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/exir/backend:operator_support",
         "fbsource//third-party/pypi/tabulate:tabulate",
