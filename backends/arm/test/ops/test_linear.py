@@ -9,6 +9,7 @@
 from typing import Tuple
 
 import pytest
+
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -307,4 +308,72 @@ def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
         ),
     )
     # Run the pipeline
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.XfailIfNoCorstone300
+@pytest.mark.xfail(
+    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See: https://github.com/pytorch/executorch/issues/13947",
+    strict=False,
+)
+def test_linear_16a8w_u55_INT16(test_data: torch.Tensor):
+    """Test linear operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+
+    pipeline = EthosU55PipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_linear_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
+@common.XfailIfNoCorstone320
+@pytest.mark.xfail(
+    reason="Ethos-U55 A16W8 linear: int16 matmul not yet supported; pending backend support or linear->conv1x1 lowering. See: https://github.com/pytorch/executorch/issues/13947",
+    strict=False,
+)
+def test_linear_16a8w_u85_INT16(test_data: torch.Tensor):
+    """Test linear operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    test_data, out_features, has_bias, per_channel_quantization = test_data()
+    in_features = test_data.shape[-1]
+
+    pipeline = EthosU85PipelineINT[input_t1](
+        Linear(
+            in_features=in_features,
+            out_features=out_features,
+            bias=has_bias,
+        ),
+        (test_data,),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=per_channel_quantization,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_linear_quantizer(
+            per_channel_quantization=per_channel_quantization
+        ),
+    )
     pipeline.run()
