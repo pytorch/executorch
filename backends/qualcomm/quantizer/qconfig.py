@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import torch
 
 from executorch.backends.qualcomm.quantizer.observers.per_block_param_observer import (
+    PerBlockFakeQuantizeObserver,
     PerBlockParamObserver,
 )
 from torch import Tensor
@@ -608,3 +609,37 @@ def get_qat_per_channel_quant_config(
     )
 
     return quantization_config
+
+
+def get_qat_per_block_quant_config(
+    act_dtype=torch.uint8,
+    weight_dtype=torch.int8,
+    act_observer=MovingAverageMinMaxObserver,
+    act_symmetric: bool = False,
+) -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+    quantization_config = get_qat_per_channel_quant_config(
+        act_dtype=act_dtype,
+        weight_dtype=weight_dtype,
+        act_observer=act_observer,
+        act_symmetric=act_symmetric,
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int8 if weight_dtype == torch.int4 else weight_dtype,
+        quant_min=(
+            -7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).min + 1
+        ),
+        quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
+        qscheme=torch.per_channel_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=PerBlockFakeQuantizeObserver.with_args(**extra_args),
+    )
+    
+
+    return QuantizationConfig(
+        input_activation=quantization_config.input_activation,
+        output_activation=quantization_config.output_activation,
+        weight=weight_quantization_spec,
+        bias=quantization_config.bias,
+    )

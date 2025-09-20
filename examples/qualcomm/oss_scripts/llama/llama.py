@@ -21,6 +21,7 @@ from functools import partial
 from multiprocessing.connection import Client
 
 import torch
+import torchao
 from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
 from executorch.backends.qualcomm._passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm._passes.qnn_pass_manager import (
@@ -101,7 +102,7 @@ from pytorch_tokenizers.llama2c import Llama2cTokenizer as SentencePieceTokenize
 
 from torchao.prototype.spinquant import apply_spinquant
 
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e, prepare_qat_pt2e
 from transformers import AutoTokenizer
 
 try:
@@ -235,22 +236,23 @@ class SingleLlama:
                 self.llama_graph_module, self.inputs, strict=True
             ).module()
 
-            if quant_dtype == QuantDtype.use_16a4w_block:
+            if quant_dtype in {QuantDtype.use_16a4w_block, QuantDtype.use_16a4w_block_qat}:
                 if self.decoder_model_config.group_size is None:
                     raise ValueError(
                         "Group size is required when use quant_dtype 16a4w_block"
                     )
-                conv_nodes = [
-                    n for n in fx_graph_module.graph.nodes if "conv" in n.name
-                ]
-                block_size_map = {
-                    n.name: (1, self.decoder_model_config.group_size, 1, 1)
-                    for n in conv_nodes
-                }
+                
+                block_size_map = {}
+                block_size_map["embedding"] = (1, self.decoder_model_config.group_size)
                 quantizer.set_block_size_map(block_size_map)
 
-            fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
-
+            prepared = prepare_qat_pt2e(fx_graph_module, quantizer)
+            fx_graph_module = torchao.quantization.pt2e.move_exported_model_to_train(prepared)
+            from executorch.backends.qualcomm.utils.utils import draw_graph
+            draw_graph("prepare_qat_pt2e", ".", fx_graph_module)
+            logging.info("Successfully saved FX graph after prepare_qat_pt2e to ./prepare_qat_pt2e.svg, exit program!")
+            sys.exit()
+            
         logging.info("Quantizing the model...")
 
         # Calibration
@@ -583,7 +585,7 @@ def compile(
     for llama_instance in llama_instance_list:
         llama_instance.load_state_dict(
             state_dict,
-            strict=True,
+            strict=False,
             assign=True,
         )
     end_load_ts = time.time()
