@@ -108,7 +108,7 @@ def prepare_tokenizer(args):
             args.tokenizer_bin is not None
         ), "Please provide tokenizer_bin for stories."
         runtime_tokenizer_path = args.tokenizer_bin
-    elif args.decoder_model == "llama3_2":
+    elif "llama3_2" in args.decoder_model:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
             tokenizer, TiktokenTokenizer
@@ -240,7 +240,7 @@ def prequant_algorithm(model, prefill_config, args):
 
     if args.range_setting == "mse_with_act_loss":
         wrapped_model = WrappedLlamaModel(
-            model, atten_mask, args.use_kv_cache, args.max_seq_length, args.device
+            model, *atten_mask, args.use_kv_cache, args.max_seq_length, args.device
         )
         act_bits, weight_bits = {
             "8a8w": (8, 8),
@@ -355,20 +355,20 @@ def eval_llm(args):
 
         logging.info("Quantizing the model...")
         model = convert_pt2e(model)
-        logging.info("Quantization complete! Here is some sample generated text:")
+        # logging.info("Quantization complete! Here is some sample generated text:")
 
-        graph_module_inference(
-            use_kv_cache=False,
-            get_example_inputs=lambda use_kv_cache=False: inputs,
-            module=model,
-            tokenizer=tokenizer,
-            ar_len=args.max_seq_len,
-            max_seq_len=args.max_seq_len,
-            kv_updater=args.kv_updater,
-            prompt="Can you tell me about Facebook?",
-            use_i64_token=use_i64_token,
-            event_name="convert_pt2e_prompt",
-        )
+        # graph_module_inference(
+        #     use_kv_cache=False,
+        #     get_example_inputs=lambda use_kv_cache=False: inputs,
+        #     module=model,
+        #     tokenizer=tokenizer,
+        #     ar_len=args.max_seq_len,
+        #     max_seq_len=args.max_seq_len,
+        #     kv_updater=args.kv_updater,
+        #     prompt="Can you tell me about Facebook?",
+        #     use_i64_token=use_i64_token,
+        #     event_name="convert_pt2e_prompt",
+        # )
 
     logging.info("Evaluation of QDQ model:")
     graph_module_inference(
@@ -380,6 +380,7 @@ def eval_llm(args):
         max_seq_len=args.max_seq_len,
         kv_updater=args.kv_updater,
         tasks=["wikitext"],
+        tasks_limit=0.1,
         use_i64_token=use_i64_token,
         event_name="convert_pt2e_prompt",
     )
@@ -424,9 +425,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--decoder_model",
-        choices=["stories260k", "stories110m", "llama3_2"]
-        + list(SUPPORTED_LLM_MODELS.keys()),
-        help=f"The Llama model to export. Current available options are: [stories260k, stories110m, llama3_2] + {SUPPORTED_LLM_MODELS.keys()}",
+        help=f"The Llama model to export. Current available options are: {SUPPORTED_LLM_MODELS.keys()}",
         required=True,
     )
     parser.add_argument(
