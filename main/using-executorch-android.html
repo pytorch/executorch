@@ -409,7 +409,7 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
 <li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/llama-demo-android.html">Running on Android &lt;XNNPack&gt;</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android">Running on Android &lt;XNNPack&gt;</a></li>
 <li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
 <li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
 </ul>
@@ -616,7 +616,7 @@ curl<span class="w"> </span>-O<span class="w"> </span>https://ossci-android.s3.a
 </div>
 <div class="section" id="example-usage">
 <h3>Example usage<a class="headerlink" href="#example-usage" title="Permalink to this heading">¶</a></h3>
-<p>In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,</p>
+<p>In your app working directory, such as executorch-examples/llm/android/LlamaDemo,</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
 <span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="mf">0.7.0</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
 </pre></div>
@@ -740,7 +740,7 @@ set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUIL
 </div>
 <p>This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data.</p>
 <p>Please use <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo">DeepLabV3AndroidDemo</a>
-and <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo">LlamaDemo</a> for the code examples
+and <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo">LlamaDemo</a> for the code examples
 using ExecuTorch AAR package.</p>
 </div>
 <div class="section" id="java-api-reference">
