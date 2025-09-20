@@ -10,7 +10,7 @@ import os
 from typing import Callable, Optional, Union
 
 import numpy as np
-
+import subprocess
 import torch
 from executorch.backends.qualcomm._passes import SeqMSE
 from executorch.examples.models.llama.evaluate.eager_eval import EagerEvalWrapper
@@ -113,10 +113,16 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             SentencePieceTokenizer, TiktokenTokenizer, HuggingFaceTokenizer
         ],
         runtime_tokenizer_path,
-        max_seq_length: int,
     ):
         self.args = args
         self.pte_path = pte_path
+        self.enable_x86_64 = args.enable_x86_64
+        self.max_seq_length = args.max_seq_len
+        
+        if self.enable_x86_64:
+            logging.warning(
+                f"Using x86_64 emulator is NOT recommended as it for CI purpose."
+            )
 
         with open(pte_path, "rb") as f:
             program_data = f.read()
@@ -154,16 +160,15 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
 
         assert self.output_vocab_size is not None, "Couldn't find the vocab size"
         assert pte_max_seq_len is not None, "Couldn't find the max_seq_len from pte"
-        if pte_max_seq_len != max_seq_length:
+        if pte_max_seq_len != self.max_seq_length:
             logging.warning(
-                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {max_seq_length} provided to the script, please ensure this is desired."
+                f"The pte provided has a max_seq_len {pte_max_seq_len}, which is different from --max_seq_len {args.max_seq_length} provided to the script, please ensure this is desired."
             )
-            if pte_max_seq_len < max_seq_length:
+            if pte_max_seq_len < self.max_seq_length:
                 logging.warning(
-                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {max_seq_length}"
+                    f"The pte max_seq_len {pte_max_seq_len} is used since it is shorter than --max_seq_len {args.max_seq_length}"
                 )
-                max_seq_length = pte_max_seq_len
-        self.max_seq_length = max_seq_length
+                self.max_seq_length = pte_max_seq_len
         self.runtime_tokenizer_path = runtime_tokenizer_path
 
         self.output_dir = args.artifact
@@ -179,10 +184,16 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
             soc_model=args.model,
             runner="examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
-        self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
+        
+        # collect output data
+        output_data_folder = f"{self.args.artifact}/outputs"
+        make_output_dir(output_data_folder)
+        
+        if not self.enable_x86_64:
+            self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
         # pyre-ignore
-        super().__init__(None, tokenizer, max_seq_length - 1)
+        super().__init__(None, tokenizer, self.max_seq_length - 1)
 
     def _model_call(self, inps):
 
@@ -193,50 +204,77 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         outputs_path = "outputs/outputs.txt"
         dump_logits_path = "outputs/all_logit.raw"
         performance_output_path = "outputs/inference_speed.txt"
-        runner_cmd = " ".join(
+        output_tensor_list = []
+        def post_process():
+                with open(f"{self.args.artifact}/{dump_logits_path}", "r") as f:
+                    output_tensor = torch.from_numpy(
+                        np.fromfile(f.name, dtype=np.uint16).reshape(
+                            1, -1, self.output_vocab_size
+                        )
+                    )
+                    output_tensor = (
+                        output_tensor.to(torch.float32) - self.logits_zero_point
+                    ) * self.logits_scale
+                    output_tensor_list.append(output_tensor)
+
+                # simple_eval will run multiple rounds, use last run for inference speed
+                with open(f"{self.args.artifact}/{performance_output_path}", "r") as f:
+                    self.inference_speed = float(f.read())
+        
+        logging.info(f"Finish 1 iteration~~~~~~~~~~~~~~")
+        if self.enable_x86_64:
+            qnn_sdk = os.getenv("QNN_SDK_ROOT")
+            target = "x86_64-linux-clang"
+            runner_cmd = " ".join(
             [
-                f"cd {self.workspace} &&",
-                "./qnn_llama_runner",
+                f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.args.build_folder}/lib &&",
+                f"./{self.args.build_folder}/examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
                 f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
-                f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
-                f"--model_path {os.path.basename(self.pte_path)}",
+                f"--tokenizer_path {self.runtime_tokenizer_path}",
+                f"--model_path {self.pte_path}",
                 f"--seq_len {self.max_seq_length}",
-                f"--output_path {outputs_path}",
-                f"--performance_output_path {performance_output_path}",
-                f"--kv_updater {'SmartMask' if self.args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
-                f"--window {self.args.window}",
-                f"--gcap {self.args.gcap}",
-                f"--ngram {self.args.ngram}",
+                f"--output_path {self.args.artifact}/outputs/outputs.txt",
+                f"--performance_output_path {self.args.artifact}/{performance_output_path}",
                 f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
                 "--temperature 0",
-                f"--dump_logits_path {dump_logits_path}",
-                f"--tokenized_prompt {os.path.basename(input_file_name)}",
+                f"--kv_updater ShiftPointer",
+                f"--dump_logits_path {self.args.artifact}/{dump_logits_path}",
+                f"--tokenized_prompt {input_file_name}"
             ]
-        )
+            )
+            subprocess.run(
+                runner_cmd,
+                shell=True,
+                executable="/bin/bash",
+                capture_output=True,
+            )
+            post_process()
+        
+        else:
+            runner_cmd = " ".join(
+                [
+                    f"cd {self.workspace} &&",
+                    "./qnn_llama_runner",
+                    f"--decoder_model_version {DECODER_MODEL_VERSION[self.args.decoder_model]}",
+                    f"--tokenizer_path {os.path.basename(self.runtime_tokenizer_path)}",
+                    f"--model_path {os.path.basename(self.pte_path)}",
+                    f"--seq_len {self.max_seq_length}",
+                    f"--output_path {outputs_path}",
+                    f"--performance_output_path {performance_output_path}",
+                    f"--kv_updater {'SmartMask' if self.args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
+                    f"--window {self.args.window}",
+                    f"--gcap {self.args.gcap}",
+                    f"--ngram {self.args.ngram}",
+                    f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
+                    "--temperature 0",
+                    f"--dump_logits_path {dump_logits_path}",
+                    f"--tokenized_prompt {os.path.basename(input_file_name)}",
+                ]
+            )
 
-        self.adb.push(inputs=[], files=[input_file_name], init_env=False)
-        self.adb.execute(custom_runner_cmd=runner_cmd)
-        output_data_folder = f"{self.output_dir}/outputs"
-        make_output_dir(output_data_folder)
-        output_tensor_list = []
-
-        def post_process():
-            with open(f"{self.args.artifact}/{dump_logits_path}", "r") as f:
-                output_tensor = torch.from_numpy(
-                    np.fromfile(f.name, dtype=np.uint16).reshape(
-                        1, -1, self.output_vocab_size
-                    )
-                )
-                output_tensor = (
-                    output_tensor.to(torch.float32) - self.logits_zero_point
-                ) * self.logits_scale
-                output_tensor_list.append(output_tensor)
-
-            # simple_eval will run multiple rounds, use last run for inference speed
-            with open(f"{self.args.artifact}/{performance_output_path}", "r") as f:
-                self.inference_speed = float(f.read())
-
-        self.adb.pull(output_path=self.output_dir, callback=post_process)
+            self.adb.push(inputs=[], files=[input_file_name], init_env=False)
+            self.adb.execute(custom_runner_cmd=runner_cmd)
+            self.adb.pull(output_path=self.output_dir, callback=post_process)
         return output_tensor_list[0]
 
 

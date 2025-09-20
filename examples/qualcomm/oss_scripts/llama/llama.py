@@ -883,8 +883,7 @@ def inference(
             args=args,
             pte_path=pte_path,
             tokenizer=tokenizer,
-            runtime_tokenizer_path=runtime_tokenizer_path,
-            max_seq_length=args.max_seq_len,
+            runtime_tokenizer_path=runtime_tokenizer_path
         )
 
         # Evaluate the model
