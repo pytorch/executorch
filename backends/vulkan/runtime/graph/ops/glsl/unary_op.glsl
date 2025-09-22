@@ -17,9 +17,6 @@
 
 ${define_active_storage_type(STORAGE)}
 
-$if BINARY_OP != "A":
-  #define binary_op(A, B) ${BINARY_OP}
-
 #include "indexing_utils.h"
 
 ${define_required_extensions(DTYPE)}
@@ -28,8 +25,6 @@ layout(std430) buffer;
 
 ${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
-$if BINARY_OP != "A":
-  ${layout_declare_tensor(2, "r", "t_other", DTYPE, STORAGE)}
 
 layout(push_constant) uniform restrict Block {
 $if STORAGE == "buffer":
@@ -67,10 +62,7 @@ void main() {
 
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
 
-$if BINARY_OP == "A":
   imageStore(t_out, pos, VEC4_T(op(in_texel, minimum, maximum)));
-$else:
-  imageStore(t_out, pos, VEC4_T(binary_op(op(in_texel, minimum, maximum), texelFetch(t_other, pos, 0))));
 }
 
 #endif

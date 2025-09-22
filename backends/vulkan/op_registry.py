@@ -211,6 +211,10 @@ def register_torchao_choose_qparams_affine():
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.gt.Tensor,
         exir_ops.edge.aten.ge.Tensor,
+        exir_ops.edge.et_vk.binary_add_with_clamp.default,
+        exir_ops.edge.et_vk.binary_sub_with_clamp.default,
+        exir_ops.edge.et_vk.binary_mul_with_clamp.default,
+        exir_ops.edge.et_vk.binary_div_with_clamp.default,
     ]
 )
 def register_binary_op():
@@ -241,7 +245,7 @@ def register_binary_op():
         exir_ops.edge.et_vk.clamp_with_binary_add.default,
         exir_ops.edge.et_vk.clamp_with_binary_sub.default,
         exir_ops.edge.et_vk.clamp_with_binary_mul.default,
-        exir_ops.edge.et_vk.clamp_with_binary_div.default
+        exir_ops.edge.et_vk.clamp_with_binary_div.default,
     ]
 )
 def register_unary_op():
@@ -475,10 +479,6 @@ def register_2d_pool_op():
     [
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.et_vk.conv_with_clamp.default,
-        exir_ops.edge.et_vk.conv_with_binary_add.default,
-        exir_ops.edge.et_vk.conv_with_binary_sub.default,
-        exir_ops.edge.et_vk.conv_with_binary_mul.default,
-        exir_ops.edge.et_vk.conv_with_binary_div.default,
     ]
 )
 def register_convolution_op():
@@ -495,7 +495,6 @@ def register_convolution_op():
             utils.NO_STORAGE,  # groups (non tensor)
             utils.NO_STORAGE,  # output_min (non tensor)
             utils.NO_STORAGE,  # output_max (non tensor)
-            utils.NO_STORAGE,  # other (prepacked)
         ],
         supports_resize=True,
         supports_prepacking=True,

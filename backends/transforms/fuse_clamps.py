@@ -13,6 +13,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
+
 class FuseClampsPass(ExportPass):
 
     FUSEABLE_CLAMPS = [
@@ -40,7 +41,6 @@ class FuseClampsPass(ExportPass):
                 output_max = activation_node.args[2]
 
         return output_min, output_max
-        
 
     def call(self, graph_module: torch.fx.GraphModule):
         fuseAdded = True
@@ -55,13 +55,22 @@ class FuseClampsPass(ExportPass):
                             and preceding_op.target in self.FUSEABLE_CLAMPS
                         ):
                             # Ensure the shapes match
-                            if "val" not in clamp_2_node.args[0].meta or "val" not in preceding_op.args[0].meta:
+                            if (
+                                "val" not in clamp_2_node.args[0].meta
+                                or "val" not in preceding_op.args[0].meta
+                            ):
                                 continue
-                            if len(clamp_2_node.args[0].meta["val"].shape) != len(preceding_op.args[0].meta["val"].shape):
+                            if len(clamp_2_node.args[0].meta["val"].shape) != len(
+                                preceding_op.args[0].meta["val"].shape
+                            ):
                                 continue
 
-                            min_max1 = self.get_output_min_max_from_activation(preceding_op)
-                            min_max2 = self.get_output_min_max_from_activation(clamp_2_node)
+                            min_max1 = self.get_output_min_max_from_activation(
+                                preceding_op
+                            )
+                            min_max2 = self.get_output_min_max_from_activation(
+                                clamp_2_node
+                            )
 
                             min_max = [None, None]
 
@@ -71,7 +80,7 @@ class FuseClampsPass(ExportPass):
                                 min_max[0] = min_max1[0]
                             else:
                                 min_max[0] = min(min_max1[0], min_max2[0])
-                            
+
                             if min_max1[1] is None and min_max2[1] is not None:
                                 min_max[1] = min_max2[1]
                             elif min_max1[1] is not None and min_max2[1] is None:

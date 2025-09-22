@@ -69,6 +69,9 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}
 ${layout_declare_spec_const(C, "int", "in_layout", "DEFAULT_LAYOUT")}
 ${layout_declare_spec_const(C, "int", "other_layout", "DEFAULT_LAYOUT")}
+${layout_declare_spec_const(C, "int", "clamp_type", "0")}
+${layout_declare_spec_const(C, "float", "min_val", "0")}
+${layout_declare_spec_const(C, "float", "max_val", "0")}
 
 $if STORAGE == "buffer":
   const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
@@ -90,7 +93,20 @@ void main() {
 
   // Simple case; no broadcasting
   if (are_equal(inp, other)) {
-    t_out[out_bufi] = T(op(t_in[out_bufi], t_other[out_bufi], T(alpha)));
+    T in_val = T(t_in[out_bufi]);
+    T other_val = T(t_other[out_bufi]);
+    if (clamp_type == 1) {
+      in_val = T(clamp(in_val, T(min_val), T(max_val)));
+    }
+    else if (clamp_type == 2) {
+      other_val = T(clamp(other_val, T(min_val), T(max_val)));
+    }
+    T out_val = T(op(in_val, other_val, T(alpha)));
+    if (clamp_type == 3) {
+      out_val = T(clamp(out_val, T(min_val), T(max_val)));
+    }
+    t_out[out_bufi] = out_val;
+
     return;
   }
 
@@ -106,7 +122,19 @@ void main() {
   uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
   uint other_bufi = tensor_idx_to_linear_idx(other, other_tidx);
 
-  t_out[out_bufi] = T(op(t_in[inp_bufi], t_other[other_bufi], T(alpha)));
+  T in_val = T(t_in[inp_bufi]);
+  T other_val = T(t_other[other_bufi]);
+  if (clamp_type == 1) {
+    in_val = T(clamp(in_val, T(min_val), T(max_val)));
+  }
+  else if (clamp_type == 2) {
+    other_val = T(clamp(other_val, T(min_val), T(max_val)));
+  }
+  T out_val = T(op(in_val, other_val, T(alpha)));
+  if (clamp_type == 3) {
+    out_val = T(clamp(out_val, T(min_val), T(max_val)));
+  }
+  t_out[out_bufi] = out_val;
 }
 
 #else // USING_TEXTURE
@@ -126,12 +154,20 @@ void main() {
     // read axis mapped texel
     tidx_to_pos(in_idx, in_sizes, in_axis_map, packed_dim)));
 
+  if (clamp_type == 1) {
+    in_texel = clamp(in_texel, VEC4_T(min_val), VEC4_T(max_val));
+  }
+
   // broadcast on logical sizes
   ivec4 other_idx = broadcast_indices(tidx, other_sizes);
   VEC4_T other_texel = VEC4_T(load_texel(
     t_other,
     // read axis mapped texel
     tidx_to_pos(other_idx, other_sizes, other_axis_map, packed_dim)));
+
+  if (clamp_type == 2) {
+    in_texel = clamp(other_texel, VEC4_T(min_val), VEC4_T(max_val));
+  }
 
   // Check boolean broadcast flags; we use ivec2 instead of bvec2 for alignment.
   if (broadcast_params.x > 0) {
@@ -141,11 +177,20 @@ void main() {
     other_texel = other_texel.xxxx;
   }
 
-  write_texel_lpos(
-    t_out,
-    lpos,
-    VEC4_OUT_T(op(in_texel, other_texel, alpha)),
-    out_axis_map);
+  if (clamp_type != 3) {
+    write_texel_lpos(
+      t_out,
+      lpos,
+      VEC4_OUT_T(op(in_texel, other_texel, alpha)),
+      out_axis_map);
+  }
+  else {
+    write_texel_lpos(
+      t_out,
+      lpos,
+      VEC4_OUT_T(clamp(VEC4_OUT_T(op(in_texel, other_texel, alpha)), min_val, max_val)),
+      out_axis_map);
+  }
 }
 
 #endif

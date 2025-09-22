@@ -39,15 +39,10 @@ void add_unary_op_node(
     const float min,
     const float max,
     const ValueRef out,
-    const std::string& op_name,
-    const ValueRef other = kDummyValueRef) {
+    const std::string& op_name) {
   std::string kernel_name(op_name);
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
-
-  std::vector<ArgGroup> args = {{out, vkapi::kWrite}, {in, vkapi::kRead}};
-  std::vector<ArgGroup> args_with_binary_op = {
-      {out, vkapi::kWrite}, {{in, other}, vkapi::kRead}};
 
   const utils::vec2 min_max = {min, max};
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -56,7 +51,7 @@ void add_unary_op_node(
       default_pick_global_wg_size,
       default_pick_local_wg_size,
       // Inputs and Outputs
-      other == kDummyValueRef ? args : args_with_binary_op,
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
       // Shader params buffers
       {},
       // Push Constants
@@ -97,18 +92,6 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         get_val_or_inf(graph, args[2], /*max = */ true),                 \
         args[3],                                                         \
         kClampShaderName);                                               \
-  }
-
-#define DEFINE_CLAMP_BINARY_OP_FN(op_name)                               \
-  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    return add_unary_op_node(                                            \
-        graph,                                                           \
-        args[0],                                                         \
-        get_val_or_inf(graph, args[1], /*max = */ false),                \
-        get_val_or_inf(graph, args[2], /*max = */ true),                 \
-        args[args.size() - 1],                                           \
-        #op_name,                                                        \
-        args[3]);                                                        \
   }
 
 #define DEFINE_RELU_FN(op_name)                                          \
@@ -176,11 +159,6 @@ DEFINE_ACTIVATION_FN(hardsigmoid);
 DEFINE_LEAKY_RELU_FN(leaky_relu);
 DEFINE_ACTIVATION_FN(round);
 
-DEFINE_CLAMP_BINARY_OP_FN(clamp_add);
-DEFINE_CLAMP_BINARY_OP_FN(clamp_sub);
-DEFINE_CLAMP_BINARY_OP_FN(clamp_mul);
-DEFINE_CLAMP_BINARY_OP_FN(clamp_div);
-
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
@@ -201,11 +179,6 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.hardsigmoid.default, hardsigmoid);
   VK_REGISTER_OP(aten.leaky_relu.default, leaky_relu);
   VK_REGISTER_OP(aten.round.default, round);
-
-  VK_REGISTER_OP(et_vk.clamp_with_binary_add.default, clamp_add);
-  VK_REGISTER_OP(et_vk.clamp_with_binary_sub.default, clamp_sub);
-  VK_REGISTER_OP(et_vk.clamp_with_binary_mul.default, clamp_mul);
-  VK_REGISTER_OP(et_vk.clamp_with_binary_div.default, clamp_div);
 }
 
 } // namespace vkcompute

@@ -19,15 +19,3 @@ conv2d_pw_s1p0:
     - NAME: conv2d_pw_s1p0
     - NAME: conv2d_pw_s1p0_clamp
       OPERATOR: clamp(X, A, B)
-    - NAME: conv2d_pw_s1p0_add
-      FUSED_OP: A += B
-      IS_FUSED: 1
-    - NAME: conv2d_pw_s1p0_sub
-      FUSED_OP: A -= B
-      IS_FUSED: 1
-    - NAME: conv2d_pw_s1p0_mul
-      FUSED_OP: A *= B
-      IS_FUSED: 1
-    - NAME: conv2d_pw_s1p0_div
-      FUSED_OP: A /= B
-      IS_FUSED: 1

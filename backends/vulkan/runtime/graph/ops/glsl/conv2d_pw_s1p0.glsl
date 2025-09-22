@@ -30,10 +30,6 @@ ${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
 ${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
 ${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
 
-$if FUSED_OP != "A":
-  #define fused_op(A, B) ${FUSED_OP}
-  ${layout_declare_tensor(4, "r", "t_other", DTYPE, "texture3d")}
-
 layout(push_constant) uniform restrict Block {
   ivec4 out_limits;
   ivec2 stride;
@@ -141,9 +137,5 @@ void main() {
     outputTexel[3] += dot(inputVec, VEC4_T(weight1OutputChannelPacked[3], weight2OutputChannelPacked[3], weight3OutputChannelPacked[3], weight4OutputChannelPacked[3]));
   }
 
-$if FUSED_OP != "A":
-  VEC4_T otherTexel = VEC4_T(texelFetch(t_other, ivec3(xIdx, yIdx, threadOutChannel), 0));
-  fused_op(outputTexel, otherTexel);
-
-imageStore(t_out, ivec3(xIdx, yIdx, threadOutChannel), op(vec4(outputTexel), out_min, out_max));
+  imageStore(t_out, ivec3(xIdx, yIdx, threadOutChannel), op(vec4(outputTexel), out_min, out_max));
 }
