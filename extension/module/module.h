@@ -206,21 +206,6 @@ class Module {
   }
 
   /**
-   * DEPRECATED: Module manages each Method exclusively.
-   *
-   * Get a method by it's name. Not recommended to use this method directly as
-   * an end user. It's exposed to allow for composability of module in apis that
-   * operate on method.
-   *
-   * @param[in] method_name The name of the method to get.
-   *
-   * @returns A Result object containing either a pointer to the requested
-   *          method or an error to indicate failure.
-   */
-  ET_DEPRECATED ET_NODISCARD runtime::Result<Method*> method(
-      const std::string& method_name);
-
-  /**
    * Load the 'forward' method from the program and set up memory management if
    * needed. The loaded method is cached to reuse the next time it's executed.
    *

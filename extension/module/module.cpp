@@ -215,12 +215,6 @@ runtime::Error Module::load_method(
   return runtime::Error::Ok;
 }
 
-ET_NODISCARD runtime::Result<Method*> Module::method(
-    const std::string& method_name) {
-  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
-  return methods_[method_name].method.get();
-}
-
 runtime::Result<MethodMeta> Module::method_meta(
     const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
