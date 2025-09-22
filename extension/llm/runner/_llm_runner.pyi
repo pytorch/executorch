@@ -4,11 +4,9 @@ Type stubs for _llm_runner module.
 This file provides type annotations for the ExecuTorch LLM Runner Python bindings.
 """
 
-from typing import Callable, List, Optional, Union, overload
+from typing import Callable, List, Optional, overload
 
-import numpy as np
 import torch
-from numpy.typing import NDArray
 
 class GenerationConfig:
     """Configuration for text generation."""
