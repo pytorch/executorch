@@ -826,8 +826,7 @@ You can see how  this coupling between the memory mode and runtime application i
 <div class="section" id="bundled-io-and-etdump">
 <h3>Bundled.io and ETdump<a class="headerlink" href="#bundled-io-and-etdump" title="Permalink to this heading">¶</a></h3>
 <p>The arm_executor_runner supports <a class="reference external" href="https://docs.pytorch.org/executorch/0.4/bundled-io.html">bundled-io</a> and <a class="reference external" href="https://docs.pytorch.org/executorch/stable/etdump.html">ETdump</a> debugging tools.</p>
-<p>To enable bundled-io, set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_DEVTOOLS</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">DET_BUNDLE_IO</span></code> when building the executor_runner. Currently using bundled-io requires specifying your
-non delegated Aten ops manually by setting <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code>. To enable ETdump, set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_ARM_ETDUMP</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">DEXECUTORCH_ENABLE_EVENT_TRACER</span></code>
+<p>To enable bundled-io, set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_DEVTOOLS</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">DET_BUNDLE_IO</span></code> when building the executor_runner. To enable ETdump, set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_ARM_ETDUMP</span></code> when building Executorch and <code class="docutils literal notranslate"><span class="pre">DEXECUTORCH_ENABLE_EVENT_TRACER</span></code>
 when building the executor_runner.</p>
 </div>
 </div>
