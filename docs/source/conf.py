@@ -186,7 +186,7 @@ html_theme_options = {
     "navigation_with_keys": False,
     "canonical_url": "https://docs.pytorch.org/executorch/stable/",
     "switcher": {
-        "json_url": "https://docs.pytorch.org/docs/pytorch-versions.json",  # for testing only, will need to replace to the correct json file on the executorch website when it's added in the repo.
+        "json_url": "https://docs.pytorch.org/executorch/executorch-versions.json",  # for testing only, will need to replace to the correct json file on the executorch website when it's added in the repo.
         "version_match": switcher_version,
     },
     "show_toc_level": 2,
