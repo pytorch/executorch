@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,6 +29,10 @@ target_compile_options(
 )
 
 # Link against required libraries
+if(TARGET bundled_program)
+  target_compile_definitions(selective_build PRIVATE -DET_BUNDLE_IO)
+  target_link_libraries(selective_build PRIVATE bundled_program)
+endif()
 target_link_libraries(selective_build PRIVATE executorch_core program_schema)
 
 # Install the module
