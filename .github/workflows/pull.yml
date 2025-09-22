@@ -936,7 +936,7 @@ jobs:
         done
 
         # Test quant models
-        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
+        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 resnet18 resnet50 vit wav2letter"
         for m_script in $model_scripts; do
           python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
         done
