@@ -629,11 +629,11 @@ jobs:
         model: ["gemma3-4b", "llava"] # llava is probably too big so not covering it here.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: macos-14-xlarge
+      runner: macos-15-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 900
+      timeout: 90
       script: |
         echo "::group::Setup ExecuTorch"
         bash .ci/scripts/setup-conda.sh
@@ -643,9 +643,10 @@ jobs:
 
         echo "::group::Setup Huggingface"
         ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
-        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        ${CONDA_RUN} pip list
         echo "::endgroup::"
 
         echo "::group::Test ${{ matrix.model }}"
