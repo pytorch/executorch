@@ -626,7 +626,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: ["gemma3-4b"] # llava is probably too big so not covering it here.
+        model: ["gemma3-4b", "llava"] # llava is probably too big so not covering it here.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-14-xlarge
@@ -642,7 +642,7 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
-        ${CONDA_RUN} pip install -U "huggingface_hub[cli]"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
         ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
