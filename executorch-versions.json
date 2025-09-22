@@ -1,6 +1,6 @@
 [
   {
-    "name": "vmain (unstable)",
+    "name": "main (unstable)",
     "version": "main",
     "url": "https://pytorch.org/executorch/main/"
   },
