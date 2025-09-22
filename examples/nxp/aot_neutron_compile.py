@@ -23,9 +23,13 @@ from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
 from executorch.extension.export_util import save_pte_program
-from executorch.extension.export_util.utils import export_to_edge
+from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
@@ -249,37 +253,28 @@ if __name__ == "__main__":  # noqa C901
         quantized_str = "quantized " if args.quantize else ""
         print(f"\nAccuracy of the {quantized_str}`{args.model_name}`: {accuracy}\n")
 
-    # 4. Export to edge program
-    edge_compile_config = EdgeCompileConfig()
-    edge_program_manager = export_to_edge(
-        module,
-        example_inputs,
-        edge_compile_config=edge_compile_config,
-    )
+    # 4. Transform and lower
 
-    logging.debug(f"Exported graph:\n{edge_program_manager.exported_program().graph}")
+    compile_spec = generate_neutron_compile_spec(
+        args.target,
+        operators_not_to_delegate=args.operators_not_to_delegate,
+        neutron_converter_flavor=args.neutron_converter_flavor,
+    )
+    partitioners = [NeutronPartitioner(compile_spec)] if args.delegate else []
+
+    edge_program_manager = to_edge_transform_and_lower(
+        export(module, example_inputs, strict=True),
+        partitioner=partitioners,
+        compile_config=EdgeCompileConfig(),
+    )
 
     edge_program_manager = NeutronEdgePassManager(
         remove_io_quant_ops=args.remove_quant_io_ops
     )(edge_program_manager)
 
-    # 5. Delegate to Neutron
-    if args.delegate:
-        logging.info("Executing Neutron Partitioner and Delegate")
+    logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
 
-        compile_spec = generate_neutron_compile_spec(
-            args.target,
-            operators_not_to_delegate=args.operators_not_to_delegate,
-            neutron_converter_flavor=args.neutron_converter_flavor,
-        )
-        partitioner = NeutronPartitioner(compile_spec)
-
-        edge_program_manager = edge_program_manager.to_backend(partitioner)
-        logging.debug(
-            f"Lowered graph:\n{edge_program_manager.exported_program().graph}"
-        )
-
-    # 6. Export to ExecuTorch program
+    # 5. Export to ExecuTorch program
     try:
         exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
@@ -301,7 +296,7 @@ if __name__ == "__main__":  # noqa C901
 
     logging.debug(f"Executorch program:\n{executorch_program_to_str(exec_prog)}")
 
-    # 7. Serialize to *.pte
+    # 6. Serialize to *.pte
     model_name = f"{args.model_name}" + (
         "_nxp_delegate" if args.delegate is True else ""
     )
