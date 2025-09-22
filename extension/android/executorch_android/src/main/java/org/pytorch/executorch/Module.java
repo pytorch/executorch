@@ -204,10 +204,9 @@ public class Module {
       throw new RuntimeException("method " + name + "does not exist for this module");
     }
 
-    MethodMetadata methodMetadata =mMethodMetadata.get(name);
+    MethodMetadata methodMetadata = mMethodMetadata.get(name);
     if (methodMetadata != null) {
       methodMetadata.setBackends(getUsedBackends(name));
-
     }
     return methodMetadata;
   }
