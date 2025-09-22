@@ -4,7 +4,7 @@ Type stubs for _llm_runner module.
 This file provides type annotations for the ExecuTorch LLM Runner Python bindings.
 """
 
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Union, overload
 
 import numpy as np
 import torch
@@ -134,14 +134,17 @@ class Stats:
 class Image:
     """Container for image data."""
 
+    @overload
     def __init__(self) -> None:
         """Initialize an empty Image."""
         ...
 
+    @overload
     def __init__(self, data: List[int], width: int, height: int, channels: int) -> None:
         """Initialize an Image with uint8 data."""
         ...
 
+    @overload
     def __init__(
         self, data: List[float], width: int, height: int, channels: int
     ) -> None:
@@ -198,10 +201,12 @@ class Audio:
     n_frames: int
     """Number of time frames."""
 
+    @overload
     def __init__(self) -> None:
         """Initialize an empty Audio."""
         ...
 
+    @overload
     def __init__(
         self, data: List[int], batch_size: int, n_bins: int, n_frames: int
     ) -> None:
@@ -225,10 +230,12 @@ class RawAudio:
     n_samples: int
     """Number of audio samples."""
 
+    @overload
     def __init__(self) -> None:
         """Initialize an empty RawAudio."""
         ...
 
+    @overload
     def __init__(
         self, data: List[int], batch_size: int, n_channels: int, n_samples: int
     ) -> None:
@@ -240,6 +247,7 @@ class RawAudio:
 class MultimodalInput:
     """Container for multimodal input data (text, image, audio, etc.)."""
 
+    @overload
     def __init__(self, text: str) -> None:
         """
         Create a MultimodalInput with text.
@@ -249,6 +257,7 @@ class MultimodalInput:
         """
         ...
 
+    @overload
     def __init__(self, image: Image) -> None:
         """
         Create a MultimodalInput with an image.
@@ -258,6 +267,7 @@ class MultimodalInput:
         """
         ...
 
+    @overload
     def __init__(self, audio: Audio) -> None:
         """
         Create a MultimodalInput with preprocessed audio.
@@ -267,6 +277,7 @@ class MultimodalInput:
         """
         ...
 
+    @overload
     def __init__(self, raw_audio: RawAudio) -> None:
         """
         Create a MultimodalInput with raw audio.
@@ -347,6 +358,7 @@ class MultimodalRunner:
             RuntimeError: If initialization fails
         """
         ...
+
     def generate(
         self,
         inputs: List[MultimodalInput],
@@ -366,7 +378,7 @@ class MultimodalRunner:
         Raises:
             RuntimeError: If generation fails
         """
-    ...
+        ...
 
     def generate_hf(
         self,
@@ -424,9 +436,11 @@ class MultimodalRunner:
         Raises:
             RuntimeError: If generation fails
         """
-    ...
+        ...
 
-    def generate_text_hf(self, inputs: dict, config: GenerationConfig, image_token_id) -> str:
+    def generate_text_hf(
+        self, inputs: dict, config: GenerationConfig, image_token_id
+    ) -> str:
         """
         Generate text directly from a HuggingFace processor dict and return as string.
 

@@ -32,9 +32,10 @@ except ImportError:
 
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 import torch
+from transformers.feature_extraction_utils import BatchFeature
 
 
 def _find_image_token_runs(
@@ -65,13 +66,13 @@ def _find_image_token_runs(
 
 
 def _hf_to_multimodal_inputs(  # noqa: C901
-    inputs: Dict[str, Any], image_token_id: Optional[int] = None
+    inputs: BatchFeature, image_token_id: Optional[int] = None
 ) -> List[MultimodalInput]:
     """Convert a HuggingFace AutoProcessor dict to ExecuTorch MultimodalInputs.
     Currently only support 1 image inside the input.
 
     Args:
-      - inputs: A dictionary containing the input data.
+      - inputs: A BatchFeature containing the input data.
       - image_token_id: The token ID for the image, if present.
 
     `inputs` expected keys:
@@ -168,38 +169,50 @@ def _hf_to_multimodal_inputs(  # noqa: C901
 
 def generate_hf(
     runner: MultimodalRunner,
-    inputs: Union[Dict[str, Any], List[MultimodalInput]],
+    inputs: Union[BatchFeature, List[MultimodalInput]],
     config: GenerationConfig,
     image_token_id: Optional[int] = None,
     token_callback: Optional[Callable[[str], None]] = None,
     stats_callback: Optional[Callable[[Stats], None]] = None,
 ) -> None:
-    """Generate using an HF dict by converting to multimodal inputs internally, or using a list of MultimodalInput."""
-    if isinstance(inputs, dict):
+    """Generate using an BatchFeature by converting to multimodal inputs internally, or using a list of MultimodalInput."""
+    if isinstance(inputs, BatchFeature):
         logging.info(
-            "Input is a dict, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
+            "Input is a BatchFeature, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
         )
         converted = _hf_to_multimodal_inputs(inputs, image_token_id=image_token_id)
-    else:
+    elif isinstance(inputs, list) and all(
+        isinstance(i, MultimodalInput) for i in inputs
+    ):
         converted = inputs
+    else:
+        raise RuntimeError(
+            "inputs must be either a BatchFeature (from HF AutoProcessor) or a list of MultimodalInput"
+        )
 
     runner.generate(converted, config, token_callback, stats_callback)
 
 
 def generate_text_hf(
     runner: MultimodalRunner,
-    inputs: Union[Dict[str, Any], List[MultimodalInput]],
+    inputs: Union[BatchFeature, List[MultimodalInput]],
     config: GenerationConfig,
     image_token_id: Optional[int] = None,
 ) -> str:
-    """Generate using an HF dict by converting to multimodal inputs internally, or using a list of MultimodalInput."""
-    if isinstance(inputs, dict):
+    """Generate using an BatchFeature by converting to multimodal inputs internally, or using a list of MultimodalInput."""
+    if isinstance(inputs, BatchFeature):
         logging.info(
-            "Input is a dict, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
+            "Input is a BatchFeature, assuming it's coming from HF AutoProcessor.apply_chat_template(). Converting to multimodal inputs."
         )
         converted = _hf_to_multimodal_inputs(inputs, image_token_id=image_token_id)
-    else:
+    elif isinstance(inputs, list) and all(
+        isinstance(i, MultimodalInput) for i in inputs
+    ):
         converted = inputs
+    else:
+        raise RuntimeError(
+            "inputs must be either a BatchFeature (from HF AutoProcessor) or a list of MultimodalInput"
+        )
 
     return runner.generate_text(converted, config)
 

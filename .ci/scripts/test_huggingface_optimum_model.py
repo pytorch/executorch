@@ -230,18 +230,13 @@ def test_llm_with_image_modality(
         return_tensors="pt",
     )
 
-    import torch
-
-    from executorch.extension.llm.runner import (
-        GenerationConfig,
-        make_image_input,
-        make_token_input,
-        MultimodalRunner,
-    )
+    from executorch.extension.llm.runner import GenerationConfig, MultimodalRunner
 
     runner = MultimodalRunner(f"{model_dir}/model.pte", f"{model_dir}/tokenizer.model")
     generated_text = runner.generate_text_hf(
-        inputs, GenerationConfig(max_new_tokens=128, temperature=0, echo=False), processor.image_token_id
+        inputs,
+        GenerationConfig(max_new_tokens=128, temperature=0, echo=False),
+        processor.image_token_id,
     )
     print(f"\nGenerated text:\n\t{generated_text}")
     # Free memory before loading eager for quality check
