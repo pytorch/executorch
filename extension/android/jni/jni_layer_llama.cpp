@@ -123,7 +123,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<executorch::extension::llm::MultimodalRunner>
       multi_modal_runner_;
-  std::vector<llm::MultimodalInput> prefill_inputs_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -213,8 +212,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
+      std::vector<llm::MultimodalInput> inputs;
       if (!prompt->toStdString().empty()) {
         inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       }
@@ -247,9 +245,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   // Contract is valid within an AAR (JNI + corresponding Java code)
   jint prefill_text_input(facebook::jni::alias_ref<jstring> prompt) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
+      runner_->prefill(prompt->toStdString(), {});
+      return 0;
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      multi_modal_runner_->prefill(llm::MultimodalInput{prompt->toStdString()});
+      multi_modal_runner_->prefill(
+          {llm::MultimodalInput{prompt->toStdString()}});
       return 0;
     }
   }
@@ -260,10 +260,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint height,
       jint channels) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return Error::InvalidArgument;
+      return static_cast<jint>(Error::InvalidArgument);
     }
     if (image == nullptr) {
-      return Error::InvalidArgument;
+      return static_cast<jint>(Error::InvalidArgument);
     }
     std::vector<llm::Image> images;
     if (image == nullptr) {
@@ -278,7 +278,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         image_data[i] = image_data_jint[i];
       }
       llm::Image image_runner{std::move(image_data), width, height, channels};
-      multi_modal_runner_->prefill(llm::MultimodalInput{std::move(image_runner)});
+      multi_modal_runner_->prefill(
+          {llm::MultimodalInput{std::move(image_runner)}});
     }
 
     return 0;
@@ -290,10 +291,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       jint n_channels,
       jint n_samples) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return Error::InvalidArgument;
+      return static_cast<jint>(Error::InvalidArgument);
     }
     if (audio == nullptr) {
-      return Error::InvalidArgument;
+      return static_cast<jint>(Error::InvalidArgument);
     }
     auto audio_size = audio->size();
     std::vector<uint8_t> audio_data(audio_size);
@@ -304,7 +305,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         audio_data[i] = audio_data_jint[i];
       }
       llm::RawAudio audio_input{audio_data, batch_size, n_channels, n_samples};
-      multi_modal_runner_->prefill(llm::MultimodalInput{std::move(audio_input)});
+      multi_modal_runner_->prefill(
+          {llm::MultimodalInput{std::move(audio_input)}});
     }
     return 0;
   }
