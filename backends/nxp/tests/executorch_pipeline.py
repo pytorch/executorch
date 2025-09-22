@@ -15,9 +15,6 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
-from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
-    RemoveIOQuantOpsPass,
-)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -115,12 +112,9 @@ def to_quantized_edge_program(
         edge_compile_config=edge_compile_config,
     )
 
-    edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
-
-    if remove_quant_io_ops:
-        edge_program_manager = edge_program_manager.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
-        )
+    edge_program_manager = NeutronEdgePassManager(
+        remove_io_quant_ops=remove_quant_io_ops
+    )(edge_program_manager)
 
     compile_spec = generate_neutron_compile_spec(
         target,

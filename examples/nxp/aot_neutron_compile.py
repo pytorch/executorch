@@ -15,9 +15,6 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
-from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
-    RemoveIOQuantOpsPass,
-)
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
@@ -262,12 +259,9 @@ if __name__ == "__main__":  # noqa C901
 
     logging.debug(f"Exported graph:\n{edge_program_manager.exported_program().graph}")
 
-    edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
-
-    if args.remove_quant_io_ops:
-        edge_program_manager = edge_program_manager.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
-        )
+    edge_program_manager = NeutronEdgePassManager(
+        remove_io_quant_ops=args.remove_quant_io_ops
+    )(edge_program_manager)
 
     # 5. Delegate to Neutron
     if args.delegate:
