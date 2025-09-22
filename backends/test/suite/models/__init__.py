@@ -25,66 +25,37 @@ DTYPES: list[torch.dtype] = [
 ]
 
 
-def load_tests(loader, suite, pattern):
-    package_dir = os.path.dirname(__file__)
-    discovered_suite = loader.discover(
-        start_dir=package_dir, pattern=pattern or "test_*.py"
-    )
-    suite.addTests(discovered_suite)
-    return suite
+class ModelTest(unittest.TestCase):
+    pass
 
 
-def _create_test(
-    cls,
-    test_func: Callable,
-    flow: TestFlow,
-    dtype: torch.dtype,
-    use_dynamic_shapes: bool,
-):
-    dtype_name = str(dtype)[6:]  # strip "torch."
-    test_name = f"{test_func.__name__}_{flow.name}_{dtype_name}"
-    if use_dynamic_shapes:
-        test_name += "_dynamic_shape"
+class TestCaseShim:
+    def __init__(self, test_runner):
+        self._test_runner = test_runner
 
-    def wrapped_test(self):
-        params = {
-            "dtype": dtype,
-            "use_dynamic_shapes": use_dynamic_shapes,
-        }
-        with TestContext(test_name, test_func.__name__, flow.name, params):
-            if flow.should_skip_test(test_name):
-                raise unittest.SkipTest(
-                    f"Skipping test due to matching flow {flow.name} skip patterns"
-                )
-
-            test_func(self, flow, dtype, use_dynamic_shapes)
-
-    wrapped_test._name = test_func.__name__  # type: ignore
-    wrapped_test._flow = flow  # type: ignore
-
-    setattr(cls, test_name, wrapped_test)
+    def _test_op(self, model, args, flow, generate_random_test_inputs=True):
+        self._test_runner.lower_and_run_model(model, args)
 
 
-# Expand a test into variants for each registered flow.
-def _expand_test(cls, test_name: str) -> None:
-    test_func = getattr(cls, test_name)
-    supports_dynamic_shapes = getattr(test_func, "supports_dynamic_shapes", True)
-    dynamic_shape_values = [True, False] if supports_dynamic_shapes else [False]
-    dtypes = getattr(test_func, "dtypes", DTYPES)
+def wrap_test(original_func, test_type):
+    def wrapped_func(test_runner):
+        shim = TestCaseShim(test_runner)
+        original_func(shim, test_runner._flow)
 
-    for flow, dtype, use_dynamic_shapes in itertools.product(
-        get_test_flows().values(), dtypes, dynamic_shape_values
-    ):
-        _create_test(cls, test_func, flow, dtype, use_dynamic_shapes)
-    delattr(cls, test_name)
+    return wrapped_func
 
 
-def model_test_cls(cls) -> Callable | None:
-    """Decorator for model tests. Handles generating test variants for each test flow and configuration."""
-    for key in dir(cls):
-        if key.startswith("test_"):
-            _expand_test(cls, key)
-    return cls
+def model_test_cls(cls):
+    parent_module = sys.modules[cls.__module__]
+
+    for func_name in dir(cls):
+        if func_name.startswith("test"):
+            original_func = getattr(cls, func_name)
+            test_type = getattr(original_func, "test_type", TestType.STANDARD)
+            wrapped_func = wrap_test(original_func, test_type)
+            setattr(parent_module, func_name, wrapped_func)
+
+    return None
 
 
 def model_test_params(
@@ -102,39 +73,3 @@ def model_test_params(
         return func
 
     return inner_decorator
-
-
-def run_model_test(
-    model: torch.nn.Module,
-    inputs: tuple[Any],
-    flow: TestFlow,
-    dtype: torch.dtype,
-    dynamic_shapes: Any | None,
-):
-    model = model.to(dtype)
-    context = get_active_test_context()
-
-    # This should be set in the wrapped test. See _create_test above.
-    assert context is not None, "Missing test context."
-
-    run_summary = run_test(
-        model,
-        inputs,
-        flow,
-        context.test_name,
-        context.test_base_name,
-        0,  # subtest_index - currently unused for model tests
-        context.params,
-        dynamic_shapes=dynamic_shapes,
-    )
-
-    log_test_summary(run_summary)
-
-    if not run_summary.result.is_success():
-        if run_summary.result.is_backend_failure():
-            raise RuntimeError("Test failure.") from run_summary.error
-        else:
-            # Non-backend failure indicates a bad test. Mark as skipped.
-            raise unittest.SkipTest(
-                f"Test failed for reasons other than backend failure. Error: {run_summary.error}"
-            )
