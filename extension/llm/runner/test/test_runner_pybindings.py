@@ -16,7 +16,7 @@ import os
 import tempfile
 import unittest
 
-import numpy as np
+import torch
 from executorch.extension.llm.runner import (
     GenerationConfig,
     Image,
@@ -118,25 +118,18 @@ class TestImage(unittest.TestCase):
 
     def test_creation(self):
         """Test creating an Image object."""
-        image = Image()
+        # Construct using binding constructor (uint8 data)
+        image = Image([1, 2, 3, 4], 2, 2, 1)
 
-        # Set properties
-        image.data = [1, 2, 3, 4]
-        image.width = 2
-        image.height = 2
-        image.channels = 1
-
-        self.assertEqual(image.data, [1, 2, 3, 4])
+        # Properties are read-only
+        self.assertEqual(image.uint8_data, [1, 2, 3, 4])
         self.assertEqual(image.width, 2)
         self.assertEqual(image.height, 2)
         self.assertEqual(image.channels, 1)
 
     def test_repr(self):
         """Test string representation."""
-        image = Image()
-        image.width = 640
-        image.height = 480
-        image.channels = 3
+        image = Image([0] * (480 * 640 * 3), 640, 480, 3)
 
         repr_str = repr(image)
         self.assertIn("Image", repr_str)
@@ -164,33 +157,29 @@ class TestMultimodalInput(unittest.TestCase):
     def test_image_input(self):
         """Test creating an image MultimodalInput."""
         # Create an image
-        image = Image()
-        image.data = [255] * (100 * 100 * 3)
-        image.width = 100
-        image.height = 100
-        image.channels = 3
+        image = Image([255] * (100 * 100 * 3), 100, 100, 3)
 
         # Test direct constructor
         image_input = MultimodalInput(image)
         self.assertTrue(image_input.is_image())
         self.assertFalse(image_input.is_text())
 
-        # Test helper function with numpy array
-        img_array = np.ones((50, 60, 3), dtype=np.uint8) * 128
-        image_input2 = make_image_input(img_array)
+        # Test helper function with torch tensor (CHW)
+        img_tensor = torch.ones((3, 50, 60), dtype=torch.uint8) * 128
+        image_input2 = make_image_input(img_tensor)
         self.assertTrue(image_input2.is_image())
         self.assertFalse(image_input2.is_text())
 
     def test_invalid_image_array(self):
         """Test error handling for invalid image arrays."""
-        # Wrong dimensions
+        # Wrong dimensions (expects 3D or 4D tensor)
         with self.assertRaises(RuntimeError) as cm:
-            make_image_input(np.ones((100,), dtype=np.uint8))
+            make_image_input(torch.ones((100,), dtype=torch.uint8))
         self.assertIn("3-dimensional", str(cm.exception))
 
         # Wrong number of channels
         with self.assertRaises(RuntimeError) as cm:
-            make_image_input(np.ones((100, 100, 2), dtype=np.uint8))
+            make_image_input(torch.ones((2, 100, 100), dtype=torch.uint8))
         self.assertIn("3 (RGB) or 4 (RGBA)", str(cm.exception))
 
     def test_repr(self):
@@ -209,7 +198,7 @@ class TestMultimodalInput(unittest.TestCase):
         self.assertIn("...", repr_str2)
 
         # Image input
-        image = Image()
+        image = Image([0, 0, 0], 1, 1, 3)
         image_input = MultimodalInput(image)
         repr_str3 = repr(image_input)
         self.assertIn("type=image", repr_str3)
@@ -256,14 +245,14 @@ class TestHelperFunctions(unittest.TestCase):
 
     def test_make_image_input(self):
         """Test make_image_input helper."""
-        # Create a test image array (RGB)
-        img_array = np.zeros((100, 150, 3), dtype=np.uint8)
-        img_array[:, :, 0] = 255  # Red channel
+        # Create a test image tensor (RGB, CHW)
+        img_tensor = torch.zeros((3, 100, 150), dtype=torch.uint8)
+        img_tensor[0, :, :] = 255  # Red channel
 
-        image_input = make_image_input(img_array)
+        image_input = make_image_input(img_tensor)
         self.assertTrue(image_input.is_image())
 
-        # Test with RGBA
-        img_array_rgba = np.ones((50, 50, 4), dtype=np.uint8) * 128
-        image_input_rgba = make_image_input(img_array_rgba)
+        # Test with RGBA (CHW)
+        img_tensor_rgba = torch.ones((4, 50, 50), dtype=torch.uint8) * 128
+        image_input_rgba = make_image_input(img_tensor_rgba)
         self.assertTrue(image_input_rgba.is_image())

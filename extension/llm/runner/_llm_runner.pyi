@@ -368,6 +368,31 @@ class MultimodalRunner:
         Raises:
             RuntimeError: If generation fails
         """
+    ...
+
+    def generate(
+        self,
+        inputs: dict,
+        config: GenerationConfig,
+        token_callback: Optional[Callable[[str], None]] = None,
+        stats_callback: Optional[Callable[[Stats], None]] = None,
+    ) -> None:
+        """
+        Generate text directly from a HuggingFace processor dict.
+
+        Expects at least 'input_ids' (torch.Tensor). If 'pixel_values' is provided,
+        an 'image_token_id' (or 'image_token_index') must also be present to locate
+        the image position(s) in input_ids.
+
+        Args:
+            inputs: HF processor outputs (e.g., from AutoProcessor.apply_chat_template)
+            config: Generation configuration
+            token_callback: Optional per-token callback
+            stats_callback: Optional stats callback
+
+        Raises:
+            RuntimeError: If required keys are missing, shapes are invalid, or generation fails
+        """
         ...
 
     def prefill(self, inputs: List[MultimodalInput]) -> None:
@@ -398,6 +423,14 @@ class MultimodalRunner:
 
         Raises:
             RuntimeError: If generation fails
+        """
+    ...
+
+    def generate_text(self, inputs: dict, config: GenerationConfig) -> str:
+        """
+        Generate text directly from a HuggingFace processor dict and return as string.
+
+        See generate(inputs: dict, ...) for expected keys and constraints.
         """
         ...
 
