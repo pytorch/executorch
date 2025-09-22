@@ -173,15 +173,15 @@ PYBIND11_MODULE(_llm_runner, m) {
                       float temperature,
                       int32_t num_bos,
                       int32_t num_eos) {
-            GenerationConfig cfg;
-            cfg.echo = echo;
-            cfg.max_new_tokens = max_new_tokens;
-            cfg.warming = warming;
-            cfg.seq_len = seq_len;
-            cfg.temperature = temperature;
-            cfg.num_bos = num_bos;
-            cfg.num_eos = num_eos;
-            return cfg;
+    GenerationConfig cfg;
+    cfg.echo = echo;
+    cfg.max_new_tokens = max_new_tokens;
+    cfg.warming = warming;
+    cfg.seq_len = seq_len;
+    cfg.temperature = temperature;
+    cfg.num_bos = num_bos;
+    cfg.num_eos = num_eos;
+    return cfg;
           }),
           py::arg("echo") = true,
           py::arg("max_new_tokens") = -1,
@@ -204,12 +204,12 @@ PYBIND11_MODULE(_llm_runner, m) {
           py::arg("num_prompt_tokens"),
           "Resolve the maximum number of new tokens to generate based on constraints")
       .def("__repr__", [](const GenerationConfig& config) {
-        return "<GenerationConfig max_new_tokens=" +
-            std::to_string(config.max_new_tokens) +
-            " seq_len=" + std::to_string(config.seq_len) +
-            " temperature=" + std::to_string(config.temperature) +
-            " echo=" + (config.echo ? "True" : "False") +
-            " warming=" + (config.warming ? "True" : "False") + ">";
+    return "<GenerationConfig max_new_tokens=" +
+        std::to_string(config.max_new_tokens) +
+        " seq_len=" + std::to_string(config.seq_len) +
+        " temperature=" + std::to_string(config.temperature) +
+        " echo=" + (config.echo ? "True" : "False") +
+        " warming=" + (config.warming ? "True" : "False") + ">";
       });
 
   // Bind Stats
