@@ -232,15 +232,6 @@ def test_llm_with_image_modality(
 
     import torch
 
-    first_image_id_index = torch.where(inputs["input_ids"] == processor.image_token_id)[
-        1
-    ][0].item()
-    last_image_id_index = torch.where(inputs["input_ids"] == processor.image_token_id)[
-        1
-    ][-1].item()
-
-    prompt_before_image = inputs["input_ids"][0, :first_image_id_index]
-    prompt_after_image = inputs["input_ids"][0, last_image_id_index + 1 :]
     from executorch.extension.llm.runner import (
         GenerationConfig,
         make_image_input,
@@ -248,14 +239,9 @@ def test_llm_with_image_modality(
         MultimodalRunner,
     )
 
-    combined_inputs = [
-        make_token_input(prompt_before_image.tolist()),
-        make_image_input(inputs["pixel_values"]),
-        make_token_input(prompt_after_image.tolist()),
-    ]
     runner = MultimodalRunner(f"{model_dir}/model.pte", f"{model_dir}/tokenizer.model")
-    generated_text = runner.generate_text(
-        combined_inputs, GenerationConfig(max_new_tokens=128, temperature=0, echo=False)
+    generated_text = runner.generate_text_hf(
+        inputs, GenerationConfig(max_new_tokens=128, temperature=0, echo=False), processor.image_token_id
     )
     print(f"\nGenerated text:\n\t{generated_text}")
     # Free memory before loading eager for quality check

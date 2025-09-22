@@ -166,7 +166,7 @@ def _hf_to_multimodal_inputs(  # noqa: C901
     return combined
 
 
-def generate(
+def generate_hf(
     runner: MultimodalRunner,
     inputs: Union[Dict[str, Any], List[MultimodalInput]],
     config: GenerationConfig,
@@ -186,7 +186,7 @@ def generate(
     runner.generate(converted, config, token_callback, stats_callback)
 
 
-def generate_text(
+def generate_text_hf(
     runner: MultimodalRunner,
     inputs: Union[Dict[str, Any], List[MultimodalInput]],
     config: GenerationConfig,
@@ -204,8 +204,8 @@ def generate_text(
     return runner.generate_text(converted, config)
 
 
-setattr(MultimodalRunner, "generate", generate)  # noqa B010
-setattr(MultimodalRunner, "generate_text", generate_text)  # noqa B010
+setattr(MultimodalRunner, "generate_hf", generate_hf)  # noqa B010
+setattr(MultimodalRunner, "generate_text_hf", generate_text_hf)  # noqa B010
 
 
 __all__ = [

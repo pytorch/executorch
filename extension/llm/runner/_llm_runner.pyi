@@ -368,12 +368,13 @@ class MultimodalRunner:
         """
     ...
 
-    def generate(
+    def generate_hf(
         self,
         inputs: dict,
         config: GenerationConfig,
         token_callback: Optional[Callable[[str], None]] = None,
         stats_callback: Optional[Callable[[Stats], None]] = None,
+        image_token_id: Optional[int] = None,
     ) -> None:
         """
         Generate text directly from a HuggingFace processor dict.
@@ -387,6 +388,7 @@ class MultimodalRunner:
             config: Generation configuration
             token_callback: Optional per-token callback
             stats_callback: Optional stats callback
+            image_token_id: Optional image token ID (or index)
 
         Raises:
             RuntimeError: If required keys are missing, shapes are invalid, or generation fails
@@ -424,11 +426,11 @@ class MultimodalRunner:
         """
     ...
 
-    def generate_text(self, inputs: dict, config: GenerationConfig) -> str:
+    def generate_text_hf(self, inputs: dict, config: GenerationConfig, image_token_id) -> str:
         """
         Generate text directly from a HuggingFace processor dict and return as string.
 
-        See generate(inputs: dict, ...) for expected keys and constraints.
+        See generate_hf(inputs: dict, ...) for expected keys and constraints.
         """
         ...
 
