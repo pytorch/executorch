@@ -10,6 +10,8 @@ from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfi
 from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_director import (
     AtenModelBuilderDirector,
 )
+from executorch.backends.nxp.backend.node_format_inference import NodeFormat
+from torch import Node
 from torch.nn import Parameter
 
 
@@ -17,6 +19,7 @@ class ConversionContext:
     tflite_builder: AtenModelBuilderDirector
     conversion_config: ConversionConfig
     parameters_mapping: dict[str, Parameter]
+    node_formats: dict[Node, NodeFormat]
     custom_delegation_options: CustomDelegationOptions
 
     def __init__(
@@ -24,6 +27,7 @@ class ConversionContext:
         tflite_builder: AtenModelBuilderDirector,
         conversion_config: ConversionConfig,
         parameters_mapping: dict,
+        node_formats: dict[Node, NodeFormat],
         custom_delegation_options: CustomDelegationOptions,
     ):
         """
@@ -35,4 +39,5 @@ class ConversionContext:
         self.tflite_builder = tflite_builder
         self.conversion_config = conversion_config
         self.parameters_mapping = parameters_mapping
+        self.node_formats = node_formats
         self.custom_delegation_options = custom_delegation_options

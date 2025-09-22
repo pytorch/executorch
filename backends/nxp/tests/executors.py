@@ -1,4 +1,4 @@
-# Copyright 2023-2025 NXP
+# Copyright 2023-2024 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,11 +22,10 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     NodeConverter,
     Target,
 )
-
-from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from torch.export import ExportedProgram
 from torch.fx import Node
 from torch.fx.graph import Graph
+
 
 # If executed on i.MX platform, there is no tensorflow module. And typically the intention is to use the tflite python
 # interpreter available in tflite_runtime
@@ -306,7 +305,6 @@ def convert_run_compare(
 ) -> (TFLiteExecutor, EdgeProgramExecutor):
 
     if tfl_model is None:
-        NodeFormatInference(edge_program).identify_node_formats()
         tfl_model, _ = EdgeProgramToIRConverter().convert_program(
             edge_program, conversion_config
         )
