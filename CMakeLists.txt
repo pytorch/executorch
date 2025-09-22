@@ -284,7 +284,9 @@ if(EXECUTORCH_BUILD_TESTS)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC -Werror
+                            -Wunused-variable -Wno-unknown-argument
+)
 
 # Let files say "include <executorch/path/to/header.h>".
 # TODO(#6475): This requires/assumes that the repo lives in a directory named
@@ -738,9 +740,6 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
 
-  # Add codegen tools subdirectory for selective_build pybind module
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -748,6 +747,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
 
   # Create bundled_module target only for pybindings when bundled_program exists
   # This target has hard dependencies on devtools generated headers
