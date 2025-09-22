@@ -65,7 +65,8 @@ class Method final {
    * and leaves `rhs` in an uninitialized state.
    */
   Method(Method&& rhs) noexcept
-      : step_state_(rhs.step_state_),
+      : id_(rhs.id_),
+        step_state_(rhs.step_state_),
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
         temp_allocator_(rhs.temp_allocator_),
@@ -104,6 +105,18 @@ class Method final {
     rhs.event_tracer_ = nullptr;
     rhs.n_chains_ = 0;
     rhs.chains_ = nullptr;
+  }
+  
+  /**
+   * Retrieve the unique identifier for this method. This is guaranteed to be
+   * unique among all methods loaded by the instance of the runtime. Note that
+   * this value is only meaningful in the context of a specific instance of the
+   * executorch runtime and will vary run to run.
+   * 
+   * @returns The unique identifier for this method instance.
+   */
+  size_t id() const {
+    return id_;
   }
 
   /**
@@ -312,7 +325,8 @@ class Method final {
       MemoryManager* memory_manager,
       EventTracer* event_tracer,
       MemoryAllocator* temp_allocator)
-      : step_state_(),
+      : id_(next_id_++),
+        step_state_(),
         program_(program),
         memory_manager_(memory_manager),
         temp_allocator_(temp_allocator),
@@ -359,7 +373,10 @@ class Method final {
 
   // Executes a single instruction using the state in step_state_
   ET_NODISCARD Error execute_instruction();
+  
+  static size_t next_id_;
 
+  size_t id_;
   StepState step_state_;
   const Program* program_;
   MemoryManager* memory_manager_;
