@@ -34,8 +34,8 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
       ::executorch::extension::llm::Image& image,
       int64_t& start_pos) {
     auto image_tensor = executorch::extension::from_blob(
-        image.data.data(),
-        {3, image.height, image.width},
+        image.get_uint8_data().data(),
+        {3, image.height(), image.width()},
         ::executorch::aten::ScalarType::Byte);
     // Run image encoder
     auto image_encoder_outputs =
