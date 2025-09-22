@@ -241,7 +241,7 @@ def register_binary_op():
         exir_ops.edge.et_vk.clamp_with_binary_add.default,
         exir_ops.edge.et_vk.clamp_with_binary_sub.default,
         exir_ops.edge.et_vk.clamp_with_binary_mul.default,
-        exir_ops.edge.et_vk.clamp_with_binary_div.default
+        exir_ops.edge.et_vk.clamp_with_binary_div.default,
     ]
 )
 def register_unary_op():

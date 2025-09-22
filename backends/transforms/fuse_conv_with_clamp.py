@@ -25,6 +25,7 @@ class FuseConvClampPass(ExportPass):
     FUSEABLE_ACTIVATIONS = [
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.clamp.default,
     ]
 
     def get_output_min_max_from_activation(self, activation_node):
