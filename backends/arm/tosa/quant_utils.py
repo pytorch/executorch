@@ -5,15 +5,13 @@
 
 # pyre-unsafe
 
-# Utiliy functions for TOSA quantized lowerings
+# Utility functions for TOSA quantized lowerings
 
 import math
 
 from typing import Any, Tuple
 
 import serializer.tosa_serializer as ts  # type: ignore
-import torch.fx
-import torch.fx.node
 
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
@@ -22,6 +20,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
+
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
@@ -29,11 +28,11 @@ def insert_rescale_ops_to_int32_maxscale(
     tosa_graph: Any, inputs: list[TosaArg], node: Node, tosa_spec=None
 ) -> tuple[list[Any], float]:
     """For ADD and SUB, we rescale to int32 using a different common scale(2*max(left scale,right scale))
-    compared to all the other cases. We also multply the left and right scales by 1<<20 giving us extra precision
+    compared to all the other cases. We also multiply the left and right scales by 1<<20 giving us extra precision
     for the computation without overflowing.
 
     Returns a list of the rescaled nodes and the scale factor used,
-    needed by rescale_node_back_to_int8.
+    needed by insert_rescale_op_to_int8.
     """
 
     if len(inputs) > 2:
@@ -88,7 +87,7 @@ def insert_rescale_ops_to_int32(
     The scales are adjusted using the smallest scale of all 'nodes'.
 
     Returns a list of the rescaled nodes and the scale factor used,
-    needed by rescale_node_back_to_int8.
+    needed by insert_rescale_op_to_int8.
 
     This functions is used in serialization to TOSA for target ops that are
     handled by the DQ/D folding pass, which stores the quantization parameters
@@ -136,7 +135,59 @@ def insert_rescale_op_to_int8(
     Parameters:
         node: The original node that is being handled by the rescales.
         last_tensor:the tosa tensor to rescale back.
-        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_op_to_int32'
+        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_ops_to_int32'
+        compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
+        tosa_graph: the tosa_graph to manipulate.
+
+    This functions is used in serialization to TOSA for target ops that are
+    handled by the DQ/D folding pass, which stores the quantization parameters
+    in the node meta dict.
+    """
+    _insert_rescale_op_to_dtype(
+        tosa_graph, last_tensor, scale, node, ts.DType.INT8, compute_rescale, tosa_spec
+    )
+
+
+def insert_rescale_op_to_int16(
+    tosa_graph: Any,
+    last_tensor: TosaArg,
+    scale: float,
+    node: Node,
+    compute_rescale=True,
+    tosa_spec=None,
+) -> None:
+    """Rescales the node back to int16, adding a suitable RESCALE op to 'tosa_graph'.
+    Parameters:
+        node: The original node that is being handled by the rescales.
+        last_tensor:the tosa tensor to rescale back.
+        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_ops_to_int32'
+        compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
+        tosa_graph: the tosa_graph to manipulate.
+
+    This functions is used in serialization to TOSA for target ops that are
+    handled by the DQ/D folding pass, which stores the quantization parameters
+    in the node meta dict.
+    """
+    _insert_rescale_op_to_dtype(
+        tosa_graph, last_tensor, scale, node, ts.DType.INT16, compute_rescale, tosa_spec
+    )
+
+
+def _insert_rescale_op_to_dtype(
+    tosa_graph: Any,
+    last_tensor: TosaArg,
+    scale: float,
+    node: Node,
+    output_dtype: Any,
+    compute_rescale=True,
+    tosa_spec=None,
+) -> None:
+    """Common implementation for rescaling nodes back to a specific dtype.
+    Parameters:
+        node: The original node that is being handled by the rescales.
+        last_tensor:the tosa tensor to rescale back.
+        scale: the scaling factor used to rescale to int32, from the function 'insert_rescale_ops_to_int32'
+        output_dtype: The target dtype (ts.DType.INT8 or ts.DType.INT16)
         compute_rescale: boolean indicating whether we need to divide the output scale by the original scale.
         tosa_graph: the tosa_graph to manipulate.
 
@@ -158,20 +209,21 @@ def insert_rescale_op_to_int8(
     else:
         output_rescale_scale = scale
 
-    # Rescale Back to INT8
-    build_rescale_from_int32(
+    # Rescale Back to the specified dtype
+    build_rescale_from_int32_to_dtype(
         tosa_graph,
         last_tensor,
         node.name,
         qargs_out.get_zp_per_tensor(),
         output_rescale_scale,
+        output_dtype,
         tosa_spec=tosa_spec,
     )
 
 
 # TOSA uses the RESCALE operation to scale between values with differing precision.
 # The RESCALE operator is defined using an integer multiply, add, and shift.
-# This utility function is for calculating the multier and shift given a scale.
+# This utility function is for calculating the multiplier and shift given a scale.
 # Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_precision_scaling
 def compute_multiplier_and_shift(
     scales: list[float], scaleWidth: int = 32
@@ -194,7 +246,9 @@ def compute_multiplier_and_shift(
         const_2_power_15_or_31 = 1 << offset
         shifted_mantissa = round(mantissa * const_2_power_15_or_31)
 
-        assert shifted_mantissa <= const_2_power_15_or_31
+        assert (
+            shifted_mantissa <= const_2_power_15_or_31
+        ), f"Mantissa {shifted_mantissa} exceeds limit {const_2_power_15_or_31}"
 
         if shifted_mantissa == const_2_power_15_or_31:
             shifted_mantissa = shifted_mantissa // 2
@@ -204,7 +258,10 @@ def compute_multiplier_and_shift(
         shift = offset - shift
 
         # INT32_MAX, 2^31 - 1
-        assert shifted_mantissa <= (const_2_power_15_or_31 - 1)
+        assert shifted_mantissa <= (const_2_power_15_or_31 - 1), (
+            f"Mantissa {shifted_mantissa} exceeds signed max "
+            f"{const_2_power_15_or_31 - 1}"
+        )
 
         multiplier = shifted_mantissa
 
@@ -216,7 +273,7 @@ def compute_multiplier_and_shift(
     return multipliers, shifts
 
 
-# For TOSA spec v1.0 RESCALE operator requires multipler, shifts, input_zp and output_zp to be
+# For TOSA spec v1.0 RESCALE operator requires multiplier, shifts, input_zp and output_zp to be
 # const inputs. Create constant operators from the data already initialized.
 def create_const_ops_for_rescale(
     tosa_fb,
@@ -262,6 +319,7 @@ def build_rescale(
     per_channel=False,
 ):
     import serializer.tosa_serializer as ts  # type: ignore
+
     import tosa.Op as TosaOp  # type: ignore
 
     scaleWidth = 32
@@ -339,50 +397,56 @@ def build_rescale_from_int32(
 ) -> None:
     # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
     # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
+    build_rescale_from_int32_to_dtype(
+        tosa_fb,
+        input_node,
+        output_name,
+        output_zp,
+        rescale_scale,
+        ts.DType.INT8,
+        is_scale32,
+        is_double_round,
+        per_channel,
+        tosa_spec,
+    )
+
+    return
+
+
+def build_rescale_from_int32_to_dtype(
+    tosa_fb: Any,
+    input_node: TosaArg,
+    output_name: str,
+    output_zp: int,
+    rescale_scale: float,
+    output_dtype: Any,
+    is_scale32: bool = True,
+    is_double_round: bool = False,
+    per_channel: bool = False,
+    tosa_spec=None,
+) -> None:
+    """Common implementation for rescaling from INT32 to a specific dtype (INT8 or INT16).
+
+    Parameters:
+        tosa_fb: The TOSA serializer
+        input_node: Input tensor (should be INT32)
+        output_name: Name for the output tensor
+        output_zp: Output zero point
+        rescale_scale: Rescaling factor
+        output_dtype: Target dtype (ts.DType.INT8 or ts.DType.INT16)
+        Other parameters: Standard rescale parameters
+    """
+    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
+    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
     build_rescale(
         tosa_fb,
         [rescale_scale],
         input_node,
         output_name=output_name,
-        output_type=ts.DType.INT8,
+        output_type=output_dtype,
         input_zp=[0],
         output_zp=[output_zp],
         rounding_mode=RoundingMode.SINGLE_ROUND,
     )  # type: ignore[call-arg]
 
-    return
-
-
-""" Creates a TOSA rescale op based on conv2d parameters. """
-
-
-def build_rescale_conv_output(
-    tosa_fb: Any,
-    op: Any,
-    output_name: str,
-    output_type: Any,
-    input_scale: list[float],
-    weight_scale: list[float],
-    output_scale: list[float],
-    output_zp: list[int],
-    tosa_spec=None,
-):
-    # TODO add check to verify if this is a Per-channel quantization.
-    post_conv2d_scale = [
-        (inp * w) / out for inp, w, out in zip(input_scale, weight_scale, output_scale)
-    ]
-
-    # For TOSA v1.0 multipliers, shifts, input_zp and output_zp are now inputs
-    # to the RESCALE op see: https://www.mlplatform.org/tosa/tosa_spec.html#_rescale
-    build_rescale(
-        tosa_fb=tosa_fb,
-        scale=post_conv2d_scale,
-        input_node=op,
-        output_name=output_name,
-        output_type=output_type,
-        input_zp=[0],
-        output_zp=output_zp,
-        rounding_mode=RoundingMode.SINGLE_ROUND,
-        per_channel=isinstance(weight_scale, torch.Tensor),
-    )  # type: ignore[call-arg]
     return

@@ -34,6 +34,7 @@ class PerBlockParamObserver(AffineQuantizedMinMaxObserver):
             eps=eps,
             **kwargs,
         )
+        self.dtype = dtype
         self.block_size = block_size
         # TODO: expand this when QNN starts to support more configurations
         self.bitwidth_of_scale = 4

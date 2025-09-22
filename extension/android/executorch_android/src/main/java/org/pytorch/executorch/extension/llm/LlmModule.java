@@ -125,9 +125,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  public int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llmCallback, echo);
-  }
+  public native int generate(String prompt, int seqLen, LlmCallback llmCallback, boolean echo);
 
   /**
    * Start generating tokens from the module.
@@ -154,8 +152,7 @@ public class LlmModule {
    * @param llmCallback callback object to receive results.
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
-  @DoNotStrip
-  public native int generate(
+  public int generate(
       int[] image,
       int width,
       int height,
@@ -163,7 +160,11 @@ public class LlmModule {
       String prompt,
       int seqLen,
       LlmCallback llmCallback,
-      boolean echo);
+      boolean echo) {
+    prefillPrompt(prompt);
+    prefillImages(image, width, height, channels);
+    return generate("", llmCallback, echo);
+  }
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -172,16 +173,12 @@ public class LlmModule {
    * @param width Input image width
    * @param height Input image height
    * @param channels Input image number of channels
-   * @param startPos The starting position in KV cache of the input in the LLM.
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Deprecated
-  public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
-    if (startPos == 0) {
-      resetContext();
-    }
+  public long prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
@@ -195,20 +192,13 @@ public class LlmModule {
    * Prefill an LLaVA Module with the given text input.
    *
    * @param prompt The text prompt to LLaVA.
-   * @param startPos The starting position in KV cache of the input in the LLM. It's passed as
-   *     reference and will be updated inside this function.
-   * @param bos The number of BOS (begin of sequence) token.
-   * @param eos The number of EOS (end of sequence) token.
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
   @Deprecated
-  public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
-    if (startPos == 0) {
-      resetContext();
-    }
-    int nativeResult = appendTextInput(prompt, bos, eos);
+  public long prefillPrompt(String prompt) {
+    int nativeResult = appendTextInput(prompt);
     if (nativeResult != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult);
     }
@@ -216,10 +206,7 @@ public class LlmModule {
   }
 
   // returns status
-  private native int appendTextInput(String prompt, int bos, int eos);
-
-  // returns status
-  private native int appendAudioInput(int[] data, int batchSize, int nChannels, int nSamples);
+  private native int appendTextInput(String prompt);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.

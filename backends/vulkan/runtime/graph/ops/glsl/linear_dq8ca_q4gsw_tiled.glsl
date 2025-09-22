@@ -110,6 +110,7 @@ void main() {
   IntPerInChannelParams int8_input_sums_tile;
 
   const int num_groups = K4 / K4_per_group;
+  const int group_size = mul_4(K4_per_group);
 
   for (int group_i = 0; group_i < num_groups; ++group_i) {
     // Reset int accumulator
@@ -119,7 +120,6 @@ void main() {
 
       load_int8_input_tile(int8_in_tile, k4, m4, K4);
       load_int4_weight_tile(int4_weight_tile, k4, n8, K4);
-      // load_int4_weight_tile(int4_weight_tile, n8, k4, N8);
 
       int_accumulate_with_int4_weight(
           out_accum, int8_in_tile, int4_weight_tile);
@@ -128,13 +128,6 @@ void main() {
     load_weight_scales_tile_for_group(weight_scales_tile, n4, group_i, N4);
     load_weight_sums_tile_for_group(weight_sums_tile, n4, group_i, N4);
     load_int8_input_sums_tile_for_group(int8_input_sums_tile, m4, group_i, M4);
-
-    const int group_size = mul_4(K4_per_group);
-
-    // // Update output tile with accumulated values
-    // accumulate_out_tile_with_int_accum_from_int4_weights_test(
-    //     out_tile,
-    //     out_accum);
 
     accumulate_out_tile_with_int_accum_from_int4_weights(
         out_tile,

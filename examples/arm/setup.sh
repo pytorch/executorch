@@ -26,7 +26,6 @@ enable_model_converter=0   # model-converter tool for VGF output
 enable_vgf_lib=0  # vgf reader - runtime backend dependency
 enable_emulation_layer=0  # Vulkan layer driver - emulates Vulkan ML extensions
 enable_vulkan_sdk=0  # Download and export Vulkan SDK required by emulation layer
-mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
 
 # Figure out if setup.sh was called or sourced and save it into "is_script_sourced"
 (return 0 2>/dev/null) && is_script_sourced=1 || is_script_sourced=0
@@ -145,17 +144,6 @@ function check_options() {
                 enable_vulkan_sdk=1
                 shift
                 ;;
-            --mlsdk-manifest-url)
-                # Ensure that there is a url provided.
-                if [[ -n "$2" && "${2:0:1}" != "-" ]]; then
-                    mlsdk_manifest_url="$2"
-                    shift 2
-                else
-                    echo "Error: --mlsdk-manifest-url requires a URL argument."
-                    print_usage "$@"
-                    exit 1
-                fi
-                ;;
             --setup-test-dependency)
                 echo "Installing test dependency..."
                 source $et_dir/backends/arm/scripts/install_models_for_test.sh
@@ -183,62 +171,37 @@ function setup_ethos_u_tools() {
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
-function prepend_env_in_setup_path() {
-    echo "export $1=$2:\${$1-}" >> ${setup_path_script}.sh
-    echo "set --path -pgx $1 $2" >> ${setup_path_script}.fish
-}
-
-function append_env_in_setup_path() {
-    echo "export $1=\${$1-}:$2" >> ${setup_path_script}.sh
-    echo "set --path -agx $1 $2" >> ${setup_path_script}.fish
-}
-
 function create_setup_path(){
     cd "${root_dir}"
 
-    # Clear setup_path_script
-    echo "" > "${setup_path_script}.sh"
-    echo "" > "${setup_path_script}.fish"
+    clear_setup_path
 
     if [[ "${enable_fvps}" -eq 1 ]]; then
         setup_path_fvp
     fi
 
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
-        toolchain_bin_path="$(cd ${toolchain_dir}/bin && pwd)"
-        append_env_in_setup_path PATH ${toolchain_bin_path}
+        setup_path_toolchain
     fi
 
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
-        cd "${root_dir}"
-        vulkan_sdk_bin_path="$(cd ${vulkan_sdk_bin_dir} && pwd)"
-        append_env_in_setup_path PATH ${vulkan_sdk_bin_path}
+        setup_path_vulkan
     fi
 
     if [[ "${enable_model_converter}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_converter_bin_path="$(cd ${mlsdk_manifest_dir}/sw/model-converter/build && pwd)"
-        append_env_in_setup_path PATH ${model_converter_bin_path}
+        setup_path_model_converter
     fi
 
-    # Add Path for vgf-lib and emulation-layer
     if [[ "${enable_vgf_lib}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_vgf_path="$(cd ${mlsdk_manifest_dir}/sw/vgf-lib/deploy && pwd)"
-        append_env_in_setup_path PATH ${model_vgf_path}/bin
-        append_env_in_setup_path LD_LIBRARY_PATH "${model_vgf_path}/lib"
-        append_env_in_setup_path DYLD_LIBRARY_PATH "${model_vgf_path}/lib"
+        setup_path_vgf_lib
     fi
 
     if [[ "${enable_emulation_layer}" -eq 1 ]]; then
-        cd "${root_dir}"
-        model_emulation_layer_path="$(cd ${mlsdk_manifest_dir}/sw/emulation-layer/ && pwd)"
-        prepend_env_in_setup_path LD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
-        prepend_env_in_setup_path DYLD_LIBRARY_PATH "${model_emulation_layer_path}/deploy/lib"
-        prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Tensor_Emulation
-        prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
-        prepend_env_in_setup_path VK_ADD_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
+        setup_path_emulation_layer
     fi
+
+    echo "[main] Update path by running 'source ${setup_path_script}.sh'"
+    echo "[main] Or for fish shell use 'source ${setup_path_script}.fish'"
 }
 
 
@@ -276,8 +239,6 @@ if [[ $is_script_sourced -eq 0 ]]; then
     echo "enable-emulation-layer=${enable_emulation_layer}"
     echo "enable-vulkan-sdk=${enable_vulkan_sdk}"
     echo "enable-vela=${enable_vela}"
-    echo "mlsdk-manifest-url=${mlsdk_manifest_url}"
-
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
@@ -301,27 +262,26 @@ if [[ $is_script_sourced -eq 0 ]]; then
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
-        source $et_dir/backends/arm/scripts/mlsdk_utils.sh -u "${mlsdk_manifest_url}"
-        setup_model_converter ${root_dir} ${mlsdk_manifest_dir} ${enable_model_converter} ${enable_vgf_lib} ${enable_emulation_layer}
+        source $et_dir/backends/arm/scripts/mlsdk_utils.sh
+        setup_mlsdk ${root_dir} \
+                    ${mlsdk_manifest_dir} \
+                    ${enable_model_converter} \
+                    ${enable_vgf_lib} \
+                    ${enable_emulation_layer}
     fi
 
-    # Create new setup_path script
-    if [[ "${enable_baremetal_toolchain}" -eq 1 || \
-           "${enable_fvps}" -eq 1 || \
-           "${enable_vulkan_sdk}" -eq 1 || \
-          "${enable_model_converter}" -eq 1 ]]; then
-        create_setup_path
-    fi
+    # Create the setup_path.sh used to create the PATH variable for shell
+    create_setup_path
 
     # Setup the tosa_reference_model and dependencies
-    CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
+    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        BUILD_PYBIND=1 \
+        pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
 
     if [[ "${enable_vela}" -eq 1 ]]; then
         setup_ethos_u_tools
     fi
 
-    echo "[main] Update path by running 'source ${setup_path_script}.sh'"
-    hash fish 2>/dev/null && echo >&2 "[main] Or for fish shell use 'source ${setup_path_script}.fish'"
     echo "[main] success!"
     exit 0
 fi

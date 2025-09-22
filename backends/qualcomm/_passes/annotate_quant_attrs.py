@@ -19,6 +19,7 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_SCALE,
     QCOM_ZERO_POINT,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 from .utils import get_quant_attrs
@@ -38,6 +39,9 @@ class AnnotateQuantAttrs(ExportPass):
         super(AnnotateQuantAttrs, self).__init__()
         self.edge_program = edge_program
         self.skip_advanced_requant = skip_advanced_requant
+        self.skip_requant_allowlist = {
+            exir_ops.edge.aten.sigmoid.default,
+        }
 
     def _annotate_source_nodes(
         self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]
@@ -80,6 +84,10 @@ class AnnotateQuantAttrs(ExportPass):
         # node1 -> q_ui8 (n) -> dq_ui8 -> q_int32 -> dq_int32 -> node2 -> ....
         # We store {node2: quant_attr in dq_int32} in node1.meta
         if n.target in q_ops and n.args[0].target not in dq_ops:
+            # for some fixed scale op, there is no need to requantize it
+            if n.args[0].target in self.skip_requant_allowlist:
+                return
+
             dq_nodes = self._find_last_dq_nodes(n)
             q_attrs = get_quant_attrs(self.edge_program, n)
             for dq_node in dq_nodes:

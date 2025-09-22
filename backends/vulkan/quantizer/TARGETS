@@ -1,8 +1,8 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "vulkan_quantizer",
     srcs = ["vulkan_quantizer.py"],
     deps = [
@@ -11,7 +11,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "vulkan_quantizer_utils",
     srcs = ["vulkan_quantizer_utils.py"],
     deps = [

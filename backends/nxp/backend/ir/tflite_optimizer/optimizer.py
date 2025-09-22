@@ -17,12 +17,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.combine_h
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
     FuseActivationFunctions,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_fully_connected_and_add_operators import (
-    FuseFullyConnectedAndAddOperators,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.keep_one_empty_buffer import (
-    KeepOneEmptyBuffer,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
     MoveActivationBeforeConcatenation,
 )
@@ -36,9 +30,7 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
 
 
 class Optimization(Enum):
-    KEEP_ONE_EMPTY_BUFFER = 0
     FUSE_ACTIVATION_FUNCTIONS = 1
-    FUSE_FULLY_CONNECTED_AND_ADD = 2
 
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
@@ -76,13 +68,7 @@ class Optimizer:
         self._builder = builder
 
         self.optimization_map = {
-            Optimization.KEEP_ONE_EMPTY_BUFFER: KeepOneEmptyBuffer(
-                builder, conversion_config
-            ),
             Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_FULLY_CONNECTED_AND_ADD: FuseFullyConnectedAndAddOperators(
                 builder, conversion_config
             ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(

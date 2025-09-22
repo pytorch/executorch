@@ -7,6 +7,7 @@
 
 
 import logging
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -44,6 +45,8 @@ class ConvertInt64OutputOpsToInt32Pass(ExportPass):
     the int32 range.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     aten_cast_ops = (
         torch.ops.aten.to.dtype,
         torch.ops.aten.to.dtype_layout,
@@ -68,10 +71,10 @@ class ConvertInt64OutputOpsToInt32Pass(ExportPass):
 
     def _get_decomposition(self, op):
         if op in self.edge_ops:
-            return exir_ops.edge.aten._to_copy.default
+            return exir_ops.edge.dim_order_ops._to_dim_order_copy.default
 
         if op in self.aten_ops:
-            return torch.ops.aten._to_copy.default
+            return torch.ops.dim_order_ops._to_dim_order_copy.default
 
         raise RuntimeError(
             f"[{self.__class__.__name__}] Can't get decomposition for op {op}"

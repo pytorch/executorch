@@ -8,6 +8,9 @@ on:
     tags:
       - ciflow/trunk/*
   pull_request:
+    paths:
+      - .ci/docker/ci_commit_pins/pytorch.txt
+      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:
@@ -582,6 +585,37 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
+  test-torchao-huggingface-checkpoints:
+    name: test-torchao-huggingface-checkpoints
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [qwen3_4b, phi_4_mini]
+        include:
+          - model: qwen3_4b
+            test_with_runner: true
+          - model: phi_4_mini
+            test_with_runner: false
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        pip install -U "huggingface_hub[cli]"
+
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
+
   # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
   # test-llava-runner-macos:
   #   name: test-llava-runner-macos
@@ -982,21 +1016,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: [linear, add, add_mul, ic3, ic4, mv2, mv3, resnet18, resnet50, vit, w2l, mobilebert, emformer_join, emformer_transcribe]
-        backend: [portable, xnnpack-f32, xnnpack-q8]
+        model: [mv3, resnet50, vit, mobilebert, emformer_transcribe]
+        backend: [portable, xnnpack-q8]
     with:
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |
         conda init powershell
-        
+
         powershell -Command "& {
           Set-PSDebug -Trace 1
           \$ErrorActionPreference = 'Stop'
           \$PSNativeCommandUseErrorActionPreference = \$true
 
-          .ci/scripts/setup-windows.ps1       
+          .ci/scripts/setup-windows.ps1
 
-          powershell .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+          .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
         }"
