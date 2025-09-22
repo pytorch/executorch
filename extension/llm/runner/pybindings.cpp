@@ -132,6 +132,17 @@ class PyMultimodalRunner {
     }
   }
 
+  void prefill(std::vector<MultimodalInput> inputs) {
+    if (!runner_) {
+      throw std::runtime_error("Runner not initialized");
+    }
+    {
+      py::gil_scoped_release release;
+      Error error = runner_->prefill(inputs);
+      THROW_IF_ERROR(error, "Prefill failed");
+    }
+  }
+
   // Note: Since the runner owns the tokenizer and metadata after creation,
   // we cannot directly access them. This is a limitation of the current design.
   // For now, we'll return a placeholder value.
@@ -152,7 +163,33 @@ PYBIND11_MODULE(_llm_runner, m) {
 
   // Bind GenerationConfig
   py::class_<GenerationConfig>(m, "GenerationConfig")
-      .def(py::init<>())
+      // Constructor with keyword arguments for all fields (all optional via
+      // defaults)
+      .def(
+          py::init([](bool echo,
+                      int32_t max_new_tokens,
+                      bool warming,
+                      int32_t seq_len,
+                      float temperature,
+                      int32_t num_bos,
+                      int32_t num_eos) {
+            GenerationConfig cfg;
+            cfg.echo = echo;
+            cfg.max_new_tokens = max_new_tokens;
+            cfg.warming = warming;
+            cfg.seq_len = seq_len;
+            cfg.temperature = temperature;
+            cfg.num_bos = num_bos;
+            cfg.num_eos = num_eos;
+            return cfg;
+          }),
+          py::arg("echo") = true,
+          py::arg("max_new_tokens") = -1,
+          py::arg("warming") = false,
+          py::arg("seq_len") = -1,
+          py::arg("temperature") = 0.8f,
+          py::arg("num_bos") = 0,
+          py::arg("num_eos") = 0)
       .def_readwrite("echo", &GenerationConfig::echo)
       .def_readwrite("max_new_tokens", &GenerationConfig::max_new_tokens)
       .def_readwrite("warming", &GenerationConfig::warming)
@@ -328,10 +365,10 @@ PYBIND11_MODULE(_llm_runner, m) {
           py::init<const std::string&>(),
           py::arg("text"),
           "Create a MultimodalInput with text")
-    .def(
-      py::init<const std::vector<uint64_t>&>(),
-      py::arg("tokens"),
-      "Create a MultimodalInput with pre-tokenized tokens (List[int])")
+      .def(
+          py::init<const std::vector<uint64_t>&>(),
+          py::arg("tokens"),
+          "Create a MultimodalInput with pre-tokenized tokens (List[int])")
       .def(
           py::init<const Image&>(),
           py::arg("image"),
@@ -345,7 +382,7 @@ PYBIND11_MODULE(_llm_runner, m) {
           py::arg("raw_audio"),
           "Create a MultimodalInput with raw audio")
       .def("is_text", &MultimodalInput::is_text)
-  .def("is_tokens", &MultimodalInput::is_tokens)
+      .def("is_tokens", &MultimodalInput::is_tokens)
       .def("is_image", &MultimodalInput::is_image)
       .def("is_audio", &MultimodalInput::is_audio)
       .def("is_raw_audio", &MultimodalInput::is_raw_audio)
@@ -579,6 +616,11 @@ PYBIND11_MODULE(_llm_runner, m) {
           py::arg("token_callback") = py::none(),
           py::arg("stats_callback") = py::none(),
           "Generate text from multimodal inputs with optional callbacks")
+      .def(
+          "prefill",
+          &PyMultimodalRunner::prefill,
+          py::arg("inputs"),
+          "Prefill multimodal inputs (e.g., chat history) without generating tokens")
       .def("stop", &PyMultimodalRunner::stop, "Stop the current generation")
       .def(
           "generate_text",

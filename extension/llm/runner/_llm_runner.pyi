@@ -34,8 +34,18 @@ class GenerationConfig:
     num_eos: int
     """Number of EOS tokens to add to the prompt."""
 
-    def __init__(self) -> None:
-        """Initialize GenerationConfig with default values."""
+    def __init__(
+        self,
+        *,
+        echo: bool = True,
+        max_new_tokens: int = -1,
+        warming: bool = False,
+        seq_len: int = -1,
+        temperature: float = 0.8,
+        num_bos: int = 0,
+        num_eos: int = 0,
+    ) -> None:
+        """Initialize GenerationConfig with optional keyword arguments for all fields."""
         ...
 
     def resolve_max_new_tokens(
@@ -357,6 +367,19 @@ class MultimodalRunner:
 
         Raises:
             RuntimeError: If generation fails
+        """
+        ...
+
+    def prefill(self, inputs: List[MultimodalInput]) -> None:
+        """
+        Prefill multimodal inputs (e.g., to rebuild KV cache from chat history)
+        without generating tokens.
+
+        Args:
+            inputs: List of multimodal inputs to prefill
+
+        Raises:
+            RuntimeError: If prefill fails
         """
         ...
 

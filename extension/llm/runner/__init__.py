@@ -12,13 +12,6 @@ enabling processing of mixed inputs (text, images, audio) and text generation.
 """
 
 try:
-    from PIL import Image as PILImage
-
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-
-try:
     # Import shared components from the compiled C++ extension
     from executorch.extension.llm.runner._llm_runner import (  # noqa: F401
         GenerationConfig,
@@ -50,5 +43,3 @@ __all__ = [
     "MultimodalRunner",
     "Stats",
 ]
-
-__version__ = "0.1.0"
