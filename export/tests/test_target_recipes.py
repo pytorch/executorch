@@ -387,7 +387,7 @@ class TestTargetRecipes(unittest.TestCase):
     @classmethod
     def _get_recipes(cls) -> Dict[str, Tuple[ExportRecipe, str]]:
         """Get available recipes with their configurations based on platform."""
-        all_recipes = {}
+        all_recipes: Dict[str, Tuple[ExportRecipe, str]] = {}
 
         # Add iOS recipes
         if is_supported_platform_for_coreml_lowering():
