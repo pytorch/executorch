@@ -603,10 +603,18 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - { name: "baseline", flags: "" }
-          - { name: "spinquant", flags: "--spinquant" }
-          - { name: "range-setting", flags: "--range_setting mse_with_act_loss" }
-          - { name: "spinquant+range-setting", flags: "--spinquant --range_setting mse_with_act_loss" }
+          - name: "baseline"
+            flags: ""
+            threshold: 62.0
+          - name: "spinquant"
+            flags: "--spinquant"
+            threshold: 62.0
+          - name: "range-setting"
+            flags: "--range_setting mse_with_act_loss"
+            threshold: 62.0
+          - name: "spinquant+range-setting"
+            flags: "--spinquant --range_setting mse_with_act_loss"
+            threshold: 62.0
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
