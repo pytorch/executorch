@@ -84,7 +84,6 @@ class Runner : public executorch::extension::llm::IRunner {
       const std::string& prompt,
       const executorch::extension::llm::GenerationConfig& config = {}) override;
   void stop() override {};
-  void stop() override {};
   void reset() override {};
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
