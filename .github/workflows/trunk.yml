@@ -627,7 +627,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        model: ["gemma3-4b", "llava"] # llava is probably too big so not covering it here.
+        model: ["gemma3-4b"] # llava gives segfault so not covering.
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: macos-15-xlarge
