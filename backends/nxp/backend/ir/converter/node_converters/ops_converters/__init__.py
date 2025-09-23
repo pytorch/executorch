@@ -55,6 +55,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sub_tensor_converter import (
+    SubTensorConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
     TanhConverter,
 )
@@ -78,6 +81,7 @@ __all__ = [
     "MaxPool2dConverter",
     "AvgPool2dConverter",
     "AddTensorConverter",
+    "SubTensorConverter",
     "CloneConverter",
     "AbsConverter",
     "AdaptiveAvgPool2dConverter",
