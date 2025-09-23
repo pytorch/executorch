@@ -82,7 +82,7 @@ class Runner : public executorch::extension::llm::IRunner {
 
   executorch::runtime::Error prefill(
       const std::string& prompt,
-      const GenerationConfig& config = {}) override;
+      const executorch::extension::llm::GenerationConfig& config = {}) override;
   void stop() override {};
   void stop() override {};
   void reset() override {};
