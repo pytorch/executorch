@@ -114,6 +114,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         ],
         runtime_tokenizer_path,
     ):
+        logging.info("init start~~~")
         self.args = args
         self.pte_path = pte_path
         self.enable_x86_64 = args.enable_x86_64
@@ -189,13 +190,16 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
         output_data_folder = f"{self.args.artifact}/outputs"
         make_output_dir(output_data_folder)
         
+        
         if not self.enable_x86_64:
             self.adb.push(inputs=[], files=[self.runtime_tokenizer_path])
         # n seq len = n-1 cache len, so we len(inps) = n-1 during _model_call
         # pyre-ignore
         super().__init__(None, tokenizer, self.max_seq_length - 1)
+        logging.info("init end~~~")
 
     def _model_call(self, inps):
+        logging.info(f"Start 1 iteration~~~~~~~~~~~~~~")
 
         input_file_name = f"{self.args.artifact}/input_tokens.raw"
         inps = inps.to(torch.uint64).numpy()
