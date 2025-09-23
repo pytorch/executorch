@@ -210,7 +210,7 @@ def main() -> None:
         else:
             logging.error("✗ Model test FAILED - outputs do not match reference")
             raise RuntimeError(
-                "Model validation failed: ExecutorTorch outputs do not match reference model outputs"
+                "Model validation failed: ExecuTorch outputs do not match reference model outputs"
             )
 
     if args.bundled:
