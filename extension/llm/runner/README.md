@@ -1,6 +1,6 @@
-# LLM Runner Framework for ExecutorTorch
+# LLM Runner Framework for ExecuTorch
 
-This directory contains the LLM Runner framework for ExecutorTorch, providing high-level C++ APIs for running Large Language Models with both text-only and multimodal capabilities.
+This directory contains the LLM Runner framework for ExecuTorch, providing high-level C++ APIs for running Large Language Models with both text-only and multimodal capabilities.
 
 ## Overview
 
@@ -474,7 +474,7 @@ DeepFusion is another popular model architecture type where a pretrained encoder
 - **Llama 3.2 Vision**: Uses cross-attention layers for vision-text fusion
 - **Other cross-attention based multimodal models**
 
-For DeepFusion support, consider using the model's native inference framework or wait for future ExecutorTorch updates that may include DeepFusion architecture support.
+For DeepFusion support, consider using the model's native inference framework or wait for future ExecuTorch updates that may include DeepFusion architecture support.
 
 ## Building and Integration
 

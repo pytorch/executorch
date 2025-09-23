@@ -455,8 +455,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias_enabled: bool = True,
         channel_last: bool = False,
     ) -> None:
-        transposed = True
-        output_padding = [0]
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -477,7 +475,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x, [0, 2, 1]),
             )
         convolution = builder.call_operator(
-            op=exir_ops.edge.aten.convolution.default,
+            op=exir_ops.edge.cadence.convolution.default,
             args=(
                 x,
                 weights,
@@ -485,9 +483,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 [stride],
                 [padding],
                 [dilation],
-                transposed,
-                output_padding,
                 groups,
+                False,
             ),
         )
         if channel_last:
@@ -504,7 +501,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
             1,
         )
 

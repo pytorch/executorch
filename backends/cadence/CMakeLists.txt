@@ -88,6 +88,9 @@ elseif(EXECUTORCH_FUSION_G3_OPT)
     ${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib
     ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
   )
+elseif(EXECUTORCH_VISION_OPT)
+  set(TARGET_DIR vision)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
 else()
   set(TARGET_DIR reference)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
