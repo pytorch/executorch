@@ -80,7 +80,7 @@ def aggregate_results(json_path: str) -> AggregatedSummary:
 
                 test_id = subtest_meta["Test ID"]
                 base_test = subtest_meta["Test Case"]
-                params = test_id[base_test.len() + 1 : -1]
+                params = test_id[len(base_test) + 1 : -1]
 
                 if params:
                     if params not in counts_by_param:
@@ -135,49 +135,30 @@ def generate_markdown(json_path: str, exit_code: int = 0):  # noqa (C901)
     if results.counts_by_params:
         print("\n## Results by Parameters\n")
 
-        # Extract all unique parameter keys from the JSON strings
-        all_param_keys = set()
-        parsed_params = {}
-
-        for params_str in results.counts_by_params.keys():
-            # Parse the JSON string (it's a string representation of a dict)
-            params_dict = json.loads(params_str)
-            parsed_params[params_str] = params_dict
-            all_param_keys.update(params_dict.keys())
-
-        if parsed_params and len(parsed_params) > 1:
-            # Sort parameter keys for consistent column ordering
-            sorted_param_keys = sorted(all_param_keys)
-
+        if len(results.counts_by_params) > 0:
             # Create table header
-            header_cols = sorted_param_keys + ["Pass", "Fail", "Skip", "Pass %"]
+            header_cols = ["Params", "Pass", "Fail", "Skip", "Pass %"]
             print("| " + " | ".join(header_cols) + " |")
             print("|" + "|".join(["---"] * len(header_cols)) + "|")
 
             # Create table rows
             for params_str, counts in results.counts_by_params.items():
-                if params_str in parsed_params:
-                    params_dict = parsed_params[params_str]
-                    row_values = []
+                row_values = [params_str]
 
-                    # Add parameter values
-                    for key in sorted_param_keys:
-                        value = params_dict.get(key, "")
-                        row_values.append(str(value))
+                # Add parameter values
+                pass_fraction = counts.passes / (counts.passes + counts.fails)
 
-                    pass_fraction = counts.passes / (counts.passes + counts.fails)
+                # Add count values
+                row_values.extend(
+                    [
+                        str(counts.passes),
+                        str(counts.fails),
+                        str(counts.skips),
+                        f"{pass_fraction*100:.2f}%",
+                    ]
+                )
 
-                    # Add count values
-                    row_values.extend(
-                        [
-                            str(counts.passes),
-                            str(counts.fails),
-                            str(counts.skips),
-                            f"{pass_fraction*100:.2f}%",
-                        ]
-                    )
-
-                    print("| " + " | ".join(row_values) + " |")
+                print("| " + " | ".join(row_values) + " |")
 
         print()
 
@@ -231,12 +212,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate a Markdown representation of a test report."
     )
-    parser.add_argument("csv_path", help="Path to the test report CSV file.")
+    parser.add_argument("json_path", help="Path to the test report CSV file.")
     parser.add_argument(
         "--exit-code", type=int, default=0, help="Exit code from the test process."
     )
     args = parser.parse_args()
-    generate_markdown(args.csv_path, args.exit_code)
+    generate_markdown(args.json_path, args.exit_code)
 
 
 if __name__ == "__main__":
