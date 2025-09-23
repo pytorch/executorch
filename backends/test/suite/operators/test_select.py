@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class SelectModel(torch.nn.Module):
@@ -27,63 +22,55 @@ class SelectModel(torch.nn.Module):
         return torch.select(x, dim=self.dim, index=self.index)
 
 
-@operator_test
-class Select(OperatorTest):
-    @dtype_test
-    def test_select_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            SelectModel(dim=0, index=0),
-            (torch.rand(3, 4, 5).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_select_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        SelectModel(dim=0, index=0),
+        (torch.rand(3, 4, 5).to(dtype),),
+    )
 
-    def test_select_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            SelectModel(dim=0, index=1),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
 
-        self._test_op(
-            SelectModel(dim=1, index=2),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+def test_select_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SelectModel(dim=0, index=1),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            SelectModel(dim=2, index=3),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SelectModel(dim=1, index=2),
+        (torch.randn(3, 4, 5),),
+    )
 
-    def test_select_negative_dim(self, flow: TestFlow) -> None:
-        self._test_op(
-            SelectModel(dim=-1, index=2),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SelectModel(dim=2, index=3),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            SelectModel(dim=-2, index=1),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
 
-        self._test_op(
-            SelectModel(dim=-3, index=0),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+def test_select_negative_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SelectModel(dim=-1, index=2),
+        (torch.randn(3, 4, 5),),
+    )
 
-    def test_select_different_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            SelectModel(dim=0, index=1),
-            (torch.randn(3, 4),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SelectModel(dim=-2, index=1),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            SelectModel(dim=1, index=1),
-            (torch.randn(2, 3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SelectModel(dim=-3, index=0),
+        (torch.randn(3, 4, 5),),
+    )
+
+
+def test_select_different_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SelectModel(dim=0, index=1),
+        (torch.randn(3, 4),),
+    )
+
+    test_runner.lower_and_run_model(
+        SelectModel(dim=1, index=1),
+        (torch.randn(2, 3, 4, 5),),
+    )

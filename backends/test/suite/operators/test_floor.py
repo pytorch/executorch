@@ -10,13 +10,8 @@
 import unittest
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class FloorModel(torch.nn.Module):
@@ -24,34 +19,38 @@ class FloorModel(torch.nn.Module):
         return torch.floor(x)
 
 
-@operator_test
-class TestFloor(OperatorTest):
-    @dtype_test
-    def test_floor_dtype(self, flow: TestFlow, dtype) -> None:
-        # Test with different dtypes
-        model = FloorModel().to(dtype)
-        self._test_op(model, (torch.rand(10, 10).to(dtype) * 2 - 1,), flow)
+@parameterize_by_dtype
+def test_floor_dtype(test_runner, dtype) -> None:
+    # Test with different dtypes
+    model = FloorModel().to(dtype)
+    test_runner.lower_and_run_model(model, (torch.rand(10, 10).to(dtype) * 2 - 1,))
 
-    def test_floor_shapes(self, flow: TestFlow) -> None:
-        # Test with different tensor shapes
 
-        # 1D tensor
-        self._test_op(FloorModel(), (torch.randn(20),), flow)
+def test_floor_shapes(test_runner) -> None:
+    # Test with different tensor shapes
 
-        # 2D tensor
-        self._test_op(FloorModel(), (torch.randn(5, 10),), flow)
+    # 1D tensor
+    test_runner.lower_and_run_model(FloorModel(), (torch.randn(20),))
 
-        # 3D tensor
-        self._test_op(FloorModel(), (torch.randn(3, 4, 5),), flow)
+    # 2D tensor
+    test_runner.lower_and_run_model(FloorModel(), (torch.randn(5, 10),))
 
-    @unittest.skip("NaN and Inf are not enforced for backends.")
-    def test_floor_edge_cases(self, flow: TestFlow) -> None:
-        # Test edge cases
+    # 3D tensor
+    test_runner.lower_and_run_model(FloorModel(), (torch.randn(3, 4, 5),))
 
-        # Tensor with infinity
-        x = torch.tensor([float("inf"), float("-inf"), 1.0, -1.0])
-        self._test_op(FloorModel(), (x,), flow, generate_random_test_inputs=False)
 
-        # Tensor with NaN
-        x = torch.tensor([float("nan"), 1.0, -1.0])
-        self._test_op(FloorModel(), (x,), flow, generate_random_test_inputs=False)
+@unittest.skip("NaN and Inf are not enforced for backends.")
+def test_floor_edge_cases(test_runner) -> None:
+    # Test edge cases
+
+    # Tensor with infinity
+    x = torch.tensor([float("inf"), float("-inf"), 1.0, -1.0])
+    test_runner.lower_and_run_model(
+        FloorModel(), (x,), generate_random_test_inputs=False
+    )
+
+    # Tensor with NaN
+    x = torch.tensor([float("nan"), 1.0, -1.0])
+    test_runner.lower_and_run_model(
+        FloorModel(), (x,), generate_random_test_inputs=False
+    )

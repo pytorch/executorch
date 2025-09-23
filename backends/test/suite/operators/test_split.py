@@ -9,13 +9,8 @@
 from typing import List
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class SplitSizeModel(torch.nn.Module):
@@ -38,82 +33,72 @@ class SplitSectionsModel(torch.nn.Module):
         return torch.split(x, self.sections, dim=self.dim)
 
 
-@operator_test
-class Split(OperatorTest):
-    @dtype_test
-    def test_split_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            SplitSizeModel(split_size=2),
-            (torch.rand(6, 4).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_split_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=2),
+        (torch.rand(6, 4).to(dtype),),
+    )
 
-    def test_split_size_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            SplitSizeModel(split_size=2, dim=0),
-            (torch.randn(6, 4),),
-            flow,
-        )
 
-        self._test_op(
-            SplitSizeModel(split_size=2, dim=1),
-            (torch.randn(4, 6),),
-            flow,
-        )
+def test_split_size_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=2, dim=0),
+        (torch.randn(6, 4),),
+    )
 
-        self._test_op(
-            SplitSizeModel(split_size=2, dim=2),
-            (torch.randn(3, 4, 6),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=2, dim=1),
+        (torch.randn(4, 6),),
+    )
 
-    def test_split_size_uneven(self, flow: TestFlow) -> None:
-        self._test_op(
-            SplitSizeModel(split_size=3),
-            (torch.randn(7, 4),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=2, dim=2),
+        (torch.randn(3, 4, 6),),
+    )
 
-        self._test_op(
-            SplitSizeModel(split_size=3, dim=1),
-            (torch.randn(4, 7),),
-            flow,
-        )
 
-    def test_split_sections_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            SplitSectionsModel(sections=[2, 3, 1], dim=0),
-            (torch.randn(6, 4),),
-            flow,
-        )
+def test_split_size_uneven(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=3),
+        (torch.randn(7, 4),),
+    )
 
-        self._test_op(
-            SplitSectionsModel(sections=[2, 3, 1], dim=1),
-            (torch.randn(4, 6),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=3, dim=1),
+        (torch.randn(4, 7),),
+    )
 
-        self._test_op(
-            SplitSectionsModel(sections=[2, 3, 1], dim=2),
-            (torch.randn(3, 4, 6),),
-            flow,
-        )
 
-    def test_split_negative_dim(self, flow: TestFlow) -> None:
-        self._test_op(
-            SplitSizeModel(split_size=2, dim=-1),
-            (torch.randn(4, 6),),
-            flow,
-        )
+def test_split_sections_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SplitSectionsModel(sections=[2, 3, 1], dim=0),
+        (torch.randn(6, 4),),
+    )
 
-        self._test_op(
-            SplitSizeModel(split_size=2, dim=-2),
-            (torch.randn(4, 6),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SplitSectionsModel(sections=[2, 3, 1], dim=1),
+        (torch.randn(4, 6),),
+    )
 
-        self._test_op(
-            SplitSectionsModel(sections=[2, 3, 1], dim=-1),
-            (torch.randn(4, 6),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SplitSectionsModel(sections=[2, 3, 1], dim=2),
+        (torch.randn(3, 4, 6),),
+    )
+
+
+def test_split_negative_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=2, dim=-1),
+        (torch.randn(4, 6),),
+    )
+
+    test_runner.lower_and_run_model(
+        SplitSizeModel(split_size=2, dim=-2),
+        (torch.randn(4, 6),),
+    )
+
+    test_runner.lower_and_run_model(
+        SplitSectionsModel(sections=[2, 3, 1], dim=-1),
+        (torch.randn(4, 6),),
+    )

@@ -10,13 +10,8 @@ import unittest
 from typing import Optional
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class ArgmaxModel(torch.nn.Module):
@@ -29,173 +24,150 @@ class ArgmaxModel(torch.nn.Module):
         return torch.argmax(x, dim=self.dim, keepdim=self.keepdim)
 
 
-@operator_test
-class Argmax(OperatorTest):
-    @dtype_test
-    def test_argmax_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            ArgmaxModel().to(dtype),
-            (torch.rand(10, 10).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_argmax_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        ArgmaxModel().to(dtype),
+        (torch.rand(10, 10).to(dtype),),
+    )
 
-    def test_argmax_dim(self, flow: TestFlow) -> None:
-        self._test_op(
-            ArgmaxModel(dim=0),
-            (torch.randn(5, 10),),
-            flow,
-        )
 
-        self._test_op(
-            ArgmaxModel(dim=1),
-            (torch.randn(5, 10),),
-            flow,
-        )
+def test_argmax_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=0),
+        (torch.randn(5, 10),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=0),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1),
+        (torch.randn(5, 10),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=1),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=0),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=2),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=1),
-            (torch.randn(2, 3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=2),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=-1),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1),
+        (torch.randn(2, 3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=-2),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=-1),
+        (torch.randn(3, 4, 5),),
+    )
 
-    def test_argmax_keepdim(self, flow: TestFlow) -> None:
-        self._test_op(
-            ArgmaxModel(dim=0, keepdim=True),
-            (torch.randn(5, 10),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=-2),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=1, keepdim=True),
-            (torch.randn(5, 10),),
-            flow,
-        )
 
-        self._test_op(
-            ArgmaxModel(dim=1, keepdim=True),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+def test_argmax_keepdim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=0, keepdim=True),
+        (torch.randn(5, 10),),
+    )
 
-        self._test_op(
-            ArgmaxModel(dim=2, keepdim=True),
-            (torch.randn(2, 3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1, keepdim=True),
+        (torch.randn(5, 10),),
+    )
 
-    def test_argmax_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            ArgmaxModel(),
-            (torch.randn(20),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1, keepdim=True),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(),
-            (torch.randn(5, 10),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=2, keepdim=True),
+        (torch.randn(2, 3, 4, 5),),
+    )
 
-        self._test_op(
-            ArgmaxModel(),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
 
-        self._test_op(
-            ArgmaxModel(),
-            (torch.randn(2, 3, 4, 5),),
-            flow,
-        )
+def test_argmax_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (torch.randn(20),),
+    )
 
-        self._test_op(
-            ArgmaxModel(),
-            (torch.randn(2, 2, 3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (torch.randn(5, 10),),
+    )
 
-    @unittest.skip("NaN and Inf are not enforced for backends.")
-    def test_argmax_edge_cases(self, flow: TestFlow) -> None:
-        x = torch.tensor([[1.0, float("inf"), 3.0], [4.0, 5.0, float("inf")]])
-        self._test_op(
-            ArgmaxModel(),
-            (x,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            ArgmaxModel(dim=0),
-            (x,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            ArgmaxModel(dim=1),
-            (x,),
-            flow,
-            generate_random_test_inputs=False,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (torch.randn(3, 4, 5),),
+    )
 
-        x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
-        self._test_op(
-            ArgmaxModel(),
-            (x,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            ArgmaxModel(dim=0),
-            (x,),
-            flow,
-            generate_random_test_inputs=False,
-        )
-        self._test_op(
-            ArgmaxModel(dim=1),
-            (x,),
-            flow,
-            generate_random_test_inputs=False,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (torch.randn(2, 3, 4, 5),),
+    )
 
-        x = torch.tensor([5.0])
-        self._test_op(
-            ArgmaxModel(),
-            (x,),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (torch.randn(2, 2, 3, 4, 5),),
+    )
 
-    def test_argmax_scalar(self, flow: TestFlow) -> None:
-        self._test_op(
-            ArgmaxModel(),
-            (torch.tensor([5.0]),),
-            flow,
-        )
+
+@unittest.skip("NaN and Inf are not enforced for backends.")
+def test_argmax_edge_cases(test_runner) -> None:
+    x = torch.tensor([[1.0, float("inf"), 3.0], [4.0, 5.0, float("inf")]])
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (x,),
+        generate_random_test_inputs=False,
+    )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=0),
+        (x,),
+        generate_random_test_inputs=False,
+    )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1),
+        (x,),
+        generate_random_test_inputs=False,
+    )
+
+    x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (x,),
+        generate_random_test_inputs=False,
+    )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=0),
+        (x,),
+        generate_random_test_inputs=False,
+    )
+    test_runner.lower_and_run_model(
+        ArgmaxModel(dim=1),
+        (x,),
+        generate_random_test_inputs=False,
+    )
+
+    x = torch.tensor([5.0])
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (x,),
+    )
+
+
+def test_argmax_scalar(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ArgmaxModel(),
+        (torch.tensor([5.0]),),
+    )

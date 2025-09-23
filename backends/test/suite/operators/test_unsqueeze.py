@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class UnsqueezeModel(torch.nn.Module):
@@ -26,85 +21,74 @@ class UnsqueezeModel(torch.nn.Module):
         return torch.unsqueeze(x, self.dim)
 
 
-@operator_test
-class Unsqueeze(OperatorTest):
-    @dtype_test
-    def test_unsqueeze_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            UnsqueezeModel(dim=1),
-            (torch.rand(3, 5).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_unsqueeze_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=1),
+        (torch.rand(3, 5).to(dtype),),
+    )
 
-    def test_unsqueeze_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            UnsqueezeModel(dim=1),
-            (torch.randn(3, 5),),
-            flow,
-        )
 
-    def test_unsqueeze_positions(self, flow: TestFlow) -> None:
-        self._test_op(
-            UnsqueezeModel(dim=0),
-            (torch.randn(3, 5),),
-            flow,
-        )
+def test_unsqueeze_basic(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=1),
+        (torch.randn(3, 5),),
+    )
 
-        self._test_op(
-            UnsqueezeModel(dim=1),
-            (torch.randn(3, 5),),
-            flow,
-        )
 
-        self._test_op(
-            UnsqueezeModel(dim=2),
-            (torch.randn(3, 5),),
-            flow,
-        )
+def test_unsqueeze_positions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=0),
+        (torch.randn(3, 5),),
+    )
 
-    def test_unsqueeze_negative_dim(self, flow: TestFlow) -> None:
-        self._test_op(
-            UnsqueezeModel(dim=-1),
-            (torch.randn(3, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=1),
+        (torch.randn(3, 5),),
+    )
 
-        self._test_op(
-            UnsqueezeModel(dim=-2),
-            (torch.randn(3, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=2),
+        (torch.randn(3, 5),),
+    )
 
-        self._test_op(
-            UnsqueezeModel(dim=-3),
-            (torch.randn(3, 5),),
-            flow,
-        )
 
-    def test_unsqueeze_different_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            UnsqueezeModel(dim=0),
-            (torch.randn(5),),
-            flow,
-        )
-        self._test_op(
-            UnsqueezeModel(dim=1),
-            (torch.randn(5),),
-            flow,
-        )
+def test_unsqueeze_negative_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=-1),
+        (torch.randn(3, 5),),
+    )
 
-        self._test_op(
-            UnsqueezeModel(dim=0),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
-        self._test_op(
-            UnsqueezeModel(dim=2),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
-        self._test_op(
-            UnsqueezeModel(dim=3),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=-2),
+        (torch.randn(3, 5),),
+    )
+
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=-3),
+        (torch.randn(3, 5),),
+    )
+
+
+def test_unsqueeze_different_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=0),
+        (torch.randn(5),),
+    )
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=1),
+        (torch.randn(5),),
+    )
+
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=0),
+        (torch.randn(3, 4, 5),),
+    )
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=2),
+        (torch.randn(3, 4, 5),),
+    )
+    test_runner.lower_and_run_model(
+        UnsqueezeModel(dim=3),
+        (torch.randn(3, 4, 5),),
+    )
