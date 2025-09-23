@@ -7,7 +7,7 @@
 #
 from enum import Enum
 
-from executorch.backends.nxp.backend.node_format import NodeFormat
+from executorch.backends.nxp.backend.node_format_inference import NodeFormat
 
 
 class TensorFormat(Enum):

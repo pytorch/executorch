@@ -18,7 +18,10 @@ from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
-from executorch.backends.nxp.backend.node_format import NXP_NODE_FORMAT
+from executorch.backends.nxp.backend.node_format_inference import (
+    NodeFormat,
+    NodeFormatInference,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 # noinspection PyProtectedMember
@@ -67,10 +70,12 @@ class EdgeProgramToIRConverter:
         :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
+        node_formats = NodeFormatInference(edge_program).identify_node_formats()
         parameters_mapping = self.map_inputs_to_parameters(edge_program)
 
         cc = self.build_conversion_context(
             parameters_mapping,
+            node_formats,
             conversion_config,
             custom_delegation_options,
         )
@@ -96,7 +101,7 @@ class EdgeProgramToIRConverter:
     def append_placeholders_and_tensors(nodes: list[Node], context: ConversionContext):
         for node in nodes:
             if node.op == "placeholder":
-                node_format = node.meta[NXP_NODE_FORMAT]
+                node_format = context.node_formats[node]
 
                 if node.name in context.parameters_mapping:
                     # Node is placeholder and has data -> append as static tensor with data
@@ -109,7 +114,7 @@ class EdgeProgramToIRConverter:
                     context.tflite_builder.append_as_fake_tensor(node, node_format)
             elif node.op == "call_function":
                 # Node is call function -> append only output as a tensor
-                node_format = node.meta[NXP_NODE_FORMAT]
+                node_format = context.node_formats[node]
                 context.tflite_builder.append_as_fake_tensor(node, node_format)
             elif node.op == "output":
                 # Nothing to do
@@ -166,6 +171,7 @@ class EdgeProgramToIRConverter:
     @staticmethod
     def build_conversion_context(
         parameters_mapping: dict,
+        node_formats: dict[Node, NodeFormat],
         conversion_config: ConversionConfig = _default_conversion_config,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
@@ -180,6 +186,7 @@ class EdgeProgramToIRConverter:
             tflite_builder,
             conversion_config,
             parameters_mapping,
+            node_formats,
             custom_delegation_options,
         )
 

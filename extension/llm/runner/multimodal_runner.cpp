@@ -62,7 +62,7 @@ Error MultimodalRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error MultimodalRunner::prefill(std::vector<MultimodalInput>& inputs) {
+Error MultimodalRunner::prefill(const std::vector<MultimodalInput>& inputs) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
