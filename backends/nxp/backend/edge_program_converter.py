@@ -134,6 +134,7 @@ class EdgeProgramToIRConverter:
 
         qdq_related_functions = [
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         ]
 
@@ -203,7 +204,8 @@ class EdgeProgramToIRConverter:
         :param conversion_context: ConversionContext instance.
         """
         qdq_q_ops_converters = {
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: QDQDequantizeConverter,  # noqa F405
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: QDQPerTensorDequantizeConverter,  # noqa F405
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: QDQPerChannelDequantizeConverter,  # noqa F405
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: QDQQuantizeConverter,  # noqa F405
         }
 
