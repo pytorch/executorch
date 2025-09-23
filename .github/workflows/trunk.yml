@@ -623,6 +623,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    secrets: inherit
     strategy:
       fail-fast: false
       matrix:
@@ -645,7 +646,7 @@ jobs:
 
         echo "::group::Set up Huggingface"
         ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         ${CONDA_RUN} pip list
