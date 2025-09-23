@@ -1145,3 +1145,114 @@ class TestRefImplementations(unittest.TestCase):
             torch.equal(output, expected_output),
             f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
         )
+
+    @expand(
+        [
+            (
+                "basic_2d",
+                torch.tensor(
+                    [[1.0, 2.0, 3.0, 4.0]], dtype=torch.float32
+                ),  # input: [1, 4]
+                torch.tensor(
+                    [[0.0, 0.0]], dtype=torch.float32
+                ),  # sin: [1, 2] - broadcasts to [1, 4]
+                torch.tensor(
+                    [[1.0, 1.0]], dtype=torch.float32
+                ),  # cos: [1, 2] - broadcasts to [1, 4]
+                torch.tensor(
+                    [[1.0, 3.0, 2.0, 4.0]], dtype=torch.float32
+                ),  # expected: [1, 3, 2, 4]
+            ),
+            (
+                "batch_sequence_3d",
+                torch.tensor(
+                    [[[1.0, 0.0, 2.0, 0.0]]], dtype=torch.float32
+                ),  # input: [1, 1, 4]
+                torch.tensor([[[0.5, 0.5]]], dtype=torch.float32),  # sin: [1, 1, 2]
+                torch.tensor(
+                    [[[0.866, 0.866]]], dtype=torch.float32
+                ),  # cos: [1, 1, 2] (approx cos(30°))
+                torch.tensor(
+                    [[[0.866, 1.732, 0.5, 1.0]]], dtype=torch.float32
+                ),  # expected: [0.866, 1.732, 0.5, 1.0]
+            ),
+            (
+                "multiple_batch",
+                torch.tensor(
+                    [[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32
+                ),  # input: [2, 2]
+                torch.tensor(
+                    [[0.0], [1.0]], dtype=torch.float32
+                ),  # sin: [2, 1] - broadcasts to [2, 2]
+                torch.tensor(
+                    [[1.0], [0.0]], dtype=torch.float32
+                ),  # cos: [2, 1] - broadcasts to [2, 2]
+                torch.tensor(
+                    [[1.0, 2.0], [-4.0, 3.0]], dtype=torch.float32
+                ),  # expected: [[1, 2], [-4, 3]]
+            ),
+            (
+                "larger_embedding",
+                torch.tensor(
+                    [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]], dtype=torch.float32
+                ),  # input: [1, 6]
+                torch.tensor([[0.0, 0.5, 1.0]], dtype=torch.float32),  # sin: [1, 3]
+                torch.tensor([[1.0, 0.866, 0.0]], dtype=torch.float32),  # cos: [1, 3]
+                torch.tensor(
+                    [[1.0, 0.598, -6.0, 2.0, 4.964, 5.0]], dtype=torch.float32
+                ),  # expected: [1, 0.598, -6, 2, 4.964, 5]
+            ),
+            (
+                "single_pair",
+                torch.tensor([[1.0, 2.0]], dtype=torch.float32),  # input: [1, 2]
+                torch.tensor([[0.707]], dtype=torch.float32),  # sin: [1, 1] (sin(45°))
+                torch.tensor([[0.707]], dtype=torch.float32),  # cos: [1, 1] (cos(45°))
+                torch.tensor(
+                    [[-0.707, 2.121]], dtype=torch.float32
+                ),  # expected: [-0.707, 2.121]
+            ),
+            (
+                "pos is not None",
+                torch.tensor(0),
+                torch.tensor(0),
+                torch.tensor(0),
+                torch.tensor(0),
+                torch.tensor(0),  # pos is not None
+            ),
+        ]
+    )
+    def test_rope(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        sin_tensor: torch.Tensor,
+        cos_tensor: torch.Tensor,
+        expected_output: torch.Tensor,
+        pos: torch.Tensor | None = None,
+    ) -> None:
+        if pos is not None:
+            with self.assertRaises(ValueError) as context:
+                torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, pos)
+
+            self.assertIn("pos is not supported", str(context.exception))
+            return
+
+        output = torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, None)
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
