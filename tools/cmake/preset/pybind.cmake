@@ -22,8 +22,8 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
 
-# TODO(larryliu0820): Temporarily disable building llm_runner for Windows
-# wheel due to the issue of tokenizer file path length limitation.
+# TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
+# due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
