@@ -94,7 +94,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   # Link with the extension_llm_runner library and its dependencies
   target_link_libraries(
     _llm_runner PRIVATE extension_llm_runner tokenizers::tokenizers
-                        portable_lib
+                        portable_lib ${TORCH_PYTHON_LIBRARY} ${TORCH_LIBRARIES}
   )
 
   # Set properties for the Python extension
