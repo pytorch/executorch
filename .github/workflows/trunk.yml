@@ -635,13 +635,15 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        echo "::group::Setup ExecuTorch"
+        echo "::group::Set up ExecuTorch"
         bash .ci/scripts/setup-conda.sh
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool cmake
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
         echo "::endgroup::"
 
-        echo "::group::Setup Huggingface"
+        echo "::group::Set up Huggingface"
         ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
