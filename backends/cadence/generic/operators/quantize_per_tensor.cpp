@@ -20,7 +20,7 @@ using ::impl::generic::kernels::quantize;
 
 // Quantize the input tensor (PT2 version). Note that quant_<min,max> are not
 // used in any computation.
-void quantize_per_tensor_out(
+Tensor& quantize_per_tensor_out(
     KernelRuntimeContext& context,
     const Tensor& input,
     double scale,
@@ -34,30 +34,110 @@ void quantize_per_tensor_out(
 
   if (out.scalar_type() == ScalarType::Byte) {
     uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
-    impl::generic::kernels::quantize<uint8_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<uint8_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Char) {
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
-    impl::generic::kernels::quantize<int8_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<int8_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else if (
       out.scalar_type() == ScalarType::Bits16 ||
       out.scalar_type() == ScalarType::UInt16) {
     uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
-    impl::generic::kernels::quantize<uint16_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<uint16_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Short) {
     int16_t* out_data = out.mutable_data_ptr<int16_t>();
-    impl::generic::kernels::quantize<int16_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    quantize<int16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  } else if (out.scalar_type() == ScalarType::Int) {
+    int32_t* out_data = out.mutable_data_ptr<int32_t>();
+    quantize<int32_t>(out_data, input_data, 1. / scale, zero_point, numel);
   } else {
     ET_CHECK_MSG(
         false,
         "Unhandled input dtype %hhd",
         static_cast<int8_t>(out.scalar_type()));
   }
+  return out;
 }
 
-} // namespace native
-} // namespace generic
-} // namespace impl
+Tensor& quantize_per_tensor_asym8s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  int8_t* out_data = out.mutable_data_ptr<int8_t>();
+  quantize<int8_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  return out;
+}
+
+Tensor& quantize_per_tensor_asym8u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
+  quantize<uint8_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  return out;
+}
+
+Tensor& quantize_per_tensor_asym16s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  int16_t* out_data = out.mutable_data_ptr<int16_t>();
+  quantize<int16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  return out;
+}
+
+Tensor& quantize_per_tensor_asym16u_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  uint16_t* out_data = out.mutable_data_ptr<uint16_t>();
+  quantize<uint16_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  return out;
+}
+
+Tensor& quantize_per_tensor_asym32s_out(
+    KernelRuntimeContext& context,
+    const Tensor& input,
+    double scale,
+    int64_t zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  const float* input_data = input.const_data_ptr<float>();
+  size_t numel = out.numel();
+  int32_t* out_data = out.mutable_data_ptr<int32_t>();
+  quantize<int32_t>(out_data, input_data, 1. / scale, zero_point, numel);
+  return out;
+}
+
+}; // namespace native
+}; // namespace generic
+}; // namespace impl

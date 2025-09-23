@@ -167,7 +167,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Size.Ge(lambda deps, r, d: 1),
                     max_size_constraint,
                 ]
-            else:
+            elif index == 1:  # input tensor(a)
                 tensor_constraints = [
                     cp.Dtype.In(
                         lambda deps: [
@@ -179,6 +179,25 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                             torch.float32,
                         ]
                     ),
+                    cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                    cp.Rank.Ge(lambda deps: 1),
+                    cp.Size.Ge(lambda deps, r, d: 1),
+                    max_size_constraint,
+                ]
+            else:  # input tensor(b)
+                tensor_constraints = [
+                    cp.Dtype.In(
+                        lambda deps: [
+                            torch.int8,
+                            torch.int16,
+                            torch.uint8,
+                            torch.uint16,
+                            torch.int32,
+                            torch.float32,
+                        ]
+                    ),
+                    cp.Dtype.Eq(lambda deps: deps[1].dtype),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),

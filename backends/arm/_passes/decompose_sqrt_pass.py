@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
-from typing import Tuple, Union
+from typing import Set, Tuple, Type, Union
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -27,6 +27,7 @@ def get_sqrt_decomposition(op) -> Union[Tuple, torch._ops.OpOverload]:
 
 
 class DecomposeSqrtPass(ExportPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         """

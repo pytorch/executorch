@@ -182,8 +182,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
     eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
   } else {
-    tokenizer_ =
-        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
+    tokenizer_ = llm::load_tokenizer(tokenizer_path_);
     if (tokenizer_ == nullptr) {
       ET_LOG(
           Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());

@@ -81,7 +81,7 @@ To run the Android/iOS apps, you need a device with at least 12GiB memory.
 #### Android
 
 We can run LLAVA using the LLAMA Demo Apps. Please refer to [this
-tutorial](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo)
+tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo)
 to for full instructions on building the Android LLAMA Demo App.
 
 #### iOS
