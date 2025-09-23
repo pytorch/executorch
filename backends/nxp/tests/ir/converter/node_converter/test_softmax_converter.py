@@ -11,7 +11,6 @@ from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from executorch.backends.nxp.tests.executorch_pipeline import to_edge_program
 from executorch.backends.nxp.tests.executors import convert_run_compare
 from executorch.backends.nxp.tests.models import SoftmaxConvModule, SoftmaxModule
@@ -57,7 +56,6 @@ def test_softmax_conversion__unknown_input_format(input_shape, dim: int):
     model = SoftmaxModule(dim)
 
     edge_program = to_edge_program(model, input_shape).exported_program()
-    NodeFormatInference(edge_program).identify_node_formats()
 
     # Currently this test not pass because the convertibility checker doesn't use tensor formats.
     with pytest.raises(
@@ -80,7 +78,6 @@ def test_softmax_conversion_channel_last(input_shape, dim: int):
     model = SoftmaxConvModule(dim)
 
     edge_program = to_edge_program(model, input_shape).exported_program()
-    NodeFormatInference(edge_program).identify_node_formats()
 
     # TODO (Robert Kalmar) Currently this test not pass because the convertibility checker doesn't use tensor formats.
     with pytest.raises(
@@ -107,7 +104,6 @@ def test_softmax_conversion_unsupported_dims(input_shape, dim: int):
     model = SoftmaxModule(dim)
 
     edge_program = to_edge_program(model, input_shape).exported_program()
-    NodeFormatInference(edge_program).identify_node_formats()
 
     with pytest.raises(
         AssertionError, match="`aten__softmax_default` is not convertible"
