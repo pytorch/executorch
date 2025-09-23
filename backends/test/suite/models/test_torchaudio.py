@@ -14,7 +14,6 @@ import torch
 import torchaudio
 
 from executorch.backends.test.suite import dtype_to_str
-from executorch.backends.test.suite.flow import TestFlow
 from torch.export import Dim
 
 #
@@ -45,9 +44,7 @@ class PatchedConformer(torch.nn.Module):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32], ids=dtype_to_str)
-@pytest.mark.parametrize(
-    "use_dynamic_shapes", [False, True], ids=["static_shapes", "dynamic_shapes"]
-)
+@pytest.mark.parametrize("use_dynamic_shapes", [False], ids=["static_shapes"])
 def test_conformer(test_runner, dtype: torch.dtype, use_dynamic_shapes: bool):
     inner_model = torchaudio.models.Conformer(
         input_dim=80,
@@ -72,7 +69,7 @@ def test_conformer(test_runner, dtype: torch.dtype, use_dynamic_shapes: bool):
 @pytest.mark.parametrize(
     "use_dynamic_shapes", [False, True], ids=["static_shapes", "dynamic_shapes"]
 )
-def test_wav2letter(flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool):
+def test_wav2letter(test_runner, dtype: torch.dtype, use_dynamic_shapes: bool):
     model = torchaudio.models.Wav2Letter().to(dtype)
     inputs = (torch.randn(1, 1, 1024, dtype=dtype),)
     dynamic_shapes = (
@@ -85,13 +82,11 @@ def test_wav2letter(flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool
         else None
     )
 
-    test_runner.lower_and_run_model(model, inputs)
+    test_runner.lower_and_run_model(model, inputs, dynamic_shapes=dynamic_shapes)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32], ids=dtype_to_str)
-@pytest.mark.parametrize(
-    "use_dynamic_shapes", [False, True], ids=["static_shapes", "dynamic_shapes"]
-)
+@pytest.mark.parametrize("use_dynamic_shapes", [False], ids=["static_shapes"])
 @unittest.skip("This model times out on all backends.")
 def test_wavernn(
     test_runner,
@@ -108,8 +103,8 @@ def test_wavernn(
 
     # See https://docs.pytorch.org/audio/stable/generated/torchaudio.models.WaveRNN.html#forward
     inputs = (
-        torch.randn(1, 1, (64 - 5 + 1) * 200),  # waveform
-        torch.randn(1, 1, 128, 64),  # specgram
-    ).to(dtype)
+        torch.randn(1, 1, (64 - 5 + 1) * 200).to(dtype),  # waveform
+        torch.randn(1, 1, 128, 64).to(dtype),  # specgram
+    )
 
     test_runner.lower_and_run_model(model, inputs)

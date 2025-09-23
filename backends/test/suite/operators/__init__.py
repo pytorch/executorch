@@ -6,21 +6,14 @@
 
 # pyre-unsafe
 
-import copy
 import os
 import sys
 import unittest
 
 from enum import Enum
-from typing import Callable
 
 import pytest
 import torch
-from executorch.backends.test.suite import get_test_flows
-from executorch.backends.test.suite.context import get_active_test_context, TestContext
-from executorch.backends.test.suite.flow import TestFlow
-from executorch.backends.test.suite.reporting import log_test_summary
-from executorch.backends.test.suite.runner import run_test
 
 
 def load_tests(loader, suite, pattern):

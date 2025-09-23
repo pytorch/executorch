@@ -1,8 +1,5 @@
 import argparse
-import csv
-import functools
 import json
-import sys
 
 from dataclasses import dataclass, field
 
@@ -216,17 +213,16 @@ def build_header(data) -> dict[str, int]:
 
     keys = max(data, key=len)
 
-    header = {
-        k:i for (i,k) in enumerate(keys)
-    }
+    header = {k: i for (i, k) in enumerate(keys)}
 
     for rec in data:
         keys = set(rec.keys())
         for k in keys:
             if k not in header:
                 header[k] = len(header)
-    
+
     return header
+
 
 def build_row(rec, header: dict[str, int]) -> list[str]:
     row = [""] * len(header)
