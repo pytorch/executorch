@@ -26,7 +26,9 @@ from torch.export.passes import move_to_device_pass
 
 
 # exist fallback operators in et namespace;
-supported_fallback_kernels: Dict[str, Any] = {}
+supported_fallback_kernels: Dict[str, Any] = {
+    "aoti_torch_mps_addmm_out": None,
+}
 
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
@@ -47,12 +49,13 @@ def collect_unsupported_fallback_kernels():
         device: str,
         *,
         debug_args: Optional[list[str]] = None,
+        debug_handle: Optional[int] = None,
     ):
         if kernel not in supported_fallback_kernels:
             missing_fallback_kernels.add(kernel)
 
         original_generate_c_shim_extern_kernel_call(
-            self, kernel, args, device, debug_args=debug_args
+            self, kernel, args, device, debug_args=debug_args, debug_handle=debug_handle
         )
 
     CppWrapperCpu.generate_c_shim_extern_kernel_call = (

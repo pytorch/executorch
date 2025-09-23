@@ -45,6 +45,18 @@ AOTITorchError aoti_torch_mps_set_arg_int(
     unsigned idx,
     int64_t val);
 
+/**
+ * ExecutorTorch implementation of aoti_torch_mps_addmm_out.
+ * Performs matrix multiplication with bias: out = beta * self + alpha * (mat1 @ mat2)
+ */
+AOTITorchError aoti_torch_mps_addmm_out(
+    AtenTensorHandle out,
+    AtenTensorHandle self,
+    AtenTensorHandle mat1,
+    AtenTensorHandle mat2,
+    double beta,
+    double alpha);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
