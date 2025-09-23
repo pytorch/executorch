@@ -1,7 +1,5 @@
 #pragma once
 
-#include <executorch/runtime/platform/compiler.h>
-
 namespace executorch::backends::xnnpack {
 /// The key for the backend. This is used to register the backend, check
 /// availability, and get/set options.

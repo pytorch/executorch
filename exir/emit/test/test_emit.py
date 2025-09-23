@@ -1920,7 +1920,7 @@ class TestEmit(unittest.TestCase):
             program_buffer = et_program.buffer
             et_module = _load_for_executorch_from_buffer(program_buffer)
             for _, (inp, expected) in enumerate(zip(test_inputs, reference_outputs)):
-                # Execute with ExecutorTorch
+                # Execute with ExecuTorch
                 et_output = et_module.forward([inp])
                 et_result = et_output[0]  # Get first output
                 # Compare results
