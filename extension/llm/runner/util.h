@@ -120,10 +120,6 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
   auto second_input_sizes = second_input_info.sizes();
   auto numel = second_input_sizes[0];
 
-  for (int i = 0; i < second_input_sizes.size(); ++i) {
-    ET_LOG(Error, "second_input_sizes[%d] = %d", i, second_input_sizes[i]);
-  }
-
   TensorPtr start_pos_tensor;
   if (numel > 1) {
     // `cache_position` goes from start_pos to start_pos +
