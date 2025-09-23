@@ -84,7 +84,8 @@ def extract_tensor_meta(meta, tosa_spec: TosaSpecification):
         ValueError: If ``meta['val']`` is not a ``FakeTensor``.
 
     """
-    assert meta.get("val") is not None
+    if meta.get("val") is None:
+        raise ValueError("Expected node.meta['val'] to be set to a FakeTensor")
     val = meta["val"]
     if type(val) is tuple:
         # TODO: should use first concrete representation

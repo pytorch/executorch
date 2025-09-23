@@ -7,7 +7,7 @@
 
 import itertools
 import operator
-from typing import cast, List
+from typing import cast, List, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
@@ -28,6 +28,8 @@ class AnnotateDecomposedMatmulPass(ExportPass):
     difficult. This helper function find all matmul partitions and annotate its
     matmul-op (can be mm or bmm).
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def _match_partition_to_node(
         self, node: torch.fx.Node, partitioned_inputs: List[torch.fx.Node]

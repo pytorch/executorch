@@ -83,12 +83,12 @@ To add the AAR file to your app:
 An AAR file itself does not contain dependency info, unlike the Maven one which bundled with pom.xml. The Java package requires `fbjni` and `soloader`, and currently requires users to explicitly declare the dependency. Therefore, two more `dependencies` in gradle rule is required:
 ```
 implementation("com.facebook.soloader:soloader:0.10.5")
-implementation("com.facebook.fbjni:fbjni:0.5.1")
+implementation("com.facebook.fbjni:fbjni:0.7.0")
 ```
 
 ### Example usage
 
-In your app working directory, such as executorch/examples/demo-apps/android/LlamaDemo,
+In your app working directory, such as executorch-examples/llm/android/LlamaDemo,
 ```
 mkdir -p app/libs
 curl https://ossci-android.s3.amazonaws.com/executorch/release/${executorch_version}/executorch.aar -o app/libs/executorch.aar
@@ -100,7 +100,7 @@ And include it in gradle:
 dependencies {
     implementation(files("libs/executorch.aar"))
     implementation("com.facebook.soloader:soloader:0.10.5")
-    implementation("com.facebook.fbjni:fbjni:0.5.1")
+    implementation("com.facebook.fbjni:fbjni:0.7.0")
 }
 ```
 
@@ -202,7 +202,7 @@ adb push extension/module/test/resources/add.pte /data/local/tmp/
 This example loads an ExecuTorch module, prepares input data, runs inference, and processes the output data.
 
 Please use [DeepLabV3AndroidDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo)
-and [LlamaDemo](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/LlamaDemo) for the code examples
+and [LlamaDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android/LlamaDemo) for the code examples
 using ExecuTorch AAR package.
 
 ## Java API reference
