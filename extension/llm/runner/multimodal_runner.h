@@ -126,7 +126,7 @@ class ET_EXPERIMENTAL MultimodalRunner {
    * @return The error code. KV cache position is tracked internally in pos_.
    */
   virtual ::executorch::runtime::Error prefill(
-      std::vector<MultimodalInput>& inputs);
+      const std::vector<MultimodalInput>& inputs);
 
   inline void stop() {
     text_token_generator_->stop();
