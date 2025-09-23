@@ -112,7 +112,7 @@ Now you can compile your app with the ExecuTorch Android library.
 
 You need Android [SDK](https://developer.android.com/studio) and [NDK](https://developer.android.com/ndk/downloads) to use it.
 
-Current NDK version used in ExecuTorch CI: r27b.
+Current NDK version used in ExecuTorch CI: r28c.
 
 You need to set `ANDROID_HOME` to Android SDK home and `ANDROID_NDK` to the correct NDK root (containing NOTICE file).
 
