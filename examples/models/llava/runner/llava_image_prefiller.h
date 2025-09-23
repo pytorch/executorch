@@ -16,8 +16,8 @@
 
 namespace example {
 
-using executorch::extension::llm::kImageEncoderMethod;
 using executorch::extension::llm::kTextModelMethod;
+using executorch::extension::llm::kVisionEncoderMethod;
 
 class ET_EXPERIMENTAL LlavaImagePrefiller {
  public:
@@ -34,12 +34,12 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
       ::executorch::extension::llm::Image& image,
       int64_t& start_pos) {
     auto image_tensor = executorch::extension::from_blob(
-        image.data.data(),
-        {3, image.height, image.width},
+        image.get_uint8_data().data(),
+        {3, image.height(), image.width()},
         ::executorch::aten::ScalarType::Byte);
     // Run image encoder
     auto image_encoder_outputs =
-        ET_UNWRAP(module_->execute(kImageEncoderMethod, image_tensor));
+        ET_UNWRAP(module_->execute(kVisionEncoderMethod, image_tensor));
 
     // inputs:[start_pos, embeds]
     auto start_pos_tensor = executorch::extension::from_blob(
@@ -67,7 +67,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
     if (is_method_loaded()) {
       return ::executorch::runtime::Error::Ok;
     }
-    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kImageEncoderMethod));
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kVisionEncoderMethod));
     ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kTextModelMethod));
     return ::executorch::runtime::Error::Ok;
   }
@@ -83,7 +83,7 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
       ET_CHECK_MSG(false, "Failed to get method names");
     }
     std::unordered_set<std::string> methods = methods_res.get();
-    bool methods_exist = methods.find(kImageEncoderMethod) != methods.end() &&
+    bool methods_exist = methods.find(kVisionEncoderMethod) != methods.end() &&
         methods.find(kTextModelMethod) != methods.end();
     if (!methods_exist) {
       for (const auto& method : methods) {
@@ -92,10 +92,10 @@ class ET_EXPERIMENTAL LlavaImagePrefiller {
       ET_CHECK_MSG(
           methods_exist,
           "Missing required methods (%s, %s) in the model",
-          kImageEncoderMethod,
+          kVisionEncoderMethod,
           kTextModelMethod);
     }
-    bool methods_loaded = module_->is_method_loaded(kImageEncoderMethod) &&
+    bool methods_loaded = module_->is_method_loaded(kVisionEncoderMethod) &&
         module_->is_method_loaded(kTextModelMethod);
     return methods_loaded;
   }
