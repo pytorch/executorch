@@ -10,7 +10,7 @@ SUITE=$1
 FLOW=$2
 ARTIFACT_DIR=$3
 
-REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.csv"
+REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.json"
 
 echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
@@ -24,7 +24,7 @@ PYTHON_EXECUTABLE=python
 ${CONDA_RUN} --no-capture-output .ci/scripts/setup-macos.sh --build-tool cmake --build-mode Release
 
 EXIT_CODE=0
-pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report "$REPORT_FILE" || EXIT_CODE=$?
+pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
 
 # Generate markdown summary.
 python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
