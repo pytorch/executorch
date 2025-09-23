@@ -1092,3 +1092,15 @@ def rms_norm(
     eps: float,
 ) -> torch.Tensor:
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
+
+
+@impl(m, "where_Scalar")
+def where_Scalar(
+    condition: torch.Tensor,
+    if_true: float,
+    if_false: float,
+) -> torch.Tensor:
+    if condition.dtype != torch.bool:
+        raise ValueError("condition must be a bool tensor")
+
+    return torch.where(condition, if_true, if_false)
