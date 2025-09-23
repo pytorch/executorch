@@ -89,7 +89,9 @@ example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 model = Add()
 model = model.eval()
 exported_program = torch.export.export_for_training(model, example_inputs)
-graph_module = exported_program.module()
+# Use check_guards=False to avoid creating _guards_fn modules that contain call_module nodes
+# which are not supported by ExecuTorch ARM passes during quantization
+graph_module = exported_program.module(check_guards=False)
 
 
 from executorch.backends.arm.vgf import VgfCompileSpec
