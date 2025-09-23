@@ -467,7 +467,7 @@ Error Runner<T>::generate_from_prompt_or_file(
 template <typename T>
 ::executorch::runtime::Error Runner<T>::prefill(
     const std::string& prompt,
-    const executorch::extension::llm::GenerationConfig& config = {}) {
+    const executorch::extension::llm::GenerationConfig& config) {
   return ::Error::NotImplemented;
 }
 
