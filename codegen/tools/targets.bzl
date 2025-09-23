@@ -29,7 +29,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":gen_oplist_lib",
         ],
-        preload_deps = [] if runtime.is_oss else ["//executorch/codegen/tools:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
+        preload_deps = ["//executorch/codegen/tools:selective_build"],
         package_style = "inplace",
         visibility = [
             "//executorch/...",
@@ -43,15 +43,25 @@ def define_common_targets(is_fbcode = False):
         srcs = ["yaml_util.py"],
     )
 
-    runtime.python_library(
-        name = "merge_yaml_lib",
-        srcs = ["merge_yaml.py"],
-        base_module = "executorch.codegen.tools",
-        deps = [
-            ":yaml_util",
-        ],
-        external_deps = ["torchgen"],
-    )
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_library(
+            name = "merge_yaml_lib",
+            srcs = ["merge_yaml.py"],
+            base_module = "executorch.codegen.tools",
+            deps = [
+                ":yaml_util",
+            ],
+            external_deps = ["torchgen"],
+        )
+    else:
+        runtime.python_library(
+            name = "merge_yaml_lib",
+            srcs = ["merge_yaml.py"],
+            base_module = "executorch.codegen.tools",
+            deps = [
+                ":yaml_util",
+            ],
+        )
 
     runtime.python_binary(
         name = "merge_yaml",
@@ -64,31 +74,43 @@ def define_common_targets(is_fbcode = False):
         visibility = ["PUBLIC"],
     )
 
-    runtime.python_test(
-        name = "test_gen_oplist",
-        base_module = "",
-        srcs = [
-            "test/test_gen_oplist.py",
-        ],
-        deps = [
-            ":gen_oplist_lib",
-        ],
-        package_style = "inplace",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_test(
+            name = "test_gen_oplist",
+            base_module = "",
+            srcs = [
+                "test/test_gen_oplist.py",
+            ],
+            deps = [
+                ":gen_oplist_lib",
+            ],
+            external_deps = ["torchgen"],
+            package_style = "inplace",
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
 
-    runtime.python_library(
-        name = "gen_all_oplist_lib",
-        srcs = ["gen_all_oplist.py"],
-        base_module = "executorch.codegen.tools",
-        visibility = [
-            "//executorch/...",
-        ],
-        external_deps = ["torchgen"],
-    )
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_library(
+            name = "gen_all_oplist_lib",
+            srcs = ["gen_all_oplist.py"],
+            base_module = "executorch.codegen.tools",
+            visibility = [
+                "//executorch/...",
+            ],
+            external_deps = ["torchgen"],
+        )
+    else:
+        runtime.python_library(
+            name = "gen_all_oplist_lib",
+            srcs = ["gen_all_oplist.py"],
+            base_module = "executorch.codegen.tools",
+            visibility = [
+                "//executorch/...",
+            ],
+        )
 
     runtime.python_binary(
         name = "gen_all_oplist",
@@ -123,20 +145,22 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
-    runtime.python_test(
-        name = "test_gen_all_oplist",
-        srcs = [
-            "test/test_gen_all_oplist.py",
-        ],
-        package_style = "inplace",
-        visibility = [
-            "PUBLIC",
-        ],
-        deps = [
-            ":gen_all_oplist_lib",
-        ],
-        _is_external_target = True,
-    )
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_test(
+            name = "test_gen_all_oplist",
+            srcs = [
+                "test/test_gen_all_oplist.py",
+            ],
+            package_style = "inplace",
+            visibility = [
+                "PUBLIC",
+            ],
+            deps = [
+                ":gen_all_oplist_lib",
+            ],
+            external_deps = ["torchgen"],
+            _is_external_target = True,
+        )
 
     runtime.python_library(
         name = "gen_selected_op_variants_lib",
@@ -159,29 +183,38 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
-    runtime.python_test(
-        name = "test_gen_selected_op_variants",
-        srcs = [
-            "test/test_gen_selected_op_variants.py",
-        ],
-        package_style = "inplace",
-        visibility = [
-            "PUBLIC",
-        ],
-        deps = [
-            ":gen_selected_op_variants_lib",
-            "fbsource//third-party/pypi/expecttest:expecttest",
-        ],
-        _is_external_target = True,
-    )
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_test(
+            name = "test_gen_selected_op_variants",
+            srcs = [
+                "test/test_gen_selected_op_variants.py",
+            ],
+            package_style = "inplace",
+            visibility = [
+                "PUBLIC",
+            ],
+            deps = [
+                ":gen_selected_op_variants_lib",
+                "fbsource//third-party/pypi/expecttest:expecttest",
+            ],
+            _is_external_target = True,
+        )
 
-    runtime.python_library(
-        name = "gen_selected_prim_ops_lib",
-        srcs = ["gen_selected_prim_ops.py"],
-        base_module = "executorch.codegen.tools",
-        visibility = ["//executorch/..."],
-        external_deps = ["torchgen"],
-    )
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_library(
+            name = "gen_selected_prim_ops_lib",
+            srcs = ["gen_selected_prim_ops.py"],
+            base_module = "executorch.codegen.tools",
+            visibility = ["//executorch/..."],
+            external_deps = ["torchgen"],
+        )
+    else:
+        runtime.python_library(
+            name = "gen_selected_prim_ops_lib",
+            srcs = ["gen_selected_prim_ops.py"],
+            base_module = "executorch.codegen.tools",
+            visibility = ["//executorch/..."],
+        )
 
     runtime.python_binary(
         name = "gen_selected_prim_ops",
@@ -196,39 +229,37 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
-    if not runtime.is_oss:
-        runtime.cxx_python_extension(
-            name = "selective_build",
-            srcs = [
-                "selective_build.cpp",
-            ],
-            base_module = "executorch.codegen.tools",
-            types = ["selective_build.pyi"],
-            preprocessor_flags = [
-                "-DEXECUTORCH_PYTHON_MODULE_NAME=selective_build",
-            ],
-            deps = [
-                "//executorch/runtime/core:core",
-                "//executorch/schema:program",
-            ],
-            external_deps = [
-                "pybind11",
-            ],
-            use_static_deps = True,
-            visibility = ["//executorch/codegen/..."],
-        )
+    
+    runtime.cxx_python_extension(
+        name = "selective_build",
+        srcs = [
+            "selective_build.cpp",
+        ],
+        base_module = "executorch.codegen.tools",
+        types = ["selective_build.pyi"],
+        preprocessor_flags = [
+            "-DEXECUTORCH_PYTHON_MODULE_NAME=selective_build",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/schema:program",
+        ],
+        external_deps = [
+            "pybind11",
+        ],
+        use_static_deps = True,
+        visibility = ["//executorch/codegen/..."],
+    )
 
 
-    # TODO(larryliu0820): This is a hack to only run these two on fbcode. These targets depends on exir which is only available in fbcode.
+    # TODO(larryliu0820): This is a hack to only run these on fbcode. These targets depend on exir which is only available in fbcode.
     if not runtime.is_oss and is_fbcode:
-        runtime.python_binary(
-            name = "gen_functions_yaml",
+        runtime.python_library(
+            name = "gen_ops_def_lib",
             srcs = ["gen_ops_def.py"],
-            main_module = "executorch.codegen.tools.gen_ops_def",
-            package_style = "inplace",
+            base_module = "executorch.codegen.tools",
             visibility = [
                 "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
             ],
             deps = [
                 "fbsource//third-party/pypi/pyyaml:pyyaml",
@@ -236,6 +267,19 @@ def define_common_targets(is_fbcode = False):
                 "//caffe2:torch",
                 "//executorch/exir:schema",
                 "//executorch/exir/_serialize:lib",
+            ],
+        )
+
+        runtime.python_binary(
+            name = "gen_functions_yaml",
+            main_module = "executorch.codegen.tools.gen_ops_def",
+            package_style = "inplace",
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                ":gen_ops_def_lib",
             ],
         )
 
