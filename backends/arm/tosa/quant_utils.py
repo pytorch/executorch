@@ -20,6 +20,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
+
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
@@ -245,7 +246,9 @@ def compute_multiplier_and_shift(
         const_2_power_15_or_31 = 1 << offset
         shifted_mantissa = round(mantissa * const_2_power_15_or_31)
 
-        assert shifted_mantissa <= const_2_power_15_or_31
+        assert (
+            shifted_mantissa <= const_2_power_15_or_31
+        ), f"Mantissa {shifted_mantissa} exceeds limit {const_2_power_15_or_31}"
 
         if shifted_mantissa == const_2_power_15_or_31:
             shifted_mantissa = shifted_mantissa // 2
@@ -255,7 +258,10 @@ def compute_multiplier_and_shift(
         shift = offset - shift
 
         # INT32_MAX, 2^31 - 1
-        assert shifted_mantissa <= (const_2_power_15_or_31 - 1)
+        assert shifted_mantissa <= (const_2_power_15_or_31 - 1), (
+            f"Mantissa {shifted_mantissa} exceeds signed max "
+            f"{const_2_power_15_or_31 - 1}"
+        )
 
         multiplier = shifted_mantissa
 
@@ -313,6 +319,7 @@ def build_rescale(
     per_channel=False,
 ):
     import serializer.tosa_serializer as ts  # type: ignore
+
     import tosa.Op as TosaOp  # type: ignore
 
     scaleWidth = 32

@@ -494,8 +494,8 @@ def prefill_inference(
             if collect_logits:
                 result_logits = logits[:, :pos]
             pos += 1
-
-    logging.info(f"prefill inference result:\n{tokenizer.decode(token_list)}")
+    if isinstance(prompt, str):
+        logging.info(f"prefill inference result:\n{tokenizer.decode(token_list)}")
     return result_logits
 
 
