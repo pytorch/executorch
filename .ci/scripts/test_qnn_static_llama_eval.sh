@@ -27,6 +27,29 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
+# -------------------------------
+# Parse args
+# -------------------------------
+EXTRA_FLAGS=""
+THRESHOLD=62.0  # default fallback
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --flags)
+      EXTRA_FLAGS="$2"
+      shift 2
+      ;;
+    --threshold)
+      THRESHOLD="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
 # Config
 PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python3}"
 MODEL="qwen2_5-0_5b"
@@ -39,7 +62,7 @@ EXTRA_FLAGS="$@"
 # Run command and capture *both stdout and stderr*
 LOG_FILE="eval_${MODEL}_$(date +%Y%m%d_%H%M%S).log"
 
-echo ">>> Running evaluation..."
+echo ">>> Running evaluation with flags: $EXTRA_FLAGS | threshold: $THRESHOLD"
 $PYTHON_EXECUTABLE -m executorch.examples.qualcomm.oss_scripts.llama.eval_llama_qnn \
   --decoder_model "$MODEL" \
   --quant_linear_only \

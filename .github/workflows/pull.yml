@@ -639,7 +639,9 @@ jobs:
 
         # Test static llama weight sharing and accuracy
         echo ">>> Running config: ${{ matrix.config.name }}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh ${{ matrix.config.flags }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh \
+          ${{ matrix.config.flags }} \
+          --threshold ${{ matrix.config.threshold }}
 
 
   # test-qnn-models-linux:
