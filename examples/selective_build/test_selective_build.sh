@@ -183,12 +183,6 @@ fi
 if [[ $1 == "cmake" ]];
 then
     cmake_install_executorch_lib $CMAKE_BUILD_TYPE
-
-    # Build selective_build module for model-based selection
-    echo "Building selective_build Python module..."
-    cmake --preset pybind -Bcmake-out .
-    cmake --build cmake-out --target selective_build -j9
-
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml
     test_cmake_select_ops_in_model
