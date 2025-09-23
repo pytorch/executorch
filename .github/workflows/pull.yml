@@ -601,6 +601,12 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+    matrix:
+      config:
+        - { name: "baseline", flags: "" }
+        - { name: "spinquant", flags: "--spinquant" }
+        - { name: "range-setting", flags: "--range_setting mse_with_act_loss" }
+        - { name: "spinquant+range-setting", flags: "--spinquant --range_setting mse_with_act_loss" }
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
@@ -624,7 +630,8 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
 
         # Test static llama weight sharing and accuracy
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh
+        echo ">>> Running config: ${{ matrix.config.name }}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh ${{ matrix.config.flags }}
 
 
   # test-qnn-models-linux:
