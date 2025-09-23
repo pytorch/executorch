@@ -20,6 +20,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
+
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
@@ -318,6 +319,7 @@ def build_rescale(
     per_channel=False,
 ):
     import serializer.tosa_serializer as ts  # type: ignore
+
     import tosa.Op as TosaOp  # type: ignore
 
     scaleWidth = 32

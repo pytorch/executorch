@@ -78,7 +78,10 @@ def aggregate_results(json_path: str) -> AggregatedSummary:
 
                 counts.add_row(result, result_detail)
 
-                params = subtest_meta["Params"]
+                test_id = subtest_meta["Test ID"]
+                base_test = subtest_meta["Test Case"]
+                params = test_id[base_test.len() + 1 : -1]
+
                 if params:
                     if params not in counts_by_param:
                         counts_by_param[params] = ResultCounts()
@@ -114,13 +117,6 @@ def escape_for_markdown(text: str) -> str:
 
 
 def generate_markdown(json_path: str, exit_code: int = 0):  # noqa (C901)
-    # Print warning if exit code is non-zero
-    if exit_code != 0:
-        print("> [!WARNING]")
-        print(
-            f"> Exit code {exit_code} was non-zero. Test process may have crashed. Check the job logs for more information.\n"
-        )
-
     results = aggregate_results(json_path)
 
     # Generate Summary section

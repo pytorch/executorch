@@ -203,7 +203,12 @@ public class Module {
     if (!mMethodMetadata.containsKey(name)) {
       throw new RuntimeException("method " + name + "does not exist for this module");
     }
-    return mMethodMetadata.get(name);
+
+    MethodMetadata methodMetadata = mMethodMetadata.get(name);
+    if (methodMetadata != null) {
+      methodMetadata.setBackends(getUsedBackends(name));
+    }
+    return methodMetadata;
   }
 
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */

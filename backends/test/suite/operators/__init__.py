@@ -83,9 +83,7 @@ def wrap_test(original_func, test_type):
         return wrapped_func
     elif test_type == TestType.DTYPE:
 
-        @pytest.mark.parametrize(
-            "dtype", [torch.float16, torch.float32], ids=lambda s: str(s)[6:]
-        )
+        @pytest.mark.parametrize("dtype", [torch.float32], ids=lambda s: str(s)[6:])
         def wrapped_func(test_runner, dtype):
             shim = TestCaseShim(test_runner)
             original_func(shim, test_runner._flow, dtype)

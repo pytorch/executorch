@@ -122,7 +122,6 @@ def run_test(  # noqa: C901
 
     # Ensure the model can run in eager mode.
     try:
-        print(f"Running model with flow {flow}")
         model(*inputs)
     except Exception as e:
         return build_result(TestResult.SKIPPED, e)

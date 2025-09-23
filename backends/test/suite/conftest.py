@@ -104,7 +104,6 @@ def pytest_json_runtest_metadata(item, call):
             subtest_metadata["Test Case"] = record.base_name
             subtest_metadata["Subtest"] = record.subtest_index
             subtest_metadata["Flow"] = record.flow
-            subtest_metadata["Params"] = record.params
             subtest_metadata["Result"] = record.result.to_short_str()
             subtest_metadata["Result Detail"] = record.result.to_detail_str()
             subtest_metadata["Error"] = error_message
