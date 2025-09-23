@@ -54,7 +54,7 @@ fi
 PYTHON_EXECUTABLE=python CMAKE_ARGS="$EXTRA_BUILD_ARGS" .ci/scripts/setup-linux.sh --build-tool cmake --build-mode Release --editable true
 
 EXIT_CODE=0
-pytest -c /dev/nul backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file "$REPORT_FILE" || EXIT_CODE=$?
+pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report "$REPORT_FILE" || EXIT_CODE=$?
 
 # Generate markdown summary.
 python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
