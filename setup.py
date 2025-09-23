@@ -814,6 +814,8 @@ class CustomBuild(build):
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_PYBIND"):
             cmake_build_args += ["--target", "portable_lib"]
             cmake_build_args += ["--target", "selective_build"]
+        # TODO(larryliu0820): Temporarily disable building llm_runner for Windows
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_LLM_RUNNER") and not _is_windows():
             cmake_build_args += ["--target", "_llm_runner"]
 
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
@@ -886,7 +888,7 @@ setup(
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
         BuiltExtension(
-            src="extension/llm/runner/_llm_runner.*",
+            src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
             modpath="executorch.extension.llm.runner._llm_runner",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
         ),
