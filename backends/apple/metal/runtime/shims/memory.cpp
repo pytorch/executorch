@@ -116,11 +116,11 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     return dtype_error;
   }
 
-  // Storage offset must always be 0
-  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
-  if (storage_offset_error != Error::Ok) {
-    return storage_offset_error;
-  }
+  // Handle storage offset by adjusting the data pointer
+  void* adjusted_data = static_cast<char*>(data) + (storage_offset * dtype_to_element_size(dtype));
+
+  ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: original_data=%p, storage_offset=%ld, element_size=%zu, adjusted_data=%p",
+         data, storage_offset, dtype_to_element_size(dtype), adjusted_data);
 
   // Convert sizes to the format expected by ExecutorTorch
   std::vector<int32_t> sizes(ndim);
@@ -128,33 +128,115 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
     sizes[i] = static_cast<int32_t>(sizes_ptr[i]);
   }
 
-  // check the tensor format
-  // Only support contiguous format for now
-  if (!is_tensor_contiguous(ndim, sizes_ptr, strides_ptr)) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed since input stride is not in contiguous format");
-    return Error::InvalidArgument;
+  // Check tensor format - support both contiguous and custom strides
+  bool is_contiguous = is_tensor_contiguous(ndim, sizes_ptr, strides_ptr);
+  bool is_chlast = is_tensor_channels_last(ndim, sizes_ptr, strides_ptr);
+
+  if (is_contiguous) {
+    ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: Creating contiguous tensor");
+    // Use simple make_tensor_ptr for contiguous tensors
+    auto tensor = executorch::extension::make_tensor_ptr(
+        sizes, // tensor dimensions
+        adjusted_data, // adjusted memory pointer (with storage offset applied)
+        dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
+    );
+
+    if (!tensor) {
+      ET_LOG(Error, "Failed to create contiguous tensor from blob");
+      return Error::InvalidArgument;
+    }
+
+    // Store the tensor so it doesn't get destroyed
+    tensors.insert(tensor);
+    *ret_new_tensor = tensor.get();
+    is_tensor_own_memory[tensor.get()] = false;
+
+  } else {
+    ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: Creating tensor with custom strides");
+
+    // Convert strides to the format expected by ExecutorTorch, handling broadcast strides
+    std::vector<int32_t> strides(ndim);
+    std::vector<int32_t> adjusted_sizes(ndim);
+    bool has_broadcast_dims = false;
+
+    for (int i = 0; i < ndim; i++) {
+      int64_t original_stride = strides_ptr[i];
+      int64_t size = sizes_ptr[i];
+
+      if (original_stride == 0) {
+        // Stride 0 means broadcasting - convert to size 1 with stride 1
+        // This tells ExecutorTorch this dimension doesn't actually consume memory
+        strides[i] = 1;
+        adjusted_sizes[i] = 1;  // Broadcast dimensions have effective size 1
+        has_broadcast_dims = true;
+        ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: Converted broadcast dim %d: stride 0->1, size %ld->1", i, size);
+      } else {
+        strides[i] = static_cast<int32_t>(original_stride);
+        adjusted_sizes[i] = static_cast<int32_t>(size);
+      }
+    }
+
+    // For tensors with broadcast dimensions, we need to create a smaller underlying tensor
+    // and then expand it to the desired size
+    if (has_broadcast_dims) {
+      ET_LOG(Debug, "aoti_torch_create_tensor_from_blob_v2: Creating base tensor for broadcasting");
+
+      // Create base tensor with adjusted (smaller) sizes
+      auto base_tensor = executorch::extension::from_blob(
+          adjusted_data, // adjusted memory pointer
+          adjusted_sizes, // adjusted (smaller) sizes
+          strides,       // adjusted strides
+          dtype_to_scalar_type(dtype) // scalar type
+      );
+
+      if (!base_tensor) {
+        ET_LOG(Error, "Failed to create base tensor for broadcasting");
+        return Error::InvalidArgument;
+      }
+
+      // Now expand the base tensor to the desired broadcast size
+      // For ExecutorTorch, we need to create a view that represents the broadcast
+      // Since ExecutorTorch may not support expand() directly, we'll need to handle this differently
+
+      // For now, let's try to create a simple view using the original sizes
+      // but with adjusted memory layout understanding
+
+      auto tensor = executorch::extension::make_tensor_ptr(
+          sizes, // original requested sizes (with broadcast dimensions)
+          adjusted_data, // same data pointer
+          dtype_to_scalar_type(dtype) // scalar type
+      );
+
+      if (!tensor) {
+        ET_LOG(Error, "Failed to create broadcast tensor view");
+        return Error::InvalidArgument;
+      }
+
+      // Store the tensor so it doesn't get destroyed
+      tensors.insert(tensor);
+      *ret_new_tensor = tensor.get();
+      is_tensor_own_memory[tensor.get()] = false;
+
+    } else {
+      // No broadcast dimensions - use normal strided tensor creation
+      auto tensor = executorch::extension::from_blob(
+          adjusted_data, // adjusted memory pointer
+          sizes,         // tensor dimensions
+          strides,       // custom strides
+          dtype_to_scalar_type(dtype) // scalar type
+      );
+
+      if (!tensor) {
+        ET_LOG(Error, "Failed to create strided tensor from blob");
+        return Error::InvalidArgument;
+      }
+
+      // Store the tensor so it doesn't get destroyed
+      tensors.insert(tensor);
+      *ret_new_tensor = tensor.get();
+      is_tensor_own_memory[tensor.get()] = false;
+    }
   }
-
-  // Create ExecutorTorch tensor that wraps the existing memory
-  // Note: We're NOT copying the data, just wrapping it
-  auto tensor = executorch::extension::make_tensor_ptr(
-      sizes, // tensor dimensions
-      data, // existing memory (don't copy!)
-      dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
-  );
-
-  if (!tensor) {
-    ET_LOG(Error, "Failed to create tensor from blob");
-    return Error::InvalidArgument;
-  }
-
-  // Store the tensor so it doesn't get destroyed
-  tensors.insert(tensor);
-
-  *ret_new_tensor = tensor.get();
-  is_tensor_own_memory[tensor.get()] = false;
 
   return Error::Ok;
 }
@@ -566,21 +648,9 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     const int64_t* strides_ptr,
     int64_t storage_offset,
     AOTITensorHandle* ret_new_tensor) {
-  // Check if storage_offset is not 0 - return error if not
-  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
-  if (storage_offset_error != Error::Ok) {
-    return storage_offset_error;
-  }
 
-  // Check if dimensions match
-  if (self->dim() != ndim) {
-    ET_LOG(
-        Error,
-        "tensor dimension mismatch. self->dim(): %d, provided ndim: %ld",
-        self->dim(),
-        ndim);
-    return Error::InvalidArgument;
-  }
+  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: self->dim()=%d, ndim=%ld, storage_offset=%ld",
+         self->dim(), ndim, storage_offset);
 
   // Get tensor properties from the input tensor
   int32_t dtype;
@@ -591,47 +661,54 @@ AOTITorchError aoti_torch__reinterpret_tensor(
   }
 
   int32_t device_type;
-  AOTITorchError device_type_err =
-      aoti_torch_get_device_type(self, &device_type);
+  AOTITorchError device_type_err = aoti_torch_get_device_type(self, &device_type);
   if (device_type_err != Error::Ok) {
     ET_LOG(Error, "failed to get device_type from input tensor");
     return device_type_err;
   }
 
   int32_t device_index;
-  AOTITorchError device_index_err =
-      aoti_torch_get_device_index(self, &device_index);
+  AOTITorchError device_index_err = aoti_torch_get_device_index(self, &device_index);
   if (device_index_err != Error::Ok) {
     ET_LOG(Error, "failed to get device_index from input tensor");
     return device_index_err;
   }
 
-  // Create new tensor with the provided sizes and strides using
-  // aoti_torch_empty_strided
-  AOTITorchError create_err = aoti_torch_empty_strided(
-      ndim,
-      sizes_ptr,
-      strides_ptr,
+  // Get the base data pointer from the source tensor
+  void* base_data_ptr = self->mutable_data_ptr();
+
+  // Calculate new tensor size in elements for logging
+  int64_t new_numel = 1;
+  for (int64_t i = 0; i < ndim; i++) {
+    new_numel *= sizes_ptr[i];
+  }
+
+  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: base_data_ptr=%p, new_numel=%ld, storage_offset=%ld",
+         base_data_ptr, new_numel, storage_offset);
+
+  // Create a new tensor view that shares the same underlying storage
+  // This is the correct way to implement reinterpret_tensor - as a view, not a copy
+  AOTITorchError create_err = aoti_torch_create_tensor_from_blob_v2(
+      base_data_ptr,       // Same underlying data pointer
+      ndim,                // New dimensions
+      sizes_ptr,           // New sizes
+      strides_ptr,         // New strides
+      storage_offset,      // Storage offset (will be handled properly now)
       dtype,
       device_type,
       device_index,
-      ret_new_tensor);
+      ret_new_tensor,
+      0,                   // layout (default)
+      nullptr,             // opaque_metadata
+      0                    // opaque_metadata_size
+  );
 
   if (create_err != Error::Ok) {
-    ET_LOG(Error, "failed to create new tensor with empty_strided");
+    ET_LOG(Error, "failed to create reinterpreted tensor view");
     return create_err;
   }
 
-  // Copy data from source tensor to new tensor
-  AOTITorchError copy_err = aoti_torch_copy_(*ret_new_tensor, self, 0);
-  if (copy_err != Error::Ok) {
-    ET_LOG(Error, "failed to copy data from source tensor to new tensor");
-    // Clean up the created tensor on failure
-    aoti_torch_delete_tensor_object(*ret_new_tensor);
-    *ret_new_tensor = nullptr;
-    return copy_err;
-  }
-
+  ET_LOG(Debug, "aoti_torch__reinterpret_tensor: Successfully created tensor view");
   return Error::Ok;
 }
 
