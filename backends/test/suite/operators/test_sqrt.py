@@ -9,13 +9,8 @@
 import unittest
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class SqrtModel(torch.nn.Module):
@@ -26,35 +21,39 @@ class SqrtModel(torch.nn.Module):
         return torch.sqrt(x)
 
 
-@operator_test
-class TestSqrt(OperatorTest):
-    @dtype_test
-    def test_sqrt_dtype(self, flow: TestFlow, dtype) -> None:
-        # Test with different dtypes
-        model = SqrtModel().to(dtype)
-        # Use non-negative values only for sqrt
-        self._test_op(model, (torch.rand(10, 10).to(dtype),), flow)
+@parameterize_by_dtype
+def test_sqrt_dtype(test_runner, dtype) -> None:
+    # Test with different dtypes
+    model = SqrtModel().to(dtype)
+    # Use non-negative values only for sqrt
+    test_runner.lower_and_run_model(model, (torch.rand(10, 10).to(dtype),))
 
-    def test_sqrt_shapes(self, flow: TestFlow) -> None:
-        # Test with different tensor shapes
 
-        # 1D tensor
-        self._test_op(SqrtModel(), (torch.rand(20),), flow)
+def test_sqrt_shapes(test_runner) -> None:
+    # Test with different tensor shapes
 
-        # 2D tensor
-        self._test_op(SqrtModel(), (torch.rand(5, 10),), flow)
+    # 1D tensor
+    test_runner.lower_and_run_model(SqrtModel(), (torch.rand(20),))
 
-        # 3D tensor
-        self._test_op(SqrtModel(), (torch.rand(3, 4, 5),), flow)
+    # 2D tensor
+    test_runner.lower_and_run_model(SqrtModel(), (torch.rand(5, 10),))
 
-    @unittest.skip("NaN and Inf are not enforced for backends.")
-    def test_sqrt_edge_cases(self, flow: TestFlow) -> None:
-        # Test edge cases
+    # 3D tensor
+    test_runner.lower_and_run_model(SqrtModel(), (torch.rand(3, 4, 5),))
 
-        # Tensor with infinity
-        x = torch.tensor([float("inf"), 1.0, 4.0])
-        self._test_op(SqrtModel(), (x,), flow, generate_random_test_inputs=False)
 
-        # Tensor with NaN
-        x = torch.tensor([float("nan"), 1.0, 4.0])
-        self._test_op(SqrtModel(), (x,), flow, generate_random_test_inputs=False)
+@unittest.skip("NaN and Inf are not enforced for backends.")
+def test_sqrt_edge_cases(test_runner) -> None:
+    # Test edge cases
+
+    # Tensor with infinity
+    x = torch.tensor([float("inf"), 1.0, 4.0])
+    test_runner.lower_and_run_model(
+        SqrtModel(), (x,), generate_random_test_inputs=False
+    )
+
+    # Tensor with NaN
+    x = torch.tensor([float("nan"), 1.0, 4.0])
+    test_runner.lower_and_run_model(
+        SqrtModel(), (x,), generate_random_test_inputs=False
+    )

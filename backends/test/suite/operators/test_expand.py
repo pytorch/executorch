@@ -9,13 +9,8 @@
 from typing import List
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class ExpandModel(torch.nn.Module):
@@ -27,96 +22,84 @@ class ExpandModel(torch.nn.Module):
         return x.expand(self.shape)
 
 
-@operator_test
-class Expand(OperatorTest):
-    @dtype_test
-    def test_expand_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            ExpandModel(shape=[8, 32]),
-            (torch.rand(1, 32).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_expand_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[8, 32]),
+        (torch.rand(1, 32).to(dtype),),
+    )
 
-    def test_expand_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            ExpandModel(shape=[8, 32]),
-            (torch.randn(1, 32),),
-            flow,
-        )
 
-        self._test_op(
-            ExpandModel(shape=[16, 20]),
-            (torch.randn(1, 1),),
-            flow,
-        )
+def test_expand_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[8, 32]),
+        (torch.randn(1, 32),),
+    )
 
-        self._test_op(
-            ExpandModel(shape=[4, 1, 32]),
-            (torch.randn(1, 32),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[16, 20]),
+        (torch.randn(1, 1),),
+    )
 
-        self._test_op(
-            ExpandModel(shape=[8, 4, 16]),
-            (torch.randn(8, 1, 16),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[4, 1, 32]),
+        (torch.randn(1, 32),),
+    )
 
-        self._test_op(
-            ExpandModel(shape=[6, 16, 8]),
-            (torch.randn(6, 16, 1),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[8, 4, 16]),
+        (torch.randn(8, 1, 16),),
+    )
 
-    def test_expand_keep_original_size(self, flow: TestFlow) -> None:
-        self._test_op(
-            ExpandModel(shape=[8, -1]),
-            (torch.randn(1, 32),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[6, 16, 8]),
+        (torch.randn(6, 16, 1),),
+    )
 
-        self._test_op(
-            ExpandModel(shape=[-1, 32]),
-            (torch.randn(4, 1),),
-            flow,
-        )
 
-        self._test_op(
-            ExpandModel(shape=[-1, 16, -1]),
-            (torch.randn(4, 1, 8),),
-            flow,
-        )
+def test_expand_keep_original_size(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[8, -1]),
+        (torch.randn(1, 32),),
+    )
 
-    def test_expand_rank_increase(self, flow: TestFlow) -> None:
-        # Test expanding 2D tensor to 3D
-        self._test_op(
-            ExpandModel(shape=[6, 8, 16]),
-            (torch.randn(8, 16),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[-1, 32]),
+        (torch.randn(4, 1),),
+    )
 
-        # Test expanding 2D tensor to 4D
-        self._test_op(
-            ExpandModel(shape=[3, 4, 8, 16]),
-            (torch.randn(8, 16),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[-1, 16, -1]),
+        (torch.randn(4, 1, 8),),
+    )
 
-    def test_expand_singleton_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            ExpandModel(shape=[512]),
-            (torch.randn(1),),
-            flow,
-        )
 
-        self._test_op(
-            ExpandModel(shape=[16, 20]),
-            (torch.randn(1, 1),),
-            flow,
-        )
+def test_expand_rank_increase(test_runner) -> None:
+    # Test expanding 2D tensor to 3D
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[6, 8, 16]),
+        (torch.randn(8, 16),),
+    )
 
-        self._test_op(
-            ExpandModel(shape=[8, 32]),
-            (torch.randn(32),),
-            flow,
-        )
+    # Test expanding 2D tensor to 4D
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[3, 4, 8, 16]),
+        (torch.randn(8, 16),),
+    )
+
+
+def test_expand_singleton_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[512]),
+        (torch.randn(1),),
+    )
+
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[16, 20]),
+        (torch.randn(1, 1),),
+    )
+
+    test_runner.lower_and_run_model(
+        ExpandModel(shape=[8, 32]),
+        (torch.randn(32),),
+    )

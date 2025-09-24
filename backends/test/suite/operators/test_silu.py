@@ -10,13 +10,8 @@
 import unittest
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class Model(torch.nn.Module):
@@ -28,23 +23,25 @@ class Model(torch.nn.Module):
         return torch.nn.functional.silu(x, inplace=self.inplace)
 
 
-@operator_test
-class TestSiLU(OperatorTest):
-    @dtype_test
-    def test_silu_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(Model(), ((torch.randn(2, 10) * 100).to(dtype),), flow)
+@parameterize_by_dtype
+def test_silu_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(Model(), ((torch.randn(2, 10) * 100).to(dtype),))
 
-    def test_silu_f32_single_dim(self, flow: TestFlow) -> None:
-        self._test_op(Model(), (torch.randn(20),), flow)
 
-    def test_silu_f32_multi_dim(self, flow: TestFlow) -> None:
-        self._test_op(Model(), (torch.randn(2, 3, 4, 5),), flow)
+def test_silu_f32_single_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(Model(), (torch.randn(20),))
 
-    @unittest.skip("In place activations aren't properly defunctionalized yet.")
-    def test_silu_f32_inplace(self, flow: TestFlow) -> None:
-        self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)
 
-    def test_silu_f32_boundary_values(self, flow: TestFlow) -> None:
-        # Test with specific values spanning negative and positive ranges
-        x = torch.tensor([-10.0, -5.0, -1.0, 0.0, 1.0, 5.0, 10.0])
-        self._test_op(Model(), (x,), flow)
+def test_silu_f32_multi_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(Model(), (torch.randn(2, 3, 4, 5),))
+
+
+@unittest.skip("In place activations aren't properly defunctionalized yet.")
+def test_silu_f32_inplace(test_runner) -> None:
+    test_runner.lower_and_run_model(Model(inplace=True), (torch.randn(3, 4, 5),))
+
+
+def test_silu_f32_boundary_values(test_runner) -> None:
+    # Test with specific values spanning negative and positive ranges
+    x = torch.tensor([-10.0, -5.0, -1.0, 0.0, 1.0, 5.0, 10.0])
+    test_runner.lower_and_run_model(Model(), (x,))

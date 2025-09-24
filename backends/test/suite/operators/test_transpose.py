@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class TransposeModel(torch.nn.Module):
@@ -27,117 +22,103 @@ class TransposeModel(torch.nn.Module):
         return torch.transpose(x, self.dim0, self.dim1)
 
 
-@operator_test
-class Transpose(OperatorTest):
-    @dtype_test
-    def test_transpose_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            TransposeModel(dim0=0, dim1=1),
-            (torch.rand(20, 32).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_transpose_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=1),
+        (torch.rand(20, 32).to(dtype),),
+    )
 
-    def test_transpose_basic(self, flow: TestFlow) -> None:
-        self._test_op(
-            TransposeModel(dim0=0, dim1=1),
-            (torch.randn(20, 32),),
-            flow,
-        )
 
-    def test_transpose_3d(self, flow: TestFlow) -> None:
-        self._test_op(
-            TransposeModel(dim0=0, dim1=1),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
+def test_transpose_basic(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=1),
+        (torch.randn(20, 32),),
+    )
 
-        self._test_op(
-            TransposeModel(dim0=0, dim1=2),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
 
-        self._test_op(
-            TransposeModel(dim0=1, dim1=2),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
+def test_transpose_3d(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=1),
+        (torch.randn(8, 10, 12),),
+    )
 
-    def test_transpose_4d(self, flow: TestFlow) -> None:
-        self._test_op(
-            TransposeModel(dim0=0, dim1=3),
-            (torch.randn(4, 6, 8, 10),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=2),
+        (torch.randn(8, 10, 12),),
+    )
 
-        self._test_op(
-            TransposeModel(dim0=1, dim1=2),
-            (torch.randn(4, 6, 8, 10),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=1, dim1=2),
+        (torch.randn(8, 10, 12),),
+    )
 
-    def test_transpose_identity(self, flow: TestFlow) -> None:
-        self._test_op(
-            TransposeModel(dim0=0, dim1=0),
-            (torch.randn(20, 32),),
-            flow,
-        )
-        self._test_op(
-            TransposeModel(dim0=1, dim1=1),
-            (torch.randn(20, 32),),
-            flow,
-        )
 
-        self._test_op(
-            TransposeModel(dim0=0, dim1=0),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
-        self._test_op(
-            TransposeModel(dim0=1, dim1=1),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
-        self._test_op(
-            TransposeModel(dim0=2, dim1=2),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
+def test_transpose_4d(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=3),
+        (torch.randn(4, 6, 8, 10),),
+    )
 
-    def test_transpose_negative_dims(self, flow: TestFlow) -> None:
-        self._test_op(
-            TransposeModel(dim0=-3, dim1=-1),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=1, dim1=2),
+        (torch.randn(4, 6, 8, 10),),
+    )
 
-        self._test_op(
-            TransposeModel(dim0=-2, dim1=-1),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
 
-    def test_transpose_different_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            TransposeModel(dim0=0, dim1=1),
-            (torch.randn(20, 32),),
-            flow,
-        )
+def test_transpose_identity(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=0),
+        (torch.randn(20, 32),),
+    )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=1, dim1=1),
+        (torch.randn(20, 32),),
+    )
 
-        self._test_op(
-            TransposeModel(dim0=0, dim1=2),
-            (torch.randn(8, 10, 12),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=0),
+        (torch.randn(8, 10, 12),),
+    )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=1, dim1=1),
+        (torch.randn(8, 10, 12),),
+    )
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=2, dim1=2),
+        (torch.randn(8, 10, 12),),
+    )
 
-        self._test_op(
-            TransposeModel(dim0=1, dim1=3),
-            (torch.randn(4, 6, 8, 10),),
-            flow,
-        )
 
-        self._test_op(
-            TransposeModel(dim0=0, dim1=4),
-            (torch.randn(2, 3, 4, 5, 6),),
-            flow,
-        )
+def test_transpose_negative_dims(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=-3, dim1=-1),
+        (torch.randn(8, 10, 12),),
+    )
+
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=-2, dim1=-1),
+        (torch.randn(8, 10, 12),),
+    )
+
+
+def test_transpose_different_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=1),
+        (torch.randn(20, 32),),
+    )
+
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=2),
+        (torch.randn(8, 10, 12),),
+    )
+
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=1, dim1=3),
+        (torch.randn(4, 6, 8, 10),),
+    )
+
+    test_runner.lower_and_run_model(
+        TransposeModel(dim0=0, dim1=4),
+        (torch.randn(2, 3, 4, 5, 6),),
+    )

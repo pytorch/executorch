@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class Model(torch.nn.Module):
@@ -31,82 +26,70 @@ class Model(torch.nn.Module):
         return self.adaptive_avgpool(x)
 
 
-@operator_test
-class AdaptiveAvgPool3d(OperatorTest):
-    @dtype_test
-    def test_adaptive_avgpool3d_dtype(self, flow: TestFlow, dtype) -> None:
-        # Input shape: (batch_size, channels, depth, height, width)
-        self._test_op(
-            Model().to(dtype),
-            ((torch.rand(1, 4, 8, 8, 8) * 10).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_adaptive_avgpool3d_dtype(test_runner, dtype) -> None:
+    # Input shape: (batch_size, channels, depth, height, width)
+    test_runner.lower_and_run_model(
+        Model().to(dtype),
+        ((torch.rand(1, 4, 8, 8, 8) * 10).to(dtype),),
+    )
 
-    def test_adaptive_avgpool3d_output_size(self, flow: TestFlow) -> None:
-        # Test with different output sizes
-        self._test_op(
-            Model(output_size=1),
-            (torch.randn(1, 4, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(output_size=(1, 1, 1)),
-            (torch.randn(1, 4, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(output_size=(6, 6, 6)),
-            (torch.randn(1, 4, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(output_size=(2, 4, 6)),
-            (torch.randn(1, 4, 8, 8, 8),),
-            flow,
-        )
 
-    def test_adaptive_avgpool3d_batch_sizes(self, flow: TestFlow) -> None:
-        # Test with batch inputs
-        self._test_op(
-            Model(),
-            (torch.randn(2, 4, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(8, 4, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(16, 4, 8, 8, 8),),
-            flow,
-        )
+def test_adaptive_avgpool3d_output_size(test_runner) -> None:
+    # Test with different output sizes
+    test_runner.lower_and_run_model(
+        Model(output_size=1),
+        (torch.randn(1, 4, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(output_size=(1, 1, 1)),
+        (torch.randn(1, 4, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(output_size=(6, 6, 6)),
+        (torch.randn(1, 4, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(output_size=(2, 4, 6)),
+        (torch.randn(1, 4, 8, 8, 8),),
+    )
 
-    def test_adaptive_avgpool3d_input_sizes(self, flow: TestFlow) -> None:
-        # Test with different input sizes
-        self._test_op(
-            Model(),
-            (torch.randn(1, 2, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(1, 8, 8, 8, 8),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(1, 4, 6, 6, 6),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(1, 4, 10, 10, 10),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(1, 4, 7, 9, 11),),
-            flow,
-        )
+
+def test_adaptive_avgpool3d_batch_sizes(test_runner) -> None:
+    # Test with batch inputs
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(2, 4, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(8, 4, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(16, 4, 8, 8, 8),),
+    )
+
+
+def test_adaptive_avgpool3d_input_sizes(test_runner) -> None:
+    # Test with different input sizes
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(1, 2, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(1, 8, 8, 8, 8),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(1, 4, 6, 6, 6),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(1, 4, 10, 10, 10),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(1, 4, 7, 9, 11),),
+    )

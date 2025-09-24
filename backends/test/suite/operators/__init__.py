@@ -61,6 +61,11 @@ def dtype_test(func):
     return func
 
 
+parameterize_by_dtype = pytest.mark.parametrize(
+    "dtype", DTYPES, ids=lambda s: str(s)[6:]
+)
+
+
 class OperatorTest(unittest.TestCase):
     pass
 
