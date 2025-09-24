@@ -31,7 +31,6 @@ optimum-cli export executorch \
   --qlinear 8da4w \
   --qlinear_encoder 8da4w \
   --qembedding 4w \
-  --qembedding_group_size 32 \
   --output_dir="voxtral"
 ```
 
