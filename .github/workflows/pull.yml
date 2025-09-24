@@ -621,7 +621,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
         # Setup install_requirements for llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-        # Test static llama weight sharing and accuracy
+
         echo ">>> Running config: ${{ matrix.config.name }}"
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh \
           --flags "${{ matrix.config.flags }}" \
