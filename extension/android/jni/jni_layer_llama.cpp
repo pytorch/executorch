@@ -286,10 +286,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   jint prefill_audio_input(
-      facebook::jni::alias_ref<jintArray> audio,
+      facebook::jni::alias_ref<jbyteArray> audio,
       jint batch_size,
-      jint n_channels,
-      jint n_samples) {
+      jint n_bins,
+      jint n_frames) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::InvalidArgument);
     }
@@ -299,12 +299,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     auto audio_size = audio->size();
     std::vector<uint8_t> audio_data(audio_size);
     if (audio_size != 0) {
-      std::vector<jint> audio_data_jint(audio_size);
-      audio->getRegion(0, audio_size, audio_data_jint.data());
+      std::vector<jbyte> audio_data_jbyte(audio_size);
+      audio->getRegion(0, audio_size, audio_data_jbyte.data());
       for (int i = 0; i < audio_size; i++) {
-        audio_data[i] = audio_data_jint[i];
+        audio_data[i] = audio_data_jbyte[i];
       }
-      llm::RawAudio audio_input{audio_data, batch_size, n_channels, n_samples};
+      llm::Audio audio_input{std::move(audio_data), batch_size, n_bins, n_frames};
       multi_modal_runner_->prefill(
           {llm::MultimodalInput{std::move(audio_input)}});
     }
