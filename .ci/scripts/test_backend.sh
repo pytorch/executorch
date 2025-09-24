@@ -22,8 +22,10 @@ conda activate "${CONDA_ENV}"
 if [[ "$(uname)" == "Darwin" ]]; then
     ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
     IS_MACOS=1
+    CONDA_PREFIX="${CONDA_RUN} --no-capture-output"
 else
     IS_MACOS=0
+    CONDA_PREFIX=""
 fi
 
 export PYTHON_EXECUTABLE=python
@@ -61,9 +63,9 @@ if [[ $IS_MACOS -eq 1 ]]; then
 else
     SETUP_SCRIPT=.ci/scripts/setup-linux.sh
 fi
-${CONDA_RUN} --no-capture-output CMAKE_ARGS="$EXTRA_BUILD_ARGS" $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
+${CONDA_PREFIX} CMAKE_ARGS="$EXTRA_BUILD_ARGS" $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
 EXIT_CODE=0
-${CONDA_RUN} --no-capture-output pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
+${CONDA_PREFIX} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
 # Generate markdown summary.
-${CONDA_RUN} --no-capture-output python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
+${CONDA_PREFIX} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
