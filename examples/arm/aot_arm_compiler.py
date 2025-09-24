@@ -188,46 +188,6 @@ def quantize(
     return m
 
 
-# Simple example models
-class AddModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x + x
-
-    example_input = (torch.ones(5, dtype=torch.int32),)
-    can_delegate = True
-
-
-class AddModule2(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return x + y
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
-
-
-class AddModule3(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return (x + y, x + x)
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
-
-
 class QuantAddTest(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -276,27 +236,6 @@ class QuantOpTest(torch.nn.Module):
     can_delegate = True  # when quantized
 
 
-class SoftmaxModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.softmax = torch.nn.Softmax(dim=0)
-
-    def forward(self, x):
-        z = self.softmax(x)
-        return z
-
-    example_input = (torch.ones(2, 2),)
-    can_delegate = True
-
-
-class MultipleOutputsModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return (x * y, x.sum(dim=-1, keepdim=True))
-
-    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
-    can_delegate = True
-
-
 class QuantLinearTest(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -311,29 +250,15 @@ class QuantLinearTest(torch.nn.Module):
 
 
 models = {
-    "add": AddModule,
-    "add2": AddModule2,
-    "add3": AddModule3,
     "qadd": QuantAddTest,
     "qadd2": QuantAddTest2,
     "qops": QuantOpTest,
-    "softmax": SoftmaxModule,
-    "MultipleOutputsModule": MultipleOutputsModule,
     # TODO: Remove this from here, once we have dedicated MCU test pipeline ready. This is an interim solution.
     # See https://github.com/pytorch/executorch/discussions/13944
     "qlinear": QuantLinearTest,
 }
 
 calibration_data = {
-    "add": (torch.randn(1, 5),),
-    "add2": (
-        torch.randn(1, 5),
-        torch.randn(1, 5),
-    ),
-    "add3": (
-        torch.randn(32, 5),
-        torch.randn(32, 5),
-    ),
     "qadd": (torch.randn(32, 2, 1),),
     "qadd2": (
         torch.randn(32, 2, 1),
@@ -345,8 +270,6 @@ calibration_data = {
         torch.randn(32, 2, 1) * -0.000001,
         torch.randn(32, 2, 1) * 1000,
     ),
-    "softmax": (torch.randn(32, 2, 2),),
-    "qlinear": (torch.randn(37, 61),),
 }
 
 evaluators = {
