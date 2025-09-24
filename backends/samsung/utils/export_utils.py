@@ -17,13 +17,11 @@ from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
 from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
-from executorch.exir import EdgeCompileConfig, ExportedProgram
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_manager import PassType
-from executorch.exir.program._program import (
-    to_edge_transform_and_lower,
-)
+from executorch.exir.program._program import to_edge_transform_and_lower
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 

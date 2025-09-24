@@ -168,7 +168,7 @@ if __name__ == "__main__":
         help=("Whether to dump all outputs. If not set, we only dump pte."),
         type=bool,
     )
-    
+
     parser.add_argument(
         "-w",
         "--weight",
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     instance.vocab_size = 29
     model = instance.get_eager_model().eval()
     if args.weight:
-        weight = torch.load(args.weight)
+        weight = torch.load(args.weight, weights_only=True)
         model.load_state_dict(weight)
     assert args.calibration_number
     if args.dataset:
