@@ -9,7 +9,6 @@
 
 import argparse
 import copy
-import json
 import logging
 import os
 
@@ -31,8 +30,8 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
 from executorch.backends.arm.util.arm_model_evaluator import (
-    GenericModelEvaluator,
-    MobileNetV2Evaluator,
+    evaluate_model,
+    evaluator_calibration_data,
 )
 
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
@@ -272,11 +271,6 @@ calibration_data = {
     ),
 }
 
-evaluators = {
-    "generic": GenericModelEvaluator,
-    "mv2": MobileNetV2Evaluator,
-}
-
 targets = [
     "ethos-u55-32",
     "ethos-u55-64",
@@ -301,21 +295,7 @@ def get_calibration_data(
 ):
     # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
     if evaluator_name is not None:
-        evaluator = evaluators[evaluator_name]
-
-        if hasattr(evaluator, "get_calibrator"):
-            assert evaluator_config is not None
-
-            config_path = Path(evaluator_config)
-            with config_path.open() as f:
-                config = json.load(f)
-
-            if evaluator_name == "mv2":
-                return evaluator.get_calibrator(
-                    training_dataset_path=config["training_dataset_path"]
-                )
-            else:
-                raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+        return evaluator_calibration_data(evaluator_name, evaluator_config)
 
     # If the model is in the calibration_data dictionary, get the data from there
     # This is used for the simple model examples provided
@@ -367,52 +347,6 @@ def get_compile_spec(
         compile_spec.dump_debug_info(mode)
 
     return compile_spec
-
-
-def evaluate_model(
-    model_name: str,
-    intermediates: str,
-    model_fp32: torch.nn.Module,
-    model_int8: torch.nn.Module,
-    example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str,
-    evaluator_config: str | None,
-) -> None:
-    evaluator = evaluators[evaluator_name]
-
-    # Get the path of the TOSA flatbuffer that is dumped
-    intermediates_path = Path(intermediates)
-    tosa_paths = list(intermediates_path.glob("*.tosa"))
-
-    if evaluator.REQUIRES_CONFIG:
-        assert evaluator_config is not None
-
-        config_path = Path(evaluator_config)
-        with config_path.open() as f:
-            config = json.load(f)
-
-        if evaluator_name == "mv2":
-            init_evaluator = evaluator(
-                model_name,
-                model_fp32,
-                model_int8,
-                example_inputs,
-                str(tosa_paths[0]),
-                config["batch_size"],
-                config["validation_dataset_path"],
-            )
-        else:
-            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
-    else:
-        init_evaluator = evaluator(
-            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
-        )
-
-    quant_metrics = init_evaluator.evaluate()
-    output_json_path = intermediates_path / "quant_metrics.json"
-
-    with output_json_path.open("w") as json_file:
-        json.dump(quant_metrics, json_file)
 
 
 def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
