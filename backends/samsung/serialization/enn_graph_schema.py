@@ -79,9 +79,6 @@ class EnnGraph:
 
         if quant_param is not None:
             need_quantize = True
-            if quant_param.get(QuantConstants.QUANT_KEY.quant_dtype) == torch.int32:
-                quant_param = none_quant_tensor_quant_meta()
-                need_quantize = False
 
             scales = self._affine_meta_param(
                 quant_param[QuantConstants.QUANT_KEY.scale]
@@ -131,8 +128,6 @@ class EnnGraph:
     def _affine_meta_param(param: Any) -> str:
         type_str_affine_table = {
             torch.int8: "AINT8",
-            torch.int32: "FLOAT32",  # INT32 just used for HW quant.
-            torch.int16: "AINT16",  # INT32 just used for HW quant.
         }
         if isinstance(param, str):
             return param

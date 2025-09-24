@@ -16,6 +16,7 @@ from executorch.backends.samsung._passes.conv1d_to_conv2d import Conv1dToConv2d
 from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
 )
+from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparamsPass
 from executorch.backends.samsung._passes.fold_qdq import FoldQDQPass
 from executorch.backends.samsung._passes.insert_qdq import InsertQDQPass
 from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
@@ -58,6 +59,7 @@ class EnnBackend(BackendDetails):
 
         enn_preprocess_passes = PassManager(
             passes=[
+                AnnotateQparamsPass(edge_program),
                 FoldQDQPass(),
                 ConstantPropPass(edge_program),
                 Conv1dToConv2d(edge_program),
