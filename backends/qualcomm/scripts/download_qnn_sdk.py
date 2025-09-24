@@ -178,9 +178,6 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     if not is_linux_x86():
         logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
-    elif not check_glibc_exist_and_validate():
-        logger.info("[QNN] Skipping Qualcomm SDK (glibc not found or version too old).")
-        return None
     else:
         logger.info("[QNN] Downloading Qualcomm SDK for Linux x86")
 
@@ -437,8 +434,7 @@ def install_qnn_sdk() -> bool:
     Returns:
         True if both steps succeeded (or were already satisfied), else False.
     """
-    if check_glibc_exist_and_validate():
-        if _ensure_libcxx_stack():
-            if _ensure_qnn_sdk_lib():
-                return True
+    if _ensure_libcxx_stack():
+        if _ensure_qnn_sdk_lib():
+            return True
     return False
