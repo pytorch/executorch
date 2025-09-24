@@ -18,6 +18,7 @@
  * all fp32 tensors.
  */
 
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -57,7 +58,13 @@ DEFINE_string(
     output_file,
     "",
     "Base name of output file. If not empty output will be written to the file(s).");
+DEFINE_string(input_list_path, "input_list.txt", "Model input list path.");
+DEFINE_string(
+  output_folder_path,
+  "outputs",
+  "Executorch inference data output path.");
 
+DEFINE_bool(dump_statistics, false, "Dump inference statistics.");
 DEFINE_bool(
     print_all_output,
     false,
@@ -70,6 +77,11 @@ DEFINE_int32(
     cpu_threads,
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
+DEFINE_bool(
+    shared_buffer,
+    false,
+    "Specifies to use shared buffers for zero-copy usecase between the application and device/co-processor associated with the backend.");
+DEFINE_uint32(method_index, 0, "Index of methods to be specified.");
 
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -251,7 +263,7 @@ int main(int argc, char** argv) {
   // Use the first method in the program.
   const char* method_name = nullptr;
   {
-    const auto method_name_result = program->get_method_name(0);
+    const auto method_name_result = program->get_method_name(FLAGS_method_index);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
   }
@@ -324,17 +336,167 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   EventTraceManager tracer;
+  auto before_load = std::chrono::high_resolution_clock::now();
   Result<Method> method = program->load_method(
       method_name,
       &memory_manager,
       tracer.get_event_tracer(),
       ptd_data_map.get());
+
+  auto after_load = std::chrono::high_resolution_clock::now();
+  double interval_load =
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          after_load - before_load)
+          .count() /
+      1000.0;
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
+
+  // QCOM change
+  std::ifstream input_list(FLAGS_input_list_path);
+  if (input_list.is_open()) {
+    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    ET_LOG(Debug, "Preparing inputs.");
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(Debug, "Inputs prepared.");
+
+    size_t num_inputs = method->inputs_size();
+    ET_LOG(Info, "Number of inputs: %zu", num_inputs);
+
+    auto split = [](std::string s, std::string delimiter) {
+      size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+      std::string token;
+      std::vector<std::string> res;
+
+      while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+        token = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back(token);
+      }
+      res.push_back(s.substr(pos_start));
+      return res;
+    };
+
+    std::string file_path;
+    int inference_index = 0;
+    double elapsed_time = 0;
+    while (std::getline(input_list, file_path)) {
+      auto input_files = split(file_path, " ");
+      if (input_files.size() == 0) {
+        break;
+      }
+      ET_CHECK_MSG(
+          input_files.size() == num_inputs,
+          "Number of inputs (%zu) mismatch with input files (%zu)",
+          num_inputs,
+          input_files.size());
+
+      std::vector<std::vector<char>> input_buf(num_inputs);
+      for (int input_index = 0; input_index < num_inputs; ++input_index) {
+        MethodMeta method_meta = method->method_meta();
+        Result<executorch::runtime::TensorInfo> tensor_meta =
+            method_meta.input_tensor_meta(input_index);
+
+        std::ifstream fin(input_files[input_index], std::ios::binary);
+        fin.seekg(0, fin.end);
+        size_t file_size = fin.tellg();
+
+        input_buf[input_index].resize(file_size);
+        fin.seekg(0, fin.beg);
+        fin.read(
+            static_cast<char*>(input_buf[input_index].data()),
+            file_size);
+        fin.close();
+
+        ET_CHECK_MSG(
+            file_size == tensor_meta->nbytes(),
+            "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
+            input_index,
+            file_size,
+            tensor_meta->nbytes());
+
+        auto impl = executorch::aten::TensorImpl(
+            tensor_meta->scalar_type(),
+            /*dim=*/tensor_meta->sizes().size(),
+            const_cast<executorch::aten::TensorImpl::SizesType*>(tensor_meta->sizes().data()),
+            input_buf[input_index].data(),
+            const_cast<executorch::aten::TensorImpl::DimOrderType*>(
+                tensor_meta->dim_order().data()));
+        Error ret = method->set_input(executorch::aten::Tensor(&impl), input_index);
+        ET_CHECK_MSG(
+            ret == Error::Ok, "Failed to set input tensor: %d", (int)ret);
+      }
+      Error status = method->execute();
+      std::vector<EValue> outputs(method->outputs_size());
+      status = method->get_outputs(outputs.data(), method->outputs_size());
+      ET_CHECK(status == Error::Ok);
+      for (size_t output_index = 0; output_index < method->outputs_size();
+          output_index++) {
+        auto output_tensor = outputs[output_index].toTensor();
+        size_t nbytes = output_tensor.nbytes();
+        auto output_file_name = FLAGS_output_folder_path + "/output_" +
+            std::to_string(inference_index) + "_" +
+            std::to_string(output_index) + ".raw";
+        std::ofstream fout(output_file_name.c_str(), std::ios::binary);
+        fout.write(output_tensor.const_data_ptr<char>(), nbytes);
+        fout.close();
+      }
+      ++inference_index;
+    }
+    return 0;
+  } else {
+    et_timestamp_t time_spent_executing = 0, time_spent_executing_1st = 0;
+    auto inputs = executorch::extension::prepare_input_tensors(*method);
+    ET_LOG(Info, "Preparing inputs.");
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(Info, "Inputs prepared.");
+
+    auto before_exec = std::chrono::high_resolution_clock::now();
+    Error status = method->execute();
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    double interval_1st_infs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            after_exec - before_exec)
+            .count() /
+        1000.0;
+
+    before_exec = std::chrono::high_resolution_clock::now();
+    for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
+      status = method->execute();
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method_name,
+          (uint32_t)status);
+    }
+    after_exec = std::chrono::high_resolution_clock::now();
+    double interval_infs = std::chrono::duration_cast<std::chrono::microseconds>(
+                              after_exec - before_exec)
+                              .count() /
+        1000.0 / FLAGS_num_executions;
+
+    if (FLAGS_dump_statistics) {
+      auto output_file_name = "statistics.txt";
+      std::ofstream fout(output_file_name);
+      fout << "load: " + std::to_string(interval_load)
+          << "\n1st: " + std::to_string(interval_1st_infs)
+          << "\navg: " + std::to_string(interval_infs) << std::endl;
+      fout.close();
+    }
+    ET_LOG(Info, "Model executed successfully.");
+    return 0;
+  }
+  // QCOM change end
 
   et_timestamp_t time_spent_executing = 0;
   // Run the model.
