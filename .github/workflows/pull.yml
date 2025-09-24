@@ -12,7 +12,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
-
 jobs:
   test-qnn-wheel-packages-linux:
     name: test-qnn-wheel-packages-linux
@@ -592,7 +591,6 @@ jobs:
         # Test static llama weight sharing and accuracy
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama.sh
 
-
   test-static-llama-qnn-eval-linux:
     name: test-static-llama-qnn-eval-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -625,24 +623,18 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-
         BUILD_TOOL="cmake"
-
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
-
         # Setup install_requirements for llama
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
-
         # Test static llama weight sharing and accuracy
         echo ">>> Running config: ${{ matrix.config.name }}"
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh \
           --flags "${{ matrix.config.flags }}" \
           --threshold "${{ matrix.config.threshold }}"
-
 
   test-qnn-models-linux:
     name: test-qnn-models-linux
@@ -802,25 +794,8 @@ jobs:
         # install a recent version of torchtune.
         PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250730  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 
-  test-openvino-linux:
-    name: test-openvino-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-    if: false # TODO Re-enable after fixing timeouts (#14314)
-    with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-gcc9
-      submodules: 'recursive'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+        # run llama runner in eager mode
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
 
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
@@ -857,6 +832,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+    if: false # TODO Re-enable after fixing timeouts (#14314)
     with:
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-gcc9
@@ -988,25 +964,25 @@ jobs:
       script: |
         set -ex
 
-  #       # The generic Linux job chooses to use base env, not the one setup by the image
-  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-  #       conda activate "${CONDA_ENV}"
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-  #       # Setup python
-  #       PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        # Setup python
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Setup Samsung SDK (AI Lite Core) and install enn backend
         export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
         source .ci/scripts/setup-samsung-linux-deps.sh
 
-  #       # Test models serially
-  #       models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
-  #       for model in $models; do
-  #         python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
-  #       done
+        # Test models serially
+        models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
+        for model in $models; do
+          python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
+        done
 
-  #       # Test ops
-  #       python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
+        # Test ops
+        python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
 
 
   test-vulkan-models-linux:
