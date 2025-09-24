@@ -13,6 +13,7 @@ from . import (  # noqa
     op_amin,
     op_any,
     op_avg_pool2d,
+    op_bitwise_not,
     op_bmm,
     op_cat,
     op_ceil,

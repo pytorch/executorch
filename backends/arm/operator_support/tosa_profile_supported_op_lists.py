@@ -104,7 +104,6 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    exir_ops.edge.aten.where.self,
     operator.getitem,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
@@ -136,6 +135,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.bitwise_not.default,
 }
 
 
@@ -220,7 +220,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    exir_ops.edge.aten.where.self,
     operator.getitem,
     exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.amax.default,
