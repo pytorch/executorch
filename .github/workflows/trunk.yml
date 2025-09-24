@@ -606,23 +606,6 @@ jobs:
             runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
             backend: torchao
-
-
-
-        include:
-          - model: qwen3_4b
-            test_with_runner: true
-          - model: phi_4_mini
-            test_with_runner: false
-          - runner: linux.2xlarge
-            use_torchao_kernels: false
-          - runner: linux.arm64.2xlarge
-            use_torchao_kernels: true
-        exclude:
-          - runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - runner: linux.arm64.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
