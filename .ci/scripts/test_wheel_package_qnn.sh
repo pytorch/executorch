@@ -139,8 +139,13 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
-  "$PIPBIN" install torch=="2.9.0.dev20250906" --index-url "https://download.pytorch.org/whl/nightly/cpu"
-  "$PIPBIN" install --pre torchao --index-url "https://download.pytorch.org/whl/nightly/cpu"
+
+  NIGHTLY_VERSION=$(python -c 'import re; txt=open("install_requirements.py").read(); print(re.search(r"NIGHTLY_VERSION\s*=\s*[\"\']([^\"\']+)[\"\']", txt).group(1))')
+
+  "$PIPBIN" install torch=="2.10.0.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  pushd "$REPO_ROOT" / third-party/ao > /dev/null
+  USE_CPP=0 python setup.py develop
+  popd > /dev/null
 
   echo "=== [$LABEL] Import smoke tests ==="
   "$PYBIN" -c "import executorch; print('executorch imported successfully')"
