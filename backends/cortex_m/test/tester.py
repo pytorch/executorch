@@ -15,6 +15,9 @@ from backends.xnnpack.quantizer.xnnpack_quantizer import (
 )
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
+from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
+    QuantizedLinearFusionPass,
+)
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
     QuantizedOpFusionPass,
 )
@@ -44,7 +47,12 @@ class CortexMQuantize(Quantize):
 class CortexMRunPasses(RunPasses):
     def __init__(self):
         super().__init__(
-            XNNPACKPassManager, pass_list=[QuantizedOpFusionPass, ReplaceQuantNodesPass]
+            XNNPACKPassManager,
+            pass_list=[
+                ReplaceQuantNodesPass,
+                QuantizedLinearFusionPass,
+                QuantizedOpFusionPass,
+            ],
         )
 
 
@@ -98,3 +106,9 @@ class CortexMTester(TesterBase):
 class McuTestCase:
     model: torch.nn.Module
     example_inputs: tuple[Any]
+
+
+def ramp_tensor(start: int, end: int, shape: tuple[int]) -> torch.Tensor:
+    return torch.linspace(start, end, steps=torch.prod(torch.tensor(shape))).reshape(
+        shape
+    )
