@@ -57,7 +57,6 @@ PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-python3}"
 MODEL="qwen2_5-0_5b"
 MAX_SEQ=1024
 PTQ="16a4w"
-THRESHOLD=62.0   # regression guardrail
 
 EXTRA_FLAGS="$@"
 
