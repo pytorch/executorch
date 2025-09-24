@@ -12,7 +12,6 @@ import executorch.backends.samsung.python.PyGraphWrapperAdaptor as PyGraphWrappe
 import numpy as np
 
 import torch
-from executorch.backends.samsung._passes.utils import none_quant_tensor_quant_meta
 from executorch.backends.samsung.builders.utils import DATA_TYPE_STR_MAPPING
 from executorch.backends.samsung.utils.constants import QuantConstants
 from executorch.backends.samsung.utils.utils import quantize_tensor

@@ -12,7 +12,6 @@ from executorch.backends.transforms.utils import is_param_node
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
 from torch.export.exported_program import ExportedProgram
 
 

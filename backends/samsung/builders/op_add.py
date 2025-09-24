@@ -12,7 +12,6 @@ from executorch.backends.samsung.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
-from executorch.backends.samsung.utils.constants import QuantConstants
 
 
 @register_node_visitor
