@@ -168,7 +168,7 @@ ExecuTorch provides C++ APIs, which can be used to target embedded or mobile dev
 CMake is the preferred build system for the ExecuTorch C++ runtime. To use with CMake, clone the ExecuTorch repository as a subdirectory of your project, and use CMake's `add_subdirectory("executorch")` to include the dependency. The `executorch` target, as well as kernel and backend targets will be made available to link against. The runtime can also be built standalone to support diverse toolchains. See [Using ExecuTorch with C++](using-executorch-cpp.md) for a detailed description of build integration, targets, and cross compilation.
 
 ```
-git clone -b viable/strict https://github.com/pytorch/executorch.git
+git clone -b release/1.0 https://github.com/pytorch/executorch.git
 ```
 ```python
 # CMakeLists.txt
