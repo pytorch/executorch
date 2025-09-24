@@ -612,6 +612,8 @@ jobs:
             docker-image: executorch-ubuntu-22.04-clang12
       fail-fast: false
     with:
+      runner: ${{ matrix.runner }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
