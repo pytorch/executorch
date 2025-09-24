@@ -30,7 +30,7 @@ class AnnotateQparamsPass(ExportPass):
          and add Q->DQ after removing all the Q->DQs.
     """
 
-    deliver_nodes = {
+    propagate_nodes = {
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.permute_copy.default,
         exir_ops.edge.aten.squeeze_copy.default,
@@ -83,7 +83,7 @@ class AnnotateQparamsPass(ExportPass):
             _impl(user, res_list)
         return res_list
 
-    def _deliver_quant_params(self, node: Node):
+    def _propagate_quant_params(self, node: Node):
         assert (
             quantize_attrs := node.meta.get("quantize_attrs")
         ), "Must be annotated node."
@@ -98,25 +98,25 @@ class AnnotateQparamsPass(ExportPass):
             ):
                 break
             node = user
-        # Case1: ...-q-dq(cur)-deliver_node-node(not d-dq)
-        # Case2: deliver_node(delivered)-deliver_node-node(not q-dq)
+        # Case1: ...-q-dq(cur)-propagate_node-node(not d-dq)
+        # Case2: propagate_node(propagateed)-propagate_node-node(not q-dq)
         for idx, user in enumerate(node.users.keys()):
-            # For the branch who need to be requantized, we deliver the requantize params
+            # For the branch who need to be requantized, we propagate the requantize params
             user_attrs = requantize_map.get(idx, quantize_attrs)
-            if user.target not in self.deliver_nodes:
+            if user.target not in self.propagate_nodes:
                 continue
             if len(user.users) == 1:
                 # Possibily no need for checking len(users)>1
                 user_of_user = list(user.users)[0]
-                # node-q-dq-deliver-q-dq not need for delivery
+                # node-q-dq-propagate-q-dq not need for propagatey
                 if (
                     user_of_user.target in QuantConstants.QUANT_OPS_KEY_MAP
                     or user_of_user.target in QuantConstants.DEQUANT_OPS_KEY_MAP
                 ):
                     continue
-            # Deliver quant for node-q-dq-deliver_node-node(not qdq)
+            # propagate quant for node-q-dq-propagate_node-node(not qdq)
             user.meta["quantize_attrs"] = user_attrs
-            self._deliver_quant_params(user)
+            self._propagate_quant_params(user)
 
     def _annotate_requantize(self, node: Node):
         assert (
@@ -153,16 +153,7 @@ class AnnotateQparamsPass(ExportPass):
 
     def _annotate(self, graph_module: GraphModule):
         for node in graph_module.graph.nodes:
-            if key_map := QuantConstants.DEQUANT_OPS_KEY_MAP.get(node.target, None):
-                # We will fold node with constant output in the future pass as a constant node
-                # example: Constant->Q->DQ->nodeN->Q->DQ, this seq will be folded to one
-                # We need to store the q-params from last DQ params for quantizing constant value
-                quant_attrs = self.get_quant_attrs(node, key_map)
-                node.meta["quantize_attrs"] = quant_attrs
-                continue
-            else:
-                key_map = QuantConstants.QUANT_OPS_KEY_MAP.get(node.target, None)
-            # ignore pre-quantized params now.
+            key_map = QuantConstants.QUANT_OPS_KEY_MAP.get(node.target, None)
             if not key_map:
                 continue
             source_node = node.args[0]
@@ -172,46 +163,15 @@ class AnnotateQparamsPass(ExportPass):
             ):
                 # Currently, don't add quant info for d_qd node here.
                 continue
+            elif source_node.target == operator.getitem:
+                source_node = source_node.args[0]
             quant_attrs = self.get_quant_attrs(node, key_map)
-            assert node.args[0].target != operator.getitem, "Not supported now."
-            source_node = node.args[0]
             source_node.meta["quantize_attrs"] = quant_attrs
             self._annotate_requantize(source_node)
-            self._deliver_quant_params(source_node)
-
-    def _annotate_real_out(self, graph_module: GraphModule):
-        for output_nodes in filter(
-            lambda x: x.op == "output", graph_module.graph.nodes
-        ):
-            output_nodes = list(output_nodes.args[0])
-            for idx, output_node in enumerate(output_nodes):
-                if output_node.target not in [
-                    *QuantConstants.QUANT_OPS_KEY_MAP.keys(),
-                    *QuantConstants.DEQUANT_OPS_KEY_MAP.keys(),
-                ]:
-                    continue
-                while output_node.args[0].target in [
-                    *QuantConstants.QUANT_OPS_KEY_MAP.keys(),
-                    *QuantConstants.DEQUANT_OPS_KEY_MAP.keys(),
-                ]:
-                    output_node = output_node.args[0]
-                output_nodes[idx] = output_node
-            for node in output_nodes:
-                if node.target in QuantConstants.QUANT_OPS_KEY_MAP:
-                    node.args[0].meta["real_out"] = True
-                else:
-                    node.meta["real_out"] = True
-
-    def _annotate_real_in(self, graph_module: GraphModule):
-        for in_node in filter(
-            lambda x: is_graph_input(self.edge_program, x), graph_module.graph.nodes
-        ):
-            in_node.meta["real_in"] = True
+            self._propagate_quant_params(source_node)
 
     def call(self, graph_module: GraphModule):
         self._annotate(graph_module)
-        self._annotate_real_out(graph_module)
-        self._annotate_real_in(graph_module)
         graph_module.recompile()
         return PassResult(graph_module, True)
 
@@ -223,7 +183,6 @@ class AnnotateQparamsPass(ExportPass):
         for key, attr in zip(quant_attr_keys[1:], quant_node.args[1:]):
             # For channel-wise quantization, params are stored by buffer nodes.
             if isinstance(attr, torch.fx.Node):
-                assert isinstance(attr.target, str), "Not supported now. "
                 attr = get_buffer(self.edge_program, attr)
             quant_attrs[key] = attr
         quant_attrs["target"] = quant_node.target

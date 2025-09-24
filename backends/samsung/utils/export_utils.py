@@ -9,10 +9,6 @@ from typing import List, Optional, Tuple
 
 import executorch.exir as exir
 import torch
-from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparamsPass
-from executorch.backends.samsung._passes.fold_redundant_as_strided_copy import (
-    FoldRudundantAsStridedCopyPass,
-)
 from executorch.backends.samsung._passes.fuse_conv_act import FuseConvActPass
 from executorch.backends.samsung._passes.remove_useless_ops import RemoveUselessOpPass
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
@@ -50,11 +46,9 @@ def get_edge_compile_config():
     )
 
 
-def get_enn_pass_list(edge_program: ExportedProgram) -> List[PassType]:
+def get_enn_pass_list() -> List[PassType]:
     return [
         RemoveUselessOpPass(),
-        FoldRudundantAsStridedCopyPass(),
-        AnnotateQparamsPass(edge_program),
         RemoveCloneOpsTransform(),
         FuseConvActPass(),
     ]
@@ -90,7 +84,7 @@ def to_edge_transform_and_lower_to_enn(
 ) -> exir.ExecutorchProgramManager:
     assert compile_specs is not None, "For now, we must deliver complile specs"
     prog = torch.export.export(module, inputs)
-    pass_list = get_enn_pass_list(prog)
+    pass_list = get_enn_pass_list()
     if custom_pass_config:
         pass_list.extend(custom_pass_config)
     return to_edge_transform_and_lower(

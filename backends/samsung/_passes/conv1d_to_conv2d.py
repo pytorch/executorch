@@ -93,5 +93,5 @@ class Conv1dToConv2d(ExportPass):
                 unsqueeze_before.meta["quantize_attrs"] = prev_qparams
 
         graph_module.recompile()
-        graph_module = super().call(graph_module).graph_module
+        _ = super().call(graph_module).graph_module
         return PassResult(graph_module, True)

@@ -73,4 +73,5 @@ class FuseConvActPass(ExportPass):
         self._fuse(graph_module)
         graph_module.recompile()
         dead_code_elimination_pass(graph_module)
+        _ = super().call(graph_module).graph_module
         return PassResult(graph_module, True)
