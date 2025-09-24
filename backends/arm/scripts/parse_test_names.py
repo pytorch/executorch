@@ -95,6 +95,9 @@ def parse_test_name(
     op = op.removesuffix("_1d")
     op = op.removesuffix("_2d")
 
+    # Remove suffix for 16 bit activation and 8 bit weight test cases
+    op = op.removesuffix("_16a8w")
+
     assert target != "None", f"{test_name} does not contain one of {TARGETS}"
     assert (
         op in op_name_map.keys()
