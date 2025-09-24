@@ -453,6 +453,15 @@ class MPSConfig:
 
 
 @dataclass
+class TorchAOKernelsConfig:
+    """
+    Configures the torchao-kernels backend.
+    """
+
+    enabled: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -464,6 +473,7 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
 ################################################################################
@@ -631,6 +641,9 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        if hasattr(args, "torchao_kernels"):
+            llm_config.backend.torchao.enabled = args.torchao_kernels
 
         # DebugConfig
         if hasattr(args, "profile_memory"):
