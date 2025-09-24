@@ -18,7 +18,10 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
     ViewCopyConverter,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    neutron_target_spec,
+    to_quantized_edge_program,
+)
 from executorch.backends.nxp.tests.executors import OverrideTargetSupportCheck
 from torch import nn
 
@@ -98,7 +101,7 @@ def test_batch_norm_conv_fusing(bias: bool, input_shape: list[int]):
     program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
-    pm = NeutronAtenPassManager()
+    pm = NeutronAtenPassManager(neutron_target_spec)
     graph_module_out = pm(deepcopy(program.module())).graph_module
 
     # Make sure the fusion worked.
@@ -133,7 +136,7 @@ def test_batch_norm_linear_fusing(bias: bool):
     program = torch.export.export(module, example_input, strict=True)
     og_module = program.module()
 
-    pm = NeutronAtenPassManager()
+    pm = NeutronAtenPassManager(neutron_target_spec)
     graph_module_out = pm(deepcopy(program.module())).graph_module
 
     # Make sure the fusion worked.
