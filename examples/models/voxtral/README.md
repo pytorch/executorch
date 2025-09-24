@@ -27,6 +27,7 @@ optimum-cli export executorch \
   --recipe "xnnpack" \
   --use_custom_sdpa \
   --use_custom_kv_cache \
+  --max_seq_len 2048 \
   --qlinear 8da4w \
   --qlinear_encoder 8da4w \
   --qembedding 4w \
