@@ -1099,6 +1099,8 @@ def get_soc_to_arch_map():
         "SXR1230P": HtpArch.V73,
         "SXR2230P": HtpArch.V69,
         "SXR2330P": HtpArch.V79,
+        "SM8850": HtpArch.V81,
+        "SM8735": HtpArch.V73,
     }
 
 
@@ -1115,6 +1117,8 @@ def get_soc_to_chipset_map():
         "SXR1230P": QcomChipset.SXR1230P,
         "SXR2230P": QcomChipset.SXR2230P,
         "SXR2330P": QcomChipset.SXR2330P,
+        "SM8850": QcomChipset.SM8850,
+        "SM8735": QcomChipset.SM8735,
     }
 
 
