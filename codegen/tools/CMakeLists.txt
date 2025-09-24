@@ -25,8 +25,17 @@ target_include_directories(
 
 # Compile options
 target_compile_options(
-  selective_build PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
+  selective_build
+  PUBLIC -Wno-deprecated-declarations
+         -fPIC
+         -frtti
+         -fexceptions
+         -Werror
+         -Wunused-variable
+         -Wno-unknown-argument
 )
+# We suppress -Wno-unknown-argument because our build system passes -fPIC for
+# Unix builds, but we also build on Windows where it's ignored
 
 # Link against required libraries
 if(TARGET bundled_program)

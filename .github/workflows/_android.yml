@@ -54,7 +54,7 @@ jobs:
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
-      ANDROID_NDK_VERSION: r27b
+      ANDROID_NDK_VERSION: r28c
       API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)

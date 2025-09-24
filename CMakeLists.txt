@@ -650,15 +650,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
-  list(APPEND _executorch_extensions extension_llm_runner)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-endif()
-
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
   install(
@@ -902,6 +893,15 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
+  list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
