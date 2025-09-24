@@ -622,7 +622,12 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_KLEIDIAI=1 bash .ci/scripts/setup-linux.sh --build-tool cmake
+        BUILD_TORCHAO_KERNELS=""
+        if [[ ${{ matrix.use_torchao_kernels }} == "true" ]]; then
+          BUILD_TORCHAO_KERNELS="BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_BUILD_KLEIDIAI=1"
+        fi
+
+        PYTHON_EXECUTABLE=python $BUILD_TORCHAO_KERNELS bash .ci/scripts/setup-linux.sh --build-tool cmake
         pip install -U "huggingface_hub[cli]"
 
         bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}  ${{ matrix.use_torchao_kernels && '--use_torchao_kernels' || '' }}

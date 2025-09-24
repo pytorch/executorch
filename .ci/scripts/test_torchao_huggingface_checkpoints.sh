@@ -116,6 +116,10 @@ if [[ $MODEL_SIZE -gt $EXPECTED_MODEL_SIZE_UPPER_BOUND ]]; then
 fi
 
 # Install ET with CMake
+EXECUTORCH_BUILD_KERNELS_TORCHAO="OFF"
+if [[ "$USE_TORCHAO_KERNELS" -eq 1 ]]; then
+  EXECUTORCH_BUILD_KERNELS_TORCHAO="ON"
+fi
 if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
   echo "[runner] Building and testing llama_main ..."
     cmake -DPYTHON_EXECUTABLE=python \
@@ -132,7 +136,7 @@ if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
         -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-        -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
+        -DEXECUTORCH_BUILD_KERNELS_TORCHAO=$(EXECUTORCH_BUILD_KERNELS_TORCHAO) \
         -Bcmake-out .
     cmake --build cmake-out -j16 --config Release --target install
 
