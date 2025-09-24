@@ -1041,13 +1041,13 @@ def quantized_relu_asym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_relu_asym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "requantize")
-def requantize(
+@impl(m, "requantize.per_tensor")
+def requantize_per_tensor(
     input: torch.Tensor,
-    in_scale: torch.Tensor,
-    in_zero_point: torch.Tensor,
-    out_scale: torch.Tensor,
-    out_zero_point: torch.Tensor,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
     dtype: ScalarType,
 ) -> torch.Tensor:
     if dtype in qdtype_map:
@@ -1055,11 +1055,6 @@ def requantize(
         return torch.quantize_per_tensor(
             torch.dequantize(input), out_scale, out_zero_point, qdtype_map[dtype]
         )
-
-    # For in_scale or out_scale other than scalar, it requires quant/dequant
-    # per channel, but the channel dimension value is missing
-    if in_scale.numel() > 1 or out_scale.numel() > 1:
-        raise NotImplementedError("Only scalar scales are supported")
 
     quant_min = torch.iinfo(input.dtype).min
     quant_max = torch.iinfo(input.dtype).max
@@ -1070,14 +1065,14 @@ def requantize(
     return torch.ops.quantized_decomposed.quantize_per_tensor(
         torch.ops.quantized_decomposed.dequantize_per_tensor(
             input,
-            in_scale.flatten()[0],
-            in_zero_point.flatten()[0],
+            in_scale,
+            in_zero_point,
             quant_min,
             quant_max,
             input.dtype,
         ),
-        out_scale.flatten()[0],
-        out_zero_point.flatten()[0],
+        out_scale,
+        out_zero_point,
         out_quant_min,
         out_quant_max,
         dtype,
