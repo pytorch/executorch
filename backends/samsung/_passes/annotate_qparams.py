@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from executorch.backends.samsung.utils.constants import QuantConstants
-from executorch.backends.samsung.utils.utils import is_graph_input
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import get_buffer

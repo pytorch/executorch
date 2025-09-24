@@ -9,6 +9,7 @@ from typing import Dict, final, List
 
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 import torch
+from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparamsPass
 from executorch.backends.samsung._passes.annotate_scalar_parameters import (
     AnnotateScalarParametersPass,
 )
@@ -16,7 +17,6 @@ from executorch.backends.samsung._passes.conv1d_to_conv2d import Conv1dToConv2d
 from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
 )
-from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparamsPass
 from executorch.backends.samsung._passes.fold_qdq import FoldQDQPass
 from executorch.backends.samsung._passes.insert_qdq import InsertQDQPass
 from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
