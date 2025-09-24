@@ -23,7 +23,6 @@ model_input=""
 aot_arm_compiler_flag_delegate="--delegate"
 aot_arm_compiler_flag_quantize="--quantize"
 aot_arm_compiler_flags=""
-portable_kernels="aten::_softmax.out"
 target="ethos-u55-128"
 output_folder_set=false
 output_folder="."
@@ -35,11 +34,14 @@ build_only=false
 system_config=""
 config=""
 memory_mode=""
+pte_placement="elf"
 et_build_root="${et_root_dir}/arm_test"
 ethos_u_scratch_dir=${script_dir}/ethos-u-scratch
 scratch_dir_set=false
 toolchain=arm-none-eabi-gcc
 select_ops_list="aten::_softmax.out"
+qdq_fusion_op=false
+model_explorer=false
 
 function help() {
     echo "Usage: $(basename $0) [options]"
@@ -51,7 +53,7 @@ function help() {
     echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
-    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"    
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delegated) kernels to include Default: ${select_ops_list}"
     echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
@@ -60,14 +62,17 @@ function help() {
     echo "  --etdump                               Adds Devtools etdump support to track timing, etdump area will be base64 encoded in the log"
     echo "  --build_type=<TYPE>                    Build with Release, Debug or RelWithDebInfo, default is ${build_type}"
     echo "  --extra_build_flags=<FLAGS>            Extra flags to pass to cmake like -DET_ARM_BAREMETAL_METHOD_ALLOCATOR_POOL_SIZE=60000 Default: none "
-    echo "  --build_only                           Only build, don't run FVP"
-    echo "  --system_config=<CONFIG>               System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
+    echo "  --build_only                           Only build, don't run"
+    echo "  --toolchain=<TOOLCHAIN>                Ethos-U: Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
+    echo "  --system_config=<CONFIG>               Ethos-U: System configuration to select from the Vela configuration file (see vela.ini). Default: Ethos_U55_High_End_Embedded for EthosU55 targets, Ethos_U85_SYS_DRAM_Mid for EthosU85 targets."
     echo "                                            NOTE: If given, this option must match the given target. This option also sets timing adapter values customized for specific hardware, see ./executor_runner/CMakeLists.txt."
-    echo "  --config=<FILEPATH>                    System configuration file that specifies system configurations (vela.ini)"
-    echo "  --memory_mode=<MODE>                   Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
-    echo "  --toolchain=<TOOLCHAIN>                Toolchain can be specified (e.g. bare metal as arm-none-eabi-gcc or zephyr as arm-zephyr-eabi-gcc Default: ${toolchain}"
+    echo "  --config=<FILEPATH>                    Ethos-U: System configuration file that specifies system configurations (vela.ini)"
+    echo "  --memory_mode=<MODE>                   Ethos-U: Memory mode to select from the Vela configuration file (see vela.ini), e.g. Shared_Sram/Sram_Only. Default: 'Shared_Sram' for Ethos-U55 targets, 'Sram_Only' for Ethos-U85 targets"
+    echo "  --pte_placement=<elf|ADDR>             Ethos-U: Control if runtime has PTE baked into the elf or if its placed in memory outside of the elf, defaults to ${pte_placement}"
     echo "  --et_build_root=<FOLDER>               Executorch build output root folder to use, defaults to ${et_build_root}"
     echo "  --scratch-dir=<FOLDER>                 Path to your Ethos-U scrach dir if you not using default ${ethos_u_scratch_dir}"
+    echo "  --qdq_fusion_op                        Enable QDQ fusion op"
+    echo "  --model_explorer                       Generate and open a visual graph of the compiled model."
     exit 0
 }
 
@@ -79,32 +84,43 @@ for arg in "$@"; do
       --aot_arm_compiler_flags=*) aot_arm_compiler_flags="${arg#*=}";;
       --no_delegate) aot_arm_compiler_flag_delegate="" ;;
       --no_quantize) aot_arm_compiler_flag_quantize="" ;;
-      --portable_kernels=*) select_ops_list="${arg#*=}";;
+      --portable_kernels=*) select_ops_list="${arg#*=}" ; echo "WARNING: --portable_kernels is DEPRECATED use select_ops_list." ;;
       --select_ops_list=*) select_ops_list="${arg#*=}";;
       --target=*) target="${arg#*=}";;
-      --toolchain=*) toolchain="${arg#*=}";;
       --output=*) output_folder="${arg#*=}" ; output_folder_set=true ;;
       --bundleio) bundleio=true ;;
       --etdump) build_with_etdump=true ;;
       --build_type=*) build_type="${arg#*=}";;
       --extra_build_flags=*) extra_build_flags="${arg#*=}";;
       --build_only) build_only=true ;;
+      --toolchain=*) toolchain="${arg#*=}";;
       --system_config=*) system_config="${arg#*=}";;
       --config=*) config="${arg#*=}";;
       --memory_mode=*) memory_mode="${arg#*=}";;
+      --pte_placement=*) pte_placement="${arg#*=}";;
       --et_build_root=*) et_build_root="${arg#*=}";;
       --scratch-dir=*) ethos_u_scratch_dir="${arg#*=}" ; scratch_dir_set=true ;;
+      --qdq_fusion_op) qdq_fusion_op=true;;
+      --model_explorer) model_explorer=true ;;
       *)
       ;;
     esac
 done
+
+if ! [[ ${pte_placement} == "elf" ]]; then
+    if ! [[ "$pte_placement" =~ ^0x[0-9a-fA-F]{1,16}$ ]]; then
+        echo "ERROR: Placing the PTE in memory failed, address is larger then 64bit $pte_placement"
+        exit 1
+    fi
+    echo "PTE is expected to be placed at $pte_placement instead of the elf."
+fi
 
 # Default Ethos-u tool folder override with --scratch-dir=<FOLDER>
 ethos_u_scratch_dir=$(realpath ${ethos_u_scratch_dir})
 setup_path_script=${ethos_u_scratch_dir}/setup_path.sh
 if [[ ${toolchain} == "arm-none-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/arm/ethos-u-setup/${toolchain}.cmake
-elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then 
+elif [[ ${toolchain} == "arm-zephyr-eabi-gcc" ]]; then
     toolchain_cmake=${et_root_dir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
 else
     echo "Error: Invalid toolchain selection, provided: ${toolchain}"
@@ -187,6 +203,7 @@ devtools_flag=""
 bundleio_flag=""
 etrecord_flag=""
 et_dump_flag=""
+qdq_fusion_op_flag=""
 if [ "$build_with_etdump" = true ] ; then
     et_dump_flag="--etdump"
     etrecord_flag="--etrecord"
@@ -197,18 +214,22 @@ if [ "$bundleio" = true ] ; then
     bundleio_flag="--bundleio"
 fi
 
+if [ "$qdq_fusion_op" = true ] ; then
+    qdq_fusion_op_flag="--enable_qdq_fusion_pass"
+fi
+
 backends/arm/scripts/build_executorch.sh --et_build_root="${et_build_root}" --build_type=$build_type $devtools_flag $et_dump_flag --toolchain="${toolchain}"
 
 if [[ -z "$model_name" ]]; then
     # the test models run, and whether to delegate
     test_model=(
-        "softmax"  # 0
-        "add"      # 1
-        "add3"     # 2
-        "qadd"     # 3
-        "qadd2"    # 4
-        "qops"     # 5
-        "mv2"      # 6
+        "softmax"   # 0
+        "add"       # 1
+        "add3"      # 2
+        "qadd"      # 3
+        "qadd2"     # 4
+        "qops"      # 5
+        "mv2"       # 6
     )
     model_compiler_flags=(
         ""                      # 0 softmax
@@ -243,12 +264,11 @@ for i in "${!test_model[@]}"; do
         # Name aligned with default aot_arm_compiler output
         model_filename=${model_short_name}_arm_delegate_${target}
     fi
-    elf_folder=${model_filename}
 
     if [ "$bundleio" = true ] ; then
-        model_filename=${model_filename}.bpte
+        model_filename_ext=${model_filename}.bpte
     else
-        model_filename=${model_filename}.pte
+        model_filename_ext=${model_filename}.pte
     fi
 
     if [ "$output_folder_set" = false ] ; then
@@ -257,20 +277,26 @@ for i in "${!test_model[@]}"; do
 
     mkdir -p ${output_folder}
     output_folder=$(realpath ${output_folder})
-    pte_file="${output_folder}/${model_filename}"
+    pte_file="${output_folder}/${model_filename_ext}"
 
     # Remove old pte files
-    rm -f "${output_folder}/${model_filename}"
+    rm -f "${output_folder}/${model_filename_ext}"
 
     if [ "$model_input_set" = true ]; then
         model_compiler_flags="${model_compiler_flags} --model_input=${model_input}"
     fi
 
-    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config}"
+    ARM_AOT_CMD="python3 -m examples.arm.aot_arm_compiler --model_name=${model} --target=${target} ${model_compiler_flags} --intermediate=${output_folder} --output=${pte_file} --system_config=${system_config} --memory_mode=${memory_mode} $bundleio_flag ${etrecord_flag} --config=${config} $qdq_fusion_op_flag"
     echo "CALL ${ARM_AOT_CMD}" >&2
     ${ARM_AOT_CMD} 1>&2
 
     pte_file=$(realpath ${pte_file})
+
+    if [ "${etrecord_flag}" != "" ] ; then
+        etrecord_filename="${output_folder}/${model_filename}_etrecord.bin"
+        etrecord_filename=$(realpath ${etrecord_filename})
+        etrecord_flag="--etrecord=${etrecord_filename}"
+    fi
 
     [[ -f ${pte_file} ]] || { >&2 echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "pte_data_size: $(wc -c ${pte_file})"
@@ -278,16 +304,42 @@ for i in "${!test_model[@]}"; do
 
     if [[ ${target} == *"TOSA"*  ]]; then
         echo "Build for ${target} skip generating a .elf and running it"
-    else
+    elif [[ ${target} == *"vgf"*  ]]; then
+        echo "Build and run for VKML, (target: ${target})"
         set -x
-        # Rebuild the application as the pte is imported as a header/c array
-        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
+        backends/arm/scripts/build_executor_runner_vkml.sh --build_type=${build_type} \
+                                                           --extra_build_flags="${extra_build_flags}" \
+                                                           --output="${output_folder}"
         if [ "$build_only" = false ] ; then
-            # Execute the executor_runner on FVP Simulator
-            elf_file="${output_folder}/${elf_folder}/cmake-out/arm_executor_runner"
-            backends/arm/scripts/run_fvp.sh --elf=${elf_file} --target=$target
+            backends/arm/scripts/run_vkml.sh --model=${pte_file} --build_path=${output_folder}
         fi
         set +x
+
+    else
+        # Build the application, the pte is imported as a header/c array or the address specified by --pte_placement
+        model_data=""
+        pte_file_or_mem="${pte_file}"
+        elf_file="${output_folder}/${model_filename}/cmake-out/arm_executor_runner"
+        if ! [[ ${pte_placement} == "elf" ]]; then
+            # Place PTE in memory specified by pte_placement
+            pte_file_or_mem="${pte_placement}"
+            model_data="--data=${pte_file}@${pte_placement}"
+            elf_file="${et_build_root}/${target}_${pte_placement}/cmake-out/arm_executor_runner"
+        fi
+
+        set -x
+        backends/arm/scripts/build_executor_runner.sh --et_build_root="${et_build_root}" --pte="${pte_file_or_mem}" --build_type=${build_type} --target=${target} --system_config=${system_config} --memory_mode=${memory_mode} ${bundleio_flag} ${et_dump_flag} --extra_build_flags="${extra_build_flags}" --ethosu_tools_dir="${ethos_u_scratch_dir}" --toolchain="${toolchain}" --select_ops_list="${select_ops_list}"
+        if [ "$build_only" = false ] ; then
+            # Execute the executor_runner on FVP Simulator
+
+            backends/arm/scripts/run_fvp.sh --elf=${elf_file} ${model_data} --target=$target ${etrecord_flag}
+        fi
+        set +x
+    fi
+
+    if [ "$model_explorer" = true ]; then
+        tosa_flatbuffer_path=$(find ${output_folder} -name "*TOSA*.tosa" | head -n 1)
+        python3 ${script_dir}/visualize.py ${tosa_flatbuffer_path}
     fi
 done
 

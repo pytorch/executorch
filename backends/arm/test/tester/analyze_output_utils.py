@@ -7,7 +7,6 @@ import logging
 import tempfile
 
 import torch
-from executorch.backends.arm.arm_backend import get_intermediate_path
 from executorch.backends.arm.test.runner_utils import (
     get_input_quantization_params,
     get_output_quantization_params,
@@ -245,7 +244,7 @@ def dump_error_output(
     # Capture assertion error and print more info
     banner = "=" * 40 + "TOSA debug info" + "=" * 40
     logger.error(banner)
-    path_to_tosa_files = get_intermediate_path(tester.compile_spec)
+    path_to_tosa_files = tester.compile_spec.get_intermediate_path()
 
     if path_to_tosa_files is None:
         path_to_tosa_files = tempfile.mkdtemp(prefix="executorch_result_dump_")
@@ -253,7 +252,7 @@ def dump_error_output(
     export_stage = tester.stages.get(StageType.EXPORT, None)
     quantize_stage = tester.stages.get(StageType.QUANTIZE, None)
     if export_stage is not None and quantize_stage is not None:
-        output_node = export_stage.artifact.graph_module.output_node()
+        output_node = export_stage.artifact.graph_module.graph.output_node()
         qp_input = get_input_quantization_params(export_stage.artifact)
         qp_output = get_output_quantization_params(output_node)
         logger.error(f"Input QuantArgs: {qp_input}")

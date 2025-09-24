@@ -249,21 +249,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             handles.inputs->io[i].elem_size);
         return Error::InvalidProgram;
       }
-      supported = executorch::runtime::is_contiguous_dim_order(
-          tensor_in.dim_order().data(), tensor_in.dim());
-      if (!supported) {
-        ET_LOG(
-            Error,
-            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
-            i);
-        return Error::InvalidProgram;
-      }
 
       // Select a compatible copy routine including checking for input layouts
       // which require permutation.
-      bool permuted_input_shape;
-      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i, tensor_in, &handles.inputs->io[i], &permuted_input_shape));
       bool both_int = tensor_in.scalar_type() == ScalarType::Int &&
           handles.inputs->io[i].elem_size == 4;
       bool both_char = tensor_in.scalar_type() == ScalarType::Char &&
@@ -273,19 +261,7 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       bool both_bool = tensor_in.scalar_type() == ScalarType::Bool &&
           (handles.inputs->io[i].elem_size == 1);
 
-      // Select a compatible copy routine
-      if ((both_char || both_bool) && permuted_input_shape) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer,
-            "+EthosUBackend::execute()handles.input.permute_CHW_to_HWC()");
-        // permuted byte copy CHW to HWC
-        permute_CHW_to_HWC(
-            tensor_in.mutable_data_ptr<char>(),
-            scratch_addr,
-            tensor_in.size(1),
-            tensor_in.size(2),
-            tensor_in.size(3));
-      } else if (both_char || both_int || both_short || both_bool) {
+      if (both_char || both_int || both_short || both_bool) {
         EXECUTORCH_PROF_SCOPE(
             event_tracer, "+EthosUBackend::execute()handles.input.memcpy()");
         // Sizes match and elt size matches so memcpy
@@ -297,18 +273,16 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
       }
-      if (!permuted_input_shape) {
-        calculate_dimensions(
-            tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
-        if (tensor_count != io_count) {
-          ET_LOG(Error, "Input tensor sizes do not match");
-          ET_LOG(
-              Error,
-              "Program expects %d elements but got %d",
-              io_count,
-              tensor_count);
-          return Error::InvalidProgram;
-        }
+      calculate_dimensions(
+          tensor_in, &handles.inputs->io[i], &tensor_count, &io_count);
+      if (tensor_count != io_count) {
+        ET_LOG(Error, "Input tensor sizes do not match");
+        ET_LOG(
+            Error,
+            "Program expects %d elements but got %d",
+            io_count,
+            tensor_count);
+        return Error::InvalidProgram;
       }
     }
 
@@ -369,34 +343,13 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       tensor_dim = tensor_dim + tensor_count;
       io_dim = io_dim + io_count;
 
-      bool permuted_output_shape;
-      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
-          i, tensor_out, &handles.outputs->io[i], &permuted_output_shape));
+      EXECUTORCH_PROF_SCOPE(
+          event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
 
-      if ((tensor_out.scalar_type() == ScalarType::Char ||
-           tensor_out.scalar_type() == ScalarType::Bool) &&
-          permuted_output_shape) {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer,
-            "+EthosUBackend::execute()handles.output.permute_HWC_to_CHW()");
-
-        const char* output_address = static_cast<const char*>(output_addr);
-
-        permute_HWC_to_CHW(
-            output_address,
-            tensor_out.mutable_data_ptr<char>(),
-            tensor_out.size(1),
-            tensor_out.size(2),
-            tensor_out.size(3));
-      } else {
-        EXECUTORCH_PROF_SCOPE(
-            event_tracer, "+EthosUBackend::execute()handles.output.memcpy()");
-
-        memcpy(
-            tensor_out.mutable_data_ptr<char>(),
-            static_cast<const char*>(output_addr),
-            tensor_out.nbytes());
-      }
+      memcpy(
+          tensor_out.mutable_data_ptr<char>(),
+          static_cast<const char*>(output_addr),
+          tensor_out.nbytes());
     }
     if (tensor_dim != io_dim) {
       ET_LOG(Error, "Total output tensor sizes do not match");
@@ -421,49 +374,9 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       *tensor_count = *tensor_count * tensor.size(i);
     }
 
-    // The VelaIO type has a shape of fixed size 4
-    for (int i = 0; i < 4; i++) {
+    // The VelaIO type has a shape of fixed size 6
+    for (int i = 0; i < shapeDim; i++) {
       *io_count = *io_count * io->shape[i];
-    }
-  }
-
-  Error check_requires_permute(
-      int index,
-      const executorch::aten::Tensor tensor,
-      VelaIO* io,
-      bool* is_permuted) const {
-    bool permuted_shape = false;
-
-    if (tensor.dim() == 4) {
-      // special case for NHWC workaround in AOT; as the compilation has
-      // permuted to channel last in an undetectable way, we assume here
-      // that the application has similarly permuted any input/output tensors.
-      permuted_shape = tensor.size(0) == io->shape[0] &&
-          tensor.size(1) == io->shape[3] && tensor.size(2) == io->shape[1] &&
-          tensor.size(3) == io->shape[2];
-      if (permuted_shape) {
-        ET_LOG(Debug, "Tensor input/output %d will be permuted", index);
-      }
-    }
-    *is_permuted = permuted_shape;
-    return Error::Ok;
-  }
-
-  void permute_CHW_to_HWC(const char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i * C + j] = input[i + j * W * H];
-      }
-    }
-  }
-
-  void permute_HWC_to_CHW(const char* input, char* output, int C, int H, int W)
-      const {
-    for (int i = 0; i != H * W; ++i) {
-      for (int j = 0; j < C; ++j) {
-        output[i + j * W * H] = input[i * C + j];
-      }
     }
   }
 };

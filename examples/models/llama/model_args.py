@@ -1,5 +1,38 @@
+import dataclasses
 from dataclasses import dataclass
-from typing import Dict, Optional
+from enum import Enum
+from functools import partial
+from typing import Any, Dict, Optional
+
+import torch.nn.functional as F
+
+
+class ActFn(Enum):
+    SILU = "silu"
+    GELU = "gelu"
+    GELU_APPROX = "gelu_approx"
+
+    @classmethod
+    def from_string(cls, value: str) -> "ActFn":
+        """Convert string to ActFn enum."""
+        try:
+            return cls(value)
+        except ValueError:
+            valid_values = [e.value for e in cls]
+            raise ValueError(
+                f"Invalid activation function: {value}. Valid options: {valid_values}"
+            )
+
+    def get_function(self):
+        """Return the corresponding activation function."""
+        if self == ActFn.SILU:
+            return F.silu
+        elif self == ActFn.GELU:
+            return F.gelu
+        elif self == ActFn.GELU_APPROX:
+            return partial(F.gelu, approximate="tanh")
+        else:
+            raise ValueError(f"Unsupported activation function: {self}")
 
 
 @dataclass
@@ -14,6 +47,8 @@ class ModelArgs:
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
+    post_attention_norm: bool = False
+    post_ffn_norm: bool = False
     max_batch_size: int = 1
     max_seq_len: int = 2048
     max_context_len: int = 2048
@@ -21,6 +56,8 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     attention_type: str = "mha"  # Attention type, registered in attention.py
+    norm_type: str = "rmsnorm"  # Normalization type, registered in norm.py
+    act_fn: ActFn = dataclasses.field(default=ActFn.SILU)  # Activation function type
     attention_qkv_bias: bool = False
     use_kv_cache: bool = False  # Use key/value cache
     use_sdpa_with_kv_cache_op: bool = (
@@ -36,10 +73,14 @@ class ModelArgs:
     # A dictionary mapping from pruned token-id to original token-id
     output_prune_map: Optional[Dict[int, int]] = None
     apply_embedding: bool = True  # Use embedding inside the transformer
+    embedding_scale_factor: float = 1.0  # Multiple by which to scale embeddings.
     apply_output: bool = True  # Use output layer (unembedding) inside the transformer
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
+    no_rope_layer_interval: Optional[int] = (
+        None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
+    )
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
@@ -69,6 +110,9 @@ class ModelArgs:
     kv_io_bit_width: Optional[int] = (
         None  # KV cache bit width. This is for QNN backend only for now.
     )
+    attention_kwargs: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    # Hybrid models can have layer types different from attention
+    layer_types: Optional[list] = None
 
     def __post_init__(self):
         if self.n_kv_heads is None:
@@ -99,3 +143,7 @@ class ModelArgs:
 
         if self.head_dim is None:
             self.head_dim = self.dim // self.n_heads
+
+        # Convert string act_fn to enum if needed
+        if isinstance(self.act_fn, str):
+            self.act_fn = ActFn.from_string(self.act_fn)

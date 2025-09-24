@@ -270,11 +270,13 @@ def get_avg_pool2d_inputs():
     return test_suite
 
 
-@register_test_suite("aten.max_pool2d_with_indices.default")
+@register_test_suite(
+    ["aten.max_pool2d_with_indices.default", "aten.max_pool2d.default"]
+)
 def get_max_pool2d_inputs():
     test_suite = VkTestSuite(
         [
-            ((S, M1, M2), [2, 2], [1, 1], [0, 0], [1, 1]),
+            ((1, 7, 89, 77), [2, 2], [1, 1], [0, 0], [1, 1]),
         ]
     )
     return test_suite
@@ -1877,6 +1879,48 @@ def get_flip_inputs():
     ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    return test_suite
+
+
+@register_test_suite("aten.expand_copy.default")
+def get_expand_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Basic expansion cases
+            ((1,), [5]),
+            ((1, 1), [3, 4]),
+            ((1, 3), [2, 3]),
+            ((3, 1), [3, 4]),
+            ((1, 1, 1), [2, 3, 4]),
+            # Expand with same size (no-op)
+            ((3, 4), [3, 4]),
+            ((2, 3, 4), [2, 3, 4]),
+            # Expand with additional dimensions
+            ((3,), [2, 3]),
+            ((3, 4), [2, 3, 4]),
+            ((2, 3), [1, 2, 3]),
+            # Mixed expansion cases
+            ((1, 3, 1, 4), [2, 3, 5, 4]),
+            ((1, 1, 3, 1), [2, 4, 3, 5]),
+            # Larger tensor cases
+            ((1, S1), [M, S1]),
+            ((S2, 1), [S2, M1]),
+            ((1, 1, S), [S1, S2, S]),
+            ((1, S1, 1, S2), [M, S1, M1, S2]),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = [
+        "at::kFloat",
+        "at::kHalf",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
 

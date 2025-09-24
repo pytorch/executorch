@@ -311,6 +311,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-p",
         "--pretrained_weight",
         help="Path to ESAM checkpoint, such as ./efficient_sam_vitt.pt or ./efficient_sam_vits.pt.zip",
         type=str,
@@ -337,6 +338,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

@@ -234,3 +234,19 @@ def find_sequential_partitions_aten(
         if _partitions_sequential(candidate):
             fused_partitions.append(candidate)
     return fused_partitions
+
+
+def check_out_zero_point_is_min_range(
+    out_zero_point: int,
+    out_dtype: torch.dtype,
+) -> bool:
+    """
+    Checks if the out_zero_point is the minimum range of the quant type.
+    """
+    if out_dtype == torch.int8:
+        return out_zero_point == -128
+    elif out_dtype == torch.int16:
+        return out_zero_point == -32768
+    elif out_dtype == torch.uint8 or torch.uint16:
+        return out_zero_point == 0
+    return False

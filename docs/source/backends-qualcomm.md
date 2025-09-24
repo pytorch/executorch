@@ -385,7 +385,7 @@ example_inputs = (torch.randn(1, 3, 224, 224),)  # Example input tensor
 Choose between quantization approaches, post training quantization (PTQ) or quantization aware training (QAT):
 ```python
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-from torch.ao.quantization.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
 
 quantizer = QnnQuantizer()
 m = torch.export.export(model, example_inputs, strict=True).module()
@@ -431,11 +431,12 @@ For practical examples, see [`test_qnn_delegate.py`](https://github.com/pytorch/
 #### Step 3: Configure Compile Specs
 During this step, you will need to specify the target SoC, data type, and other QNN compiler spec.
 ```python
-from executorch.backends.qualcomm.compiler import (
+from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     generate_htp_compiler_spec,
+    QcomChipset,
+    to_edge_transform_and_lower_to_qnn,
 )
-from executorch.backends.qualcomm.utils.utils import QcomChipset
 
 # HTP Compiler Configuration
 backend_options = generate_htp_compiler_spec(
@@ -450,11 +451,6 @@ compile_spec = generate_qnn_executorch_compiler_spec(
 ```
 #### Step 4: Lower and Export the Model
 ```python
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    to_edge_transform_and_lower_to_qnn,
-)
-from executorch.exir import ExecutorchBackendConfig
-
 # Lower to QNN backend
 delegated_program = to_edge_transform_and_lower_to_qnn(
     quantized_model if quantized else model,
@@ -463,9 +459,7 @@ delegated_program = to_edge_transform_and_lower_to_qnn(
 )
 
 # Export to ExecuTorch format
-executorch_program = delegated_program.to_executorch(
-    config=ExecutorchBackendConfig(extract_delegate_segments=False)
-)
+executorch_program = delegated_program.to_executorch()
 
 # Save the compiled model
 model_name = "custom_model_qnn.pte"

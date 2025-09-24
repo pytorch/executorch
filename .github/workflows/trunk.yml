@@ -176,7 +176,7 @@ jobs:
           - model: phi_4_mini
             backend: portable
             runner: linux.arm64.m7g.4xlarge
-          - model: qwen2_5
+          - model: qwen2_5_1_5b
             backend: portable
             runner: linux.arm64.2xlarge
           - model: llama3_2_vision_encoder
@@ -435,7 +435,7 @@ jobs:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -585,34 +585,76 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
-  # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
-  # test-llava-runner-macos:
-  #   name: test-llava-runner-macos
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-  #   strategy:
-  #     fail-fast: false
-  #   with:
-  #     runner: macos-14-xlarge
-  #     python-version: '3.11'
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 900
-  #     script: |
-  #       BUILD_TOOL=cmake
+  test-torchao-huggingface-checkpoints:
+    name: test-torchao-huggingface-checkpoints
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [qwen3_4b, phi_4_mini]
+        include:
+          - model: qwen3_4b
+            test_with_runner: true
+          - model: phi_4_mini
+            test_with_runner: false
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-  #       bash .ci/scripts/setup-conda.sh
-  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+        pip install -U "huggingface_hub[cli]"
 
-  #       # install Llava requirements
-  #       ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
-  #       ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
 
-  #       # run python unittest
-  #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
+  test-multimodal-macos:
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    name: test-multimodal-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b"] # llava gives segfault so not covering.
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: macos-15-xlarge
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        echo "::group::Set up ExecuTorch"
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
 
-  #       # run e2e (export, tokenizer and runner)
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+        echo "::endgroup::"
+
+        echo "::group::Set up Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        echo "::group::Test ${{ matrix.model }}"
+        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
+        echo "::endgroup::"
 
   test-qnn-model:
     name: test-qnn-model
@@ -823,10 +865,10 @@ jobs:
           --tsv_path ${TSV_PATH}
         echo "::endgroup::"
 
-  test-huggingface-transformers-coreml:
+  test-huggingface-transformers-macos:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-transformers-coreml
+    name: test-huggingface-transformers-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     permissions:
       id-token: write
@@ -844,10 +886,10 @@ jobs:
           # phi4-mini|xnnpack|--quantize,
           # smollm2-135m|xnnpack|--quantize,
           # smollm3-3b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
           # CoreML.
           llama3.2-1b|coreml_fp32_gpu|--quantize,
           qwen3-0.6b|coreml_fp32_gpu|--quantize,
-          qwen3-1.7b|xnnpack|--quantize,
           smollm2-135m|coreml_fp32_gpu|--quantize,
           olmo-1b|coreml_fp32_gpu|--quantize,
           bert|coreml_fp32_gpu|--quantize,
@@ -940,3 +982,66 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  test-mcu-models:
+    name: test-mcu-models
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=${{ matrix.build-tool }}
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Try to mirror these as closely as possible
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # Run selective Build
+        chmod +x examples/selective_build/test_selective_build.sh
+        examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
+
+        # Run MCU models
+        chmod +x examples/arm/run_mcu_models_fvp.sh
+        examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
+
+  test-models-windows:
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [mv3, resnet50, vit, mobilebert, emformer_transcribe]
+        backend: [portable, xnnpack-q8]
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        conda init powershell
+
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1
+
+          .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+        }"

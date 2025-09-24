@@ -61,13 +61,7 @@ def test_softmax_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Softmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", Softmax.test_data)
 @common.XfailIfNoCorstone300
 def test_softmax_u55_INT(test_data):
     data, dim = test_data()
@@ -77,13 +71,7 @@ def test_softmax_u55_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    Softmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", Softmax.test_data)
 @common.XfailIfNoCorstone320
 def test_softmax_u85_INT(test_data):
     data, dim = test_data()

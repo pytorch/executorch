@@ -6,8 +6,8 @@
 # pyre-unsafe
 from typing import Any, List
 
-import executorch.backends.arm.tosa_quant_utils as tqutils
-import executorch.backends.arm.tosa_utils as tutils
+import executorch.backends.arm.tosa.quant_utils as tqutils
+import executorch.backends.arm.tosa.utils as tutils
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -18,8 +18,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
 
 
@@ -73,7 +73,9 @@ class AbsVisitor_INT(NodeVisitor):
             abs_output = output
 
         # Do the INT32 Abs
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().ABS,
             [
                 rescaled_inputs[0].name,
@@ -123,7 +125,9 @@ class AbsVisitor_FP(AbsVisitor_INT):
             )
 
             # MI lowering
-            tosa_graph.addOperator(
+            self._serialize_operator(
+                node,
+                tosa_graph,
                 ts.TosaOp.Op().ABS,
                 [inputs[0].name],
                 [output.name],

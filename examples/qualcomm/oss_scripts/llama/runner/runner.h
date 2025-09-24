@@ -16,6 +16,7 @@
 #include <memory>
 #include <string>
 
+#include <executorch/examples/qualcomm/oss_scripts/llama/runner/cache_utils.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/decoder_runner.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/imem_alloc.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/kv_manager.h>
@@ -31,9 +32,12 @@ namespace example {
 enum DecoderModelVersion {
   kLlama2 = 0,
   kLlama3,
-  kQwen2_5,
+  kGemma3,
   kPhi4,
-  kSmollm2_135m
+  kQwen2_5,
+  kQwen3,
+  kSmollm2_135m,
+  kSmollm3
 };
 
 enum KvBitWidth {
@@ -68,13 +72,7 @@ class Runner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {})
       override;
-  executorch::runtime::Error generate_from_pos(
-      const std::string& prompt,
-      int64_t start_pos,
-      const executorch::extension::llm::GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const executorch::llm::Stats&)> stats_callback = {})
-      override;
+
   executorch::runtime::Error generate_from_prompt_or_file(
       const std::string& prompt,
       bool tokenized_prompt,
@@ -82,6 +80,7 @@ class Runner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const executorch::llm::Stats&)> stats_callback = {});
   void stop() override {};
+  void reset() override {};
   executorch::runtime::Result<DecoderModelVersion> get_decoder_model_version();
 
  private:
@@ -98,6 +97,10 @@ class Runner : public executorch::extension::llm::IRunner {
   int ngram_{0};
   int window_{0};
   int gcap_{0};
+
+  // Defaults to StaticCahce, indicating that the model does not use a
+  // global/local architecture.
+  CacheMode cache_mode_{CacheMode::StaticCahce};
   int64_t cur_pos_{0};
 
   std::string tokenizer_path_;
@@ -105,6 +108,7 @@ class Runner : public executorch::extension::llm::IRunner {
   std::string dump_logits_path_;
   float temperature_;
   EvalMode eval_mode_;
+
   DecoderModelVersion decoder_model_version_;
   KVManagerMode kv_updater_;
   std::unique_ptr<IMemAlloc> buffer_manager_;

@@ -384,6 +384,7 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     passes_job=None,
+    passes_dependency=None,
     qat_training_data=None,
     online_prepare=False,
     optrace=False,
@@ -406,6 +407,7 @@ def build_executorch_binary(
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
+        passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
@@ -449,6 +451,7 @@ def build_executorch_binary(
             compile_spec,
             constant_methods=metadata,
             passes_job=passes_job,
+            dep_table=passes_dependency,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
@@ -637,7 +640,7 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
     # prepare input data
     inputs, targets = [], []
     data_loader = get_data_loader()
-    for _, data in enumerate(data_loader):
+    for data in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = data[0]
@@ -729,9 +732,9 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
             dataset, batch_size=1, shuffle=shuffle, collate_fn=collator
         )
 
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader(max_hidden_seq_length)
-    for idx, batch in enumerate(data_loader):
+    for batch in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = batch["input_ids"]
@@ -750,9 +753,8 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
             )
         )
         targets.append(labels)
-        input_list += f"input_{idx}_0.raw input_{idx}_1.raw input_{idx}_2.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def setup_common_args_and_variables():
@@ -869,11 +871,30 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "--seed",
+        help="Set the seed for generating random numbers in both torch and random.",
+        type=int,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+
+    def validate(args):
+        if not args.compile_only and args.device is None:
+            raise RuntimeError(
+                "device serial is required if not compile only. "
+                "Please specify a device serial by -s/--device argument."
+            )
+        if args.seed:
+            torch.manual_seed(args.seed)
+            np.random.seed(args.seed)
+            random.seed(args.seed)
+
+    parser.set_defaults(validate=validate)
 
     return parser
 

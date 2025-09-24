@@ -266,6 +266,7 @@ _one_to_one = [
     torch.ops.aten.erf.default,
     torch.ops.aten.exp.default,
     torch.ops.aten.expm1.default,
+    torch.ops.aten.elu.default,
     torch.ops.aten.floor.default,
     torch.ops.aten.log.default,
     torch.ops.aten.reciprocal.default,
@@ -359,6 +360,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.max_pool2d.default,
     torch.ops.aten.full.default,
     torch.ops.aten.full,
+    torch.ops.aten.fill_.Scalar,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
@@ -472,6 +474,10 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
+        torch.ops.aten.add.Tensor,
+        torch.ops.aten.add_.Tensor,
+        torch.ops.aten.sub.Tensor,
+        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.matmul.default,
         torch.ops.aten.mm.default,
         torch.ops.aten.bmm.default,
@@ -484,10 +490,6 @@ def get_quant_properties(  # noqa: C901
         ]
         quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
     elif node.target in (
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.add_.Tensor,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub_.Tensor,
         torch.ops.aten.minimum.default,
         torch.ops.aten.maximum.default,
     ):
@@ -624,6 +626,7 @@ def annotate_graph(  # type: ignore[return]
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
             torch.ops.aten.full,
+            torch.ops.aten.fill_.Scalar,
             torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

@@ -5,13 +5,14 @@
 
 from copy import copy
 from math import prod
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
-from executorch.backends.arm.operator_support.pool_2d_support import AvgPool2dSupported
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def get_meandim_decomposition(op) -> tuple:
@@ -63,10 +64,17 @@ class DecomposeMeanDimPass(ArmPass):
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def __init__(self, graph_module, tosa_spec):
         super().__init__()
         self._graph_module = graph_module
         self._tosa_spec = tosa_spec
+        # Lazy import to avoid circular dependency with operator_support
+        from executorch.backends.arm.operator_support.pool_2d_support import (
+            AvgPool2dSupported,
+        )
+
         self._avg_pool_checker = AvgPool2dSupported(
             self._tosa_spec, WhyNoPartitionReporter()
         )

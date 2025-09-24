@@ -77,7 +77,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             super().__init__()
             self.text_model = llava.text_model
 
-        def forward(self, input_pos, embeddings):
+        def forward(self, embeddings, input_pos):
             return self.text_model(None, {"input_pos": input_pos}, embeddings)
 
     llava_text_model = LlavaTextModel(llava)
@@ -88,7 +88,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         max_seq_len=llava.text_model_args.max_seq_len,
         dtype=DType.fp32,
         use_kv_cache=True,
-        example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
+        example_inputs=(embeddings, torch.tensor([0], dtype=torch.int64)),
         dynamic_shapes=dynamic_shapes,
     )
 
@@ -224,13 +224,13 @@ def export_all(llava_model: LlavaModel):
 
     lowered_and_edge = to_edge_transform_and_lower(
         {
-            "image_encoder": image_encoder_ep,
+            "vision_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
-            "text_model": text_model_ep,
+            "text_decoder": text_model_ep,
         },
         partitioner={
-            "image_encoder": [XnnpackPartitioner()],
-            "text_model": [
+            "vision_encoder": [XnnpackPartitioner()],
+            "text_decoder": [
                 # First partition the DQLinear nodes, then partition the rest of the nodes,
                 # to avoid multiple DQLinear nodes in the same partition,
                 # to avoid holding multiple unpacked and packed weight buffers in memory,
@@ -242,6 +242,7 @@ def export_all(llava_model: LlavaModel):
                 XnnpackPartitioner(),
             ],
         },
+        constant_methods={"get_max_seq_len": llava_model.max_seq_len},
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
@@ -253,8 +254,8 @@ def export_all(llava_model: LlavaModel):
             ],
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
-                "image_encoder": ConstraintBasedSymShapeEvalPass(),
-                "text_model": ConstraintBasedSymShapeEvalPass(),
+                "vision_encoder": ConstraintBasedSymShapeEvalPass(),
+                "text_decoder": ConstraintBasedSymShapeEvalPass(),
                 "token_embedding": HintBasedSymShapeEvalPass(),
             },
         )

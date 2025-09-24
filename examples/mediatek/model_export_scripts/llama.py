@@ -1,3 +1,9 @@
+# Copyright (c) MediaTek Inc.
+# All rights reserved
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import sys
 
@@ -42,6 +48,10 @@ from executorch.backends.mediatek import (
     NeuropilotQuantizer,
     Precision,
 )
+from executorch.exir.backend.backend_api import (
+    MethodProgramsPartitionerSpec,
+    to_backend,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 from tqdm import tqdm
@@ -66,6 +76,14 @@ def get_argument_parser():
         default="A16W8",
         choices=["A16W4", "A16W8", "A16W16", "A8W4", "A8W8"],
         help="Precision to quantize entire model to.",
+    )
+    parser.add_argument(
+        "--platform",
+        type=str,
+        default="DX4",
+        choices=["DX3", "DX4"],
+        help="Chip model of the inference device. "
+        "DX3 for Dimensity 9300, DX4 for Dimensity 9400.",
     )
     parser.add_argument(
         "-d",
@@ -140,6 +158,7 @@ def print_args(args, exp_name):
     print(f"Max Response Tokens:          {args.response_cap}")
     print(f"Number of chunks:             {args.num_chunks}")
     print(f"Export shape(s):              {args.shapes}")
+    print(f"Platform:                     {args.platform}")
     print()
 
 
@@ -311,6 +330,7 @@ def export_to_et_ir(
     max_cache_size,
     chunk_idx,
     export_shapes,
+    platform_b,
     cal_dataset=None,
 ):
     print(f"Exporting Chunk {chunk_idx} to PTE")
@@ -318,7 +338,7 @@ def export_to_et_ir(
         max_num_token, max_cache_size, True
     )
     print("Getting pre autograd ATen Dialect Graph")
-    pre_autograd_aten_dialect = torch.export.export_for_training(
+    pre_autograd_aten_dialect = torch.export.export(
         model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
     ).module()  # NOTE: Will be replaced with export
     quantizer = NeuropilotQuantizer()
@@ -331,52 +351,64 @@ def export_to_et_ir(
         prepared_graph(*example_inputs)  # dummy calibration
     converted_graph = convert_pt2e(prepared_graph, fold_quantize=False)
 
-    print("Getting ATen Dialect Graph")
+    method_to_edge_program = {}
+    method_to_partitioner = {}
+    edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
+
+    model_shared_key_name = f"{exp_name}_{chunk_idx}"
+
     # Fixed Shape Export Here
     for shape, ntok_and_cache in export_shapes.items():
-        dest_path = get_dest_path(output_folder, exp_name, shape, chunk_idx)
-        print(f"Exporting Shape {shape} to:\n{dest_path}")
+        model_fname = f"{exp_name}_{shape}_{chunk_idx}"
         example_inputs = model.get_example_inputs(*ntok_and_cache)
+        print(f"Getting ATen Dialect Graph for {exp_name} {shape} chunk {chunk_idx}")
         aten_dialect: exir.ExportedProgram = torch.export.export(
             converted_graph, example_inputs, strict=True
         )
 
-        print("Lowering to Edge Dialect Graph")
-        edge_program: exir.EdgeProgramManager = exir.to_edge(
-            aten_dialect,
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        )
+        method_to_edge_program[f"{model_fname}"] = exir.to_edge(
+            aten_dialect
+        ).exported_program()
         del aten_dialect
 
-        print("Delegating Edge Program to Neuropilot Backend")
         compile_spec = [
             CompileSpec("gno", b"LTS"),
             CompileSpec("gno-exp", b""),
             CompileSpec("gno-non-4d-tiling", b""),
             CompileSpec("ImportForever", struct.pack("?", True)),
-            CompileSpec("platform-config", b"mt6989"),
+            CompileSpec("platform-config", platform_b),
+            CompileSpec("ExtractSharedBlobKey", model_shared_key_name.encode()),
         ]
-        partitioner = NeuropilotPartitioner(compile_spec)
-        delegated_program = edge_program.to_backend(partitioner)
-        print("Exported Delegated Program:")
-        print(delegated_program.exported_program())
-        del edge_program
+        method_to_partitioner[f"{model_fname}"] = NeuropilotPartitioner(compile_spec)
 
-        print("Transforming delegated program to executorch backend")
-        executorch_program = delegated_program.to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                memory_planning_pass=exir.passes.MemoryPlanningPass(
-                    alloc_graph_input=False,
-                    alloc_graph_output=False,
-                ),
-                extract_delegate_segments=True,
-            )
+    print("Delegating Edge Program to Neuropilot Backend")
+    delegated_program = to_backend(
+        MethodProgramsPartitionerSpec(method_to_edge_program, method_to_partitioner)
+    )
+
+    edge_manager = exir.EdgeProgramManager(
+        delegated_program, compile_config=edge_compile_config
+    )
+    del delegated_program
+
+    print("Transforming delegated program to executorch backend")
+    executorch_program = edge_manager.to_executorch(
+        config=exir.ExecutorchBackendConfig(
+            memory_planning_pass=exir.passes.MemoryPlanningPass(
+                alloc_graph_input=False,
+                alloc_graph_output=False,
+            ),
+            extract_delegate_segments=True,
         )
+    )
+    del edge_manager
+    print(f"\n Model Size: {len(executorch_program.buffer)}")
 
-        print(f"ET Model Dest: {dest_path}\n")
-        os.makedirs(dest_path.rsplit("/", 1)[0], exist_ok=True)
-        with open(dest_path, "wb") as file:
-            file.write(executorch_program.buffer)
+    dest_path = get_dest_path(output_folder, exp_name, None, chunk_idx)
+    print(f"{exp_name} ET Model chunk {chunk_idx} Dest: {dest_path}\n")
+    os.makedirs(dest_path.rsplit("/", 1)[0], exist_ok=True)
+    with open(dest_path, "wb") as file:
+        file.write(executorch_program.buffer)
 
 
 def main():
@@ -388,6 +420,14 @@ def main():
     else:
         exp_name = (
             f"{get_exp_name(args.config)}_{args.precision}_{args.num_chunks}_chunks"
+        )
+    if args.platform == "DX4":
+        platform_b = b"mt6991"
+    elif args.platform == "DX3":
+        platform_b = b"mt6989"
+    else:
+        raise ValueError(
+            f"Platform should be either DX3 or DX4, but got {args.platform}"
         )
     print_args(args, exp_name)
 
@@ -475,6 +515,7 @@ def main():
             max_cache_size,
             chunk_idx,
             export_shapes,
+            platform_b,
             cal_dataset,
         )
 

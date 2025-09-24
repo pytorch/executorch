@@ -44,6 +44,13 @@ void DispatchNode::encode(ComputeGraph* graph) {
   if (!shader_) {
     return;
   }
+
+  // If any global wg size element is 0, then skip encoding this shader
+  if (global_workgroup_size_[0] == 0 || global_workgroup_size_[1] == 0 ||
+      global_workgroup_size_[2] == 0) {
+    return;
+  }
+
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 

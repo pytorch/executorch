@@ -16,6 +16,8 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+build-android/
+build-x86/
 dist/
 ethos-u-scratch/
 executorch.egg-info
@@ -65,3 +67,7 @@ xcuserdata/
 
 # Android
 *.aar
+
+# Windows
+*.dll
+*.pyd

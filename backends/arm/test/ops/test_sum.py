@@ -60,6 +60,7 @@ def test_sum_dim_intlist_tosa_INT(test_data: input_t1):
         aten_op,
         exir_op=[],
     )
+    pipeline.dump_artifact("export")
     pipeline.run()
 
 
@@ -93,7 +94,11 @@ def test_view_u85_INT_1_0(test_data: Tuple):
 @common.SkipIfNoModelConverter
 def test_sum_dim_intlist_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
-        Sum(), test_data(), aten_op, tosa_version="TOSA-1.0+FP"
+        Sum(),
+        test_data(),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 
@@ -106,6 +111,7 @@ def test_sum_dim_intlist_vgf_INT(test_data: input_t1):
         test_data(),
         aten_op,
         tosa_version="TOSA-1.0+INT",
+        run_on_vulkan_runtime=True,
     )
     pipeline.run()
 

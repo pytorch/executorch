@@ -1,0 +1,1 @@
+Unit tests will not build without a file in this directory. Normally, running the build script should add the model files to this directory, but the Build Rule CIs will attempt and fail to build the unit tests directly without this file present.

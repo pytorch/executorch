@@ -22,7 +22,7 @@ jobs:
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: 3.12
       submodules: recursive
       timeout: 90
@@ -109,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [pybind]
+        preset: [pybind, windows]
     with:
       job-name: build
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -119,14 +119,24 @@ jobs:
         set -eux
         conda init powershell
         powershell -Command "& {
-          \$ErrorActionPreference = 'Stop'
           Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
 
           conda create --yes --quiet -n et python=3.12
           conda activate et
-
           python install_requirements.py
-          cmake --preset ${{ matrix.preset }}
+
+          cmake --preset ${{ matrix.preset }} -T ClangCL
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Host "CMake configuration was unsuccessful. Exit code: \$LASTEXITCODE."
+            exit \$LASTEXITCODE
+          }
+
           \$numCores = [System.Environment]::GetEnvironmentVariable('NUMBER_OF_PROCESSORS') - 1
           cmake --build cmake-out -j \$numCores
+          if (\$LASTEXITCODE -ne 0) {
+            Write-Host "CMake build was unsuccessful. Exit code: \$LASTEXITCODE."
+            exit \$LASTEXITCODE
+          }
         }"

@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from typing import Set, Type
 
 import torch._export.utils
 import torch.fx
@@ -40,6 +41,8 @@ class FuseConstantArgsPass(ExportPass):
         def f():
             return x
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
@@ -107,7 +110,11 @@ class FuseConstantArgsPass(ExportPass):
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            if node.target == exir_ops.backend.tosa.TABLE.default:
+            if node.target in [
+                exir_ops.backend.tosa.TABLE.default,
+                exir_ops.backend.tosa.RESCALE.default,
+                exir_ops.backend.tosa.TRANSPOSE.default,
+            ]:
                 continue
 
             input_nodes = node.all_input_nodes
@@ -163,6 +170,8 @@ class ComputeConstantOpsAOT(ExportPass):
         def f(node_name_pre_computed):
             return node_name_pre_computed
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = [
         exir_ops.edge.aten.full.default,

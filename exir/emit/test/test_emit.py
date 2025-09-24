@@ -66,7 +66,7 @@ from executorch.runtime import Runtime
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export, export_for_training
+from torch.export import Dim, export
 from torch.export.experimental import _export_forward_backward
 
 
@@ -1751,8 +1751,8 @@ class TestEmit(unittest.TestCase):
         module_1(*example_inputs)
         module_2(*example_inputs)
 
-        ep1 = export_for_training(module_1, example_inputs, strict=True)
-        ep2 = export_for_training(module_2, example_inputs, strict=True)
+        ep1 = export(module_1, example_inputs, strict=True)
+        ep2 = export(module_2, example_inputs, strict=True)
 
         edge_program_manager = exir.to_edge(
             {"forward1": ep1, "forward2": ep2},
@@ -1794,7 +1794,6 @@ class TestEmit(unittest.TestCase):
         net = TrainingNet(Net())
 
         # Captures the forward graph. The graph will look similar to the model definition now.
-        # Will move to export_for_training soon which is the api planned to be supported in the long term.
         ep = export(
             net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
         )
@@ -1921,7 +1920,7 @@ class TestEmit(unittest.TestCase):
             program_buffer = et_program.buffer
             et_module = _load_for_executorch_from_buffer(program_buffer)
             for _, (inp, expected) in enumerate(zip(test_inputs, reference_outputs)):
-                # Execute with ExecutorTorch
+                # Execute with ExecuTorch
                 et_output = et_module.forward([inp])
                 et_result = et_output[0]  # Get first output
                 # Compare results

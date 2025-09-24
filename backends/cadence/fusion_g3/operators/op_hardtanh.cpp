@@ -25,7 +25,6 @@ using ::executorch::runtime::KernelRuntimeContext;
 using ::torch::executor::native::utils::extract_scalar;
 using ::torch::executor::native::utils::get_scalar_dtype;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -113,4 +112,3 @@ Tensor& hardtanh_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

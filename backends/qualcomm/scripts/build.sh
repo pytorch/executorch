@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Copyright (c) Qualcomm Innovation Center, Inc.
 # All rights reserved
 #
@@ -116,6 +117,21 @@ if [ "$BUILD_AARCH64" = true ]; then
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
+
+    LLAMA_EXAMPLE_ROOT=examples/models/llama
+    cmake $PRJ_ROOT/$LLAMA_EXAMPLE_ROOT \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+        -DANDROID_ABI='arm64-v8a' \
+        -DANDROID_PLATFORM=android-30 \
+        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -B$LLAMA_EXAMPLE_ROOT
+
+    cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi
 
 if [ "$BUILD_X86_64" = true ]; then
@@ -172,4 +188,18 @@ if [ "$BUILD_X86_64" = true ]; then
        -B$EXAMPLE_ROOT
 
    cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
+
+   LLAMA_EXAMPLE_ROOT=examples/models/llama
+    cmake $PRJ_ROOT/$LLAMA_EXAMPLE_ROOT \
+        -DBUILD_TESTING=OFF \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+        -DANDROID_ABI='arm64-v8a' \
+        -DANDROID_PLATFORM=android-30 \
+        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -B$LLAMA_EXAMPLE_ROOT
+
+    cmake --build $LLAMA_EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi

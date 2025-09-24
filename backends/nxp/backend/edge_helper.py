@@ -1,10 +1,10 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch.fx import Node
+from torch.fx import GraphModule, Node
 from torch.nn import Parameter
 
 
@@ -71,3 +71,19 @@ def node_is_effectively_static_tensor(
     return _is_dequantize(node) and node_is_static_tensor(
         node.args[0], parameters_mapping
     )
+
+
+def try_get_tensor_constant_from_node(
+    graph_module: GraphModule, node: Node
+) -> Parameter | None:
+    """Get the static data from a given node. If it doesn't have any data, return `None`."""
+    if node is None or node.op != "get_attr":
+        return None
+
+    target_atoms = node.target.split(".")
+    attr_itr = graph_module
+    for atom in target_atoms:
+        if not hasattr(attr_itr, atom):
+            return None
+        attr_itr = getattr(attr_itr, atom)
+    return attr_itr

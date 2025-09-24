@@ -14,7 +14,7 @@ import torch.fx as fx
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.operators.op_permute import transform_permutation_vector
-from executorch.backends.arm.tosa_utils import tosa_shape
+from executorch.backends.arm.tosa.utils import tosa_shape
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -128,7 +128,7 @@ class EthosU55NotSupported(OperatorSupportBase):
         exir_ops.edge.aten.bitwise_and.Scalar,
         exir_ops.edge.aten.bitwise_or.Scalar,
         exir_ops.edge.aten.bitwise_xor.Scalar,
-        exir_ops.edge.aten.bitwise_not,
+        exir_ops.edge.aten.bitwise_not.default,
         exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_or.default,
         exir_ops.edge.aten.logical_xor.default,
@@ -236,18 +236,20 @@ class EthosU55ViewCheck(OperatorSupportBase):
             shape = input_node.meta["val"].shape
             rank = len(shape)
             if not -rank <= dim < rank:
-                raise IndexError(
-                    f"Dim {dim} is outside of the range for tensor '{node.target}' of "
-                    f"rank {rank}"
+                self.reporter.report_reject(
+                    node,
+                    (f"Dimension {dim} out of range for rank {rank}."),
                 )
+                return False
             dim = dim % rank
 
             size = shape[dim]
             if not -size <= index < size:
-                raise IndexError(
-                    f"Index {index} is outside of the range for dim {dim} with size "
-                    f"{size} for tensor {node.target}"
+                self.reporter.report_reject(
+                    node,
+                    (f"Index {index} out of range for dim {dim} with size {size}."),
                 )
+                return False
             index = index % size
 
             # Shape after squeeze. This may get converted into a view which may become

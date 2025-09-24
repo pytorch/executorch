@@ -7,14 +7,6 @@ load(":build_defs.bzl", "ET_JNI_COMPILER_FLAGS")
 
 oncall("executorch")
 
-# Define the common JNI source files
-shared_srcs = [
-    "jni_layer.cpp",
-    "jni_layer_runtime.cpp",
-    "jni_helper.cpp",
-    "log.cpp",
-]
-
 non_fbcode_target(_kind = executorch_generated_lib,
     name = "generated_op_lib_optimized",
     custom_ops_aten_kernel_deps = [
@@ -36,7 +28,7 @@ non_fbcode_target(_kind = executorch_generated_lib,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni",
-    srcs = shared_srcs,
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS,
     soname = "libexecutorch.$(ext)",
@@ -57,7 +49,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_jni_full",
-    srcs = shared_srcs,
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS,
     soname = "libexecutorch.$(ext)",
@@ -79,7 +71,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_training_jni",
-    srcs = shared_srcs + ["jni_layer_training.cpp"],
+    srcs = ["jni_layer.cpp", "log.cpp", "jni_layer_runtime.cpp", "jni_layer_training.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS + [
         "-DEXECUTORCH_BUILD_EXTENSION_TRAINING",
@@ -106,9 +98,7 @@ non_fbcode_target(_kind = fb_android_cxx_library,
 
 non_fbcode_target(_kind = fb_android_cxx_library,
     name = "executorch_llama_jni",
-    exclude_files = ["log.cpp"]
-    shared_srcs_filtered = [f for f in shared_srcs if f not in exclude_files]
-    srcs = shared_srcs_filtered + ["jni_layer_llama.cpp"]
+    srcs = ["jni_layer.cpp", "jni_layer_llama.cpp", "jni_layer_runtime.cpp", "jni_helper.cpp"],
     allow_jni_merging = False,
     compiler_flags = ET_JNI_COMPILER_FLAGS + [
         "-DEXECUTORCH_BUILD_LLAMA_JNI",
@@ -123,7 +113,6 @@ non_fbcode_target(_kind = fb_android_cxx_library,
         "//third-party/glog:glog",
         "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
         "//xplat/executorch/examples/models/llama/runner:runner_static",
-        "//xplat/executorch/examples/models/llava/runner:runner_static",
         "//xplat/executorch/extension/module:module_static",
         "//xplat/executorch/extension/runner_util:inputs_static",
         "//xplat/executorch/extension/tensor:tensor_static",
@@ -159,5 +148,6 @@ runtime.cxx_library(
     name = "jni_headers",
     exported_headers = [
         "jni_layer_constants.h",
+        "jni_helper.h",
     ]
 )

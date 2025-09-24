@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -178,6 +180,7 @@ class TestFloorDivide(OperatorTest):
         y = torch.tensor([-2.0]).expand_as(x).clone()
         self._test_op(model, (x, y), flow, generate_random_test_inputs=False)
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_floor_divide_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
         model = FloorDivideModel()

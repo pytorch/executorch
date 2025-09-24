@@ -89,29 +89,48 @@ class QuantizationConfig:
             torch.ops.aten.linear.default,
             torch.ops.aten.conv2d.padding,
         ]:
-            input_act = node.args[0]
-            weight = node.args[1]
-            # If the weights are quantized per_tensor, do the same with bias
-            qscheme = (
-                torch.per_tensor_symmetric
-                if self.weight is None
-                else self.weight.qscheme
-            )
-            ch_axis = None
-            if self.weight is not None:
-                if qscheme == torch.per_channel_symmetric:
-                    ch_axis = self.weight.ch_axis
+            if self.input_activation is None or self.weight is None:
+                raise ValueError(
+                    "Input activation and weight QuantizationConfig must be specified."
+                )
+            if self.input_activation.dtype == self.weight.dtype == torch.int8:
+                # This is the default int8 quantization which uses the derived quantization
+                # calculated from the activation and weight scale
+                input_act = node.args[0]
+                weight = node.args[1]
 
-            quantization_spec = DerivedQuantizationSpec(
-                derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
-                derive_qparams_fn=_derive_qparams_fn,
-                dtype=torch.int32,
-                quant_min=torch.iinfo(torch.int32).min,
-                quant_max=torch.iinfo(torch.int32).max - 1,
-                qscheme=qscheme,
-                ch_axis=ch_axis,
-            )
-            return quantization_spec  # type: ignore[return-value]
+                # If the weights are quantized per_tensor, do the same with bias
+                qscheme = (
+                    torch.per_tensor_symmetric
+                    if self.weight is None
+                    else self.weight.qscheme
+                )
+                ch_axis = None
+                if self.weight is not None:
+                    if qscheme == torch.per_channel_symmetric:
+                        ch_axis = self.weight.ch_axis
+
+                quantization_spec = DerivedQuantizationSpec(
+                    derived_from=[(input_act, node), (weight, node)],  # type: ignore[list-item]
+                    derive_qparams_fn=_derive_qparams_fn,
+                    dtype=torch.int32,
+                    quant_min=torch.iinfo(torch.int32).min,
+                    quant_max=torch.iinfo(torch.int32).max - 1,
+                    qscheme=qscheme,
+                    ch_axis=ch_axis,
+                )
+                return quantization_spec  # type: ignore[return-value]
+            elif (
+                self.input_activation.dtype == torch.int16
+                and self.weight.dtype == torch.int8
+            ):
+                # In case the activation is quantized to int16, the bias needs to be
+                # added after the convolution, so use the output quantization for this case.
+                return self.output_activation
+            else:
+                raise NotImplementedError(
+                    f"Bias quantization of types: i:{self.input_activation.dtype}, w:{self.weight.dtype} not implemented"
+                )
 
         if self.bias is None:
             return None

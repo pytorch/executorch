@@ -1,13 +1,13 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "passes",
     srcs = glob(["*.py"]),
     deps = [
         "//executorch/backends/arm:common",
         "//executorch/backends/arm:constants",
-        "//executorch/backends/arm:tosa_quant_utils",
-        "//executorch/backends/arm:tosa_utils",
+        "//executorch/backends/arm/tosa:quant_utils",
+        "//executorch/backends/arm/tosa:utils",
         "//executorch/backends/arm/tosa/dialect:lib",
         "//executorch/backends/transforms:fuse_view_copy",
         "//executorch/backends/transforms:remove_getitem_op",

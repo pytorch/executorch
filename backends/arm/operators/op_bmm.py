@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+"""Provide a visitor for lowering batched matmul (BMM) to TOSA."""
+
 from typing import Any, List
 
 import torch
@@ -22,14 +24,21 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
 @register_node_visitor
 class BMMVisitor(NodeVisitor):
+    """Provide a visitor that lowers ``aten.bmm`` to TOSA ``MATMUL``.
+
+    INT8 accumulates into INT32; add a rescale to INT8 using SINGLE_ROUND
+    rounding and output zero-point.
+
+    """
+
     target = "aten.bmm.default"
 
     tosa_specs = [
@@ -47,7 +56,7 @@ class BMMVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
+        """Define the TOSA ``MATMUL`` operator and optional rescale."""
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
@@ -55,7 +64,7 @@ class BMMVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP32],
             output.tosa_spec,
         )
 
@@ -78,7 +87,9 @@ class BMMVisitor(NodeVisitor):
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=f"{node.name}_B_ZP")
 
         # Add the MATMUL to the TOSA graph.
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MATMUL,
             [
                 inputs[0].name,

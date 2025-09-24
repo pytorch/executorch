@@ -51,6 +51,7 @@ ExecuTorch provides support for:
 - [MPS](backends-mps)
 - [Vulkan](backends-vulkan)
 - [ARM Ethos-U](backends-arm-ethos-u)
+- [ARM VGF](backends-arm-vgf)
 - [Qualcomm](backends-qualcomm)
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
@@ -71,7 +72,7 @@ ExecuTorch provides support for:
 - [Overview](runtime-overview)
 - [Extension Module](extension-module)
 - [Extension Tensor](extension-tensor)
-- [Running a Model (C++ Tutorial)](running-a-model-cpp-tutorial)
+- [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial)
 - [Backend Delegate Implementation and Linking](runtime-backend-delegate-implementation-and-linking)
 - [Platform Abstraction Layer](runtime-platform-abstraction-layer)
 #### Portable C++ Programming
@@ -92,7 +93,7 @@ ExecuTorch provides support for:
 - [Exporting LLMs](llm/export-llm.md)
 - [Exporting custom LLMs](llm/export-custom-llm.md)
 - [Running with C++](llm/run-with-c-plus-plus.md)
-- [Running on Android (XNNPack)](llm/llama-demo-android.md)
+- [Running on Android (XNNPack)](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android)
 - [Running on Android (QNN)](llm/build-run-llama3-qualcomm-ai-engine-direct-backend.md)
 - [Running on iOS](llm/run-on-ios.md)
 #### Backend Development
@@ -148,7 +149,8 @@ using-executorch-faqs
 
 Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
 Building an ExecuTorch iOS Demo App <https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
-tutorial-arm.md
+tutorial-arm-ethos-u
+tutorial-arm-vgf
 ```
 
 ```{toctree}
@@ -163,6 +165,7 @@ backends-coreml
 backends-mps
 backends-vulkan
 backends-arm-ethos-u
+backends-arm-vgf
 backends-qualcomm
 backends-mediatek
 backends-cadence
@@ -248,7 +251,7 @@ Getting Started <llm/getting-started>
 Exporting LLMs with export_llm <llm/export-llm>
 Exporting custom LLMs <llm/export-custom-llm>
 Running with C++ <llm/run-with-c-plus-plus>
-Running on Android <XNNPack> <llm/llama-demo-android>
+Running on Android <XNNPack> <https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android>
 Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
 Running on iOS <llm/run-on-ios>
 ```

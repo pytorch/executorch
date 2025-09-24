@@ -6,7 +6,7 @@
 # pyre-unsafe
 
 
-from typing import Dict, Union
+from typing import Dict, Set, Type, Union
 
 import torch
 from executorch.backends.transforms.replace_scalar_with_tensor import (
@@ -15,6 +15,7 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import ExportPass
 
 
 # Operators that are included for both TOSA profiles
@@ -58,6 +59,8 @@ _common_ops: Dict[
 
 
 class ReplaceScalarWithTensorArgPassTOSAMI(ReplaceScalarWithTensorArgPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     scalar_to_tensor_ops = _common_ops | {
         exir_ops.edge.aten.pow.Tensor_Scalar: exir_ops.edge.aten.pow.Tensor_Tensor,
         torch.ops.aten.pow.Tensor_Scalar: torch.ops.aten.pow.Tensor_Tensor,
@@ -68,6 +71,8 @@ class ReplaceScalarWithTensorArgPassTOSAMI(ReplaceScalarWithTensorArgPass):
 
 
 class ReplaceScalarWithTensorArgPassTOSABI(ReplaceScalarWithTensorArgPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     scalar_to_tensor_ops = _common_ops
 
     def __init__(self):
