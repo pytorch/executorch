@@ -285,12 +285,6 @@ Error Runner<T>::load() {
           sliding_window,
           cache_mode_});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    // TODO: sliding window attention will be supported in future.
-    if (sliding_window < context_len_) {
-      ET_CHECK_MSG(
-          false,
-          "Lookahead decoding (eval_mode == 2) is not yet supported for sliding window attention.");
-    }
     token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
@@ -307,7 +301,8 @@ Error Runner<T>::load() {
             ngram_,
             window_,
             gcap_,
-            sliding_window},
+            sliding_window,
+            cache_mode_},
         &stats_);
   } else {
     token_generator_ = std::make_unique<TokenGenerator<T>>(

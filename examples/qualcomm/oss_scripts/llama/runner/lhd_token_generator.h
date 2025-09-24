@@ -29,6 +29,7 @@ class LhdTokenGenerator : public TokenGenerator<T> {
     int32_t window;
     int32_t gcap;
     int sliding_window;
+    CacheMode cache_mode;
   };
   LhdTokenGenerator(
       tokenizers::Tokenizer* tokenizer,
@@ -51,7 +52,8 @@ class LhdTokenGenerator : public TokenGenerator<T> {
                 metadata.ar_len,
                 metadata.vocab_size,
                 metadata.use_int64_token,
-                metadata.sliding_window},
+                metadata.sliding_window,
+                metadata.cache_mode},
             stats),
         metadata_(metadata),
         lhd_branch_(metadata.ngram - 1, std::vector<int32_t>(metadata.window)),
@@ -63,6 +65,22 @@ class LhdTokenGenerator : public TokenGenerator<T> {
         metadata.ngram,
         metadata.window,
         metadata.gcap);
+
+    // initialize position offset
+    position_offset_ = std::vector<int32_t>(metadata.ar_len);
+    int idx = 0;
+    // lookahead branches
+    for (int i = 0; i < metadata.ngram - 1; ++i) {
+      for (int j = 0; j < metadata.window; ++j) {
+        position_offset_[idx++] = i + j;
+      }
+    }
+    // verification branches
+    for (int i = 0; i < metadata.gcap; ++i) {
+      for (int j = 1; j < metadata.ngram; ++j) {
+        position_offset_[idx++] = j;
+      }
+    }
   }
 
   ~LhdTokenGenerator() = default;
@@ -135,6 +153,9 @@ class LhdTokenGenerator : public TokenGenerator<T> {
 
   // verification branch
   std::vector<NgramData> v_branch_;
+
+  // position offset in attention mask
+  std::vector<int32_t> position_offset_;
 
   // n-gram pools
   NgramContainer ngrams_pool_;

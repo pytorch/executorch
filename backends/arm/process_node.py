@@ -12,7 +12,7 @@ import serializer.tosa_serializer as ts
 import torch
 import torch.fx
 from executorch.backends.arm.operators.node_visitor import NodeVisitor
-from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg, TosaSpecialDtype
 from executorch.backends.arm.tosa.specification import TosaSpecification
 from executorch.backends.arm.tosa.utils import tosa_shape
 from torch._export.utils import (
@@ -112,10 +112,17 @@ def process_inputs_to_parameters(
     if tosa_arg.dtype == torch.float32:
         assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
 
+    # Handle special case for INT48 tensors
+    special_type = node.meta.get(TosaSpecialDtype.meta_key(), None)
+    if isinstance(special_type, TosaSpecialDtype):
+        tosa_dtype = special_type.get_tosa_dtype()
+    else:
+        tosa_dtype = tosa_arg.dtype
+
     parameter_values = np.transpose(parameter_values, tosa_arg.dim_order)
 
     tosa_graph.addConst(
-        parameter_values.shape, tosa_arg.dtype, parameter_values, name=tosa_arg.name
+        parameter_values.shape, tosa_dtype, parameter_values, name=tosa_arg.name
     )
 
 
