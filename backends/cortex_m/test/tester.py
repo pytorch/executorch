@@ -9,10 +9,7 @@ from typing import Any
 
 import torch
 
-from executorch.backends.arm.quantizer.arm_quantizer import (
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-)
+from backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
@@ -36,10 +33,8 @@ from executorch.backends.xnnpack._passes import XNNPACKPassManager
 
 class CortexMQuantize(Quantize):
     def __init__(self):
-        compile_spec = get_u55_compile_spec()
-        quantizer = TOSAQuantizer(compile_spec)
+        quantizer = XNNPACKQuantizer()
         config = get_symmetric_quantization_config()
-
         super().__init__(quantizer, config)
 
 
