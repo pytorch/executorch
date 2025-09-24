@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
 
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
@@ -41,6 +42,7 @@
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
+using executorch::extension::Module;
 
 namespace {
 bool utf8_check_validity(const char* str, size_t length) {
@@ -285,6 +287,101 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
+  llm::MultimodalInput processRawAudioFile(
+    const std::string& audio_path,
+    const std::string& processor_path) {
+  if (processor_path.empty()) {
+    ET_LOG(Error, "Processor path is required for raw audio processing");
+    throw std::runtime_error(
+        "Processor path is required for raw audio processing");
+  }
+
+  // Load the audio processor .pte.
+  std::unique_ptr<Module> processor_module;
+  try {
+    processor_module =
+        std::make_unique<Module>(processor_path, Module::LoadMode::File);
+    auto load_error = processor_module->load();
+    if (load_error != ::executorch::runtime::Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to load processor module from: %s",
+          processor_path.c_str());
+      throw std::runtime_error("Failed to load processor module");
+    }
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "Exception while loading processor module: %s", e.what());
+    throw std::runtime_error("Exception while loading processor module");
+  }
+
+  // Load the audio data from file.
+  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
+  if (!f.is_open()) {
+    ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
+    throw std::runtime_error("Failed to open audio file");
+  }
+
+  std::size_t n_floats = f.tellg() / sizeof(float);
+  f.seekg(0, std::ios::beg);
+
+  std::vector<float> audio_data(n_floats);
+  f.read(
+      reinterpret_cast<char*>(audio_data.data()),
+      audio_data.size() * sizeof(float));
+  f.close();
+
+  ET_LOG(
+      Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
+
+  // Execute the processor
+  std::vector<executorch::aten::SizesType> tensor_shape = {
+      static_cast<executorch::aten::SizesType>(audio_data.size())};
+  auto input_tensor = executorch::extension::from_blob(
+      audio_data.data(), tensor_shape, ::executorch::aten::ScalarType::Float);
+
+  ET_LOG(Info, "Processing audio through processor module...");
+  auto result = processor_module->execute("forward", input_tensor);
+  if (!result.ok()) {
+    ET_LOG(Error, "Failed to execute processor's forward method");
+    throw std::runtime_error("Failed to execute processor forward method");
+  }
+
+  auto outputs = result.get();
+  if (outputs.empty()) {
+    ET_LOG(Error, "Processor returned no outputs");
+    throw std::runtime_error("Processor returned no outputs");
+  }
+
+  // Extract processed audio features
+  const auto& processed_tensor = outputs[0].toTensor();
+  const float* processed_data = processed_tensor.const_data_ptr<float>();
+  const auto& sizes = processed_tensor.sizes();
+
+  ET_LOG(
+      Info,
+      "Processed audio tensor shape: [%d, %d, %d]",
+      static_cast<int>(sizes[0]),
+      static_cast<int>(sizes[1]),
+      static_cast<int>(sizes[2]));
+
+  // Create Audio multimodal input from processed features
+  int32_t batch_size = static_cast<int32_t>(sizes[0]);
+  int32_t n_bins = static_cast<int32_t>(sizes[1]);
+  int32_t n_frames = static_cast<int32_t>(sizes[2]);
+  size_t total_elements = batch_size * n_bins * n_frames;
+  std::vector<float> audio_vec(processed_data, processed_data + total_elements);
+  auto processed_audio = ::executorch::extension::llm::Audio(
+      std::move(audio_vec), batch_size, n_bins, n_frames);
+  ET_LOG(
+      Info,
+      "Created processed Audio: batch_size=%d, n_bins=%d, n_frames=%d",
+      batch_size,
+      n_bins,
+      n_frames);
+  return ::executorch::extension::llm::make_audio_input(
+      std::move(processed_audio));
+}
+
   jint prefill_audio_input(
       facebook::jni::alias_ref<jbyteArray> audio,
       jint batch_size,
@@ -306,7 +403,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       }
       llm::Audio audio_input{std::move(audio_data), batch_size, n_bins, n_frames};
       multi_modal_runner_->prefill(
-          {llm::MultimodalInput{std::move(audio_input)}});
+          {processRawAudioFile("/data/local/tmp/llama/audio.bin", "/data/local/tmp/llama/voxtral_preprocessor.pte")});
     }
     return 0;
   }
