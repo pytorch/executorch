@@ -58,7 +58,7 @@ fi
 
 if [[ $IS_MACOS -eq 1 ]]; then
     $SETUP_SCRIPT=.ci/scripts/setup-macos.sh
-else;
+else
     $SETUP_SCRIPT=.ci/scripts/setup-linux.sh
 fi
 ${CONDA_RUN} --no-capture-output CMAKE_ARGS="$EXTRA_BUILD_ARGS" $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
