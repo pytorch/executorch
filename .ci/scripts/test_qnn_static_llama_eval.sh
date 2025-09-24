@@ -7,6 +7,8 @@
 
 set -euo pipefail
 
+echo ">>> Script invoked with arguments: $@"
+
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 # Download QNN_SDK. If already downloaded, export environment path
