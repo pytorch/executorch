@@ -132,32 +132,18 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlmCall
           mMessageAdapter.add(modelLoadingMessage);
           mMessageAdapter.notifyDataSetChanged();
         });
-    if (mModule != null) {
-      ETLogging.getInstance().log("Start deallocating existing module instance");
-      mModule.resetNative();
-      mModule = null;
-      ETLogging.getInstance().log("Completed deallocating existing module instance");
-    }
+    
     long runStartTime = System.currentTimeMillis();
-    // Create LlmModule with or without dataPath
-    if (dataPath != null && !dataPath.isEmpty()) {
-      mModule =
-          new LlmModule(
-              ModelUtils.getModelCategory(
-                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
-              modelPath,
-              tokenizerPath,
-              temperature,
-              dataPath);
-    } else {
-      mModule =
-          new LlmModule(
-              ModelUtils.getModelCategory(
-                  mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
-              modelPath,
-              tokenizerPath,
-              temperature);
-    }
+    // Create LlmModule with dataPath
+    mModule =
+        new LlmModule(
+            ModelUtils.getModelCategory(
+                mCurrentSettingsFields.getModelType(), mCurrentSettingsFields.getBackendType()),
+            modelPath,
+            tokenizerPath,
+            temperature,
+            dataPath);
+    
     int loadResult = mModule.load();
     long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelLoadError = "";

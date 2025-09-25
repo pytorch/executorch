@@ -57,7 +57,7 @@ dependencies {
   implementation("androidx.constraintlayout:constraintlayout:2.2.0-alpha12")
   implementation("com.facebook.fbjni:fbjni:0.5.1")
   implementation("com.google.code.gson:gson:2.8.6")
-  implementation("org.pytorch:executorch-android-qnn:0.7.0-qnn-rc3")
+  implementation(files("libs/executorch.aar"))
   implementation("com.google.android.material:material:1.12.0")
   implementation("androidx.activity:activity:1.9.0")
   implementation("org.json:json:20250107")
