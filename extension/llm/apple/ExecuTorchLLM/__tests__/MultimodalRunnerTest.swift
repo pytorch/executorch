@@ -45,6 +45,11 @@ extension UIImage {
 }
 
 class MultimodalRunnerTest: XCTestCase {
+  let systemPrompt = "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: "
+  let assistantPrompt = "ASSISTANT: "
+  let userPrompt = "What's on the picture?"
+  let sequenceLength = 768
+
   func test() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "llava", ofType: "pte"),
@@ -59,10 +64,25 @@ class MultimodalRunnerTest: XCTestCase {
 
     do {
       try runner.generate([
-        MultimodalInput("A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: "),
+        MultimodalInput(systemPrompt),
         MultimodalInput(image.asImage()),
-        MultimodalInput("What's on the picture? ASSISTANT: "),
-      ], sequenceLength: 768) { token in
+        MultimodalInput("\(userPrompt) \(assistantPrompt)"),
+      ], sequenceLength: sequenceLength) { token in
+        text += token
+      }
+    } catch {
+      XCTFail("Failed to generate text with error \(error)")
+    }
+    XCTAssertTrue(text.lowercased().contains("waterfall"))
+
+    text = ""
+    runner.reset()
+    do {
+      try runner.generate([
+        MultimodalInput(systemPrompt),
+        MultimodalInput(image.asImage()),
+        MultimodalInput("\(userPrompt) \(assistantPrompt)"),
+      ], sequenceLength: sequenceLength) { token in
         text += token
       }
     } catch {
