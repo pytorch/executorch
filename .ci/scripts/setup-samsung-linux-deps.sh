@@ -11,7 +11,7 @@ set -ex
 
 download_ai_lite_core() {
   API_BASE="https://soc-developer.semiconductor.samsung.com/api/v1/resource/ai-litecore/download"
-  API_KEY="kn10SoSY3hkC-9Qny5TqD2mnqVrlupv3krnjLeBt5cY"
+  API_KEY=$SAMSUNG_AI_LITECORE_KEY
 
   VERSION="0.5"
   OS_NAME="Ubuntu 22.04"
@@ -52,7 +52,7 @@ download_ai_lite_core() {
 install_enn_backend() {
   NDK_INSTALLATION_DIR=/opt/ndk
   rm -rf "${NDK_INSTALLATION_DIR}" && sudo mkdir -p "${NDK_INSTALLATION_DIR}"
-  ANDROID_NDK_VERSION=r27b
+  ANDROID_NDK_VERSION=r28c
 
   # build Exynos backend
   export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}

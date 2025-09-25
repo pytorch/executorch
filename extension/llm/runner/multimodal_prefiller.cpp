@@ -41,25 +41,66 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
     Image image = input.get_image();
-    auto image_tensor = executorch::extension::from_blob(
-        image.data.data(),
-        {3, image.height, image.width},
-        ::executorch::aten::ScalarType::Byte);
 
+    auto method_meta = ET_UNWRAP(
+        module_->method_meta(kVisionEncoderMethod),
+        "Failed to get method_meta for %s",
+        kVisionEncoderMethod);
+
+    ET_CHECK_OR_RETURN_ERROR(
+        method_meta.num_inputs() > 0,
+        InvalidArgument,
+        "Image encoder should have at least 1 input");
+    auto input_meta = ET_UNWRAP(
+        method_meta.input_tensor_meta(0),
+        "Cannot get input tensor meta at index 0");
+    auto expected_dtype = input_meta.scalar_type();
+
+    if (expected_dtype == ::executorch::aten::ScalarType::Float) {
+      ET_CHECK_OR_RETURN_ERROR(
+          image.is_float(),
+          InvalidArgument,
+          "Model expects float image data, but image has uint8_t data.");
+    } else if (expected_dtype == ::executorch::aten::ScalarType::Byte) {
+      ET_CHECK_OR_RETURN_ERROR(
+          image.is_uint8(),
+          InvalidArgument,
+          "Model expects uint8_t image data, but image has float data.");
+    } else {
+      ET_LOG(
+          Error,
+          "Unsupported image encoder input dtype: %s",
+          ::executorch::runtime::toString(expected_dtype));
+      return ::executorch::runtime::Error::NotSupported;
+    }
+
+    // The model might expect a 4D tensor (NCHW), but toTensor() returns a 3D
+    // tensor (CHW). Add a batch dimension of 1 if needed.
+    auto expected_dims = input_meta.sizes();
+    auto image_tensor = ET_UNWRAP(
+        image.toTensor(/*with_batch*/ expected_dims.size() == 4),
+        "Failed to convert image to tensor");
+    ET_LOG(
+        Info,
+        "Image tensor dim: %zu, dtype: %s",
+        image_tensor->dim(),
+        ::executorch::runtime::toString(image_tensor->scalar_type()));
     // Run image encoder
     auto image_encoder_outputs =
-        ET_UNWRAP(module_->execute(kImageEncoderMethod, image_tensor));
+        ET_UNWRAP(module_->execute(kVisionEncoderMethod, image_tensor));
 
     encoder_output = image_encoder_outputs[0];
   } else if (input.is_audio()) {
     Audio audio = input.get_audio();
 
-    // Use the original tensor shape as intended
-    auto audio_tensor = executorch::extension::from_blob(
-        audio.data.data(),
-        {audio.batch_size, audio.n_bins, audio.n_frames},
-        ::executorch::aten::ScalarType::Float);
-
+    // Use Audio::toTensor() for tensor creation
+    auto audio_tensor =
+        ET_UNWRAP(audio.toTensor(), "Failed to convert audio to tensor");
+    ET_LOG(
+        Info,
+        "Audio tensor dim: %zu, dtype: %s",
+        audio_tensor->dim(),
+        ::executorch::runtime::toString(audio_tensor->scalar_type()));
     // Run audio encoder
     auto audio_encoder_result =
         module_->execute(kAudioEncoderMethod, audio_tensor);
@@ -69,10 +110,14 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto audio_encoder_outputs = audio_encoder_result.get();
 
     encoder_output = audio_encoder_outputs[0];
-  } else if (input.is_text()) {
-    auto& text = input.get_text();
-    std::vector<uint64_t> tokens =
-        ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
+  } else if (input.is_text() || input.is_tokens()) {
+    std::vector<uint64_t> tokens;
+    if (input.is_text()) {
+      auto& text = input.get_text();
+      tokens = ET_UNWRAP_TOKENIZER(tokenizer_->encode(text));
+    } else {
+      tokens = input.get_tokens();
+    }
 
     auto text_tensor = executorch::extension::from_blob(
         tokens.data(),
@@ -143,8 +188,8 @@ Result<uint64_t> MultimodalPrefiller::prefill(
       ET_UNWRAP(module_->method_names(), "Failed to get method names");
 
   // Load image_encoder method if exists.
-  if (methods.find(kImageEncoderMethod) != methods.end()) {
-    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kImageEncoderMethod));
+  if (methods.find(kVisionEncoderMethod) != methods.end()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method(kVisionEncoderMethod));
   }
 
   if (methods.find(kAudioEncoderMethod) != methods.end()) {
@@ -171,8 +216,8 @@ bool MultimodalPrefiller::is_method_loaded() {
     ET_CHECK_MSG(false, "Failed to get method names");
   }
   std::unordered_set<std::string> methods = methods_res.get();
-  if (methods.find(kImageEncoderMethod) != methods.end()) {
-    return module_->is_method_loaded(kImageEncoderMethod);
+  if (methods.find(kVisionEncoderMethod) != methods.end()) {
+    return module_->is_method_loaded(kVisionEncoderMethod);
   }
   return true;
 }

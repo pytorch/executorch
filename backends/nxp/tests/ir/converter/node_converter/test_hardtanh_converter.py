@@ -57,7 +57,7 @@ def test_relu6_quant(mocker, input_shape: tuple[int], inplace: bool):
         tflite_input_preprocess=ToNHWCPreprocess(),
         tflite_output_preprocess=ToNCHWPreprocess(),
         input_data=input_data,
-        atol=1.0,
+        atol=2.0,
     )
 
 

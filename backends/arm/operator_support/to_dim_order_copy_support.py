@@ -89,6 +89,7 @@ class ToCopySupported(SupportedTOSAOperatorCheck):
             torch.int32,
             torch.bfloat16,
             torch.float16,
+            torch.float32,
         ],
     }
     ALL_SUPPORTED_TYPES = _merge_supported_types(
