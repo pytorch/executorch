@@ -647,8 +647,10 @@ class LlmConfig:
             assert args.torchao_kernels
             assert args.torchao_kernels_linear
             llm_config.backend.torchao.linear = True
-        
-        if hasattr(args, "torchao_kernels") or hasattr(args, "torchao_kernels_tied_embedding"):
+
+        if hasattr(args, "torchao_kernels") or hasattr(
+            args, "torchao_kernels_tied_embedding"
+        ):
             assert args.torchao_kernels
             assert args.torchao_kernels_tied_embedding
             llm_config.backend.torchao.tied_embedding = True
