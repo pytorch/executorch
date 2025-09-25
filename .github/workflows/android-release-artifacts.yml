@@ -20,10 +20,6 @@ on:
   schedule:
     - cron: 0 10 * * *
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   check-if-aar-exists:
     name: check-if-aar-exists
