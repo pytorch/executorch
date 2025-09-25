@@ -145,6 +145,7 @@ run_core_tests () {
   echo "=== [$LABEL] Import smoke tests ==="
   "$PYBIN" -c "import executorch; print('executorch imported successfully')"
   "$PYBIN" -c "import executorch.backends.qualcomm; print('executorch.backends.qualcomm imported successfully')"
+  "$PYBIN" -c "from executorch.export.target_recipes import get_android_recipe; recipe = get_android_recipe('android-arm64-snapdragon-fp16'); print(f'executorch.export.target_recipes imported successfully: {recipe}')"
 
   echo "=== [$LABEL] List installed executorch/backends/qualcomm/python ==="
   local SITE_DIR

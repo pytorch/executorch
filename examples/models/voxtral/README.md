@@ -44,7 +44,7 @@ The Voxtral runner will do the following things:
 - Feed the formatted inputs to the multimodal modal runner.
 
 
-# [Option A] Exporting the audio preprocessor
+## Exporting the audio preprocessor
 The exported model takes in a mel spectrogram input tensor as its audio inputs.
 We provide a simple way to transform raw audio data into a mel spectrogram by exporting a version of Voxtral's audio preprocessor used directly by Transformers.
 

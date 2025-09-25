@@ -57,7 +57,7 @@ def _graph_has_unsupported_patterns(program: torch.export.ExportedProgram) -> bo
             and node.target == exir_ops.edge.aten.convolution.default
         ):
             in_rank = node.args[0].meta["val"].dim()
-            if in_rank != 4:
+            if in_rank > 4:
                 return True
 
     return False
