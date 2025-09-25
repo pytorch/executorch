@@ -131,8 +131,7 @@ int32_t main(int32_t argc, char** argv) {
 #endif
   // Load tokenizer
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
-      std::make_unique<tokenizers::Llama2cTokenizer>();
-  tokenizer->load(tokenizer_path);
+      ::executorch::extension::llm::load_tokenizer(tokenizer_path);
   if (tokenizer == nullptr) {
     ET_LOG(Error, "Failed to load tokenizer from: %s", tokenizer_path);
     return 1;

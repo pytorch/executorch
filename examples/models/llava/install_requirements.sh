@@ -7,9 +7,4 @@
 
 set -x
 
-pip install transformers accelerate sentencepiece tiktoken
-
-# Run llama2/install requirements for torchao deps
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-bash "$SCRIPT_DIR"/../llama/install_requirements.sh
+pip install git+https://github.com/huggingface/optimum-executorch.git@d4d3046738ca31b5542506aaa76a28d540600227

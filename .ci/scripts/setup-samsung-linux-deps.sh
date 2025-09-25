@@ -52,7 +52,7 @@ download_ai_lite_core() {
 install_enn_backend() {
   NDK_INSTALLATION_DIR=/opt/ndk
   rm -rf "${NDK_INSTALLATION_DIR}" && sudo mkdir -p "${NDK_INSTALLATION_DIR}"
-  ANDROID_NDK_VERSION=r27b
+  ANDROID_NDK_VERSION=r28c
 
   # build Exynos backend
   export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}
