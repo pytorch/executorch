@@ -1,7 +1,27 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
 
 oncall("executorch")
+
+python_unittest_remote_gpu(
+    name = "test_cuda_export",
+    srcs = [
+        "test_cuda_export.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cuda:cuda_backend",
+        "//executorch/backends/cuda:cuda_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+    keep_gpu_sections = True,
+)
 
 python_unittest(
     name = "test_cuda_partitioner",
@@ -14,6 +34,7 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/cuda:cuda_partitioner",
+        "//executorch/backends/cuda:cuda_backend",
         "//executorch/exir:lib",
         "//executorch/exir/backend:compile_spec_schema",
     ],
