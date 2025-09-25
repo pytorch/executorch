@@ -2,6 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Define TOSA profile support lists for INT and FP.
+
+Expose static sets of EXIR operator overloads used by the TOSA partitioner to
+seed positive support checks for different profiles.
+
+"""
 
 import operator
 from typing import Final, Set
@@ -24,6 +30,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.bitwise_and.Scalar,
     exir_ops.edge.aten.bitwise_or.Scalar,
     exir_ops.edge.aten.bitwise_xor.Scalar,
+    exir_ops.edge.aten.cos.default,
     exir_ops.edge.aten.logical_and.default,
     exir_ops.edge.aten.logical_or.default,
     exir_ops.edge.aten.logical_xor.default,
@@ -97,7 +104,6 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    exir_ops.edge.aten.where.self,
     operator.getitem,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
@@ -113,6 +119,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     torch.ops.aten.scalar_tensor.default,
     exir_ops.edge.aten.gelu.default,
     exir_ops.edge.aten.alias_copy.default,
+    exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sinh.default,
     exir_ops.edge.aten.atan.default,
     exir_ops.edge.aten.acosh.default,
@@ -128,6 +135,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.bitwise_not.default,
 }
 
 
@@ -147,6 +155,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.cat.default,
     exir_ops.edge.aten.ceil.default,
     exir_ops.edge.aten.clamp.default,
+    exir_ops.edge.aten.cos.default,
     exir_ops.edge.aten.cumsum.default,
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.permute_copy.default,
@@ -211,7 +220,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    exir_ops.edge.aten.where.self,
     operator.getitem,
     exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.amax.default,
@@ -223,6 +231,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     torch.ops.aten.scalar_tensor.default,
     exir_ops.edge.aten.gelu.default,
     exir_ops.edge.aten.alias_copy.default,
+    exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sinh.default,
     exir_ops.edge.aten.atan.default,
     exir_ops.edge.aten.acosh.default,

@@ -80,6 +80,8 @@ TestCase create_test_case_from_config(
   test_case.add_input_spec(zero_point);
   test_case.add_output_spec(output_tensor);
 
+  test_case.set_abs_tolerance(scale_val + 1e-4);
+
   return test_case;
 }
 

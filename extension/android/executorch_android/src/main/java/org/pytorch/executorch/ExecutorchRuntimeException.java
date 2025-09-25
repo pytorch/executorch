@@ -75,6 +75,7 @@ public class ExecutorchRuntimeException extends RuntimeException {
   }
 
   static class ErrorHelper {
+    private static final boolean ENABLE_READ_LOG_BUFFER = false;
     // Reusable StringBuilder instance
     private static final StringBuilder sb = new StringBuilder();
 
@@ -92,14 +93,15 @@ public class ExecutorchRuntimeException extends RuntimeException {
             .append("] ")
             .append(baseMessage)
             .append(": ")
-            .append(details)
-            .append("\nDetailed Logs:\n");
-
-        try {
-          String[] logEntries = readLogBuffer(); // JNI call
-          formatLogEntries(sb, logEntries);
-        } catch (Exception e) {
-          sb.append("Failed to retrieve detailed logs: ").append(e.getMessage());
+            .append(details);
+        if (ENABLE_READ_LOG_BUFFER) {
+          try {
+            sb.append("\nDetailed Logs:\n");
+            String[] logEntries = readLogBuffer(); // JNI call
+            formatLogEntries(sb, logEntries);
+          } catch (Exception e) {
+            sb.append("Failed to retrieve detailed logs: ").append(e.getMessage());
+          }
         }
 
         return sb.toString();

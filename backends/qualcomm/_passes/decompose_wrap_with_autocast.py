@@ -10,7 +10,7 @@ from typing import Dict, Tuple
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_nn_module_stack
+from .utils import merge_decomposed_graph
 
 
 class DecomposeWrapWithAutocast(ExportPass):
@@ -52,7 +52,7 @@ class DecomposeWrapWithAutocast(ExportPass):
         graph = gm.graph
         for node in graph.nodes:
             if isinstance(node.target, torch._higher_order_ops.wrap.WrapWithAutocast):
-                submod, submod_name = self._get_submod(gm, node)
+                submod, _ = self._get_submod(gm, node)
                 n_args = node.args
                 input_submod = n_args[4]
                 decomposed_module = submod
@@ -61,22 +61,13 @@ class DecomposeWrapWithAutocast(ExportPass):
                     # which ensures that reference to nodes are correctly updated in the new graph
                     # remap = {"expand_1": node.args[5], "to_4": node.args[6]}
                     remap = {n_args[i].name: n_args[i] for i in range(5, len(n_args))}
-
-                    for decomposed_node in decomposed_module.graph.nodes:
-                        copy_nn_module_stack(node, decomposed_node)
-                        # no need to copy existent 'output'
-                        if decomposed_node.op == "output":
-                            self._replace_output(node, decomposed_node, remap)
-                        # no need to copy existent placeholders
-                        elif decomposed_node.op == "placeholder":
-                            # replace node map from string to graph node
-                            remap[decomposed_node] = remap.pop(decomposed_node.name)
-                        else:
-                            remap[decomposed_node] = graph.node_copy(
-                                decomposed_node,
-                                arg_transform=lambda x, remap=remap: remap[x],
-                            )
-
+                    merge_decomposed_graph(
+                        remap=remap,
+                        target_node=node,
+                        target_graph=graph,
+                        decomposed_graph_module=decomposed_module,
+                        output_processor=self._replace_output,
+                    )
                     graph.erase_node(node)
 
                 graph.erase_node(input_submod)

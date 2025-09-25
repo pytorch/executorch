@@ -906,7 +906,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
        exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
        if not using use_edge_to_transform_and_lower.
 
-       run_on_vulkan_runtime: Set to true to test VGF output on VKML runtime.
+       run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
 
        vgf_compiler_flags: Optional compiler flags.
 
@@ -922,7 +922,7 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
         test_data: T,
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
-        run_on_vulkan_runtime: bool = False,
+        run_on_vulkan_runtime: bool = True,
         vgf_compiler_flags: Optional[str] = "",
         tosa_version: str = "TOSA-1.0+FP",
         symmetric_io_quantization: bool = False,
@@ -1018,3 +1018,16 @@ class VgfPipeline(BasePipelineMaker, Generic[T]):
                 qtol=qtol,
                 inputs=self.test_data,
             )
+        self.run_on_vulkan_runtime = run_on_vulkan_runtime
+
+    # TODO: Remove once CI fully working
+    def run(self):
+        import pytest
+
+        if self.run_on_vulkan_runtime:
+            try:
+                super().run()
+            except FileNotFoundError as e:
+                pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+        else:
+            super().run()
