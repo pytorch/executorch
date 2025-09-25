@@ -23,9 +23,11 @@ if [[ "$(uname)" == "Darwin" ]]; then
     bash .ci/scripts/setup-conda.sh
     eval "$(conda shell.bash hook)"
     CONDA_RUN_CMD="${CONDA_RUN} --no-capture-output"
-    ${CONDA_RUN_CMD} --no-capture-output pip install awscli==1.37.21
+    ${CONDA_RUN_CMD} pip install awscli==1.37.21
+    IS_MACOS=0
 else
     CONDA_RUN_CMD=""
+    IS_MACOS=1
 fi
 
 export PYTHON_EXECUTABLE=python
@@ -53,17 +55,17 @@ if [[ "$FLOW" == *vulkan* ]]; then
     EXTRA_BUILD_ARGS+=" -DEXECUTORCH_BUILD_VULKAN=ON"
 fi
 
+if [[ "$FLOW" == *arm* ]]; then
+    # Setup ARM deps.
+    .ci/scripts/setup-arm-baremetal-tools.sh
+fi
+
 if [[ $IS_MACOS -eq 1 ]]; then
     SETUP_SCRIPT=.ci/scripts/setup-macos.sh
 else
     SETUP_SCRIPT=.ci/scripts/setup-linux.sh
 fi
 CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
-
-if [[ "$FLOW" == *arm* ]]; then
-    # Setup ARM deps.
-    .ci/scripts/setup-arm-baremetal-tools.sh
-fi
 
 EXIT_CODE=0
 ${CONDA_RUN_CMD} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
