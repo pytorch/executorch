@@ -15,7 +15,8 @@ buck2 query "//backends/apple/... + //backends/arm: + //backends/arm/debug/... +
 //backends/arm/_passes/... + //backends/arm/runtime/... + //backends/arm/tosa/... \
 + //backends/example/... + \
 //backends/mediatek/... + //backends/transforms/... + \
-//backends/xnnpack/... + //configurations/... + //extension/flat_tensor: + \
+//backends/xnnpack/... + //codegen/tools/... + \
+//configurations/... + //extension/flat_tensor: + \
 //extension/llm/runner: + //kernels/aten/... + //kernels/optimized/... + \
 //kernels/portable/... + //kernels/quantized/... + //kernels/test/... + \
 //runtime/... + //schema/... + //test/... + //util/..."
@@ -38,3 +39,6 @@ for op in "build" "test"; do
           $BUILDABLE_KERNELS_PRIM_OPS_TARGETS //runtime/backend/... //runtime/core/... \
           //runtime/executor: //runtime/kernel/... //runtime/platform/...
 done
+
+# Build only without testing
+buck2 build //codegen/tools/... # Needs torch for testing which we don't have in our OSS buck setup.

@@ -1,0 +1,20 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "test_cuda_partitioner",
+    srcs = [
+        "test_cuda_partitioner.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cuda:cuda_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:compile_spec_schema",
+    ],
+)
