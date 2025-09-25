@@ -458,7 +458,8 @@ class TorchAOKernelsConfig:
     Configures the torchao-kernels backend.
     """
 
-    enabled: bool = False
+    linear: bool = True
+    tied_embedding: bool = True
 
 
 @dataclass
@@ -642,8 +643,15 @@ class LlmConfig:
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
 
-        if hasattr(args, "torchao_kernels"):
-            llm_config.backend.torchao.enabled = args.torchao_kernels
+        if hasattr(args, "torchao_kernels") or hasattr(args, "torchao_kernels_linear"):
+            assert args.torchao_kernels
+            assert args.torchao_kernels_linear
+            llm_config.backend.torchao.linear = True
+        
+        if hasattr(args, "torchao_kernels") or hasattr(args, "torchao_kernels_tied_embedding"):
+            assert args.torchao_kernels
+            assert args.torchao_kernels_tied_embedding
+            llm_config.backend.torchao.tied_embedding = True
 
         # DebugConfig
         if hasattr(args, "profile_memory"):
