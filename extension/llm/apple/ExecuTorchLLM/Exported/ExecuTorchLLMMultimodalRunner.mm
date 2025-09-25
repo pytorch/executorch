@@ -216,4 +216,10 @@ withTokenCallback:(nullable void (^)(NSString *))callback
   }
 }
 
+- (void)reset {
+  if (_runner) {
+    _runner->reset();
+  }
+}
+
 @end
