@@ -593,23 +593,19 @@ jobs:
       contents: read
     strategy:
       matrix:
+        model: [qwen3_4b, phi_4_mini]
+        runner: [linux.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12]
+        backend: [xnnpack]
         include:
           - model: qwen3_4b
-            backend: xnnpack
-            runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-          - model: phi_4_mini
-            backend: xnnpack
-            runner: linux.2xlarge
-            docker-image: executorch-ubuntu-22.04-clang12
-          - model: qwen3_4b
-            backend: torchao
             runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
-          - model: phi_4_mini
             backend: torchao
+          - model: phi_4_mini
             runner: linux.arm64.2xlarge
             docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
