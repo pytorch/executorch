@@ -77,6 +77,10 @@ utils::uvec3 quantized_linear_global_wg_size(
     M_per_tile = 1;
   }
 
+  if (shader.kernel_name.find("q8ta_q8csw_tiled") != std::string::npos) {
+    N_per_tile = 8;
+  }
+
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
