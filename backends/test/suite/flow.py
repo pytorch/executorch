@@ -1,3 +1,8 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 
 from dataclasses import dataclass, field
@@ -122,10 +127,14 @@ def all_flows() -> dict[str, TestFlow]:
         logger.info(f"Skipping QNN flow registration: {e}")
 
     try:
-        from executorch.backends.test.suite.flows.arm import ARM_TOSA_FLOW
+        from executorch.backends.test.suite.flows.arm import (
+            ARM_TOSA_FP_FLOW,
+            ARM_TOSA_INT_FLOW,
+        )
 
         flows += [
-            ARM_TOSA_FLOW,
+            ARM_TOSA_FP_FLOW,
+            ARM_TOSA_INT_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping ARM flow registration: {e}")
