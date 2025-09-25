@@ -36,7 +36,7 @@ set(CMSIS_NN_LOCAL_PATH
 # library is downloaded via FetchContent in the default/regular case.
 if(CMSIS_NN_LOCAL_PATH AND EXISTS "${CMSIS_NN_LOCAL_PATH}")
   message(STATUS "Using CMSIS-NN from specified path: ${CMSIS_NN_LOCAL_PATH}")
-  add_subdirectory(${CMSIS_NN_LOCAL_PATH} cmsis_nn_build)
+  add_subdirectory(${CMSIS_NN_LOCAL_PATH} _deps/cmsis_nn-build)
 else()
   # Use FetchContent with automatic fallback
   message(STATUS "Using CMSIS-NN via FetchContent")
@@ -48,23 +48,7 @@ else()
     GIT_SHALLOW TRUE
   )
 
-  FetchContent_GetProperties(cmsis_nn)
-  if(NOT cmsis_nn_POPULATED)
-    FetchContent_Populate(cmsis_nn)
-    add_subdirectory(${cmsis_nn_SOURCE_DIR} ${cmsis_nn_BINARY_DIR})
-  endif()
-endif()
-
-# Add MVEI define to cmsis-nn target
-if(TARGET cmsis-nn)
-  target_compile_definitions(cmsis-nn PUBLIC ARM_MATH_MVEI=1)
-  get_target_property(CMSIS_NN_INCLUDES cmsis-nn INTERFACE_INCLUDE_DIRECTORIES)
-  message(STATUS "CMSIS-NN include dirs: ${CMSIS_NN_INCLUDES}")
-else()
-  message(
-    FATAL_ERROR
-      "CMSIS-NN target not found. Check your CMSIS_NN_LOCAL_PATH or network connection."
-  )
+  FetchContent_MakeAvailable(cmsis_nn)
 endif()
 
 # Cortex-M ops kernel sources
