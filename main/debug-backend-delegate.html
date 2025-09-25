@@ -519,21 +519,38 @@
 <div class="section" id="get-delegation-summary">
 <h2>Get delegation summary<a class="headerlink" href="#get-delegation-summary" title="Permalink to this heading">¶</a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">get_delegation_info()</span></code> method provides a summary of what happened to the model after the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.backend_debug</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_delegation_info</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span><span class="w"> </span><span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dim</span><span class="p">,</span> <span class="n">export</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torchvision.models.mobilenetv2</span><span class="w"> </span><span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torchvision.models</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">models</span>
+
+<span class="c1"># Dependency needed for debugging delegates</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools.backend_debug</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_delegation_info</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">tabulate</span><span class="w"> </span><span class="kn">import</span> <span class="n">tabulate</span>
 
-<span class="c1"># ... After call to to_backend(), but before to_executorch()</span>
-<span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
+<span class="p">)</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">et_program</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
 <span class="n">delegation_info</span> <span class="o">=</span> <span class="n">get_delegation_info</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+<span class="c1"># print the summary like the number of delegated nodes, non-delegated nodes, etc</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">delegation_info</span><span class="o">.</span><span class="n">get_summary</span><span class="p">())</span>
 <span class="n">df</span> <span class="o">=</span> <span class="n">delegation_info</span><span class="o">.</span><span class="n">get_operator_delegation_dataframe</span><span class="p">()</span>
+<span class="c1"># print the table including op_type, occurrences_in_delegated_graphs, occurrences_in_non_delegated_graphs</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">tabulate</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="s2">&quot;keys&quot;</span><span class="p">,</span> <span class="n">tablefmt</span><span class="o">=</span><span class="s2">&quot;fancy_grid&quot;</span><span class="p">))</span>
 </pre></div>
 </div>
 <p>Example printout:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span>  <span class="n">delegated</span>  <span class="n">subgraphs</span><span class="p">:</span>  <span class="mi">86</span>
-<span class="n">Number</span>  <span class="n">of</span>  <span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">473</span>
-<span class="n">Number</span>  <span class="n">of</span>  <span class="n">non</span><span class="o">-</span><span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">430</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span> <span class="n">delegated</span> <span class="n">subgraphs</span><span class="p">:</span> <span class="mi">2</span>
+<span class="n">Number</span> <span class="n">of</span> <span class="n">delegated</span> <span class="n">nodes</span><span class="p">:</span> <span class="mi">203</span>
+<span class="n">Number</span> <span class="n">of</span> <span class="n">non</span><span class="o">-</span><span class="n">delegated</span> <span class="n">nodes</span><span class="p">:</span> <span class="mi">4</span>
 </pre></div>
 </div>
 <table class="colwidths-auto docutils align-default">
@@ -546,72 +563,610 @@
 </thead>
 <tbody>
 <tr class="row-even"><td><p>0</p></td>
-<td><p>aten__softmax_default</p></td>
-<td><p>12</p></td>
+<td><p>aten__native_batch_norm_legit_no_training_default</p></td>
+<td><p>52</p></td>
 <td><p>0</p></td>
 </tr>
 <tr class="row-odd"><td><p>1</p></td>
 <td><p>aten_add_tensor</p></td>
-<td><p>37</p></td>
+<td><p>10</p></td>
 <td><p>0</p></td>
 </tr>
 <tr class="row-even"><td><p>2</p></td>
-<td><p>aten_addmm_default</p></td>
-<td><p>48</p></td>
+<td><p>aten_convolution_default</p></td>
+<td><p>52</p></td>
 <td><p>0</p></td>
 </tr>
 <tr class="row-odd"><td><p>3</p></td>
-<td><p>aten_arange_start_step</p></td>
+<td><p>aten_hardtanh_default</p></td>
+<td><p>35</p></td>
 <td><p>0</p></td>
-<td><p>25</p></td>
 </tr>
-<tr class="row-even"><td><p></p></td>
-<td><p>…</p></td>
-<td><p></p></td>
-<td><p></p></td>
+<tr class="row-even"><td><p>4</p></td>
+<td><p>aten_linear_default</p></td>
+<td><p>1</p></td>
+<td><p>0</p></td>
 </tr>
-<tr class="row-odd"><td><p>23</p></td>
+<tr class="row-odd"><td><p>5</p></td>
+<td><p>aten_mean_dim</p></td>
+<td><p>1</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-even"><td><p>6</p></td>
 <td><p>aten_view_copy_default</p></td>
-<td><p>170</p></td>
-<td><p>48</p></td>
+<td><p>0</p></td>
+<td><p>1</p></td>
 </tr>
-<tr class="row-even"><td><p></p></td>
-<td><p>…</p></td>
-<td><p></p></td>
-<td><p></p></td>
+<tr class="row-odd"><td><p>7</p></td>
+<td><p>dim_order_ops__clone_dim_order_default</p></td>
+<td><p>0</p></td>
+<td><p>1</p></td>
 </tr>
-<tr class="row-odd"><td><p>26</p></td>
-<td><p>Total</p></td>
-<td><p>473</p></td>
-<td><p>430</p></td>
+<tr class="row-even"><td><p>8</p></td>
+<td><p>getitem</p></td>
+<td><p>52</p></td>
+<td><p>2</p></td>
+</tr>
+<tr class="row-odd"><td><p>9</p></td>
+<td><p><strong>Total</strong></p></td>
+<td><p><strong>203</strong></p></td>
+<td><p><strong>4</strong></p></td>
 </tr>
 </tbody>
 </table>
-<p>From the table, the operator <code class="docutils literal notranslate"><span class="pre">aten_view_copy_default</span></code> appears 170 times in delegate graphs and 48 times in non-delegated graphs. Users can use information like this to debug.</p>
+<p>From the table, the operator <code class="docutils literal notranslate"><span class="pre">aten_view_copy_default</span></code> appears 0 times in delegate graphs and 1 times in non-delegated graphs. Users can use information like this to debug. <code class="docutils literal notranslate"><span class="pre">get_item</span> <span class="pre">node</span></code> is a special case, it means getting the output from the delegate subgraph.</p>
 </div>
 <div class="section" id="visualize-delegated-graph">
 <h2>Visualize delegated graph<a class="headerlink" href="#visualize-delegated-graph" title="Permalink to this heading">¶</a></h2>
-<p>To see a more detailed view, use the <code class="docutils literal notranslate"><span class="pre">format_delegated_graph()</span></code> method to get a str of printout of the whole graph or use <code class="docutils literal notranslate"><span class="pre">print_delegated_graph()</span></code> to print directly:</p>
+<p>To see a more detailed view, use the <code class="docutils literal notranslate"><span class="pre">format_delegated_graph()</span></code> method to get a string representation of the entire graph or use <code class="docutils literal notranslate"><span class="pre">print_delegated_graph()</span></code> to print directly:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.backend.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_delegated_graph</span>
-<span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">et_program</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">format_delegated_graph</span><span class="p">(</span><span class="n">graph_module</span><span class="p">))</span> <span class="c1"># or call print_delegated_graph(graph_module)</span>
 </pre></div>
 </div>
-<p>It will print the whole model as well as the subgraph consumed by the backend. The generic debug function provided by fx like <code class="docutils literal notranslate"><span class="pre">print_tabular()</span></code> or <code class="docutils literal notranslate"><span class="pre">print_readable()</span></code> will only show <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> but hide the the subgraph consumes by the backend, while this function exposes the contents inside the subgraph.</p>
-<p>In the example printout below, observe that <code class="docutils literal notranslate"><span class="pre">embedding</span></code> and <code class="docutils literal notranslate"><span class="pre">add</span></code> operators are delegated to <code class="docutils literal notranslate"><span class="pre">XNNPACK</span></code> while the <code class="docutils literal notranslate"><span class="pre">sub</span></code> operator is not.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default_22</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_23</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-  <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_23</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_24</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-  <span class="o">%</span><span class="n">lowered_module_0</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">lowered_module_0</span><span class="p">]</span>
-    <span class="n">backend_id</span><span class="p">:</span> <span class="n">XnnpackBackend</span>
-    <span class="n">lowered</span> <span class="n">graph</span><span class="p">():</span>
-      <span class="o">%</span><span class="n">aten_embedding_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">aten_embedding_default</span><span class="p">]</span>
-      <span class="o">%</span><span class="n">aten_embedding_default_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">aten_embedding_default_1</span><span class="p">]</span>
-      <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_embedding_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-      <span class="k">return</span> <span class="p">(</span><span class="n">aten_add_tensor</span><span class="p">,)</span>
-  <span class="o">%</span><span class="n">executorch_call_delegate</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">higher_order</span><span class="o">.</span><span class="n">executorch_call_delegate</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">lowered_module_0</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-  <span class="o">%</span><span class="n">aten_sub_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sub</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-</pre></div>
-</div>
+<p>It will print the whole model as well as the subgraph consumed by the backend. The generic debug function provided by fx like <code class="docutils literal notranslate"><span class="pre">print_tabular()</span></code> or <code class="docutils literal notranslate"><span class="pre">print_readable()</span></code> will only show <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> and hide the subgraph consumed by the backend, while this function exposes the contents inside the subgraph.</p>
+<p>In the example printout below, observe that there are two subgraphs, <code class="docutils literal notranslate"><span class="pre">aten_view_copy_default</span></code> is not delegated, while most of the others ops are delegated.</p>
+<details>
+```
+graph():
+  %b_features_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_0_1_num_batches_tracked]
+  %b_features_1_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_1_conv_0_1_num_batches_tracked]
+  %b_features_1_conv_2_num_batches_tracked : [num_users=0] = placeholder[target=b_features_1_conv_2_num_batches_tracked]
+  %b_features_2_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_2_conv_0_1_num_batches_tracked]
+  %b_features_2_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_2_conv_1_1_num_batches_tracked]
+  %b_features_2_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_2_conv_3_num_batches_tracked]
+  %b_features_3_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_3_conv_0_1_num_batches_tracked]
+  %b_features_3_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_3_conv_1_1_num_batches_tracked]
+  %b_features_3_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_3_conv_3_num_batches_tracked]
+  %b_features_4_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_4_conv_0_1_num_batches_tracked]
+  %b_features_4_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_4_conv_1_1_num_batches_tracked]
+  %b_features_4_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_4_conv_3_num_batches_tracked]
+  %b_features_5_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_5_conv_0_1_num_batches_tracked]
+  %b_features_5_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_5_conv_1_1_num_batches_tracked]
+  %b_features_5_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_5_conv_3_num_batches_tracked]
+  %b_features_6_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_6_conv_0_1_num_batches_tracked]
+  %b_features_6_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_6_conv_1_1_num_batches_tracked]
+  %b_features_6_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_6_conv_3_num_batches_tracked]
+  %b_features_7_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_7_conv_0_1_num_batches_tracked]
+  %b_features_7_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_7_conv_1_1_num_batches_tracked]
+  %b_features_7_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_7_conv_3_num_batches_tracked]
+  %b_features_8_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_8_conv_0_1_num_batches_tracked]
+  %b_features_8_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_8_conv_1_1_num_batches_tracked]
+  %b_features_8_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_8_conv_3_num_batches_tracked]
+  %b_features_9_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_9_conv_0_1_num_batches_tracked]
+  %b_features_9_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_9_conv_1_1_num_batches_tracked]
+  %b_features_9_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_9_conv_3_num_batches_tracked]
+  %b_features_10_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_10_conv_0_1_num_batches_tracked]
+  %b_features_10_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_10_conv_1_1_num_batches_tracked]
+  %b_features_10_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_10_conv_3_num_batches_tracked]
+  %b_features_11_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_11_conv_0_1_num_batches_tracked]
+  %b_features_11_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_11_conv_1_1_num_batches_tracked]
+  %b_features_11_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_11_conv_3_num_batches_tracked]
+  %b_features_12_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_12_conv_0_1_num_batches_tracked]
+  %b_features_12_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_12_conv_1_1_num_batches_tracked]
+  %b_features_12_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_12_conv_3_num_batches_tracked]
+  %b_features_13_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_13_conv_0_1_num_batches_tracked]
+  %b_features_13_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_13_conv_1_1_num_batches_tracked]
+  %b_features_13_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_13_conv_3_num_batches_tracked]
+  %b_features_14_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_14_conv_0_1_num_batches_tracked]
+  %b_features_14_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_14_conv_1_1_num_batches_tracked]
+  %b_features_14_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_14_conv_3_num_batches_tracked]
+  %b_features_15_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_15_conv_0_1_num_batches_tracked]
+  %b_features_15_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_15_conv_1_1_num_batches_tracked]
+  %b_features_15_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_15_conv_3_num_batches_tracked]
+  %b_features_16_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_16_conv_0_1_num_batches_tracked]
+  %b_features_16_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_16_conv_1_1_num_batches_tracked]
+  %b_features_16_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_16_conv_3_num_batches_tracked]
+  %b_features_17_conv_0_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_17_conv_0_1_num_batches_tracked]
+  %b_features_17_conv_1_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_17_conv_1_1_num_batches_tracked]
+  %b_features_17_conv_3_num_batches_tracked : [num_users=0] = placeholder[target=b_features_17_conv_3_num_batches_tracked]
+  %b_features_18_1_num_batches_tracked : [num_users=0] = placeholder[target=b_features_18_1_num_batches_tracked]
+  %x : [num_users=1] = placeholder[target=x]
+  %lowered_module_0 : [num_users=1] = get_attr[target=lowered_module_0]
+    backend_id: XnnpackBackend
+    lowered graph():
+      %p_features_0_0_weight : [num_users=1] = placeholder[target=p_features_0_0_weight]
+      %p_features_0_1_weight : [num_users=1] = placeholder[target=p_features_0_1_weight]
+      %p_features_0_1_bias : [num_users=1] = placeholder[target=p_features_0_1_bias]
+      %p_features_1_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_1_conv_0_0_weight]
+      %p_features_1_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_1_conv_0_1_weight]
+      %p_features_1_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_1_conv_0_1_bias]
+      %p_features_1_conv_1_weight : [num_users=1] = placeholder[target=p_features_1_conv_1_weight]
+      %p_features_1_conv_2_weight : [num_users=1] = placeholder[target=p_features_1_conv_2_weight]
+      %p_features_1_conv_2_bias : [num_users=1] = placeholder[target=p_features_1_conv_2_bias]
+      %p_features_2_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_2_conv_0_0_weight]
+      %p_features_2_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_2_conv_0_1_weight]
+      %p_features_2_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_2_conv_0_1_bias]
+      %p_features_2_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_2_conv_1_0_weight]
+      %p_features_2_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_2_conv_1_1_weight]
+      %p_features_2_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_2_conv_1_1_bias]
+      %p_features_2_conv_2_weight : [num_users=1] = placeholder[target=p_features_2_conv_2_weight]
+      %p_features_2_conv_3_weight : [num_users=1] = placeholder[target=p_features_2_conv_3_weight]
+      %p_features_2_conv_3_bias : [num_users=1] = placeholder[target=p_features_2_conv_3_bias]
+      %p_features_3_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_3_conv_0_0_weight]
+      %p_features_3_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_3_conv_0_1_weight]
+      %p_features_3_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_3_conv_0_1_bias]
+      %p_features_3_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_3_conv_1_0_weight]
+      %p_features_3_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_3_conv_1_1_weight]
+      %p_features_3_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_3_conv_1_1_bias]
+      %p_features_3_conv_2_weight : [num_users=1] = placeholder[target=p_features_3_conv_2_weight]
+      %p_features_3_conv_3_weight : [num_users=1] = placeholder[target=p_features_3_conv_3_weight]
+      %p_features_3_conv_3_bias : [num_users=1] = placeholder[target=p_features_3_conv_3_bias]
+      %p_features_4_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_4_conv_0_0_weight]
+      %p_features_4_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_4_conv_0_1_weight]
+      %p_features_4_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_4_conv_0_1_bias]
+      %p_features_4_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_4_conv_1_0_weight]
+      %p_features_4_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_4_conv_1_1_weight]
+      %p_features_4_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_4_conv_1_1_bias]
+      %p_features_4_conv_2_weight : [num_users=1] = placeholder[target=p_features_4_conv_2_weight]
+      %p_features_4_conv_3_weight : [num_users=1] = placeholder[target=p_features_4_conv_3_weight]
+      %p_features_4_conv_3_bias : [num_users=1] = placeholder[target=p_features_4_conv_3_bias]
+      %p_features_5_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_5_conv_0_0_weight]
+      %p_features_5_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_5_conv_0_1_weight]
+      %p_features_5_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_5_conv_0_1_bias]
+      %p_features_5_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_5_conv_1_0_weight]
+      %p_features_5_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_5_conv_1_1_weight]
+      %p_features_5_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_5_conv_1_1_bias]
+      %p_features_5_conv_2_weight : [num_users=1] = placeholder[target=p_features_5_conv_2_weight]
+      %p_features_5_conv_3_weight : [num_users=1] = placeholder[target=p_features_5_conv_3_weight]
+      %p_features_5_conv_3_bias : [num_users=1] = placeholder[target=p_features_5_conv_3_bias]
+      %p_features_6_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_6_conv_0_0_weight]
+      %p_features_6_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_6_conv_0_1_weight]
+      %p_features_6_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_6_conv_0_1_bias]
+      %p_features_6_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_6_conv_1_0_weight]
+      %p_features_6_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_6_conv_1_1_weight]
+      %p_features_6_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_6_conv_1_1_bias]
+      %p_features_6_conv_2_weight : [num_users=1] = placeholder[target=p_features_6_conv_2_weight]
+      %p_features_6_conv_3_weight : [num_users=1] = placeholder[target=p_features_6_conv_3_weight]
+      %p_features_6_conv_3_bias : [num_users=1] = placeholder[target=p_features_6_conv_3_bias]
+      %p_features_7_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_7_conv_0_0_weight]
+      %p_features_7_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_7_conv_0_1_weight]
+      %p_features_7_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_7_conv_0_1_bias]
+      %p_features_7_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_7_conv_1_0_weight]
+      %p_features_7_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_7_conv_1_1_weight]
+      %p_features_7_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_7_conv_1_1_bias]
+      %p_features_7_conv_2_weight : [num_users=1] = placeholder[target=p_features_7_conv_2_weight]
+      %p_features_7_conv_3_weight : [num_users=1] = placeholder[target=p_features_7_conv_3_weight]
+      %p_features_7_conv_3_bias : [num_users=1] = placeholder[target=p_features_7_conv_3_bias]
+      %p_features_8_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_8_conv_0_0_weight]
+      %p_features_8_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_8_conv_0_1_weight]
+      %p_features_8_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_8_conv_0_1_bias]
+      %p_features_8_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_8_conv_1_0_weight]
+      %p_features_8_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_8_conv_1_1_weight]
+      %p_features_8_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_8_conv_1_1_bias]
+      %p_features_8_conv_2_weight : [num_users=1] = placeholder[target=p_features_8_conv_2_weight]
+      %p_features_8_conv_3_weight : [num_users=1] = placeholder[target=p_features_8_conv_3_weight]
+      %p_features_8_conv_3_bias : [num_users=1] = placeholder[target=p_features_8_conv_3_bias]
+      %p_features_9_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_9_conv_0_0_weight]
+      %p_features_9_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_9_conv_0_1_weight]
+      %p_features_9_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_9_conv_0_1_bias]
+      %p_features_9_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_9_conv_1_0_weight]
+      %p_features_9_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_9_conv_1_1_weight]
+      %p_features_9_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_9_conv_1_1_bias]
+      %p_features_9_conv_2_weight : [num_users=1] = placeholder[target=p_features_9_conv_2_weight]
+      %p_features_9_conv_3_weight : [num_users=1] = placeholder[target=p_features_9_conv_3_weight]
+      %p_features_9_conv_3_bias : [num_users=1] = placeholder[target=p_features_9_conv_3_bias]
+      %p_features_10_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_10_conv_0_0_weight]
+      %p_features_10_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_10_conv_0_1_weight]
+      %p_features_10_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_10_conv_0_1_bias]
+      %p_features_10_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_10_conv_1_0_weight]
+      %p_features_10_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_10_conv_1_1_weight]
+      %p_features_10_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_10_conv_1_1_bias]
+      %p_features_10_conv_2_weight : [num_users=1] = placeholder[target=p_features_10_conv_2_weight]
+      %p_features_10_conv_3_weight : [num_users=1] = placeholder[target=p_features_10_conv_3_weight]
+      %p_features_10_conv_3_bias : [num_users=1] = placeholder[target=p_features_10_conv_3_bias]
+      %p_features_11_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_11_conv_0_0_weight]
+      %p_features_11_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_11_conv_0_1_weight]
+      %p_features_11_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_11_conv_0_1_bias]
+      %p_features_11_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_11_conv_1_0_weight]
+      %p_features_11_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_11_conv_1_1_weight]
+      %p_features_11_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_11_conv_1_1_bias]
+      %p_features_11_conv_2_weight : [num_users=1] = placeholder[target=p_features_11_conv_2_weight]
+      %p_features_11_conv_3_weight : [num_users=1] = placeholder[target=p_features_11_conv_3_weight]
+      %p_features_11_conv_3_bias : [num_users=1] = placeholder[target=p_features_11_conv_3_bias]
+      %p_features_12_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_12_conv_0_0_weight]
+      %p_features_12_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_12_conv_0_1_weight]
+      %p_features_12_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_12_conv_0_1_bias]
+      %p_features_12_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_12_conv_1_0_weight]
+      %p_features_12_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_12_conv_1_1_weight]
+      %p_features_12_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_12_conv_1_1_bias]
+      %p_features_12_conv_2_weight : [num_users=1] = placeholder[target=p_features_12_conv_2_weight]
+      %p_features_12_conv_3_weight : [num_users=1] = placeholder[target=p_features_12_conv_3_weight]
+      %p_features_12_conv_3_bias : [num_users=1] = placeholder[target=p_features_12_conv_3_bias]
+      %p_features_13_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_13_conv_0_0_weight]
+      %p_features_13_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_13_conv_0_1_weight]
+      %p_features_13_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_13_conv_0_1_bias]
+      %p_features_13_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_13_conv_1_0_weight]
+      %p_features_13_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_13_conv_1_1_weight]
+      %p_features_13_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_13_conv_1_1_bias]
+      %p_features_13_conv_2_weight : [num_users=1] = placeholder[target=p_features_13_conv_2_weight]
+      %p_features_13_conv_3_weight : [num_users=1] = placeholder[target=p_features_13_conv_3_weight]
+      %p_features_13_conv_3_bias : [num_users=1] = placeholder[target=p_features_13_conv_3_bias]
+      %p_features_14_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_14_conv_0_0_weight]
+      %p_features_14_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_14_conv_0_1_weight]
+      %p_features_14_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_14_conv_0_1_bias]
+      %p_features_14_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_14_conv_1_0_weight]
+      %p_features_14_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_14_conv_1_1_weight]
+      %p_features_14_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_14_conv_1_1_bias]
+      %p_features_14_conv_2_weight : [num_users=1] = placeholder[target=p_features_14_conv_2_weight]
+      %p_features_14_conv_3_weight : [num_users=1] = placeholder[target=p_features_14_conv_3_weight]
+      %p_features_14_conv_3_bias : [num_users=1] = placeholder[target=p_features_14_conv_3_bias]
+      %p_features_15_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_15_conv_0_0_weight]
+      %p_features_15_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_15_conv_0_1_weight]
+      %p_features_15_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_15_conv_0_1_bias]
+      %p_features_15_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_15_conv_1_0_weight]
+      %p_features_15_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_15_conv_1_1_weight]
+      %p_features_15_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_15_conv_1_1_bias]
+      %p_features_15_conv_2_weight : [num_users=1] = placeholder[target=p_features_15_conv_2_weight]
+      %p_features_15_conv_3_weight : [num_users=1] = placeholder[target=p_features_15_conv_3_weight]
+      %p_features_15_conv_3_bias : [num_users=1] = placeholder[target=p_features_15_conv_3_bias]
+      %p_features_16_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_16_conv_0_0_weight]
+      %p_features_16_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_16_conv_0_1_weight]
+      %p_features_16_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_16_conv_0_1_bias]
+      %p_features_16_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_16_conv_1_0_weight]
+      %p_features_16_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_16_conv_1_1_weight]
+      %p_features_16_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_16_conv_1_1_bias]
+      %p_features_16_conv_2_weight : [num_users=1] = placeholder[target=p_features_16_conv_2_weight]
+      %p_features_16_conv_3_weight : [num_users=1] = placeholder[target=p_features_16_conv_3_weight]
+      %p_features_16_conv_3_bias : [num_users=1] = placeholder[target=p_features_16_conv_3_bias]
+      %p_features_17_conv_0_0_weight : [num_users=1] = placeholder[target=p_features_17_conv_0_0_weight]
+      %p_features_17_conv_0_1_weight : [num_users=1] = placeholder[target=p_features_17_conv_0_1_weight]
+      %p_features_17_conv_0_1_bias : [num_users=1] = placeholder[target=p_features_17_conv_0_1_bias]
+      %p_features_17_conv_1_0_weight : [num_users=1] = placeholder[target=p_features_17_conv_1_0_weight]
+      %p_features_17_conv_1_1_weight : [num_users=1] = placeholder[target=p_features_17_conv_1_1_weight]
+      %p_features_17_conv_1_1_bias : [num_users=1] = placeholder[target=p_features_17_conv_1_1_bias]
+      %p_features_17_conv_2_weight : [num_users=1] = placeholder[target=p_features_17_conv_2_weight]
+      %p_features_17_conv_3_weight : [num_users=1] = placeholder[target=p_features_17_conv_3_weight]
+      %p_features_17_conv_3_bias : [num_users=1] = placeholder[target=p_features_17_conv_3_bias]
+      %p_features_18_0_weight : [num_users=1] = placeholder[target=p_features_18_0_weight]
+      %p_features_18_1_weight : [num_users=1] = placeholder[target=p_features_18_1_weight]
+      %p_features_18_1_bias : [num_users=1] = placeholder[target=p_features_18_1_bias]
+      %b_features_0_1_running_mean : [num_users=1] = placeholder[target=b_features_0_1_running_mean]
+      %b_features_0_1_running_var : [num_users=1] = placeholder[target=b_features_0_1_running_var]
+      %b_features_1_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_1_conv_0_1_running_mean]
+      %b_features_1_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_1_conv_0_1_running_var]
+      %b_features_1_conv_2_running_mean : [num_users=1] = placeholder[target=b_features_1_conv_2_running_mean]
+      %b_features_1_conv_2_running_var : [num_users=1] = placeholder[target=b_features_1_conv_2_running_var]
+      %b_features_2_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_2_conv_0_1_running_mean]
+      %b_features_2_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_2_conv_0_1_running_var]
+      %b_features_2_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_2_conv_1_1_running_mean]
+      %b_features_2_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_2_conv_1_1_running_var]
+      %b_features_2_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_2_conv_3_running_mean]
+      %b_features_2_conv_3_running_var : [num_users=1] = placeholder[target=b_features_2_conv_3_running_var]
+      %b_features_3_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_3_conv_0_1_running_mean]
+      %b_features_3_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_3_conv_0_1_running_var]
+      %b_features_3_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_3_conv_1_1_running_mean]
+      %b_features_3_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_3_conv_1_1_running_var]
+      %b_features_3_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_3_conv_3_running_mean]
+      %b_features_3_conv_3_running_var : [num_users=1] = placeholder[target=b_features_3_conv_3_running_var]
+      %b_features_4_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_4_conv_0_1_running_mean]
+      %b_features_4_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_4_conv_0_1_running_var]
+      %b_features_4_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_4_conv_1_1_running_mean]
+      %b_features_4_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_4_conv_1_1_running_var]
+      %b_features_4_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_4_conv_3_running_mean]
+      %b_features_4_conv_3_running_var : [num_users=1] = placeholder[target=b_features_4_conv_3_running_var]
+      %b_features_5_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_5_conv_0_1_running_mean]
+      %b_features_5_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_5_conv_0_1_running_var]
+      %b_features_5_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_5_conv_1_1_running_mean]
+      %b_features_5_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_5_conv_1_1_running_var]
+      %b_features_5_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_5_conv_3_running_mean]
+      %b_features_5_conv_3_running_var : [num_users=1] = placeholder[target=b_features_5_conv_3_running_var]
+      %b_features_6_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_6_conv_0_1_running_mean]
+      %b_features_6_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_6_conv_0_1_running_var]
+      %b_features_6_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_6_conv_1_1_running_mean]
+      %b_features_6_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_6_conv_1_1_running_var]
+      %b_features_6_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_6_conv_3_running_mean]
+      %b_features_6_conv_3_running_var : [num_users=1] = placeholder[target=b_features_6_conv_3_running_var]
+      %b_features_7_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_7_conv_0_1_running_mean]
+      %b_features_7_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_7_conv_0_1_running_var]
+      %b_features_7_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_7_conv_1_1_running_mean]
+      %b_features_7_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_7_conv_1_1_running_var]
+      %b_features_7_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_7_conv_3_running_mean]
+      %b_features_7_conv_3_running_var : [num_users=1] = placeholder[target=b_features_7_conv_3_running_var]
+      %b_features_8_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_8_conv_0_1_running_mean]
+      %b_features_8_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_8_conv_0_1_running_var]
+      %b_features_8_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_8_conv_1_1_running_mean]
+      %b_features_8_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_8_conv_1_1_running_var]
+      %b_features_8_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_8_conv_3_running_mean]
+      %b_features_8_conv_3_running_var : [num_users=1] = placeholder[target=b_features_8_conv_3_running_var]
+      %b_features_9_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_9_conv_0_1_running_mean]
+      %b_features_9_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_9_conv_0_1_running_var]
+      %b_features_9_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_9_conv_1_1_running_mean]
+      %b_features_9_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_9_conv_1_1_running_var]
+      %b_features_9_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_9_conv_3_running_mean]
+      %b_features_9_conv_3_running_var : [num_users=1] = placeholder[target=b_features_9_conv_3_running_var]
+      %b_features_10_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_10_conv_0_1_running_mean]
+      %b_features_10_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_10_conv_0_1_running_var]
+      %b_features_10_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_10_conv_1_1_running_mean]
+      %b_features_10_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_10_conv_1_1_running_var]
+      %b_features_10_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_10_conv_3_running_mean]
+      %b_features_10_conv_3_running_var : [num_users=1] = placeholder[target=b_features_10_conv_3_running_var]
+      %b_features_11_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_11_conv_0_1_running_mean]
+      %b_features_11_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_11_conv_0_1_running_var]
+      %b_features_11_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_11_conv_1_1_running_mean]
+      %b_features_11_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_11_conv_1_1_running_var]
+      %b_features_11_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_11_conv_3_running_mean]
+      %b_features_11_conv_3_running_var : [num_users=1] = placeholder[target=b_features_11_conv_3_running_var]
+      %b_features_12_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_12_conv_0_1_running_mean]
+      %b_features_12_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_12_conv_0_1_running_var]
+      %b_features_12_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_12_conv_1_1_running_mean]
+      %b_features_12_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_12_conv_1_1_running_var]
+      %b_features_12_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_12_conv_3_running_mean]
+      %b_features_12_conv_3_running_var : [num_users=1] = placeholder[target=b_features_12_conv_3_running_var]
+      %b_features_13_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_13_conv_0_1_running_mean]
+      %b_features_13_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_13_conv_0_1_running_var]
+      %b_features_13_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_13_conv_1_1_running_mean]
+      %b_features_13_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_13_conv_1_1_running_var]
+      %b_features_13_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_13_conv_3_running_mean]
+      %b_features_13_conv_3_running_var : [num_users=1] = placeholder[target=b_features_13_conv_3_running_var]
+      %b_features_14_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_14_conv_0_1_running_mean]
+      %b_features_14_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_14_conv_0_1_running_var]
+      %b_features_14_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_14_conv_1_1_running_mean]
+      %b_features_14_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_14_conv_1_1_running_var]
+      %b_features_14_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_14_conv_3_running_mean]
+      %b_features_14_conv_3_running_var : [num_users=1] = placeholder[target=b_features_14_conv_3_running_var]
+      %b_features_15_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_15_conv_0_1_running_mean]
+      %b_features_15_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_15_conv_0_1_running_var]
+      %b_features_15_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_15_conv_1_1_running_mean]
+      %b_features_15_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_15_conv_1_1_running_var]
+      %b_features_15_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_15_conv_3_running_mean]
+      %b_features_15_conv_3_running_var : [num_users=1] = placeholder[target=b_features_15_conv_3_running_var]
+      %b_features_16_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_16_conv_0_1_running_mean]
+      %b_features_16_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_16_conv_0_1_running_var]
+      %b_features_16_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_16_conv_1_1_running_mean]
+      %b_features_16_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_16_conv_1_1_running_var]
+      %b_features_16_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_16_conv_3_running_mean]
+      %b_features_16_conv_3_running_var : [num_users=1] = placeholder[target=b_features_16_conv_3_running_var]
+      %b_features_17_conv_0_1_running_mean : [num_users=1] = placeholder[target=b_features_17_conv_0_1_running_mean]
+      %b_features_17_conv_0_1_running_var : [num_users=1] = placeholder[target=b_features_17_conv_0_1_running_var]
+      %b_features_17_conv_1_1_running_mean : [num_users=1] = placeholder[target=b_features_17_conv_1_1_running_mean]
+      %b_features_17_conv_1_1_running_var : [num_users=1] = placeholder[target=b_features_17_conv_1_1_running_var]
+      %b_features_17_conv_3_running_mean : [num_users=1] = placeholder[target=b_features_17_conv_3_running_mean]
+      %b_features_17_conv_3_running_var : [num_users=1] = placeholder[target=b_features_17_conv_3_running_var]
+      %b_features_18_1_running_mean : [num_users=1] = placeholder[target=b_features_18_1_running_mean]
+      %b_features_18_1_running_var : [num_users=1] = placeholder[target=b_features_18_1_running_var]
+      %x : [num_users=1] = placeholder[target=x]
+      %aten_convolution_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%x, %p_features_0_0_weight, None, [2, 2], [1, 1], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default, %p_features_0_1_weight, %p_features_0_1_bias, %b_features_0_1_running_mean, %b_features_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default, 0), kwargs = {})
+      %aten_hardtanh_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default, %p_features_1_conv_0_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 32), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_1, %p_features_1_conv_0_1_weight, %p_features_1_conv_0_1_bias, %b_features_1_conv_0_1_running_mean, %b_features_1_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_1 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_1, 0), kwargs = {})
+      %aten_hardtanh_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_1, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_1, %p_features_1_conv_1_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_2, %p_features_1_conv_2_weight, %p_features_1_conv_2_bias, %b_features_1_conv_2_running_mean, %b_features_1_conv_2_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_2 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_2, 0), kwargs = {})
+      %aten_convolution_default_3 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_2, %p_features_2_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_3 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_3, %p_features_2_conv_0_1_weight, %p_features_2_conv_0_1_bias, %b_features_2_conv_0_1_running_mean, %b_features_2_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_3 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_3, 0), kwargs = {})
+      %aten_hardtanh_default_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_3, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_4 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_2, %p_features_2_conv_1_0_weight, None, [2, 2], [1, 1], [1, 1], False, [0, 0], 96), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_4 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_4, %p_features_2_conv_1_1_weight, %p_features_2_conv_1_1_bias, %b_features_2_conv_1_1_running_mean, %b_features_2_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_4 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_4, 0), kwargs = {})
+      %aten_hardtanh_default_3 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_4, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_5 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_3, %p_features_2_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_5 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_5, %p_features_2_conv_3_weight, %p_features_2_conv_3_bias, %b_features_2_conv_3_running_mean, %b_features_2_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_5 : [num_users=2] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_5, 0), kwargs = {})
+      %aten_convolution_default_6 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_5, %p_features_3_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_6 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_6, %p_features_3_conv_0_1_weight, %p_features_3_conv_0_1_bias, %b_features_3_conv_0_1_running_mean, %b_features_3_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_6 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_6, 0), kwargs = {})
+      %aten_hardtanh_default_4 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_6, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_7 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_4, %p_features_3_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 144), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_7 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_7, %p_features_3_conv_1_1_weight, %p_features_3_conv_1_1_bias, %b_features_3_conv_1_1_running_mean, %b_features_3_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_7 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_7, 0), kwargs = {})
+      %aten_hardtanh_default_5 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_7, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_8 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_5, %p_features_3_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_8 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_8, %p_features_3_conv_3_weight, %p_features_3_conv_3_bias, %b_features_3_conv_3_running_mean, %b_features_3_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_8 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_8, 0), kwargs = {})
+      %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%getitem_5, %getitem_8), kwargs = {})
+      %aten_convolution_default_9 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor, %p_features_4_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_9 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_9, %p_features_4_conv_0_1_weight, %p_features_4_conv_0_1_bias, %b_features_4_conv_0_1_running_mean, %b_features_4_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_9 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_9, 0), kwargs = {})
+      %aten_hardtanh_default_6 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_9, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_10 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_6, %p_features_4_conv_1_0_weight, None, [2, 2], [1, 1], [1, 1], False, [0, 0], 144), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_10 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_10, %p_features_4_conv_1_1_weight, %p_features_4_conv_1_1_bias, %b_features_4_conv_1_1_running_mean, %b_features_4_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_10 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_10, 0), kwargs = {})
+      %aten_hardtanh_default_7 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_10, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_11 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_7, %p_features_4_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_11 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_11, %p_features_4_conv_3_weight, %p_features_4_conv_3_bias, %b_features_4_conv_3_running_mean, %b_features_4_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_11 : [num_users=2] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_11, 0), kwargs = {})
+      %aten_convolution_default_12 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_11, %p_features_5_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_12 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_12, %p_features_5_conv_0_1_weight, %p_features_5_conv_0_1_bias, %b_features_5_conv_0_1_running_mean, %b_features_5_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_12 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_12, 0), kwargs = {})
+      %aten_hardtanh_default_8 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_12, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_13 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_8, %p_features_5_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 192), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_13 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_13, %p_features_5_conv_1_1_weight, %p_features_5_conv_1_1_bias, %b_features_5_conv_1_1_running_mean, %b_features_5_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_13 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_13, 0), kwargs = {})
+      %aten_hardtanh_default_9 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_13, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_14 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_9, %p_features_5_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_14 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_14, %p_features_5_conv_3_weight, %p_features_5_conv_3_bias, %b_features_5_conv_3_running_mean, %b_features_5_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_14 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_14, 0), kwargs = {})
+      %aten_add_tensor_1 : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%getitem_11, %getitem_14), kwargs = {})
+      %aten_convolution_default_15 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_1, %p_features_6_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_15 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_15, %p_features_6_conv_0_1_weight, %p_features_6_conv_0_1_bias, %b_features_6_conv_0_1_running_mean, %b_features_6_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_15 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_15, 0), kwargs = {})
+      %aten_hardtanh_default_10 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_15, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_16 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_10, %p_features_6_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 192), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_16 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_16, %p_features_6_conv_1_1_weight, %p_features_6_conv_1_1_bias, %b_features_6_conv_1_1_running_mean, %b_features_6_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_16 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_16, 0), kwargs = {})
+      %aten_hardtanh_default_11 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_16, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_17 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_11, %p_features_6_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_17 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_17, %p_features_6_conv_3_weight, %p_features_6_conv_3_bias, %b_features_6_conv_3_running_mean, %b_features_6_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_17 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_17, 0), kwargs = {})
+      %aten_add_tensor_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_1, %getitem_17), kwargs = {})
+      %aten_convolution_default_18 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_2, %p_features_7_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_18 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_18, %p_features_7_conv_0_1_weight, %p_features_7_conv_0_1_bias, %b_features_7_conv_0_1_running_mean, %b_features_7_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_18 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_18, 0), kwargs = {})
+      %aten_hardtanh_default_12 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_18, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_19 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_12, %p_features_7_conv_1_0_weight, None, [2, 2], [1, 1], [1, 1], False, [0, 0], 192), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_19 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_19, %p_features_7_conv_1_1_weight, %p_features_7_conv_1_1_bias, %b_features_7_conv_1_1_running_mean, %b_features_7_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_19 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_19, 0), kwargs = {})
+      %aten_hardtanh_default_13 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_19, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_20 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_13, %p_features_7_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_20 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_20, %p_features_7_conv_3_weight, %p_features_7_conv_3_bias, %b_features_7_conv_3_running_mean, %b_features_7_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_20 : [num_users=2] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_20, 0), kwargs = {})
+      %aten_convolution_default_21 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_20, %p_features_8_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_21 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_21, %p_features_8_conv_0_1_weight, %p_features_8_conv_0_1_bias, %b_features_8_conv_0_1_running_mean, %b_features_8_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_21 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_21, 0), kwargs = {})
+      %aten_hardtanh_default_14 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_21, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_22 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_14, %p_features_8_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 384), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_22 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_22, %p_features_8_conv_1_1_weight, %p_features_8_conv_1_1_bias, %b_features_8_conv_1_1_running_mean, %b_features_8_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_22 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_22, 0), kwargs = {})
+      %aten_hardtanh_default_15 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_22, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_23 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_15, %p_features_8_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_23 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_23, %p_features_8_conv_3_weight, %p_features_8_conv_3_bias, %b_features_8_conv_3_running_mean, %b_features_8_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_23 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_23, 0), kwargs = {})
+      %aten_add_tensor_3 : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%getitem_20, %getitem_23), kwargs = {})
+      %aten_convolution_default_24 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_3, %p_features_9_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_24 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_24, %p_features_9_conv_0_1_weight, %p_features_9_conv_0_1_bias, %b_features_9_conv_0_1_running_mean, %b_features_9_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_24 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_24, 0), kwargs = {})
+      %aten_hardtanh_default_16 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_24, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_25 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_16, %p_features_9_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 384), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_25 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_25, %p_features_9_conv_1_1_weight, %p_features_9_conv_1_1_bias, %b_features_9_conv_1_1_running_mean, %b_features_9_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_25 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_25, 0), kwargs = {})
+      %aten_hardtanh_default_17 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_25, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_26 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_17, %p_features_9_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_26 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_26, %p_features_9_conv_3_weight, %p_features_9_conv_3_bias, %b_features_9_conv_3_running_mean, %b_features_9_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_26 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_26, 0), kwargs = {})
+      %aten_add_tensor_4 : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_3, %getitem_26), kwargs = {})
+      %aten_convolution_default_27 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_4, %p_features_10_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_27 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_27, %p_features_10_conv_0_1_weight, %p_features_10_conv_0_1_bias, %b_features_10_conv_0_1_running_mean, %b_features_10_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_27 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_27, 0), kwargs = {})
+      %aten_hardtanh_default_18 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_27, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_28 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_18, %p_features_10_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 384), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_28 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_28, %p_features_10_conv_1_1_weight, %p_features_10_conv_1_1_bias, %b_features_10_conv_1_1_running_mean, %b_features_10_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_28 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_28, 0), kwargs = {})
+      %aten_hardtanh_default_19 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_28, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_29 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_19, %p_features_10_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_29 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_29, %p_features_10_conv_3_weight, %p_features_10_conv_3_bias, %b_features_10_conv_3_running_mean, %b_features_10_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_29 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_29, 0), kwargs = {})
+      %aten_add_tensor_5 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_4, %getitem_29), kwargs = {})
+      %aten_convolution_default_30 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_5, %p_features_11_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_30 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_30, %p_features_11_conv_0_1_weight, %p_features_11_conv_0_1_bias, %b_features_11_conv_0_1_running_mean, %b_features_11_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_30 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_30, 0), kwargs = {})
+      %aten_hardtanh_default_20 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_30, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_31 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_20, %p_features_11_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 384), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_31 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_31, %p_features_11_conv_1_1_weight, %p_features_11_conv_1_1_bias, %b_features_11_conv_1_1_running_mean, %b_features_11_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_31 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_31, 0), kwargs = {})
+      %aten_hardtanh_default_21 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_31, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_32 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_21, %p_features_11_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_32 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_32, %p_features_11_conv_3_weight, %p_features_11_conv_3_bias, %b_features_11_conv_3_running_mean, %b_features_11_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_32 : [num_users=2] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_32, 0), kwargs = {})
+      %aten_convolution_default_33 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_32, %p_features_12_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_33 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_33, %p_features_12_conv_0_1_weight, %p_features_12_conv_0_1_bias, %b_features_12_conv_0_1_running_mean, %b_features_12_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_33 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_33, 0), kwargs = {})
+      %aten_hardtanh_default_22 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_33, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_34 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_22, %p_features_12_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 576), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_34 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_34, %p_features_12_conv_1_1_weight, %p_features_12_conv_1_1_bias, %b_features_12_conv_1_1_running_mean, %b_features_12_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_34 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_34, 0), kwargs = {})
+      %aten_hardtanh_default_23 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_34, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_35 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_23, %p_features_12_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_35 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_35, %p_features_12_conv_3_weight, %p_features_12_conv_3_bias, %b_features_12_conv_3_running_mean, %b_features_12_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_35 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_35, 0), kwargs = {})
+      %aten_add_tensor_6 : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%getitem_32, %getitem_35), kwargs = {})
+      %aten_convolution_default_36 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_6, %p_features_13_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_36 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_36, %p_features_13_conv_0_1_weight, %p_features_13_conv_0_1_bias, %b_features_13_conv_0_1_running_mean, %b_features_13_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_36 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_36, 0), kwargs = {})
+      %aten_hardtanh_default_24 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_36, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_37 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_24, %p_features_13_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 576), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_37 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_37, %p_features_13_conv_1_1_weight, %p_features_13_conv_1_1_bias, %b_features_13_conv_1_1_running_mean, %b_features_13_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_37 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_37, 0), kwargs = {})
+      %aten_hardtanh_default_25 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_37, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_38 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_25, %p_features_13_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_38 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_38, %p_features_13_conv_3_weight, %p_features_13_conv_3_bias, %b_features_13_conv_3_running_mean, %b_features_13_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_38 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_38, 0), kwargs = {})
+      %aten_add_tensor_7 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_6, %getitem_38), kwargs = {})
+      %aten_convolution_default_39 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_7, %p_features_14_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_39 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_39, %p_features_14_conv_0_1_weight, %p_features_14_conv_0_1_bias, %b_features_14_conv_0_1_running_mean, %b_features_14_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_39 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_39, 0), kwargs = {})
+      %aten_hardtanh_default_26 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_39, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_40 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_26, %p_features_14_conv_1_0_weight, None, [2, 2], [1, 1], [1, 1], False, [0, 0], 576), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_40 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_40, %p_features_14_conv_1_1_weight, %p_features_14_conv_1_1_bias, %b_features_14_conv_1_1_running_mean, %b_features_14_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_40 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_40, 0), kwargs = {})
+      %aten_hardtanh_default_27 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_40, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_41 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_27, %p_features_14_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_41 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_41, %p_features_14_conv_3_weight, %p_features_14_conv_3_bias, %b_features_14_conv_3_running_mean, %b_features_14_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_41 : [num_users=2] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_41, 0), kwargs = {})
+      %aten_convolution_default_42 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_41, %p_features_15_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_42 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_42, %p_features_15_conv_0_1_weight, %p_features_15_conv_0_1_bias, %b_features_15_conv_0_1_running_mean, %b_features_15_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_42 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_42, 0), kwargs = {})
+      %aten_hardtanh_default_28 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_42, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_43 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_28, %p_features_15_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 960), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_43 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_43, %p_features_15_conv_1_1_weight, %p_features_15_conv_1_1_bias, %b_features_15_conv_1_1_running_mean, %b_features_15_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_43 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_43, 0), kwargs = {})
+      %aten_hardtanh_default_29 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_43, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_44 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_29, %p_features_15_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_44 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_44, %p_features_15_conv_3_weight, %p_features_15_conv_3_bias, %b_features_15_conv_3_running_mean, %b_features_15_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_44 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_44, 0), kwargs = {})
+      %aten_add_tensor_8 : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%getitem_41, %getitem_44), kwargs = {})
+      %aten_convolution_default_45 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_8, %p_features_16_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_45 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_45, %p_features_16_conv_0_1_weight, %p_features_16_conv_0_1_bias, %b_features_16_conv_0_1_running_mean, %b_features_16_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_45 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_45, 0), kwargs = {})
+      %aten_hardtanh_default_30 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_45, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_46 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_30, %p_features_16_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 960), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_46 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_46, %p_features_16_conv_1_1_weight, %p_features_16_conv_1_1_bias, %b_features_16_conv_1_1_running_mean, %b_features_16_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_46 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_46, 0), kwargs = {})
+      %aten_hardtanh_default_31 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_46, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_47 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_31, %p_features_16_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_47 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_47, %p_features_16_conv_3_weight, %p_features_16_conv_3_bias, %b_features_16_conv_3_running_mean, %b_features_16_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_47 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_47, 0), kwargs = {})
+      %aten_add_tensor_9 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_8, %getitem_47), kwargs = {})
+      %aten_convolution_default_48 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor_9, %p_features_17_conv_0_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_48 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_48, %p_features_17_conv_0_1_weight, %p_features_17_conv_0_1_bias, %b_features_17_conv_0_1_running_mean, %b_features_17_conv_0_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_48 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_48, 0), kwargs = {})
+      %aten_hardtanh_default_32 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_48, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_49 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_32, %p_features_17_conv_1_0_weight, None, [1, 1], [1, 1], [1, 1], False, [0, 0], 960), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_49 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_49, %p_features_17_conv_1_1_weight, %p_features_17_conv_1_1_bias, %b_features_17_conv_1_1_running_mean, %b_features_17_conv_1_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_49 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_49, 0), kwargs = {})
+      %aten_hardtanh_default_33 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_49, 0.0, 6.0), kwargs = {})
+      %aten_convolution_default_50 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_hardtanh_default_33, %p_features_17_conv_2_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_50 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_50, %p_features_17_conv_3_weight, %p_features_17_conv_3_bias, %b_features_17_conv_3_running_mean, %b_features_17_conv_3_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_50 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_50, 0), kwargs = {})
+      %aten_convolution_default_51 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%getitem_50, %p_features_18_0_weight, None, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+      %aten__native_batch_norm_legit_no_training_default_51 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten_convolution_default_51, %p_features_18_1_weight, %p_features_18_1_bias, %b_features_18_1_running_mean, %b_features_18_1_running_var, 0.1, 1e-05), kwargs = {})
+      %getitem_51 : [num_users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default_51, 0), kwargs = {})
+      %aten_hardtanh_default_34 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem_51, 0.0, 6.0), kwargs = {})
+      %aten_mean_dim : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mean.dim](args = (%aten_hardtanh_default_34, [-1, -2], True), kwargs = {})
+      return (aten_mean_dim,)
+  %executorch_call_delegate : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, %x), kwargs = {})
+  %getitem : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate, 0), kwargs = {})
+  %aten_view_copy_default : [num_users=1] = call_function[target=executorch.exir.memory.view](args = (%getitem, [1, 1280]), kwargs = {})
+  %alloc : [num_users=1] = call_function[target=executorch.exir.memory.alloc](args = (((1, 1280), torch.float32),), kwargs = {})
+  %dim_order_ops__clone_dim_order_default : [num_users=1] = call_function[target=torch.ops.dim_order_ops._clone_dim_order.out](args = (%aten_view_copy_default,), kwargs = {dim_order: [0, 1], out: %alloc})
+  %lowered_module_1 : [num_users=1] = get_attr[target=lowered_module_1]
+    backend_id: XnnpackBackend
+    lowered graph():
+      %p_classifier_1_weight : [num_users=1] = placeholder[target=p_classifier_1_weight]
+      %p_classifier_1_bias : [num_users=1] = placeholder[target=p_classifier_1_bias]
+      %dim_order_ops__clone_dim_order_default : [num_users=1] = placeholder[target=dim_order_ops__clone_dim_order_default]
+      %aten_linear_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.linear.default](args = (%dim_order_ops__clone_dim_order_default, %p_classifier_1_weight, %p_classifier_1_bias), kwargs = {})
+      return (aten_linear_default,)
+  %executorch_call_delegate_1 : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_1, %dim_order_ops__clone_dim_order_default), kwargs = {})
+  %getitem_1 : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate_1, 0), kwargs = {})
+  return (getitem_1,)
+```
+</details>
 </div>
 </div>
 
