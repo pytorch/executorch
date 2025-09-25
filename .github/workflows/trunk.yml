@@ -991,7 +991,7 @@ jobs:
 
   test-static-llama-qnn-eval-linux:
     # needs: changes # has dependency on changes jobs defined above
-    if: needs.changes.outputs.qnn == 'true'
+    # if: needs.changes.outputs.qnn == 'true'
     name: test-static-llama-qnn-eval-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
