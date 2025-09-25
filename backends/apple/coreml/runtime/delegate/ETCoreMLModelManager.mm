@@ -447,15 +447,13 @@ NSString *raw_model_identifier(NSString *identifier) {
     // Handle based on the type of the model asset.
     switch (modelAssetType.value()) {
         case ModelAssetType::CompiledModel: {
-            // The model is already compiled; no further action needed.
-            // Return the existing model URL.
+            // Model is already compiled.
             ETCoreMLLogInfo("The model in the pte file is pre-compiled.  Skipping compilation.");
             return modelURL;
         }
 
         case ModelAssetType::Model: {
-            // The model is not compiled yet.
-            // Compile the model at the specified URL with a maximum wait time of 5 minutes.
+            // Compile the model.
             ETCoreMLLogInfo("The model in the pte file is not pre-compiled.  Compiling with a 5 min timeout.");
             NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
                                                           maxWaitTimeInSeconds:(5 * 60)
