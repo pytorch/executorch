@@ -26,9 +26,7 @@ _GEMMA_TO_EXECUTORCH = {
 }
 
 
-def gemma_to_executorch(
-    state_dict: Dict[str, torch.Tensor]
-) -> Dict[str, torch.Tensor]:
+def gemma_to_executorch(state_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
     """
     Convert the state dict so that it matches what ExecuTorch's transformer definition expects.
     """
