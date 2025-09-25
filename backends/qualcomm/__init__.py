@@ -1,7 +1,7 @@
 import os
 
 from .scripts.download_qnn_sdk import (
-    check_glibc_exist_and_validate,
+    # check_glibc_exist_and_validate,
     install_qnn_sdk,
     is_linux_x86,
 )
@@ -15,7 +15,7 @@ if (
     env_flag not in ("1", "true", "yes")
     and not qnn_sdk_root_flag
     and is_linux_x86()
-    and check_glibc_exist_and_validate()
+    # and check_glibc_exist_and_validate()
 ):
     ok = install_qnn_sdk()
 
