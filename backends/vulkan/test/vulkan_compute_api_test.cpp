@@ -187,6 +187,8 @@ std::vector<int64_t> get_reference_strides(
         default:
           return {};
       }
+    default:
+      VK_THROW("Unsupported memory layout: ", layout);
   }
   return {};
 }
