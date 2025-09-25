@@ -11,16 +11,26 @@ import XCTest
 
 extension UIImage {
   func asImage() -> Image {
-    let targetWidth = 336
-    let scaledHeight = Int((Double(targetWidth) * Double(size.height) / Double(size.width)).rounded())
+    let targetSide = CGFloat(336)
+    let scale = max(targetSide / size.width, targetSide / size.height)
+    let scaledSize = CGSize(width: size.width * scale, height: size.height * scale)
     let format = UIGraphicsImageRendererFormat.default()
     format.scale = 1
-    let resizedImage = UIGraphicsImageRenderer(size: CGSize(width: targetWidth, height: scaledHeight), format: format).image { _ in
-      draw(in: CGRect(origin: .zero, size: CGSize(width: targetWidth, height: scaledHeight)))
+    let scaledImage = UIGraphicsImageRenderer(size: scaledSize, format: format).image { _ in
+      draw(in: CGRect(origin: .zero, size: scaledSize))
     }
-    let resizedCGImage = resizedImage.cgImage!
-    let imageWidth = resizedCGImage.width
-    let imageHeight = resizedCGImage.height
+    guard let scaledCGImage = scaledImage.cgImage else {
+      return Image(data: Data(), width: 336, height: 336, channels: 3)
+    }
+    let cropRect = CGRect(
+      x: ((scaledSize.width - targetSide) * 0.5).rounded(.down),
+      y: ((scaledSize.height - targetSide) * 0.5).rounded(.down),
+      width: targetSide.rounded(.down),
+      height: targetSide.rounded(.down)
+    )
+    let croppedCGImage = scaledCGImage.cropping(to: cropRect) ?? scaledCGImage
+    let imageWidth = croppedCGImage.width
+    let imageHeight = croppedCGImage.height
     let pixelCount = imageWidth * imageHeight
     var rgbaBuffer = [UInt8](repeating: 0, count: pixelCount * 4)
     let context = CGContext(
@@ -32,7 +42,7 @@ extension UIImage {
       space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     )!
-    context.draw(resizedCGImage, in: CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight))
+    context.draw(croppedCGImage, in: CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight))
     var planarRGB = [UInt8](repeating: 0, count: pixelCount * 3)
     for pixelIndex in 0..<pixelCount {
       let sourceOffset = pixelIndex * 4
@@ -40,7 +50,7 @@ extension UIImage {
       planarRGB[pixelIndex + pixelCount] = rgbaBuffer[sourceOffset + 1]
       planarRGB[pixelIndex + pixelCount * 2] = rgbaBuffer[sourceOffset + 2]
     }
-    return Image(data: Data(planarRGB), width: targetWidth, height: scaledHeight, channels: 3)
+    return Image(data: Data(planarRGB), width: 336, height: 336, channels: 3)
   }
 }
 
@@ -55,7 +65,7 @@ class MultimodalRunnerTest: XCTestCase {
     guard let modelPath = bundle.path(forResource: "llava", ofType: "pte"),
           let tokenizerPath = bundle.path(forResource: "tokenizer", ofType: "bin"),
           let imagePath = bundle.path(forResource: "IMG_0005", ofType: "jpg"),
-          let image = UIImage(contentsOfFile: imagePath) else {
+          let uiImage = UIImage(contentsOfFile: imagePath) else {
       XCTFail("Couldn't find model or tokenizer files")
       return
     }
@@ -65,7 +75,7 @@ class MultimodalRunnerTest: XCTestCase {
     do {
       try runner.generate([
         MultimodalInput(systemPrompt),
-        MultimodalInput(image.asImage()),
+        MultimodalInput(uiImage.asImage()),
         MultimodalInput("\(userPrompt) \(assistantPrompt)"),
       ], sequenceLength: sequenceLength) { token in
         text += token
@@ -80,7 +90,7 @@ class MultimodalRunnerTest: XCTestCase {
     do {
       try runner.generate([
         MultimodalInput(systemPrompt),
-        MultimodalInput(image.asImage()),
+        MultimodalInput(uiImage.asImage()),
         MultimodalInput("\(userPrompt) \(assistantPrompt)"),
       ], sequenceLength: sequenceLength) { token in
         text += token
