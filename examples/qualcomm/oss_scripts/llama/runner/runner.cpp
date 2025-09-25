@@ -182,8 +182,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
     eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
   } else {
-    tokenizer_ =
-        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
+    tokenizer_ = llm::load_tokenizer(tokenizer_path_);
     if (tokenizer_ == nullptr) {
       ET_LOG(
           Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
@@ -286,12 +285,6 @@ Error Runner<T>::load() {
           sliding_window,
           cache_mode_});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    // TODO: sliding window attention will be supported in future.
-    if (sliding_window < context_len_) {
-      ET_CHECK_MSG(
-          false,
-          "Lookahead decoding (eval_mode == 2) is not yet supported for sliding window attention.");
-    }
     token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
@@ -308,7 +301,8 @@ Error Runner<T>::load() {
             ngram_,
             window_,
             gcap_,
-            sliding_window},
+            sliding_window,
+            cache_mode_},
         &stats_);
   } else {
     token_generator_ = std::make_unique<TokenGenerator<T>>(

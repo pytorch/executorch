@@ -38,6 +38,10 @@ from executorch.backends.arm.util.arm_model_evaluator import (
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
 # To use Cortex-M backend
+from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
+    QuantizedLinearFusionPass,
+)
+
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
     QuantizedOpFusionPass,
 )
@@ -55,6 +59,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 from torch.utils.data import DataLoader
@@ -148,7 +153,8 @@ def quantize(
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
 ) -> torch.nn.Module:
-    """This is the official recommended flow for quantization in pytorch 2.0 export"""
+    """This is the official recommended flow for quantization in pytorch 2.0
+    export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
     quantizer = None
@@ -291,6 +297,19 @@ class MultipleOutputsModule(torch.nn.Module):
     can_delegate = True
 
 
+class QuantLinearTest(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        # Define a simple linear layer
+        self.linear = torch.nn.Linear(61, 37)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    example_input = (torch.randn([8, 61], dtype=torch.float32),)
+    can_delegate = True
+
+
 models = {
     "add": AddModule,
     "add2": AddModule2,
@@ -300,6 +319,9 @@ models = {
     "qops": QuantOpTest,
     "softmax": SoftmaxModule,
     "MultipleOutputsModule": MultipleOutputsModule,
+    # TODO: Remove this from here, once we have dedicated MCU test pipeline ready. This is an interim solution.
+    # See https://github.com/pytorch/executorch/discussions/13944
+    "qlinear": QuantLinearTest,
 }
 
 calibration_data = {
@@ -324,6 +346,7 @@ calibration_data = {
         torch.randn(32, 2, 1) * 1000,
     ),
     "softmax": (torch.randn(32, 2, 2),),
+    "qlinear": (torch.randn(37, 61),),
 }
 
 evaluators = {
@@ -605,7 +628,7 @@ def get_args():
     parser.add_argument(
         "--enable_qdq_fusion_pass",
         action="store_true",
-        help="Enable the QuantizedOpFusionPass fusion step",
+        help="Enable the Quantized qdq fusion Op passes",
     )
     parser.add_argument(
         "--enable_debug_mode",
@@ -806,22 +829,24 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
     return model_int8, edge
 
 
-def transform_for_cortex_m_backend(edge, args):
+def transform_for_cortex_m_backend(edge_program_manager, args):
     # Let's make sure we are using optimized Cortex M backend
     # NB: If we can't find and replace ops those are expected to be replaced,
     # bad things will happen at runtime, like "missing operator" errors!
 
     # Instantiate the mandatory ReplaceQuantNodesPass
-    passes = [ReplaceQuantNodesPass()]
-
-    # Conditionally add the QuantizedOpFusionPass
+    passes = [ReplaceQuantNodesPass]
     if args.enable_qdq_fusion_pass:
-        passes.append(QuantizedOpFusionPass())
-
-    # Apply the passes
-    edge = edge.transform(passes)
-
-    return edge
+        passes += [QuantizedLinearFusionPass, QuantizedOpFusionPass]
+    current_edge = edge_program_manager
+    for pass_cls in passes:
+        transform_pass = (
+            pass_cls(current_edge.exported_program())
+            if pass_cls.__name__ == "QuantizedLinearFusionPass"
+            else pass_cls()
+        )
+        current_edge = current_edge.transform([transform_pass])
+    return current_edge
 
 
 if __name__ == "__main__":  # noqa: C901

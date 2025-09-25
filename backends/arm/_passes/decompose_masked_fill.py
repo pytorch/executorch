@@ -6,10 +6,13 @@
 # pyre-unsafe
 
 
+from typing import Set, Type
+
 import torch
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 edge_ops = (exir_ops.edge.aten.masked_fill.Scalar,)
@@ -36,6 +39,8 @@ class DecomposeMaskedFill(ArmPass):
     Fills the tensor with the scalar value according to the boolean mask.
     Decomposed to a where and a full_like operator.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op not in (edge_ops + aten_ops):

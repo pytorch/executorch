@@ -81,24 +81,20 @@ void load_image(const std::string& image_path, Image& image) {
       new_height,
       0,
       channels);
-  // transpose to CHW
-  image.data.resize(channels * new_width * new_height);
+  std::vector<uint8_t> chw_data(channels * new_width * new_height);
   for (int i = 0; i < new_width * new_height; ++i) {
     for (int c = 0; c < channels; ++c) {
-      image.data[c * new_width * new_height + i] =
-          resized_data[i * channels + c];
+      chw_data[c * new_width * new_height + i] = resized_data[i * channels + c];
     }
   }
-  image.width = new_width;
-  image.height = new_height;
-  image.channels = channels;
+  image = Image(std::move(chw_data), new_width, new_height, channels);
   // convert to tensor
   ET_LOG(
       Info,
       "image Channels: %" PRId32 ", Height: %" PRId32 ", Width: %" PRId32,
-      image.channels,
-      image.height,
-      image.width);
+      image.channels(),
+      image.height(),
+      image.width());
   stbi_image_free(data);
 }
 
@@ -135,8 +131,7 @@ int32_t main(int32_t argc, char** argv) {
 #endif
   // Load tokenizer
   std::unique_ptr<::tokenizers::Tokenizer> tokenizer =
-      std::make_unique<tokenizers::Llama2cTokenizer>();
-  tokenizer->load(tokenizer_path);
+      ::executorch::extension::llm::load_tokenizer(tokenizer_path);
   if (tokenizer == nullptr) {
     ET_LOG(Error, "Failed to load tokenizer from: %s", tokenizer_path);
     return 1;

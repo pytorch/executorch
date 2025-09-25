@@ -62,6 +62,16 @@ Error MultimodalRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
+Error MultimodalRunner::prefill(const std::vector<MultimodalInput>& inputs) {
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
+  for (auto& input : inputs) {
+    ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
+  }
+  return Error::Ok;
+}
+
 Error MultimodalRunner::generate(
     const std::vector<MultimodalInput>& inputs,
     const GenerationConfig& config,
@@ -106,6 +116,12 @@ Error MultimodalRunner::generate(
   // Process multimodal inputs in order
   for (size_t i = 0; i < inputs.size(); ++i) {
     const MultimodalInput& input = inputs[i];
+    ET_LOG(
+        Info,
+        "Prefilling input %zu/%zu, type: %s",
+        i,
+        inputs.size(),
+        input.type_name());
     if (config.echo && i == inputs.size() - 1 && input.is_text()) {
       wrapped_callback(input.get_text());
     }

@@ -16,10 +16,6 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_embedding.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
@@ -31,10 +27,13 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/slice_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhbbf16_to_floathbf16.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_add.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_hardtanh.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mean.cpp"
@@ -58,6 +57,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_native_group_norm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sum.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_select_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/dtype_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/normalization_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/select_copy_util.cpp"
@@ -80,8 +80,8 @@ target_include_directories(
 add_library(
   custom_ops
   "quantized_linear_out.cpp"
-  "quantized_conv_nchw_out.cpp"
-  "quantized_conv_nhwc_out.cpp"
+  "quantized_conv2d_nchw_out.cpp"
+  "quantized_conv2d_nhwc_out.cpp"
   "quantized_relu_out.cpp"
   "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp"

@@ -360,6 +360,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.max_pool2d.default,
     torch.ops.aten.full.default,
     torch.ops.aten.full,
+    torch.ops.aten.fill_.Scalar,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
@@ -625,6 +626,7 @@ def annotate_graph(  # type: ignore[return]
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
             torch.ops.aten.full,
+            torch.ops.aten.fill_.Scalar,
             torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

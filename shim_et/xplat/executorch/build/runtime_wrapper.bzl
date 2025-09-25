@@ -346,6 +346,7 @@ def _python_binary(*args, **kwargs):
 
 def _python_test(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     env.python_test(*args, **kwargs)
 
 def get_oss_build_kwargs():

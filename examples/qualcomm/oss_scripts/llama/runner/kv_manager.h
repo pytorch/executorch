@@ -95,13 +95,17 @@ class KVManager {
    * of attention map should be [ar_len].
    * @param ar_len Length of input tokens.
    * @param n_past Number of past elements in the cache.
+   * @param sliding_window Length of sliding window for sliding window attention
+   * mask
+   * @param position_offset (optional) attention mask position offset of
    */
   void init_attention_mask(
       uint16_t* attention_mask,
       const std::vector<int32_t>& attention_map,
       int32_t ar_len,
       int32_t n_past,
-      int32_t sliding_window);
+      int32_t sliding_window,
+      const std::vector<int32_t>& position_offset = {});
 
   /**
    * @brief Update attention mask based on kv manager mode, and n_update.
@@ -126,13 +130,16 @@ class KVManager {
    * @param n_update Number of elements to be updated.
    * @param sliding_window Length of sliding window for sliding window attention
    * mask
+   * @param position_offset (optional) attention mask position offset of
+   * lookahead decoder
    */
   void update_attention_mask(
       uint16_t* attention_mask,
       int32_t ar_len,
       int32_t n_past,
       int32_t n_update,
-      int32_t sliding_window);
+      int32_t sliding_window,
+      const std::vector<int32_t>& position_offset = {});
 
   /**
    * @brief Reset the data pointer of the I/O cache tensor based on number of
