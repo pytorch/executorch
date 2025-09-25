@@ -458,9 +458,8 @@ class TorchAOKernelsConfig:
     Configures the torchao-kernels backend.
     """
 
-    enabled: bool = False
-    convert_linear: bool = True
-    convert_tied_embedding: bool = True
+    convert_linear: bool = False
+    convert_tied_embedding: bool = False
 
 
 @dataclass
@@ -653,7 +652,6 @@ class LlmConfig:
                 "torchao_kernels_tied_embedding",
             ]
         ):
-            llm_config.backend.torchao.enabled = True
             if hasattr(args, "torchao_kernels") and args.torchao_kernels:
                 # Enable all conversions if torchao_kernels is specified
                 llm_config.backend.torchao.convert_linear = True
