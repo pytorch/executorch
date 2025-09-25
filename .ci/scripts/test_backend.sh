@@ -20,8 +20,10 @@ CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
     IS_MACOS=1
+    bash .ci/scripts/setup-conda.sh
+    eval "$(conda shell.bash hook)"
+    ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
     CONDA_PREFIX="${CONDA_RUN} --no-capture-output"
 else
     IS_MACOS=0
