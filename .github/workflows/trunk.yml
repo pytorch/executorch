@@ -622,7 +622,7 @@ jobs:
 
         if [[ "${{ matrix.backend }}" == "torchao" ]]; then
           BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 pip install third-party/ao
-        else
+        fi
 
         pip install -U "huggingface_hub[cli]"
 

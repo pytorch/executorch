@@ -756,8 +756,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
-            use_torchao_kernels_linear=llm_config.backend.torchao.linear,
-            use_torchao_kernels_tied_embedding=llm_config.backend.torchao.tied_embedding,
+            use_torchao_kernels_linear=llm_config.backend.torchao.convert_linear,
+            use_torchao_kernels_tied_embedding=llm_config.backend.torchao.convert_tied_embedding,
         )
     )
 
