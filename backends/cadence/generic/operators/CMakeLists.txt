@@ -88,7 +88,7 @@ add_library(
   "quantized_fully_connected_out.cpp"
   "dequantize_per_tensor.cpp"
   "quantized_matmul_out.cpp"
-  "requantize_out.cpp"
+  "op_requantize_out.cpp"
   "im2row_out.cpp"
 )
 target_include_directories(
