@@ -2251,6 +2251,7 @@ class CommonReplacePasses:
         ReplaceRepeatWithCatPass,
         ReplaceFullLikeWithFullPass,
         ReplaceAtenConvolutionWithCadenceConvolutionPass,
+        ReplaceNopTransposeOrPermuteWithViewPass
     ]
 
 
@@ -2291,7 +2292,6 @@ class CadenceReplaceOpsInGraph:
         ReplaceIm2RowWithViewPass,
         MakeSliceAndCatDimOutermostPass,
         ReplaceMatmulWithTransposedMatmulPass,
-        ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
         ReplaceScalarTensorWithFullPass,
         ReplaceInfArgInFullWithValuePass,
