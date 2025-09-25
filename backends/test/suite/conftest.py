@@ -164,7 +164,7 @@ def pytest_json_modifyreport(json_report):
         # Native crashes are recorded differently and won't have the full metadata.
         # Pytest-xdist records crash info under the "???" key.
         if "???" in test_data:
-            test_id = test_data["nodeid"].strip("::")  # Remove leading ::
+            test_id = test_data["nodeid"].removeprefix("::")  # Remove leading ::
             test_base_id = test_id.split("[")[
                 0
             ]  # Strip parameterization to get the base test case
