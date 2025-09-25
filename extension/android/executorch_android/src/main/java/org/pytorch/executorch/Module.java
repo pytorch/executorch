@@ -206,6 +206,13 @@ public class Module {
     return mMethodMetadata.get(name);
   }
 
+  @DoNotStrip
+  private static native String[] readLogBufferStaticNative();
+
+  public static String[] readLogBufferStatic() {
+    return readLogBufferStaticNative();
+  }
+
   /** Retrieve the in-memory log buffer, containing the most recent ExecuTorch log entries. */
   public String[] readLogBuffer() {
     return readLogBufferNative();
