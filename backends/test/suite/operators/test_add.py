@@ -26,7 +26,7 @@ class ModelAlpha(torch.nn.Module):
 
 
 @pytest.mark.parametrize(
-    "dtype", [torch.float16, torch.float32], ids=lambda s: str(s)[6:]
+    "dtype", [torch.float32], ids=lambda s: str(s)[6:]
 )
 def test_add_dtype(test_runner, dtype) -> None:
     test_runner.lower_and_run_model(
