@@ -973,7 +973,25 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
+  # this is for filtering out the qnn changes such that qnn jobs only triggered when the specific files are changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      qnn: ${{ steps.filter.outputs.qnn }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            qnn:
+              - 'backends/qualcomm/**'
+              - 'examples/qualcomm/**'
+              - 'examples/models/llama/**'
+
   test-static-llama-qnn-eval-linux:
+    needs: changes # has dependency on changes jobs defined above
+    if: needs.changes.outputs.qnn == 'true'
     name: test-static-llama-qnn-eval-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
