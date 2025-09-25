@@ -264,7 +264,7 @@ If you an error about "RE2 failed to compile pattern with lookahead:...SUPPORT_R
 
 **1. Build llama runner binary for Android**
 
-*Pre-requisite*: Android NDK (tested with r27b) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
+*Pre-requisite*: Android NDK (tested with r28c) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
 
 **1.1 Set Android NDK**
 ```

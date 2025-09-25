@@ -139,6 +139,7 @@ def test_max_dim_tosa_FP_not_delegated():
 
 @common.parametrize("test_data", Amax.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amax_vgf_FP(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
     module = Amax(dim, keep_dims)
@@ -153,6 +154,7 @@ def test_amax_vgf_FP(test_data: Amax.input_t):
 
 @common.parametrize("test_data", Amax.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amax_vgf_INT(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
     module = Amax(dim, keep_dims)
@@ -167,6 +169,7 @@ def test_amax_vgf_INT(test_data: Amax.input_t):
 
 @common.parametrize("test_data", Max.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Max.input_t](
@@ -180,6 +183,7 @@ def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
 
 @common.parametrize("test_data", Max.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_max_dim_vgf_INT_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Max.input_t](

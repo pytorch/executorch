@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+import pytest
 import torch
 from executorch.backends.arm.test import common
 
@@ -102,6 +102,7 @@ def test_scalar_tensor_u85_INT(test_data):
 
 @common.parametrize("test_data", float_test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_scalar_tensor_vgf_FP(test_data):
     scalar, dtype, data = test_data()
     pipeline = VgfPipeline(
@@ -115,6 +116,7 @@ def test_scalar_tensor_vgf_FP(test_data):
 
 @common.parametrize("test_data", int_test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_scalar_tensor_vgf_INT(test_data):
     scalar, dtype, data = test_data()
     pipeline = VgfPipeline(

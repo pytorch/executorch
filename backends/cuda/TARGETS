@@ -1,0 +1,18 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "cuda_partitioner",
+    srcs = [
+        "cuda_partitioner.py",
+    ],
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+    ],
+)

@@ -573,8 +573,6 @@ def test_convolution_2d_vgf_INT_block_bottleneck(test_data):
         tosa_version="TOSA-1.0+INT",
         per_channel_quantization=per_channel_quantization,
     )
-    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
-    # pipeline.change_args("run_method_and_compare_outputs", model.get_inputs(), qtol=1)
     pipeline.run()
 
 

@@ -182,6 +182,4 @@ def test_bmm_vgf_INT_single_input(test_data: input_t1):
         exir_op_bmm,
         tosa_version="TOSA-1.0+INT",
     )
-    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
-    # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

@@ -125,11 +125,8 @@ def test_mv2_vgf_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        run_on_vulkan_runtime=False,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
-    # )
     pipeline.run()
 
 
@@ -142,9 +139,6 @@ def test_mv2_vgf_FP():
         exir_op=[],
         tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
-    # )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()

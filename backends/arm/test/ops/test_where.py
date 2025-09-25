@@ -139,8 +139,11 @@ test_modules_common = {
 
 test_modules_FP = {
     **test_modules_common,
-    "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
     "float32_tensor_cond_tuple_dtype_bool": lambda: float32_tensor_cond_tuple_dtype_bool,
+}
+
+test_modules_FP_unsupported_dtype = {
+    "float32_tensor_cond_tuple_dtype": lambda: float32_tensor_cond_tuple_dtype,
     "int32_scalar_cond": lambda: int32_scalar_cond,
 }
 
@@ -158,6 +161,17 @@ def test_where_self_tosa_FP(test_module):
         test_module().get_inputs(),
         aten_op,
         exir_op,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_module", test_modules_FP_unsupported_dtype)
+def test_where_self_tosa_FP_unsupported_dtype(test_module):
+    pipeline = OpNotSupportedPipeline[input_t](
+        test_module(),
+        test_module().get_inputs(),
+        {exir_op: 1},
+        n_expected_delegates=1,  # condition can be delegated
     )
     pipeline.run()
 
