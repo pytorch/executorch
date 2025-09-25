@@ -20,14 +20,12 @@ CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    IS_MACOS=1
     bash .ci/scripts/setup-conda.sh
     eval "$(conda shell.bash hook)"
-    ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
-    CONDA_PREFIX="${CONDA_RUN} --no-capture-output"
+    CONDA_RUN_CMD="${CONDA_RUN} --no-capture-output"
+    ${CONDA_RUN_CMD} --no-capture-output pip install awscli==1.37.21
 else
-    IS_MACOS=0
-    CONDA_PREFIX=""
+    CONDA_RUN_CMD=""
 fi
 
 export PYTHON_EXECUTABLE=python
@@ -60,7 +58,7 @@ if [[ $IS_MACOS -eq 1 ]]; then
 else
     SETUP_SCRIPT=.ci/scripts/setup-linux.sh
 fi
-CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_PREFIX} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
+CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_RUN_CMD} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
 if [[ "$FLOW" == *arm* ]]; then
     # Setup ARM deps.
@@ -68,6 +66,6 @@ if [[ "$FLOW" == *arm* ]]; then
 fi
 
 EXIT_CODE=0
-${CONDA_PREFIX} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
+${CONDA_RUN_CMD} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
 # Generate markdown summary.
-${CONDA_PREFIX} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
+${CONDA_RUN_CMD} python -m executorch.backends.test.suite.generate_markdown_summary_json "$REPORT_FILE" > ${GITHUB_STEP_SUMMARY:-"step_summary.md"} --exit-code $EXIT_CODE
