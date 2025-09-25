@@ -10,15 +10,25 @@ SUITE=$1
 FLOW=$2
 ARTIFACT_DIR=$3
 
-REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.csv"
+REPORT_FILE="$ARTIFACT_DIR/test-report-$FLOW-$SUITE.json"
 
 echo "Running backend test job for suite $SUITE, flow $FLOW."
 echo "Saving job artifacts to $ARTIFACT_DIR."
 
-# The generic Linux job chooses to use base env, not the one setup by the image
 eval "$(conda shell.bash hook)"
 CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
 conda activate "${CONDA_ENV}"
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    IS_MACOS=1
+    bash .ci/scripts/setup-conda.sh
+    eval "$(conda shell.bash hook)"
+    ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
+    CONDA_PREFIX="${CONDA_RUN} --no-capture-output"
+else
+    IS_MACOS=0
+    CONDA_PREFIX=""
+fi
 
 export PYTHON_EXECUTABLE=python
 
