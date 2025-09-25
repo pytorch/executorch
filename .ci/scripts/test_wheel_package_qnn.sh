@@ -98,7 +98,7 @@ PYTHON_VERSION=$1
 # Check wheel does NOT contain qualcomm/sdk
 # ----------------------------
 echo "Checking wheel does not contain qualcomm/sdk..."
-SDK_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/sdk" || true)
+SDK_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep -E "executorch/backends/qualcomm/sdk" || true)
 if [ -n "$SDK_FILES" ]; then
     echo "ERROR: Wheel package contains unexpected qualcomm/sdk files:"
     echo "$SDK_FILES"
@@ -111,7 +111,7 @@ fi
 # Check .so files in the wheel
 # ----------------------------
 echo "Checking for .so files inside the wheel..."
-WHEEL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep "executorch/backends/qualcomm/python" || true)
+WHEEL_SO_FILES=$(unzip -l "$WHEEL_FILE" | awk '{print $4}' | grep -E "executorch/backends/qualcomm/python" || true)
 if [ -z "$WHEEL_SO_FILES" ]; then
     echo "ERROR: No .so files found in wheel under executorch/backends/qualcomm/python"
     exit 1
@@ -139,12 +139,29 @@ run_core_tests () {
   echo "=== [$LABEL] Installing wheel & deps ==="
   "$PIPBIN" install --upgrade pip
   "$PIPBIN" install "$WHEEL_FILE"
+  TORCH_VERSION=$(
+  "$PYBIN" - <<'PY'
+import re, pathlib
+txt = pathlib.Path("install_requirements.py").read_text()
+print(re.search(r'TORCH_VERSION\s*=\s*["\']([^"\']+)["\']', txt).group(1))
+PY
+)
 
-  NIGHTLY_VERSION=$(python -c 'import re; txt=open("install_requirements.py").read(); print(re.search(r"NIGHTLY_VERSION\s*=\s*[\"\']([^\"\']+)[\"\']", txt).group(1))')
+  NIGHTLY_VERSION=$(
+  "$PYBIN" - <<'PY'
+import re, pathlib
+txt = pathlib.Path("install_requirements.py").read_text()
+print(re.search(r'NIGHTLY_VERSION\s*=\s*["\']([^"\']+)["\']', txt).group(1))
+PY
+)
+  echo "=== [$LABEL] Install torch==${TORCH_VERSION}.${NIGHTLY_VERSION} ==="
 
-  "$PIPBIN" install torch=="2.10.0.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
-  pushd "$REPO_ROOT" / third-party/ao > /dev/null
-  USE_CPP=0 python setup.py develop
+  # Install torchao based on the pinned PyTorch version
+  "$PIPBIN" install torch=="${TORCH_VERSION}.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+
+  # Install torchao based on the pinned commit from third-party/ao submodule
+  pushd "$REPO_ROOT/third-party/ao" > /dev/null
+  USE_CPP=0 "$PYBIN" setup.py develop
   popd > /dev/null
 
   echo "=== [$LABEL] Import smoke tests ==="
