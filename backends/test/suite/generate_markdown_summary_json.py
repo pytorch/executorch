@@ -70,25 +70,24 @@ def aggregate_results(json_path: str) -> AggregatedSummary:
     counts_by_param = {}
 
     for test_data in data["tests"]:
-        result_meta = test_data.get("metadata")
-        if result_meta:
-            for subtest_meta in result_meta["subtests"]:
-                result = subtest_meta["Result"]
-                result_detail = subtest_meta.get("Result Detail") or ""
+        result_meta = test_data["metadata"]
+        for subtest_meta in result_meta["subtests"]:
+            result = subtest_meta["Result"]
+            result_detail = subtest_meta.get("Result Detail") or ""
 
-                counts.add_row(result, result_detail)
+            counts.add_row(result, result_detail)
 
-                test_id = subtest_meta["Test ID"]
-                base_test = subtest_meta["Test Case"]
-                params = test_id[len(base_test) + 1 : -1]
+            test_id = subtest_meta["Test ID"]
+            base_test = subtest_meta["Test Case"]
+            params = test_id[len(base_test) + 1 : -1]
 
-                if params:
-                    if params not in counts_by_param:
-                        counts_by_param[params] = ResultCounts()
-                    counts_by_param[params].add_row(result, result_detail)
+            if params:
+                if params not in counts_by_param:
+                    counts_by_param[params] = ResultCounts()
+                counts_by_param[params].add_row(result, result_detail)
 
-                if result.lower() == "fail":
-                    failed_tests.append(subtest_meta)
+            if result.lower() == "fail":
+                failed_tests.append(subtest_meta)
 
     return AggregatedSummary(
         counts=counts,

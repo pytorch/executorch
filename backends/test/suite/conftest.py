@@ -84,6 +84,7 @@ def test_runner(request):
 
 @pytest.hookimpl(optionalhook=True)
 def pytest_json_runtest_metadata(item, call):
+    # Store detailed results in the test report under the metadata key.
     metadata = {"subtests": []}
 
     if hasattr(item, "funcargs") and "test_runner" in item.funcargs:
@@ -143,5 +144,39 @@ def pytest_json_runtest_metadata(item, call):
             )
 
             metadata["subtests"].append(subtest_metadata)
-
     return metadata
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_json_modifyreport(json_report):
+    # Post-process the report, mainly to populate metadata for crashed tests. The runtest_metadata
+    # hook doesn't seem to be called when there's a native crash, but xdist still creates a report
+    # entry.
+
+    for test_data in json_report["tests"]:
+        if "metadata" not in test_data:
+            test_data["metadata"] = {}
+        metadata = test_data["metadata"]
+        if "subtests" not in metadata:
+            metadata["subtests"] = []
+        subtests = metadata["subtests"]
+
+        # Native crashes are recorded differently and won't have the full metadata.
+        # Pytest-xdist records crash info under the "???" key.
+        if "???" in test_data:
+            test_id = test_data["nodeid"].strip("::")  # Remove leading ::
+            test_base_id = test_id.split("[")[
+                0
+            ]  # Strip parameterization to get the base test case
+            params = test_id[len(test_base_id) + 1 : -1].split("-")
+            flow = params[0]
+
+            crashed_test_meta = {
+                "Test ID": test_id,
+                "Test Case": test_base_id,
+                "Flow": flow,
+                "Result": "Fail",
+                "Result Detail": "Process Crash",
+                "Error": test_data["???"].get("longrepr", "Process crashed."),
+            }
+            subtests.append(crashed_test_meta)

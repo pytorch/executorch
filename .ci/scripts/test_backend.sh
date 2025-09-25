@@ -63,7 +63,7 @@ if [[ $IS_MACOS -eq 1 ]]; then
 else
     SETUP_SCRIPT=.ci/scripts/setup-linux.sh
 fi
-${CONDA_PREFIX} CMAKE_ARGS="$EXTRA_BUILD_ARGS" $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
+CMAKE_ARGS="$EXTRA_BUILD_ARGS" ${CONDA_PREFIX} $SETUP_SCRIPT --build-tool cmake --build-mode Release --editable true
 
 EXIT_CODE=0
 ${CONDA_PREFIX} pytest -c /dev/nul -n auto backends/test/suite/$SUITE/ -m flow_$FLOW --json-report --json-report-file="$REPORT_FILE" || EXIT_CODE=$?
