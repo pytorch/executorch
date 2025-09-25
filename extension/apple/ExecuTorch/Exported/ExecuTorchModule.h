@@ -16,7 +16,6 @@ NS_ASSUME_NONNULL_BEGIN
  * and its debug name.
  */
 NS_SWIFT_NAME(TensorMetadata)
-__attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchTensorMetadata : NSObject
 
 /** The size of each dimension. */
@@ -47,7 +46,6 @@ __attribute__((deprecated("This API is experimental.")))
  * per-tensor metadata, buffer sizes, backends, and instruction count.
  */
 NS_SWIFT_NAME(MethodMetadata)
-__attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchMethodMetadata : NSObject
 
 /** The method’s name. */
@@ -120,7 +118,6 @@ typedef NS_ENUM(uint8_t, ExecuTorchVerification) {
  * This class is a facade for loading programs and executing methods within them.
  */
 NS_SWIFT_NAME(Module)
-__attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchModule : NSObject
 
 /**
