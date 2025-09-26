@@ -630,7 +630,12 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   list(APPEND _executorch_extensions extension_module_static)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_AUDIO)
+  message(STATUS "Audio/ASR extension enabled")
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
+  message(STATUS "LLM extension enabled")
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
     set(SUPPORT_REGEX_LOOKAHEAD ON)
     # llama/runner/CMakeLists.txt builds a shared library libllama_runner.so

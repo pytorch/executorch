@@ -166,10 +166,12 @@ if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   )
 endif()
 
-if(EXECUTORCH_BUILD_LLAMA_JNI)
+if(EXECUTORCH_BUILD_EXTENSION_LLM)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
   list(APPEND link_libraries extension_llm_runner)
-  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
+  target_compile_definitions(
+    executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_LLM=1
+  )
 
   if(QNN_SDK_ROOT)
     target_sources(
@@ -218,6 +220,29 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     target_compile_definitions(
       executorch_jni PRIVATE EXECUTORCH_BUILD_MEDIATEK=1
     )
+  endif()
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_AUDIO)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
+  target_compile_definitions(
+    executorch_jni PUBLIC EXECUTORCH_BUILD_EXTENSION_AUDIO=1
+  )
+
+  if(QNN_SDK_ROOT)
+    target_sources(
+      executorch_jni
+      PRIVATE
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/encoder.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/decoder.cpp
+        ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner/runner.cpp
+    )
+
+    target_include_directories(
+      executorch_jni
+      PRIVATE ${EXECUTORCH_ROOT}/examples/qualcomm/oss_scripts/whisper/runner
+    )
+    target_compile_definitions(executorch_jni PRIVATE EXECUTORCH_BUILD_QNN=1)
   endif()
 endif()
 
