@@ -15,6 +15,12 @@
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
+@interface ExecuTorchLLMConfig ()
+
+- (const llm::GenerationConfig &)nativeConfig;
+
+@end
+
 @implementation ExecuTorchLLMTextRunner {
   NSString *_modelPath;
   NSString *_tokenizerPath;
@@ -69,15 +75,15 @@ using namespace executorch::runtime;
 }
 
 - (BOOL)generate:(NSString*)prompt
-    sequenceLength:(NSInteger)seq_len
+           config:(ExecuTorchLLMConfig *)config
 withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error {
+            error:(NSError**)error {
   if (![self loadWithError:error]) {
     return NO;
   }
   auto status = _runner->generate(
     prompt.UTF8String,
-    llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
+    config.nativeConfig,
     [callback](const std::string& token) {
       if (callback) {
         callback(@(token.c_str()));
