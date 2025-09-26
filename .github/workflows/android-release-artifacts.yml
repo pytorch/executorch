@@ -94,6 +94,9 @@ jobs:
 
         FLAVOR="${{ inputs.flavor }}"
         if [[ "$FLAVOR" == "vulkan+xnnpack" || -z "$FLAVOR" ]]; then
+          curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
+          tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
+          export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
           export EXECUTORCH_BUILD_VULKAN=ON
         fi
 
