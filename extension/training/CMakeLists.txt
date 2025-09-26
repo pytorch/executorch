@@ -74,6 +74,12 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "16.0")
+      target_link_options(_training_lib PRIVATE -Wl,-ld_classic)
+    endif()
+  endif()
+
   install(TARGETS _training_lib
           LIBRARY DESTINATION executorch/extension/training/pybindings
   )

@@ -107,7 +107,7 @@ install_pytorch_and_domains() {
   TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
   export TORCHVISION_VERSION
 
-  install_domains
+  #install_domains
 
   popd || return
   # Print sccache stats for debugging
