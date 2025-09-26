@@ -176,6 +176,7 @@ def emit_program(
         )
 
         emitter.run()
+
         plans.append(emitter.plan())
 
         debug_handle_map[name] = emitter.debug_handle_map
