@@ -31,6 +31,7 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
 from executorch.backends.arm.util.arm_model_evaluator import (
+    DeiTTinyEvaluator,
     GenericModelEvaluator,
     MobileNetV2Evaluator,
 )
@@ -352,6 +353,7 @@ calibration_data = {
 evaluators = {
     "generic": GenericModelEvaluator,
     "mv2": MobileNetV2Evaluator,
+    "deit_tiny_patch16_224": DeiTTinyEvaluator,
 }
 
 targets = [
@@ -387,7 +389,7 @@ def get_calibration_data(
             with config_path.open() as f:
                 config = json.load(f)
 
-            if evaluator_name == "mv2":
+            if evaluator_name == "mv2" or evaluator_name == "deit_tiny_patch16_224":
                 return evaluator.get_calibrator(
                     training_dataset_path=config["training_dataset_path"]
                 )
@@ -468,7 +470,7 @@ def evaluate_model(
         with config_path.open() as f:
             config = json.load(f)
 
-        if evaluator_name == "mv2":
+        if evaluator_name == "mv2" or evaluator_name == "deit_tiny_patch16_224":
             init_evaluator = evaluator(
                 model_name,
                 model_fp32,
@@ -558,7 +560,7 @@ def get_args():
         required=False,
         nargs="?",
         const="generic",
-        choices=["generic", "mv2"],
+        choices=["generic", "mv2", "deit_tiny_patch16_224"],
         help="Flag for running evaluation of the model.",
     )
     parser.add_argument(
