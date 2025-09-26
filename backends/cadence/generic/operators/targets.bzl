@@ -79,6 +79,36 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "quantized_conv1d_ncl_out",
+        srcs = ["quantized_conv1d_ncl_out.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "quantized_conv1d_nlc_out",
+        srcs = ["quantized_conv1d_nlc_out.cpp"],
+        exported_headers = ["operators.h"],
+        platforms = CXX,
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/backends/cadence/generic/kernels:cadence_kernels",
+        ],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "quantized_conv2d_nchw_out",
         srcs = ["quantized_conv2d_nchw_out.cpp"],
         exported_headers = ["operators.h", "quantized_ops.h"],

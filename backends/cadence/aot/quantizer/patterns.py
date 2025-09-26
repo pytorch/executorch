@@ -247,7 +247,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv1d_ncl.default
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -459,29 +459,35 @@ class ConvReluBasePattern(QuantizationPattern):
             output=[(relu_node,)],  # Output is from the relu node
         )
 
-    def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
-
 
 # Conv1d + regular relu op fusion
 class Conv1dReluPattern0(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv1d.default, torch.ops.aten.relu.default]
 
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv1d_ncl.default
 
 # Conv1d + alternate relu op fusion
 class Conv1dReluPattern1(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv1d.default, torch.ops.aten.relu_.default]
 
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv1d_ncl.default
 
 # Conv2d + regular relu op fusion
 class Conv2dReluPattern0(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv2d.default, torch.ops.aten.relu.default]
 
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv2d_nchw.default
 
 # Conv2d + alternate relu op fusion
 class Conv2dReluPattern1(ConvReluBasePattern):
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten.conv2d.default, torch.ops.aten.relu_.default]
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_conv2d_nchw.default

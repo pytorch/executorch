@@ -149,6 +149,8 @@ executorch_generated_lib(
         "//executorch/backends/cadence/generic/operators:dequantize_per_tensor",
         "//executorch/backends/cadence/generic/operators:quantize_per_tensor",
         "//executorch/backends/cadence/generic/operators:quantized_add_out",
+        "//executorch/backends/cadence/generic/operators:quantized_conv1d_ncl_out",
+        "//executorch/backends/cadence/generic/operators:quantized_conv1d_nlc_out",
         "//executorch/backends/cadence/generic/operators:quantized_conv2d_nchw_out",
         "//executorch/backends/cadence/generic/operators:quantized_conv2d_nhwc_out",
         "//executorch/backends/cadence/generic/operators:quantized_fully_connected_out",

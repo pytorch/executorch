@@ -787,6 +787,8 @@ class ReplaceTrivialConvWithLinear(ExportPass):
 
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_ncl.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_nlc.default: exir_ops.edge.cadence.quantized_linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
@@ -799,10 +801,7 @@ class ReplaceTrivialConvWithLinear(ExportPass):
         # and quantized_conv have the same first 8 args. The quantized op has
         # extra args holding at least the zero point and scale of input, weight, bias,
         # and output tensor.
-        quantized_op = (
-            op == exir_ops.edge.cadence.quantized_conv2d_nchw.default
-            or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.default
-        )
+        quantized_op = op != exir_ops.edge.cadence.convolution.default
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
@@ -979,11 +978,12 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
     ) -> ProxyValue:
         if op not in {
             exir_ops.edge.cadence.convolution.default,
+            exir_ops.edge.cadence.quantized_conv1d_ncl.default,
             exir_ops.edge.cadence.quantized_conv2d_nchw.default,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv2d_nchw.default
+        quantized_op = op != exir_ops.edge.cadence.convolution.default
 
         if not quantized_op and len(args) == 8 and args[-1] is True:
             # Already in NHWC layout.
@@ -1067,6 +1067,8 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
     # decompose to.
     conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_ncl.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv1d_nlc.default: exir_ops.edge.cadence.quantized_linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
         exir_ops.edge.cadence.quantized_conv2d_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
@@ -1076,10 +1078,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
             return super().call_operator(op, args, kwargs, meta)
 
         # Get the relevant args from convolution node.
-        quantized_op = (
-            op == exir_ops.edge.cadence.quantized_conv2d_nchw.default
-            or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.default
-        )
+        quantized_op = op != exir_ops.edge.cadence.convolution.default
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
         ), "Inconsistent args for convolution"
@@ -1621,6 +1620,14 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
         exir_ops.edge.cadence.quantized_add: (
             exir_ops.edge.cadence.quantized_add.per_tensor,
             [1, 2, 4, 5],
+        ),
+        exir_ops.edge.cadence.quantized_conv1d_ncl: (
+            exir_ops.edge.cadence.quantized_conv1d_ncl.per_tensor,
+            [8, 9, 12, 13],
+        ),
+        exir_ops.edge.cadence.quantized_conv1d_nlc: (
+            exir_ops.edge.cadence.quantized_conv1d_nlc.per_tensor,
+            [8, 9, 12, 13],
         ),
         exir_ops.edge.cadence.quantized_conv2d_nchw: (
             exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,

@@ -144,7 +144,7 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
   }
 }
 
-void quantized_conv2d_nhwc(
+void quantized_conv1d_nlc(
     const Tensor& input,
     const Tensor& weight,
     const Tensor& bias,
@@ -173,7 +173,7 @@ void quantized_conv2d_nhwc(
   const int oh = conv1d ? 1 : out.size(1);
   const int ow = conv1d ? out.size(1) : out.size(2);
 
-#define typed_quantized_conv2d_nhwc(ctype, dtype)                 \
+#define typed_quantized_conv1d_nlc(ctype, dtype)                  \
   case ScalarType::dtype: {                                       \
     conv2d_nhwc_core_generic<ctype, ctype, int32_t, ctype, true>( \
         input.const_data_ptr<ctype>(),                            \
@@ -206,16 +206,16 @@ void quantized_conv2d_nhwc(
   }
   ScalarType dtype = out.scalar_type();
   switch (dtype) {
-    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_conv2d_nhwc);
+    ET_FORALL_CADENCE_QUANTIZED_TYPES(typed_quantized_conv1d_nlc);
     default:
       ET_DCHECK_MSG(
           false, "Unhandled dtype %s", torch::executor::toString(dtype));
   }
 
-#undef typed_quantized_conv2d_nhwc
+#undef typed_quantized_conv1d_nlc
 }
 
-void quantized_conv2d_nhwc_out(
+void quantized_conv1d_nlc_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -235,7 +235,7 @@ void quantized_conv2d_nhwc_out(
   const float bias_scale_float = bias_scale.const_data_ptr<float>()[0];
   const int32_t weight_zero_point_int =
       weight_zero_point.const_data_ptr<int32_t>()[0];
-  quantized_conv2d_nhwc(
+  quantized_conv1d_nlc(
       input,
       weight,
       bias,
@@ -251,7 +251,7 @@ void quantized_conv2d_nhwc_out(
       out);
 }
 
-void quantized_conv2d_nhwc_per_tensor_out(
+void quantized_conv1d_nlc_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -267,9 +267,8 @@ void quantized_conv2d_nhwc_per_tensor_out(
     int64_t output_zero_point,
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
-    bool channel_last,
     Tensor& out) {
-  quantized_conv2d_nhwc(
+  quantized_conv1d_nlc(
       input,
       weight,
       bias,
@@ -285,7 +284,7 @@ void quantized_conv2d_nhwc_per_tensor_out(
       out);
 }
 
-void quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
+void quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -302,7 +301,7 @@ void quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  quantized_conv2d_nhwc(
+  quantized_conv1d_nlc(
       input,
       weight,
       bias,
@@ -318,7 +317,7 @@ void quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_out(
       out);
 }
 
-void quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_out(
+void quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_out(
     __ET_UNUSED KernelRuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
@@ -335,139 +334,7 @@ void quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_out(
     __ET_UNUSED int64_t out_multiplier,
     __ET_UNUSED int64_t out_shift,
     Tensor& out) {
-  quantized_conv2d_nhwc(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      groups,
-      in_zero_point,
-      weight_zero_point,
-      bias_scale,
-      output_scale,
-      output_zero_point,
-      out);
-}
-
-void quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    __ET_UNUSED int64_t out_multiplier,
-    __ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv2d_nhwc(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      groups,
-      in_zero_point,
-      weight_zero_point,
-      bias_scale,
-      output_scale,
-      output_zero_point,
-      out);
-}
-
-void quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    __ET_UNUSED int64_t out_multiplier,
-    __ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv2d_nhwc(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      groups,
-      in_zero_point,
-      weight_zero_point,
-      bias_scale,
-      output_scale,
-      output_zero_point,
-      out);
-}
-
-void quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    __ET_UNUSED int64_t out_multiplier,
-    __ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv2d_nhwc(
-      input,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      groups,
-      in_zero_point,
-      weight_zero_point,
-      bias_scale,
-      output_scale,
-      output_zero_point,
-      out);
-}
-
-void quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_out(
-    __ET_UNUSED KernelRuntimeContext& ctx,
-    const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    int64_t in_zero_point,
-    int64_t weight_zero_point,
-    double bias_scale,
-    double output_scale,
-    int64_t output_zero_point,
-    __ET_UNUSED int64_t out_multiplier,
-    __ET_UNUSED int64_t out_shift,
-    Tensor& out) {
-  quantized_conv2d_nhwc(
+  quantized_conv1d_nlc(
       input,
       weight,
       bias,
