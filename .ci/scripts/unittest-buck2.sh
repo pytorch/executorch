@@ -35,10 +35,17 @@ BUILDABLE_KERNELS_PRIM_OPS_TARGETS=$(buck2 query //kernels/prim_ops/... | grep -
 for op in "build" "test"; do
     buck2 $op $BUILDABLE_OPTIMIZED_OPS \
           //examples/selective_build:select_all_dtype_selective_lib_portable_lib \
+          //extension/llm/custom_ops/spinquant/test:fast_hadamard_transform_test \
+          //extension/llm/runner/test:test_multimodal_input \
+          //extension/llm/runner/test:test_generation_config \
           //kernels/portable/... \
           $BUILDABLE_KERNELS_PRIM_OPS_TARGETS //runtime/backend/... //runtime/core/... \
           //runtime/executor: //runtime/kernel/... //runtime/platform/...
 done
 
 # Build only without testing
-buck2 build //codegen/tools/... # Needs torch for testing which we don't have in our OSS buck setup.
+buck2 build //codegen/tools/... \
+        //extension/llm/runner/io_manager:io_manager \
+        //extension/llm/modules/... \
+        //extension/llm/runner:multimodal_runner_lib \
+        //extension/llm/runner:text_decoder_runner

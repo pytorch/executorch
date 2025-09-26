@@ -11,9 +11,6 @@ from typing import Callable
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.combine_hard_sigmoid_and_mul_to_hard_swish import (
-    CombineHardSigmoidAndMulIntoHardSwish,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
     FuseActivationFunctions,
 )
@@ -38,7 +35,6 @@ class Optimization(Enum):
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
-    COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH = 16
 
 
 class Optimizer:
@@ -81,9 +77,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.MOVE_ACTIVATION_BEFORE_CONCAT: MoveActivationBeforeConcatenation(
-                builder, conversion_config
-            ),
-            Optimization.COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH: CombineHardSigmoidAndMulIntoHardSwish(
                 builder, conversion_config
             ),
         }

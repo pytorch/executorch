@@ -436,11 +436,13 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     switch (modelAssetType.value()) {
         case ModelAssetType::CompiledModel: {
             // Model is already compiled.
+            ETCoreMLLogInfo("The model in the pte file is pre-compiled.  Skipping compilation.");
             return modelURL;
         }
             
         case ModelAssetType::Model: {
             // Compile the model.
+            ETCoreMLLogInfo("The model in the pte file is not pre-compiled.  Compiling with a 5 min timeout.");
             NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
                                                           maxWaitTimeInSeconds:(5 * 60)
                                                                          error:error];

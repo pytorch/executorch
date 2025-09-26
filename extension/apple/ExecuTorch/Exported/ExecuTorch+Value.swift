@@ -8,7 +8,6 @@
 
 @_exported import ExecuTorch
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Value {
   /// Creates a `Value` instance encapsulating a `Tensor`.
   ///
@@ -35,20 +34,17 @@ public extension Value {
 
 /// A protocol that provides a uniform way to convert different Swift types
 /// into a `Value`.
-@available(*, deprecated, message: "This API is experimental.")
 public protocol ValueConvertible {
   /// Converts the instance into a `Value`.
   func asValue() -> Value
 }
 
 /// A protocol that provides a uniform way to create an instance from a `Value`.
-@available(*, deprecated, message: "This API is experimental.")
 public protocol ValueConstructible {
   /// Constructs the instance from a `Value`.
   static func from(_ value: Value) throws -> Self
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension ValueConstructible {
   /// Sugar on top of `decode(from:)`
   init(_ value: Value) throws {
@@ -57,13 +53,11 @@ public extension ValueConstructible {
 }
 
 /// A protocol that provides a uniform way to create an instance from an array of `Value`.
-@available(*, deprecated, message: "This API is experimental.")
 public protocol ValueSequenceConstructible {
   /// Constructs the instance from a `Value` array.
   static func from(_ values: [Value]) throws -> Self
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension ValueSequenceConstructible where Self: ValueConstructible {
   public static func from(_ values: [Value]) throws -> Self {
     guard values.count == 1 else { throw Error(code: .invalidType) }
@@ -71,7 +65,6 @@ extension ValueSequenceConstructible where Self: ValueConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension ValueSequenceConstructible {
   /// Sugar on top of `decode(from:)`
   init(_ values: [Value]) throws {
@@ -81,109 +74,91 @@ public extension ValueSequenceConstructible {
 
 // MARK: - ValueConvertible Conformances
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Value: ValueConvertible {
   /// Returns the `Value` itself.
   public func asValue() -> Value { self }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension AnyTensor: ValueConvertible {
   /// Converts the `Tensor` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Tensor: ValueConvertible {
   /// Converts the `Tensor` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension String: ValueConvertible {
   /// Converts the `String` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension NSNumber: ValueConvertible {
   /// Converts the `NSNumber` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt8: ValueConvertible {
   /// Converts the `UInt8` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: Int(self))) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int8: ValueConvertible {
   /// Converts the `Int8` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: Int(self))) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int16: ValueConvertible {
   /// Converts the `Int16` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int32: ValueConvertible {
   /// Converts the `Int32` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int64: ValueConvertible {
   /// Converts the `Int64` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int: ValueConvertible {
   /// Converts the `Int` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Float: ValueConvertible {
   /// Converts the `Float` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Double: ValueConvertible {
   /// Converts the `Double` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Bool: ValueConvertible {
   /// Converts the `Bool` into a `Value`.
   public func asValue() -> Value { Value(self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt16: ValueConvertible {
   /// Converts the `UInt16` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt32: ValueConvertible {
   /// Converts the `UInt32` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt64: ValueConvertible {
   /// Converts the `UInt64` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt: ValueConvertible {
   /// Converts the `UInt` into a `Value`.
   public func asValue() -> Value { Value(NSNumber(value: self)) }
@@ -191,14 +166,12 @@ extension UInt: ValueConvertible {
 
 // MARK: - ValueConstructible Conformances
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Value: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     value as! Self
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension AnyTensor: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let tensor = value.anyTensor else {
@@ -208,7 +181,6 @@ extension AnyTensor: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Tensor: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let anyTensor = value.anyTensor else {
@@ -221,7 +193,6 @@ extension Tensor: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension String: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let string = value.string else {
@@ -231,7 +202,6 @@ extension String: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension NSNumber: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar as? Self else {
@@ -241,7 +211,6 @@ extension NSNumber: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt8: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -254,7 +223,6 @@ extension UInt8: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int8: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -267,7 +235,6 @@ extension Int8: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int16: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -280,7 +247,6 @@ extension Int16: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int32: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -293,7 +259,6 @@ extension Int32: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int64: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -306,7 +271,6 @@ extension Int64: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -319,7 +283,6 @@ extension Int: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Float: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard value.isFloat else {
@@ -329,7 +292,6 @@ extension Float: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Double: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard value.isDouble else {
@@ -339,7 +301,6 @@ extension Double: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Bool: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard value.isBoolean else {
@@ -349,7 +310,6 @@ extension Bool: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt16: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -362,7 +322,6 @@ extension UInt16: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt32: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -375,7 +334,6 @@ extension UInt32: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt64: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -388,7 +346,6 @@ extension UInt64: ValueConstructible, ValueSequenceConstructible {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt: ValueConstructible, ValueSequenceConstructible {
   public static func from(_ value: Value) throws -> Self {
     guard let scalar = value.scalar else {
@@ -403,7 +360,6 @@ extension UInt: ValueConstructible, ValueSequenceConstructible {
 
 // MARK: - ValueSequenceConstructible Conformances
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Array: ValueSequenceConstructible where Element: ValueConstructible {
   public static func from(_ values: [Value]) throws -> [Element] {
     return try values.map { try Element.from($0) }

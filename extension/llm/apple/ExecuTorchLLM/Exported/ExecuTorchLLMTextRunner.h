@@ -64,9 +64,15 @@ withTokenCallback:(nullable void (^)(NSString *))callback
             error:(NSError **)error;
 
 /**
- Stops any ongoing generation and cleans up internal resources.
+ Stop producing new tokens and terminate the current generation process.
 */
 - (void)stop;
+
+/**
+  Remove the prefilled tokens from the KV cache and resets the start position
+  to 0. It also clears the stats for previous runs.
+ */
+- (void)reset;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

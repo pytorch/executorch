@@ -9,7 +9,6 @@ from typing import Tuple
 
 import torch
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import PartitionResult
 from torch.export import export
 
@@ -31,8 +30,7 @@ class TestCudaPartitioner(unittest.TestCase):
         exported_program = export(module, inputs, strict=True)
 
         # Create partitioner and compile specs
-        compile_specs = [CompileSpec("cuda_compile_options", b"")]
-        partitioner = CudaPartitioner(compile_specs)
+        partitioner = CudaPartitioner([])
 
         # Get partition result
         partition_result = partitioner.partition(exported_program)
