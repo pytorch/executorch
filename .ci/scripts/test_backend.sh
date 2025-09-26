@@ -24,10 +24,10 @@ if [[ "$(uname)" == "Darwin" ]]; then
     eval "$(conda shell.bash hook)"
     CONDA_RUN_CMD="${CONDA_RUN} --no-capture-output"
     ${CONDA_RUN_CMD} pip install awscli==1.37.21
-    IS_MACOS=0
+    IS_MACOS=1
 else
     CONDA_RUN_CMD=""
-    IS_MACOS=1
+    IS_MACOS=0
 fi
 
 export PYTHON_EXECUTABLE=python
