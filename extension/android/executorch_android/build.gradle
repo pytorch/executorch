@@ -15,6 +15,7 @@ plugins {
 
 def qnnVersion = System.properties['qnnVersion']
 def execuTorchVersion = System.properties['execuTorchVersion']
+def flavor = System.properties['flavor']
 
 android {
     namespace = "org.pytorch.executorch"
@@ -69,7 +70,7 @@ mavenPublishing {
   publishToMavenCentral()
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android" + (qnnVersion ? "-qnn" : ""), execuTorchVersion ? execuTorchVersion : "0.7.0-SNAPSHOT")
+  coordinates("org.pytorch", "executorch-android" + (flavor ? "-" + flavor : ""), execuTorchVersion ? execuTorchVersion : "1.0.0-SNAPSHOT")
 
   pom {
     name = "ExecuTorch Android"

@@ -15,14 +15,10 @@ on:
         type: choice
         options:
           - "xnnpack"
-          - "vulkan+xnnpack"
+          - "vulkan"
           - "qnn"
   schedule:
     - cron: 0 10 * * *
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   check-if-aar-exists:
@@ -34,12 +30,13 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ inputs.version }}"
+          FLAVOR="${{ inputs.flavor }}"
           if [ -z "$VERSION" ]; then
             echo "No version name specified. Will create a snapshot AAR"
             exit 0
           fi
-          if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar" | grep "200 OK"; then
-            echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}/executorch.aar"
+          if curl -I "https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar" | grep "200 OK"; then
+            echo "AAR already exists at https://ossci-android.s3.amazonaws.com/executorch/release/${VERSION}-${FLAVOR}/executorch.aar"
             echo "Will skip build/upload"
             exit 1
           fi
@@ -93,7 +90,14 @@ jobs:
         fi
 
         FLAVOR="${{ inputs.flavor }}"
-        if [[ "$FLAVOR" == "vulkan+xnnpack" || -z "$FLAVOR" ]]; then
+        if [ ! -z "$FLAVOR" ]; then
+          GRADLE_ARGS+=" -Dflavor=${FLAVOR}"
+        fi
+
+        if [[ "$FLAVOR" == "vulkan" || -z "$FLAVOR" ]]; then
+          curl -O https://sdk.lunarg.com/sdk/download/1.4.321.1/linux/vulkansdk-linux-x86_64-1.4.321.1.tar.xz
+          tar xf vulkansdk-linux-x86_64-1.4.321.1.tar.xz -C /tmp
+          export PATH="/tmp/1.4.321.1/x86_64/bin:$PATH"
           export EXECUTORCH_BUILD_VULKAN=ON
         fi
 
@@ -145,8 +149,12 @@ jobs:
           pip install awscli==1.32.18
           AWS_CMD="aws s3 cp"
           VERSION="${{ inputs.version }}"
+          FLAVOR="${{ inputs.flavor }}"
           if [ -z "$VERSION" ]; then
             VERSION="snapshot-$(date +"%Y%m%d")"
           fi
-          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}/executorch.aar --acl public-read
-          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}/executorch.aar.sha256sums --acl public-read
+          if [ -z "$FLAVOR" ]; then
+            FLAVOR="xnnpack"
+          fi
+          ${AWS_CMD} executorch.aar s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar --acl public-read
+          ${AWS_CMD} executorch.aar.sha256sums s3://ossci-android/executorch/release/${VERSION}-${FLAVOR}/executorch.aar.sha256sums --acl public-read
