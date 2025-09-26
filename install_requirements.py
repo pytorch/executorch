@@ -13,53 +13,11 @@ import subprocess
 import sys
 
 
-def python_is_compatible():
-    # Scrape the version range from pyproject.toml, which should be in the current directory.
-    version_specifier = None
-    with open("pyproject.toml", "r") as file:
-        for line in file:
-            if line.startswith("requires-python"):
-                match = re.search(r'"([^"]*)"', line)
-                if match:
-                    version_specifier = match.group(1)
-                    break
+from torch_pin import NIGHTLY_VERSION, TORCH_VERSION
 
-    if not version_specifier:
-        print(
-            "WARNING: Skipping python version check: version range not found",
-            file=sys.stderr,
-        )
-        return False
-
-    # Install the packaging module if necessary.
-    try:
-        import packaging
-    except ImportError:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "packaging"], check=True
-        )
-    # Compare the current python version to the range in version_specifier. Exits
-    # with status 1 if the version is not compatible, or with status 0 if the
-    # version is compatible or the logic itself fails.
-    try:
-        import packaging.specifiers
-        import packaging.version
-
-        python_version = packaging.version.parse(platform.python_version())
-        version_range = packaging.specifiers.SpecifierSet(version_specifier)
-        if python_version not in version_range:
-            print(
-                f'ERROR: ExecuTorch does not support python version {python_version}: must satisfy "{version_specifier}"',
-                file=sys.stderr,
-            )
-            return False
-    except Exception as e:
-        print(f"WARNING: Skipping python version check: {e}", file=sys.stderr)
-    return True
-
-
-# The pip repository that hosts torch packages.
-TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
+# The pip repository that hosts nightly torch packages.
+# This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
+TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
 
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
@@ -71,7 +29,9 @@ TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250906"
+#
+# NOTE: If you're changing, make the corresponding supported CUDA versions in
+# SUPPORTED_CUDA_VERSIONS above if needed.
 
 
 def install_requirements(use_pytorch_nightly):
@@ -89,7 +49,11 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        "torch==2.9.0" if use_pytorch_nightly else "torch",
+        (
+            f"torch=={TORCH_VERSION}.{NIGHTLY_VERSION}"
+            if use_pytorch_nightly
+            else "torch"
+        ),
     ]
 
     # Install the requirements for core ExecuTorch package.
