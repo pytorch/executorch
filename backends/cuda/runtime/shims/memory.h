@@ -91,6 +91,31 @@ AOTITorchError aoti_torch_empty_strided(
  */
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
 
+/**
+ * Creates a tensor view that reinterprets the same underlying memory with
+ * different shape and strides without copying data.
+ *
+ * Note that the new tensor will not have the ownership of the underlying
+ * memory.
+ *
+ * @param self Input tensor whose memory will be reinterpreted
+ * @param ndim Number of dimensions for the new tensor view
+ * @param sizes_ptr Array of sizes for each dimension
+ * @param strides_ptr Array of strides for each dimension (or nullptr for
+ * contiguous)
+ * @param storage_offset Storage offset (must be 0)
+ * @param ret_new_tensor Output pointer to store the new tensor view
+ *
+ * @return Error::Ok on success, appropriate error code on failure
+ */
+AOTITorchError aoti_torch__reinterpret_tensor(
+    Tensor* self,
+    int64_t ndim,
+    const int64_t* sizes_ptr,
+    const int64_t* strides_ptr,
+    int64_t storage_offset,
+    Tensor** ret_new_tensor);
+
 // Function to clear all tensors from internal storage
 void clear_all_tensors();
 } // extern "C"
