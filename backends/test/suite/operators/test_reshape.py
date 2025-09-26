@@ -9,13 +9,8 @@
 from typing import List
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class ReshapeModel(torch.nn.Module):
@@ -27,56 +22,48 @@ class ReshapeModel(torch.nn.Module):
         return torch.reshape(x, self.shape)
 
 
-@operator_test
-class Reshape(OperatorTest):
-    @dtype_test
-    def test_reshape_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            ReshapeModel(shape=[3, 5]),
-            (torch.rand(15).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_reshape_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[3, 5]),
+        (torch.rand(15).to(dtype),),
+    )
 
-    def test_reshape_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            ReshapeModel(shape=[3, 5]),
-            (torch.randn(15),),
-            flow,
-        )
 
-        self._test_op(
-            ReshapeModel(shape=[20]),
-            (torch.randn(4, 5),),
-            flow,
-        )
+def test_reshape_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[3, 5]),
+        (torch.randn(15),),
+    )
 
-        self._test_op(
-            ReshapeModel(shape=[2, 2, 5]),
-            (torch.randn(4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[20]),
+        (torch.randn(4, 5),),
+    )
 
-        self._test_op(
-            ReshapeModel(shape=[6, 4]),
-            (torch.randn(3, 2, 4),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[2, 2, 5]),
+        (torch.randn(4, 5),),
+    )
 
-    def test_reshape_inferred_dimension(self, flow: TestFlow) -> None:
-        self._test_op(
-            ReshapeModel(shape=[3, -1]),
-            (torch.randn(15),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[6, 4]),
+        (torch.randn(3, 2, 4),),
+    )
 
-        self._test_op(
-            ReshapeModel(shape=[-1, 5]),
-            (torch.randn(15),),
-            flow,
-        )
 
-        self._test_op(
-            ReshapeModel(shape=[2, -1, 3]),
-            (torch.randn(24),),
-            flow,
-        )
+def test_reshape_inferred_dimension(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[3, -1]),
+        (torch.randn(15),),
+    )
+
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[-1, 5]),
+        (torch.randn(15),),
+    )
+
+    test_runner.lower_and_run_model(
+        ReshapeModel(shape=[2, -1, 3]),
+        (torch.randn(24),),
+    )

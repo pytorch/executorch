@@ -9,13 +9,8 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class ModelWithSize(torch.nn.Module):
@@ -44,94 +39,105 @@ class ModelWithScale(torch.nn.Module):
         )
 
 
-@operator_test
-class TestUpsampleNearest2d(OperatorTest):
-    @dtype_test
-    def test_upsample_nearest2d_dtype(self, flow: TestFlow, dtype) -> None:
-        # Input shape: (batch_size, channels, height, width)
-        model = ModelWithSize(size=(10, 10)).to(dtype)
-        self._test_op(model, (torch.rand(2, 3, 5, 5).to(dtype),), flow)
+@parameterize_by_dtype
+def test_upsample_nearest2d_dtype(test_runner, dtype) -> None:
+    # Input shape: (batch_size, channels, height, width)
+    model = ModelWithSize(size=(10, 10)).to(dtype)
+    test_runner.lower_and_run_model(model, (torch.rand(2, 3, 5, 5).to(dtype),))
 
-    def test_upsample_nearest2d_sizes(self, flow: TestFlow) -> None:
-        # Test with different input and output sizes
 
-        # Small input, larger output
-        self._test_op(ModelWithSize(size=(8, 8)), (torch.randn(1, 2, 4, 4),), flow)
+def test_upsample_nearest2d_sizes(test_runner) -> None:
+    # Test with different input and output sizes
 
-        # Larger input, even larger output
-        self._test_op(ModelWithSize(size=(16, 16)), (torch.randn(1, 2, 8, 8),), flow)
+    # Small input, larger output
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(8, 8)), (torch.randn(1, 2, 4, 4),)
+    )
 
-        # Different height and width
-        self._test_op(ModelWithSize(size=(16, 8)), (torch.randn(1, 2, 8, 4),), flow)
+    # Larger input, even larger output
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(16, 16)), (torch.randn(1, 2, 8, 8),)
+    )
 
-        # Asymmetric upsampling
-        self._test_op(ModelWithSize(size=(20, 10)), (torch.randn(1, 2, 5, 5),), flow)
+    # Different height and width
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(16, 8)), (torch.randn(1, 2, 8, 4),)
+    )
 
-    def test_upsample_nearest2d_scale_factors(self, flow: TestFlow) -> None:
-        # Test with different scale factors
+    # Asymmetric upsampling
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(20, 10)), (torch.randn(1, 2, 5, 5),)
+    )
 
-        # Scale by 2
-        self._test_op(
-            ModelWithScale(scale_factor=2.0),
-            (torch.randn(1, 2, 5, 5),),
-            flow,
-            generate_random_test_inputs=False,
-        )
 
-        # Scale by 3
-        self._test_op(
-            ModelWithScale(scale_factor=3.0),
-            (torch.randn(1, 2, 5, 5),),
-            flow,
-            generate_random_test_inputs=False,
-        )
+def test_upsample_nearest2d_scale_factors(test_runner) -> None:
+    # Test with different scale factors
 
-        # Scale by 1.5
-        self._test_op(
-            ModelWithScale(scale_factor=1.5),
-            (torch.randn(1, 2, 6, 6),),
-            flow,
-            generate_random_test_inputs=False,
-        )
+    # Scale by 2
+    test_runner.lower_and_run_model(
+        ModelWithScale(scale_factor=2.0),
+        (torch.randn(1, 2, 5, 5),),
+        generate_random_test_inputs=False,
+    )
 
-        # Different scales for height and width
-        self._test_op(
-            ModelWithScale(scale_factor=(2.0, 1.5)),
-            (torch.randn(1, 2, 5, 6),),
-            flow,
-            generate_random_test_inputs=False,
-        )
+    # Scale by 3
+    test_runner.lower_and_run_model(
+        ModelWithScale(scale_factor=3.0),
+        (torch.randn(1, 2, 5, 5),),
+        generate_random_test_inputs=False,
+    )
 
-    def test_upsample_nearest2d_batch_sizes(self, flow: TestFlow) -> None:
-        # Test with different batch sizes
-        self._test_op(ModelWithSize(size=(10, 10)), (torch.randn(1, 3, 5, 5),), flow)
-        self._test_op(ModelWithSize(size=(10, 10)), (torch.randn(4, 3, 5, 5),), flow)
-        self._test_op(ModelWithSize(size=(10, 10)), (torch.randn(8, 3, 5, 5),), flow)
+    # Scale by 1.5
+    test_runner.lower_and_run_model(
+        ModelWithScale(scale_factor=1.5),
+        (torch.randn(1, 2, 6, 6),),
+        generate_random_test_inputs=False,
+    )
 
-    def test_upsample_nearest2d_channels(self, flow: TestFlow) -> None:
-        # Test with different numbers of channels
-        self._test_op(
-            ModelWithSize(size=(10, 10)), (torch.randn(2, 1, 5, 5),), flow
-        )  # Grayscale
-        self._test_op(
-            ModelWithSize(size=(10, 10)), (torch.randn(2, 3, 5, 5),), flow
-        )  # RGB
-        self._test_op(
-            ModelWithSize(size=(10, 10)), (torch.randn(2, 4, 5, 5),), flow
-        )  # RGBA
-        self._test_op(
-            ModelWithSize(size=(10, 10)), (torch.randn(2, 16, 5, 5),), flow
-        )  # Multi-channel
+    # Different scales for height and width
+    test_runner.lower_and_run_model(
+        ModelWithScale(scale_factor=(2.0, 1.5)),
+        (torch.randn(1, 2, 5, 6),),
+        generate_random_test_inputs=False,
+    )
 
-    def test_upsample_nearest2d_same_size(self, flow: TestFlow) -> None:
-        # Test with output size same as input size (should be identity)
-        self._test_op(
-            ModelWithSize(size=(5, 5)),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-        )
-        self._test_op(
-            ModelWithScale(scale_factor=1.0),
-            (torch.randn(2, 3, 5, 5),),
-            flow,
-        )
+
+def test_upsample_nearest2d_batch_sizes(test_runner) -> None:
+    # Test with different batch sizes
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(1, 3, 5, 5),)
+    )
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(4, 3, 5, 5),)
+    )
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(8, 3, 5, 5),)
+    )
+
+
+def test_upsample_nearest2d_channels(test_runner) -> None:
+    # Test with different numbers of channels
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(2, 1, 5, 5),)
+    )  # Grayscale
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(2, 3, 5, 5),)
+    )  # RGB
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(2, 4, 5, 5),)
+    )  # RGBA
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(10, 10)), (torch.randn(2, 16, 5, 5),)
+    )  # Multi-channel
+
+
+def test_upsample_nearest2d_same_size(test_runner) -> None:
+    # Test with output size same as input size (should be identity)
+    test_runner.lower_and_run_model(
+        ModelWithSize(size=(5, 5)),
+        (torch.randn(2, 3, 5, 5),),
+    )
+    test_runner.lower_and_run_model(
+        ModelWithScale(scale_factor=1.0),
+        (torch.randn(2, 3, 5, 5),),
+    )

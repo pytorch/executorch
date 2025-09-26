@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class Model(torch.nn.Module):
@@ -35,90 +30,80 @@ class Model(torch.nn.Module):
         return self.linear(x)
 
 
-@operator_test
-class Linear(OperatorTest):
-    @dtype_test
-    def test_linear_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            Model().to(dtype),
-            ((torch.rand(16, 64) * 10).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_linear_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        Model().to(dtype),
+        ((torch.rand(16, 64) * 10).to(dtype),),
+    )
 
-    @dtype_test
-    def test_linear_no_bias_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            Model(bias=False).to(dtype),
-            ((torch.rand(16, 64) * 10).to(dtype),),
-            flow,
-        )
 
-    def test_linear_feature_sizes(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(in_features=32, out_features=16),
-            (torch.randn(20, 32),),
-            flow,
-        )
-        self._test_op(
-            Model(in_features=128, out_features=64),
-            (torch.randn(8, 128),),
-            flow,
-        )
-        self._test_op(
-            Model(in_features=256, out_features=1),
-            (torch.randn(4, 256),),
-            flow,
-        )
-        self._test_op(
-            Model(in_features=1, out_features=512),
-            (torch.randn(1024, 1),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_linear_no_bias_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        Model(bias=False).to(dtype),
+        ((torch.rand(16, 64) * 10).to(dtype),),
+    )
 
-    def test_linear_no_bias(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(bias=False),
-            (torch.randn(16, 64),),
-            flow,
-        )
-        self._test_op(
-            Model(in_features=128, out_features=96, bias=False),
-            (torch.randn(8, 128),),
-            flow,
-        )
 
-    def test_linear_batch_sizes(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(),
-            (torch.randn(8, 64),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(32, 64),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(100, 64),),
-            flow,
-        )
+def test_linear_feature_sizes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        Model(in_features=32, out_features=16),
+        (torch.randn(20, 32),),
+    )
+    test_runner.lower_and_run_model(
+        Model(in_features=128, out_features=64),
+        (torch.randn(8, 128),),
+    )
+    test_runner.lower_and_run_model(
+        Model(in_features=256, out_features=1),
+        (torch.randn(4, 256),),
+    )
+    test_runner.lower_and_run_model(
+        Model(in_features=1, out_features=512),
+        (torch.randn(1024, 1),),
+    )
 
-    def test_linear_unbatched(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(in_features=512),
-            (torch.randn(512),),
-            flow,
-        )
 
-    def test_linear_leading_batch(self, flow: TestFlow) -> None:
-        self._test_op(
-            Model(),
-            (torch.randn(4, 8, 64),),
-            flow,
-        )
-        self._test_op(
-            Model(),
-            (torch.randn(2, 4, 8, 64),),
-            flow,
-        )
+def test_linear_no_bias(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        Model(bias=False),
+        (torch.randn(16, 64),),
+    )
+    test_runner.lower_and_run_model(
+        Model(in_features=128, out_features=96, bias=False),
+        (torch.randn(8, 128),),
+    )
+
+
+def test_linear_batch_sizes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(8, 64),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(32, 64),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(100, 64),),
+    )
+
+
+def test_linear_unbatched(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        Model(in_features=512),
+        (torch.randn(512),),
+    )
+
+
+def test_linear_leading_batch(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(4, 8, 64),),
+    )
+    test_runner.lower_and_run_model(
+        Model(),
+        (torch.randn(2, 4, 8, 64),),
+    )

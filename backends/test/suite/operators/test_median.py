@@ -10,13 +10,8 @@ import unittest
 from typing import Optional
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class MedianModel(torch.nn.Module):
@@ -44,145 +39,171 @@ class MedianValueOnlyModel(torch.nn.Module):
             return torch.median(x)
 
 
-@operator_test
-class Median(OperatorTest):
-    @dtype_test
-    def test_median_dtype(self, flow: TestFlow, dtype) -> None:
-        # Test with different dtypes (global reduction)
-        model = MedianValueOnlyModel().to(dtype)
-        self._test_op(model, (torch.rand(10, 10).to(dtype),), flow)
+@parameterize_by_dtype
+def test_median_dtype(test_runner, dtype) -> None:
+    # Test with different dtypes (global reduction)
+    model = MedianValueOnlyModel().to(dtype)
+    test_runner.lower_and_run_model(model, (torch.rand(10, 10).to(dtype),))
 
-    def test_median_basic(self, flow: TestFlow) -> None:
-        # Basic test with default parameters (global reduction)
-        self._test_op(MedianValueOnlyModel(), (torch.randn(10, 10),), flow)
 
-    def test_median_dim(self, flow: TestFlow) -> None:
-        # Test with different dimensions (values only)
+def test_median_basic(test_runner) -> None:
+    # Basic test with default parameters (global reduction)
+    test_runner.lower_and_run_model(MedianValueOnlyModel(), (torch.randn(10, 10),))
 
-        # 2D tensor, dim=0
-        self._test_op(MedianValueOnlyModel(dim=0), (torch.randn(5, 10),), flow)
 
-        # 2D tensor, dim=1
-        self._test_op(MedianValueOnlyModel(dim=1), (torch.randn(5, 10),), flow)
+def test_median_dim(test_runner) -> None:
+    # Test with different dimensions (values only)
 
-        # 3D tensor, dim=0
-        self._test_op(MedianValueOnlyModel(dim=0), (torch.randn(3, 4, 5),), flow)
+    # 2D tensor, dim=0
+    test_runner.lower_and_run_model(MedianValueOnlyModel(dim=0), (torch.randn(5, 10),))
 
-        # 3D tensor, dim=1
-        self._test_op(MedianValueOnlyModel(dim=1), (torch.randn(3, 4, 5),), flow)
+    # 2D tensor, dim=1
+    test_runner.lower_and_run_model(MedianValueOnlyModel(dim=1), (torch.randn(5, 10),))
 
-        # 3D tensor, dim=2
-        self._test_op(MedianValueOnlyModel(dim=2), (torch.randn(3, 4, 5),), flow)
+    # 3D tensor, dim=0
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=0), (torch.randn(3, 4, 5),)
+    )
 
-        # 4D tensor, dim=1
-        self._test_op(MedianValueOnlyModel(dim=1), (torch.randn(2, 3, 4, 5),), flow)
+    # 3D tensor, dim=1
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=1), (torch.randn(3, 4, 5),)
+    )
 
-        # Negative dim (last dimension)
-        self._test_op(MedianValueOnlyModel(dim=-1), (torch.randn(3, 4, 5),), flow)
+    # 3D tensor, dim=2
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=2), (torch.randn(3, 4, 5),)
+    )
 
-        # Negative dim (second-to-last dimension)
-        self._test_op(MedianValueOnlyModel(dim=-2), (torch.randn(3, 4, 5),), flow)
+    # 4D tensor, dim=1
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=1), (torch.randn(2, 3, 4, 5),)
+    )
 
-    def test_median_with_indices(self, flow: TestFlow) -> None:
-        # Test with different dimensions (values and indices)
+    # Negative dim (last dimension)
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=-1), (torch.randn(3, 4, 5),)
+    )
 
-        # 2D tensor, dim=0
-        self._test_op(MedianModel(dim=0), (torch.randn(5, 10),), flow)
+    # Negative dim (second-to-last dimension)
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=-2), (torch.randn(3, 4, 5),)
+    )
 
-        # 2D tensor, dim=1
-        self._test_op(MedianModel(dim=1), (torch.randn(5, 10),), flow)
 
-        # 3D tensor, dim=0
-        self._test_op(MedianModel(dim=0), (torch.randn(3, 4, 5),), flow)
+def test_median_with_indices(test_runner) -> None:
+    # Test with different dimensions (values and indices)
 
-        # 3D tensor, dim=1
-        self._test_op(MedianModel(dim=1), (torch.randn(3, 4, 5),), flow)
+    # 2D tensor, dim=0
+    test_runner.lower_and_run_model(MedianModel(dim=0), (torch.randn(5, 10),))
 
-        # 3D tensor, dim=2
-        self._test_op(MedianModel(dim=2), (torch.randn(3, 4, 5),), flow)
+    # 2D tensor, dim=1
+    test_runner.lower_and_run_model(MedianModel(dim=1), (torch.randn(5, 10),))
 
-        # 4D tensor, dim=1
-        self._test_op(MedianModel(dim=1), (torch.randn(2, 3, 4, 5),), flow)
+    # 3D tensor, dim=0
+    test_runner.lower_and_run_model(MedianModel(dim=0), (torch.randn(3, 4, 5),))
 
-        # Negative dim (last dimension)
-        self._test_op(MedianModel(dim=-1), (torch.randn(3, 4, 5),), flow)
+    # 3D tensor, dim=1
+    test_runner.lower_and_run_model(MedianModel(dim=1), (torch.randn(3, 4, 5),))
 
-        # Negative dim (second-to-last dimension)
-        self._test_op(MedianModel(dim=-2), (torch.randn(3, 4, 5),), flow)
+    # 3D tensor, dim=2
+    test_runner.lower_and_run_model(MedianModel(dim=2), (torch.randn(3, 4, 5),))
 
-    def test_median_keepdim(self, flow: TestFlow) -> None:
-        # Test with keepdim=True (values only)
+    # 4D tensor, dim=1
+    test_runner.lower_and_run_model(MedianModel(dim=1), (torch.randn(2, 3, 4, 5),))
 
-        # 2D tensor, dim=0, keepdim=True
-        self._test_op(
-            MedianValueOnlyModel(dim=0, keepdim=True), (torch.randn(5, 10),), flow
-        )
+    # Negative dim (last dimension)
+    test_runner.lower_and_run_model(MedianModel(dim=-1), (torch.randn(3, 4, 5),))
 
-        # 2D tensor, dim=1, keepdim=True
-        self._test_op(
-            MedianValueOnlyModel(dim=1, keepdim=True), (torch.randn(5, 10),), flow
-        )
+    # Negative dim (second-to-last dimension)
+    test_runner.lower_and_run_model(MedianModel(dim=-2), (torch.randn(3, 4, 5),))
 
-        # 3D tensor, dim=1, keepdim=True
-        self._test_op(
-            MedianValueOnlyModel(dim=1, keepdim=True), (torch.randn(3, 4, 5),), flow
-        )
 
-        # 4D tensor, dim=2, keepdim=True
-        self._test_op(
-            MedianValueOnlyModel(dim=2, keepdim=True), (torch.randn(2, 3, 4, 5),), flow
-        )
+def test_median_keepdim(test_runner) -> None:
+    # Test with keepdim=True (values only)
 
-    def test_median_keepdim_with_indices(self, flow: TestFlow) -> None:
-        # Test with keepdim=True (values and indices)
+    # 2D tensor, dim=0, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=0, keepdim=True), (torch.randn(5, 10),)
+    )
 
-        # 2D tensor, dim=0, keepdim=True
-        self._test_op(MedianModel(dim=0, keepdim=True), (torch.randn(5, 10),), flow)
+    # 2D tensor, dim=1, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=1, keepdim=True), (torch.randn(5, 10),)
+    )
 
-        # 2D tensor, dim=1, keepdim=True
-        self._test_op(MedianModel(dim=1, keepdim=True), (torch.randn(5, 10),), flow)
+    # 3D tensor, dim=1, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=1, keepdim=True), (torch.randn(3, 4, 5),)
+    )
 
-        # 3D tensor, dim=1, keepdim=True
-        self._test_op(MedianModel(dim=1, keepdim=True), (torch.randn(3, 4, 5),), flow)
+    # 4D tensor, dim=2, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=2, keepdim=True), (torch.randn(2, 3, 4, 5),)
+    )
 
-        # 4D tensor, dim=2, keepdim=True
-        self._test_op(
-            MedianModel(dim=2, keepdim=True), (torch.randn(2, 3, 4, 5),), flow
-        )
 
-    def test_median_shapes(self, flow: TestFlow) -> None:
-        # Test with different tensor shapes (global reduction)
+def test_median_keepdim_with_indices(test_runner) -> None:
+    # Test with keepdim=True (values and indices)
 
-        # 1D tensor
-        self._test_op(MedianValueOnlyModel(), (torch.randn(20),), flow)
+    # 2D tensor, dim=0, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianModel(dim=0, keepdim=True), (torch.randn(5, 10),)
+    )
 
-        # 2D tensor
-        self._test_op(MedianValueOnlyModel(), (torch.randn(5, 10),), flow)
+    # 2D tensor, dim=1, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianModel(dim=1, keepdim=True), (torch.randn(5, 10),)
+    )
 
-        # 3D tensor
-        self._test_op(MedianValueOnlyModel(), (torch.randn(3, 4, 5),), flow)
+    # 3D tensor, dim=1, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianModel(dim=1, keepdim=True), (torch.randn(3, 4, 5),)
+    )
 
-        # 4D tensor
-        self._test_op(MedianValueOnlyModel(), (torch.randn(2, 3, 4, 5),), flow)
+    # 4D tensor, dim=2, keepdim=True
+    test_runner.lower_and_run_model(
+        MedianModel(dim=2, keepdim=True), (torch.randn(2, 3, 4, 5),)
+    )
 
-        # 5D tensor
-        self._test_op(MedianValueOnlyModel(), (torch.randn(2, 2, 3, 4, 5),), flow)
 
-    @unittest.skip("NaN and Inf are not enforced for backends.")
-    def test_median_edge_cases(self, flow: TestFlow) -> None:
-        # Tensor with NaN (NaN should be propagated)
-        x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
-        self._test_op(
-            MedianValueOnlyModel(), (x,), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            MedianValueOnlyModel(dim=0), (x,), flow, generate_random_test_inputs=False
-        )
-        self._test_op(
-            MedianValueOnlyModel(dim=1), (x,), flow, generate_random_test_inputs=False
-        )
+def test_median_shapes(test_runner) -> None:
+    # Test with different tensor shapes (global reduction)
 
-    def test_median_scalar(self, flow: TestFlow) -> None:
-        # Test with scalar input (1-element tensor)
-        self._test_op(MedianValueOnlyModel(), (torch.tensor([5.0]),), flow)
-        self._test_op(MedianValueOnlyModel(dim=0), (torch.tensor([5.0]),), flow)
+    # 1D tensor
+    test_runner.lower_and_run_model(MedianValueOnlyModel(), (torch.randn(20),))
+
+    # 2D tensor
+    test_runner.lower_and_run_model(MedianValueOnlyModel(), (torch.randn(5, 10),))
+
+    # 3D tensor
+    test_runner.lower_and_run_model(MedianValueOnlyModel(), (torch.randn(3, 4, 5),))
+
+    # 4D tensor
+    test_runner.lower_and_run_model(MedianValueOnlyModel(), (torch.randn(2, 3, 4, 5),))
+
+    # 5D tensor
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(), (torch.randn(2, 2, 3, 4, 5),)
+    )
+
+
+@unittest.skip("NaN and Inf are not enforced for backends.")
+def test_median_edge_cases(test_runner) -> None:
+    # Tensor with NaN (NaN should be propagated)
+    x = torch.tensor([[1.0, float("nan"), 3.0], [4.0, 5.0, float("nan")]])
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(), (x,), generate_random_test_inputs=False
+    )
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=0), (x,), generate_random_test_inputs=False
+    )
+    test_runner.lower_and_run_model(
+        MedianValueOnlyModel(dim=1), (x,), generate_random_test_inputs=False
+    )
+
+
+def test_median_scalar(test_runner) -> None:
+    # Test with scalar input (1-element tensor)
+    test_runner.lower_and_run_model(MedianValueOnlyModel(), (torch.tensor([5.0]),))
+    test_runner.lower_and_run_model(MedianValueOnlyModel(dim=0), (torch.tensor([5.0]),))

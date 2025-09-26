@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class StackModel(torch.nn.Module):
@@ -26,89 +21,82 @@ class StackModel(torch.nn.Module):
         return torch.stack([x1, x2, x3], dim=self.dim)
 
 
-@operator_test
-class Stack(OperatorTest):
-    @dtype_test
-    def test_stack_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            StackModel(),
-            (
-                torch.rand(3, 4).to(dtype),
-                torch.rand(3, 4).to(dtype),
-                torch.rand(3, 4).to(dtype),
-            ),
-            flow,
-        )
+@parameterize_by_dtype
+def test_stack_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        StackModel(),
+        (
+            torch.rand(3, 4).to(dtype),
+            torch.rand(3, 4).to(dtype),
+            torch.rand(3, 4).to(dtype),
+        ),
+    )
 
-    def test_stack_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            StackModel(dim=0),
-            (
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-            ),
-            flow,
-        )
 
-        self._test_op(
-            StackModel(dim=1),
-            (
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-            ),
-            flow,
-        )
+def test_stack_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        StackModel(dim=0),
+        (
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+        ),
+    )
 
-        self._test_op(
-            StackModel(dim=2),
-            (
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        StackModel(dim=1),
+        (
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+        ),
+    )
 
-    def test_stack_negative_dim(self, flow: TestFlow) -> None:
-        self._test_op(
-            StackModel(dim=-1),
-            (
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        StackModel(dim=2),
+        (
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+        ),
+    )
 
-        self._test_op(
-            StackModel(dim=-2),
-            (
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-                torch.randn(3, 4),
-            ),
-            flow,
-        )
 
-    def test_stack_different_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            StackModel(),
-            (
-                torch.randn(5),
-                torch.randn(5),
-                torch.randn(5),
-            ),
-            flow,
-        )
+def test_stack_negative_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        StackModel(dim=-1),
+        (
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+        ),
+    )
 
-        self._test_op(
-            StackModel(),
-            (
-                torch.randn(2, 3, 4),
-                torch.randn(2, 3, 4),
-                torch.randn(2, 3, 4),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        StackModel(dim=-2),
+        (
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+            torch.randn(3, 4),
+        ),
+    )
+
+
+def test_stack_different_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        StackModel(),
+        (
+            torch.randn(5),
+            torch.randn(5),
+            torch.randn(5),
+        ),
+    )
+
+    test_runner.lower_and_run_model(
+        StackModel(),
+        (
+            torch.randn(2, 3, 4),
+            torch.randn(2, 3, 4),
+            torch.randn(2, 3, 4),
+        ),
+    )

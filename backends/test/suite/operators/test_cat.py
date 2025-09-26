@@ -8,13 +8,8 @@
 
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class CatModel(torch.nn.Module):
@@ -26,151 +21,140 @@ class CatModel(torch.nn.Module):
         return torch.cat([x1, x2, x3], dim=self.dim)
 
 
-@operator_test
-class Cat(OperatorTest):
-    @dtype_test
-    def test_cat_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            CatModel(),
-            (
-                torch.rand(8, 32).to(dtype),
-                torch.rand(12, 32).to(dtype),
-                torch.rand(16, 32).to(dtype),
-            ),
-            flow,
-        )
+@parameterize_by_dtype
+def test_cat_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        CatModel(),
+        (
+            torch.rand(8, 32).to(dtype),
+            torch.rand(12, 32).to(dtype),
+            torch.rand(16, 32).to(dtype),
+        ),
+    )
 
-    def test_cat_dimensions(self, flow: TestFlow) -> None:
-        self._test_op(
-            CatModel(dim=0),
-            (
-                torch.randn(8, 32),
-                torch.randn(12, 32),
-                torch.randn(16, 32),
-            ),
-            flow,
-        )
 
-        self._test_op(
-            CatModel(dim=1),
-            (
-                torch.randn(16, 8),
-                torch.randn(16, 12),
-                torch.randn(16, 16),
-            ),
-            flow,
-        )
+def test_cat_dimensions(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        CatModel(dim=0),
+        (
+            torch.randn(8, 32),
+            torch.randn(12, 32),
+            torch.randn(16, 32),
+        ),
+    )
 
-        self._test_op(
-            CatModel(dim=2),
-            (
-                torch.randn(4, 8, 4),
-                torch.randn(4, 8, 8),
-                torch.randn(4, 8, 12),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        CatModel(dim=1),
+        (
+            torch.randn(16, 8),
+            torch.randn(16, 12),
+            torch.randn(16, 16),
+        ),
+    )
 
-    def test_cat_negative_dim(self, flow: TestFlow) -> None:
-        self._test_op(
-            CatModel(dim=-1),
-            (
-                torch.randn(16, 8),
-                torch.randn(16, 12),
-                torch.randn(16, 16),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        CatModel(dim=2),
+        (
+            torch.randn(4, 8, 4),
+            torch.randn(4, 8, 8),
+            torch.randn(4, 8, 12),
+        ),
+    )
 
-        self._test_op(
-            CatModel(dim=-2),
-            (
-                torch.randn(8, 32),
-                torch.randn(12, 32),
-                torch.randn(16, 32),
-            ),
-            flow,
-        )
 
-    def test_cat_different_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            CatModel(),
-            (
-                torch.randn(128),
-                torch.randn(256),
-                torch.randn(384),
-            ),
-            flow,
-        )
+def test_cat_negative_dim(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        CatModel(dim=-1),
+        (
+            torch.randn(16, 8),
+            torch.randn(16, 12),
+            torch.randn(16, 16),
+        ),
+    )
 
-        self._test_op(
-            CatModel(dim=0),
-            (
-                torch.randn(4, 8, 16),
-                torch.randn(8, 8, 16),
-                torch.randn(12, 8, 16),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        CatModel(dim=-2),
+        (
+            torch.randn(8, 32),
+            torch.randn(12, 32),
+            torch.randn(16, 32),
+        ),
+    )
 
-        self._test_op(
-            CatModel(dim=1),
-            (
-                torch.randn(8, 4, 16),
-                torch.randn(8, 8, 16),
-                torch.randn(8, 12, 16),
-            ),
-            flow,
-        )
 
-        self._test_op(
-            CatModel(dim=2),
-            (
-                torch.randn(8, 12, 4),
-                torch.randn(8, 12, 8),
-                torch.randn(8, 12, 12),
-            ),
-            flow,
-        )
+def test_cat_different_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        CatModel(),
+        (
+            torch.randn(128),
+            torch.randn(256),
+            torch.randn(384),
+        ),
+    )
 
-    def test_cat_broadcast(self, flow: TestFlow) -> None:
-        self._test_op(
-            CatModel(dim=0),
-            (
-                torch.randn(2, 16, 32),
-                torch.randn(4, 16, 32),
-                torch.randn(6, 16, 32),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        CatModel(dim=0),
+        (
+            torch.randn(4, 8, 16),
+            torch.randn(8, 8, 16),
+            torch.randn(12, 8, 16),
+        ),
+    )
 
-        self._test_op(
-            CatModel(dim=1),
-            (
-                torch.randn(8, 8, 16),
-                torch.randn(8, 16, 16),
-                torch.randn(8, 24, 16),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        CatModel(dim=1),
+        (
+            torch.randn(8, 4, 16),
+            torch.randn(8, 8, 16),
+            torch.randn(8, 12, 16),
+        ),
+    )
 
-        self._test_op(
-            CatModel(dim=2),
-            (
-                torch.randn(4, 16, 8),
-                torch.randn(4, 16, 16),
-                torch.randn(4, 16, 24),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        CatModel(dim=2),
+        (
+            torch.randn(8, 12, 4),
+            torch.randn(8, 12, 8),
+            torch.randn(8, 12, 12),
+        ),
+    )
 
-    def test_cat_same_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            CatModel(),
-            (
-                torch.randn(8, 32),
-                torch.randn(8, 32),
-                torch.randn(8, 32),
-            ),
-            flow,
-        )
+
+def test_cat_broadcast(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        CatModel(dim=0),
+        (
+            torch.randn(2, 16, 32),
+            torch.randn(4, 16, 32),
+            torch.randn(6, 16, 32),
+        ),
+    )
+
+    test_runner.lower_and_run_model(
+        CatModel(dim=1),
+        (
+            torch.randn(8, 8, 16),
+            torch.randn(8, 16, 16),
+            torch.randn(8, 24, 16),
+        ),
+    )
+
+    test_runner.lower_and_run_model(
+        CatModel(dim=2),
+        (
+            torch.randn(4, 16, 8),
+            torch.randn(4, 16, 16),
+            torch.randn(4, 16, 24),
+        ),
+    )
+
+
+def test_cat_same_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        CatModel(),
+        (
+            torch.randn(8, 32),
+            torch.randn(8, 32),
+            torch.randn(8, 32),
+        ),
+    )

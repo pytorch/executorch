@@ -7,13 +7,8 @@
 # pyre-unsafe
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class SqueezeModel(torch.nn.Module):
@@ -30,57 +25,50 @@ class SqueezeDimModel(torch.nn.Module):
         return torch.squeeze(x, dim=self.dim)
 
 
-@operator_test
-class Squeeze(OperatorTest):
-    @dtype_test
-    def test_squeeze_dtype(self, flow: TestFlow, dtype) -> None:
-        self._test_op(
-            SqueezeModel(),
-            (torch.rand(1, 3, 1, 5).to(dtype),),
-            flow,
-        )
+@parameterize_by_dtype
+def test_squeeze_dtype(test_runner, dtype) -> None:
+    test_runner.lower_and_run_model(
+        SqueezeModel(),
+        (torch.rand(1, 3, 1, 5).to(dtype),),
+    )
 
-    def test_squeeze_specific_dimension(self, flow: TestFlow) -> None:
-        self._test_op(
-            SqueezeDimModel(dim=0),
-            (torch.randn(1, 3, 5),),
-            flow,
-        )
 
-        self._test_op(
-            SqueezeDimModel(dim=2),
-            (torch.randn(3, 4, 1, 5),),
-            flow,
-        )
+def test_squeeze_specific_dimension(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SqueezeDimModel(dim=0),
+        (torch.randn(1, 3, 5),),
+    )
 
-        self._test_op(
-            SqueezeDimModel(dim=-1),
-            (torch.randn(3, 4, 5, 1),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SqueezeDimModel(dim=2),
+        (torch.randn(3, 4, 1, 5),),
+    )
 
-    def test_squeeze_no_effect(self, flow: TestFlow) -> None:
-        self._test_op(
-            SqueezeDimModel(dim=1),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SqueezeDimModel(dim=-1),
+        (torch.randn(3, 4, 5, 1),),
+    )
 
-        self._test_op(
-            SqueezeModel(),
-            (torch.randn(3, 4, 5),),
-            flow,
-        )
 
-    def test_squeeze_multiple_dims(self, flow: TestFlow) -> None:
-        self._test_op(
-            SqueezeModel(),
-            (torch.randn(1, 3, 1, 5, 1),),
-            flow,
-        )
+def test_squeeze_no_effect(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SqueezeDimModel(dim=1),
+        (torch.randn(3, 4, 5),),
+    )
 
-        self._test_op(
-            SqueezeDimModel(dim=(0, 1)),
-            (torch.randn(1, 1, 1),),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        SqueezeModel(),
+        (torch.randn(3, 4, 5),),
+    )
+
+
+def test_squeeze_multiple_dims(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        SqueezeModel(),
+        (torch.randn(1, 3, 1, 5, 1),),
+    )
+
+    test_runner.lower_and_run_model(
+        SqueezeDimModel(dim=(0, 1)),
+        (torch.randn(1, 1, 1),),
+    )

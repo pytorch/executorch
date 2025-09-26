@@ -9,13 +9,8 @@
 from typing import Union
 
 import torch
-from executorch.backends.test.suite.flow import TestFlow
 
-from executorch.backends.test.suite.operators import (
-    dtype_test,
-    operator_test,
-    OperatorTest,
-)
+from executorch.backends.test.suite.operators import parameterize_by_dtype
 
 
 class MaskedFillModel(torch.nn.Module):
@@ -27,75 +22,69 @@ class MaskedFillModel(torch.nn.Module):
         return x.masked_fill(mask, self.value)
 
 
-@operator_test
-class MaskedFill(OperatorTest):
-    @dtype_test
-    def test_masked_fill_dtype(self, flow: TestFlow, dtype) -> None:
-        mask = torch.randint(0, 2, (16, 32), dtype=torch.bool)
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.rand(16, 32).to(dtype),
-                mask,
-            ),
-            flow,
-        )
+@parameterize_by_dtype
+def test_masked_fill_dtype(test_runner, dtype) -> None:
+    mask = torch.randint(0, 2, (16, 32), dtype=torch.bool)
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=0.0),
+        (
+            torch.rand(16, 32).to(dtype),
+            mask,
+        ),
+    )
 
-    def test_masked_fill_different_values(self, flow: TestFlow) -> None:
-        mask = torch.randint(0, 2, (16, 32), dtype=torch.bool)
 
-        self._test_op(
-            MaskedFillModel(value=5.0),
-            (
-                torch.randn(16, 32),
-                mask,
-            ),
-            flow,
-        )
+def test_masked_fill_different_values(test_runner) -> None:
+    mask = torch.randint(0, 2, (16, 32), dtype=torch.bool)
 
-        self._test_op(
-            MaskedFillModel(value=-5.0),
-            (
-                torch.randn(16, 32),
-                mask,
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=5.0),
+        (
+            torch.randn(16, 32),
+            mask,
+        ),
+    )
 
-        self._test_op(
-            MaskedFillModel(value=1),
-            (
-                torch.randn(16, 32),
-                mask,
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=-5.0),
+        (
+            torch.randn(16, 32),
+            mask,
+        ),
+    )
 
-    def test_masked_fill_different_shapes(self, flow: TestFlow) -> None:
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.randn(512),
-                torch.randint(0, 2, (512,), dtype=torch.bool),
-            ),
-            flow,
-        )
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=1),
+        (
+            torch.randn(16, 32),
+            mask,
+        ),
+    )
 
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.randn(4, 8, 16),
-                torch.randint(0, 2, (4, 8, 16), dtype=torch.bool),
-            ),
-            flow,
-        )
 
-    def test_masked_fill_broadcast(self, flow: TestFlow) -> None:
-        self._test_op(
-            MaskedFillModel(value=0.0),
-            (
-                torch.randn(16, 32),
-                torch.randint(0, 2, (32,), dtype=torch.bool),
-            ),
-            flow,
-        )
+def test_masked_fill_different_shapes(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=0.0),
+        (
+            torch.randn(512),
+            torch.randint(0, 2, (512,), dtype=torch.bool),
+        ),
+    )
+
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=0.0),
+        (
+            torch.randn(4, 8, 16),
+            torch.randint(0, 2, (4, 8, 16), dtype=torch.bool),
+        ),
+    )
+
+
+def test_masked_fill_broadcast(test_runner) -> None:
+    test_runner.lower_and_run_model(
+        MaskedFillModel(value=0.0),
+        (
+            torch.randn(16, 32),
+            torch.randint(0, 2, (32,), dtype=torch.bool),
+        ),
+    )
