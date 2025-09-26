@@ -168,9 +168,11 @@ def generate_markdown(json_path: str, exit_code: int = 0):  # noqa (C901)
 
     # Generate Failed Tests section
     print("# Failed Tests\n")
-    print("To reproduce, run the following command from the root of the ExecuTorch repository:")
+    print(
+        "To reproduce, run the following command from the root of the ExecuTorch repository:"
+    )
     print("```")
-    print("pytest -c /dev/nul backends/test/suite/ -k \"<test_id>\"")
+    print('pytest -c /dev/nul backends/test/suite/ -k "<test_id>"')
     print("```")
     if results.failed_tests:
         header = build_header(results.failed_tests)
