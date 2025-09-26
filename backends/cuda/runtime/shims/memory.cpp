@@ -123,9 +123,76 @@ AOTITorchError aoti_torch_empty_strided(
   return Error::Ok;
 }
 
-// TODO(gasoonjia): reuse aoti_torch_delete_tensor_object to destory tensors
 void clear_all_tensors() {
+  // Use aoti_torch_delete_tensor_object to properly delete each tensor
+  // Note: We need to collect tensor pointers first since deletion modifies the
+  // set
+  auto old_tensors =
+      std::move(tensors); // tensors is now empty and no need to copy
+  for (const auto& tensor_shared : old_tensors) {
+    aoti_torch_delete_tensor_object(tensor_shared.get());
+  }
+
+  // tensors set should now be empty, but ensure it's cleared
   tensors.clear();
+}
+
+AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
+  // Handle null tensor pointer
+  if (tensor == nullptr) {
+    ET_LOG(Error, "Cannot delete null tensor");
+    return Error::InvalidArgument;
+  }
+
+  // Check if tensor exists in our tracking
+  bool found_in_tensors = false;
+  for (auto it = tensors.begin(); it != tensors.end(); ++it) {
+    if (it->get() == tensor) {
+      found_in_tensors = true;
+      break;
+    }
+  }
+
+  // If tensor not found in our tracking, it's invalid
+  if (!found_in_tensors) {
+    ET_LOG(Error, "Didn't find tensor %p", tensor);
+    return Error::InvalidArgument;
+  }
+
+  // Find and delete the tensor
+  for (auto it = tensors.begin(); it != tensors.end(); ++it) {
+    if (it->get() == tensor) {
+      // Get the tensor before erasing
+      auto tensor_ptr = *it;
+
+      void* data_ptr = tensor_ptr->mutable_data_ptr();
+
+      // Determine if it's GPU memory
+      cudaPointerAttributes attributes{};
+      ET_CUDA_CHECK_OR_RETURN_ERROR(
+          cudaPointerGetAttributes(&attributes, data_ptr));
+
+      // et tensor does not own data; need to free them manually.
+      if (attributes.type == cudaMemoryTypeManaged) {
+        // This is CUDA managed memory - free with proper synchronization
+        ET_CUDA_CHECK_OR_RETURN_ERROR(
+            cudaDeviceSynchronize()); // Wait for all operations to complete
+                                      // BEFORE freeing
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
+      } else {
+        // This is CPU memory - free immediately
+        free(data_ptr);
+      }
+      // Remove from set (this will call the destructor if it's the last
+      // reference)
+      tensors.erase(it);
+      return Error::Ok;
+    }
+  }
+
+  // This should never be reached since we found it above
+  ET_LOG(Error, "Internal error: tensor not found after validation");
+  return Error::Internal;
 }
 
 } // extern "C"
