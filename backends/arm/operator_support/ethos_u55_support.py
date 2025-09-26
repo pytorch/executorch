@@ -384,3 +384,63 @@ class EthosU55TransposeCheck(OperatorSupportBase):
             return False
 
         return True
+
+
+class EthosU55CastCheck(OperatorSupportBase):
+    """Reject unsupported casts on U55.
+
+    U55 does not support casting from INT32 or any casts involving BOOL. Note that
+    casting from one dtype to the same dtype is a no-op and is supported.
+
+
+    Attributes:
+        reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+
+    """
+
+    targets = [
+        exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+    ]
+
+    def __init__(self, reporter: WhyNoPartitionReporter):
+        """Initialize the check with a reporter.
+
+        Args:
+            reporter (WhyNoPartitionReporter): Reporter for rejection reasons.
+
+        """
+        super().__init__()
+        self.reporter = reporter
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+        """Return True if the node satisfies the cast constraints of U55.
+
+        Args:
+            submodules (typing.Mapping[str, torch.nn.Module]): Exported modules.
+            node (fx.Node): FX node to check.
+
+        Returns:
+            bool: True if supported; otherwise, False.
+
+        """
+        if node.target not in self.targets:
+            return True
+        input_dtype = get_first_fake_tensor(node.all_input_nodes[0]).dtype
+        output_dtype = get_first_fake_tensor(node).dtype
+        if input_dtype == output_dtype:
+            # This is ok as this will not result in a cast
+            return True
+        if input_dtype in (torch.bool, torch.int32):
+            self.reporter.report_reject(
+                node, f"Casting from {input_dtype} is not supported on U55."
+            )
+            return False
+        if output_dtype in (torch.bool,):
+            self.reporter.report_reject(
+                node, f"Casting to {output_dtype} is not supported on U55."
+            )
+            return False
+
+        return True
