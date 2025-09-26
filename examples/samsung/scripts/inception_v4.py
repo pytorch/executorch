@@ -28,14 +28,12 @@ def get_dataset(dataset_path, data_size):
     from torchvision import datasets, transforms
 
     image_shape = (299, 299)
-    crop_size = 224
     shuffle = True
 
     def get_data_loader():
         preprocess = transforms.Compose(
             [
                 transforms.Resize(image_shape),
-                transforms.CenterCrop(crop_size),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
