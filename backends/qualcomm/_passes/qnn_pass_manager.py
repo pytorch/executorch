@@ -18,6 +18,7 @@ from executorch.backends.qualcomm._passes import (
     ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
+    DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
     DecomposeEinsum,
@@ -193,6 +194,7 @@ class QnnPassManager(PassManager):
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
         self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
+        self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
@@ -208,6 +210,7 @@ class QnnPassManager(PassManager):
     def transform_for_export_pipeline(
         self, exported_program: ExportedProgram, convert_linear_to_conv2d: bool = False
     ):
+        self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
