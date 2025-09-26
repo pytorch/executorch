@@ -28,3 +28,4 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
     cuda_shim_cpp_unittest("aoti_torch_empty_strided")
+    cuda_shim_cpp_unittest("aoti_torch_delete_tensor_object")
