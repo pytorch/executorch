@@ -224,6 +224,32 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class SubTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Sub Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.ops.aten.sub.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        inputs = [(node, 0)]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, 0), (node, 1)]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+
 class AvgPoolPattern(SharedSpecPattern):
     """
     Quantizer for AvgPool2D operator.
