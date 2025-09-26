@@ -11,8 +11,7 @@ import math
 
 from typing import Any, Tuple
 
-import serializer.tosa_serializer as ts
-
+import tosa_serializer as ts
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     get_input_qparams,
     get_output_qparams,
@@ -20,8 +19,6 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
-
-from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
 def insert_rescale_ops_to_int32_maxscale(
@@ -371,12 +368,10 @@ def build_rescale(
     output_type: Any,
     input_zp: list[int],
     output_zp: list[int],
-    rounding_mode: RoundingMode,
-    per_channel=False,
+    rounding_mode: ts.RoundingMode,
+    per_channel: bool = False,
+    is_scale32: bool = True,
 ):
-
-    import tosa.Op as TosaOp  # type: ignore
-
     scaleWidth = 16 if input_node.dtype == ts.DType.INT48 else 32
     is_scale32 = False if input_node.dtype == ts.DType.INT48 else True
     multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
@@ -402,7 +397,7 @@ def build_rescale(
     )
 
     tosa_fb.addOperator(
-        TosaOp.Op().RESCALE,
+        ts.Op.RESCALE,
         [input_node.name, *rescale_inputs],
         [output_name],
         attr_rescale,
@@ -433,7 +428,7 @@ def build_rescale_to_int32(
         ts.DType.INT32,
         [input_zp],
         [0],
-        rounding_mode=RoundingMode.SINGLE_ROUND,
+        rounding_mode=ts.RoundingMode.SINGLE_ROUND,
     )  # type: ignore[call-arg]
 
     return input_A_rescaled_to_int32
@@ -501,7 +496,7 @@ def build_rescale_from_int32_to_dtype(
         output_type=output_dtype,
         input_zp=[0],
         output_zp=[output_zp],
-        rounding_mode=RoundingMode.SINGLE_ROUND,
+        rounding_mode=ts.RoundingMode.SINGLE_ROUND,
     )  # type: ignore[call-arg]
 
     return
