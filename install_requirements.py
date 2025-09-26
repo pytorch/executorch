@@ -12,6 +12,8 @@ import sys
 
 from install_utils import determine_torch_url, is_intel_mac_os, python_is_compatible
 
+from torch_pin import NIGHTLY_VERSION, TORCH_VERSION
+
 # The pip repository that hosts nightly torch packages.
 # This will be dynamically set based on CUDA availability and CUDA backend enabled/disabled.
 TORCH_NIGHTLY_URL_BASE = "https://download.pytorch.org/whl/nightly"
@@ -36,7 +38,6 @@ SUPPORTED_CUDA_VERSIONS = (
 #
 # NOTE: If you're changing, make the corresponding supported CUDA versions in
 # SUPPORTED_CUDA_VERSIONS above if needed.
-NIGHTLY_VERSION = "dev20250915"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -57,7 +58,11 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        f"torch==2.10.0.{NIGHTLY_VERSION}" if use_pytorch_nightly else "torch",
+        (
+            f"torch=={TORCH_VERSION}.{NIGHTLY_VERSION}"
+            if use_pytorch_nightly
+            else "torch"
+        ),
     ]
 
     # Install the requirements for core ExecuTorch package.
