@@ -49,6 +49,7 @@ NS_SWIFT_NAME(LogSink)
  * A singleton class for managing log sinks and dispatching log messages.
  */
 NS_SWIFT_NAME(Log)
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchLog : NSObject
 
 /// The shared singleton log instance.
