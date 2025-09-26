@@ -67,7 +67,9 @@ class MultimodalRunnerTest: XCTestCase {
         MultimodalInput(systemPrompt),
         MultimodalInput(image.asImage()),
         MultimodalInput("\(userPrompt) \(assistantPrompt)"),
-      ], sequenceLength: sequenceLength) { token in
+      ], Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
         text += token
       }
     } catch {
@@ -82,7 +84,9 @@ class MultimodalRunnerTest: XCTestCase {
         MultimodalInput(systemPrompt),
         MultimodalInput(image.asImage()),
         MultimodalInput("\(userPrompt) \(assistantPrompt)"),
-      ], sequenceLength: sequenceLength) { token in
+      ], Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
         text += token
       }
     } catch {
