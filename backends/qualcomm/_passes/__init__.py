@@ -13,6 +13,7 @@ from .convert_bmm_to_matmul import ConvertBmmToMatmul
 from .convert_linear_to_conv2d import ConvertLinearToConv2d
 from .convert_square_to_pow import ConvertSquareToPow
 from .decompose_any import DecomposeAny
+from .decompose_binary_alpha import DecomposeBinaryAlpha
 from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
@@ -54,6 +55,7 @@ __all__ = [
     ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
+    DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
     DecomposeEinsum,
