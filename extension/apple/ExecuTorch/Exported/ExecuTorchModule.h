@@ -16,6 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
  * and its debug name.
  */
 NS_SWIFT_NAME(TensorMetadata)
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchTensorMetadata : NSObject
 
 /** The size of each dimension. */
@@ -46,6 +47,7 @@ NS_SWIFT_NAME(TensorMetadata)
  * per-tensor metadata, buffer sizes, backends, and instruction count.
  */
 NS_SWIFT_NAME(MethodMetadata)
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchMethodMetadata : NSObject
 
 /** The method’s name. */
