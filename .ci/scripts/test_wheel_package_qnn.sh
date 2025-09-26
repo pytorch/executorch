@@ -142,7 +142,7 @@ run_core_tests () {
   TORCH_VERSION=$(
   "$PYBIN" - <<'PY'
 import re, pathlib
-txt = pathlib.Path("install_requirements.py").read_text()
+txt = pathlib.Path("torch_pin.py").read_text()
 print(re.search(r'TORCH_VERSION\s*=\s*["\']([^"\']+)["\']', txt).group(1))
 PY
 )
@@ -150,7 +150,7 @@ PY
   NIGHTLY_VERSION=$(
   "$PYBIN" - <<'PY'
 import re, pathlib
-txt = pathlib.Path("install_requirements.py").read_text()
+txt = pathlib.Path("torch_pin.py").read_text()
 print(re.search(r'NIGHTLY_VERSION\s*=\s*["\']([^"\']+)["\']', txt).group(1))
 PY
 )
