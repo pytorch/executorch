@@ -1009,10 +1009,7 @@ jobs:
         ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
         ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
         ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
-<<<<<<< HEAD
         ./cmake-out/backends/vulkan/test/custom_ops/qdq8ta_conv2d_activations
-=======
->>>>>>> 9fc8737bb4 (changes)
 
         # "Classic" Operator tests
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
