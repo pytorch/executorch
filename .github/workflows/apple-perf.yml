@@ -167,7 +167,7 @@ jobs:
       fail-fast: false
     with:
       # NB: Need to use our AWS MacOS runner to upload large models to S3
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       timeout: 60

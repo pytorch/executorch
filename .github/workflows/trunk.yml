@@ -39,7 +39,7 @@ jobs:
             backend: portable
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -211,7 +211,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -233,7 +233,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -453,7 +453,7 @@ jobs:
     name: test-static-llama-ane
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.9
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -475,7 +475,7 @@ jobs:
     name: test-llama-torchao-lowbit
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.9
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -559,7 +559,7 @@ jobs:
         mode: [mps, coreml, xnnpack+custom+quantize_kv]
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -705,7 +705,7 @@ jobs:
         model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -744,7 +744,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

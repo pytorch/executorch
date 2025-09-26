@@ -70,7 +70,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.9
     with:
       ref: ${{ inputs.ref }}
-      runner: macos-m1-stable
+      runner: macos-m1-14
       python-version: "3.12"
       submodules: recursive
       timeout: ${{ inputs.timeout }}

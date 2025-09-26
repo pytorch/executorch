@@ -18,7 +18,7 @@ from examples.xnnpack import MODEL_NAME_TO_OPTIONS, QuantType
 
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
-    "macos": "macos-m1-stable",
+    "macos": "macos-m1-14",
 }
 CUSTOM_RUNNERS = {
     "linux": {
