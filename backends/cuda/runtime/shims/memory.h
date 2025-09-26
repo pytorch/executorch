@@ -116,6 +116,31 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t storage_offset,
     Tensor** ret_new_tensor);
 
+/**
+ * Copies data from source tensor to destination tensor.
+ *
+ * This function implements copy function for tensors living in CUDA AOTI
+ * backend. It supports copying between tensors with different shapes (as long
+ * as they have the same total number of elements) and different memory
+ * layouts/strides.
+ *
+ * Note that currently this function does not support copying between tensors
+ * with different dtypes.
+ *
+ * @param self Destination tensor (data will be overwritten)
+ * @param src Source tensor (data will be copied from this tensor)
+ * @param non_blocking Whether the copy should be non-blocking (currently
+ * ignored)
+ *
+ * @return Error::Ok on success, appropriate error code on failure:
+ *         - Error::InvalidArgument: null pointers, dtype mismatch, numel
+ * mismatch
+ *         - Error::MemoryAllocationFailed: failed to allocate temporary memory
+ *         - Error::Internal: CUDA operation failures
+ */
+AOTITorchError
+aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
+
 // Function to clear all tensors from internal storage
 void clear_all_tensors();
 } // extern "C"
