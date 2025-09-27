@@ -463,6 +463,10 @@ class ArmTester(Tester):
         for run_iteration in range(num_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
 
+            # Avoid issues with inplace operators
+            test_input = copy.deepcopy(reference_input)
+            original_input = copy.deepcopy(reference_input)
+
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
                 for generated_input in reference_input
@@ -477,16 +481,16 @@ class ArmTester(Tester):
                 # Run exported module directly
                 test_outputs, _ = pytree.tree_flatten(
                     self._calculate_reference_output(
-                        exported_program.module(), reference_input
+                        exported_program.module(), test_input
                     )
                 )
             else:
                 # Run lowered model with target
                 test_outputs, _ = pytree.tree_flatten(
-                    test_stage.run_artifact(reference_input)
+                    test_stage.run_artifact(test_input)
                 )
 
-            logger.info(f"\n      Input: {reference_input}")
+            logger.info(f"\n      Input: {original_input}")
             logger.info(f"\n Ref output: {reference_outputs}")
             logger.info(f"\nTest output: {test_outputs}")
 
