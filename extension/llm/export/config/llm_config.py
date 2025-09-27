@@ -453,6 +453,16 @@ class MPSConfig:
 
 
 @dataclass
+class TorchAOKernelsConfig:
+    """
+    Configures the torchao-kernels backend.
+    """
+
+    convert_linear: bool = False
+    convert_tied_embedding: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -464,6 +474,7 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
 ################################################################################
@@ -631,6 +642,28 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # TorchAoKernels
+        if any(
+            hasattr(args, a)
+            for a in [
+                "torchao_kernels",
+                "torchao_kernels_linear",
+                "torchao_kernels_tied_embedding",
+            ]
+        ):
+            if hasattr(args, "torchao_kernels") and args.torchao_kernels:
+                # Enable all conversions if torchao_kernels is specified
+                llm_config.backend.torchao.convert_linear = True
+                llm_config.backend.torchao.convert_tied_embedding = True
+            else:
+                # Otherwise, only enable the conversions that are specified
+                llm_config.backend.torchao.convert_linear = getattr(
+                    args, "torchao_kernels_linear", False
+                )
+                llm_config.backend.torchao.convert_tied_embedding = getattr(
+                    args, "torchao_kernels_tied_embedding", False
+                )
 
         # DebugConfig
         if hasattr(args, "profile_memory"):
