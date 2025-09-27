@@ -6,6 +6,14 @@
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.convert_int_pow_to_mul import ConvertIntPowToMuls
+from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -71,7 +79,14 @@ class DecomposeExpm1Pass(ArmPass):
         - exir_ops.edge.aten.logical_and.default
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ConvertIntPowToMuls,
+        InsertTableOpsPass,
+        DecomposeDivPass,
+        ReplaceScalarWithTensorArgPassTOSAMI,
+        MatchArgDtypePass,
+        MatchArgRanksPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_expm1_ops:

@@ -8,8 +8,13 @@
 
 import logging
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.decompose_embedding_pass import (
+    DecomposeEmbeddingPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import EdgeOpOverload, ExportPass, PassResult
 from torch._subclasses.fake_tensor import FakeTensor
@@ -25,6 +30,8 @@ class InsertInt32CastsAfterInt64PlaceholdersPass(ExportPass):
     Note: Overflow checks are not applied in this pass. It is the user's responsibility to ensure that values fit within
     the int32 range.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {DecomposeEmbeddingPass}
 
     # Ops that require i64 inputs → positions of args to upcast.
     # Key: op overload; Value: zero-based indices of positional args that must be i64.

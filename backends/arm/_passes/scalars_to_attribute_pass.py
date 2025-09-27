@@ -10,6 +10,7 @@ from typing import cast, Set, Type, Union
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -22,7 +23,7 @@ class ScalarsToAttributePass(ExportPass):
     to attribute Nodes that output the same value.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {MatchArgRanksPass}
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,
