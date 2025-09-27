@@ -13,3 +13,17 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
         ],
     )
+
+    runtime.python_library(
+        name = "etdump",
+        srcs = ["etdump.py"],
+        visibility = [
+            "//executorch/backends/cadence/...",
+            "@EXECUTORCH_CLIENTS"
+        ],
+        deps = [
+            "fbcode//executorch/devtools:lib",
+            "fbcode//executorch/devtools/inspector:inspector_utils",
+            "fbsource//third-party/pypi/tabulate:tabulate",
+        ],
+    )
