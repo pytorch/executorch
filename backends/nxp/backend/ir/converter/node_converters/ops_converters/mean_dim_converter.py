@@ -1,8 +1,8 @@
-# Copyright (c) 2025 NXP
-# All rights reserved.
+# Copyright 2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 
 import torch
 
@@ -20,6 +20,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     mean_options,
 )
+from executorch.backends.nxp.backend.node_format_inference import NXP_NODE_FORMAT
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -34,15 +35,34 @@ class MeanDimConverter(NodeConverter):
     ) -> bool:
         match target:
             case Target.RT700:
-                # TODO: Consider different tensor formats (dim-order)
-                dim = node.args[1]
                 keepdim = node.args[2] if len(node.args) >= 3 else False
                 rank = len(node.args[0].meta["val"].shape)
-                dim = [MeanDimConverter._to_neg_dim(d, rank) for d in dim]
+                dim = [MeanDimConverter._to_pos_dim(d, rank) for d in node.args[1]]
 
-                # Only last 2 dimensions (H, W) and keepdim=True with rank=4 are supported on Neutron.
-                if rank != 4 or dim not in [[-1, -2], [-2, -1]] or not keepdim:
+                if rank != 4 or not keepdim:
+                    # neutron-converter/src/OperatorC/GlobalAvgPoolPlugin.cpp#74-77
                     return False
+
+                # The `mean.dim` gets converted to AveragePool by the NeutronConverter, so the channels must be a
+                #  multiple of `num_macs`.
+                # neutron-converter/src/OperatorC/GlobalAvgPoolPlugin.cpp#59-85
+                num_macs = 8
+                channels_dim = (
+                    1 if node.meta[NXP_NODE_FORMAT].is_channels_first() else -1
+                )
+                if (node.meta["val"].shape[channels_dim] % num_macs) != 0:
+                    return False
+
+                # Neutron only supports reduction over the spatial dimensions H, W.
+                if node.meta[NXP_NODE_FORMAT].is_channels_first():
+                    # The input is NCHW. H and W are at indices 2 and 3.
+                    if dim not in [[2, 3], [3, 2]]:
+                        return False
+                else:
+                    # The input is formatless. It can be considered as NHWC, as this is the way Neutron will look at
+                    #  the dimensions. So H and W are the middle dimensions.
+                    if dim not in [[1, 2], [2, 1]]:
+                        return False
 
                 return True
 

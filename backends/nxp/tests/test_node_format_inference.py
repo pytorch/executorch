@@ -9,6 +9,7 @@ from executorch import exir
 from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormat,
     NodeFormatInference,
+    NXP_NODE_FORMAT,
 )
 from executorch.backends.nxp.neutron_pass_manager import NeutronPassManager
 from executorch.backends.nxp.tests.models import (
@@ -27,7 +28,7 @@ def test_convolution():
     exir_program = torch.export.export(model, example_input)
     edge_program = exir.to_edge(exir_program).exported_program()
 
-    node_formats = NodeFormatInference(edge_program).identify_node_formats()
+    NodeFormatInference(edge_program).identify_node_formats()
 
     expected_mapping = {
         "p_conv_weight": NodeFormat.CHANNELS_FIRST,
@@ -37,8 +38,8 @@ def test_convolution():
         "output": NodeFormat.CHANNELS_FIRST,
     }
 
-    for node, node_format in node_formats.items():
-        assert expected_mapping[node.name] == node_format
+    for node in edge_program.graph.nodes:
+        assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
 
 
 def test_softmax():
@@ -48,7 +49,7 @@ def test_softmax():
     exir_program = torch.export.export(model, example_input)
     edge_program = exir.to_edge(exir_program).exported_program()
 
-    node_formats = NodeFormatInference(edge_program).identify_node_formats()
+    NodeFormatInference(edge_program).identify_node_formats()
 
     expected_mapping = {
         "x": NodeFormat.FORMATLESS,
@@ -56,8 +57,8 @@ def test_softmax():
         "output": NodeFormat.FORMATLESS,
     }
 
-    for node, node_format in node_formats.items():
-        assert expected_mapping[node.name] == node_format
+    for node in edge_program.graph.nodes:
+        assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
 
 
 def test_maxpool2d():
@@ -78,7 +79,7 @@ def test_maxpool2d():
 
     # Remove MaxPool-related "getitem" nodes from graph
     edge_program = NeutronPassManager(edge_program, [RemoveGetItemPass]).transform()
-    node_formats = NodeFormatInference(edge_program).identify_node_formats()
+    NodeFormatInference(edge_program).identify_node_formats()
 
     expected_mapping = {
         "x": NodeFormat.CHANNELS_FIRST,
@@ -86,5 +87,5 @@ def test_maxpool2d():
         "output": NodeFormat.CHANNELS_FIRST,
     }
 
-    for node, node_format in node_formats.items():
-        assert expected_mapping[node.name] == node_format
+    for node in edge_program.graph.nodes:
+        assert expected_mapping[node.name] == node.meta[NXP_NODE_FORMAT]
