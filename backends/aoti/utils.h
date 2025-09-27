@@ -36,6 +36,8 @@ inline executorch::aten::ScalarType dtype_to_scalar_type(int32_t dtype) {
   switch (dtype) {
     case 6: // PyTorch's float32 dtype code
       return executorch::aten::ScalarType::Float;
+    case 15: // PyTorch's bfloat16 dtype code
+      return executorch::aten::ScalarType::BFloat16;
     // Future support for additional dtypes can be added here
     default:
       ET_LOG(Error, "Unsupported dtype: %d for ScalarType conversion", dtype);
