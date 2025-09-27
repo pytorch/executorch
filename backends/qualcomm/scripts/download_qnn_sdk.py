@@ -295,9 +295,12 @@ def _install_glibc_234():
         build_dir = pathlib.Path(tmpdir) / "glibc-build"
         os.makedirs(build_dir, exist_ok=True)
 
+        logger.info("[glibc] Configuring build...")
         env = os.environ.copy()
         # Remove LD_LIBRARY_PATH to satisfy configure checks
         env.pop("LD_LIBRARY_PATH", None)
+        # allow warnings
+        env["CFLAGS"] = "-O2 -Wno-error"
 
         # Configure
         cmd = ["../glibc-2.34/configure", f"--prefix={GLIBC_ROOT}"]
