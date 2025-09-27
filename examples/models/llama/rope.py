@@ -47,12 +47,11 @@ def precompute_freqs_cis(
     use_scaled: bool = False,
     scale_factor: Optional[int] = None,
     high_freq_factor: int = 4,
-    device: Union[str, torch.device] = "cpu",
 ):
     freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
+        theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim)
     )
-    t = torch.arange(end, device=freqs.device)  # pyre-ignore
+    t = torch.arange(end)
     if use_scaled:
         assert scale_factor is not None
         freqs = apply_scaling(freqs, scale_factor, high_freq_factor)  # pyre-ignore

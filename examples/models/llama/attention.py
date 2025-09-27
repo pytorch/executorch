@@ -429,7 +429,6 @@ class AttentionMHA(Attention):
                 self.max_context_len,
                 self.max_context_len,
                 dtype=torch.bool,
-                device="cpu",
             )
         )
         self.register_buffer("mask", causal_mask, persistent=False)

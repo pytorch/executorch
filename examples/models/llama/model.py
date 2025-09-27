@@ -195,7 +195,7 @@ the checkpoint format to avoid generating faulty models.
 
         # Within the device="meta" context, tensors that are created do not carry data.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
-        with torch.device("meta"):
+        with torch.device("cpu"):
             # Model itself is loaded in default dtype, fp32.
             self.model_ = construct_transformer(model_args)
             # Get checkpoint dtype.
