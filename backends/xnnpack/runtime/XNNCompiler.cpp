@@ -610,6 +610,9 @@ bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
   auto cvt_output_id = graph_node->output_id();
 
   auto check_dtype = [graph](uint32_t id, DataType dtype) -> bool {
+    assert(
+        dtype == DataType::xnn_datatype_qdint8 ||
+        dtype == DataType::xnn_datatype_qbint4);
     for (auto value : *graph->xvalues()) {
       if (value->xvalue_union_type() !=
           fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
@@ -629,12 +632,6 @@ bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
     return false;
   }
 
-  // XNNPACK dtypes which have qp8 support.
-  const std::vector<DataType> supported_filter_dtypes = {
-      DataType::xnn_datatype_qbint4,
-      DataType::xnn_datatype_qcint4,
-      DataType::xnn_datatype_qcint8};
-
   // Find if the convert output is going to the right linear node.
   // Assuming if we can find one valid linear node, then we can use QP8
   // for all the linear nodes consuming this convert output.
@@ -642,10 +639,9 @@ bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
     if (node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
       auto linear_node = node->xnode_union_as_XNNFullyConnected();
       if (linear_node->input1_id() == cvt_output_id) {
-        for (auto supported_filter_dtype : supported_filter_dtypes) {
-          if (check_dtype(linear_node->filter_id(), supported_filter_dtype)) {
-            return true;
-          }
+        if (check_dtype(
+                linear_node->filter_id(), DataType::xnn_datatype_qbint4)) {
+          return true;
         }
       }
     }

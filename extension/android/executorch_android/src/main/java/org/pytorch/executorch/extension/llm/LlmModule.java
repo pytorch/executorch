@@ -167,7 +167,7 @@ public class LlmModule {
   }
 
   /**
-   * Prefill an LLaVA Module with the given images input.
+   * Prefill an multimodal Module with the given images input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
@@ -189,9 +189,9 @@ public class LlmModule {
   private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
-   * Prefill an LLaVA Module with the given text input.
+   * Prefill an multimodal Module with the given text input.
    *
-   * @param prompt The text prompt to LLaVA.
+   * @param prompt The text prompt to multimodal model.
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
@@ -207,6 +207,35 @@ public class LlmModule {
 
   // returns status
   private native int appendTextInput(String prompt);
+
+  /**
+   * Prefill a multimodal Module with the given text input.
+   *
+   * @param prompt The text prompt to multimodal model.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  public int prefillAudio(String filePath) {
+    java.io.File file = new java.io.File(filePath);
+    try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+      byte[] fileBytes = new byte[(int) file.length()];
+      int bytesRead = fis.read(fileBytes);
+      if (bytesRead != fileBytes.length) {
+          throw new RuntimeException("Could not completely read file " + file.getName());
+      }
+      int nFloats = fileBytes.length / 4;
+      int batchSize = nFloats / (128 * 3000);
+      return appendAudioInput(fileBytes, batchSize, 128, 3000);
+    } catch (java.io.IOException e) {
+      throw new RuntimeException("Failed to read file: " + e);
+    }
+  }
+
+  // For Audio (option B), not RawAudio
+  // Use batch_size = ceil(n_floats / (n_bins * n_frames)), n_bins = 128, n_frames = 3000
+  // returns status
+  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
    * Reset the context of the LLM. This will clear the KV cache and reset the state of the LLM.
