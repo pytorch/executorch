@@ -24,8 +24,8 @@ from tosa.ResizeMode import ResizeMode  # type: ignore
 
 
 @register_node_visitor
-class UpsampleNearest2dVisitor(NodeVisitor):
-    target = "aten.upsample_nearest2d.vec"
+class ResizeVisitor(NodeVisitor):
+    target = "tosa.RESIZE.default"
 
     tosa_specs = NodeVisitor.tosa_specs
 
@@ -41,12 +41,18 @@ class UpsampleNearest2dVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts
 
-        validate_num_inputs(self.target, inputs, 3)
-        validate_same_dtype(self.target, [inputs[0], output], ts)
+        validate_num_inputs(self.target, inputs, [3, 4])
+        if node.kwargs.get("resize_mode") == "bilinear":
+            resize_mode = ResizeMode.BILINEAR
+            align_corners = bool(node.args[2])
+        else:
+            resize_mode = ResizeMode.NEAREST
+            align_corners = False
+            validate_same_dtype(self.target, [inputs[0], output], ts)
         validate_valid_dtype(
             self.target,
             [inputs[0], output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP16, ts.DType.FP32],
             output.tosa_spec,
         )
 
@@ -59,7 +65,7 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         # Align corners shouldn't make a difference for nearest upsampling. We set to False so
         # half pixel centers are used for resize parameter logic.
         scale_n_yx, scale_d_yx, offset_yx, border_yx = get_resize_parameters(
-            input_size_yx, output_size_yx, ResizeMode.NEAREST, align_corners=False
+            input_size_yx, output_size_yx, resize_mode, align_corners=align_corners
         )
 
         def in_int16_range(x):
@@ -86,7 +92,7 @@ class UpsampleNearest2dVisitor(NodeVisitor):
         )
         attr = ts.TosaSerializerAttribute()
         attr.ResizeAttribute(
-            mode=ResizeMode.NEAREST,
+            mode=resize_mode,
         )
 
         self._serialize_operator(

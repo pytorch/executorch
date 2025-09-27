@@ -5,6 +5,7 @@
 
 from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
     rescale,
+    resize,
     table,
     transpose,
 )
