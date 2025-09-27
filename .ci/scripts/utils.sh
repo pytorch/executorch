@@ -46,72 +46,12 @@ install_pip_dependencies() {
 
 install_domains() {
   echo "Install torchvision and torchaudio"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@release/2.9"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@release/0.24"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_pytorch_and_domains() {
-  pushd .ci/docker || return
-  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  popd || return
-
-  git clone https://github.com/pytorch/pytorch.git
-
-  # Fetch the target commit
-  pushd pytorch || return
-  git checkout "${TORCH_VERSION}"
-
-  local system_name=$(uname)
-  if [[ "${system_name}" == "Darwin" ]]; then
-    local platform=$(python -c 'import sysconfig; import platform; v=platform.mac_ver()[0].split(".")[0]; platform=sysconfig.get_platform().split("-"); platform[1]=f"{v}_0"; print("_".join(platform))')
-  fi
-  local python_version=$(python -c 'import platform; v=platform.python_version_tuple(); print(f"{v[0]}{v[1]}")')
-  local torch_release=$(cat version.txt)
-  local torch_short_hash=${TORCH_VERSION:0:7}
-  local torch_wheel_path="cached_artifacts/pytorch/executorch/pytorch_wheels/${system_name}/${python_version}"
-  local torch_wheel_name="torch-${torch_release}%2Bgit${torch_short_hash}-cp${python_version}-cp${python_version}-${platform:-}.whl"
-
-  local cached_torch_wheel="https://gha-artifacts.s3.us-east-1.amazonaws.com/${torch_wheel_path}/${torch_wheel_name}"
-  # Cache PyTorch wheel is only needed on MacOS, Linux CI already has this as part
-  # of the Docker image
-  local torch_wheel_not_found=0
-  if [[ "${system_name}" == "Darwin" ]]; then
-    pip install "${cached_torch_wheel}" || torch_wheel_not_found=1
-  else
-    torch_wheel_not_found=1
-  fi
-
-  # Found no such wheel, we will build it from source then
-  if [[ "${torch_wheel_not_found}" == "1" ]]; then
-    echo "No cached wheel found, continue with building PyTorch at ${TORCH_VERSION}"
-
-    git submodule update --init --recursive
-    USE_DISTRIBUTED=1 python setup.py bdist_wheel
-    pip install "$(echo dist/*.whl)"
-
-    # Only AWS runners have access to S3
-    if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
-      for wheel_path in dist/*.whl; do
-        local wheel_name=$(basename "${wheel_path}")
-        echo "Caching ${wheel_name}"
-        aws s3 cp "${wheel_path}" "s3://gha-artifacts/${torch_wheel_path}/${wheel_name}"
-      done
-    fi
-  else
-    echo "Use cached wheel at ${cached_torch_wheel}"
-  fi
-
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
-  export TORCHVISION_VERSION
-
-  install_domains
-
-  popd || return
-  # Print sccache stats for debugging
-  sccache --show-stats || true
+  pip install torch==2.9.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/test/cpu
 }
 
 build_executorch_runner_buck2() {
