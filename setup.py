@@ -494,7 +494,7 @@ class InstallerBuildExt(build_ext):
                     # Run build.sh with SDK path exported
                     env = dict(**os.environ)
                     env["QNN_SDK_ROOT"] = str(sdk_path)
-                    subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
+                    subprocess.check_call([str(build_sh), "--skip_la"], env=env)
 
                     # Copy the main .so into the wheel package
                     so_src = (
