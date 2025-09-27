@@ -70,7 +70,10 @@ class AnnotateDecomposedMatmulPass(ExportPass):
                 node for node in partition.nodes if node.target in matmul_targets
             ][0]
 
-            if quantized_input:
+            if quantized_input and not all(
+                input_node.target in DQ_OPS
+                for input_node in matmul_node.all_input_nodes
+            ):
                 matmul_args = matmul_node.all_input_nodes
                 for node in matmul_args:
                     # Find the dq-node connected to this mm/bmm arg
@@ -96,7 +99,9 @@ class AnnotateDecomposedMatmulPass(ExportPass):
 
             partition_output = list(partition.output_nodes[0].users)[0]
             quantized_output = partition_output.target in Q_OPS
-            if quantized_output:
+            if quantized_output and not all(
+                user.target in Q_OPS for user in matmul_node.users
+            ):
                 with graph_module.graph.inserting_after(matmul_node):
                     # Create q-node after matmul
                     q_node = create_node(
