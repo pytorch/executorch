@@ -64,6 +64,7 @@ dependencies=[
   "pytest",
   "pytest-xdist",
   "pytest-rerunfailures==15.1",
+  "pytest-json-report",
   "pyyaml",
   "ruamel.yaml",
   "sympy",

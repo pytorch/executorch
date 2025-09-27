@@ -44,6 +44,9 @@ class TestFlow:
     def should_skip_test(self, test_name: str) -> bool:
         return any(pattern in test_name for pattern in self.skip_patterns)
 
+    def __str__(self):
+        return self.name
+
 
 def all_flows() -> dict[str, TestFlow]:
     flows = []
