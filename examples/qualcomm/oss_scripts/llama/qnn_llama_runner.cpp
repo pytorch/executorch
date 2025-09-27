@@ -9,7 +9,7 @@
 /**
  * @file
  *
- * This tool can run Llama2 110M, Llama3.2 1B / 3B, Gemma3 1B,
+ * This tool can run Llama2 110M, Llama3.2 1B / 3B, Gemma 2B, Gemma3 1B,
  * phi4-mini-instruct, Qwen2.5 0.5B / 1.5B, Qwen3 0.6B / 1.7B, SmolLM2 135M,
  * SmolLM3 3B with Qualcomm AI Engine Direct.
  *
@@ -117,6 +117,7 @@ std::string get_formatted_prompt(
       formatted_prompt.append(
           "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n");
       break;
+    case example::DecoderModelVersion::kGemma:
     case example::DecoderModelVersion::kGemma3:
       formatted_prompt.append("<start_of_turn>user\n");
       formatted_prompt.append(prompt);
