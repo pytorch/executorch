@@ -6,11 +6,13 @@ import pathlib
 import platform
 import re
 import shutil
+import sys
 import tarfile
 import tempfile
 import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
+
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -241,6 +243,115 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
                     dst.write(src.read())
 
 
+####################
+# libc management
+####################
+
+GLIBC_ROOT = pathlib.Path("/tmp/glibc-2.34")
+GLIBC_LOADER = GLIBC_ROOT / "lib" / "ld-linux-x86-64.so.2"
+GLIBC_LIBDIR = GLIBC_ROOT / "lib"
+GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
+
+
+def _parse_ver_tuple(s: str) -> Tuple[int, int]:
+    parts = re.findall(r"\d+", s)
+    return (int(parts[0]), int(parts[1])) if len(parts) >= 2 else (0, 0)
+
+
+def _detect_glibc_version() -> Optional[Tuple[int, int]]:
+    for path in REQUIRED_LIBC_LIBS:
+        try:
+            out = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT)
+            first = out.decode(errors="ignore").split("\n", 1)[0]
+            m = re.search(r"version\s+(\d+\.\d+)", first, re.IGNORECASE)
+            if m:
+                vt = _parse_ver_tuple(m.group(1))
+                logger.info("[glibc] Found %s version %s", path, vt)
+                return vt
+        except Exception as e:
+            logger.info("[glibc] Skipped %s (%s)", path, e)
+    return None
+
+
+def _install_glibc_234():
+    """Download and build glibc 2.34 into /tmp/glibc-2.34 if missing."""
+    if GLIBC_LOADER.exists():
+        logger.info("[glibc] Found existing glibc-2.34 at %s", GLIBC_ROOT)
+        return
+
+    logger.info(
+        "[glibc] Installing glibc 2.34 into %s ... this may take a while", GLIBC_ROOT
+    )
+    url = "https://ftp.gnu.org/gnu/libc/glibc-2.34.tar.xz"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tarball = pathlib.Path(tmpdir) / "glibc-2.34.tar.xz"
+        urllib.request.urlretrieve(url, tarball)
+        logger.info("[glibc] Downloaded %s", url)
+        build_dir = pathlib.Path(tmpdir) / "glibc-build"
+        src_dir = pathlib.Path(tmpdir) / "glibc-2.34"
+        os.makedirs(build_dir, exist_ok=True)
+
+        # Extract
+        logger.info("[glibc] Extracting source...")
+        with tarfile.open(tarball, "r:xz") as tf:
+            tf.extractall(path=tmpdir)
+
+        # Configure and build
+        logger.info("[glibc] Configuring build...")
+        subprocess.check_call(
+            ["../glibc-2.34/configure", f"--prefix={GLIBC_ROOT}"],
+            cwd=build_dir,
+        )
+        logger.info("[glibc] Building (this may take several minutes)...")
+        subprocess.check_call(["make", "-j", str(os.cpu_count())], cwd=build_dir)
+        logger.info("[glibc] Installing...")
+        subprocess.check_call(["make", "install"], cwd=build_dir)
+
+    if GLIBC_LOADER.exists():
+        logger.info("[glibc] Successfully installed glibc 2.34 at %s", GLIBC_ROOT)
+    else:
+        logger.error(
+            "[glibc] Install finished but loader not found at %s", GLIBC_LOADER
+        )
+
+
+def _reexec_with_new_glibc_if_needed(min_required=(2, 29)):
+    if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
+        logger.debug("[glibc] Already re-executed once; skipping loop.")
+        return
+
+    vt = _detect_glibc_version()
+    if vt is None:
+        logger.warn("[glibc] Could not detect system glibc version.")
+    elif vt < min_required:
+        logger.warn("[glibc] System glibc %s < required %s", vt, min_required)
+    else:
+        logger.info("[glibc] System glibc %s >= required %s", vt, min_required)
+        return
+
+    _install_glibc_234()
+    if not GLIBC_LOADER.exists():
+        logger.error("[glibc] Loader still missing at %s", GLIBC_LOADER)
+        return
+
+    argv = [
+        str(GLIBC_LOADER),
+        "--library-path",
+        str(GLIBC_LIBDIR),
+        sys.executable,
+    ] + sys.argv
+    env = os.environ.copy()
+    env[GLIBC_REEXEC_GUARD] = "1"
+
+    logger.warn("[glibc] Re-executing under new loader: %s", argv)
+    os.execvpe(str(GLIBC_LOADER), argv, env)
+
+
+####################
+# libc++ management
+####################
+
 LLVM_VERSION = "14.0.0"
 LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
 LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
@@ -437,6 +548,10 @@ def install_qnn_sdk() -> bool:
     Returns:
         True if both steps succeeded (or were already satisfied), else False.
     """
+    logger.info("[QNN] Starting SDK installation")
+    # Re-exec with glibc 2.34 if needed.
+    _reexec_with_new_glibc_if_needed()
+
     if _ensure_libcxx_stack():
         if _ensure_qnn_sdk_lib():
             return True
