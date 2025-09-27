@@ -877,6 +877,11 @@ if(EXECUTORCH_BUILD_PYBIND)
       portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
                               INSTALL_RPATH "@loader_path/../../../torch/lib"
     )
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+      if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "16.0")
+        target_link_options(portable_lib PRIVATE -Wl,-ld_classic)
+      endif()
+    endif()
   else()
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
