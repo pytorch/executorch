@@ -18,6 +18,7 @@ from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_dir
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 
@@ -35,6 +36,10 @@ def _is_dequant_node(node: torch.fx.Node) -> bool:
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
     ]
+
+
+def is_not_qdq_node(node: torch.fx.Node) -> bool:
+    return not (_is_quant_node(node) or _is_dequant_node(node))
 
 
 class Target(Enum):
@@ -124,6 +129,23 @@ class NodeConverter(ABC):
         ) and cls._is_supported_on_target(
             node, target, parameters_mapping, custom_delegation_options
         )
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+    ):
+        """Check if the given `node` supports the assigned partitioning, which is stored  the `partition_list`. Child
+            classes can overwrite this method in case they have delegation restrictions based on the context defined by
+            the partitioning result.
+
+        :param node: torch.Node to check.
+        :param partition_list: List of proposed partitions.
+        :param custom_delegation_options: Custom user options which affect node delegation.
+        """
+        return True
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:
