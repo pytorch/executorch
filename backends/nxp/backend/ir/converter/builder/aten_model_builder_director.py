@@ -9,7 +9,7 @@ from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
 from executorch.backends.nxp.backend.ir.converter.conversion import translator
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
-from executorch.backends.nxp.backend.node_format_inference import NodeFormat
+from executorch.backends.nxp.backend.node_format import NodeFormat
 from torch.fx import Node
 from torch.nn import Parameter
 
