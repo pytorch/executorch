@@ -437,8 +437,7 @@ def install_qnn_sdk() -> bool:
     Returns:
         True if both steps succeeded (or were already satisfied), else False.
     """
-    if check_glibc_exist_and_validate():
-        if _ensure_libcxx_stack():
-            if _ensure_qnn_sdk_lib():
-                return True
+    if _ensure_libcxx_stack():
+        if _ensure_qnn_sdk_lib():
+            return True
     return False
