@@ -183,7 +183,6 @@ def test_quantized_rescale_u55(test_data: tuple[torch.Tensor, torch.Tensor]):
         test_data=test_data,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -199,6 +198,5 @@ def test_quantized_rescale_u85(test_data: tuple[torch.Tensor, torch.Tensor]):
         test_data=test_data,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()

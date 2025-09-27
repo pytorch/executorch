@@ -144,7 +144,10 @@ def test_add_tensor_tosa_INT_i32(test_data: input_t1):
 @common.XfailIfNoCorstone300
 def test_add_tensor_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
-        Add(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -153,7 +156,10 @@ def test_add_tensor_u55_INT(test_data: input_t1):
 @common.XfailIfNoCorstone320
 def test_add_tensor_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
-        Add(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Add(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -186,7 +192,10 @@ def test_add_tensor_tosa_INT_2(test_data: input_t2):
 @common.XfailIfNoCorstone300
 def test_add_tensor_u55_INT_2(test_data: input_t2):
     pipeline = EthosU55PipelineINT[input_t2](
-        Add2(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Add2(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -195,7 +204,10 @@ def test_add_tensor_u55_INT_2(test_data: input_t2):
 @common.XfailIfNoCorstone320
 def test_add_tensor_u85_INT_2(test_data: input_t2):
     pipeline = EthosU85PipelineINT[input_t2](
-        Add2(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Add2(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -290,7 +302,6 @@ def test_add_tensor_16a8w_u55_INT16(test_data: input_t1):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(
@@ -318,7 +329,6 @@ def test_add_tensor_16a8w_u85_INT16(test_data: input_t1):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(

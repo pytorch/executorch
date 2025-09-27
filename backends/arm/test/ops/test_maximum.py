@@ -61,7 +61,6 @@ def test_maximum_u55_INT(test_data: Tuple):
         Maximum(),
         test_data(),
         aten_op,
-        run_on_fvp=True,
     ).run()
 
 
@@ -72,7 +71,6 @@ def test_maximum_u85_INT(test_data: Tuple):
         Maximum(),
         test_data(),
         aten_op,
-        run_on_fvp=True,
     ).run()
 
 

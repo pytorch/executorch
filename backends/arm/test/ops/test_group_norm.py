@@ -118,7 +118,6 @@ def test_native_group_norm_u55_INT(test_data):
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
-        run_on_fvp=True,
         atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
     )
     pipeline.change_args("run_method_and_compare_outputs", atol=1, qtol=1)
@@ -142,7 +141,6 @@ def test_native_group_norm_u85_INT(test_data):
         test_data[1],
         test_data[0],
         "torch.ops.aten.sub.Tensor",  # 'sub' op arbitrarily chosen to confirm groupnorm was decomposed
-        run_on_fvp=True,
         atol=0.1,  # TODO: "MLETORCH-925: Fix numerical issue for aten.native_group_norm"
     )
     pipeline.change_args("run_method_and_compare_outputs", atol=1, qtol=1)

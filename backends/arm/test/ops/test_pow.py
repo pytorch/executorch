@@ -159,7 +159,6 @@ def test_pow_tensor_scalar_u55_INT(test_data: Pow_TensorScalar.input_t):
         (base,),
         Pow_TensorScalar.aten_op,
         Pow_TensorScalar.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -173,7 +172,6 @@ def test_pow_tensor_scalar_u85_INT(test_data: Pow_TensorScalar.input_t):
         (base,),
         Pow_TensorScalar.aten_op,
         Pow_TensorScalar.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
