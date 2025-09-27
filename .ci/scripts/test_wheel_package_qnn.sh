@@ -141,17 +141,17 @@ run_core_tests () {
   "$PIPBIN" install "$WHEEL_FILE"
   TORCH_VERSION=$(
   "$PYBIN" - <<'PY'
-import re, pathlib
-txt = pathlib.Path("torch_pin.py").read_text()
-print(re.search(r'TORCH_VERSION\s*=\s*["\']([^"\']+)["\']', txt).group(1))
+import runpy
+module_vars = runpy.run_path("torch_pin.py")
+print(module_vars["TORCH_VERSION"])
 PY
 )
 
   NIGHTLY_VERSION=$(
   "$PYBIN" - <<'PY'
-import re, pathlib
-txt = pathlib.Path("torch_pin.py").read_text()
-print(re.search(r'NIGHTLY_VERSION\s*=\s*["\']([^"\']+)["\']', txt).group(1))
+import runpy
+module_vars = runpy.run_path("torch_pin.py")
+print(module_vars["NIGHTLY_VERSION"])
 PY
 )
   echo "=== [$LABEL] Install torch==${TORCH_VERSION}.${NIGHTLY_VERSION} ==="
