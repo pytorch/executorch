@@ -276,37 +276,43 @@ def _detect_glibc_version() -> Optional[Tuple[int, int]]:
 def _install_glibc_234():
     """Download and build glibc 2.34 into /tmp/glibc-2.34 if missing."""
     if GLIBC_LOADER.exists():
-        logger.info("[glibc] Found existing glibc-2.34 at %s", GLIBC_ROOT)
+        logger.info("[glibc] Already installed at %s", GLIBC_ROOT)
         return
 
-    logger.info(
-        "[glibc] Installing glibc 2.34 into %s ... this may take a while", GLIBC_ROOT
-    )
+    logger.info("[glibc] Installing glibc 2.34 into %s ...", GLIBC_ROOT)
     url = "https://ftp.gnu.org/gnu/libc/glibc-2.34.tar.xz"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tarball = pathlib.Path(tmpdir) / "glibc-2.34.tar.xz"
+        logger.info("[glibc] Downloading %s", url)
         urllib.request.urlretrieve(url, tarball)
-        logger.info("[glibc] Downloaded %s", url)
-        build_dir = pathlib.Path(tmpdir) / "glibc-build"
-        src_dir = pathlib.Path(tmpdir) / "glibc-2.34"
-        os.makedirs(build_dir, exist_ok=True)
+        logger.info("[glibc] Downloaded %s", tarball)
 
-        # Extract
         logger.info("[glibc] Extracting source...")
         with tarfile.open(tarball, "r:xz") as tf:
             tf.extractall(path=tmpdir)
 
-        # Configure and build
-        logger.info("[glibc] Configuring build...")
-        subprocess.check_call(
-            ["../glibc-2.34/configure", f"--prefix={GLIBC_ROOT}"],
-            cwd=build_dir,
-        )
-        logger.info("[glibc] Building (this may take several minutes)...")
-        subprocess.check_call(["make", "-j", str(os.cpu_count())], cwd=build_dir)
-        logger.info("[glibc] Installing...")
-        subprocess.check_call(["make", "install"], cwd=build_dir)
+        build_dir = pathlib.Path(tmpdir) / "glibc-build"
+        os.makedirs(build_dir, exist_ok=True)
+
+        env = os.environ.copy()
+        # Remove LD_LIBRARY_PATH to satisfy configure checks
+        env.pop("LD_LIBRARY_PATH", None)
+
+        # Configure
+        cmd = ["../glibc-2.34/configure", f"--prefix={GLIBC_ROOT}"]
+        logger.info("[glibc] Running: %s", " ".join(cmd))
+        subprocess.check_call(cmd, cwd=build_dir, env=env)
+
+        # Build
+        cmd = ["make", "-j", str(os.cpu_count())]
+        logger.info("[glibc] Running: %s", " ".join(cmd))
+        subprocess.check_call(cmd, cwd=build_dir, env=env)
+
+        # Install
+        cmd = ["make", "install"]
+        logger.info("[glibc] Running: %s", " ".join(cmd))
+        subprocess.check_call(cmd, cwd=build_dir, env=env)
 
     if GLIBC_LOADER.exists():
         logger.info("[glibc] Successfully installed glibc 2.34 at %s", GLIBC_ROOT)
