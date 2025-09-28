@@ -65,18 +65,18 @@ cd "$BUILD_DIR"
 
 # Unset it to keep glibc configure happy
 unset LD_LIBRARY_PATH
-
+CFLAGS="-O2 -fPIC -fcommon \
+        -Wno-error=array-parameter \
+        -Wno-error=array-bounds \
+        -Wno-error=maybe-uninitialized \
+        -Wno-error=zero-length-bounds \
+        -Wno-error=stringop-overflow \
+        -Wno-error=deprecated-declarations \
+        -Wno-error" \
 ../glibc-$GLIBC_VERSION/configure \
-  --prefix="$PREFIX" \
-  --without-selinux \
-  CFLAGS="-O2 -fPIC -fcommon \
-          -Wno-error=array-parameter \
-          -Wno-error=array-bounds \
-          -Wno-error=maybe-uninitialized \
-          -Wno-error=zero-length-bounds \
-          -Wno-error=stringop-overflow \
-          -Wno-error=deprecated-declarations \
-          -Wno-error"
+    --prefix="$PREFIX" \
+    --without-selinux
+
 
 make -j"$(nproc)"
 make install
