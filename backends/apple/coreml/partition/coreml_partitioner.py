@@ -27,6 +27,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
+from torch.fx.passes.infra.partitioner import Partition
 
 logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
@@ -180,6 +181,215 @@ Do not file an issue with ExecuTorch for op support.
                 + node.op
             )
             return False
+
+
+class SingleOpCoreMLPartitioner(Partitioner):
+    """
+    CoreML partitioner that creates individual call_delegate nodes for each operation,
+    with special handling for 4-bit weight-only quantization patterns (dequantize_affine + linear).
+    """
+
+    def __init__(
+        self,
+        *,
+        skip_ops_for_coreml_delegation: Optional[List[str]] = None,
+        compile_specs: Optional[List[CompileSpec]] = None,
+        take_over_mutable_buffer: Optional[bool] = True,
+        take_over_constant_data: bool = True,
+    ) -> None:
+        if skip_ops_for_coreml_delegation is None:
+            skip_ops_for_coreml_delegation = []
+        self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
+
+        self.delegation_spec = DelegationSpec(
+            backend_id=CoreMLBackend.__name__,
+            compile_specs=compile_specs if compile_specs is not None else [],
+        )
+        self.take_over_mutable_buffer = take_over_mutable_buffer
+        self.take_over_constant_data = take_over_constant_data
+        self._logged_msgs = set()
+
+    def _is_dequantize_affine_node(self, node: torch.fx.Node) -> bool:
+        """Check if node is a dequantize_affine operation."""
+        if node.op != "call_function":
+            return False
+
+        # Check for the actual torchao.dequantize_affine operation
+        return str(node.target) == "torchao.dequantize_affine.default"
+
+    def _is_linear_node(self, node: torch.fx.Node) -> bool:
+        """Check if node is a linear operation."""
+        if node.op != "call_function":
+            return False
+
+        # Check for the actual aten.linear operation
+        return str(node.target) == "aten.linear.default"
+
+    def _is_embedding_node(self, node: torch.fx.Node) -> bool:
+        """Check if node is an embedding operation."""
+        if node.op != "call_function":
+            return False
+
+        # Check for the actual aten.embedding operation
+        return str(node.target) == "aten.embedding.default"
+
+    def _is_4bit_weight_only_pattern(self, dequant_node: torch.fx.Node, consumer_node: torch.fx.Node) -> bool:
+        """
+        Check if the dequantize_affine + consumer pattern represents 4-bit weight-only quantization.
+        This checks the quant_min and quant_max parameters of the dequantize_affine node.
+        Consumer can be either linear or embedding.
+        """
+        if not self._is_dequantize_affine_node(dequant_node):
+            return False
+
+        # Check if consumer is either linear or embedding
+        if not (self._is_linear_node(consumer_node) or self._is_embedding_node(consumer_node)):
+            return False
+
+        # Check if dequantize_affine output feeds into consumer input
+        if dequant_node not in consumer_node.all_input_nodes:
+            return False
+
+        # Check for 4-bit quantization parameters (quant_min=-8, quant_max=7)
+        if len(dequant_node.args) >= 6:
+            try:
+                quant_min = dequant_node.args[5]
+                quant_max = dequant_node.args[6] if len(dequant_node.args) > 6 else None
+
+                # Handle case where parameters might be nodes vs constants
+                if hasattr(quant_min, 'meta') and 'val' in quant_min.meta:
+                    quant_min = quant_min.meta['val']
+                if hasattr(quant_max, 'meta') and 'val' in quant_max.meta:
+                    quant_max = quant_max.meta['val']
+
+                return quant_min == -8 and quant_max == 7
+            except (IndexError, AttributeError, TypeError):
+                return False
+
+        return False
+
+    def _find_4bit_patterns(self, graph_module: torch.fx.GraphModule) -> List[Tuple[torch.fx.Node, torch.fx.Node]]:
+        """Find all dequantize_affine + consumer patterns that represent 4-bit weight-only quantization."""
+        patterns = []
+
+        for node in graph_module.graph.nodes:
+            if self._is_dequantize_affine_node(node):
+                # Look for linear or embedding nodes that use this dequantize_affine output
+                for user in node.users:
+                    if (self._is_linear_node(user) or self._is_embedding_node(user)) and self._is_4bit_weight_only_pattern(node, user):
+                        patterns.append((node, user))
+
+        return patterns
+
+    def _create_single_op_partitions(self, exported_program: ExportedProgram) -> List[Partition]:
+        """Create individual partitions for each supported operation."""
+        op_support = _OperatorsSupportedForCoreMLBackend(
+            self.skip_ops_for_coreml_delegation,
+            lower_full_graph=False,
+            log=True,
+        )
+
+        # Find 4-bit quantization patterns first
+        patterns_4bit = self._find_4bit_patterns(exported_program.graph_module)
+        pattern_nodes = set()
+        for dequant_node, consumer_node in patterns_4bit:
+            pattern_nodes.add(dequant_node)
+            pattern_nodes.add(consumer_node)
+
+        partitions = []
+        partition_id = 0
+
+        # Create combined partitions for 4-bit patterns (dequantize_affine + linear/embedding)
+        for dequant_node, consumer_node in patterns_4bit:
+            partition = Partition(id=partition_id, nodes=[dequant_node, consumer_node])
+            partitions.append(partition)
+            partition_id += 1
+
+        # Create single-node partitions for all other supported operations
+        for node in exported_program.graph_module.graph.nodes:
+            if node in pattern_nodes:
+                continue  # Skip nodes that are part of 4-bit patterns
+
+            if op_support.is_node_supported(None, node):
+                # Check if the node actually has tensor inputs/outputs to avoid empty delegates
+                # Skip operations that don't have meaningful computation (like constants)
+                if node.op == "get_attr":
+                    continue
+
+                partition = Partition(id=partition_id, nodes=[node])
+                partitions.append(partition)
+                partition_id += 1
+
+        return partitions
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        """Partition the graph into single-operation delegates with special 4-bit quantization handling."""
+        logger.info("SingleOpCoreMLPartitioner::partition")
+        partition_tags = {}
+
+        # Create single-op partitions with special 4-bit pattern handling
+        partition_list = self._create_single_op_partitions(exported_program)
+
+        for partition in partition_list:
+            for node in partition.nodes:
+                tag = f"tag{partition.id}"
+                node.meta["delegation_tag"] = tag
+                partition_tags[tag] = self.delegation_spec
+
+        if self.take_over_constant_data:
+            tag_constant_data(exported_program)
+        if self.take_over_mutable_buffer:
+            logger.info(
+                "Core ML partitioner will take over torch mutable buffer as Core ML state, "
+                "so if your model contains mutable buffer, "
+                "then you will need MacOS15+/iOS18+ to execute. "
+                "If you want your mutable buffer model to be compatible with older OS, "
+                "then please set `take_over_mutable_buffer=False`"
+            )
+            tag_mutated_buffer(exported_program)
+
+        return PartitionResult(
+            tagged_exported_program=exported_program, partition_tags=partition_tags
+        )
+
+    def log_once(self, msg: str) -> None:
+        if msg not in self._logged_msgs:
+            logging.info(msg)
+            self._logged_msgs.add(msg)
+
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        """Reuse the same logic as the original CoreMLPartitioner."""
+        do_not_decompose = []
+        op_support = _OperatorsSupportedForCoreMLBackend(
+            self.skip_ops_for_coreml_delegation,
+            lower_full_graph=False,
+            log=False,
+        )
+
+        do_not_decompose_blocklist = [
+            torch.ops.aten.triu.default,
+            torch.ops.aten.tril.default,
+            torch.ops.aten.repeat_interleave.self_int,
+            torch.ops.aten.repeat_interleave.self_Tensor,
+        ]
+        for node in ep.graph.nodes:
+            if node.op == "call_function" and isinstance(
+                node.target, torch._ops.OpOverload
+            ):
+                try:
+                    if (
+                        op_support.is_node_supported(None, node)
+                        and node.target not in do_not_decompose_blocklist
+                        and not _is_view_op(node.target)
+                    ):
+                        do_not_decompose.append(node.target)
+                except Exception as e:
+                    self.log_once(
+                        f"Encountered exception when checking node support, treating node as unsupported: {e}"
+                    )
+        return do_not_decompose, None
 
 
 class CoreMLPartitioner(Partitioner):

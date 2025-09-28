@@ -14,8 +14,15 @@ import torch
 import torchvision
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
-from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner, SingleOpCoreMLPartitioner
+from executorch.backends.apple.coreml.test.test_coreml_utils import (
+    IS_VALID_TEST_RUNTIME,
+)
 from executorch.exir.backend.utils import format_delegated_graph
+from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
+
+if IS_VALID_TEST_RUNTIME:
+    from executorch.runtime import Runtime
 
 
 @torch.library.custom_op("unsupported::linear", mutates_args=())
@@ -47,6 +54,30 @@ if _TEST_RUNTIME:
 
 class TestCoreMLPartitioner(unittest.TestCase):
     edge_compile_config = executorch.exir.EdgeCompileConfig()
+
+    def _coreml_partitioner(self, *, minimum_deployment_target=ct.target.iOS18):
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=minimum_deployment_target
+        )
+        return CoreMLPartitioner(compile_specs=compile_specs)
+
+    def _single_op_coreml_partitioner(self, *, minimum_deployment_target=ct.target.iOS18):
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=minimum_deployment_target
+        )
+        return SingleOpCoreMLPartitioner(compile_specs=compile_specs)
+
+    def _compare_outputs(self, executorch_program, eager_program, example_inputs):
+        if not IS_VALID_TEST_RUNTIME:
+            return
+        runtime = Runtime.get()
+        program = runtime.load_program(executorch_program.buffer)
+        method = program.load_method("forward")
+        et_outputs = method.execute(*example_inputs)[0]
+        eager_outputs = eager_program(*example_inputs)
+        self.assertTrue(
+            torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
+        )
 
     def test_add_sub_skip_mm(self):
         class Model(torch.nn.Module):
@@ -336,9 +367,434 @@ class TestCoreMLPartitioner(unittest.TestCase):
                 torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
             )
 
+    def test_single_op_partitioner_basic(self):
+        """Test that SingleOpCoreMLPartitioner creates individual delegates for each operation."""
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(10, 20)
+                self.linear2 = torch.nn.Linear(20, 5)
+
+            def forward(self, x):
+                x = self.linear1(x)
+                x = torch.relu(x)
+                x = self.linear2(x)
+                return x
+
+        model = SimpleModel()
+        model.eval()
+        example_inputs = (torch.randn(1, 10),)
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Test original partitioner - should create fewer delegates
+        delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._coreml_partitioner()],
+        )
+
+        original_delegates = [
+            node.target.__name__
+            for node in delegated_program_manager.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+
+        # Test single op partitioner - should create more delegates
+        delegated_program_manager_single = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        single_op_delegates = [
+            node.target.__name__
+            for node in delegated_program_manager_single.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+
+        # SingleOpCoreMLPartitioner should create more individual delegates
+        self.assertGreater(len(single_op_delegates), len(original_delegates))
+        self.assertGreaterEqual(len(single_op_delegates), 3)  # At least linear1, relu, linear2
+
+        # Test to_executorch and compare outputs
+        et_prog_original = delegated_program_manager.to_executorch()
+        et_prog_single_op = delegated_program_manager_single.to_executorch()
+
+        self._compare_outputs(et_prog_original, model, example_inputs)
+        self._compare_outputs(et_prog_single_op, model, example_inputs)
+
+
+    def test_single_op_partitioner_skip_get_attr(self):
+        """Test that get_attr nodes are properly skipped."""
+        class ModelWithConstants(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("constant", torch.ones(5))
+                self.linear = torch.nn.Linear(5, 3)
+
+            def forward(self, x):
+                x = x + self.constant
+                return self.linear(x)
+
+        model = ModelWithConstants()
+        model.eval()
+        example_inputs = (torch.randn(1, 5),)
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Should not fail due to get_attr nodes
+        delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        # Check that we have delegates created
+        delegates = [
+            node for node in delegated_program_manager.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+
+        self.assertGreater(len(delegates), 0)
+
+        # Test to_executorch
+        et_prog = delegated_program_manager.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_single_op_partitioner_with_skipped_ops(self):
+        """Test SingleOpCoreMLPartitioner with skip_ops_for_coreml_delegation."""
+        class ModelWithMM(torch.nn.Module):
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        model = ModelWithMM()
+        model.eval()
+        example_inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Create partitioner with skipped ops
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18
+        )
+        partitioner = SingleOpCoreMLPartitioner(
+            skip_ops_for_coreml_delegation=["aten.mm.default"],
+            compile_specs=compile_specs
+        )
+
+        delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[partitioner],
+        )
+
+        call_functions = [
+            node.target.__name__
+            for node in delegated_program_manager.exported_program().graph.nodes
+            if node.op == "call_function"
+        ]
+
+        # Should have mm.default not delegated, but add.Tensor delegated
+        self.assertIn("aten.mm.default", call_functions)
+        self.assertIn("executorch_call_delegate", call_functions)
+
+        # Test to_executorch
+        et_prog = delegated_program_manager.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_single_op_partitioner_multiple_ops_separate_delegates(self):
+        """Test that multiple different operations create separate call_delegate nodes."""
+        class MultiOpModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(10, 15)
+                self.linear2 = torch.nn.Linear(15, 20)
+                self.linear3 = torch.nn.Linear(20, 5)
+
+            def forward(self, x):
+                # This should create separate delegates for:
+                # linear1, relu, linear2, sigmoid, linear3, tanh
+                x = self.linear1(x)
+                x = torch.relu(x)
+                x = self.linear2(x)
+                x = torch.sigmoid(x)
+                x = self.linear3(x)
+                x = torch.tanh(x)
+                return x
+
+        model = MultiOpModel()
+        model.eval()
+        example_inputs = (torch.randn(1, 10),)
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Test SingleOpCoreMLPartitioner
+        delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        delegates = [
+            node for node in delegated_program_manager.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+
+        # Should have at least 6 separate delegates (3 linear + 3 activation functions)
+        self.assertGreaterEqual(len(delegates), 6)
+
+        # Compare with original partitioner which should create fewer delegates
+        delegated_program_manager_orig = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._coreml_partitioner()],
+        )
+
+        original_delegates = [
+            node for node in delegated_program_manager_orig.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+
+        # SingleOp should create more delegates than original
+        self.assertGreater(len(delegates), len(original_delegates))
+
+        # Test to_executorch and compare outputs
+        et_prog_single = delegated_program_manager.to_executorch()
+        et_prog_orig = delegated_program_manager_orig.to_executorch()
+
+        self._compare_outputs(et_prog_single, model, example_inputs)
+        self._compare_outputs(et_prog_orig, model, example_inputs)
+
+    def test_single_op_partitioner_conv_ops_separate_delegates(self):
+        """Test that convolution operations create separate delegates."""
+        class ConvModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(3, 16, 3, padding=1)
+                self.conv2 = torch.nn.Conv2d(16, 32, 3, padding=1)
+
+            def forward(self, x):
+                x = self.conv1(x)
+                x = torch.relu(x)
+                x = torch.max_pool2d(x, 2)
+                x = self.conv2(x)
+                x = torch.relu(x)
+                return x
+
+        model = ConvModel()
+        model.eval()
+        example_inputs = (torch.randn(1, 3, 32, 32),)
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        delegates = [
+            node for node in delegated_program_manager.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+
+        # Should have separate delegates for conv1, relu, max_pool2d, conv2, relu
+        self.assertGreaterEqual(len(delegates), 5)
+
+        # Test to_executorch
+        et_prog = delegated_program_manager.to_executorch()
+        self._compare_outputs(et_prog, model, example_inputs)
+
+    def test_single_op_partitioner_4bit_weight_only_linear(self):
+        """Test 4-bit weight-only quantized linear layers with SingleOpCoreMLPartitioner."""
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear1 = torch.nn.Linear(64, 128)  # Use sizes divisible by block size
+                self.linear2 = torch.nn.Linear(128, 32)
+
+            def forward(self, x):
+                x = self.linear1(x)
+                x = torch.relu(x)
+                x = self.linear2(x)
+                return x
+
+        model = TestModel()
+        model.eval()
+        example_inputs = (torch.randn(1, 64),)
+
+        # Apply 4-bit weight-only quantization to linear layers
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+        )
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Test with SingleOpCoreMLPartitioner
+        delegated_program_single = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        # Test with original CoreMLPartitioner
+        delegated_program_orig = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._coreml_partitioner()],
+        )
+
+        # Check that both work
+        for node in delegated_program_single.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        for node in delegated_program_orig.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        # Test to_executorch and compare outputs
+        et_prog_single = delegated_program_single.to_executorch()
+        et_prog_orig = delegated_program_orig.to_executorch()
+
+        self._compare_outputs(et_prog_single, model, example_inputs)
+        self._compare_outputs(et_prog_orig, model, example_inputs)
+
+    def test_single_op_partitioner_4bit_embedding(self):
+        """Test 4-bit weight-only quantized embedding layers with SingleOpCoreMLPartitioner."""
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(64, 128)
+                self.linear = torch.nn.Linear(128, 256)
+
+            def forward(self, x):
+                x = self.embedding(x)
+                x = self.linear(x)
+                return x
+
+        model = TestModel()
+        model.eval()
+        example_inputs = (torch.LongTensor([0]),)
+
+        # Apply 4-bit weight-only quantization to embedding layer
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Test with SingleOpCoreMLPartitioner
+        delegated_program_single = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        # Test with original CoreMLPartitioner
+        delegated_program_orig = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._coreml_partitioner()],
+        )
+
+        # Check that both work
+        for node in delegated_program_single.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        for node in delegated_program_orig.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        # Test to_executorch and compare outputs
+        et_prog_single = delegated_program_single.to_executorch()
+        et_prog_orig = delegated_program_orig.to_executorch()
+
+        self._compare_outputs(et_prog_single, model, example_inputs)
+        self._compare_outputs(et_prog_orig, model, example_inputs)
+
+    def test_single_op_partitioner_mixed_4bit_embedding_and_linear(self):
+        """Test model with both 4-bit embedding and 4-bit linear quantization."""
+        class MixedQuantModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.embedding = torch.nn.Embedding(64, 128)
+                self.linear1 = torch.nn.Linear(128, 256)
+                self.linear2 = torch.nn.Linear(256, 128)
+
+            def forward(self, x):
+                x = self.embedding(x)
+                x = self.linear1(x)
+                x = torch.relu(x)
+                x = self.linear2(x)
+                return x
+
+        model = MixedQuantModel()
+        model.eval()
+        example_inputs = (torch.LongTensor([0]),)
+
+        # Apply 4-bit quantization to embedding
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            lambda m, fqn: isinstance(m, torch.nn.Embedding),
+        )
+
+        # Apply 4-bit quantization to linear layers
+        quantize_(
+            model,
+            IntxWeightOnlyConfig(weight_dtype=torch.int4, granularity=PerGroup(32)),
+            lambda m, fqn: isinstance(m, torch.nn.Linear),
+        )
+
+        exported_program = torch.export.export(model, example_inputs, strict=True)
+
+        # Test with SingleOpCoreMLPartitioner
+        delegated_program_single = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._single_op_coreml_partitioner()],
+        )
+
+        # Test with original CoreMLPartitioner
+        delegated_program_orig = executorch.exir.to_edge_transform_and_lower(
+            exported_program,
+            partitioner=[self._coreml_partitioner()],
+        )
+
+        # Check that both work
+        for node in delegated_program_single.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        for node in delegated_program_orig.exported_program().graph.nodes:
+            if node.op == "call_function":
+                assert node.target.__name__ in [
+                    "executorch_call_delegate",
+                    "getitem",
+                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+
+        # Test to_executorch and compare outputs
+        et_prog_single = delegated_program_single.to_executorch()
+        et_prog_orig = delegated_program_orig.to_executorch()
+
+        self._compare_outputs(et_prog_single, model, example_inputs)
+        self._compare_outputs(et_prog_orig, model, example_inputs)
+
 
 if __name__ == "__main__":
     test_runner = TestCoreMLPartitioner()
+    # Original CoreMLPartitioner tests
     test_runner.test_add_sub_skip_mm()
     test_runner.test_vit_skip_conv()
     test_runner.test_ops_to_not_decompose()
@@ -346,3 +802,13 @@ if __name__ == "__main__":
     test_runner.test_lower_full_graph()
     # test_runner.test_symint_arg()
     test_runner.test_take_over_constant_data_false()
+
+    # SingleOpCoreMLPartitioner tests
+    test_runner.test_single_op_partitioner_basic()
+    test_runner.test_single_op_partitioner_skip_get_attr()
+    test_runner.test_single_op_partitioner_with_skipped_ops()
+    test_runner.test_single_op_partitioner_multiple_ops_separate_delegates()
+    test_runner.test_single_op_partitioner_conv_ops_separate_delegates()
+    test_runner.test_single_op_partitioner_4bit_weight_only_linear()
+    test_runner.test_single_op_partitioner_4bit_embedding()
+    test_runner.test_single_op_partitioner_mixed_4bit_embedding_and_linear()
