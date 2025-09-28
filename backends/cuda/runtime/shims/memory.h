@@ -44,8 +44,16 @@ AOTITorchError aoti_torch_empty_strided(
     int32_t device_index,
     Tensor** ret_new_tensor);
 
+/**
+ * Deletes a tensor object and frees its associated memory.
+ *
+ * @param tensor Pointer to the tensor object to be deleted
+ * @return AOTITorchError error code (Error::Ok on success, or an error code on
+ * failure)
+ */
+AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor);
+
 // Function to clear all tensors from internal storage
-// TODO(gasoonjia): reuse aoti_torch_delete_tensor_object to destory tensors
 void clear_all_tensors();
 
 } // extern "C"
