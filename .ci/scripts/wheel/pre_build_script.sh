@@ -72,10 +72,12 @@ CFLAGS="-O2 -fPIC -fcommon \
         -Wno-error=zero-length-bounds \
         -Wno-error=stringop-overflow \
         -Wno-error=deprecated-declarations \
+        -Wno-error=use-after-free \
         -Wno-error" \
 ../glibc-$GLIBC_VERSION/configure \
     --prefix="$PREFIX" \
     --without-selinux
+
 
 
 make -j"$(nproc)"
