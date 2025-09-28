@@ -45,36 +45,38 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
-# Print GCC version (just the number)
 echo "GCC version: $(gcc -dumpfullversion)"
 
-# Version / directories
 GLIBC_VERSION=2.29
-PREFIX=/tmp/glibc-$GLIBC_VERSION
+PREFIX=/tmp/glibc-install-$GLIBC_VERSION
 BUILD_DIR=/tmp/glibc-build
 TARBALL=/tmp/glibc-$GLIBC_VERSION.tar.xz
 SRC_DIR=/tmp/glibc-$GLIBC_VERSION
 
-# Clean old dirs/files if they exist
 rm -rf "$PREFIX" "$BUILD_DIR" "$SRC_DIR" "$TARBALL"
 mkdir -p "$BUILD_DIR"
 
-# Download source tarball into /tmp
 MIRROR=https://ftpmirror.gnu.org/gnu/libc
 curl -L "$MIRROR/glibc-$GLIBC_VERSION.tar.xz" -o "$TARBALL"
 
-# Extract into /tmp
 tar -C /tmp -xf "$TARBALL"
 
-# Configure with relaxed flags
 cd "$BUILD_DIR"
-CFLAGS="-O2 -fPIC -fcommon -Wno-error=array-parameter -Wno-error=stringop-overflow -Wno-error" \
-  ../glibc-$GLIBC_VERSION/configure --prefix="$PREFIX"
 
-# Build & install
-make -j"$(nproc)" CFLAGS="$CFLAGS"
+../glibc-$GLIBC_VERSION/configure \
+  --prefix="$PREFIX" \
+  --without-selinux \
+  CFLAGS="-O2 -fPIC -fcommon \
+          -Wno-error=array-parameter \
+          -Wno-error=array-bounds \
+          -Wno-error=maybe-uninitialized \
+          -Wno-error=zero-length-bounds \
+          -Wno-error=stringop-overflow \
+          -Wno-error=deprecated-declarations \
+          -Wno-error"
+
+make -j"$(nproc)"
 make install
 
-# Quick check
 "$PREFIX/lib/ld-2.29.so" --version || true
 "$PREFIX/lib/libc.so.6" --version || true
