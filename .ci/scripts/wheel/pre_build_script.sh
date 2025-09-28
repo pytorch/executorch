@@ -45,38 +45,36 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
-#!/usr/bin/env bash
-set -euxo pipefail
+# Print GCC version (just the number)
+echo "GCC version: $(gcc -dumpfullversion)"
 
-echo "GCC version:"
-gcc --version
-
+# Version / directories
 GLIBC_VERSION=2.29
 PREFIX=/tmp/glibc-$GLIBC_VERSION
 BUILD_DIR=/tmp/glibc-build
+TARBALL=/tmp/glibc-$GLIBC_VERSION.tar.xz
+SRC_DIR=/tmp/glibc-$GLIBC_VERSION
 
-# Clean old dirs if they exist
-rm -rf "$PREFIX" "$BUILD_DIR"
+# Clean old dirs/files if they exist
+rm -rf "$PREFIX" "$BUILD_DIR" "$SRC_DIR" "$TARBALL"
 mkdir -p "$BUILD_DIR"
 
-# Download
+# Download source tarball into /tmp
 MIRROR=https://ftpmirror.gnu.org/gnu/libc
-curl -L $MIRROR/glibc-$GLIBC_VERSION.tar.xz -o glibc-$GLIBC_VERSION.tar.xz
-# curl -sSL https://ftp.gnu.org/gnu/libc/glibc-$GLIBC_VERSION.tar.xz -o /tmp/glibc-$GLIBC_VERSION.tar.xz
-tar -C /tmp -xf /tmp/glibc-$GLIBC_VERSION.tar.xz
+curl -L "$MIRROR/glibc-$GLIBC_VERSION.tar.xz" -o "$TARBALL"
 
-cd "$BUILD_DIR"
+# Extract into /tmp
+tar -C /tmp -xf "$TARBALL"
 
 # Configure with relaxed flags
+cd "$BUILD_DIR"
 CFLAGS="-O2 -fPIC -fcommon -Wno-error=array-parameter -Wno-error=stringop-overflow -Wno-error" \
-../glibc-$GLIBC_VERSION/configure --prefix="$PREFIX"
+  ../glibc-$GLIBC_VERSION/configure --prefix="$PREFIX"
 
-# Build
+# Build & install
 make -j"$(nproc)" CFLAGS="$CFLAGS"
-
-# Install
 make install
 
-# Check
+# Quick check
 "$PREFIX/lib/ld-2.29.so" --version || true
 "$PREFIX/lib/libc.so.6" --version || true
