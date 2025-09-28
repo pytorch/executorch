@@ -324,7 +324,9 @@ def _install_glibc_234():
         # Install
         cmd = ["make", "install"]
         logger.info("[glibc] Running: %s", " ".join(cmd))
+        logger.info(f"[glibc] Installing into /tmp/glibc-{GLIBC_VERSION} ...")
         subprocess.check_call(cmd, cwd=build_dir, env=env)
+        logger.info("[glibc] Installation complete")
 
     if GLIBC_LOADER.exists():
         logger.info(
