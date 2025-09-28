@@ -44,3 +44,34 @@ fi
 # able to see the installed torch package.
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
+
+#!/usr/bin/env bash
+set -euxo pipefail
+
+GLIBC_VERSION=2.29
+PREFIX=/tmp/glibc-$GLIBC_VERSION
+BUILD_DIR=/tmp/glibc-build
+
+# Clean old dirs if they exist
+rm -rf "$PREFIX" "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+
+# Download
+curl -sSL https://ftp.gnu.org/gnu/libc/glibc-$GLIBC_VERSION.tar.xz -o /tmp/glibc-$GLIBC_VERSION.tar.xz
+tar -C /tmp -xf /tmp/glibc-$GLIBC_VERSION.tar.xz
+
+cd "$BUILD_DIR"
+
+# Configure with relaxed flags
+CFLAGS="-O2 -fPIC -fcommon -Wno-error=array-parameter -Wno-error=stringop-overflow -Wno-error" \
+../glibc-$GLIBC_VERSION/configure --prefix="$PREFIX"
+
+# Build
+make -j"$(nproc)" CFLAGS="$CFLAGS"
+
+# Install
+make install
+
+# Check
+"$PREFIX/lib/ld-2.29.so" --version || true
+"$PREFIX/lib/libc.so.6" --version || true

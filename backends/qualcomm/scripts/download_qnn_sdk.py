@@ -254,123 +254,23 @@ GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 
 
-def _parse_ver_tuple(s: str) -> Tuple[int, int]:
-    parts = re.findall(r"\d+", s)
-    return (int(parts[0]), int(parts[1])) if len(parts) >= 2 else (0, 0)
+def _check_tmp_glibc() -> bool:
+    """Check if glibc in /tmp was installed correctly and log its version."""
+    libc_path = pathlib.Path(f"/tmp/glibc-{GLIBC_VERSION}/lib/libc.so.6")
+    if not libc_path.exists():
+        logger.error("[glibc] Expected glibc at %s but file not found", libc_path)
+        return False
 
-
-def _detect_glibc_version() -> Optional[Tuple[int, int]]:
-    for path in REQUIRED_LIBC_LIBS:
-        try:
-            out = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT)
-            first = out.decode(errors="ignore").split("\n", 1)[0]
-            m = re.search(r"version\s+(\d+\.\d+)", first, re.IGNORECASE)
-            if m:
-                vt = _parse_ver_tuple(m.group(1))
-                logger.info("[glibc] Found %s version %s", path, vt)
-                return vt
-        except Exception as e:
-            logger.info("[glibc] Skipped %s (%s)", path, e)
-    return None
-
-
-def _install_glibc_234():
-    """Download and build glibc GLIBC_VERSION into /tmp/glibc-{GLIBC_VERSION} if missing."""
-    if GLIBC_LOADER.exists():
-        logger.info("[glibc] Already installed at %s", GLIBC_ROOT)
-        return
-
-    logger.info(f"[glibc] Installing glibc {GLIBC_VERSION} into %s ...", GLIBC_ROOT)
-    # url = "https://ftp.gnu.org/gnu/libc/glibc-2.34.tar.xz"
-    # url = "https://ftp.gnu.org/gnu/libc/glibc-2.36.tar.xz"
-    url = f"https://ftp.gnu.org/gnu/libc/glibc-{GLIBC_VERSION}.tar.xz"
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tarball = pathlib.Path(tmpdir) / f"glibc-{GLIBC_VERSION}.tar.xz"
-        logger.info("[glibc] Downloading %s", url)
-        urllib.request.urlretrieve(url, tarball)
-        logger.info("[glibc] Downloaded %s", tarball)
-
-        logger.info("[glibc] Extracting source...")
-        with tarfile.open(tarball, "r:xz") as tf:
-            tf.extractall(path=tmpdir)
-
-        build_dir = pathlib.Path(tmpdir) / "glibc-build"
-        os.makedirs(build_dir, exist_ok=True)
-
-        logger.info("[glibc] Configuring build...")
-        env = os.environ.copy()
-
-        # Remove LD_LIBRARY_PATH to satisfy configure checks
-        env.pop("LD_LIBRARY_PATH", None)
-
-        # Allow warnings (disable -Werror promoted by newer GCC)
-        # Add -fcommon to avoid "multiple definition" issues on some glibc versions
-        env["CFLAGS"] = (
-            "-O2 -fPIC -fcommon "
-            "-Wno-error=array-parameter "
-            "-Wno-error=stringop-overflow "
-            "-Wno-error"
+    try:
+        out = subprocess.check_output(
+            [str(libc_path), "--version"], stderr=subprocess.STDOUT
         )
-        env["CC"] = "gcc"
-
-        # Configure
-        cmd = [f"../glibc-{GLIBC_VERSION}/configure", f"--prefix={GLIBC_ROOT}"]
-        logger.info("[glibc] Running: %s", " ".join(cmd))
-        subprocess.check_call(cmd, cwd=build_dir, env=env)
-
-        # Build
-        cmd = ["make", "-j", str(os.cpu_count()), "CFLAGS=" + env["CFLAGS"]]
-        logger.info("[glibc] Running: %s", " ".join(cmd))
-        subprocess.check_call(cmd, cwd=build_dir, env=env)
-
-        # Install
-        cmd = ["make", "install"]
-        logger.info("[glibc] Running: %s", " ".join(cmd))
-        logger.info(f"[glibc] Installing into /tmp/glibc-{GLIBC_VERSION} ...")
-        subprocess.check_call(cmd, cwd=build_dir, env=env)
-        logger.info("[glibc] Installation complete")
-
-    if GLIBC_LOADER.exists():
-        logger.info(
-            f"[glibc] Successfully installed glibc {GLIBC_VERSION} at %s", GLIBC_ROOT
-        )
-    else:
-        logger.error(
-            "[glibc] Install finished but loader not found at %s", GLIBC_LOADER
-        )
-
-
-def _reexec_with_new_glibc_if_needed(min_required=(2, 29)):
-    if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
-        logger.debug("[glibc] Already re-executed once; skipping loop.")
-        return
-
-    vt = _detect_glibc_version()
-    if vt is None:
-        logger.warn("[glibc] Could not detect system glibc version.")
-    elif vt < min_required:
-        logger.warn("[glibc] System glibc %s < required %s", vt, min_required)
-    else:
-        logger.info("[glibc] System glibc %s >= required %s", vt, min_required)
-        return
-
-    _install_glibc_234()
-    if not GLIBC_LOADER.exists():
-        logger.error("[glibc] Loader still missing at %s", GLIBC_LOADER)
-        return
-
-    argv = [
-        str(GLIBC_LOADER),
-        "--library-path",
-        str(GLIBC_LIBDIR),
-        sys.executable,
-    ] + sys.argv
-    env = os.environ.copy()
-    env[GLIBC_REEXEC_GUARD] = "1"
-
-    logger.warn("[glibc] Re-executing under new loader: %s", argv)
-    os.execvpe(str(GLIBC_LOADER), argv, env)
+        first_line = out.decode(errors="ignore").split("\n", 1)[0]
+        logger.info("[glibc] Found custom glibc at %s: %s", libc_path, first_line)
+        return True
+    except Exception as e:
+        logger.error("[glibc] Failed to run %s --version: %s", libc_path, e)
+        return False
 
 
 ####################
@@ -575,7 +475,10 @@ def install_qnn_sdk() -> bool:
     """
     logger.info("[QNN] Starting SDK installation")
     # Re-exec with glibc 2.36 if needed.
-    _reexec_with_new_glibc_if_needed()
+    # Just check that pre-installed glibc is present and valid
+    if not _check_tmp_glibc():
+        logger.error("[glibc] Pre-installed glibc check failed. Exiting early.")
+        return False
 
     if _ensure_libcxx_stack():
         if _ensure_qnn_sdk_lib():
