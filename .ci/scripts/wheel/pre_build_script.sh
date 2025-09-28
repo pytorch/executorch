@@ -48,6 +48,9 @@ fi
 #!/usr/bin/env bash
 set -euxo pipefail
 
+echo "GCC version:"
+gcc --version
+
 GLIBC_VERSION=2.29
 PREFIX=/tmp/glibc-$GLIBC_VERSION
 BUILD_DIR=/tmp/glibc-build
