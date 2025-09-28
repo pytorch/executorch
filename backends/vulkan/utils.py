@@ -348,6 +348,8 @@ all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
 }
 
 MemoryLayoutSet = Set[VkMemoryLayout]
@@ -400,6 +402,12 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
         height = (height + 3) // 4
     elif layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
         channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4W4C:
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
+        height = (height + 3) // 4
+        width = (width + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -691,6 +699,8 @@ def make_filtered_tensor_repset(
 
 
 ## Convenience TensorRepSet definitions
+
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
