@@ -73,7 +73,9 @@ CFLAGS="-O2 -fPIC -fcommon \
         -Wno-error=stringop-overflow \
         -Wno-error=deprecated-declarations \
         -Wno-error=use-after-free \
-        -Wno-error" \
+        -Wno-error=builtin-declaration-mismatch \
+        -Wno-error"
+
 ../glibc-$GLIBC_VERSION/configure \
     --prefix="$PREFIX" \
     --without-selinux
