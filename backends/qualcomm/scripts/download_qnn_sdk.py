@@ -304,8 +304,12 @@ def _install_glibc_234():
         env.pop("LD_LIBRARY_PATH", None)
         # allow warnings
         # env["CFLAGS"] = "-O2 -Wno-error"
-        env["CFLAGS"] = "-O2 -Wno-error"  # prevent warnings-as-errors
-        env["CC"] = "gcc"  # explicit, avoids surprises
+        # env["CFLAGS"] = "-O2 -Wno-error"  # prevent warnings-as-errors
+        # env["CC"] = "gcc"  # explicit, avoids surprises
+        env["CFLAGS"] = (
+            "-O2 -Wno-error=array-parameter -Wno-error=stringop-overflow -Wno-error"
+        )
+        env["CC"] = "gcc"
 
         # Configure
         cmd = [f"../glibc-{GLIBC_VERSION}/configure", f"--prefix={GLIBC_ROOT}"]
