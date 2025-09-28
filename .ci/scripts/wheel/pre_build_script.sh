@@ -96,9 +96,38 @@ export CPPFLAGS="$COMMON_FLAGS"
     --without-selinux
 
 # Build and install
+# Build and install
 make -j"$(nproc)"
 make install
 
-# Check installed glibc
-"$PREFIX/lib/ld-2.29.so" --version || true
-"$PREFIX/lib/libc.so.6" --version || true
+echo ">>> Finished make install"
+echo ">>> PREFIX=$PREFIX"
+
+# List everything under $PREFIX
+echo ">>> ls -l $PREFIX"
+ls -l "$PREFIX" || true
+
+echo ">>> ls -l $PREFIX/lib"
+ls -l "$PREFIX/lib" || true
+
+echo ">>> ls -l $PREFIX/lib64"
+ls -l "$PREFIX/lib64" || true
+
+# Explicitly show libc/ld files
+echo ">>> Checking for libc.so.6"
+if [ -e "$PREFIX/lib/libc.so.6" ]; then
+    ls -l "$PREFIX/lib/libc.so.6"
+else
+    echo "libc.so.6 NOT FOUND in $PREFIX/lib"
+fi
+
+echo ">>> Checking for ld-2.29.so"
+if [ -e "$PREFIX/lib/ld-2.29.so" ]; then
+    ls -l "$PREFIX/lib/ld-2.29.so"
+else
+    echo "ld-2.29.so NOT FOUND in $PREFIX/lib"
+fi
+
+# Run version checks only if files exist
+[ -x "$PREFIX/lib/ld-2.29.so" ] && "$PREFIX/lib/ld-2.29.so" --version || echo "ld-2.29.so missing or not executable"
+[ -x "$PREFIX/lib/libc.so.6" ] && "$PREFIX/lib/libc.so.6" --version || echo "libc.so.6 missing or not executable"
