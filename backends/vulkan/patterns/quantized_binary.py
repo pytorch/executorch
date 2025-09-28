@@ -31,14 +31,16 @@ class QuantizedBinaryMatch(PatternMatch):
         if len(binary_node.args) > 2 and binary_node.args[2] is not None:
             # Alpha is typically a scalar value
             if isinstance(binary_node.args[2], (int, float)):
-                self.alpha = float(binary_node.args[2])
+                self.alpha = binary_node.args[2]
 
         # Identify input nodes - both should be dequantize nodes for static quantization
         if len(binary_node.args) < 2:
             return
 
         input_a_node = binary_node.args[0]
+        assert isinstance(input_a_node, torch.fx.Node)
         input_b_node = binary_node.args[1]
+        assert isinstance(input_b_node, torch.fx.Node)
 
         # Both arguments must be dequant nodes for static quantization
         if not utils.is_dequant_node(input_a_node) or not utils.is_dequant_node(
