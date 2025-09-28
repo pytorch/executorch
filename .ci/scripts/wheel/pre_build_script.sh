@@ -63,24 +63,27 @@ tar -C /tmp -xf "$TARBALL"
 
 cd "$BUILD_DIR"
 
-# Unset it to keep glibc configure happy
+# Unset to keep glibc configure happy
 unset LD_LIBRARY_PATH
-CFLAGS="-O2 -fPIC -fcommon \
-        -Wno-error=array-parameter \
-        -Wno-error=array-bounds \
-        -Wno-error=maybe-uninitialized \
-        -Wno-error=zero-length-bounds \
-        -Wno-error=stringop-overflow \
-        -Wno-error=deprecated-declarations \
-        -Wno-error=use-after-free \
-        -Wno-error=builtin-declaration-mismatch \
-        -Wno-error"
+
+# Suppress warnings that GCC 13+ promotes to errors
+COMMON_FLAGS="-O2 -fPIC -fcommon \
+    -Wno-error=array-parameter \
+    -Wno-error=array-bounds \
+    -Wno-error=maybe-uninitialized \
+    -Wno-error=zero-length-bounds \
+    -Wno-error=stringop-overflow \
+    -Wno-error=deprecated-declarations \
+    -Wno-error=use-after-free \
+    -Wno-error=builtin-declaration-mismatch \
+    -Wno-error"
+
+export CFLAGS="$COMMON_FLAGS"
+export CPPFLAGS="$COMMON_FLAGS"
 
 ../glibc-$GLIBC_VERSION/configure \
     --prefix="$PREFIX" \
     --without-selinux
-
-
 
 make -j"$(nproc)"
 make install
