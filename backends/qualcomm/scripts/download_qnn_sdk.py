@@ -247,7 +247,8 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 # libc management
 ####################
 
-GLIBC_ROOT = pathlib.Path("/tmp/glibc-2.36")
+GLIBC_VERSION = "2.29"
+GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-{GLIBC_VERSION}")
 GLIBC_LOADER = GLIBC_ROOT / "lib" / "ld-linux-x86-64.so.2"
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
@@ -274,17 +275,18 @@ def _detect_glibc_version() -> Optional[Tuple[int, int]]:
 
 
 def _install_glibc_234():
-    """Download and build glibc 2.36 into /tmp/glibc-2.36 if missing."""
+    """Download and build glibc GLIBC_VERSION into /tmp/glibc-{GLIBC_VERSION} if missing."""
     if GLIBC_LOADER.exists():
         logger.info("[glibc] Already installed at %s", GLIBC_ROOT)
         return
 
-    logger.info("[glibc] Installing glibc 2.36 into %s ...", GLIBC_ROOT)
+    logger.info(f"[glibc] Installing glibc {GLIBC_VERSION} into %s ...", GLIBC_ROOT)
     # url = "https://ftp.gnu.org/gnu/libc/glibc-2.34.tar.xz"
-    url = "https://ftp.gnu.org/gnu/libc/glibc-2.36.tar.xz"
+    # url = "https://ftp.gnu.org/gnu/libc/glibc-2.36.tar.xz"
+    url = f"https://ftp.gnu.org/gnu/libc/glibc-{GLIBC_VERSION}.tar.xz"
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        tarball = pathlib.Path(tmpdir) / "glibc-2.36.tar.xz"
+        tarball = pathlib.Path(tmpdir) / f"glibc-{GLIBC_VERSION}.tar.xz"
         logger.info("[glibc] Downloading %s", url)
         urllib.request.urlretrieve(url, tarball)
         logger.info("[glibc] Downloaded %s", tarball)
@@ -306,7 +308,7 @@ def _install_glibc_234():
         env["CC"] = "gcc"  # explicit, avoids surprises
 
         # Configure
-        cmd = ["../glibc-2.36/configure", f"--prefix={GLIBC_ROOT}"]
+        cmd = [f"../glibc-{GLIBC_VERSION}/configure", f"--prefix={GLIBC_ROOT}"]
         logger.info("[glibc] Running: %s", " ".join(cmd))
         subprocess.check_call(cmd, cwd=build_dir, env=env)
 
@@ -321,7 +323,9 @@ def _install_glibc_234():
         subprocess.check_call(cmd, cwd=build_dir, env=env)
 
     if GLIBC_LOADER.exists():
-        logger.info("[glibc] Successfully installed glibc 2.36 at %s", GLIBC_ROOT)
+        logger.info(
+            f"[glibc] Successfully installed glibc {GLIBC_VERSION} at %s", GLIBC_ROOT
+        )
     else:
         logger.error(
             "[glibc] Install finished but loader not found at %s", GLIBC_LOADER
