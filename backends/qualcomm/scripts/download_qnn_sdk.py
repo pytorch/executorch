@@ -300,14 +300,17 @@ def _install_glibc_234():
 
         logger.info("[glibc] Configuring build...")
         env = os.environ.copy()
+
         # Remove LD_LIBRARY_PATH to satisfy configure checks
         env.pop("LD_LIBRARY_PATH", None)
-        # allow warnings
-        # env["CFLAGS"] = "-O2 -Wno-error"
-        # env["CFLAGS"] = "-O2 -Wno-error"  # prevent warnings-as-errors
-        # env["CC"] = "gcc"  # explicit, avoids surprises
+
+        # Allow warnings (disable -Werror promoted by newer GCC)
+        # Add -fcommon to avoid "multiple definition" issues on some glibc versions
         env["CFLAGS"] = (
-            "-O2 -Wno-error=array-parameter -Wno-error=stringop-overflow -Wno-error"
+            "-O2 -fPIC -fcommon "
+            "-Wno-error=array-parameter "
+            "-Wno-error=stringop-overflow "
+            "-Wno-error"
         )
         env["CC"] = "gcc"
 
@@ -317,7 +320,7 @@ def _install_glibc_234():
         subprocess.check_call(cmd, cwd=build_dir, env=env)
 
         # Build
-        cmd = ["make", "-j", str(os.cpu_count())]
+        cmd = ["make", "-j", str(os.cpu_count()), "CFLAGS=" + env["CFLAGS"]]
         logger.info("[glibc] Running: %s", " ".join(cmd))
         subprocess.check_call(cmd, cwd=build_dir, env=env)
 
