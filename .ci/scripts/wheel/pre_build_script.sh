@@ -45,6 +45,8 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
+# Install glibc-2.29
+
 echo "GCC version: $(gcc -dumpfullversion)"
 
 GLIBC_VERSION=2.29
@@ -53,20 +55,27 @@ BUILD_DIR=/tmp/glibc-build
 TARBALL=/tmp/glibc-$GLIBC_VERSION.tar.xz
 SRC_DIR=/tmp/glibc-$GLIBC_VERSION
 
+# Clean old dirs
 rm -rf "$PREFIX" "$BUILD_DIR" "$SRC_DIR" "$TARBALL"
 mkdir -p "$BUILD_DIR"
 
-MIRROR=https://ftpmirror.gnu.org/gnu/libc
+# Download tarball from canonical GNU FTP (not ftpmirror)
+MIRROR=https://ftp.gnu.org/gnu/libc
 curl -L "$MIRROR/glibc-$GLIBC_VERSION.tar.xz" -o "$TARBALL"
 
+# Sanity check tarball
+ls -lh "$TARBALL"
+file "$TARBALL" || true
+
+# Extract
 tar -C /tmp -xf "$TARBALL"
 
 cd "$BUILD_DIR"
 
-# Unset to keep glibc configure happy
+# Unset LD_LIBRARY_PATH to satisfy glibc configure
 unset LD_LIBRARY_PATH
 
-# Suppress warnings that GCC 13+ promotes to errors
+# Suppress GCC 13+ warnings that break glibc-2.29
 COMMON_FLAGS="-O2 -fPIC -fcommon \
     -Wno-error=array-parameter \
     -Wno-error=array-bounds \
@@ -81,12 +90,15 @@ COMMON_FLAGS="-O2 -fPIC -fcommon \
 export CFLAGS="$COMMON_FLAGS"
 export CPPFLAGS="$COMMON_FLAGS"
 
+# Configure
 ../glibc-$GLIBC_VERSION/configure \
     --prefix="$PREFIX" \
     --without-selinux
 
+# Build and install
 make -j"$(nproc)"
 make install
 
+# Check installed glibc
 "$PREFIX/lib/ld-2.29.so" --version || true
 "$PREFIX/lib/libc.so.6" --version || true
