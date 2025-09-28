@@ -4,7 +4,7 @@ Instead of needing to manually write code to call torch.export(), use ExecuTorch
 
 ## Prerequisites
 
-The LLM export functionality requires the `pytorch_tokenizers` package. If you encounter a `ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install it from the ExecutorTorch source code:
+The LLM export functionality requires the `pytorch_tokenizers` package. If you encounter a `ModuleNotFoundError: No module named 'pytorch_tokenizers'` error, install it from the ExecuTorch source code:
 
 ```bash
 pip install -e ./extension/llm/tokenizers/

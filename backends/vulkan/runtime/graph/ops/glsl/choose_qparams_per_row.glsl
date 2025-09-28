@@ -19,6 +19,8 @@
 #define MAX_THREADS 256
 
 ${define_active_storage_type(STORAGE)}
+
+${define_required_extensions(DTYPE)}
 ${define_required_extensions("int8")}
 
 #extension GL_EXT_control_flow_attributes : require
@@ -126,8 +128,8 @@ void find_min_max_for_row(const int output_y) {
   const int X4 = div_4(input_sizes.x);
 
   // Initialize thread-local min/max
-  float local_min = 1e30;
-  float local_max = -1e30;
+  T local_min = T(1e30);
+  T local_max = T(-1e30);
 
   // Each thread processes elements along their assigned output_id with stride
   // NUM_WORKERS_PER_OUTPUT
@@ -187,7 +189,7 @@ void main() {
       calculate_scale_and_zero_point(
           local_min, local_max, quant_min, quant_max, scale, zero_point);
 
-      scales_out[i] = scale;
+      scales_out[i] = T(scale);
       zps_out[i] = zero_point;
     }
   }

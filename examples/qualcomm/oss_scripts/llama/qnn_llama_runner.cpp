@@ -10,8 +10,8 @@
  * @file
  *
  * This tool can run Llama2 110M, Llama3.2 1B / 3B, Gemma3 1B,
- * phi4-mini-instruct, Qwen2.5 0.5B / 1.5B, Qwen3 0.6B / 1.7B, Smollm2 135M with
- * Qualcomm AI Engine Direct.
+ * phi4-mini-instruct, Qwen2.5 0.5B / 1.5B, Qwen3 0.6B / 1.7B, SmolLM2 135M,
+ * SmolLM3 3B with Qualcomm AI Engine Direct.
  *
  */
 
@@ -155,11 +155,22 @@ std::string get_formatted_prompt(
       if (!system_prompt.empty()) {
         formatted_prompt.append("<|im_start|>system\n");
         formatted_prompt.append(system_prompt);
-        formatted_prompt.append("<|im_end|>\n\n");
+        formatted_prompt.append("<|im_end|>\n");
       }
       formatted_prompt.append("<|im_start|>user\n");
       formatted_prompt.append(prompt);
       formatted_prompt.append("<|im_end|>\n\n");
+      break;
+    case example::DecoderModelVersion::kSmollm3:
+      if (!system_prompt.empty()) {
+        formatted_prompt.append("<|im_start|>system\n");
+        formatted_prompt.append(system_prompt);
+        formatted_prompt.append("\n\n");
+      }
+      formatted_prompt.append("<|im_start|>user\n");
+      formatted_prompt.append(prompt);
+      formatted_prompt.append("<|im_end|>\n");
+      formatted_prompt.append("<|im_start|>assistant\n");
       break;
     default:
       ET_CHECK_MSG(false, "unsupported llama version");

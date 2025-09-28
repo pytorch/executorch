@@ -46,6 +46,23 @@ def test_mv2_tosa_FP():
     pipeline.run()
 
 
+def test_mv2_tosa_FP_channels_last():
+    input_tensor = model_inputs[0].to(memory_format=torch.channels_last)
+    pipeline = TosaPipelineFP[input_t](
+        mv2,
+        (input_tensor,),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    # Changing memory format leads to an unsupported as_strided_copy op being inserted into the graph,
+    # leading to a graph break.
+    pipeline.change_args(
+        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
+    )
+    pipeline.run()
+
+
 @common.parametrize("per_channel_quantization", quant_test_data)
 def test_mv2_tosa_INT(per_channel_quantization):
     pipeline = TosaPipelineINT[input_t](
@@ -110,11 +127,8 @@ def test_mv2_vgf_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+        run_on_vulkan_runtime=False,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
-    # )
     pipeline.run()
 
 
@@ -127,9 +141,6 @@ def test_mv2_vgf_FP():
         exir_op=[],
         tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
-    # )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()

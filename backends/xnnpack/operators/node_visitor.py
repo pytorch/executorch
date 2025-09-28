@@ -232,7 +232,7 @@ class NodeVisitor:
             if quant_params.dtype == torch.int32:
                 return XNNDatatype.xnn_datatype_qcint32
             elif quant_params.dtype == torch.int8:
-                if quant_params.is_per_channel_group:
+                if quant_params.per_channel_group:
                     # 4-bit per channel group quantized weights
                     # No 8-bit support yet
                     assert (
@@ -282,7 +282,7 @@ class NodeVisitor:
             buffer_idx = len(xnn_graph.constant_data)
             num_scales = scale.numel()
 
-            if quant_params.is_per_channel_group:
+            if quant_params.per_channel_group:
                 scale = scale.to(torch.bfloat16)
 
             num_bytes = scale.untyped_storage().nbytes()
@@ -300,7 +300,7 @@ class NodeVisitor:
                 scale_name, bytes(scale_array), CONSTANT_TENSOR_ALIGNMENT
             )
 
-            if quant_params.is_per_channel_group:
+            if quant_params.per_channel_group:
                 return PerChannelGroupQuant(
                     scale=[],
                     channel_dim=quant_params.axis,
@@ -335,7 +335,7 @@ class NodeVisitor:
     ) -> None:
         # Make sure things are lining up for per_channel_group quantization case
         # Has to be done this late because we don't have clean access to the actual tensor
-        assert quant_params.is_per_channel_group, "Not per_channel_group quantization"
+        assert quant_params.per_channel_group, "Not per_channel_group quantization"
         # linear weights will be in [oc, ic]. And per_channel quantization must be on axis 0
         num_groups = cast(torch.Tensor, quant_params.scale).shape[1]
         assert (

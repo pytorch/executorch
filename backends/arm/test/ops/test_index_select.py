@@ -174,8 +174,4 @@ def test_index_select_vgf_INT_rand(test_data: input_params):
         op.exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", inputs=test_input, atol=0.9, rtol=0.2, qtol=1
-    # )
     pipeline.run()

@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -11,6 +13,8 @@ from executorch.exir.pass_base import ExportPass
 
 class CastToInt32Pass(ExportPass):
     """Casts the input to int32 if it is not already and casts back the output to the original input dtype."""
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = {
         exir_ops.edge.aten.bitwise_left_shift.Tensor,

@@ -56,7 +56,7 @@ def main():
 
     # pte prefill image
     logging.warning("Image encoder started")
-    pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
+    pte_embeds_img = llava_module.run_method("vision_encoder", (resized,))[0]
     logging.warning("Image encoder finished")
     logging.warning("Image token prefill started")
     pte_prefill_img = llava_module.run_method(

@@ -54,13 +54,13 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-mediatek-sdk)
     MEDIATEK_SDK=yes
     CLANG_VERSION=12
-    ANDROID_NDK_VERSION=r27b
+    ANDROID_NDK_VERSION=r28c
     ;;
   executorch-ubuntu-22.04-clang12-android)
     LINTRUNNER=""
     CLANG_VERSION=12
     # From https://developer.android.com/ndk/downloads
-    ANDROID_NDK_VERSION=r27b
+    ANDROID_NDK_VERSION=r28c
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"

@@ -164,7 +164,6 @@ def emit_program(
             operators=[],
             delegates=[],
             operator_cache={},
-            delegate_cache={},
             emit_stacktrace=emit_stacktrace,
             emit_mutable_buffer_names=emit_mutable_buffer_names,
         )

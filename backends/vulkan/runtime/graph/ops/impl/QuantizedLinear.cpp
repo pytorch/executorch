@@ -77,6 +77,10 @@ utils::uvec3 quantized_linear_global_wg_size(
     M_per_tile = 1;
   }
 
+  if (shader.kernel_name.find("q8ta_q8csw_tiled") != std::string::npos) {
+    N_per_tile = 8;
+  }
+
   const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
   const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
 
@@ -802,20 +806,12 @@ void quantized_linear_impl(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
 
   // Allocate temporary tensor to store quantized and packed input
-
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(graph, fp_input);
-
-  const int64_t int_input_height = num_blocks_M;
-  const int64_t int_input_width = num_blocks_K * 4;
-
   TmpTensor packed_int_input(
       &graph,
-      {int_input_height, int_input_width},
-      vkapi::kInt,
+      graph.sizes_of(fp_input),
+      vkapi::kInt8x4,
       utils::kBuffer,
-      utils::kWidthPacked);
+      utils::kPackedInt8_4H4W);
 
   // Non dynamically quantized input case
   if (!input_quant_config.is_dynamic) {

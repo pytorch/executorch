@@ -7,7 +7,7 @@
 
 #!/bin/bash
 
-# ExecutorTorch Model Profiling Script
+# ExecuTorch Model Profiling Script
 #
 # This script automates the process of building executor_runner with profiling enabled,
 # running model inference with ETDump collection, and generating CSV profiling reports.

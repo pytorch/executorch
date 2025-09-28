@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from typing import Dict, List
 from unittest.mock import NonCallableMock, patch
 
@@ -77,7 +78,7 @@ class TestGenOpList(unittest.TestCase):
         gen_oplist.main(args)
         mock_dump_yaml.assert_called_once_with(
             ["aten::add", "aten::mul"],
-            output_path,
+            Path(output_path),
             None,
             {"aten::add": ["default"], "aten::mul": ["default"]},
             False,
@@ -100,7 +101,7 @@ class TestGenOpList(unittest.TestCase):
         gen_oplist.main(args)
         mock_dump_yaml.assert_called_once_with(
             ["aten::add", "aten::mul"],
-            output_path,
+            Path(output_path),
             None,
             {
                 "aten::add": [
@@ -129,7 +130,7 @@ class TestGenOpList(unittest.TestCase):
         gen_oplist.main(args)
         mock_dump_yaml.assert_called_once_with(
             ["aten::add.out", "aten::mul.out", "aten::relu.out"],
-            output_path,
+            Path(output_path),
             test_path,
             {
                 "aten::relu.out": ["default"],
@@ -153,7 +154,7 @@ class TestGenOpList(unittest.TestCase):
         gen_oplist.main(args)
         mock_dump_yaml.assert_called_once_with(
             ["aten::add", "aten::mul"],
-            output_path,
+            Path(output_path),
             None,
             {"aten::add": ["default"], "aten::mul": ["default"]},
             True,
@@ -164,7 +165,7 @@ class TestGenOpList(unittest.TestCase):
     ) -> None:
         op_list = ["aten::add", "aten::mul"]
         filename = os.path.join(self.temp_dir.name, "selected_operators.yaml")
-        gen_oplist._dump_yaml(op_list, filename, "model.pte")
+        gen_oplist._dump_yaml(op_list, Path(filename), "model.pte")
         self.assertTrue(os.path.isfile(filename))
         with open(filename) as f:
             es = yaml.safe_load(f)

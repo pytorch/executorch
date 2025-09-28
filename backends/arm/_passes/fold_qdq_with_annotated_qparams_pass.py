@@ -8,7 +8,7 @@
 
 import copy
 
-from typing import cast, Dict, Set, Tuple
+from typing import cast, Dict, Set, Tuple, Type
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
@@ -99,6 +99,8 @@ class FoldAndAnnotateQParamsPass(ArmPass):
     The quantization parameters for x_dq and aten_add_tensor_q are stored in meta for the aten_add_tensor node.
 
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
@@ -210,6 +212,8 @@ class QuantizeOperatorArguments(ExportPass):
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         # Loop over the graph nodes and find full.default nodes.
@@ -256,6 +260,8 @@ class RetraceFoldedDtypesPass(ExportPass):
     This pass changes types of ops in self.targeted_ops, such as sum, so that
     the output type of that matches the type of the output_qparams.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops: Set[EdgeOpOverload] = {
         exir_ops.edge.aten.sum.dim_IntList,

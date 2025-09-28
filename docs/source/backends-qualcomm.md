@@ -385,7 +385,7 @@ example_inputs = (torch.randn(1, 3, 224, 224),)  # Example input tensor
 Choose between quantization approaches, post training quantization (PTQ) or quantization aware training (QAT):
 ```python
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-from torch.ao.quantization.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
 
 quantizer = QnnQuantizer()
 m = torch.export.export(model, example_inputs, strict=True).module()

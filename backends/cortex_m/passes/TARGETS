@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name="replace_quant_nodes_pass",
     srcs=[
         "replace_quant_nodes_pass.py",
@@ -24,7 +24,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name="passes_utils",
     srcs=[
         "passes_utils.py",

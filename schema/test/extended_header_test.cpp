@@ -35,6 +35,8 @@ class ExtendedHeaderTest : public ::testing::Test {
  * an implementation detail.
  */
 // clang-format off
+
+// The minimum header.
 constexpr char kExampleHeaderData[] = {
   // Magic bytes
   'e', 'h', '0', '0',
@@ -44,6 +46,20 @@ constexpr char kExampleHeaderData[] = {
   0x71, 0x61, 0x51, 0x41, 0x31, 0x21, 0x11, 0x01,
   // uint64_t segment base offset
   0x72, 0x62, 0x52, 0x42, 0x32, 0x22, 0x12, 0x02,
+};
+
+// Contains segment data size.
+constexpr char kExampleHeaderDataExtended[] = {
+  // Magic bytes
+  'e', 'h', '0', '0',
+  // uint32_t header size (little endian)
+  0x20, 0x00, 0x00, 0x00,
+  // uint64_t program size
+  0x71, 0x61, 0x51, 0x41, 0x31, 0x21, 0x11, 0x01,
+  // uint64_t segment base offset
+  0x72, 0x62, 0x52, 0x42, 0x32, 0x22, 0x12, 0x02,
+  // uint64_t segment data size
+  0x73, 0x63, 0x53, 0x43, 0x33, 0x23, 0x13, 0x03,
 };
 // clang-format on
 
@@ -55,6 +71,9 @@ constexpr uint64_t kExampleProgramSize = 0x0111213141516171;
 /// unique within the header data.
 constexpr uint64_t kExampleSegmentBaseOffset = 0x0212223242526272;
 
+/// The segment_data_size field encoded in kExampleHeaderData. Each byte is
+/// unique within the header data.
+constexpr uint64_t kExampleSegmentDataSize = 0x0313233343536373;
 /// The offset to the header's length field, which is in the 4 bytes after the
 /// magic.
 constexpr size_t kHeaderLengthOffset =
@@ -64,22 +83,22 @@ constexpr size_t kHeaderLengthOffset =
  * Returns fake serialized Program head data that contains kExampleHeaderData at
  * the expected offset.
  */
-std::vector<uint8_t> CreateExampleProgramHead() {
+std::vector<uint8_t> CreateExampleProgramHead(
+    const char* example,
+    size_t size) {
   // Allocate memory representing the head of the serialized Program.
   std::vector<uint8_t> ret(ExtendedHeader::kNumHeadBytes);
   // Write non-zeros into it to make it more obvious if we read outside the
   // header.
   memset(ret.data(), 0x55, ret.size());
   // Copy the example header into the right offset.
-  memcpy(
-      ret.data() + ExtendedHeader::kHeaderOffset,
-      kExampleHeaderData,
-      sizeof(kExampleHeaderData));
+  memcpy(ret.data() + ExtendedHeader::kHeaderOffset, example, size);
   return ret;
 }
 
 TEST_F(ExtendedHeaderTest, ValidHeaderParsesCorrectly) {
-  std::vector<uint8_t> program = CreateExampleProgramHead();
+  std::vector<uint8_t> program =
+      CreateExampleProgramHead(kExampleHeaderData, sizeof(kExampleHeaderData));
 
   Result<ExtendedHeader> header =
       ExtendedHeader::Parse(program.data(), program.size());
@@ -87,15 +106,41 @@ TEST_F(ExtendedHeaderTest, ValidHeaderParsesCorrectly) {
   // The header should be present.
   ASSERT_EQ(header.error(), Error::Ok);
 
+  // Expect this header has size 24.
+  EXPECT_EQ(program[kHeaderLengthOffset], 0x18);
+
   // Since each byte of these fields is unique, success demonstrates that the
   // endian-to-int conversion is correct and looks at the expected bytes of the
   // header.
   EXPECT_EQ(header->program_size, kExampleProgramSize);
   EXPECT_EQ(header->segment_base_offset, kExampleSegmentBaseOffset);
+  EXPECT_EQ(header->segment_data_size, 0);
+}
+
+TEST_F(ExtendedHeaderTest, ValidHeaderParsesCorrectly_ExtendedExample) {
+  std::vector<uint8_t> program = CreateExampleProgramHead(
+      kExampleHeaderDataExtended, sizeof(kExampleHeaderDataExtended));
+
+  Result<ExtendedHeader> header =
+      ExtendedHeader::Parse(program.data(), program.size());
+
+  // The header should be present.
+  ASSERT_EQ(header.error(), Error::Ok);
+
+  // Expect this header has size 32.
+  EXPECT_EQ(program[kHeaderLengthOffset], 0x20);
+
+  // Since each byte of these fields is unique, success demonstrates that the
+  // endian-to-int conversion is correct and looks at the expected bytes of the
+  // header.
+  EXPECT_EQ(header->program_size, kExampleProgramSize);
+  EXPECT_EQ(header->segment_base_offset, kExampleSegmentBaseOffset);
+  EXPECT_EQ(header->segment_data_size, kExampleSegmentDataSize);
 }
 
 TEST_F(ExtendedHeaderTest, ShortDataFails) {
-  std::vector<uint8_t> program = CreateExampleProgramHead();
+  std::vector<uint8_t> program =
+      CreateExampleProgramHead(kExampleHeaderData, sizeof(kExampleHeaderData));
 
   // Try parsing a smaller-than-required part of the data.
   ASSERT_GE(program.size(), ExtendedHeader::kNumHeadBytes);
@@ -119,7 +164,8 @@ TEST_F(ExtendedHeaderTest, MissingHeaderNotFound) {
 
 TEST_F(ExtendedHeaderTest, BadMagicTreatedAsMissing) {
   // Get a valid header.
-  std::vector<uint8_t> program = CreateExampleProgramHead();
+  std::vector<uint8_t> program =
+      CreateExampleProgramHead(kExampleHeaderData, sizeof(kExampleHeaderData));
 
   // Should be present.
   {
@@ -141,7 +187,8 @@ TEST_F(ExtendedHeaderTest, BadMagicTreatedAsMissing) {
 
 TEST_F(ExtendedHeaderTest, ShorterHeaderLengthFails) {
   // Get a valid header.
-  std::vector<uint8_t> program = CreateExampleProgramHead();
+  std::vector<uint8_t> program =
+      CreateExampleProgramHead(kExampleHeaderData, sizeof(kExampleHeaderData));
 
   // Should be present.
   {
@@ -165,7 +212,8 @@ TEST_F(ExtendedHeaderTest, ShorterHeaderLengthFails) {
 
 TEST_F(ExtendedHeaderTest, LongerHeaderLengthSucceeds) {
   // Get a valid header.
-  std::vector<uint8_t> program = CreateExampleProgramHead();
+  std::vector<uint8_t> program =
+      CreateExampleProgramHead(kExampleHeaderData, sizeof(kExampleHeaderData));
 
   // Make the header length larger.
   // First demonstrate that we're looking in the right place.

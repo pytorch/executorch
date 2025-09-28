@@ -7,7 +7,6 @@ import copy
 
 import logging
 
-import os
 from collections import Counter
 from pprint import pformat
 from typing import (
@@ -32,13 +31,8 @@ import torch.utils._pytree as pytree
 
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
-from executorch.backends.arm.arm_backend import (
-    get_intermediate_path,
-    is_ethosu,
-    is_tosa,
-    is_vgf,
-)
-from executorch.backends.arm.ethosu import EthosUPartitioner
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
+from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
@@ -47,10 +41,7 @@ from executorch.backends.arm.quantizer import (
 )
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
-    get_elf_path,
     get_output_quantization_params,
-    get_target_board,
-    run_target,
     TosaReferenceModelDispatch,
 )
 
@@ -58,13 +49,15 @@ from executorch.backends.arm.test.tester.analyze_output_utils import (
     dump_error_output,
     print_error_diffs,
 )
+from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
-from executorch.backends.arm.tosa.specification import get_tosa_spec
 
-from executorch.backends.arm.vgf import VgfPartitioner
+from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
+from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import Stage, StageType
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.devtools.backend_debug import get_delegation_info
@@ -77,7 +70,6 @@ from executorch.exir import (
     to_edge_transform_and_lower,
 )
 from executorch.exir.backend.backend_api import validation_disabled
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.operator_support import (
     DontPartition,
     DontPartitionModule,
@@ -96,7 +88,6 @@ from tabulate import tabulate
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
 from torch.fx import Graph
-from torch.utils._pytree import tree_flatten
 
 
 logger = logging.getLogger(__name__)
@@ -131,7 +122,7 @@ def _dump_lowered_modules_artifact(
                 to_print = dbg_tosa_fb_to_json(tosa_fb)
                 to_print = pformat(to_print, compact=True, indent=1)
                 output += f"\nTOSA deserialized {node.name}: \n{to_print}\n"
-            elif output_format == "vela":
+            elif output_format == EthosUCompileSpec.get_output_format():
                 vela_cmd_stream = lowered_module.processed_bytes
                 output += f"\nVela command stream {node.name}: \n{vela_cmd_stream}\n"
             else:
@@ -182,43 +173,6 @@ class ToEdgeTransformAndLower(tester.ToEdgeTransformAndLower):
             partitioner=self.partitioners,
             constant_methods=self.constant_methods,
             generate_etrecord=generate_etrecord,
-        )
-
-
-class Serialize(tester.Serialize):
-    def __init__(self, compile_spec: list[CompileSpec], timeout):
-        super().__init__()
-        self.timeout = timeout
-        self.executorch_program_manager: ExecutorchProgramManager | None
-        self.compile_spec = compile_spec
-
-    def run(self, artifact: ExecutorchProgramManager, inputs=None) -> None:
-        super().run(artifact, inputs)
-        # Keep the entire ExecutorchProgramManager for execution.
-        self.executorch_program_manager = artifact
-
-    def run_artifact(self, inputs):
-        if self.executorch_program_manager is None:
-            raise RuntimeError(
-                "Tried running artifact from Serialize stage without running the stage."
-            )
-        inputs_flattened, _ = tree_flatten(inputs)
-        intermediate_path = get_intermediate_path(self.compile_spec)
-        target_board = get_target_board(self.compile_spec)
-        elf_path = get_elf_path(target_board)
-
-        if not os.path.exists(elf_path):
-            raise FileNotFoundError(
-                f"Did not find build arm_executor_runner in path {elf_path}, run setup_testing.sh?"
-            )
-
-        return run_target(
-            self.executorch_program_manager,
-            inputs_flattened,
-            intermediate_path,
-            target_board,
-            elf_path,
-            self.timeout,
         )
 
 
@@ -297,7 +251,7 @@ class ArmTester(Tester):
         self,
         model: torch.nn.Module,
         example_inputs: Tuple,
-        compile_spec: List[CompileSpec],
+        compile_spec: ArmCompileSpec,
         tosa_ref_model_path: str | None = None,
         dynamic_shapes: Optional[Tuple[Any]] = None,
         constant_methods: Optional[Dict[str, Any]] = None,
@@ -309,7 +263,7 @@ class ArmTester(Tester):
         Args:
             model (torch.nn.Module): The model to test
             example_inputs (Tuple[torch.Tensor]): Example inputs to the model
-            compile_spec (List[CompileSpec]): The compile spec to use
+            compile_spec (ArmCompileSpec): The compile spec to use
         """
 
         self.transform_passes = transform_passes
@@ -331,12 +285,11 @@ class ArmTester(Tester):
     ):
         if quantize_stage is None:
             quantizer = None
-            if is_tosa(self.compile_spec):
-                tosa_spec = get_tosa_spec(self.compile_spec)
-                quantizer = TOSAQuantizer(tosa_spec)
-            elif is_ethosu(self.compile_spec):
+            if isinstance(self.compile_spec, TosaCompileSpec):
+                quantizer = TOSAQuantizer(self.compile_spec)
+            elif isinstance(self.compile_spec, EthosUCompileSpec):
                 quantizer = EthosUQuantizer(self.compile_spec)
-            elif is_vgf(self.compile_spec):
+            elif isinstance(self.compile_spec, VgfCompileSpec):
                 quantizer = VgfQuantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
@@ -359,10 +312,12 @@ class ArmTester(Tester):
 
     def partition(self, partition_stage: Optional[Partition] = None):
         if partition_stage is None:
-            if is_tosa(self.compile_spec):
-                arm_partitioner = TOSAPartitioner(compile_spec=self.compile_spec)
-            elif is_ethosu(self.compile_spec):
-                arm_partitioner = EthosUPartitioner(compile_spec=self.compile_spec)
+            if isinstance(self.compile_spec, TosaCompileSpec):
+                arm_partitioner = TOSAPartitioner(self.compile_spec)
+            elif isinstance(self.compile_spec, EthosUCompileSpec):
+                arm_partitioner = EthosUPartitioner(self.compile_spec)
+            elif isinstance(self.compile_spec, VgfCompileSpec):
+                arm_partitioner = VgfPartitioner(self.compile_spec)
             else:
                 raise ValueError("compile spec doesn't target any Arm Partitioner")
             partition_stage = Partition(arm_partitioner)
@@ -379,24 +334,26 @@ class ArmTester(Tester):
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
         ] = None,
+        generate_etrecord: bool = False,
     ):
+        if transform_passes is not None:
+            raise RuntimeError(
+                "transform passes are given to ArmTester at construction."
+            )
+
         if to_edge_and_lower_stage is None:
             if partitioners is None:
-                arm_partitioner = None
-                if is_tosa(self.compile_spec):
+                if isinstance(self.compile_spec, TosaCompileSpec):
                     arm_partitioner = TOSAPartitioner(
-                        compile_spec=self.compile_spec,
-                        additional_checks=additional_checks,
+                        self.compile_spec, additional_checks
                     )
-                elif is_ethosu(self.compile_spec):
+                elif isinstance(self.compile_spec, EthosUCompileSpec):
                     arm_partitioner = EthosUPartitioner(
-                        compile_spec=self.compile_spec,
-                        additional_checks=additional_checks,
+                        self.compile_spec, additional_checks
                     )
-                elif is_vgf(self.compile_spec):
+                elif isinstance(self.compile_spec, VgfCompileSpec):
                     arm_partitioner = VgfPartitioner(
-                        compile_spec=self.compile_spec,
-                        additional_checks=additional_checks,
+                        self.compile_spec, additional_checks
                     )
                 else:
                     raise ValueError("compile spec doesn't target any Arm Partitioner")
@@ -412,7 +369,9 @@ class ArmTester(Tester):
                 to_edge_and_lower_stage.partitioners = partitioners
             if edge_compile_config is not None:
                 to_edge_and_lower_stage.edge_compile_conf = edge_compile_config
-        return super().to_edge_transform_and_lower(to_edge_and_lower_stage)
+        return super().to_edge_transform_and_lower(
+            to_edge_and_lower_stage, generate_etrecord=generate_etrecord
+        )
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
@@ -423,9 +382,13 @@ class ArmTester(Tester):
         self, serialize_stage: Optional[Serialize] = None, timeout: int = 480
     ):
         if serialize_stage is None:
-            serialize_stage = Serialize(self.compile_spec, timeout)
+            serialize_stage = Serialize(
+                compile_spec=self.compile_spec,
+                module=self.original_module,
+                timeout=timeout,
+            )
         assert (
-            get_intermediate_path(self.compile_spec) is not None
+            self.compile_spec.get_intermediate_path() is not None
         ), "Can't dump serialized file when compile specs do not contain an artifact path."
 
         return super().serialize(serialize_stage)
@@ -443,6 +406,7 @@ class ArmTester(Tester):
         qtol=0,
         error_callbacks=None,
         run_eager_mode=False,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         """
         Compares the run_artifact output of 'stage' with the output of a reference stage.
@@ -621,7 +585,7 @@ class ArmTester(Tester):
         to_print = f"{line} {self.cur} Placeholder Dtype Distribution {line}\n"
 
         graph = self.get_graph(self.cur)
-        tosa_spec = get_tosa_spec(self.compile_spec)
+        tosa_spec = self.compile_spec.tosa_spec
         dtype_dist_placeholders, dtype_dirst_tensors = _get_dtype_distribution(
             graph, tosa_spec
         )
@@ -668,7 +632,7 @@ class ArmTester(Tester):
         # We need to clone the artifact in order to ensure that the state_dict is preserved after passes are run.
         artifact = self.get_artifact(stage)
         if self.cur == StageType.EXPORT:
-            new_gm = ArmPassManager(get_tosa_spec(self.compile_spec)).transform_for_annotation_pipeline(  # type: ignore[arg-type]
+            new_gm = ArmPassManager(self.compile_spec.tosa_spec).transform_for_annotation_pipeline(  # type: ignore[arg-type]
                 graph_module=artifact.graph_module
             )
         else:
@@ -698,10 +662,17 @@ class ArmTester(Tester):
         rtol=1e-03,
         qtol=0,
         error_callbacks=None,
+        statistics_callback: Callable[[ErrorStatistics], None] | None = None,
     ):
         try:
             super()._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+                reference_output,
+                stage_output,
+                quantization_scale,
+                atol,
+                rtol,
+                qtol,
+                statistics_callback=statistics_callback,
             )
         except AssertionError as e:
             if error_callbacks is None:
@@ -784,7 +755,7 @@ def _get_tosa_operator_distribution(
                             [operator["op"] for operator in block["operators"]]
                         )
                 break
-            elif spec.value == b"vela":
+            elif spec.value == EthosUCompileSpec.get_output_format().encode():
                 return "Can not get operator distribution for Vela command stream."
             else:
                 return f"Unknown output format '{spec.value}'."

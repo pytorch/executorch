@@ -54,7 +54,7 @@ def test_resnet_tosa_INT(per_channel_quantization):
         exir_op=[],
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
-        atol=0.5,
+        atol=0.25,
         qtol=1,
     )
     pipeline.run()

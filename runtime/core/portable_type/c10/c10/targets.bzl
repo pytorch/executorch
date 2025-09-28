@@ -46,7 +46,9 @@ def get_sleef_deps():
                 "fbsource//third-party/sleef:sleef",
             ],
         }),
-        "ovr_config//os:windows": [],
+        "ovr_config//os:windows": [
+                "fbsource//third-party/sleef:sleef",
+        ],
     })
 
 def define_common_targets():

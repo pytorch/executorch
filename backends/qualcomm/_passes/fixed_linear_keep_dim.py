@@ -5,9 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 import torch
 
+from executorch.backends.qualcomm.builders.node_visitor import dq_ops
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+
+from .utils import copy_meta, get_quant_attrs
 
 
 class FixedLinearKeepDim(ExportPass):
@@ -18,8 +22,12 @@ class FixedLinearKeepDim(ExportPass):
     view_copy = exir_ops.edge.aten.view_copy.default
     linear = exir_ops.edge.aten.linear.default
 
-    def __init__(self):
+    def __init__(
+        self,
+        edge_program: torch.export.ExportedProgram,
+    ):
         super(FixedLinearKeepDim, self).__init__()
+        self.edge_program = edge_program
 
     def _fixed_keep_dim(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
@@ -46,9 +54,15 @@ class FixedLinearKeepDim(ExportPass):
                     )
                     # meta needs to be copied elementwisely for fake-tensor
                     # to be updated correctly and not affect meta of input_node
-                    for k, v in input_node.meta.items():
-                        squeeze_node.meta[k] = v
+                    squeeze_node.meta = copy_meta(input_node.meta)
                     squeeze_node.meta["val"] = input_tensor.reshape(squeeze_dim)
+                    # if input_node is dequantize, we need to fetch encodings manually
+                    # TODO: remove this when constant fold mechanism is introduced
+                    if input_node.target in dq_ops:
+                        squeeze_node.meta[QCOM_QUANT_ATTRS] = get_quant_attrs(
+                            self.edge_program, input_node
+                        )
+
                     for user in input_users:
                         if user == linear_node:
                             user.replace_input_with(input_node, squeeze_node)
@@ -66,8 +80,7 @@ class FixedLinearKeepDim(ExportPass):
                     )
                     # meta needs to be copied elementwisely for fake-tensor
                     # to be updated correctly and not affect meta of unsqueeze_node
-                    for k, v in linear_node.meta.items():
-                        unsqueeze_node.meta[k] = v
+                    unsqueeze_node.meta = copy_meta(linear_node.meta)
                     # update linear node's shape
                     linear_node.meta["val"] = linear_output.reshape(
                         (squeeze_node.meta["val"].shape[0], linear_output.shape[-1])

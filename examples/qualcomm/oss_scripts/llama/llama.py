@@ -142,7 +142,7 @@ class SingleLlama:
         self.inputs = (
             inputs[0],  # tokens
             *inputs[1],  # attn_mask
-            *(inputs[2] if self.llama_meta["get_use_kv_cache"] else []),  # pos_ids
+            *((inputs[2],) if self.llama_meta["get_use_kv_cache"] else []),  # pos_ids
             *(inputs[3] if self.llama_meta["get_use_kv_cache"] else []),  # k_caches
             *(inputs[4] if self.llama_meta["get_use_kv_cache"] else []),  # v_caches
         )
@@ -223,6 +223,7 @@ class SingleLlama:
         custom_annotations=(),
         scales_state_dict=None,
         chat_template=None,
+        lookahead_config=None,
     ):
         self.quant_dtype = quant_dtype
         quantizer = make_custom_quantizer(
@@ -268,6 +269,7 @@ class SingleLlama:
                 num_fewshot=args.num_fewshot,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="prepare_pt2e_tasks",
+                seq_mse_candidates=self.decoder_model_config.seq_mse_candidates,
             )
 
         # Check user's prompt, helps calibrate special token
@@ -289,8 +291,8 @@ class SingleLlama:
             prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
+            lookahead_config=lookahead_config,
         )
-
         if scales_state_dict:
             set_scales(
                 fx_graph_module, scales_state_dict, self.llama_graph_module.head_dim
@@ -336,6 +338,7 @@ class SingleLlama:
                 prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="convert_pt2e_prompt",
+                lookahead_config=lookahead_config,
             )
 
     def save_logits_quant_attrs(self):
@@ -435,6 +438,7 @@ def compile(
     kv_config.use_kv_cache = True
     kv_config.enable_r3 = decoder_model_config.r3
     kv_config.kv_io_bit_width = decoder_model_config.get_kv_io_bit_width()
+
     if decoder_model_config.masked_softmax:
         if is_qnn_sdk_version_less_than("2.35"):
             logging.warning(
@@ -496,13 +500,6 @@ def compile(
                 )
             )
         elif args.model_mode == "lookahead":
-            # TODO: Lookahead decoding is not yet supported for gemma3-1b.
-            # This will be implemented once the model architecture and KV update logic are adapted.
-            if args.decoder_model == "gemma3-1b":
-                raise NotImplementedError(
-                    "gemma3-1b does not currently support lookahead decoding."
-                )
-
             llama_instance_list.append(
                 LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
@@ -686,16 +683,21 @@ def compile(
         llama_instance_list[i] = SingleLlama(
             llama_instance_list[i].eval(), decoder_model_config, pte_filename
         )
-
         if args.embedding_quantize:
             llama_instance_list[i].passes_job[I64toI32][
                 QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY
             ]["skip_node"] = {"tokens"}
+
     if decoder_model_config.ptq:
         start_quantize_ts = time.time()
         custom_annotations = decoder_model_config.custom_annotation
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
+            lookahead_config = (
+                (args.window, args.ngram, args.gcap)
+                if i == 0 and args.model_mode == "lookahead"
+                else None
+            )
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
@@ -703,6 +705,7 @@ def compile(
                 custom_annotations=custom_annotations,
                 scales_state_dict=scales_state_dict,
                 chat_template=chat_template,
+                lookahead_config=lookahead_config,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
@@ -723,6 +726,48 @@ def compile(
             llama_instance.passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
                 "get_quant_io_dtype_fn"
             ] = partial(llama_instance._tag_ios, fixed_point_type=fixed_point_type)
+
+        # force overriding frozen parameters here for model quantizing under seq mse scenario
+        # this will make weight sharing work properly
+        if decoder_model_config.seq_mse_candidates != 0 and args.model_mode in [
+            "hybrid",
+            "lookahead",
+        ]:
+            decode, prompt = [
+                instance.llama_graph_module for instance in llama_instance_list
+            ]
+            override_nodes = {
+                str(node.meta["nn_module_stack"].values()): node
+                for node in prompt.graph.nodes
+                if node.target == torch.ops.aten.conv2d.default
+            }
+            indices_map = {
+                # (affine_tensor, group_size, scales, zero_points, dtype, min, max)
+                torch.ops.torchao.dequantize_affine: [0, 2, 3],
+                # (per_channel_tensor, scales, zero_points, dim, dtype, min, max)
+                torch.ops.quantized_decomposed.dequantize_per_channel.default: [
+                    0,
+                    1,
+                    2,
+                ],
+                # should not need to worry about per-tensor case
+            }
+            for node in decode.graph.nodes:
+                if node.target == torch.ops.aten.conv2d.default:
+                    if target_node := override_nodes.get(
+                        str(node.meta["nn_module_stack"].values())
+                    ):
+                        # arguments of conv: (input, weight, bias)
+                        for i, dq_node in enumerate(node.args[1:]):
+                            for index in indices_map[dq_node.target]:
+                                setattr(
+                                    prompt,
+                                    target_node.args[i + 1].args[index].target,
+                                    getattr(decode, dq_node.args[index].target),
+                                )
+                    else:
+                        raise RuntimeError("failed to override quantization attribute")
+
         end_quantize_ts = time.time()
         logging.info(f"Time for quantizing: {end_quantize_ts - start_quantize_ts}")
 
@@ -967,8 +1012,8 @@ def inference(
         # No pregen inputs, input_list is not required
         adb.push(inputs=[], files=[runtime_tokenizer_path])
         adb.execute(custom_runner_cmd=runner_cmd)
-
         adb.pull(output_path=args.artifact, callback=post_process)
+
     if args.ip and args.port != -1:
         inference_speed = 0
         with open(
@@ -1224,7 +1269,7 @@ def export_llama(args) -> None:
             args.tokenizer_bin is not None
         ), "Please provide tokenizer_bin for stories."
         runtime_tokenizer_path = args.tokenizer_bin
-    elif args.decoder_model == "llama3_2":
+    elif "llama3_2" in args.decoder_model:
         tokenizer = get_tokenizer(args.tokenizer_model)
         assert isinstance(
             tokenizer, TiktokenTokenizer

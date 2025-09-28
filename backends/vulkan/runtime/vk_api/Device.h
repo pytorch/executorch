@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <sstream>
+#include <string>
 #include <vector>
 
 namespace vkcompute {
@@ -57,6 +57,8 @@ struct PhysicalDevice final {
   // Metadata
   uint32_t num_compute_queues;
   bool supports_int16_shader_types;
+  bool supports_int64_shader_types;
+  bool supports_float64_shader_types;
   bool has_unified_memory;
   bool has_timestamps;
   float timestamp_period;

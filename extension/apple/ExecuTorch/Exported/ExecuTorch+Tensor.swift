@@ -12,14 +12,12 @@
 ///
 /// - Parameter shape: An array of integers, where each element represents a dimension size.
 /// - Returns: An integer equal to the product of the sizes of all dimensions.
-@available(*, deprecated, message: "This API is experimental.")
 public func elementCount(ofShape shape: [Int]) -> Int {
   __ExecuTorchElementCountOfShape(shape.map(NSNumber.init))
 }
 
 /// A protocol that types conform to in order to be used as tensor element types.
 /// Provides the mapping from the Swift type to the underlying `DataType`.
-@available(*, deprecated, message: "This API is experimental.")
 public protocol Scalar {
   /// The `DataType` corresponding to this scalar type.
   static var dataType: DataType { get }
@@ -27,7 +25,6 @@ public protocol Scalar {
   func asNSNumber() -> NSNumber
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt8: Scalar {
   /// The `DataType` corresponding to `UInt8`, which is `.byte`.
   public static var dataType: DataType { .byte }
@@ -35,7 +32,6 @@ extension UInt8: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int8: Scalar {
   /// The `DataType` corresponding to `Int8`, which is `.char`.
   public static var dataType: DataType { .char }
@@ -43,7 +39,6 @@ extension Int8: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int16: Scalar {
   /// The `DataType` corresponding to `Int16`, which is `.short`.
   public static var dataType: DataType { .short }
@@ -51,7 +46,6 @@ extension Int16: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int32: Scalar {
   /// The `DataType` corresponding to `Int32`, which is `.int`.
   public static var dataType: DataType { .int }
@@ -59,7 +53,6 @@ extension Int32: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int64: Scalar {
   /// The `DataType` corresponding to `Int64`, which is `.long`.
   public static var dataType: DataType { .long }
@@ -67,7 +60,6 @@ extension Int64: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Int: Scalar {
   /// The `DataType` corresponding to `Int`, which is `.long`.
   public static var dataType: DataType { .long }
@@ -75,7 +67,6 @@ extension Int: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Float: Scalar {
   /// The `DataType` corresponding to `Float`, which is `.float`.
   public static var dataType: DataType { .float }
@@ -83,7 +74,6 @@ extension Float: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Double: Scalar {
   /// The `DataType` corresponding to `Double`, which is `.double`.
   public static var dataType: DataType { .double }
@@ -91,7 +81,6 @@ extension Double: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Bool: Scalar {
   /// The `DataType` corresponding to `Bool`, which is `.bool`.
   public static var dataType: DataType { .bool }
@@ -99,7 +88,6 @@ extension Bool: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt16: Scalar {
   /// The `DataType` corresponding to `UInt16`.
   public static var dataType: DataType { .uInt16 }
@@ -107,7 +95,6 @@ extension UInt16: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt32: Scalar {
   /// The `DataType` corresponding to `UInt32`.
   public static var dataType: DataType { .uInt32 }
@@ -115,7 +102,6 @@ extension UInt32: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt64: Scalar {
   /// The `DataType` corresponding to `UInt64`.
   public static var dataType: DataType { .uInt64 }
@@ -123,7 +109,6 @@ extension UInt64: Scalar {
   public func asNSNumber() -> NSNumber { NSNumber(value: self) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension UInt: Scalar {
   /// The `DataType` corresponding to `UInt`.
   public static var dataType: DataType { .uInt64 }
@@ -132,7 +117,6 @@ extension UInt: Scalar {
 }
 
 /// A type-erasing tensor class for ExecuTorch operations.
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// The shape of the tensor.
   var shape: [Int] { __shape.map(\.intValue) }
@@ -258,7 +242,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates an empty tensor with the specified properties.
   ///
@@ -302,7 +285,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates a tensor filled with the specified scalar value.
   ///
@@ -348,7 +330,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates a tensor filled with ones.
   ///
@@ -390,7 +371,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates a tensor filled with zeros.
   ///
@@ -433,7 +413,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates a tensor with random values uniformly distributed in `[0, 1)`.
   ///
@@ -477,7 +456,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates a tensor with random values from a normal distribution with mean `0` and variance `1`.
   ///
@@ -521,7 +499,6 @@ public extension AnyTensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension AnyTensor {
   /// Creates a tensor with random integers from `low` (inclusive) to `high` (exclusive).
   ///
@@ -581,7 +558,6 @@ public extension AnyTensor {
 ///
 /// This class encapsulates a type-erasing `AnyTensor` instance and provides a variety of
 /// initializers and utility methods to work with tensor data.
-@available(*, deprecated, message: "This API is experimental.")
 public final class Tensor<T: Scalar>: Equatable {
   /// The data type of the tensor's elements.
   public var dataType: DataType { anyTensor.dataType }
@@ -819,7 +795,6 @@ public final class Tensor<T: Scalar>: Equatable {
   public let anyTensor: AnyTensor
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Returns the tensor's elements as an array of scalars.
   ///
@@ -829,7 +804,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates an empty tensor with the specified properties.
   ///
@@ -868,7 +842,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates a tensor filled with the specified scalar value.
   ///
@@ -912,7 +885,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates a tensor filled with ones.
   ///
@@ -950,7 +922,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates a tensor filled with zeros.
   ///
@@ -988,7 +959,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates a tensor with random values uniformly distributed in `[0, 1)`.
   ///
@@ -1027,7 +997,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates a tensor with random values from a normal distribution with mean `0` and variance `1`.
   ///
@@ -1066,7 +1035,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Tensor {
   /// Creates a tensor with random integers from `low` (inclusive) to `high` (exclusive).
   ///
@@ -1117,7 +1085,6 @@ public extension Tensor {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 extension Tensor: CustomStringConvertible {
   public var description: String {
     self.anyTensor.description

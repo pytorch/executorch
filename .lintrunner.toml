@@ -73,7 +73,6 @@ exclude_patterns = [
     '**/third-party/**',
     # NB: Objective-C is not supported
     'examples/apple/**',
-    'examples/demo-apps/apple_ios/**',
     'examples/demo-apps/react-native/rnllama/ios/**',
     'extension/apple/**',
     'extension/llm/apple/**',
@@ -207,6 +206,7 @@ exclude_patterns = [
     '**/*.png',
     '**/*.webp',
     '**/*.jpeg',
+    '**/*.mp3',
     '**/*.mp4',
     '**/*.pte',
     '**/*.pth',
@@ -217,6 +217,8 @@ exclude_patterns = [
     '**/*.jpg',
     '**/*.jar',
     '**/*.gif',
+    'extension/llm/tokenizers',
+    'extension/llm/tokenizers/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',

@@ -20,6 +20,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
+
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
@@ -245,7 +246,9 @@ def compute_multiplier_and_shift(
         const_2_power_15_or_31 = 1 << offset
         shifted_mantissa = round(mantissa * const_2_power_15_or_31)
 
-        assert shifted_mantissa <= const_2_power_15_or_31
+        assert (
+            shifted_mantissa <= const_2_power_15_or_31
+        ), f"Mantissa {shifted_mantissa} exceeds limit {const_2_power_15_or_31}"
 
         if shifted_mantissa == const_2_power_15_or_31:
             shifted_mantissa = shifted_mantissa // 2
@@ -255,13 +258,19 @@ def compute_multiplier_and_shift(
         shift = offset - shift
 
         # INT32_MAX, 2^31 - 1
-        assert shifted_mantissa <= (const_2_power_15_or_31 - 1)
+        assert shifted_mantissa <= (const_2_power_15_or_31 - 1), (
+            f"Mantissa {shifted_mantissa} exceeds signed max "
+            f"{const_2_power_15_or_31 - 1}"
+        )
 
         multiplier = shifted_mantissa
 
         if shift > 62:
             multiplier = multiplier >> min(31, shift - 62)
             shift = 62
+
+        assert multiplier >= 0, "Multiplier should be non-negative"
+        assert shift >= 2 and shift <= 62, "Shift should be in range [2, 62]"
         multipliers.append(multiplier)
         shifts.append(shift)
     return multipliers, shifts
@@ -313,10 +322,11 @@ def build_rescale(
     per_channel=False,
 ):
     import serializer.tosa_serializer as ts  # type: ignore
+
     import tosa.Op as TosaOp  # type: ignore
 
-    scaleWidth = 32
-    is_scale32 = True
+    scaleWidth = 16 if input_node.dtype == ts.DType.INT48 else 32
+    is_scale32 = False if input_node.dtype == ts.DType.INT48 else True
     multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
     rescale_inputs = create_const_ops_for_rescale(
         tosa_fb,

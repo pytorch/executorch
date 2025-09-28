@@ -244,3 +244,32 @@ def test_to_tosa_INT_not_delegated_REDUNDANT_CAST(test_data: Tuple):
         non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
     )
     pipeline.run()
+
+
+_TO_COPY_DATA_INT_U55_REJECT = {
+    "rand_bool_int8": lambda: (
+        torch.randint(0, 2, (1, 2, 3, 4), dtype=torch.bool),
+        torch.int8,
+    ),
+    "rand_int16_bool": lambda: (
+        torch.randint(-1000, 1000, (1, 2, 3, 4), dtype=torch.int16),
+        torch.bool,
+    ),
+    "rand_int32_int8": lambda: (
+        torch.randint(-1000, 1000, (1, 2, 3, 4), dtype=torch.int32),
+        torch.int8,
+    ),
+}
+
+
+@common.parametrize("test_data", _TO_COPY_DATA_INT_U55_REJECT)
+def test_to_u55_INT(test_data: Tuple):
+    test_tensor, new_dtype = test_data()
+    pipeline = OpNotSupportedPipeline[input_t1](
+        Cast(new_dtype),
+        (test_tensor,),
+        u55_subset=True,
+        quantize=True,
+        non_delegated_ops={},  # These are removed outside of the Arm backend so the graph is empty
+    )
+    pipeline.run()

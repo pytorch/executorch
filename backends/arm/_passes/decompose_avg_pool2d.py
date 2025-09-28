@@ -4,6 +4,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
@@ -34,7 +36,7 @@ def get_decomposition(op) -> tuple:
 
 
 class DecomposeAvgPool2d(ExportPass):
-    """ """
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_div_ops + aten_div_ops):

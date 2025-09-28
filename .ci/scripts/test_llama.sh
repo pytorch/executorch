@@ -159,6 +159,7 @@ cmake_install_executorch_libraries() {
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE="$CMAKE_BUILD_TYPE" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DEXECUTORCH_ENABLE_LOGGING=ON \
         -DQNN_SDK_ROOT="$QNN_SDK_ROOT"
     cmake --build cmake-out -j9 --target install --config "$CMAKE_BUILD_TYPE"
 }

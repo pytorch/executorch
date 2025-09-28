@@ -27,6 +27,7 @@ class OpConfig:
     base_name: str
     type_dispatch_suffixes: dict[tuple[torch.dtype, ...], str]
     weight_arg_idx: Optional[int] = None
+    is_quant_op: bool = False
     variant: str = "per_tensor"
 
 
@@ -62,16 +63,16 @@ class CompileTimeTypeDispatchPass(ExportPass):
             weight_arg_idx=2,
             variant="default",
         ),
-        exir_ops.edge.cadence.quantized_conv_nchw.per_tensor: OpConfig(
-            "quantized_conv_nchw",
+        exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor: OpConfig(
+            "quantized_conv2d_nchw",
             type_dispatch_suffixes={
                 (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
                 (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
             },
             weight_arg_idx=1,
         ),
-        exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor: OpConfig(
-            "quantized_conv_nhwc",
+        exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor: OpConfig(
+            "quantized_conv2d_nhwc",
             type_dispatch_suffixes={
                 (torch.int8, torch.int8): "asym8sxsym8s_asym8s",
                 (torch.uint8, torch.uint8): "asym8uxsym8u_asym8u",
@@ -100,6 +101,29 @@ class CompileTimeTypeDispatchPass(ExportPass):
             },
             variant="default",
         ),
+        exir_ops.edge.cadence.quantize_per_tensor.default: OpConfig(
+            "quantize_per_tensor",
+            type_dispatch_suffixes={
+                (torch.int8,): "asym8s",
+                (torch.uint8,): "asym8u",
+                (torch.int16,): "asym16s",
+                (torch.uint16,): "asym16s",
+                (torch.int32,): "asym32s",
+            },
+            variant="default",
+            is_quant_op=True,
+        ),
+        exir_ops.edge.cadence.dequantize_per_tensor.default: OpConfig(
+            "dequantize_per_tensor",
+            type_dispatch_suffixes={
+                (torch.int8,): "asym8s",
+                (torch.uint8,): "asym8u",
+                (torch.int16,): "asym16s",
+                (torch.uint16,): "asym16s",
+                (torch.int32,): "asym32s",
+            },
+            variant="default",
+        ),
     }
 
     def call_operator(
@@ -120,6 +144,8 @@ class CompileTimeTypeDispatchPass(ExportPass):
         if config.weight_arg_idx is not None:
             weight_dtype = args[config.weight_arg_idx].to_tensor().dtype
             dtype_key = (input_dtype, weight_dtype)
+        elif config.is_quant_op:
+            dtype_key = (args[5],)
         else:
             dtype_key = (input_dtype,)
 
@@ -129,28 +155,33 @@ class CompileTimeTypeDispatchPass(ExportPass):
         type_suffix = config.type_dispatch_suffixes[dtype_key]
         base_name = config.base_name
 
+        typed_op_name = f"{base_name}_{type_suffix}"
+
         if op in [
-            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
-            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
         ]:
             groups = args[6]
             input_channels = (
                 args[0].to_tensor().shape[1]
-                if op == exir_ops.edge.cadence.quantized_conv_nchw.per_tensor
+                if op == exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
                 else args[0].to_tensor().shape[-1]
             )
             is_depthwise = groups == input_channels
-
-            dilation = args[5]
             # pyre-ignore[16]: None has no attribute '__iter__'.
-            is_dilated = any(d > 1 for d in dilation)
+            is_dilated = any(d > 1 for d in args[5])
+            is_1d = len(args[0].to_tensor().shape) == 3
 
-            if is_dilated:
-                type_suffix = f"dilated_{type_suffix}"
-            elif is_depthwise:
-                type_suffix = f"depthwise_{type_suffix}"
-
-        typed_op_name = f"{base_name}_{type_suffix}"
+            if is_depthwise:
+                typed_op_name = f"{base_name}_depthwise_{type_suffix}"
+            elif is_dilated:
+                typed_op_name = f"{base_name}_dilated_{type_suffix}"
+            elif is_1d and groups == 1:
+                if "nchw" in base_name:
+                    layout_suffix = "ncl"
+                else:
+                    layout_suffix = "nlc"
+                typed_op_name = f"quantized_conv1d_{layout_suffix}_{type_suffix}"
 
         typed_op = getattr(
             getattr(exir_ops.edge.cadence, typed_op_name), config.variant

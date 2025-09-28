@@ -9,7 +9,6 @@
 #include <executorch/extension/threadpool/threadpool.h>
 
 #include <algorithm>
-#include <atomic>
 #include <memory>
 
 #include <executorch/extension/threadpool/threadpool_guard.h>
@@ -101,17 +100,20 @@ ThreadPool* get_threadpool() {
     return nullptr; // NOLINT(facebook-hte-NullableReturn)
   }
 
-  int num_threads = cpuinfo_get_processors_count();
-  /*
-   * For llvm-tsan, holding limit for the number of locks for a single thread
-   * is 63 (because of comparison < 64 instead of <=). pthreadpool's worst
-   * case is the number of threads in a pool. So we want to limit the threadpool
-   * size to 64 when running with tsan. However, sometimes it is tricky to
-   * detect if we are running under tsan, for now capping the default
-   * threadcount to the tsan limit unconditionally.
-   */
-  constexpr int tsan_thread_limit = 63;
-  num_threads = std::min(num_threads, tsan_thread_limit);
+  static const int num_threads = ([]() {
+    int result = cpuinfo_get_processors_count();
+
+    /*
+     * For llvm-tsan, holding limit for the number of locks for a single thread
+     * is 63 (because of comparison < 64 instead of <=). pthreadpool's worst
+     * case is the number of threads in a pool. So we want to limit the
+     * threadpool size to 64 when running with tsan. However, sometimes it is
+     * tricky to detect if we are running under tsan, for now capping the
+     * default threadcount to the tsan limit unconditionally.
+     */
+    constexpr int tsan_thread_limit = 63;
+    return std::min(result, tsan_thread_limit);
+  })();
   static auto threadpool = std::make_unique<ThreadPool>(num_threads);
 
 // Inheriting from old threadpool to get around segfault issue

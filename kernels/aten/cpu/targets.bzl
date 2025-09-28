@@ -18,6 +18,12 @@ _EDGE_DIALECT_OPS = (
             "//executorch/kernels/aten/cpu/util:copy_ops_util",
         ],
     ),
+    op_target(
+        name = "op__clone_dim_order",
+        deps = [
+            "//executorch/kernels/aten/cpu/util:copy_ops_util",
+        ],
+    ),
 )
 
 def define_common_targets():

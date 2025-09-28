@@ -136,18 +136,9 @@ def test_conformer_vgf_INT():
         exir_op=[],
         tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,  # TODO: run on vulkan runtime
     )
     pipeline.pop_stage("check_count.exir")
-
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs",
-    #     get_test_inputs(
-    #         TestConformer.dim, TestConformer.lengths, TestConformer.num_examples
-    #     ),
-    #     rtol=1.0,
-    #     atol=3.0,
-    # )
     pipeline.run()
 
 

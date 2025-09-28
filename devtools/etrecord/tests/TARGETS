@@ -1,4 +1,4 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
@@ -11,7 +11,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "etrecord_test_library",
     srcs = ["etrecord_test.py"],
     deps = [

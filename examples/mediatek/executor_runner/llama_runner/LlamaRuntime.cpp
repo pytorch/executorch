@@ -26,7 +26,10 @@ void LlamaRuntime::Initialize(
   mModelOptions = modelOptions;
 
   // Initialize rotary embedding master lookup table
-  const size_t rotEmbDim = modelOptions.hidden_size / modelOptions.num_head;
+  const size_t headDim = modelOptions.head_dim
+      ? modelOptions.head_dim
+      : (modelOptions.hidden_size / modelOptions.num_head);
+  const size_t rotEmbDim = headDim * modelOptions.partial_rotary_factor;
   mRotEmbMasterLut = std::make_unique<llm_helper::RotaryEmbeddingMasterLut>(
       modelOptions.rot_emb_type,
       modelOptions.max_token_length,
@@ -55,6 +58,9 @@ void LlamaRuntime::Initialize(
       usePromptModel ? modelOptions.prompt_token_batch_size : 1;
   mTokenBatchSize = initBatchSize;
 
+  // Enable SWA if window size is not 0
+  const bool enableSWA = (modelOptions.window_size != 0);
+
   // Get effective prompt and gen model paths
   const auto& [prompt_model_paths, gen_model_paths] = [&] {
     if (useSharedWeights) {
@@ -80,6 +86,7 @@ void LlamaRuntime::Initialize(
         initBatchSize,
         numCache,
         numRotEmbInputs,
+        enableSWA,
         mRotEmbMasterLut.get());
     mLlamaModelChunks.push_back(std::move(llamaChunk));
   }

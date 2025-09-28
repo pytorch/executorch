@@ -1,11 +1,11 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "whisper_model_lib",
     srcs = [
         "whisper_model.py",
@@ -16,7 +16,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "whisper_lib",
     srcs = ["whisper.py"],
     deps = [

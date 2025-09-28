@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import platform
+import re
 import shutil
 import tarfile
 import tempfile
@@ -11,7 +12,6 @@ import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
 
-# Module logger (library-friendly)
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -32,6 +32,70 @@ def is_linux_x86() -> bool:
         "i386",
         "i686",
     )
+
+
+import subprocess
+
+MINIMUM_LIBC_VERSION = 2.29
+
+REQUIRED_LIBC_LIBS = [
+    "/lib/x86_64-linux-gnu/libc.so.6",
+    "/lib64/libc.so.6",
+    "/lib/libc.so.6",
+]
+
+
+def check_glibc_exist_and_validate() -> bool:
+    """
+    Check if users have glibc installed.
+    """
+    exists = False
+    for path in REQUIRED_LIBC_LIBS:
+        try:
+            output = subprocess.check_output(
+                [path, "--version"], stderr=subprocess.STDOUT
+            )
+            output = output.decode().split("\n")[0]
+            logger.debug(f"[QNN] glibc version for path {path} is: {output}")
+            match = re.search(r"version (\d+\.\d+)", output)
+            if match:
+                version = match.group(1)
+                if float(version) >= MINIMUM_LIBC_VERSION:
+                    logger.debug(f"[QNN] glibc version is {version}.")
+                    exists = True
+                    return True
+                else:
+                    logger.error(
+                        f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
+                    )
+            else:
+                logger.error("[QNN] glibc version not found.")
+
+        except Exception:
+            continue
+
+    if not exists:
+        logger.error(
+            r""""
+            [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
+            Ubuntu/Debian:
+                sudo apt update
+                sudo apt install libc6
+
+            Fedora/Red Hat:
+                sudo dnf install glibc
+
+            Arch Linux:
+                sudo pacman -S glibc
+            
+            Also please make sure the glibc version is >= MINIMUM_LIBC_VERSION. You can verify the glibc version by running the following command:
+            Option 1:
+                ldd --version
+            Option 2:
+                /path/to/libc.so.6 --version
+            """
+        )
+    return exists
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
@@ -111,10 +175,14 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
         f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
-
     if not is_linux_x86():
-        logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
+        logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
+    elif not check_glibc_exist_and_validate():
+        logger.info("[QNN] Skipping Qualcomm SDK (glibc not found or version too old).")
+        return None
+    else:
+        logger.info("[QNN] Downloading Qualcomm SDK for Linux x86")
 
     dst_folder.mkdir(parents=True, exist_ok=True)
 
@@ -369,6 +437,8 @@ def install_qnn_sdk() -> bool:
     Returns:
         True if both steps succeeded (or were already satisfied), else False.
     """
-    ok_libcxx = _ensure_libcxx_stack()
-    ok_qnn = _ensure_qnn_sdk_lib()
-    return bool(ok_qnn and ok_libcxx)
+    if check_glibc_exist_and_validate():
+        if _ensure_libcxx_stack():
+            if _ensure_qnn_sdk_lib():
+                return True
+    return False

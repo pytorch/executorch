@@ -1,6 +1,6 @@
 import logging
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from executorch.backends.test.harness import Tester
@@ -34,6 +34,15 @@ class TestFlow:
 
     is_delegated: bool = True
     """ Indicates whether the flow is expected to generate CALL_DELEGATE nodes. """
+
+    skip_patterns: list[str] = field(default_factory=lambda: [])
+    """ Tests with names containing any substrings in this list are skipped. """
+
+    supports_serialize: bool = True
+    """ True if the test flow supports the Serialize stage. """
+
+    def should_skip_test(self, test_name: str) -> bool:
+        return any(pattern in test_name for pattern in self.skip_patterns)
 
 
 def all_flows() -> dict[str, TestFlow]:
@@ -108,5 +117,14 @@ def all_flows() -> dict[str, TestFlow]:
         ]
     except Exception as e:
         logger.info(f"Skipping QNN flow registration: {e}")
+
+    try:
+        from executorch.backends.test.suite.flows.arm import ARM_TOSA_FLOW
+
+        flows += [
+            ARM_TOSA_FLOW,
+        ]
+    except Exception as e:
+        logger.info(f"Skipping ARM flow registration: {e}")
 
     return {f.name: f for f in flows if f is not None}

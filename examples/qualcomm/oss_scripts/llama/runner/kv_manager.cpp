@@ -122,7 +122,8 @@ void KVManager<T>::init_attention_mask(
     const std::vector<int32_t>& attention_map,
     int32_t ar_len,
     int32_t n_past,
-    int32_t sliding_window) {
+    int32_t sliding_window,
+    const std::vector<int32_t>& position_offset) {
   ET_CHECK_MSG(
       attention_map.size() <= ar_len,
       "The size of attention_map (%zu) doesn't match with ar_len (%d)",
@@ -154,11 +155,12 @@ void KVManager<T>::init_attention_mask(
         }
         // Attend to itself
         new_ptr[i] = pos_val;
-
         // mask by limitation of sliding_window
-        int32_t avalible_context_len = sliding_window - (i + 1) - n_past;
-        if (n_past > avalible_context_len) {
-          std::fill_n(past_ptr, n_past - avalible_context_len, neg_val);
+        int32_t available_context_len = position_offset.empty()
+            ? sliding_window - (i + 1) - n_past
+            : sliding_window - (position_offset[i] + 1) - n_past;
+        if (n_past > available_context_len) {
+          std::fill_n(past_ptr, n_past - available_context_len, neg_val);
         }
 
         past_ptr += metadata_.context_len;
@@ -219,7 +221,8 @@ void KVManager<T>::update_attention_mask(
     int32_t ar_len,
     int32_t n_past,
     int32_t n_update,
-    int32_t sliding_window) {
+    int32_t sliding_window,
+    const std::vector<int32_t>& position_offset) {
   uint16_t pos_val = 65535;
   uint16_t neg_val = 0;
   uint16_t* cur_ptr = attention_mask;
@@ -230,21 +233,22 @@ void KVManager<T>::update_attention_mask(
 
   for (int i = 0; i < ar_len; i++) {
     std::fill_n(cur_ptr, n_update, pos_val);
-    int32_t avalible_cache_len = sliding_window - (i + 1);
+    int32_t available_cache_len = position_offset.empty()
+        ? sliding_window - (i + 1)
+        : sliding_window - (position_offset[i] + 1);
     if (kv_updater_ == KVManagerMode::SMART_MASK) {
-      if (n_past + n_update > avalible_cache_len) {
+      if (n_past + n_update > available_cache_len) {
         std::fill_n(
-            cur_ptr - n_past, n_past + n_update - avalible_cache_len, neg_val);
+            cur_ptr - n_past, n_past + n_update - available_cache_len, neg_val);
       }
     } else if (kv_updater_ == KVManagerMode::SHIFT_POINTER) {
-      if (std::abs(n_past + ar_len) > avalible_cache_len) {
-        int32_t n_invalid = n_past - avalible_cache_len;
+      if (std::abs(n_past + ar_len) > available_cache_len) {
+        int32_t n_invalid = n_past - available_cache_len;
         std::fill_n(
-            cur_ptr, std::abs(n_past + ar_len) - avalible_cache_len, neg_val);
+            cur_ptr, std::abs(n_past + ar_len) - available_cache_len, neg_val);
       }
-
-      cur_ptr += metadata_.context_len;
     }
+    cur_ptr += metadata_.context_len;
   }
 }
 

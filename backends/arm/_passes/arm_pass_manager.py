@@ -7,6 +7,9 @@
 
 # pyre-unsafe
 
+
+from collections import defaultdict
+
 import executorch.backends.arm.tosa.dialect  # noqa: unused
 from executorch.backends.arm._passes import (
     AddBiasPass,
@@ -39,6 +42,7 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
+    DecomposeConv2dWithInt16ActivationPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -94,6 +98,7 @@ from executorch.backends.arm._passes import (
     UnsqueezeScalarPlaceholdersPass,
 )
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm.tosa.specification import (
     TosaLoweringContext,
     TosaSpecification,
@@ -115,6 +120,32 @@ class ArmPassManager(PassManager):
         self.tosa_spec = tosa_spec
         super().__init__()
 
+    def validate_constraints_mandatory(self):
+        """
+        Validates that necessary passes have run before transforming to backend.
+
+        Note that this differs from the original validate_constraints function, which
+        only checks the order of passes.
+        """
+        passes_to_run = defaultdict(list)
+
+        for current_pass in self.passes:
+            current_pass_name = ArmPass.get_name(current_pass)
+            for required_pass_name in ArmPass.get_required_passes(current_pass):
+                passes_to_run[required_pass_name].append(current_pass_name)
+
+            passes_to_run.pop(current_pass_name, None)
+
+        if len(passes_to_run) > 0:
+            error_msg = "The following constraints for passes are not met:\n"
+            for required_pass, requiring_passes in passes_to_run.items():
+                for requiring_pass in requiring_passes:
+                    error_msg += (
+                        f"  - {required_pass} must run after {requiring_pass}\n"
+                    )
+
+            raise RuntimeError(error_msg)
+
     def _transform(self, graph_module: GraphModule):
         with TosaLoweringContext(self.tosa_spec):
             return self(graph_module).graph_module
@@ -125,7 +156,6 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveGetItemPass())
         self.add_pass(ConvertSplitToSlicePass())
         self.add_pass(ConvertMmToBmmPass())
-        self.add_pass(DecomposeLinearVectorNormPass())
         self.add_pass(
             DecomposeMeanDimPass(exported_program.graph_module, self.tosa_spec)
         )
@@ -154,6 +184,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(DecomposeGroupedConv())
+
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
@@ -167,14 +198,20 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program))
+        # If we have a conv2d with int16 activation split up into a convolution
+        # and an addition, to work-around the lack of support for int48 in torch
+        # needs to happen before AddBiasPass, but after the table ops are inserted
+        # to be able to validate that conv2d has right dtype arguments.
+        self.add_pass(DecomposeConv2dWithInt16ActivationPass())
         self.add_pass(AddBiasPass(exported_program))
 
-        self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
 
+        self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
 
     def _tosa_FP_pipeline(self, exported_program: ExportedProgram) -> GraphModule:
@@ -258,6 +295,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
 
+        self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
 
     def transform_to_backend_pipeline(self, exported_program: ExportedProgram):

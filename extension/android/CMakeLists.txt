@@ -30,7 +30,7 @@ endif()
 # libc++ dependencies are consistent. WARNING # Users need to use the SAME fbjni
 # version here and in app gradle dependency for runtime compatibility!
 if(NOT FBJNI_VERSION)
-  set(FBJNI_VERSION 0.5.1)
+  set(FBJNI_VERSION 0.7.0)
 endif()
 
 set(FBJNI_AAR_URL
@@ -168,26 +168,8 @@ endif()
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
   target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp jni/log.cpp)
-  list(APPEND link_libraries llama_runner llava_runner)
+  list(APPEND link_libraries extension_llm_runner)
   target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llava/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
-  )
-
-  add_subdirectory(
-    ${EXECUTORCH_ROOT}/examples/models/llama/runner
-    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama/runner
-  )
-
-  target_sources(
-    executorch_jni
-    PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner/llm_runner_helper.cpp
-  )
-
-  target_include_directories(
-    executorch_jni PRIVATE ${EXECUTORCH_ROOT}/extension/llm/runner
-  )
 
   if(QNN_SDK_ROOT)
     target_sources(

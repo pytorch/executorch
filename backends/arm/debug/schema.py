@@ -13,7 +13,7 @@ from typing import Any, Optional
 import serializer.tosa_serializer as ts  # type: ignore
 import torch
 
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
 from torch.fx.traceback import NodeSource
 
@@ -112,7 +112,7 @@ class DebugSchema:
 
 
 class DebugHook:
-    def __init__(self, debug_mode: ArmCompileSpecBuilder.DebugMode) -> None:
+    def __init__(self, debug_mode: ArmCompileSpec.DebugMode) -> None:
         self._debug_events: list[DebugSchema] = []
         self.__op_id_to_name = {}
         self.mode = debug_mode
@@ -126,7 +126,7 @@ class DebugHook:
 
         # If the debug data is being embedded into the TOSA flatbuffer
         # do not collect TOSADebugSchema data, it's redundent
-        if self.mode != ArmCompileSpecBuilder.DebugMode.TOSA:
+        if self.mode != ArmCompileSpec.DebugMode.TOSA:
             tosa_debug_info = TosaDebugSchema(
                 node_name=str(tosa_op),
                 operator_name=self.__op_id_to_name[tosa_op_id],

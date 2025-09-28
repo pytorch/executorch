@@ -41,7 +41,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     PermuteCopyConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import (
-    QDQDequantizeConverter,
+    QDQPerChannelDequantizeConverter,
+    QDQPerTensorDequantizeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_quantize_converter import (
     QDQQuantizeConverter,
@@ -70,7 +71,8 @@ __all__ = [
     "PermuteCopyConverter",
     "SoftmaxConverter",
     "ViewCopyConverter",
-    "QDQDequantizeConverter",
+    "QDQPerTensorDequantizeConverter",
+    "QDQPerChannelDequantizeConverter",
     "QDQQuantizeConverter",
     "ConstantPadNDConverter",
     "ReLUConverter",

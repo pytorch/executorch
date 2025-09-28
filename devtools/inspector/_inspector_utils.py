@@ -657,13 +657,21 @@ def _combine_aot_overlapped_intermediate_outputs(
     # Combine all AOT debug_handles into a list
     aot_combined_debug_handle = [t[0] for t in aot_map.keys()]
 
-    if set(aot_combined_debug_handle) != set(runtime_debug_handle):
-        # AOT combined debug_handle and runtime debug_handle do not match.
+    # Reason we dont check for exact match:
+    # in some experiments where we want to rewrite the aten graph that was
+    # lowered, so as to use custom ops like int4_matmul, we lose some nodes
+    # on the graph and thus lose some debug handles. And we dont find
+    # exact match within connected components.
+    if not set(aot_combined_debug_handle).issubset(set(runtime_debug_handle)):
+        # AOT combined debug_handle is not a subset of runtime debug_handle.
         return (-1,), None
 
     # Pick the last intermediate output
     last_int = runtime_debug_handle[negative_index]
     key = (last_int,)
+    if key not in aot_map:
+        # If the last intermediate output is not in the AOT map, return None
+        return (-1,), None
     return runtime_debug_handle, aot_map[key]
 
 
@@ -965,7 +973,7 @@ def compare_intermediate_outputs(a: Any, b: Any, comparator) -> List[float]:
         # Ensure both sequences have the same length
         if len(a) != len(b):
             raise ValueError(
-                f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length for comparison."
+                f"Sequences 'a' ({a}) and 'b' ({b}) must have the same length for comparison. len(a): {len(a)} len(b): {len(b)}."
             )
 
         # Compare each element in the sequences and return the list of results
@@ -989,6 +997,9 @@ def get_ancestor_node_identifiers(node: Node) -> List[str]:
 
     Returns: the identifiers of all its ancestor nodes
     """
+
+    if FROM_NODE_KEY not in node.meta:
+        return []
 
     node_source = node.meta[FROM_NODE_KEY]
     node_source = node_source[-1]
@@ -1056,11 +1067,16 @@ def _find_matched_debug_handles(
         if node.op in ("output", "placeholder"):
             return
         node_id = f"{node.name}.{exported_program_graph_id}"
-        parent_node_id = get_parent_node_identifier(node)
+        parent_node_ids = get_ancestor_node_identifiers(node)
         if node_id in ancestors_node_id_to_debug_handle:
             matched_debug_handles.add(ancestors_node_id_to_debug_handle[node_id])
-        elif parent_node_id and parent_node_id in ancestors_node_id_to_debug_handle:
-            matched_debug_handles.add(ancestors_node_id_to_debug_handle[parent_node_id])
+        elif parent_node_ids:
+            for parent_node_id in parent_node_ids:
+                if parent_node_id in ancestors_node_id_to_debug_handle:
+                    matched_debug_handles.add(
+                        ancestors_node_id_to_debug_handle[parent_node_id]
+                    )
+                    break
 
     bfs_trace_with_node_process(exported_program.graph_module, _find_n_match_node)
     return matched_debug_handles
@@ -1094,15 +1110,17 @@ def _apply_debug_handles(
         if node.op in ("output", "placeholder"):
             return
         node_id = f"{node.name}.{exported_program_graph_id}"
-        parent_node_id = get_parent_node_identifier(node)
+        parent_node_ids = get_ancestor_node_identifiers(node)
+        node.meta[DEBUG_HANDLE_KEY] = UNSET_DEBUG_HANDLE
         if node_id in ancestors_node_id_to_debug_handle:
             node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[node_id]
-        elif parent_node_id and parent_node_id in ancestors_node_id_to_debug_handle:
-            node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[
-                parent_node_id
-            ]
-        else:
-            node.meta[DEBUG_HANDLE_KEY] = UNSET_DEBUG_HANDLE
+        elif parent_node_ids:
+            for parent_node_id in parent_node_ids:
+                if parent_node_id in ancestors_node_id_to_debug_handle:
+                    node.meta[DEBUG_HANDLE_KEY] = ancestors_node_id_to_debug_handle[
+                        parent_node_id
+                    ]
+                    break
 
     bfs_trace_with_node_process(exported_program.graph_module, _equip_debug_handle)
 
@@ -1111,6 +1129,7 @@ def propagate_back_debug_handle(
     exported_program: ExportedProgram,
     exported_program_graph_id: int,
     edge_dialect_program: ExportedProgram,
+    disable_debug_handle_valdiation: bool = False,
 ) -> bool:
     """
     Propagate debug handle from edge dialect program back to the exported program while maintain the correctness
@@ -1123,6 +1142,10 @@ def propagate_back_debug_handle(
 
     Then debug handle of op1 should be same as op1_0, and debug handle of op3 should be same as op3_0 and op3_1.
     The debug handle of op2 will be UNSET_DEBUG_HANDLE for further skipping.
+
+    disable_debug_handle_validation is used to avoid _verify_graph_match() in case of debug handle mismatch.
+    This can happen when we are comparing against aten graph in which case not all debug handles are matched
+    in aten graph. Example of this is when symbolic shape nodes are re-exported.
 
     Return: True if every debug handle in the edge dialect program has a corresponding node in the exported program, otherwise, return False.
     """
@@ -1137,7 +1160,9 @@ def propagate_back_debug_handle(
     )
 
     # 3. Verify if every debug handle in edge dialect program has a corresponding node
-    if not _verify_graph_match(edge_dialect_program, matched_debug_handles):
+    if not disable_debug_handle_valdiation and not _verify_graph_match(
+        edge_dialect_program, matched_debug_handles
+    ):
         return False
 
     # 4. Apply debug handles to the exported program

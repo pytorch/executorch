@@ -16,6 +16,8 @@
 
 ${define_active_storage_type(STORAGE)}
 
+${define_required_extensions(DTYPE)}
+
 #extension GL_EXT_control_flow_attributes : require
 
 layout(std430) buffer;
@@ -85,7 +87,7 @@ void main() {
   }
 
   // Initialize thread-local min/max
-  T local_exp_sum = 0;
+  T local_exp_sum = T(0);
 
   const int context_len_aligned_down = context_len - mod_4(context_len);
   const int C4_limit = div_4(context_len_aligned_down);

@@ -16,7 +16,7 @@ if you are using Ubuntu, or use an equivalent install command.
 
 ### ModuleNotFoundError: No module named 'pytorch_tokenizers'
 
-The `pytorch_tokenizers` package is required for LLM export functionality. Install it from the ExecutorTorch source code:
+The `pytorch_tokenizers` package is required for LLM export functionality. Install it from the ExecuTorch source code:
 ```
 pip install -e ./extension/llm/tokenizers/
 ```

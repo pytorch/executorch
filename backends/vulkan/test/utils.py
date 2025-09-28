@@ -303,13 +303,13 @@ def run_and_check_output(
     Returns:
         bool: True if outputs match within tolerance, False otherwise
     """
-    # Load the ExecutorTorch program
+    # Load the ExecuTorch program
     executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
 
     # Flatten inputs for execution
     inputs_flattened, _ = tree_flatten(sample_inputs)
 
-    # Run the ExecutorTorch program
+    # Run the ExecuTorch program
     model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
 
     # Generate reference outputs using the reference model

@@ -332,7 +332,7 @@ class SourceTransformStage(Stage):
         self._transformed_models = copy.deepcopy(artifact.data)
 
         # Apply torchao quantize_ to each model
-        for _, model in artifact.data.items():
+        for _, model in self._transformed_models.items():
             # pyre-ignore
             if len(self._quantization_recipe.ao_quantization_configs) > 1:
                 raise ValueError(

@@ -249,15 +249,6 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
             handles.inputs->io[i].elem_size);
         return Error::InvalidProgram;
       }
-      supported = executorch::runtime::is_contiguous_dim_order(
-          tensor_in.dim_order().data(), tensor_in.dim());
-      if (!supported) {
-        ET_LOG(
-            Error,
-            "Input %d expected contiguous dim_order, but got non-contiguous dim_order",
-            i);
-        return Error::InvalidProgram;
-      }
 
       // Select a compatible copy routine including checking for input layouts
       // which require permutation.
@@ -383,8 +374,8 @@ class EthosUBackend final : public ::executorch::runtime::BackendInterface {
       *tensor_count = *tensor_count * tensor.size(i);
     }
 
-    // The VelaIO type has a shape of fixed size 4
-    for (int i = 0; i < 4; i++) {
+    // The VelaIO type has a shape of fixed size 6
+    for (int i = 0; i < shapeDim; i++) {
       *io_count = *io_count * io->shape[i];
     }
   }
