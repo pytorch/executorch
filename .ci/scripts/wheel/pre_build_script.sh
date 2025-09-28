@@ -60,7 +60,9 @@ rm -rf "$PREFIX" "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # Download
-curl -sSL https://ftp.gnu.org/gnu/libc/glibc-$GLIBC_VERSION.tar.xz -o /tmp/glibc-$GLIBC_VERSION.tar.xz
+MIRROR=https://ftpmirror.gnu.org/gnu/libc
+curl -L $MIRROR/glibc-$GLIBC_VERSION.tar.xz -o glibc-$GLIBC_VERSION.tar.xz
+# curl -sSL https://ftp.gnu.org/gnu/libc/glibc-$GLIBC_VERSION.tar.xz -o /tmp/glibc-$GLIBC_VERSION.tar.xz
 tar -C /tmp -xf /tmp/glibc-$GLIBC_VERSION.tar.xz
 
 cd "$BUILD_DIR"
