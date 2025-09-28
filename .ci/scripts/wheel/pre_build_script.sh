@@ -63,6 +63,9 @@ tar -C /tmp -xf "$TARBALL"
 
 cd "$BUILD_DIR"
 
+# Unset it to keep glibc configure happy
+unset LD_LIBRARY_PATH
+
 ../glibc-$GLIBC_VERSION/configure \
   --prefix="$PREFIX" \
   --without-selinux \
