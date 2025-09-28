@@ -1,0 +1,117 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+/*
+ * Defines functions to compute a FPOutTile using int8 input and weight tiles.
+ *
+ * Settings:
+ * - TILE_M: The number of rows in the output tile.
+ * - TILE_N4: The number of (groups of 4) columns in the output tile.
+ */
+
+#ifndef LINEAR_INT8_OUTPUT_TILE_INT8_INT8_COMPUTE_GLSLH
+#define LINEAR_INT8_OUTPUT_TILE_INT8_INT8_COMPUTE_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+#extension GL_EXT_integer_dot_product : require
+
+#include "linear_fp_per_out_channel_params.glslh"
+#include "linear_int8_output_tile.glslh"
+#include "linear_int_accumulator.glslh"
+#include "linear_int_per_out_channel_params.glslh"
+
+void compute_int8_out_tile_with_int32_accum(
+    out Int8OutTile out_tile,
+    const Int32Accum accum,
+    const float input_q_scale,
+    const int input_q_zp,
+    const float output_q_inv_scale,
+    const int output_q_zp,
+    const IntPerOutChannelParams weight_sums,
+    const FPPerOutChannelParams weight_scales) {
+  ivec4 input_zp_vec = ivec4(-input_q_zp);
+  ivec4 output_zp_vec = ivec4(-output_q_zp);
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    [[unroll]] for (int m4i = 0; m4i < 4; ++m4i) {
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+        const int m = mul_4(m4) + m4i;
+        // Compute floating point output values
+        ivec4 accum_adjusted =
+            input_zp_vec * weight_sums.data[n4] + accum.data[m][n4];
+        vec4 float_out_texel =
+            vec4(accum_adjusted) * vec4(weight_scales.data[n4] * input_q_scale);
+        // Requantize to int8
+        float_out_texel =
+            round(float_out_texel * output_q_inv_scale) + output_q_zp;
+        ivec4 quantized_out_texel = clamp(ivec4(float_out_texel), -128, 127);
+
+        out_tile.data[m4][n4][m4i] = pack_into_int32(quantized_out_texel);
+      }
+    }
+  }
+}
+
+void compute_int8_out_tile_with_int32_accum(
+    out Int8OutTile out_tile,
+    const Int32Accum accum,
+    const float input_q_scale,
+    const int input_q_zp,
+    const float output_q_inv_scale,
+    const int output_q_zp,
+    const IntPerOutChannelParams weight_sums,
+    const FPPerOutChannelParams weight_scales,
+    const FPPerOutChannelParams bias) {
+  ivec4 input_zp_vec = ivec4(-input_q_zp);
+  ivec4 output_zp_vec = ivec4(-output_q_zp);
+  [[unroll]] for (int m4 = 0; m4 < TILE_M4; ++m4) {
+    [[unroll]] for (int m4i = 0; m4i < 4; ++m4i) {
+      [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+        const int m = mul_4(m4) + m4i;
+        // Compute floating point output values
+        ivec4 accum_adjusted =
+            input_zp_vec * weight_sums.data[n4] + accum.data[m][n4];
+        vec4 float_out_texel =
+            fma(vec4(accum_adjusted),
+                vec4(weight_scales.data[n4]) * input_q_scale,
+                vec4(bias.data[n4]));
+        // Requantize to int8
+        float_out_texel =
+            round(float_out_texel * output_q_inv_scale) + output_q_zp;
+        ivec4 quantized_out_texel = clamp(ivec4(float_out_texel), -128, 127);
+
+        out_tile.data[m4][n4][m4i] = pack_into_int32(quantized_out_texel);
+      }
+    }
+  }
+}
+
+// // overload of the above but with bias
+// void accumulate_out_tile_with_int_accum(
+//     inout FPOutTile out_tile,
+//     const Int32Accum accum,
+//     const float input_q_scale,
+//     const int input_q_zp,
+//     const IntPerOutChannelParams weight_sums,
+//     const FPPerOutChannelParams weight_scales,
+//     const FPPerOutChannelParams bias) {
+//   ivec4 input_zp_vec = ivec4(-input_q_zp);
+//   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
+//     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
+//       // Apply scale and zero points to the int accumulator
+//       ivec4 accum_adjusted =
+//           input_zp_vec * weight_sums.data[n4] + accum.data[m][n4];
+//       out_tile.data[m][n4] =
+//           fma(VEC4_T(accum_adjusted),
+//               VEC4_T(input_q_scale * weight_scales.data[n4]),
+//               out_tile.data[m][n4]);
+//       out_tile.data[m][n4] += bias.data[n4];
+//     }
+//   }
+// }
+
+#endif // LINEAR_INT8_OUTPUT_TILE_INT8_INT8_COMPUTE_GLSLH
