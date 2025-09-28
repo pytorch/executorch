@@ -1145,3 +1145,14 @@ class TestRefImplementations(unittest.TestCase):
             torch.equal(output, expected_output),
             f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
         )
+
+    def test_where_Scalar(self) -> None:
+        input_tensor = torch.tensor([1, 2, 3, 4], dtype=torch.int8)
+        out = torch.ops.cadence.where_Scalar(input_tensor > 2, 1.0, 0.0)
+        self.assertTrue(
+            torch.equal(out, torch.tensor([0.0, 0.0, 1.0, 1.0], dtype=torch.float32))
+        )
+        with self.assertRaises(ValueError) as context:
+            torch.ops.cadence.where_Scalar(input_tensor, 1.0, 0.0)
+
+        self.assertIn("condition must be a bool tensor", str(context.exception))

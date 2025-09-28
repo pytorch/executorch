@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import <Foundation/Foundation.h>
+#import "ExecuTorchLLMConfig.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -49,24 +49,33 @@ __attribute__((deprecated("This API is experimental.")))
 - (BOOL)loadWithError:(NSError **)error;
 
 /**
- Generates text given an input prompt, up to a specified sequence length.
- Invokes the provided callback for each generated token.
+ Generates text given an input prompt. A default configuration
+ is created and passed to the configuration block for in-place mutation.
 
- @param prompt    The initial text prompt to generate from.
- @param seq_len   The maximum number of tokens to generate.
- @param callback  A block called with each generated token as an NSString.
- @param error     On failure, populated with an NSError explaining the issue.
+ The token callback, if provided, is invoked for each generated token.
+
+ @param prompt     The initial text prompt to generate from.
+ @param config     A configuration object.
+ @param callback   A block called with each generated token as an NSString.
+ @param error      On failure, populated with an NSError explaining the issue.
  @return YES if generation completes successfully, NO if an error occurred.
 */
 - (BOOL)generate:(NSString *)prompt
-   sequenceLength:(NSInteger)seq_len
-withTokenCallback:(nullable void (^)(NSString *))callback
-            error:(NSError **)error;
+           config:(ExecuTorchLLMConfig *)config
+withTokenCallback:(nullable void (^)(NSString *token))callback
+            error:(NSError **)error
+    NS_SWIFT_NAME(generate(_:_:tokenCallback:));
 
 /**
- Stops any ongoing generation and cleans up internal resources.
+ Stop producing new tokens and terminate the current generation process.
 */
 - (void)stop;
+
+/**
+ Remove the prefilled tokens from the KV cache and reset the start position
+ to 0. It also clears the stats for previous runs.
+*/
+- (void)reset;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

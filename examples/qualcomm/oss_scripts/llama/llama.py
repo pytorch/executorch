@@ -223,6 +223,7 @@ class SingleLlama:
         custom_annotations=(),
         scales_state_dict=None,
         chat_template=None,
+        lookahead_config=None,
     ):
         self.quant_dtype = quant_dtype
         quantizer = make_custom_quantizer(
@@ -290,6 +291,7 @@ class SingleLlama:
             prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
+            lookahead_config=lookahead_config,
         )
         if scales_state_dict:
             set_scales(
@@ -336,6 +338,7 @@ class SingleLlama:
                 prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="convert_pt2e_prompt",
+                lookahead_config=lookahead_config,
             )
 
     def save_logits_quant_attrs(self):
@@ -497,13 +500,6 @@ def compile(
                 )
             )
         elif args.model_mode == "lookahead":
-            # TODO: Lookahead decoding is not yet supported for gemma3-1b.
-            # This will be implemented once the model architecture and KV update logic are adapted.
-            if args.decoder_model == "gemma3-1b":
-                raise NotImplementedError(
-                    "gemma3-1b does not currently support lookahead decoding."
-                )
-
             llama_instance_list.append(
                 LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
@@ -697,6 +693,11 @@ def compile(
         custom_annotations = decoder_model_config.custom_annotation
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
+            lookahead_config = (
+                (args.window, args.ngram, args.gcap)
+                if i == 0 and args.model_mode == "lookahead"
+                else None
+            )
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
@@ -704,6 +705,7 @@ def compile(
                 custom_annotations=custom_annotations,
                 scales_state_dict=scales_state_dict,
                 chat_template=chat_template,
+                lookahead_config=lookahead_config,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:

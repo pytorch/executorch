@@ -68,7 +68,7 @@ def _is_float_tensor(node: Node):
         or not isinstance(node.meta["val"], FakeTensor)
     ):
         return False
-    return node.meta["val"].dtype == torch.float32
+    return node.meta["val"].dtype in (torch.bfloat16, torch.float32)
 
 
 def _mark_nodes_as_annotated(nodes: List[Node]):
@@ -1094,11 +1094,13 @@ def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator(
     [
+        torch.ops.aten.conv1d.default,
         torch.ops.aten.conv2d.default,
         torch.ops.aten.conv2d.padding,
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv3d.default,
         torch.ops.aten.conv_transpose1d.default,
+        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv_transpose3d.input,
         torch.ops.aten.convolution.default,
     ]
 )

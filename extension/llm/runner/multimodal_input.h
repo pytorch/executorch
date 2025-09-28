@@ -31,7 +31,7 @@ class ET_EXPERIMENTAL MultimodalInput {
   /// Type of multimodal input data
   enum class Type {
     TEXT, ///< Text string input
-    TOKENS, ///< Pre-tokenized input (vector of token IDs)
+    TOKENS, ///< Tokenizer encoded input (vector of token IDs)
     IMAGE, ///< Processed image input
     AUDIO, ///< Processed audio input
     RAW_AUDIO, ///< Raw unprocessed audio input (straight from audio file)

@@ -277,10 +277,14 @@ def get_symmetric_a16w8_linear_quantizer(
     )
 
 
-@common.parametrize("test_data", test_data_rank1_INT | test_data_rank4_INT)
-@pytest.mark.xfail(
-    reason="missing int16 linear ops support; fails at TOSA reference model run with Invalid TOSA graph"
-)
+test_data_all_16a8w = test_data_rank1_INT | test_data_rank4_INT
+# TODO: Remove large rand test as they are flaky until sorted out why: MLETORCH-1377
+for k in list(test_data_all_16a8w.keys()):
+    if "large_rand" in k:
+        test_data_all_16a8w.pop(k)
+
+
+@common.parametrize("test_data", test_data_all_16a8w)
 def test_linear_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test linear operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     test_data, out_features, has_bias, per_channel_quantization = test_data()
