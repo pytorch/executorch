@@ -43,13 +43,6 @@ ivec4 quantize(
   return clamp(ivec4(quantized), -128, 127);
 }
 
-int pack_into_int32(const ivec4 quant_vals) {
-  int packed = ((quant_vals[0] & 0xFF) << 0) | ((quant_vals[1] & 0xFF) << 8) |
-      ((quant_vals[2] & 0xFF) << 16) | ((quant_vals[3] & 0xFF) << 24);
-
-  return packed;
-}
-
 void quantize_and_pack(
     out Int8InputBlock packed,
     const FPInputTile in_block,
