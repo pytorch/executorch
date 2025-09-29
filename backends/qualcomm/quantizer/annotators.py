@@ -1094,11 +1094,13 @@ def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator(
     [
+        torch.ops.aten.conv1d.default,
         torch.ops.aten.conv2d.default,
         torch.ops.aten.conv2d.padding,
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv3d.default,
         torch.ops.aten.conv_transpose1d.default,
+        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv_transpose3d.input,
         torch.ops.aten.convolution.default,
     ]
 )

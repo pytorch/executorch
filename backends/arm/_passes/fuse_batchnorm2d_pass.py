@@ -12,6 +12,7 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
 )
+from executorch.backends.arm.common.debug import get_node_debug_info
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     delete_constant_placeholder,
@@ -60,8 +61,16 @@ class FuseBatchnorm2DPass(ExportPass):
             input_node = node.all_input_nodes[0]
             is_single_user = len(input_node.users) == 1
             bn_weight_node, bn_bias_node, bn_mean_node, bn_var_node = node.args[1:5]
-            assert bn_mean_node is not None, "Batchnorm mean node cannot be None."
-            assert bn_var_node is not None, "Batchnorm var node cannot be None."
+            if bn_mean_node is None:
+                raise RuntimeError(
+                    "BatchNorm mean buffer missing for node: "
+                    f"{get_node_debug_info(node, graph_module)}"
+                )
+            if bn_var_node is None:
+                raise RuntimeError(
+                    "BatchNorm variance buffer missing for node: "
+                    f"{get_node_debug_info(node, graph_module)}"
+                )
 
             epsilon = node.args[-1]
 
@@ -133,14 +142,23 @@ class FuseBatchnorm2DPass(ExportPass):
                     input_node = new_input_node
             else:
                 input_weight_node, input_bias_node = input_node.args[1:3]
-                assert (
+                if not (
                     isinstance(input_weight_node, Node)
                     and input_weight_node.op == "placeholder"
-                ), "Parameter weight of convolution must be a placeholder"
-                assert (input_bias_node is None) or (
-                    isinstance(input_weight_node, Node)
-                    and input_weight_node.op == "placeholder"
-                ), "Parameter bias of convolution must be a placeholder or None"
+                ):
+                    raise RuntimeError(
+                        "Parameter weight of convolution must be a placeholder"
+                    )
+                if not (
+                    (input_bias_node is None)
+                    or (
+                        isinstance(input_weight_node, Node)
+                        and input_weight_node.op == "placeholder"
+                    )
+                ):
+                    raise RuntimeError(
+                        "Parameter bias of convolution must be a placeholder or None"
+                    )
 
                 input_weight_tensor = torch.Tensor(
                     get_param(self.exported_program, input_weight_node)
