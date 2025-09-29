@@ -34,7 +34,10 @@ def vela_bin_pack_io(prefix, data):
         io_elem_size = data[prefix + "_elem_size"][i]
         io_offset = data[prefix + "_offset"][i]
         io_region = data[prefix + "_region"][i]
-        assert len(io_shape) == vela_io_shape_dims
+        if len(io_shape) != vela_io_shape_dims:
+            raise ValueError(
+                f"Expected {vela_io_shape_dims}D shape, got {len(io_shape)}D"
+            )
         inp_pad = io_shape.tolist()
         io_struct = struct.pack(
             "<iiiiiiiii", *inp_pad, io_elem_size, io_offset, io_region

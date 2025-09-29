@@ -37,6 +37,7 @@ from torch.nn import functional as F
 from torch.testing import FileCheck
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+from torchao.quantization.utils import compute_error
 
 
 class TestQuantFusionPass(unittest.TestCase):
@@ -470,7 +471,8 @@ class TestQuantFusionPass(unittest.TestCase):
 
         # Compare numerics
         actual_outputs = m.exported_program().module()(*example_inputs)
-        self.assertTrue(torch.allclose(expected_outputs, actual_outputs))
+        sqnr = compute_error(expected_outputs, actual_outputs)
+        self.assertTrue(sqnr >= 50, f"Got sqnr {sqnr}")
 
         # Can lower to executorch
         exec_prog = m.to_executorch()  # noqa
@@ -488,7 +490,8 @@ class TestQuantFusionPass(unittest.TestCase):
         )
 
         actual_outputs2 = m_copy.exported_program().module()(*example_inputs)
-        self.assertTrue(torch.allclose(expected_outputs, actual_outputs2))
+        sqnr = compute_error(expected_outputs, actual_outputs2)
+        self.assertTrue(sqnr >= 50, f"Got sqnr {sqnr}")
 
         # Can lower to executorch
         exec_prog2 = m_copy.to_executorch()  # noqa

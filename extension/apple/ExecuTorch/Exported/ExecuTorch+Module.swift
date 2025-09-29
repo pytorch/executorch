@@ -8,7 +8,6 @@
 
 @_exported import ExecuTorch
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension TensorMetadata {
   /// The size of each dimension.
   var shape: [Int] { __shape.map(\.intValue) }
@@ -17,7 +16,6 @@ public extension TensorMetadata {
   var dimensionOrder: [Int] { __dimensionOrder.map(\.intValue) }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension MethodMetadata {
   /// The declared input tags.
   var inputValueTags: [ValueTag] {
@@ -49,7 +47,6 @@ public extension MethodMetadata {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Module {
   /// Executes a specific method with the provided input values.
   /// The method is loaded on demand if not already loaded.
@@ -94,7 +91,6 @@ public extension Module {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Module {
   /// Executes a specific method and decodes the outputs into `Output` generic type.
   ///
@@ -177,7 +173,6 @@ public extension Module {
   }
 }
 
-@available(*, deprecated, message: "This API is experimental.")
 public extension Module {
   /// Sets a single input value for a method at the specified index.
   ///
