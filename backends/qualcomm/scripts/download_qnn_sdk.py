@@ -248,7 +248,7 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 ####################
 
 GLIBC_VERSION = "2.29"
-GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-{GLIBC_VERSION}")
+GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LOADER = GLIBC_ROOT / "lib" / "ld-linux-x86-64.so.2"
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
