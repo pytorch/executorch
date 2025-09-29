@@ -65,7 +65,15 @@ echo ">>> Extracting RPM with bsdtar"
 bsdtar -C /tmp -xf /tmp/glibc.rpm
 
 # Copy needed files from the extracted tree (not host system!)
-cp -av /tmp/lib64/libc.so.6 /tmp/lib64/ld-linux-x86-64.so.2 "$PREFIX/lib/" || true
+# Copy all runtime libs from extracted RPM
+cp -av /tmp/lib64/libc.so.6 \
+       /tmp/lib64/ld-linux-x86-64.so.2 \
+       /tmp/lib64/libdl.so.2 \
+       /tmp/lib64/libpthread.so.0 \
+       /tmp/lib64/librt.so.1 \
+       /tmp/lib64/libm.so.6 \
+       /tmp/lib64/libutil.so.1 \
+       "$PREFIX/lib/" || true
 
 # Check what we staged
 echo ">>> Contents staged in $PREFIX/lib"
