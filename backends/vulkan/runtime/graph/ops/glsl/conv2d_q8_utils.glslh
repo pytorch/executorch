@@ -1,0 +1,151 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_Q8_UTILS_GLSLH
+#define CONV2D_Q8_UTILS_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+#extension GL_EXT_integer_dot_product : require
+
+#include "linear_int_accumulator.glslh"
+
+struct Int8InputWindow1D {
+  int[MAX_WINDOW_WIDTH] data;
+  int len;
+};
+
+Int8InputWindow1D initial_input_window() {
+  Int8InputWindow1D input_window;
+  for (int i = 0; i < MAX_WINDOW_WIDTH; ++i) {
+    input_window.data[i] = 0;
+  }
+  input_window.len = 0;
+  return input_window;
+}
+
+bool in_bounds(
+    const int block_w,
+    const int block_h,
+    const int block_c4,
+    const Conv2dBlockExtents block_extents) {
+  ivec3 idx = ivec3(block_w, block_h, block_c4);
+  if (any(lessThan(idx, ivec3(0)))) {
+    return false;
+  }
+  if (any(greaterThanEqual(idx, block_extents.data))) {
+    return false;
+  }
+
+  return true;
+}
+
+Int8InputWindow1D load_input_window(
+    const int w_start,
+    const int w_end,
+    const int h,
+    const int c4,
+    const Conv2dBlockExtents block_extents,
+    const ivec4 input_zps) {
+  Int8InputWindow1D input_window = initial_input_window();
+
+  const int block_w_start = div_4(w_start);
+  const int block_w_end = div_4(w_end);
+
+  int window_i = 0;
+  for (int block_w = block_w_start; block_w <= block_w_end; ++block_w) {
+    ivec4 input_block = input_zps;
+
+    if (in_bounds(block_w, h, c4, block_extents)) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+      const int buffer_idx =
+          h * block_extents.data_xz + block_w * block_extents.data.z + c4;
+      input_block = t_packed_int8_input[buffer_idx];
+#else
+      input_block = texelFetch(t_packed_int8_input, ivec3(block_w, h, c4), 0);
+#endif
+    }
+
+    const int loaded_w_start = mul_4(block_w);
+    for (int row = 0; row < 4; ++row) {
+      if (loaded_w_start + row >= w_start && loaded_w_start + row <= w_end) {
+        input_window.data[window_i++] = input_block[row];
+      }
+    }
+  }
+  input_window.len = window_i;
+  return input_window;
+}
+
+ivec4 load_weight_block(
+    const int ic4,
+    const int kx,
+    const int ky,
+    const int oc4,
+    const int IC4,
+    const int Kw,
+    const int Kh,
+    const int OC4) {
+#ifdef PACKED_INT8_WEIGHTS_BUFFER
+  const int block_x = oc4 * Kw + kx;
+  const int block_y = ky * IC4 + ic4;
+  return t_packed_int8_weight[block_y * (Kw * OC4) + block_x];
+#else
+  return texelFetch(
+      t_packed_int8_weight, ivec2(oc4 * Kw + kx, ky * IC4 + ic4), 0);
+#endif
+}
+
+void perform_conv1d(
+    inout Int32Accum accum,
+    const Int8InputWindow1D input_window,
+    const ivec4 weight_block,
+    const int kx) {
+  [[unroll]] for (int out_w = 0; out_w < 4; ++out_w) {
+    const int window_i = out_w * conv2d_params.stride.x + kx;
+    [[unroll]] for (int out_c = 0; out_c < 4; ++out_c) {
+      accum.data[out_w][0][out_c] = dotPacked4x8AccSatEXT(
+          input_window.data[window_i],
+          weight_block[out_c],
+          accum.data[out_w][0][out_c]);
+    }
+  }
+}
+
+#ifdef DEBUG_MODE
+
+void printInt8InputWindow1D(const Int8InputWindow1D input_window) {
+  debugPrintfEXT("Int8InputWindow1D contents (len = %d): \\n", input_window.len);
+  for (int i = 0; i < min(input_window.len, MAX_WINDOW_WIDTH); ++i) {
+    ivec4 unpacked = unpack_int8x4(input_window.data[i]);
+    debugPrintfEXT(
+        "  [%d]: (%d, %d, %d, %d) \\n",
+        i,
+        unpacked.x,
+        unpacked.y,
+        unpacked.z,
+        unpacked.w);
+  }
+}
+
+void printWeightBlock(const ivec4 weight_block) {
+  debugPrintfEXT("WeightBlock contents: \\n");
+  for (int i = 0; i < 4; ++i) {
+    ivec4 unpacked = unpack_int8x4(weight_block[i]);
+    debugPrintfEXT(
+        "  [%d]: (%d, %d, %d, %d) \\n",
+        i,
+        unpacked.x,
+        unpacked.y,
+        unpacked.z,
+        unpacked.w);
+  }
+}
+
+#endif // DEBUG_MODE
+
+#endif // CONV2D_Q8_UTILS_GLSLH

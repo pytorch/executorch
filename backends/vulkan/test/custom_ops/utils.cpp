@@ -661,7 +661,12 @@ float collect_gpu_timing_us(ComputeGraph& graph) {
     float total_duration_us = 0.0f;
     for (const auto& shader_result : results) {
       if (shader_result.kernel_name.find("nchw_to") == std::string::npos &&
-          shader_result.kernel_name.find("to_nchw") == std::string::npos) {
+          shader_result.kernel_name.find("to_nchw") == std::string::npos &&
+          shader_result.kernel_name.find(
+              "quantize_and_pack_q8ta_conv2d_input") == std::string::npos &&
+          shader_result.kernel_name.find(
+              "unpack_and_dequantize_q8ta_conv2d_output") ==
+              std::string::npos) {
         // Calculate duration from start and end times, convert from ns to μs
         uint64_t duration_ns =
             shader_result.end_time_ns - shader_result.start_time_ns;
@@ -1712,6 +1717,41 @@ void compute_weight_sums(
       sum += static_cast<int32_t>(quantized_weight_data[weight_idx]);
     }
     weight_sums_data[out_f] = sum;
+  }
+}
+
+// Compute weight sums for 4D quantized conv2d operations
+// Weight layout: [C_out, K_h, K_w, align_up_4(C_in_per_group)]
+void compute_weight_sums_4d(
+    ValueSpec& weight_sums,
+    const ValueSpec& quantized_weight,
+    int64_t out_channels,
+    int64_t kernel_h,
+    int64_t kernel_w,
+    int64_t aligned_in_channels) {
+  auto& weight_sums_data = weight_sums.get_int32_data();
+  auto& quantized_weight_data = quantized_weight.get_int8_data();
+
+  weight_sums_data.resize(out_channels);
+
+  // For each output channel, compute the sum of quantized weights
+  for (int64_t out_c = 0; out_c < out_channels; ++out_c) {
+    int32_t sum = 0;
+
+    for (int64_t kh = 0; kh < kernel_h; ++kh) {
+      for (int64_t kw = 0; kw < kernel_w; ++kw) {
+        for (int64_t in_c = 0; in_c < aligned_in_channels; ++in_c) {
+          // Weight indexing: [out_c, kh, kw, in_c]
+          int64_t weight_idx =
+              out_c * (kernel_h * kernel_w * aligned_in_channels) +
+              kh * (kernel_w * aligned_in_channels) + kw * aligned_in_channels +
+              in_c;
+          sum += static_cast<int32_t>(quantized_weight_data[weight_idx]);
+        }
+      }
+    }
+
+    weight_sums_data[out_c] = sum;
   }
 }
 

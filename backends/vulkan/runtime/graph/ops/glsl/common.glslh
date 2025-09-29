@@ -46,6 +46,14 @@ int extract_8bit_from_packed_int_le(const int packed, const int i) {
   return byte;
 }
 
+ivec4 unpack_int8x4(const int packed) {
+  return ivec4(
+    extract_8bit_from_packed_int_le(packed, 0),
+    extract_8bit_from_packed_int_le(packed, 1),
+    extract_8bit_from_packed_int_le(packed, 2),
+    extract_8bit_from_packed_int_le(packed, 3));
+}
+
 int pack_4xqint_into_int32(
     const int val0,
     const int val1,
@@ -53,6 +61,13 @@ int pack_4xqint_into_int32(
     const int val3) {
   int packed = (val0 & 0xFF) | ((val1 & 0xFF) << 8) | ((val2 & 0xFF) << 16) |
       ((val3 & 0xFF) << 24);
+
+  return packed;
+}
+
+int pack_into_int32(const ivec4 quant_vals) {
+  int packed = ((quant_vals[0] & 0xFF) << 0) | ((quant_vals[1] & 0xFF) << 8) |
+      ((quant_vals[2] & 0xFF) << 16) | ((quant_vals[3] & 0xFF) << 24);
 
   return packed;
 }

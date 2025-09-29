@@ -60,9 +60,11 @@ def define_common_targets(is_fbcode = False):
         ],
         headers = [
             "utils.h",
+            "conv2d_utils.h",
         ],
         exported_headers = [
             "utils.h",
+            "conv2d_utils.h",
         ],
         platforms = get_platforms(),
         deps = [
@@ -98,3 +100,5 @@ def define_common_targets(is_fbcode = False):
     define_custom_op_test_binary("choose_qparams_per_row")
     define_custom_op_test_binary("q4gsw_linear")
     define_custom_op_test_binary("qdq8ta_conv2d_activations")
+    define_custom_op_test_binary("q8ta_q8csw_q8to_conv2d")
+    define_custom_op_test_binary("q8ta_q8csw_q8to_conv2d_dw")
