@@ -87,22 +87,27 @@
       for (NSUInteger index = 2; specialTokens.count < 256; ++index) {
         [specialTokens addObject:[NSString stringWithFormat:@"<|reserved_special_token_%zu|>", index]];
       }
-      auto __block runner = [[ExecuTorchLLMTextRunner alloc] initWithModelPath:modelPath
-                                                                 tokenizerPath:tokenizerPath
-                                                                 specialTokens:specialTokens];
+      ExecuTorchLLMTextRunner *__block runner =
+          [[ExecuTorchLLMTextRunner alloc] initWithModelPath:modelPath
+                                               tokenizerPath:tokenizerPath
+                                               specialTokens:specialTokens];
       NSError *error;
       BOOL status = [runner loadWithError:&error];
       if (!status) {
         XCTFail("Load failed with error %zi", error.code);
         return;
       }
+      ExecuTorchLLMGenerationConfig *config =
+          [[ExecuTorchLLMGenerationConfig alloc] initWithConfigurationHandler:^(ExecuTorchLLMGenerationConfig *config) {
+            config.sequenceLength = 50;
+          }];
       TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
       [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTClockMetric new], [XCTMemoryMetric new] ]
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
-                              BOOL status = [runner generate:@"Once upon a time"
-                                              sequenceLength:50
-                                           withTokenCallback:^(NSString *token) {
+                              BOOL status = [runner generateWithPrompt:@"Once upon a time"
+                                                                config:config
+                                                     withTokenCallback:^(NSString *token) {
                                 tokensPerSecondMetric.tokenCount++;
                               }
                                                        error:NULL];
