@@ -90,28 +90,4 @@ void compute_int8_out_tile_with_int32_accum(
   }
 }
 
-// // overload of the above but with bias
-// void accumulate_out_tile_with_int_accum(
-//     inout FPOutTile out_tile,
-//     const Int32Accum accum,
-//     const float input_q_scale,
-//     const int input_q_zp,
-//     const IntPerOutChannelParams weight_sums,
-//     const FPPerOutChannelParams weight_scales,
-//     const FPPerOutChannelParams bias) {
-//   ivec4 input_zp_vec = ivec4(-input_q_zp);
-//   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-//     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
-//       // Apply scale and zero points to the int accumulator
-//       ivec4 accum_adjusted =
-//           input_zp_vec * weight_sums.data[n4] + accum.data[m][n4];
-//       out_tile.data[m][n4] =
-//           fma(VEC4_T(accum_adjusted),
-//               VEC4_T(input_q_scale * weight_scales.data[n4]),
-//               out_tile.data[m][n4]);
-//       out_tile.data[m][n4] += bias.data[n4];
-//     }
-//   }
-// }
-
 #endif // LINEAR_INT8_OUTPUT_TILE_INT8_INT8_COMPUTE_GLSLH
