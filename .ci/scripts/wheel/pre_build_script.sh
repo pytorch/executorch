@@ -45,9 +45,18 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
-# Install glibc-2.29
+# Install glibc-2.34
 
-echo "GCC version: $(gcc -dumpfullversion)"
+# Install older GCC (works on GitHub Ubuntu runners)
+sudo apt-get update
+sudo apt-get install -y gcc-11 g++-11
+
+# Force glibc build to use GCC 11
+export CC=gcc-11
+export CXX=g++-11
+
+echo "GCC version (system default): $(gcc -dumpfullversion)"
+echo "GCC version (forced CC): $($CC -dumpfullversion)"
 
 # 👇 only change this line to bump version
 GLIBC_VERSION=2.34
@@ -77,22 +86,11 @@ cd "$BUILD_DIR"
 # Unset LD_LIBRARY_PATH to satisfy glibc configure
 unset LD_LIBRARY_PATH
 
-# Suppress GCC 13+ warnings
-COMMON_FLAGS="-O2 -fPIC -fcommon \
-    -Wno-error \
-    -Wno-error=array-parameter \
-    -Wno-error=array-bounds \
-    -Wno-error=maybe-uninitialized \
-    -Wno-error=zero-length-bounds \
-    -Wno-error=stringop-overflow \
-    -Wno-error=deprecated-declarations \
-    -Wno-error=use-after-free \
-    -Wno-error=builtin-declaration-mismatch \
-    -Wno-error=attributes \
-    -Wno-error=implicit-function-declaration"
-
+# Suppress GCC warnings (GCC 11 is more compatible, but keep flags)
+COMMON_FLAGS="-O2 -fPIC -fcommon -Wno-error"
 export CFLAGS="$COMMON_FLAGS"
 export CPPFLAGS="$COMMON_FLAGS"
+export CXXFLAGS="$COMMON_FLAGS"
 
 # Configure
 ../glibc-$GLIBC_VERSION/configure \
