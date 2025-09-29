@@ -273,6 +273,43 @@ def _check_tmp_glibc() -> bool:
         return False
 
 
+def _current_glibc_version() -> str:
+    try:
+        return ctypes.CDLL("libc.so.6").gnu_get_libc_version().decode()
+    except Exception:
+        return "unknown"
+
+
+def _ensure_glibc_minimum():
+    current = _current_glibc_version()
+    logger.info("[glibc] Current loaded glibc: %s", current)
+
+    if current >= GLIBC_VERSION:
+        logger.info("[glibc] Current glibc is sufficient, no re-exec needed.")
+        return
+
+    if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
+        logger.error(
+            "[glibc] Re-exec attempted but glibc is still too low (%s).", current
+        )
+        return
+
+    if not GLIBC_LOADER.exists():
+        logger.error("[glibc] Loader not found at %s", GLIBC_LOADER)
+        return
+
+    logger.info(
+        "[glibc] Re-executing under %s (target=%s)", GLIBC_LOADER, GLIBC_VERSION
+    )
+
+    os.environ[GLIBC_REEXEC_GUARD] = "1"
+    os.execv(
+        str(GLIBC_LOADER),
+        [str(GLIBC_LOADER), "--library-path", str(GLIBC_LIBDIR), sys.executable]
+        + sys.argv,
+    )
+
+
 ####################
 # libc++ management
 ####################
@@ -474,13 +511,14 @@ def install_qnn_sdk() -> bool:
         True if both steps succeeded (or were already satisfied), else False.
     """
     logger.info("[QNN] Starting SDK installation")
-    # Re-exec with glibc 2.36 if needed.
-    # Just check that pre-installed glibc is present and valid
+
+    # Check and re-exec with custom glibc if needed
+    _ensure_glibc_minimum()
+
     if not _check_tmp_glibc():
         logger.error("[glibc] Pre-installed glibc check failed. Exiting early.")
         return False
 
-    if _ensure_libcxx_stack():
-        if _ensure_qnn_sdk_lib():
-            return True
+    if _ensure_libcxx_stack() and _ensure_qnn_sdk_lib():
+        return True
     return False
