@@ -126,7 +126,8 @@ class ArmCompileSpec(ABC):
 
     def to_list(self):
         """Get the ArmCompileSpec in list form."""
-        assert self.tosa_spec
+        if not self.tosa_spec:
+            raise ValueError("tosa_spec must be set before calling to_list()")
 
         # Always supply a TOSA version
         compile_spec = [

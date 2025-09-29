@@ -14,8 +14,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 
 //
@@ -86,19 +84,20 @@ bool should_use_im2col(
   // this result in a larger footprint for the im2col matrix, but the cost of
   // performing the im2col procedure will also become prohibitive. In these
   // cases it is faster to just compute convolution directly without going
-  // through im2col.
-  if (kernel_size_list->at(0) * kernel_size_list->at(1) <= 10) {
-    const int64_t groups_val = graph->get_int(groups);
-    // Do not use im2col for grouped convolutions; manual experimentation shows
-    // that im2col becomes very slow when dealing with grouped convolutions.
-    // The reason for this is likely that memory access in the im2col shader
-    // becomes too non-linear due to needed to keep convolution groups
-    // contiguous in memory.
-    if (groups_val == 1) {
-      return true;
-    }
+  // through im2col. Empirically, im2col works well for 3x3 convolution and
+  // not for 5x5 convolution, so set the limit at 10.
+  if (kernel_size_list->at(0) * kernel_size_list->at(1) > 10) {
+    return false;
   }
-  return false;
+
+  // Only use im2col for non-grouped convolutions; manual experimentation shows
+  // that im2col becomes very slow when dealing with grouped convolutions. The
+  // reason for this is likely that memory access in the im2col shader becomes
+  // too non-linear due to needed to keep convolution groups contiguous in
+  // in memory. This means that the channels of the input tensor (which are
+  // originally contiguous in memory) will be split up during the im2col
+  // procedure.
+  return graph->get_int(groups) == 1;
 }
 
 struct Conv2DParams {
@@ -227,7 +226,6 @@ std::vector<int64_t> calculate_packed_int8_input_im2col_sizes(
   const int64_t in_channels = utils::val_at(-3, in_sizes);
 
   std::vector<int64_t> out_sizes = graph->sizes_of(output);
-  // const int64_t batches = utils::val_at(-4, out_sizes);
   const int64_t out_height = utils::val_at(-2, out_sizes);
   const int64_t out_width = utils::val_at(-1, out_sizes);
 
