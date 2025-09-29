@@ -558,7 +558,7 @@ only the delegate runtime source files.</p></li>
 <code class="docutils literal notranslate"><span class="pre">executorch/third-party</span></code> then try to use that if possible. This
 helps with reducing the binary size when the delegate is enabled.</p></li>
 <li><p>The rest of the ExecuTorch code, outside of the delegate, should not depend on
-this. And it should should build and run correctly without this dependency
+this. And it should build and run correctly without this dependency
 when the delegate is disabled at build time.</p></li>
 </ul>
 <p>More details in the section <a class="reference internal" href="#runtime-dependencies"><span class="std std-doc">below</span></a>.</p>

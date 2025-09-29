@@ -645,7 +645,6 @@
 <span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">tagged_module</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shapes</span><span class="p">)</span>
 <span class="n">executorch_program</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
     <span class="n">exported_program</span><span class="p">,</span>
-    <span class="n">transform_passes</span> <span class="o">=</span> <span class="p">[</span><span class="n">partial_function</span><span class="p">],</span>
     <span class="n">partitioner</span> <span class="o">=</span> <span class="p">[</span><span class="n">XnnpackPartitioner</span><span class="p">()]</span>
 <span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 </pre></div>
@@ -679,7 +678,8 @@
 <div class="section" id="testing-the-model">
 <h2>Testing the Model<a class="headerlink" href="#testing-the-model" title="Permalink to this heading">¶</a></h2>
 <p>Before integrating the runtime code, it is common to test the exported model from Python. This can be used to evaluate model accuracy and sanity check behavior before moving to the target device. Note that not all hardware backends are available from Python, as they may require specialized hardware to function. See the specific backend documentation for more information on hardware requirements and the availablilty of simulators. The XNNPACK delegate used in this example is always available on host machines.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
 
 <span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 
@@ -689,7 +689,16 @@
 <span class="n">outputs</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">execute</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
 </pre></div>
 </div>
-<p>Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Extension Module</span></a>. There is also an E2E demo in <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation">executorch-examples</a>.</p>
+<p>To run a model with program and data separated, please use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/extension/pybindings/README.md">ExecuTorch Module pybindings</a>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.extension.pybindings</span><span class="w"> </span><span class="kn">import</span> <span class="n">portable_lib</span>
+
+<span class="n">input_tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
+<span class="n">module</span> <span class="o">=</span> <span class="n">portable_lib</span><span class="o">.</span><span class="n">_load_for_executorch</span><span class="p">(</span><span class="s2">&quot;model.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;model.ptd&quot;</span><span class="p">)</span>
+<span class="n">outputs</span> <span class="o">=</span> <span class="n">module</span><span class="o">.</span><span class="n">forward</span><span class="p">([</span><span class="n">input_tensor</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>There is also an E2E demo in <a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation">executorch-examples</a>.</p>
 <p>For more information, see <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.</p>
 </div>
 <div class="section" id="advanced-topics">

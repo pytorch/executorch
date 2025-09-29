@@ -523,6 +523,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">TextIO</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -1648,7 +1649,7 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">(</span>
-    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">]],</span> <span class="n">aten_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span> <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="c1"># THe current design of using EDGE_DO_NOT_DECOMP to prevent decomposition</span>
     <span class="c1"># has long standing issues.  _remove_invalid_ops_for_not_decompose was a band-aid to</span>
@@ -1656,17 +1657,8 @@
     <span class="c1"># and contiguous views: https://fb.workplace.com/groups/pytorch.edge.users/permalink/1796069037930048/</span>
     <span class="c1"># EDGE_DO_NOT_DECOMP is only needed by partitioners that specify check_op_support</span>
     <span class="c1"># As a temp fix, we give a more reliable path for backends that do not specify check_op_support</span>
-    <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[]):</span>
-                <span class="p">(</span>
-                    <span class="n">curr_ops_no_decomp</span><span class="p">,</span>
-                    <span class="n">check_op_support</span><span class="p">,</span>
-                <span class="p">)</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">check_op_support</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="k">return</span> <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">check_op_support</span> <span class="ow">is</span> <span class="kc">None</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
@@ -1689,60 +1681,75 @@
 <span class="sd">          on nodes with preserved aten targets. They are then replaces with transformed ops to</span>
 <span class="sd">          keep them through the second pass of decompositions</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span> <span class="o">=</span> <span class="n">_can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">(</span>
-        <span class="n">partitioner</span><span class="p">,</span> <span class="n">aten_programs</span>
-    <span class="p">)</span>
-    <span class="n">ops_set_to_not_decompose_by_program</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">ops_set_to_not_decompose_by_program</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
     <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="c1"># Functionalize program before asking partitioners to preserve ops</span>
         <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">({})</span>
 
         <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># preserve all ops listed by all partitioners first</span>
-            <span class="n">all_ops_no_decomp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-            <span class="n">all_ops_no_decomp_needing_preservation</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="n">partitioners_for_program</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="n">final_ops_to_preserve</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+            <span class="c1"># Decompose by default if there are no partitioners for the method</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">partitioners_for_program</span><span class="p">:</span>
+                <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
+
+            <span class="c1"># Process each partitioner individually using their specific requirements</span>
+            <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioners_for_program</span><span class="p">:</span>
                 <span class="n">curr_ops_no_decomp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
-                <span class="n">all_ops_no_decomp</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">(</span><span class="n">curr_ops_no_decomp</span><span class="p">)</span>
 
-            <span class="c1"># If not using the can_skip_using_EDGE_DO_NOT_DECOMP path, we need to remove invalid ops</span>
-            <span class="c1"># Otherwise there will be issues</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">:</span>
-                <span class="n">all_ops_no_decomp</span> <span class="o">=</span> <span class="n">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span>
-                    <span class="nb">list</span><span class="p">(</span><span class="n">all_ops_no_decomp</span><span class="p">)</span>
-                <span class="p">)</span>
-                <span class="n">all_ops_no_decomp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">all_ops_no_decomp</span><span class="p">)</span>
-
-            <span class="c1"># Run default decompositions, except for those in all_ops_no_decomp</span>
-            <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
-            <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">all_ops_no_decomp</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">table</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">all_ops_no_decomp_needing_preservation</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
-            <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
-
-            <span class="c1"># Among all the preserved aten ops, use the check_op_fn to do an additional</span>
-            <span class="c1"># check on which ops need to be preserved and which ops need to be decomposed</span>
-            <span class="c1"># Those which are truly preserved will be replaced with transformed ops</span>
-            <span class="k">if</span> <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">:</span>
-                <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">all_ops_no_decomp_needing_preservation</span>
-                <span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                    <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
-                    <span class="ow">or</span> <span class="p">[]</span>
+                <span class="c1"># Check if this partitioner can skip using EDGE_DO_NOT_DECOMP</span>
+                <span class="n">can_skip_using_edge_do_not_decomp</span> <span class="o">=</span> <span class="n">_can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">(</span>
+                    <span class="n">curr_partitioner</span><span class="p">,</span> <span class="n">program</span>
                 <span class="p">)</span>
 
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">:</span>
-            <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
-            <span class="n">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">can_skip_using_edge_do_not_decomp</span><span class="p">:</span>
+                    <span class="c1"># Preserve all ops in curr_ops_no_decomp from decomposition</span>
+                    <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
+                    <span class="n">ops_needing_preservation</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
+                    <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">curr_ops_no_decomp</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">table</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                            <span class="n">ops_needing_preservation</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
+
+                    <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+                    <span class="n">final_ops_to_preserve</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ops_needing_preservation</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># EDGE_DO_NOT_DECOMP path for the partitioner</span>
+                    <span class="n">curr_ops_no_decomp</span> <span class="o">=</span> <span class="n">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span>
+                        <span class="n">curr_ops_no_decomp</span>
+                    <span class="p">)</span>
+
+                    <span class="c1"># Apply decompositions with this partitioner&#39;s preserved ops</span>
+                    <span class="n">table</span> <span class="o">=</span> <span class="n">_default_decomposition_table</span><span class="p">()</span>
+                    <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">curr_ops_no_decomp</span><span class="p">:</span>
+                        <span class="n">table</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+                    <span class="c1"># First pass of decompositions with this partitioner&#39;s preserved ops</span>
+                    <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">table</span><span class="p">)</span>
+
+                    <span class="c1"># Filter ops using EDGE_DO_NOT_DECOMP</span>
+                    <span class="n">temp_partitioner_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">[</span><span class="n">curr_partitioner</span><span class="p">]}</span>
+                    <span class="n">preserved_ops</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span>
+                            <span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">temp_partitioner_dict</span>
+                        <span class="p">)</span>
+                        <span class="ow">or</span> <span class="p">[]</span>
+                    <span class="p">)</span>
+                    <span class="n">final_ops_to_preserve</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">preserved_ops</span><span class="p">)</span>
+
+                    <span class="c1"># Second pass of decompositions with this partitioner&#39;s preserved ops after filtering</span>
+                    <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
+
+                    <span class="c1"># Restore ops from edge_no_decomp_namespace to aten ops</span>
+                    <span class="n">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+            <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">final_ops_to_preserve</span><span class="p">)</span>
+
         <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
             <span class="n">config</span><span class="p">,</span>
             <span class="n">program</span><span class="p">,</span>
-            <span class="n">preserve_ops</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])),</span>
+            <span class="n">preserve_ops</span><span class="o">=</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[]),</span>
         <span class="p">)</span>
 
     <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
@@ -1861,9 +1868,6 @@
     <span class="k">elif</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
 
-    <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span> <span class="o">=</span> <span class="n">_can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">(</span>
-        <span class="n">partitioner</span><span class="p">,</span> <span class="n">aten_programs</span>
-    <span class="p">)</span>
     <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
         <span class="n">partitioner</span><span class="p">,</span> <span class="n">aten_programs</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">generate_etrecord</span>
     <span class="p">)</span>
@@ -1889,7 +1893,8 @@
             <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span>
                 <span class="n">program</span>
             <span class="p">)</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">:</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_can_skip_using_EDGE_DO_NOT_DECOMP</span><span class="p">(</span><span class="n">curr_partitioner</span><span class="p">,</span> <span class="n">program</span><span class="p">):</span>
                 <span class="n">curr_op_set</span> <span class="o">=</span> <span class="n">_remove_invalid_ops_for_not_decompose</span><span class="p">(</span><span class="n">curr_op_set</span><span class="p">)</span>
             <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">ops_set_to_not_decompose</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">curr_op_set</span><span class="p">)</span>
             <span class="n">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>

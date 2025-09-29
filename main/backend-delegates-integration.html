@@ -535,12 +535,13 @@ the top level ExecuTorch package. For third-party dependencies, please refer to
 <h2>C++ Source Files<a class="headerlink" href="#c-source-files" title="Permalink to this heading">¶</a></h2>
 <p>At a minimum, a delegate must provide CMake support for building its C++
 sources.</p>
-<p>For the CMake setup, the delegate dir should be included by the
-top level <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> file using <code class="docutils literal notranslate"><span class="pre">add_subdirectory</span></code> CMake command, and
-should be built conditionally with an ExecuTorch build flag like
-<code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_&lt;DELEGATE_NAME&gt;</span></code>, see <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK</span></code> for example.
-For third-party dependencies, please refer to
-<a class="reference internal" href="backend-delegates-dependencies.html"><span class="doc std std-doc">this</span></a>.</p>
+<p>For the CMake setup:</p>
+<ul class="simple">
+<li><p>The delegate directory should be included by the top-level <code class="docutils literal notranslate"><span class="pre">CMakeLists.txt</span></code> file using the <code class="docutils literal notranslate"><span class="pre">add_subdirectory</span></code> command.</p></li>
+<li><p>It should be built conditionally using an ExecuTorch build flag like <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_&lt;DELEGATE_NAME&gt;</span></code>.
+(See <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK</span></code> for an example.)</p></li>
+</ul>
+<p>For third-party dependencies, please refer to <a class="reference internal" href="backend-delegates-dependencies.html"><span class="doc std std-doc">this</span></a>.</p>
 <!---
 TODO: Add more details. Need to insert a CMake layer in `executorch/backends` to
 provide some uniform abstraction across delegates.
@@ -561,11 +562,11 @@ runtime logic.</p></li>
 </div>
 <div class="section" id="documentation">
 <h2>Documentation<a class="headerlink" href="#documentation" title="Permalink to this heading">¶</a></h2>
-<p>A delegate must contain a <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/README.md</span></code>
-explaining the basics of the delegate, directory structure, features, and known
-issues if any.</p>
-<p>Any extra setup steps beyond the ones listed above should be documented in
-<code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/setup.md</span></code></p>
+<p>A delegate must include:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/README.md</span></code> – covering the basics of the delegate, its directory structure, features, and any known issues.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/setup.md</span></code> – documenting any additional setup steps beyond the ones listed above.</p></li>
+</ul>
 </div>
 </div>
 

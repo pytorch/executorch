@@ -608,7 +608,7 @@ You may encounter some rough edges and features which may be documented or plann
 <span class="n">model</span> <span class="o">=</span> <span class="n">Add</span><span class="p">()</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">exported_program</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_for_training</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
-<span class="n">graph_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
 
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">executorch.backends.arm.vgf</span><span class="w"> </span><span class="kn">import</span> <span class="n">VgfCompileSpec</span>
