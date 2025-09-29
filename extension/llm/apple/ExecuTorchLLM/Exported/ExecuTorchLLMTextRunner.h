@@ -63,7 +63,7 @@ __attribute__((deprecated("This API is experimental.")))
 - (BOOL)generateWithPrompt:(NSString *)prompt
                     config:(ExecuTorchLLMConfig *)config
              tokenCallback:(nullable void (^)(NSString *token))callback
-            error:(NSError **)error
+                     error:(NSError **)error
     NS_SWIFT_NAME(generate(_:_:tokenCallback:));
 
 /**
