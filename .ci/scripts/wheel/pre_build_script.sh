@@ -79,6 +79,7 @@ unset LD_LIBRARY_PATH
 
 # Suppress GCC 13+ warnings
 COMMON_FLAGS="-O2 -fPIC -fcommon \
+    -Wno-error \
     -Wno-error=array-parameter \
     -Wno-error=array-bounds \
     -Wno-error=maybe-uninitialized \
@@ -87,7 +88,8 @@ COMMON_FLAGS="-O2 -fPIC -fcommon \
     -Wno-error=deprecated-declarations \
     -Wno-error=use-after-free \
     -Wno-error=builtin-declaration-mismatch \
-    -Wno-error"
+    -Wno-error=attributes \
+    -Wno-error=implicit-function-declaration"
 
 export CFLAGS="$COMMON_FLAGS"
 export CPPFLAGS="$COMMON_FLAGS"
