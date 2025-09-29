@@ -225,7 +225,6 @@ if [[ -z "$model_name" ]]; then
     test_model=(
         "softmax"   # 0
         "add"       # 1
-        "add3"      # 2
         "qadd"      # 3
         "qadd2"     # 4
         "qops"      # 5
@@ -234,7 +233,6 @@ if [[ -z "$model_name" ]]; then
     model_compiler_flags=(
         ""                      # 0 softmax
         "--delegate"            # 1 add
-        "--delegate"            # 2 add3
         "--delegate --quantize" # 3 qadd
         "--delegate --quantize" # 4 qadd2
         "--delegate --quantize" # 5 qops

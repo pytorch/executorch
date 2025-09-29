@@ -50,7 +50,9 @@ class TextRunnerTest: XCTestCase {
     var text = ""
 
     do {
-      try runner.generate(userPrompt, sequenceLength: sequenceLength) { token in
+      try runner.generate(userPrompt, Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
         text += token
       }
     } catch {
@@ -61,7 +63,9 @@ class TextRunnerTest: XCTestCase {
     text = ""
     runner.reset()
     do {
-      try runner.generate(userPrompt, sequenceLength: sequenceLength) { token in
+      try runner.generate(userPrompt, Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
         text += token
       }
     } catch {
