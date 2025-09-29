@@ -162,10 +162,10 @@ using namespace executorch::runtime;
   return YES;
 }
 
-- (BOOL)generate:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
-           config:(ExecuTorchLLMConfig *)config
-withTokenCallback:(nullable void (^)(NSString *))callback
-            error:(NSError **)error {
+- (BOOL)generateWithInputs:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString *))callback
+                     error:(NSError **)error {
   if (![self loadWithError:error]) {
     return NO;
   }
