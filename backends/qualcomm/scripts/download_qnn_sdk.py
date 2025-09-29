@@ -275,16 +275,19 @@ def _check_tmp_glibc() -> bool:
 
 def _current_glibc_version() -> str:
     try:
-        return ctypes.CDLL("libc.so.6").gnu_get_libc_version().decode()
-    except Exception:
-        return "unknown"
+        libc = ctypes.CDLL("libc.so.6")
+        func = libc.gnu_get_libc_version
+        func.restype = ctypes.c_char_p
+        return func().decode()
+    except Exception as e:
+        return f"error:{e}"
 
 
 def _ensure_glibc_minimum():
     current = _current_glibc_version()
     logger.info("[glibc] Current loaded glibc: %s", current)
 
-    if current >= GLIBC_VERSION:
+    if current != "unknown" and current >= GLIBC_VERSION:
         logger.info("[glibc] Current glibc is sufficient, no re-exec needed.")
         return
 
@@ -299,7 +302,9 @@ def _ensure_glibc_minimum():
         return
 
     logger.info(
-        "[glibc] Re-executing under %s (target=%s)", GLIBC_LOADER, GLIBC_VERSION
+        "[glibc] Re-executing process with loader %s and library path %s",
+        GLIBC_LOADER,
+        GLIBC_LIBDIR,
     )
 
     os.environ[GLIBC_REEXEC_GUARD] = "1"
