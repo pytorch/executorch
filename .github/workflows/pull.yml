@@ -738,8 +738,8 @@ jobs:
         # Install llama requirements
         bash examples/models/llama/install_requirements.sh
 
-        # install a recent version of torchtune.
-        PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250730  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+        # install a recent version of torchtune (>= 20250730)
+        PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250929  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 
         # run llama runner in eager mode
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
