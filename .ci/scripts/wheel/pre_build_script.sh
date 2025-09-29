@@ -60,16 +60,16 @@ RPM_URL="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35
 # Download
 curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
 
-# Extract directly
+# Extract directly with bsdtar
 echo ">>> Extracting RPM with bsdtar"
 bsdtar -C /tmp -xf /tmp/glibc.rpm
 
-# Copy what we need
-cp -av /lib64/libc.so.6 /lib64/ld-linux-x86-64.so.2 "$PREFIX/lib/"
+# Copy needed files from the extracted tree (not host system!)
+cp -av /tmp/lib64/libc.so.6 /tmp/lib64/ld-linux-x86-64.so.2 "$PREFIX/lib/" || true
 
-# Check staged contents
+# Check what we staged
 echo ">>> Contents staged in $PREFIX/lib"
 ls -l "$PREFIX/lib"
 
-# Verify
+# Verify version
 "$PREFIX/lib/libc.so.6" --version || true
