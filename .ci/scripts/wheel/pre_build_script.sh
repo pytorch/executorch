@@ -47,16 +47,16 @@ fi
 
 # Install glibc-2.34
 
-# Install older GCC (works on GitHub Ubuntu runners)
-apt-get update
-apt-get install -y gcc-11 g++-11
+# Prefer older GCC to avoid glibc build errors
+if [ -f /opt/rh/devtoolset-9/enable ]; then
+    echo ">>> Enabling devtoolset-9 (GCC 9)"
+    source /opt/rh/devtoolset-9/enable
+elif [ -f /opt/rh/devtoolset-8/enable ]; then
+    echo ">>> Enabling devtoolset-8 (GCC 8)"
+    source /opt/rh/devtoolset-8/enable
+fi
 
-# Force glibc build to use GCC 11
-export CC=gcc-11
-export CXX=g++-11
-
-echo "GCC version (system default): $(gcc -dumpfullversion)"
-echo "GCC version (forced CC): $($CC -dumpfullversion)"
+echo "GCC version: $(gcc -dumpfullversion)"
 
 # 👇 only change this line to bump version
 GLIBC_VERSION=2.34
