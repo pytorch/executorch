@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional, Sequence
 
 from executorch.exir._serialize._cord import Cord
-from executorch.extension.flat_tensor.serialize.flat_tensor_schema import TensorLayout
+from executorch.exir.tensor_layout import TensorLayout
 
 
 @dataclass
