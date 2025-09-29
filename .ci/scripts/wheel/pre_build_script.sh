@@ -52,22 +52,19 @@ fi
 set -euo pipefail
 
 GLIBC_VERSION=2.34
-PREFIX=/tmp/glibc-install-$GLIBC_VERSION
+PREFIX=/tmp/glibc-install-2.34
 mkdir -p "$PREFIX/lib"
 
-echo '>>> Downloading prebuilt glibc-2.34 (EL9 family)'
+echo '>>> Downloading prebuilt glibc-libs-2.34 (EL9 family)'
+RPM_URL=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm
+curl -fsSL "$RPM_URL" -o /tmp/glibc-libs.rpm
 
-RPM_URL=http://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/g/glibc-2.34-168.el9_6.23.x86_64.rpm
-curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
+bsdtar -xf /tmp/glibc-libs.rpm
 
-# safer than rpm2cpio: use bsdtar
-bsdtar -xf /tmp/glibc.rpm
-
-mkdir -p "$PREFIX/lib"
 cp ./usr/lib64/libc.so.6 \
    ./usr/lib64/ld-2.34.so \
    ./usr/lib64/ld-linux-x86-64.so.2 \
-   "$PREFIX/lib/"
+   "$PREFIX/lib/
 
 echo ">>> Staged glibc $GLIBC_VERSION to $PREFIX/lib"
 ls -l "$PREFIX/lib"
