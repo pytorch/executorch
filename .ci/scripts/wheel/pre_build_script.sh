@@ -48,8 +48,8 @@ fi
 # Install glibc-2.34
 
 # Install older GCC (works on GitHub Ubuntu runners)
-sudo apt-get update
-sudo apt-get install -y gcc-11 g++-11
+apt-get update
+apt-get install -y gcc-11 g++-11
 
 # Force glibc build to use GCC 11
 export CC=gcc-11
