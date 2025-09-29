@@ -106,11 +106,16 @@ def process_inputs_to_parameters(
         ) from e
     parameter_data = get_param(edge_program, node)
 
-    assert isinstance(parameter_data, torch.Tensor), "Expect Attr to be tensor"
+    if not isinstance(parameter_data, torch.Tensor):
+        raise TypeError(
+            f"Expected parameter '{node.name}' to be a torch.Tensor, got "
+            f"{type(parameter_data).__name__}"
+        )
     parameter_values = parameter_data.detach().numpy()
 
     if tosa_arg.dtype == torch.float32:
-        assert tosa_spec.support_float(), f"{tosa_spec} doesn't support float"
+        if not tosa_spec.support_float():
+            raise ValueError(f"{tosa_spec} doesn't support float operations")
 
     # Handle special case for INT48 tensors
     special_type = node.meta.get(TosaSpecialDtype.meta_key(), None)
@@ -142,7 +147,11 @@ def process_inputs_to_buffers(
         ) from e
     buffer_data = get_buffer(edge_program, node)
 
-    assert isinstance(buffer_data, torch.Tensor), "Expect Attr to be tensor"
+    if not isinstance(buffer_data, torch.Tensor):
+        raise TypeError(
+            f"Expected buffer '{node.name}' to be a torch.Tensor, got "
+            f"{type(buffer_data).__name__}"
+        )
     buffer_values = buffer_data.detach().numpy()
 
     # TODO: fragile code for temporary fix
@@ -183,8 +192,12 @@ def process_placeholder(
     tosa_spec: TosaSpecification,
 ):
     """Wrapper for processing and serializing all types of placeholders"""
-    assert node.name == node.target, "Expect placeholder name and target to match"
-    assert 0 == len(node.args), "Can't handle default input values"
+    if node.name != node.target:
+        raise ValueError(
+            f"Placeholder name '{node.name}' does not match target '{node.target}'"
+        )
+    if len(node.args) != 0:
+        raise ValueError(f"Placeholder '{node.name}' must not have default values")
 
     if node.name in edge_program.graph_signature.user_inputs:
         process_inputs(node, tosa_graph, tosa_spec)
