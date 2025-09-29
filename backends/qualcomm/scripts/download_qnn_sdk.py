@@ -256,7 +256,7 @@ GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 
 def _check_tmp_glibc() -> bool:
     """Check if glibc in /tmp was installed correctly and log its version."""
-    libc_path = pathlib.Path(f"/tmp/glibc-{GLIBC_VERSION}/lib/libc.so.6")
+    libc_path = GLIBC_ROOT / "lib" / "libc.so.6"
     if not libc_path.exists():
         logger.error("[glibc] Expected glibc at %s but file not found", libc_path)
         return False
