@@ -22,7 +22,7 @@ from executorch.exir._serialize.data_serializer import (
 from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import ScalarType
-from executorch.extension.flat_tensor.serialize.flat_tensor_schema import TensorLayout
+from executorch.exir.tensor_layout import TensorLayout
 
 from executorch.extension.flat_tensor.serialize.serialize import (
     _deserialize_to_flat_tensor,
