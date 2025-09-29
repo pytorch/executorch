@@ -184,17 +184,17 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 # libc management
 ####################
 
-GLIBC_VERSION = "2.29"
+GLIBC_VERSION = "2.34"
 GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_LOADER_CANDIDATES = [
-    GLIBC_LIBDIR / "ld-2.29.so",
+    GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
     GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
 ]
 GLIBC_LOADER = next((p for p in GLIBC_LOADER_CANDIDATES if p.exists()), None)
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 
-MINIMUM_LIBC_VERSION = "2.29"
+MINIMUM_LIBC_VERSION = GLIBC_VERSION
 GLIBC_CUSTOM = str(GLIBC_LIBDIR / "libc.so.6")
 
 REQUIRED_LIBC_LIBS = [
@@ -518,7 +518,7 @@ def install_qnn_sdk() -> bool:
     """
     logger.info("[QNN] Starting SDK installation")
 
-    _ensure_glibc_minimum("2.29")
+    _ensure_glibc_minimum(GLIBC_VERSION)
 
     if not _check_tmp_glibc():
         logger.error("[glibc] Pre-installed glibc check failed. Exiting early.")

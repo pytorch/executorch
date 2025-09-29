@@ -49,7 +49,9 @@ fi
 
 echo "GCC version: $(gcc -dumpfullversion)"
 
-GLIBC_VERSION=2.29
+# 👇 only change this line to bump version
+GLIBC_VERSION=2.34
+
 PREFIX=/tmp/glibc-install-$GLIBC_VERSION
 BUILD_DIR=/tmp/glibc-build
 TARBALL=/tmp/glibc-$GLIBC_VERSION.tar.xz
@@ -59,7 +61,7 @@ SRC_DIR=/tmp/glibc-$GLIBC_VERSION
 rm -rf "$PREFIX" "$BUILD_DIR" "$SRC_DIR" "$TARBALL"
 mkdir -p "$BUILD_DIR"
 
-# Download tarball from canonical GNU FTP (not ftpmirror)
+# Download tarball from canonical GNU FTP
 MIRROR=https://ftp.gnu.org/gnu/libc
 curl -L "$MIRROR/glibc-$GLIBC_VERSION.tar.xz" -o "$TARBALL"
 
@@ -75,7 +77,7 @@ cd "$BUILD_DIR"
 # Unset LD_LIBRARY_PATH to satisfy glibc configure
 unset LD_LIBRARY_PATH
 
-# Suppress GCC 13+ warnings that break glibc-2.29
+# Suppress GCC 13+ warnings
 COMMON_FLAGS="-O2 -fPIC -fcommon \
     -Wno-error=array-parameter \
     -Wno-error=array-bounds \
@@ -95,7 +97,6 @@ export CPPFLAGS="$COMMON_FLAGS"
     --prefix="$PREFIX" \
     --without-selinux
 
-# Build and install
 # Build and install
 make -j"$(nproc)"
 make install
@@ -121,13 +122,13 @@ else
     echo "libc.so.6 NOT FOUND in $PREFIX/lib"
 fi
 
-echo ">>> Checking for ld-2.29.so"
-if [ -e "$PREFIX/lib/ld-2.29.so" ]; then
-    ls -l "$PREFIX/lib/ld-2.29.so"
+echo ">>> Checking for ld-$GLIBC_VERSION.so"
+if [ -e "$PREFIX/lib/ld-$GLIBC_VERSION.so" ]; then
+    ls -l "$PREFIX/lib/ld-$GLIBC_VERSION.so"
 else
-    echo "ld-2.29.so NOT FOUND in $PREFIX/lib"
+    echo "ld-$GLIBC_VERSION.so NOT FOUND in $PREFIX/lib"
 fi
 
 # Run version checks only if files exist
-[ -x "$PREFIX/lib/ld-2.29.so" ] && "$PREFIX/lib/ld-2.29.so" --version || echo "ld-2.29.so missing or not executable"
+[ -x "$PREFIX/lib/ld-$GLIBC_VERSION.so" ] && "$PREFIX/lib/ld-$GLIBC_VERSION.so" --version || echo "ld-$GLIBC_VERSION.so missing or not executable"
 [ -x "$PREFIX/lib/libc.so.6" ] && "$PREFIX/lib/libc.so.6" --version || echo "libc.so.6 missing or not executable"
