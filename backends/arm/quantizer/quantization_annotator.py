@@ -392,7 +392,11 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.conv2d.padding,
             ],
             [torch.ops.aten.batch_norm.default, F.batch_norm],
-            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+            [
+                torch.ops.aten.relu.default,
+                torch.ops.aten.relu_.default,
+                torch.ops.aten.hardtanh.default,
+            ],
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
@@ -408,6 +412,7 @@ def get_quant_properties(  # noqa: C901
             ]
         elif node.target in (
             torch.ops.aten.relu.default,
+            torch.ops.aten.relu_.default,
             torch.ops.aten.hardtanh.default,
         ):
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -444,7 +449,11 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.linear.default,
                 torch.ops.aten.conv2d.padding,
             ],
-            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+            [
+                torch.ops.aten.relu.default,
+                torch.ops.aten.relu_.default,
+                torch.ops.aten.hardtanh.default,
+            ],
         ],
         any_or_hardtanh_min_zero,
     ):
