@@ -58,3 +58,15 @@ ARM_TOSA_INT_FLOW = _create_tosa_flow(
     common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+INT"),
     quantize=True,
 )
+
+ARM_ETHOS_U55_FLOW = _create_tosa_flow(
+    "arm_ethos_u55",
+    common.get_u55_compile_spec(),
+    quantize=True,
+)
+
+ARM_ETHOS_U85_FLOW = _create_tosa_flow(
+    "arm_ethos_u85",
+    common.get_u85_compile_spec(),
+    quantize=True,
+)

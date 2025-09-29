@@ -128,6 +128,8 @@ def all_flows() -> dict[str, TestFlow]:
 
     try:
         from executorch.backends.test.suite.flows.arm import (
+            ARM_ETHOS_U55_FLOW,
+            ARM_ETHOS_U85_FLOW,
             ARM_TOSA_FP_FLOW,
             ARM_TOSA_INT_FLOW,
         )
@@ -135,6 +137,8 @@ def all_flows() -> dict[str, TestFlow]:
         flows += [
             ARM_TOSA_FP_FLOW,
             ARM_TOSA_INT_FLOW,
+            ARM_ETHOS_U55_FLOW,
+            ARM_ETHOS_U85_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping ARM flow registration: {e}")
