@@ -55,27 +55,20 @@ GLIBC_VERSION=2.34
 PREFIX=/tmp/glibc-install-$GLIBC_VERSION
 mkdir -p "$PREFIX/lib"
 
-echo ">>> Downloading prebuilt glibc-$GLIBC_VERSION (CentOS Stream 9)"
+echo '>>> Downloading prebuilt glibc-2.34 (EL9 family)'
 
-# Pick a mirror with real packages
-RPM_URL="http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/glibc-${GLIBC_VERSION}-100.el9.x86_64.rpm"
+# Try Rocky Linux mirror first
+RPM_URL="http://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/g/glibc-2.34-100.el9.x86_64.rpm"
 
-# Download RPM
-curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
+curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm || {
+    echo "Download failed: $RPM_URL"
+    exit 1
+}
 
-echo ">>> Extracting RPM..."
-if command -v bsdtar >/dev/null 2>&1; then
-    bsdtar -xf /tmp/glibc.rpm
-elif command -v rpm2cpio >/dev/null 2>&1; then
-    rpm2cpio /tmp/glibc.rpm | cpio -idmv
-else
-    echo "Neither bsdtar nor rpm2cpio found, trying to fetch rpm2cpio.sh..."
-    curl -fsSL https://raw.githubusercontent.com/rpm-software-management/rpm/main/scripts/rpm2cpio.sh -o /tmp/rpm2cpio.sh
-    chmod +x /tmp/rpm2cpio.sh
-    /tmp/rpm2cpio.sh /tmp/glibc.rpm | cpio -idmv
-fi
+echo ">>> Extracting RPM with bsdtar..."
+bsdtar -xf /tmp/glibc.rpm
 
-# Copy only runtime loader + libc
+# Copy out libraries
 cp ./usr/lib64/libc.so.6 \
    ./usr/lib64/ld-2.34.so \
    ./usr/lib64/ld-linux-x86-64.so.2 \
