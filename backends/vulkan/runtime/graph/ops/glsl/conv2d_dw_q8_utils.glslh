@@ -1,0 +1,214 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_DW_Q8_UTILS_GLSLH
+#define CONV2D_DW_Q8_UTILS_GLSLH
+
+#extension GL_EXT_control_flow_attributes : require
+
+struct InputWindow1D {
+  vec4[MAX_WINDOW_WIDTH] data;
+  int len;
+};
+
+InputWindow1D initial_input_window() {
+  InputWindow1D input_window;
+  for (int i = 0; i < MAX_WINDOW_WIDTH; ++i) {
+    input_window.data[i] = vec4(0);
+  }
+  input_window.len = 0;
+  return input_window;
+}
+
+vec4 dequantize(const int packed_texel, const float scale, const int zp) {
+  return vec4(unpack_int8x4(packed_texel) - zp) * scale;
+}
+
+vec4 dequantize(const int packed_texel, const vec4 scales) {
+  return vec4(unpack_int8x4(packed_texel)) * scales;
+}
+
+bool in_bounds(
+    const int block_w,
+    const int block_h,
+    const int block_c4,
+    const Conv2dBlockExtents block_extents) {
+  ivec3 idx = ivec3(block_w, block_h, block_c4);
+  if (any(lessThan(idx, ivec3(0)))) {
+    return false;
+  }
+  if (any(greaterThanEqual(idx, block_extents.data))) {
+    return false;
+  }
+
+  return true;
+}
+
+InputWindow1D load_input_window(
+    const int w_start,
+    const int w_end,
+    const int h,
+    const int c4,
+    const Conv2dBlockExtents block_extents,
+    const float input_scale,
+    const int input_zp,
+    const ivec4 input_zps) {
+  InputWindow1D input_window = initial_input_window();
+
+  const int block_w_start = div_4(w_start);
+  const int block_w_end = div_4(w_end);
+
+  int window_i = 0;
+  for (int block_w = block_w_start; block_w <= block_w_end; ++block_w) {
+    ivec4 input_block = input_zps;
+
+    if (in_bounds(block_w, h, c4, block_extents)) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+      const int buffer_idx =
+          h * block_extents.data_xz + block_w * block_extents.data.z + c4;
+      input_block = t_packed_int8_input[buffer_idx];
+#else
+      input_block = texelFetch(t_packed_int8_input, ivec3(block_w, h, c4), 0);
+#endif
+    }
+
+    const int loaded_w_start = mul_4(block_w);
+    for (int row = 0; row < 4; ++row) {
+      if (loaded_w_start + row >= w_start && loaded_w_start + row <= w_end) {
+        input_window.data[window_i++] =
+            dequantize(input_block[row], input_scale, input_zp);
+      }
+    }
+  }
+  input_window.len = window_i;
+  return input_window;
+}
+
+struct WeightRow {
+  vec4[MAX_KERNEL_WIDTH] data;
+  int len;
+};
+
+WeightRow initial_weight_row() {
+  WeightRow weight_row;
+  for (int i = 0; i < MAX_KERNEL_WIDTH; ++i) {
+    weight_row.data[i] = vec4(0);
+  }
+  weight_row.len = 0;
+  return weight_row;
+}
+
+WeightRow load_weight_row(
+    const int oc4,
+    const int ky,
+    const int OC4,
+    const int Kw,
+    const int Kw4,
+    const vec4 weight_scales) {
+  WeightRow weight_row = initial_weight_row();
+
+  int k4 = ky * Kw4;
+  int row_idx = 0;
+  for (int w = 0; w < Kw; w += 4) {
+#ifdef WEIGHT_BUFFER
+    const ivec4 weight_block = t_packed_int8_weight[k4 * OC4 + oc4];
+#else
+    const ivec4 weight_block = texelFetch(
+        t_packed_int8_weight, ivec2(oc4, k4), 0);
+#endif
+
+    for (int row = 0; row < 4; ++row) {
+      if (w + row < Kw) {
+        weight_row.data[row_idx++] = dequantize(weight_block[row], weight_scales);
+      }
+    }
+    k4++;
+  }
+  weight_row.len = row_idx;
+  return weight_row;
+}
+
+struct FPOutBlock {
+  vec4[4] data;
+};
+
+void perform_conv1d(
+    inout FPOutBlock out_block,
+    const InputWindow1D input_window,
+    const WeightRow weight_row) {
+  for (int out_w = 0; out_w < 4; ++out_w) {
+    [[unroll]] for (int kx = 0; kx < weight_row.len; ++kx) {
+      const int in_w = out_w * conv2d_params.stride.x;
+      out_block.data[out_w] = fma(
+          input_window.data[in_w + kx],
+          weight_row.data[kx],
+          out_block.data[out_w]);
+    }
+  }
+}
+
+ivec4 quantize(
+    const vec4 texel, const float inv_scale, const int zp) {
+  vec4 quantized = round(texel * inv_scale) + zp;
+  return clamp(ivec4(quantized), -128, 127);
+}
+
+ivec4 quantize_and_pack(
+    FPOutBlock out_block, const float inv_scale, const int zp) {
+  ivec4 packed_block;
+  for (int row = 0; row < 4; ++row) {
+    ivec4 quantized_texel = quantize(out_block.data[row], inv_scale, zp);
+    packed_block[row] = pack_into_int32(quantized_texel);
+  }
+  return packed_block;
+}
+
+#ifdef DEBUG_MODE
+
+void printInputWindow1D(const InputWindow1D input_window) {
+  debugPrintfEXT("InputWindow1D contents (len = %d): \\n", input_window.len);
+  for (int i = 0; i < min(input_window.len, MAX_WINDOW_WIDTH); ++i) {
+    debugPrintfEXT(
+        "  [%d]: (%.3f, %.3f, %.3f, %.3f) \\n",
+        i,
+        input_window.data[i].x,
+        input_window.data[i].y,
+        input_window.data[i].z,
+        input_window.data[i].w);
+  }
+}
+
+void printWeightRow(const WeightRow weight_row) {
+  debugPrintfEXT("WeightRow contents (len = %d): \\n", weight_row.len);
+  for (int i = 0; i < min(weight_row.len, MAX_KERNEL_WIDTH); ++i) {
+    debugPrintfEXT(
+        "  [%d]: (%.3f, %.3f, %.3f, %.3f) \\n",
+        i,
+        weight_row.data[i].x,
+        weight_row.data[i].y,
+        weight_row.data[i].z,
+        weight_row.data[i].w);
+  }
+}
+
+void printFPOutBlock(const FPOutBlock out_block) {
+    debugPrintfEXT("FPOutBlock contents: \\n");
+    for (int i = 0; i < 4; ++i) {
+      debugPrintfEXT(
+          "  [%d]: (%.3f, %.3f, %.3f, %.3f) \\n",
+          i,
+          out_block.data[i].x,
+          out_block.data[i].y,
+          out_block.data[i].z,
+          out_block.data[i].w);
+    }
+  }
+
+#endif // DEBUG_MODE
+
+#endif // CONV2D_DW_Q8_UTILS_GLSLH
