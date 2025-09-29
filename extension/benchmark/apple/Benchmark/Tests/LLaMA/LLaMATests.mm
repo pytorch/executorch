@@ -97,18 +97,16 @@
         XCTFail("Load failed with error %zi", error.code);
         return;
       }
-      ExecuTorchLLMGenerationConfig *config =
-          [[ExecuTorchLLMGenerationConfig alloc] initWithBlock:^(ExecuTorchLLMGenerationConfig *config) {
-            config.sequenceLength = 50;
-          }];
       TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
       [testCase measureWithMetrics:@[ tokensPerSecondMetric, [XCTClockMetric new], [XCTMemoryMetric new] ]
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
                               BOOL status = [runner generateWithPrompt:@"Once upon a time"
-                                                                config:config
+                                                                config:[[ExecuTorchLLMGenerationConfig alloc] initWithBlock:^(ExecuTorchLLMGenerationConfig *config) {
+                                config.sequenceLength = 50;
+                              }]
                                                          tokenCallback:^(NSString *token) {
-                                tokensPerSecondMetric.tokenCount++;
+                                ++tokensPerSecondMetric.tokenCount;
                               }
                                                                  error:NULL];
                               XCTAssertTrue(status);
