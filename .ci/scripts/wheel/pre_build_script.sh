@@ -57,22 +57,17 @@ mkdir -p "$PREFIX/lib"
 
 echo '>>> Downloading prebuilt glibc-2.34 (EL9 family)'
 
-# Try Rocky Linux mirror first
-RPM_URL="http://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/g/glibc-2.34-100.el9.x86_64.rpm"
+RPM_URL=http://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages/g/glibc-2.34-168.el9_6.23.x86_64.rpm
+curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
 
-curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm || {
-    echo "Download failed: $RPM_URL"
-    exit 1
-}
-
-echo ">>> Extracting RPM with bsdtar..."
+# safer than rpm2cpio: use bsdtar
 bsdtar -xf /tmp/glibc.rpm
 
-# Copy out libraries
+mkdir -p "$PREFIX/lib"
 cp ./usr/lib64/libc.so.6 \
    ./usr/lib64/ld-2.34.so \
    ./usr/lib64/ld-linux-x86-64.so.2 \
-   "$PREFIX/lib"
+   "$PREFIX/lib/"
 
 echo ">>> Staged glibc $GLIBC_VERSION to $PREFIX/lib"
 ls -l "$PREFIX/lib"
