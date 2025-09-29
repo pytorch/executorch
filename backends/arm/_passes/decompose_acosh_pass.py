@@ -8,6 +8,13 @@
 from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass  # noqa
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -22,7 +29,13 @@ class DecomposeAcoshPass(ArmPass):
         acosh(x) = log(x + sqrt((x-1)(x+1))
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSqrtPass,
+        InsertTableOpsPass,
+        MatchArgRanksPass,
+        ReplaceScalarWithTensorArgPassTOSAMI,
+        MatchArgDtypePass,
+    }
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
 
