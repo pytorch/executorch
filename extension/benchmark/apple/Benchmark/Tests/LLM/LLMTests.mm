@@ -42,10 +42,10 @@
 
 @end
 
-@interface LLaMATests : ResourceTestCase
+@interface LLMTests : ResourceTestCase
 @end
 
-@implementation LLaMATests
+@implementation LLMTests
 
 + (NSArray<NSString *> *)directories {
   return @[
