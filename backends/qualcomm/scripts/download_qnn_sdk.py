@@ -283,18 +283,24 @@ def _current_glibc_version() -> str:
         return f"error:{e}"
 
 
-def _ensure_glibc_minimum():
-    current = _current_glibc_version()
-    logger.info("[glibc] Current loaded glibc: %s", current)
+def _log_current_loader():
+    """Dump the loader and libc mappings from /proc/self/maps for debugging."""
+    try:
+        with open("/proc/self/maps") as f:
+            for line in f:
+                if "ld-" in line or "libc.so" in line:
+                    logger.info("[glibc] Loader map: %s", line.strip())
+    except Exception as e:
+        logger.warning("[glibc] Failed to read /proc/self/maps: %s", e)
 
-    if current != "unknown" and current >= GLIBC_VERSION:
-        logger.info("[glibc] Current glibc is sufficient, no re-exec needed.")
-        return
+
+def _ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
+    current = _current_glibc_version()
+    logger.info("[glibc] Current loaded glibc (via ctypes): %s", current)
 
     if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
-        logger.error(
-            "[glibc] Re-exec attempted but glibc is still too low (%s).", current
-        )
+        logger.info("[glibc] Already re-exec'd once; continuing under current loader.")
+        _log_current_loader()  # ✅ confirm loader after re-exec
         return
 
     if not GLIBC_LOADER.exists():
@@ -302,7 +308,7 @@ def _ensure_glibc_minimum():
         return
 
     logger.info(
-        "[glibc] Re-executing process with loader %s and library path %s",
+        "[glibc] Forcing re-exec under loader %s with libdir %s",
         GLIBC_LOADER,
         GLIBC_LIBDIR,
     )
@@ -517,8 +523,7 @@ def install_qnn_sdk() -> bool:
     """
     logger.info("[QNN] Starting SDK installation")
 
-    # Check and re-exec with custom glibc if needed
-    _ensure_glibc_minimum()
+    _ensure_glibc_minimum("2.29")
 
     if not _check_tmp_glibc():
         logger.error("[glibc] Pre-installed glibc check failed. Exiting early.")
