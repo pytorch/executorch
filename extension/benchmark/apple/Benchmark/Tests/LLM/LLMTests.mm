@@ -102,7 +102,7 @@
                             block:^{
                               tokensPerSecondMetric.tokenCount = 0;
                               BOOL status = [runner generateWithPrompt:@"Once upon a time"
-                                                                config:[[ExecuTorchLLMGenerationConfig alloc] initWithBlock:^(ExecuTorchLLMGenerationConfig *config) {
+                                                                config:[[ExecuTorchLLMConfig alloc] initWithBlock:^(ExecuTorchLLMConfig *config) {
                                 config.sequenceLength = 50;
                               }]
                                                          tokenCallback:^(NSString *token) {
