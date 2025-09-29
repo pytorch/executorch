@@ -57,27 +57,23 @@ mkdir -p "$PREFIX/lib"
 echo ">>> Downloading prebuilt glibc-$GLIBC_VERSION (Fedora 35 RPM)"
 RPM_URL="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
 
-# Download
 curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
 
-# Extract directly with bsdtar
 echo ">>> Extracting RPM with bsdtar"
-bsdtar -C /tmp -xf /tmp/glibc.rpm
+WORKDIR=/tmp/glibc-extracted
+rm -rf "$WORKDIR"
+mkdir -p "$WORKDIR"
+bsdtar -C "$WORKDIR" -xf /tmp/glibc.rpm
 
-# Copy needed files from the extracted tree (not host system!)
-# Copy all runtime libs from extracted RPM
-cp -av /tmp/lib64/libc.so.6 \
-       /tmp/lib64/ld-linux-x86-64.so.2 \
-       /tmp/lib64/libdl.so.2 \
-       /tmp/lib64/libpthread.so.0 \
-       /tmp/lib64/librt.so.1 \
-       /tmp/lib64/libm.so.6 \
-       /tmp/lib64/libutil.so.1 \
+# Copy the loader and all runtime libs from the SAME glibc
+cp -av "$WORKDIR/lib64/ld-linux-x86-64.so.2" \
+       "$WORKDIR/lib64/libc.so.6" \
+       "$WORKDIR/lib64/libdl.so.2" \
+       "$WORKDIR/lib64/libpthread.so.0" \
+       "$WORKDIR/lib64/librt.so.1" \
+       "$WORKDIR/lib64/libm.so.6" \
+       "$WORKDIR/lib64/libutil.so.1" \
        "$PREFIX/lib/" || true
 
-# Check what we staged
 echo ">>> Contents staged in $PREFIX/lib"
 ls -l "$PREFIX/lib"
-
-# Verify version
-"$PREFIX/lib/libc.so.6" --version || true

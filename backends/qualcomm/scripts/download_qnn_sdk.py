@@ -183,25 +183,11 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 ####################
 # libc management
 ####################
-
-####################
-# libc management
-####################
-
 GLIBC_VERSION = "2.34"
 GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
-
-# Loader candidates: Fedora RPM may give us either ld-2.34.so or ld-linux-x86-64.so.2
-GLIBC_LOADER_CANDIDATES = [
-    GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
-    GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
-]
-GLIBC_LOADER = next((p for p in GLIBC_LOADER_CANDIDATES if p.exists()), None)
-
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
-MINIMUM_LIBC_VERSION = GLIBC_VERSION
-GLIBC_CUSTOM = str(GLIBC_LIBDIR / "libc.so.6")
+MINIMUM_LIBC_VERSION = GLIBC_VERSION  # string like "2.34"
 
 
 def _parse_version(v: str) -> tuple[int, int]:
@@ -209,77 +195,14 @@ def _parse_version(v: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
 
 
-def check_glibc_exist_and_validate() -> bool:
-    """
-    Validate glibc in /tmp, fallback to system libc only if custom one not found.
-    """
-    candidates = [GLIBC_CUSTOM]
-
-    # Optional: keep fallbacks for debugging (not recommended in CI if you always stage custom)
-    candidates += [
-        "/lib64/libc.so.6",
-        "/lib/x86_64-linux-gnu/libc.so.6",
-        "/lib/libc.so.6",
-    ]
-
-    for path in candidates:
-        if not pathlib.Path(path).exists():
-            continue
-        try:
-            output = subprocess.check_output(
-                [path, "--version"], stderr=subprocess.STDOUT
-            )
-            first_line = output.decode().split("\n", 1)[0]
-            logger.debug(f"[QNN] glibc version for path {path} is: {first_line}")
-
-            match = re.search(r"version (\d+\.\d+)", first_line)
-            if match:
-                version = match.group(1)
-                if _parse_version(version) >= _parse_version(MINIMUM_LIBC_VERSION):
-                    logger.info(f"[QNN] Using glibc {version} from {path}")
-                    return True
-                else:
-                    logger.error(
-                        f"[QNN] glibc version {version} too low at {path}. Need >= {MINIMUM_LIBC_VERSION}."
-                    )
-            else:
-                logger.error(f"[QNN] Could not parse glibc version from {first_line}")
-        except Exception as e:
-            logger.error(f"[QNN] Failed to check {path}: {e}")
-
-    logger.error(
-        f"[QNN] glibc not found or too old. Minimum required: {MINIMUM_LIBC_VERSION}."
-    )
-    return False
-
-
-def _check_tmp_glibc() -> bool:
-    """Check if staged glibc in /tmp was installed correctly and log its version."""
-    libc_path = GLIBC_LIBDIR / "libc.so.6"
-    if not libc_path.exists():
-        logger.error("[glibc] Expected glibc at %s but file not found", libc_path)
-        return False
-
-    try:
-        out = subprocess.check_output(
-            [str(libc_path), "--version"], stderr=subprocess.STDOUT
-        )
-        first_line = out.decode(errors="ignore").split("\n", 1)[0]
-        logger.info("[glibc] Found custom glibc at %s: %s", libc_path, first_line)
-        return True
-    except Exception as e:
-        logger.error("[glibc] Failed to run %s --version: %s", libc_path, e)
-        return False
-
-
-def _current_glibc_version() -> str:
-    try:
-        libc = ctypes.CDLL("libc.so.6")
-        func = libc.gnu_get_libc_version
-        func.restype = ctypes.c_char_p
-        return func().decode()
-    except Exception as e:
-        return f"error:{e}"
+def _resolve_glibc_loader() -> pathlib.Path | None:
+    for p in [
+        GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
+        GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
+    ]:
+        if p.exists():
+            return p
+    return None
 
 
 def _log_current_loader():
@@ -293,6 +216,62 @@ def _log_current_loader():
         logger.warning("[glibc] Failed to read /proc/self/maps: %s", e)
 
 
+def _current_glibc_version() -> str:
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        func = libc.gnu_get_libc_version
+        func.restype = ctypes.c_char_p
+        return func().decode()
+    except Exception as e:
+        return f"error:{e}"
+
+
+def _run_under_custom_loader(argv: list[str]) -> bytes:
+    loader = _resolve_glibc_loader()
+    if not loader:
+        raise FileNotFoundError(f"glibc loader not found in {GLIBC_LIBDIR}")
+    cmd = [str(loader), "--library-path", str(GLIBC_LIBDIR), *argv]
+    return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+
+def _check_tmp_glibc() -> bool:
+    libc_path = GLIBC_LIBDIR / "libc.so.6"
+    if not libc_path.exists():
+        logger.error("[glibc] Expected glibc at %s but file not found", libc_path)
+        return False
+    try:
+        out = _run_under_custom_loader([str(libc_path), "--version"])
+        first_line = out.decode(errors="ignore").split("\n", 1)[0]
+        logger.info("[glibc] Found custom glibc at %s: %s", libc_path, first_line)
+        return True
+    except Exception as e:
+        logger.error("[glibc] Failed to run libc under staged loader: %s", e)
+        return False
+
+
+def check_glibc_exist_and_validate() -> bool:
+    libc = GLIBC_LIBDIR / "libc.so.6"
+    if not libc.exists():
+        logger.error("[QNN] staged libc missing at %s", libc)
+        return False
+    try:
+        out = _run_under_custom_loader([str(libc), "--version"])
+        first = out.decode(errors="ignore").split("\n", 1)[0]
+        m = re.search(r"version (\d+\.\d+)", first)
+        if not m:
+            logger.error("[QNN] could not parse glibc version from: %s", first)
+            return False
+        ver = m.group(1)
+        if _parse_version(ver) >= _parse_version(MINIMUM_LIBC_VERSION):
+            logger.info("[QNN] Using glibc %s from %s", ver, libc)
+            return True
+        logger.error("[QNN] glibc %s < required %s", ver, MINIMUM_LIBC_VERSION)
+        return False
+    except Exception as e:
+        logger.error("[QNN] failed to validate staged glibc: %s", e)
+        return False
+
+
 def _ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
     current = _current_glibc_version()
     logger.info("[glibc] Current loaded glibc (via ctypes): %s", current)
@@ -302,21 +281,18 @@ def _ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
         _log_current_loader()
         return
 
-    if not GLIBC_LOADER or not GLIBC_LOADER.exists():
+    loader = _resolve_glibc_loader()
+    if not loader:
         logger.error("[glibc] Loader not found in %s", GLIBC_LIBDIR)
         return
 
     logger.info(
-        "[glibc] Forcing re-exec under loader %s with libdir %s",
-        GLIBC_LOADER,
-        GLIBC_LIBDIR,
+        "[glibc] Forcing re-exec under loader %s with libdir %s", loader, GLIBC_LIBDIR
     )
-
     os.environ[GLIBC_REEXEC_GUARD] = "1"
     os.execv(
-        str(GLIBC_LOADER),
-        [str(GLIBC_LOADER), "--library-path", str(GLIBC_LIBDIR), sys.executable]
-        + sys.argv,
+        str(loader),
+        [str(loader), "--library-path", str(GLIBC_LIBDIR), sys.executable] + sys.argv,
     )
 
 
@@ -521,13 +497,8 @@ def install_qnn_sdk() -> bool:
         True if both steps succeeded (or were already satisfied), else False.
     """
     logger.info("[QNN] Starting SDK installation")
-
     _ensure_glibc_minimum(GLIBC_VERSION)
-
     if not _check_tmp_glibc():
         logger.error("[glibc] Pre-installed glibc check failed. Exiting early.")
         return False
-
-    if _ensure_libcxx_stack() and _ensure_qnn_sdk_lib():
-        return True
-    return False
+    return _ensure_libcxx_stack() and _ensure_qnn_sdk_lib()
