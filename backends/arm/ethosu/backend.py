@@ -56,6 +56,7 @@ class EthosUBackend(BackendDetails):
             tosa_flatbuffer,
             compile_flags,
             verbose=logger.getEffectiveLevel() == logging.INFO,
+            intermediate_path=compile_spec.get_intermediate_path(),
         )
         return binary
 
