@@ -495,18 +495,21 @@ def register_convolution_op():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw.default,
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
     ]
 )
 def register_quantized_conv_op():
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.PACKED_INT8_4W4C_BUFFER,  # input
             utils.NO_STORAGE,  # input_scale (non tensor)
             utils.NO_STORAGE,  # input_zero_point (non tensor)
             utils.NO_STORAGE,  # weight (prepacked)
             utils.NO_STORAGE,  # weight_sums (prepacked)
             utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
             utils.NO_STORAGE,  # bias (prepacked)
             utils.NO_STORAGE,  # kernel_size (non tensor)
             utils.NO_STORAGE,  # stride (non tensor)
@@ -517,6 +520,40 @@ def register_quantized_conv_op():
         ],
         supports_resize=False,
         supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
+    ]
+)
+def register_quantize_for_conv2d_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,
+        ],
+        supports_resize=False,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.dequantize_q8to_from_conv2d.default,
+    ]
+)
+def register_dequantize_for_conv2d_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,
+        ],
+        outputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+        ],
+        supports_resize=False,
     )
 
 
