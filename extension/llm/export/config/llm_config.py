@@ -652,7 +652,7 @@ class LlmConfig:
                 "use_torchao_kernels_tied_embedding",
             ]
         ):
-            if hasattr(args, "use_torchao_kernels") and args.torchao_kernels:
+            if hasattr(args, "use_torchao_kernels") and args.use_torchao_kernels:
                 # Enable all conversions if torchao_kernels is specified
                 llm_config.backend.torchao.use_torchao_kernels_linear = True
                 llm_config.backend.torchao.use_torchao_kernels_tied_embedding = True
