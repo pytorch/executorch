@@ -6,6 +6,7 @@ import json
 import logging
 
 import shutil
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -415,7 +416,7 @@ class CoreMLBackend(BackendDetails):
         mlmodel: ct.models.MLModel, model_type: MODEL_TYPE
     ) -> PreprocessResult:
         identifier = "executorch_" + str(uuid.uuid4())
-        dir_path: Path = Path("tmp") / identifier
+        dir_path: Path = Path(tempfile.gettempdir()) / identifier
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()
         logger.warning(

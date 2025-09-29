@@ -9,7 +9,6 @@
 
 import argparse
 import copy
-import json
 import logging
 import os
 
@@ -26,8 +25,8 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.util.arm_model_evaluator import (
-    GenericModelEvaluator,
-    MobileNetV2Evaluator,
+    evaluate_model,
+    evaluator_calibration_data,
 )
 
 from executorch.backends.arm.vgf import VgfCompileSpec
@@ -176,46 +175,6 @@ def quantize(
     return m
 
 
-# Simple example models
-class AddModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x + x
-
-    example_input = (torch.ones(5, dtype=torch.int32),)
-    can_delegate = True
-
-
-class AddModule2(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return x + y
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
-
-
-class AddModule3(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return (x + y, x + x)
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
-
-
 class QuantAddTest(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -264,27 +223,6 @@ class QuantOpTest(torch.nn.Module):
     can_delegate = True  # when quantized
 
 
-class SoftmaxModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.softmax = torch.nn.Softmax(dim=0)
-
-    def forward(self, x):
-        z = self.softmax(x)
-        return z
-
-    example_input = (torch.ones(2, 2),)
-    can_delegate = True
-
-
-class MultipleOutputsModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return (x * y, x.sum(dim=-1, keepdim=True))
-
-    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
-    can_delegate = True
-
-
 class QuantLinearTest(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -299,29 +237,15 @@ class QuantLinearTest(torch.nn.Module):
 
 
 models = {
-    "add": AddModule,
-    "add2": AddModule2,
-    "add3": AddModule3,
     "qadd": QuantAddTest,
     "qadd2": QuantAddTest2,
     "qops": QuantOpTest,
-    "softmax": SoftmaxModule,
-    "MultipleOutputsModule": MultipleOutputsModule,
     # TODO: Remove this from here, once we have dedicated MCU test pipeline ready. This is an interim solution.
     # See https://github.com/pytorch/executorch/discussions/13944
     "qlinear": QuantLinearTest,
 }
 
 calibration_data = {
-    "add": (torch.randn(1, 5),),
-    "add2": (
-        torch.randn(1, 5),
-        torch.randn(1, 5),
-    ),
-    "add3": (
-        torch.randn(32, 5),
-        torch.randn(32, 5),
-    ),
     "qadd": (torch.randn(32, 2, 1),),
     "qadd2": (
         torch.randn(32, 2, 1),
@@ -333,13 +257,6 @@ calibration_data = {
         torch.randn(32, 2, 1) * -0.000001,
         torch.randn(32, 2, 1) * 1000,
     ),
-    "softmax": (torch.randn(32, 2, 2),),
-    "qlinear": (torch.randn(37, 61),),
-}
-
-evaluators = {
-    "generic": GenericModelEvaluator,
-    "mv2": MobileNetV2Evaluator,
 }
 
 targets = [
@@ -366,21 +283,7 @@ def get_calibration_data(
 ):
     # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
     if evaluator_name is not None:
-        evaluator = evaluators[evaluator_name]
-
-        if hasattr(evaluator, "get_calibrator"):
-            assert evaluator_config is not None
-
-            config_path = Path(evaluator_config)
-            with config_path.open() as f:
-                config = json.load(f)
-
-            if evaluator_name == "mv2":
-                return evaluator.get_calibrator(
-                    training_dataset_path=config["training_dataset_path"]
-                )
-            else:
-                raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+        return evaluator_calibration_data(evaluator_name, evaluator_config)
 
     # If the model is in the calibration_data dictionary, get the data from there
     # This is used for the simple model examples provided
@@ -408,11 +311,14 @@ def get_compile_spec(
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
+        extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
+        if debug_mode is not None:
+            extra_flags.append("--enable-debug-db")
         compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags=["--verbose-operators", "--verbose-cycle-estimate"],
+            extra_flags=extra_flags,
             config_ini=config,
         )
     elif "vgf" in target:
@@ -432,52 +338,6 @@ def get_compile_spec(
         compile_spec.dump_debug_info(mode)
 
     return compile_spec
-
-
-def evaluate_model(
-    model_name: str,
-    intermediates: str,
-    model_fp32: torch.nn.Module,
-    model_int8: torch.nn.Module,
-    example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str,
-    evaluator_config: str | None,
-) -> None:
-    evaluator = evaluators[evaluator_name]
-
-    # Get the path of the TOSA flatbuffer that is dumped
-    intermediates_path = Path(intermediates)
-    tosa_paths = list(intermediates_path.glob("*.tosa"))
-
-    if evaluator.REQUIRES_CONFIG:
-        assert evaluator_config is not None
-
-        config_path = Path(evaluator_config)
-        with config_path.open() as f:
-            config = json.load(f)
-
-        if evaluator_name == "mv2":
-            init_evaluator = evaluator(
-                model_name,
-                model_fp32,
-                model_int8,
-                example_inputs,
-                str(tosa_paths[0]),
-                config["batch_size"],
-                config["validation_dataset_path"],
-            )
-        else:
-            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
-    else:
-        init_evaluator = evaluator(
-            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
-        )
-
-    quant_metrics = init_evaluator.evaluate()
-    output_json_path = intermediates_path / "quant_metrics.json"
-
-    with output_json_path.open("w") as json_file:
-        json.dump(quant_metrics, json_file)
 
 
 def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
@@ -604,7 +464,7 @@ def get_args():
         "--config",
         required=False,
         default="Arm/vela.ini",
-        help="Specify custom vela configuration file (vela.ini)",
+        help="Specify custom vela configuration file (vela.ini) for Ethos-U targets.",
     )
     parser.add_argument(
         "--non_strict_export",
@@ -622,7 +482,7 @@ def get_args():
         "--enable_debug_mode",
         required=False,
         choices=["json", "tosa"],
-        help="Flag to enable ATen-to-TOSA debug mode.",
+        help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
     )
     args = parser.parse_args()
 
