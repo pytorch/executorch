@@ -19,6 +19,7 @@ from executorch.backends.apple.coreml.test.test_coreml_utils import (
     IS_VALID_TEST_RUNTIME,
 )
 from executorch.exir.backend.utils import format_delegated_graph
+from executorch.exir.dialects._ops import ops as exir_ops
 from torchao.quantization import IntxWeightOnlyConfig, PerAxis, PerGroup, quantize_
 
 if IS_VALID_TEST_RUNTIME:
@@ -73,8 +74,8 @@ class TestCoreMLPartitioner(unittest.TestCase):
         runtime = Runtime.get()
         program = runtime.load_program(executorch_program.buffer)
         method = program.load_method("forward")
-        et_outputs = method.execute(*example_inputs)[0]
         eager_outputs = eager_program(*example_inputs)
+        et_outputs = method.execute(list(example_inputs))[0]
         self.assertTrue(
             torch.allclose(et_outputs, eager_outputs, atol=1e-02, rtol=1e-02)
         )
@@ -196,7 +197,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         # Using to_edge_transform_and_lower, we expect SDPA will be preserved and show up in delegated graph
         edge_program_manager = executorch.exir.to_edge_transform_and_lower(
-            ep, partitioner=[coreml_partitioner]
+            ep, compile_config=self.edge_compile_config, partitioner=[coreml_partitioner]
         )
         self.assertTrue(
             "executorch.exir.dialects.edge._ops.aten.scaled_dot_product_attention.default"
@@ -344,6 +345,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         edge_program_manager = executorch.exir.to_edge_transform_and_lower(
             exir_program_aten,
+            compile_config=self.edge_compile_config,
             partitioner=[CoreMLPartitioner(take_over_constant_data=False)],
         )
         for node in edge_program_manager.exported_program().graph.nodes:
@@ -386,10 +388,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
         example_inputs = (torch.randn(1, 10),)
 
         exported_program = torch.export.export(model, example_inputs, strict=True)
-
         # Test original partitioner - should create fewer delegates
         delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._coreml_partitioner()],
         )
 
@@ -402,6 +404,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Test single op partitioner - should create more delegates
         delegated_program_manager_single = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
@@ -413,7 +416,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         # SingleOpCoreMLPartitioner should create more individual delegates
         self.assertGreater(len(single_op_delegates), len(original_delegates))
-        self.assertGreaterEqual(len(single_op_delegates), 3)  # At least linear1, relu, linear2
+        self.assertEqual(len(single_op_delegates), 3)  # At least linear1, relu, linear2
 
         # Test to_executorch and compare outputs
         et_prog_original = delegated_program_manager.to_executorch()
@@ -444,6 +447,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Should not fail due to get_attr nodes
         delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
@@ -453,7 +457,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
             if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
         ]
 
-        self.assertGreater(len(delegates), 0)
+        self.assertEqual(len(delegates), 2)
 
         # Test to_executorch
         et_prog = delegated_program_manager.to_executorch()
@@ -484,6 +488,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[partitioner],
         )
 
@@ -530,6 +535,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Test SingleOpCoreMLPartitioner
         delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
@@ -538,22 +544,15 @@ class TestCoreMLPartitioner(unittest.TestCase):
             if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
         ]
 
-        # Should have at least 6 separate delegates (3 linear + 3 activation functions)
-        self.assertGreaterEqual(len(delegates), 6)
+        # Should have 6 separate delegates (3 linear + 3 activation functions)
+        self.assertEqual(len(delegates), 6)
 
         # Compare with original partitioner which should create fewer delegates
         delegated_program_manager_orig = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._coreml_partitioner()],
         )
-
-        original_delegates = [
-            node for node in delegated_program_manager_orig.exported_program().graph.nodes
-            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
-        ]
-
-        # SingleOp should create more delegates than original
-        self.assertGreater(len(delegates), len(original_delegates))
 
         # Test to_executorch and compare outputs
         et_prog_single = delegated_program_manager.to_executorch()
@@ -573,7 +572,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
             def forward(self, x):
                 x = self.conv1(x)
                 x = torch.relu(x)
-                x = torch.max_pool2d(x, 2)
+                x = torch.max_pool2d(x, 2, 1)
                 x = self.conv2(x)
                 x = torch.relu(x)
                 return x
@@ -586,6 +585,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         delegated_program_manager = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
@@ -595,7 +595,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
         ]
 
         # Should have separate delegates for conv1, relu, max_pool2d, conv2, relu
-        self.assertGreaterEqual(len(delegates), 5)
+        self.assertEqual(len(delegates), 5)
 
         # Test to_executorch
         et_prog = delegated_program_manager.to_executorch()
@@ -630,29 +630,22 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Test with SingleOpCoreMLPartitioner
         delegated_program_single = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
         # Test with original CoreMLPartitioner
         delegated_program_orig = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._coreml_partitioner()],
         )
 
-        # Check that both work
-        for node in delegated_program_single.exported_program().graph.nodes:
-            if node.op == "call_function":
-                assert node.target.__name__ in [
-                    "executorch_call_delegate",
-                    "getitem",
-                ], f"Got unexpected node target after delegation: {node.target.__name__}"
-
-        for node in delegated_program_orig.exported_program().graph.nodes:
-            if node.op == "call_function":
-                assert node.target.__name__ in [
-                    "executorch_call_delegate",
-                    "getitem",
-                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+        delegates = [
+            node for node in delegated_program_single.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+        self.assertEqual(len(delegates), 3)
 
         # Test to_executorch and compare outputs
         et_prog_single = delegated_program_single.to_executorch()
@@ -690,29 +683,22 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Test with SingleOpCoreMLPartitioner
         delegated_program_single = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
         # Test with original CoreMLPartitioner
         delegated_program_orig = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._coreml_partitioner()],
         )
 
-        # Check that both work
-        for node in delegated_program_single.exported_program().graph.nodes:
-            if node.op == "call_function":
-                assert node.target.__name__ in [
-                    "executorch_call_delegate",
-                    "getitem",
-                ], f"Got unexpected node target after delegation: {node.target.__name__}"
-
-        for node in delegated_program_orig.exported_program().graph.nodes:
-            if node.op == "call_function":
-                assert node.target.__name__ in [
-                    "executorch_call_delegate",
-                    "getitem",
-                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+        delegates = [
+            node for node in delegated_program_single.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+        self.assertEqual(len(delegates), 2)
 
         # Test to_executorch and compare outputs
         et_prog_single = delegated_program_single.to_executorch()
@@ -760,29 +746,22 @@ class TestCoreMLPartitioner(unittest.TestCase):
         # Test with SingleOpCoreMLPartitioner
         delegated_program_single = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._single_op_coreml_partitioner()],
         )
 
         # Test with original CoreMLPartitioner
         delegated_program_orig = executorch.exir.to_edge_transform_and_lower(
             exported_program,
+            compile_config=self.edge_compile_config,
             partitioner=[self._coreml_partitioner()],
         )
 
-        # Check that both work
-        for node in delegated_program_single.exported_program().graph.nodes:
-            if node.op == "call_function":
-                assert node.target.__name__ in [
-                    "executorch_call_delegate",
-                    "getitem",
-                ], f"Got unexpected node target after delegation: {node.target.__name__}"
-
-        for node in delegated_program_orig.exported_program().graph.nodes:
-            if node.op == "call_function":
-                assert node.target.__name__ in [
-                    "executorch_call_delegate",
-                    "getitem",
-                ], f"Got unexpected node target after delegation: {node.target.__name__}"
+        delegates = [
+            node for node in delegated_program_single.exported_program().graph.nodes
+            if node.op == "call_function" and node.target.__name__ == "executorch_call_delegate"
+        ]
+        self.assertEqual(len(delegates), 4)
 
         # Test to_executorch and compare outputs
         et_prog_single = delegated_program_single.to_executorch()

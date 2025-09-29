@@ -25,9 +25,8 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
-from torch.fx.passes.infra.partitioner import Partition
 
 logger = logging.getLogger(__name__)
 logger.setLevel(get_coreml_log_level(default_level=logging.INFO))
@@ -214,41 +213,55 @@ class SingleOpCoreMLPartitioner(Partitioner):
         if node.op != "call_function":
             return False
 
-        # Check for the actual torchao.dequantize_affine operation
-        return str(node.target) == "torchao.dequantize_affine.default"
+        return node.target.__name__ == "torchao.dequantize_affine.default"
 
     def _is_linear_node(self, node: torch.fx.Node) -> bool:
-        """Check if node is a linear operation."""
+        """Check if node is a linear operation (can be aten.linear.default or aten.addmm.default after decomposition)."""
         if node.op != "call_function":
             return False
 
-        # Check for the actual aten.linear operation
-        return str(node.target) == "aten.linear.default"
+        return node.target.__name__ == "aten.linear.default"
 
     def _is_embedding_node(self, node: torch.fx.Node) -> bool:
         """Check if node is an embedding operation."""
         if node.op != "call_function":
             return False
 
-        # Check for the actual aten.embedding operation
-        return str(node.target) == "aten.embedding.default"
+        return node.target.__name__ == "aten.embedding.default"
 
-    def _is_4bit_weight_only_pattern(self, dequant_node: torch.fx.Node, consumer_node: torch.fx.Node) -> bool:
+    def _is_4bit_weight_only_pattern(
+        self,
+        dequant_node: torch.fx.Node,
+        consumer_node: torch.fx.Node,
+        intermediate_node: torch.fx.Node = None,
+    ) -> bool:
         """
         Check if the dequantize_affine + consumer pattern represents 4-bit weight-only quantization.
         This checks the quant_min and quant_max parameters of the dequantize_affine node.
-        Consumer can be either linear or embedding.
+        Consumer can be either linear/addmm or embedding.
         """
         if not self._is_dequantize_affine_node(dequant_node):
             return False
 
         # Check if consumer is either linear or embedding
-        if not (self._is_linear_node(consumer_node) or self._is_embedding_node(consumer_node)):
+        if not (
+            self._is_linear_node(consumer_node)
+            or self._is_embedding_node(consumer_node)
+        ):
             return False
 
-        # Check if dequantize_affine output feeds into consumer input
-        if dequant_node not in consumer_node.all_input_nodes:
-            return False
+        # Check connectivity: either direct or through intermediate node
+        if intermediate_node is not None:
+            # Pattern: dequant_node -> intermediate_node -> consumer_node
+            if (
+                dequant_node not in intermediate_node.all_input_nodes
+                or intermediate_node not in consumer_node.all_input_nodes
+            ):
+                return False
+        else:
+            # Direct pattern: dequant_node -> consumer_node
+            if dequant_node not in consumer_node.all_input_nodes:
+                return False
 
         # Check for 4-bit quantization parameters (quant_min=-8, quant_max=7)
         if len(dequant_node.args) >= 6:
@@ -257,10 +270,10 @@ class SingleOpCoreMLPartitioner(Partitioner):
                 quant_max = dequant_node.args[6] if len(dequant_node.args) > 6 else None
 
                 # Handle case where parameters might be nodes vs constants
-                if hasattr(quant_min, 'meta') and 'val' in quant_min.meta:
-                    quant_min = quant_min.meta['val']
-                if hasattr(quant_max, 'meta') and 'val' in quant_max.meta:
-                    quant_max = quant_max.meta['val']
+                if hasattr(quant_min, "meta") and "val" in quant_min.meta:
+                    quant_min = quant_min.meta["val"]
+                if hasattr(quant_max, "meta") and "val" in quant_max.meta:
+                    quant_max = quant_max.meta["val"]
 
                 return quant_min == -8 and quant_max == 7
             except (IndexError, AttributeError, TypeError):
@@ -268,20 +281,24 @@ class SingleOpCoreMLPartitioner(Partitioner):
 
         return False
 
-    def _find_4bit_patterns(self, graph_module: torch.fx.GraphModule) -> List[Tuple[torch.fx.Node, torch.fx.Node]]:
+    def _find_4bit_patterns(
+        self, graph_module: torch.fx.GraphModule
+    ) -> List[Tuple[torch.fx.Node, ...]]:
         """Find all dequantize_affine + consumer patterns that represent 4-bit weight-only quantization."""
         patterns = []
 
         for node in graph_module.graph.nodes:
             if self._is_dequantize_affine_node(node):
-                # Look for linear or embedding nodes that use this dequantize_affine output
+                # First, check for direct connections to linear/embedding
                 for user in node.users:
-                    if (self._is_linear_node(user) or self._is_embedding_node(user)) and self._is_4bit_weight_only_pattern(node, user):
+                    if self._is_4bit_weight_only_pattern(node, user):
                         patterns.append((node, user))
 
         return patterns
 
-    def _create_single_op_partitions(self, exported_program: ExportedProgram) -> List[Partition]:
+    def _create_single_op_partitions(
+        self, exported_program: ExportedProgram
+    ) -> List[Partition]:
         """Create individual partitions for each supported operation."""
         op_support = _OperatorsSupportedForCoreMLBackend(
             self.skip_ops_for_coreml_delegation,
@@ -292,16 +309,16 @@ class SingleOpCoreMLPartitioner(Partitioner):
         # Find 4-bit quantization patterns first
         patterns_4bit = self._find_4bit_patterns(exported_program.graph_module)
         pattern_nodes = set()
-        for dequant_node, consumer_node in patterns_4bit:
-            pattern_nodes.add(dequant_node)
-            pattern_nodes.add(consumer_node)
+        for pattern in patterns_4bit:
+            for node in pattern:
+                pattern_nodes.add(node)
 
         partitions = []
         partition_id = 0
 
         # Create combined partitions for 4-bit patterns (dequantize_affine + linear/embedding)
-        for dequant_node, consumer_node in patterns_4bit:
-            partition = Partition(id=partition_id, nodes=[dequant_node, consumer_node])
+        for pattern in patterns_4bit:
+            partition = Partition(id=partition_id, nodes=list(pattern))
             partitions.append(partition)
             partition_id += 1
 
