@@ -12,7 +12,7 @@ import math
 import re
 
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Literal, Optional, Tuple
+from typing import ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 
 from executorch.exir._serialize._cord import Cord
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
@@ -21,10 +21,9 @@ from executorch.exir._serialize._flatbuffer import (
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
 )
-from executorch.exir._serialize._named_data_store import (
-    BufferEntry,
-    NamedDataStoreOutput,
-)
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
+
+from executorch.exir._serialize.data_serializer import DataEntry
 
 from executorch.exir._serialize.padding import aligned_size, pad_to, padding_required
 
@@ -368,8 +367,8 @@ def _extract_constant_segment(
 def _extract_named_data(
     program: Program,
     segments: List[AlignedData],
-    buffers: List[BufferEntry],
-    name_to_buffer_idx: Dict[str, int],
+    buffers: Sequence[bytes],
+    name_to_data_entry: Dict[str, DataEntry],
 ) -> None:
     """Modifies the program in-place to add references to the named data
         segments.
@@ -379,7 +378,7 @@ def _extract_named_data(
         segments: A list of buffers to append extracted segments to. Modified in-place.
         buffers: A list of unique buffers and the information required to
             serialize them. Not modified.
-        name_to_buffer_idx: A map from the name of a blob to the index in buffers.
+        name_to_data_entry: A map from the blob name to DataEntry.
             Not modified.
     """
     if program.named_data is not None and len(program.named_data) > 0:
@@ -389,14 +388,14 @@ def _extract_named_data(
     segment_index_map: Dict[int, int] = {}
 
     named_data: List[NamedData] = []
-    for name, buffer_idx in name_to_buffer_idx.items():
-        segment_index = segment_index_map.get(buffer_idx, None)
+    for name, data_entry in name_to_data_entry.items():
+        segment_index = segment_index_map.get(data_entry.buffer_index, None)
         if segment_index is None:
             segment_index = len(segments)
-            segment_index_map[buffer_idx] = segment_index
+            segment_index_map[data_entry.buffer_index] = segment_index
             segments.append(
                 AlignedData(
-                    Cord(buffers[buffer_idx].buffer), buffers[buffer_idx].alignment
+                    Cord(buffers[data_entry.buffer_index]), data_entry.alignment
                 )
             )
         named_data.append(NamedData(key=name, segment_index=segment_index))

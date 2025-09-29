@@ -117,18 +117,18 @@ def serialize_for_executorch(
             )
             buffers.append(emitter_output.external_constant_buffer[index])
 
-        # Extract external data.
+        # Extract external data from named_data_store.
         # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `get`.
-        key_to_buffer_index = named_data_store.external_data.get(tag, {})
-        for key, index in key_to_buffer_index.items():
+        blob_to_data_entry = named_data_store.external_data.get(tag, {})
+        for key, data_entry in blob_to_data_entry.items():
             assert key not in key_to_data_entry  # key must be unique
             key_to_data_entry[key] = DataEntry(
                 buffer_index=len(buffers),
-                # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
-                alignment=named_data_store.buffers[index].alignment,
-                tensor_layout=None,
+                alignment=data_entry.alignment,
+                tensor_layout=data_entry.tensor_layout,
             )
-            buffers.append(named_data_store.buffers[index].buffer)
+            # pyre-ignore[16]: Undefined attribute: `Optional` has no attribute `buffers`.
+            buffers.append(named_data_store.buffers[data_entry.buffer_index])
 
         # Serialize into PTD file.
         ptd_files[tag] = data_serializer.serialize(
