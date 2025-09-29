@@ -42,6 +42,7 @@ from executorch.backends.arm._passes import (
     DecomposeAtanPass,
     DecomposeAvgPool2d,
     DecomposeBatchNormNoStatsPass,
+    DecomposeConv2dWithInt16ActivationPass,
     DecomposeCoshPass,
     DecomposeCosineSimilarityPass,
     DecomposeCumsumPass,
@@ -90,6 +91,7 @@ from executorch.backends.arm._passes import (
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
+    RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
     ToTosaMemoryFormatPass,
@@ -111,6 +113,8 @@ from executorch.exir import ExportedProgram
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from torch.fx import GraphModule
+from torch.fx.passes.infra.pass_base import PassResult
+from torch.nn.modules import Module
 
 
 class ArmPassManager(PassManager):
@@ -183,6 +187,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ComputeConstantOpsAOT(exported_program))
 
         self.add_pass(DecomposeGroupedConv())
+
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(UnsqueezeBeforeRepeatPass())
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
@@ -196,9 +201,15 @@ class ArmPassManager(PassManager):
 
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
+        self.add_pass(InsertTableOpsPass(exported_program))
+        # If we have a conv2d with int16 activation split up into a convolution
+        # and an addition, to work-around the lack of support for int48 in torch
+        # needs to happen before AddBiasPass, but after the table ops are inserted
+        # to be able to validate that conv2d has right dtype arguments.
+        self.add_pass(DecomposeConv2dWithInt16ActivationPass())
+        self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
 
-        self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
@@ -281,6 +292,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
+        self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
@@ -348,3 +360,20 @@ class ArmPassManager(PassManager):
             self.add_pass(DecomposeMaskedFill())
 
         return self._transform(graph_module)
+
+    def __call__(self, module: Module) -> PassResult:
+        try:
+            return super().__call__(module)
+        except Exception as e:
+            first_exception = e.__cause__ or e.__context__ or e
+            import re
+
+            message = e.args[0]
+            m = re.search(r"An error occurred when running the '([^']+)' pass", message)
+            if m:
+                pass_name = m.group(1)
+                first_exception.args = (
+                    f"{pass_name}: {first_exception.args[0]}",
+                    *first_exception.args[1:],
+                )
+            raise first_exception
