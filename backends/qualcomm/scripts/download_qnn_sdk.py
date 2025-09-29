@@ -187,36 +187,24 @@ GLIBC_VERSION = "2.34"
 GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
-MINIMUM_LIBC_VERSION = GLIBC_VERSION  # string like "2.34"
+MINIMUM_LIBC_VERSION = GLIBC_VERSION
+
+RPM_URL = (
+    "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/"
+    "Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
+)
+RPM_PATH = pathlib.Path("/tmp/glibc.rpm")
+WORKDIR = pathlib.Path("/tmp/glibc-extracted")
 
 
 def _parse_version(v: str) -> tuple[int, int]:
+    """Turn '2.34' → (2,34) so it can be compared."""
     parts = v.split(".")
     return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
 
 
-def _resolve_glibc_loader() -> pathlib.Path | None:
-    for p in [
-        GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
-        GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
-    ]:
-        if p.exists():
-            return p
-    return None
-
-
-def _log_current_loader():
-    """Dump the loader and libc mappings from /proc/self/maps for debugging."""
-    try:
-        with open("/proc/self/maps") as f:
-            for line in f:
-                if "ld-" in line or "libc.so" in line:
-                    logger.info("[glibc] Loader map: %s", line.strip())
-    except Exception as e:
-        logger.warning("[glibc] Failed to read /proc/self/maps: %s", e)
-
-
 def _current_glibc_version() -> str:
+    """Return system glibc version string (via ctypes)."""
     try:
         libc = ctypes.CDLL("libc.so.6")
         func = libc.gnu_get_libc_version
@@ -226,60 +214,73 @@ def _current_glibc_version() -> str:
         return f"error:{e}"
 
 
-def _run_under_custom_loader(argv: list[str]) -> bytes:
-    loader = _resolve_glibc_loader()
-    if not loader:
-        raise FileNotFoundError(f"glibc loader not found in {GLIBC_LIBDIR}")
-    cmd = [str(loader), "--library-path", str(GLIBC_LIBDIR), *argv]
-    return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+def _resolve_glibc_loader() -> pathlib.Path | None:
+    """Return staged ld.so path if available."""
+    for p in [
+        GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
+        GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
+    ]:
+        if p.exists():
+            return p
+    return None
 
 
-def _check_tmp_glibc() -> bool:
-    libc_path = GLIBC_LIBDIR / "libc.so.6"
-    if not libc_path.exists():
-        logger.error("[glibc] Expected glibc at %s but file not found", libc_path)
-        return False
-    try:
-        out = _run_under_custom_loader([str(libc_path), "--version"])
-        first_line = out.decode(errors="ignore").split("\n", 1)[0]
-        logger.info("[glibc] Found custom glibc at %s: %s", libc_path, first_line)
-        return True
-    except Exception as e:
-        logger.error("[glibc] Failed to run libc under staged loader: %s", e)
-        return False
+def _stage_prebuilt_glibc():
+    """Download + extract Fedora 35 glibc RPM into /tmp."""
+    logger.info(">>> Staging prebuilt glibc-%s from Fedora 35 RPM", GLIBC_VERSION)
+    GLIBC_LIBDIR.mkdir(parents=True, exist_ok=True)
+
+    # Download
+    subprocess.check_call(["curl", "-fsSL", RPM_URL, "-o", str(RPM_PATH)])
+
+    # Extract
+    if WORKDIR.exists():
+        shutil.rmtree(WORKDIR)
+    WORKDIR.mkdir(parents=True)
+    subprocess.check_call(["bsdtar", "-C", str(WORKDIR), "-xf", str(RPM_PATH)])
+
+    # Copy runtime libs
+    staged = [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "librt.so.1",
+        "libm.so.6",
+        "libutil.so.1",
+    ]
+    for lib in staged:
+        src = WORKDIR / "lib64" / lib
+        if src.exists():
+            shutil.copy2(src, GLIBC_LIBDIR / lib)
+            logger.info("[glibc] Staged %s", lib)
+        else:
+            logger.warning("[glibc] Missing %s in RPM", lib)
 
 
-def check_glibc_exist_and_validate() -> bool:
-    libc = GLIBC_LIBDIR / "libc.so.6"
-    if not libc.exists():
-        logger.error("[QNN] staged libc missing at %s", libc)
-        return False
-    try:
-        out = _run_under_custom_loader([str(libc), "--version"])
-        first = out.decode(errors="ignore").split("\n", 1)[0]
-        m = re.search(r"version (\d+\.\d+)", first)
-        if not m:
-            logger.error("[QNN] could not parse glibc version from: %s", first)
-            return False
-        ver = m.group(1)
-        if _parse_version(ver) >= _parse_version(MINIMUM_LIBC_VERSION):
-            logger.info("[QNN] Using glibc %s from %s", ver, libc)
-            return True
-        logger.error("[QNN] glibc %s < required %s", ver, MINIMUM_LIBC_VERSION)
-        return False
-    except Exception as e:
-        logger.error("[QNN] failed to validate staged glibc: %s", e)
-        return False
-
-
-def _ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
+def ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
+    """
+    Ensure process runs under glibc >= min_version.
+    - If system glibc is new enough → skip.
+    - Else → stage Fedora RPM and re-exec under staged loader.
+    """
     current = _current_glibc_version()
-    logger.info("[glibc] Current loaded glibc (via ctypes): %s", current)
+    logger.info("[glibc] Current loaded glibc: %s", current)
 
-    if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
-        logger.info("[glibc] Already re-exec'd once; continuing under current loader.")
-        _log_current_loader()
+    # If system glibc already sufficient → skip everything
+    m = re.match(r"(\d+\.\d+)", current)
+    if m and _parse_version(m.group(1)) >= _parse_version(min_version):
+        logger.info("[glibc] System glibc >= %s, no staging needed.", min_version)
         return
+
+    # Avoid infinite loop
+    if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
+        logger.info("[glibc] Already re-exec'd once, continuing.")
+        return
+
+    # Stage prebuilt if not already staged
+    if not (GLIBC_LIBDIR / "libc.so.6").exists():
+        _stage_prebuilt_glibc()
 
     loader = _resolve_glibc_loader()
     if not loader:
@@ -287,7 +288,7 @@ def _ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
         return
 
     logger.info(
-        "[glibc] Forcing re-exec under loader %s with libdir %s", loader, GLIBC_LIBDIR
+        "[glibc] Re-execing under loader %s with libdir %s", loader, GLIBC_LIBDIR
     )
     os.environ[GLIBC_REEXEC_GUARD] = "1"
     os.execv(
