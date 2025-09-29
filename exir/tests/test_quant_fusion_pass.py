@@ -14,6 +14,7 @@ from executorch import exir
 from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.quant_fusion_pass import (
+    _get_node_value_dict,
     quant_fusion_and_const_prop_pass,
     QuantFusionPass,
 )
@@ -36,7 +37,8 @@ from torch.nn import functional as F
 
 from torch.testing import FileCheck
 from torchao.quantization.granularity import PerAxis, PerGroup
-from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+from torchao.quantization.quant_api import IntxWeightOnlyConfig, MappingType, quantize_
+from torchao.quantization.utils import compute_error
 
 
 class TestQuantFusionPass(unittest.TestCase):
@@ -382,13 +384,22 @@ class TestQuantFusionPass(unittest.TestCase):
             # )
 
     def test_embedding_torchao(self) -> None:
-        for bit_width, use_dtype_variant, test_per_group in zip(
-            [2, 4, 8], [True, False], [True, False]
+        for bit_width, use_dtype_variant, test_per_group, mapping_type in zip(
+            [2, 4, 8],
+            [True, False],
+            [True, False],
+            [MappingType.SYMMETRIC, MappingType.ASYMMETRIC],
         ):
-            self._test_embedding_torchao(bit_width, use_dtype_variant, test_per_group)
+            self._test_embedding_torchao(
+                bit_width, use_dtype_variant, test_per_group, mapping_type
+            )
 
     def _test_embedding_torchao(
-        self, bit_width: int, use_dtype_variant: bool, test_per_group: bool
+        self,
+        bit_width: int,
+        use_dtype_variant: bool,
+        test_per_group: bool,
+        mapping_type: MappingType,
     ) -> None:
         assert bit_width in [2, 4, 8]
         embedding_suffix = f"{bit_width}bit" if bit_width < 8 else "byte"
@@ -410,7 +421,9 @@ class TestQuantFusionPass(unittest.TestCase):
         quantize_(
             model,
             IntxWeightOnlyConfig(
-                weight_dtype=getattr(torch, f"int{bit_width}"), granularity=granularity
+                weight_dtype=getattr(torch, f"int{bit_width}"),
+                granularity=granularity,
+                mapping_type=mapping_type,
             ),
             lambda m, fqn: isinstance(m, torch.nn.Embedding),
         )
@@ -438,7 +451,10 @@ class TestQuantFusionPass(unittest.TestCase):
             m.exported_program().graph_module.code
         )
 
-        m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
+        node_value_dict = _get_node_value_dict(m.exported_program())
+        m = m.transform(
+            [QuantFusionPass(_fix_node_meta_val=True, node_value_dict=node_value_dict)]
+        )
 
         # After pass, we see packing op and quantized embedding op, but no torchao dequantize op
         FileCheck().check_count(
@@ -456,6 +472,22 @@ class TestQuantFusionPass(unittest.TestCase):
         )
 
         constant_prop_pass(m.exported_program())
+
+        found_embedding_node = False
+        seeking_suffix = embedding_suffix.replace("_", ".")
+        seeking = f"quantized_decomposed::embedding_{seeking_suffix}"
+        for node in m.exported_program().graph.nodes:
+            if node.op == "call_function" and node.target.name() == seeking:
+                found_embedding_node = True
+                if mapping_type == MappingType.SYMMETRIC:
+                    assert (
+                        node.args[2] is None
+                    ), f"Expected zero_point=None for symmetric quantization, but got {node.args[2]}"
+                else:
+                    assert node.args[2] is not None
+        assert (
+            found_embedding_node
+        ), f"Did not find embedding node with target {seeking}"
 
         # After constant prop, we see quantized embedding op, but no packing op
         FileCheck().check_count(
