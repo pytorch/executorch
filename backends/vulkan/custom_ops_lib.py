@@ -572,3 +572,45 @@ name = "dequantize_q8to_from_conv2d"
 lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
 lib.impl(name, dequantize_q8to_from_conv2d_impl, "CompositeExplicitAutograd")
 dequantize_q8to_from_conv2d_op = getattr(getattr(torch.ops, namespace), name)
+
+########################
+## add_q8ta_q8ta_q8to ##
+########################
+
+
+def add_q8ta_q8ta_q8to_impl(
+    input_a: torch.Tensor,
+    input_b: torch.Tensor,
+    input_a_scale: float,
+    input_a_zero_point: int,
+    input_b_scale: float,
+    input_b_zero_point: int,
+    output_scale: float,
+    output_zero_point: int,
+    alpha: float,
+):
+    # Dequantize inputs to float
+    dequant_a = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input_a, input_a_scale, input_a_zero_point, -128, 127, input_a.dtype
+    )
+    dequant_b = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input_b, input_b_scale, input_b_zero_point, -128, 127, input_b.dtype
+    )
+
+    # Perform addition with alpha scaling
+    result = dequant_a + alpha * dequant_b
+
+    # Quantize the result back to int8
+    quantized_result = torch.ops.quantized_decomposed.quantize_per_tensor(
+        result, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return quantized_result
+
+
+name = "add_q8ta_q8ta_q8to"
+lib.define(
+    f"{name}(Tensor input_a, Tensor input_b, float input_a_scale, int input_a_zero_point, float input_b_scale, int input_b_zero_point, float output_scale, int output_zero_point, float alpha) -> Tensor"
+)
+lib.impl(name, add_q8ta_q8ta_q8to_impl, "CompositeExplicitAutograd")
+add_q8ta_q8ta_q8to_op = getattr(getattr(torch.ops, namespace), name)
