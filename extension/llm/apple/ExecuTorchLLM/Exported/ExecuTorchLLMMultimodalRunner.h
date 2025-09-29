@@ -193,10 +193,10 @@ __attribute__((objc_subclassing_restricted))
  @param error      On failure, populated with an NSError explaining the issue.
  @return YES if generation completes successfully, NO if an error occurred.
 */
-- (BOOL)generate:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
-           config:(ExecuTorchLLMConfig *)config
-withTokenCallback:(nullable void (^)(NSString *))callback
-            error:(NSError **)error
+- (BOOL)generateWithInputs:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString *))callback
+                     error:(NSError **)error
     NS_SWIFT_NAME(generate(_:_:tokenCallback:));
 
 /**
