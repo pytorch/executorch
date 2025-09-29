@@ -45,90 +45,44 @@ fi
 
 "${GITHUB_WORKSPACE}/${REPOSITORY}/install_requirements.sh" --example
 
-# Install glibc-2.34
+# ----------------------------
+# Stage prebuilt glibc 2.34
+# ----------------------------
 
-# Prefer older GCC to avoid glibc build errors
-if [ -f /opt/rh/devtoolset-9/enable ]; then
-    echo ">>> Enabling devtoolset-9 (GCC 9)"
-    source /opt/rh/devtoolset-9/enable
-elif [ -f /opt/rh/devtoolset-8/enable ]; then
-    echo ">>> Enabling devtoolset-8 (GCC 8)"
-    source /opt/rh/devtoolset-8/enable
-fi
+set -euo pipefail
 
-echo "GCC version: $(gcc -dumpfullversion)"
-
-# 👇 only change this line to bump version
 GLIBC_VERSION=2.34
-
 PREFIX=/tmp/glibc-install-$GLIBC_VERSION
-BUILD_DIR=/tmp/glibc-build
-TARBALL=/tmp/glibc-$GLIBC_VERSION.tar.xz
-SRC_DIR=/tmp/glibc-$GLIBC_VERSION
+mkdir -p "$PREFIX/lib"
 
-# Clean old dirs
-rm -rf "$PREFIX" "$BUILD_DIR" "$SRC_DIR" "$TARBALL"
-mkdir -p "$BUILD_DIR"
+echo ">>> Downloading prebuilt glibc-$GLIBC_VERSION (CentOS Stream 9)"
 
-# Download tarball from canonical GNU FTP
-MIRROR=https://ftp.gnu.org/gnu/libc
-curl -L "$MIRROR/glibc-$GLIBC_VERSION.tar.xz" -o "$TARBALL"
+# Choose a mirror (can switch if one dies)
+RPM_URL="http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/glibc-${GLIBC_VERSION}-100.el9.x86_64.rpm"
 
-# Sanity check tarball
-ls -lh "$TARBALL"
-file "$TARBALL" || true
+# Download RPM
+curl -L "$RPM_URL" -o /tmp/glibc.rpm
 
-# Extract
-tar -C /tmp -xf "$TARBALL"
+# Extract without root
+command -v rpm2cpio >/dev/null 2>&1 || {
+    echo ">>> rpm2cpio not found, downloading static helper..."
+    curl -L https://raw.githubusercontent.com/rpm-software-management/rpm/main/scripts/rpm2cpio.sh -o /tmp/rpm2cpio.sh
+    chmod +x /tmp/rpm2cpio.sh
+    RPM2CPIO=/tmp/rpm2cpio.sh
+}
+RPM2CPIO=${RPM2CPIO:-rpm2cpio}
 
-cd "$BUILD_DIR"
+$RPM2CPIO /tmp/glibc.rpm | cpio -idmv
 
-# Unset LD_LIBRARY_PATH to satisfy glibc configure
-unset LD_LIBRARY_PATH
+# Copy only runtime loader + libc
+cp ./usr/lib64/libc.so.6 \
+   ./usr/lib64/ld-2.34.so \
+   ./usr/lib64/ld-linux-x86-64.so.2 \
+   "$PREFIX/lib"
 
-# Suppress GCC warnings (GCC 11 is more compatible, but keep flags)
-COMMON_FLAGS="-O2 -fPIC -fcommon -Wno-error"
-export CFLAGS="$COMMON_FLAGS"
-export CPPFLAGS="$COMMON_FLAGS"
-export CXXFLAGS="$COMMON_FLAGS"
+echo ">>> Staged glibc $GLIBC_VERSION to $PREFIX/lib"
+ls -l "$PREFIX/lib"
 
-# Configure
-../glibc-$GLIBC_VERSION/configure \
-    --prefix="$PREFIX" \
-    --without-selinux
-
-# Build and install
-make -j"$(nproc)"
-make install
-
-echo ">>> Finished make install"
-echo ">>> PREFIX=$PREFIX"
-
-# List everything under $PREFIX
-echo ">>> ls -l $PREFIX"
-ls -l "$PREFIX" || true
-
-echo ">>> ls -l $PREFIX/lib"
-ls -l "$PREFIX/lib" || true
-
-echo ">>> ls -l $PREFIX/lib64"
-ls -l "$PREFIX/lib64" || true
-
-# Explicitly show libc/ld files
-echo ">>> Checking for libc.so.6"
-if [ -e "$PREFIX/lib/libc.so.6" ]; then
-    ls -l "$PREFIX/lib/libc.so.6"
-else
-    echo "libc.so.6 NOT FOUND in $PREFIX/lib"
-fi
-
-echo ">>> Checking for ld-$GLIBC_VERSION.so"
-if [ -e "$PREFIX/lib/ld-$GLIBC_VERSION.so" ]; then
-    ls -l "$PREFIX/lib/ld-$GLIBC_VERSION.so"
-else
-    echo "ld-$GLIBC_VERSION.so NOT FOUND in $PREFIX/lib"
-fi
-
-# Run version checks only if files exist
-[ -x "$PREFIX/lib/ld-$GLIBC_VERSION.so" ] && "$PREFIX/lib/ld-$GLIBC_VERSION.so" --version || echo "ld-$GLIBC_VERSION.so missing or not executable"
-[ -x "$PREFIX/lib/libc.so.6" ] && "$PREFIX/lib/libc.so.6" --version || echo "libc.so.6 missing or not executable"
+# Verify
+"$PREFIX/lib/libc.so.6" --version || true
+"$PREFIX/lib/ld-2.34.so" --version || true
