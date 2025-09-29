@@ -98,7 +98,7 @@
         return;
       }
       ExecuTorchLLMGenerationConfig *config =
-          [[ExecuTorchLLMGenerationConfig alloc] initWithConfigurationHandler:^(ExecuTorchLLMGenerationConfig *config) {
+          [[ExecuTorchLLMGenerationConfig alloc] initWithBlock:^(ExecuTorchLLMGenerationConfig *config) {
             config.sequenceLength = 50;
           }];
       TokensPerSecondMetric *tokensPerSecondMetric = [TokensPerSecondMetric new];
@@ -107,10 +107,10 @@
                               tokensPerSecondMetric.tokenCount = 0;
                               BOOL status = [runner generateWithPrompt:@"Once upon a time"
                                                                 config:config
-                                                     withTokenCallback:^(NSString *token) {
+                                                         tokenCallback:^(NSString *token) {
                                 tokensPerSecondMetric.tokenCount++;
                               }
-                                                       error:NULL];
+                                                                 error:NULL];
                               XCTAssertTrue(status);
                             }];
     },
