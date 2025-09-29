@@ -51,7 +51,7 @@ MODEL_OUT=model.pte
 # Default to XNNPACK
 BACKEND_ARGS="-X --xnnpack-extended-ops"
 if [[ "$USE_TORCHAO_KERNELS" -eq 1 ]]; then
-  BACKEND_ARGS="--torchao-kernels"
+  BACKEND_ARGS="--use-torchao-kernels"
 fi
 
 case "$MODEL_NAME" in

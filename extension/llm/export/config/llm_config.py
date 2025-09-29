@@ -458,8 +458,8 @@ class TorchAOKernelsConfig:
     Configures the torchao-kernels backend.
     """
 
-    convert_linear: bool = False
-    convert_tied_embedding: bool = False
+    use_torchao_kernels_linear: bool = False
+    use_torchao_kernels_tied_embedding: bool = False
 
 
 @dataclass
@@ -647,22 +647,22 @@ class LlmConfig:
         if any(
             hasattr(args, a)
             for a in [
-                "torchao_kernels",
-                "torchao_kernels_linear",
-                "torchao_kernels_tied_embedding",
+                "use_torchao_kernels",
+                "use_torchao_kernels_linear",
+                "use_torchao_kernels_tied_embedding",
             ]
         ):
-            if hasattr(args, "torchao_kernels") and args.torchao_kernels:
+            if hasattr(args, "use_torchao_kernels") and args.torchao_kernels:
                 # Enable all conversions if torchao_kernels is specified
-                llm_config.backend.torchao.convert_linear = True
-                llm_config.backend.torchao.convert_tied_embedding = True
+                llm_config.backend.torchao.use_torchao_kernels_linear = True
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = True
             else:
                 # Otherwise, only enable the conversions that are specified
-                llm_config.backend.torchao.convert_linear = getattr(
-                    args, "torchao_kernels_linear", False
+                llm_config.backend.torchao.use_torchao_kernels_linear = getattr(
+                    args, "use_torchao_kernels_linear", False
                 )
-                llm_config.backend.torchao.convert_tied_embedding = getattr(
-                    args, "torchao_kernels_tied_embedding", False
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = getattr(
+                    args, "use_torchao_kernels_tied_embedding", False
                 )
 
         # DebugConfig

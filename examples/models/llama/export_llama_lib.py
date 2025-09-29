@@ -418,17 +418,17 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
     parser.add_argument(
-        "--torchao-kernels",
+        "--use-torchao-kernels",
         action="store_true",
         help="Delegate tied-embedding and quantized linear ops to torchao kernels",
     )
     parser.add_argument(
-        "--torchao-kernels-tied-embedding",
+        "--use-torchao-kernels-tied-embedding",
         action="store_true",
         help="Delegate tied-embedding ops to torchao kernels",
     )
     parser.add_argument(
-        "--torchao-kernels-linear",
+        "--use-torchao-kernels-linear",
         action="store_true",
         help="Delegate linear ops to torchao kernels",
     )
@@ -756,7 +756,7 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
-            use_torchao_kernels_linear=llm_config.backend.torchao.convert_linear,
+            use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
             use_torchao_kernels_tied_embedding=llm_config.backend.torchao.convert_tied_embedding,
         )
     )
