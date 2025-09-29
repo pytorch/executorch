@@ -186,73 +186,67 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 
 GLIBC_VERSION = "2.29"
 GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
-GLIBC_LOADER = GLIBC_ROOT / "lib" / "ld-linux-x86-64.so.2"
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
+GLIBC_LOADER_CANDIDATES = [
+    GLIBC_LIBDIR / "ld-2.29.so",
+    GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
+]
+GLIBC_LOADER = next((p for p in GLIBC_LOADER_CANDIDATES if p.exists()), None)
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 
-MINIMUM_LIBC_VERSION = 2.29
-
-GLIBC_CUSTOM = "/tmp/glibc-install-2.29/lib/libc.so.6"
+MINIMUM_LIBC_VERSION = "2.29"
+GLIBC_CUSTOM = str(GLIBC_LIBDIR / "libc.so.6")
 
 REQUIRED_LIBC_LIBS = [
-    "/lib/x86_64-linux-gnu/libc.so.6",
-    "/lib64/libc.so.6",
-    "/lib/libc.so.6",
     GLIBC_CUSTOM,
+    "/lib64/libc.so.6",
+    "/lib/x86_64-linux-gnu/libc.so.6",
+    "/lib/libc.so.6",
 ]
+
+
+def _parse_version(v: str) -> tuple[int, int]:
+    parts = v.split(".")
+    return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
 
 
 def check_glibc_exist_and_validate() -> bool:
     """
-    Check if users have glibc installed.
+    Check if users have glibc installed (system or custom in /tmp).
     """
-    exists = False
-    for path in REQUIRED_LIBC_LIBS:
+    GLIBC_CUSTOM = f"/tmp/glibc-install-{GLIBC_VERSION}/lib/libc.so.6"
+    candidates = [GLIBC_CUSTOM, "/lib64/libc.so.6", "/lib/x86_64-linux-gnu/libc.so.6"]
+
+    for path in candidates:
+        if not pathlib.Path(path).exists():
+            continue
         try:
             output = subprocess.check_output(
                 [path, "--version"], stderr=subprocess.STDOUT
             )
-            output = output.decode().split("\n")[0]
-            logger.debug(f"[QNN] glibc version for path {path} is: {output}")
-            match = re.search(r"version (\d+\.\d+)", output)
+            first_line = output.decode().split("\n", 1)[0]
+            logger.debug(f"[QNN] glibc version for path {path} is: {first_line}")
+
+            match = re.search(r"version (\d+\.\d+)", first_line)
             if match:
                 version = match.group(1)
-                if float(version) >= MINIMUM_LIBC_VERSION:
-                    logger.debug(f"[QNN] glibc version is {version}.")
-                    exists = True
+                if _parse_version(version) >= _parse_version(MINIMUM_LIBC_VERSION):
+                    logger.info(f"[QNN] Using glibc {version} from {path}")
                     return True
                 else:
                     logger.error(
-                        f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
+                        f"[QNN] glibc version {version} is too low at {path}. "
+                        f"Need >= {MINIMUM_LIBC_VERSION}."
                     )
             else:
-                logger.error("[QNN] glibc version not found.")
+                logger.error(f"[QNN] Could not parse glibc version from {first_line}")
+        except Exception as e:
+            logger.error(f"[QNN] Failed to check {path}: {e}")
 
-        except Exception:
-            continue
-
-    if not exists:
-        logger.error(
-            r""""
-            [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
-            Ubuntu/Debian:
-                sudo apt update
-                sudo apt install libc6
-
-            Fedora/Red Hat:
-                sudo dnf install glibc
-
-            Arch Linux:
-                sudo pacman -S glibc
-            
-            Also please make sure the glibc version is >= MINIMUM_LIBC_VERSION. You can verify the glibc version by running the following command:
-            Option 1:
-                ldd --version
-            Option 2:
-                /path/to/libc.so.6 --version
-            """
-        )
-    return exists
+    logger.error(
+        f"[QNN] glibc not found or too old. Minimum required: {MINIMUM_LIBC_VERSION}."
+    )
+    return False
 
 
 def _check_tmp_glibc() -> bool:
