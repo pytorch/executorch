@@ -30,6 +30,7 @@ class ReplaceQDQPass(ExportPass):
             if node.target in [
                 exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
                 exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
+                exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default,
             ]:
                 # Replace quantize op feeding into conv2d (first argument is the quantized input)
                 quantized_input_node = node.args[0]
