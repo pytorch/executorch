@@ -16,10 +16,7 @@ import unittest
 from typing import List, Sequence
 
 from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
-from executorch.exir._serialize._named_data_store import (
-    BufferEntry,
-    NamedDataStoreOutput,
-)
+from executorch.exir._serialize._named_data_store import NamedDataStoreOutput
 from executorch.exir._serialize._program import (
     _ExtendedHeader,
     _get_extended_header,
@@ -28,6 +25,7 @@ from executorch.exir._serialize._program import (
     deserialize_pte_binary,
     serialize_pte_binary,
 )
+from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir._serialize.padding import aligned_size
 
 from executorch.exir.schema import (
@@ -699,14 +697,14 @@ class TestProgram(unittest.TestCase):
 
         # Create named data segment.
         named_data_buffers = [
-            BufferEntry(
-                buffer=self.gen_blob_data(8, b"\x50\x55\x05"), alignment=3
-            ),  # expect lcm(3, 128) = 384
-            BufferEntry(
-                buffer=self.gen_blob_data(16, b"\x60\x66\x06"), alignment=256
-            ),  # expect lcm(256, 128) = 256
+            self.gen_blob_data(8, b"\x50\x55\x05"),
+            self.gen_blob_data(16, b"\x60\x66\x06"),
         ]
-        pte_named_data = {"key0": 0, "key1": 1}
+        buffer_alignment = [3, 256]
+        pte_named_data = {
+            "key0": DataEntry(0, buffer_alignment[0], None),  # expect lcm(3, 128) = 384
+            "key1": DataEntry(1, buffer_alignment[1], None),
+        }  # expect lcm(256, 128) = 256
         named_data = NamedDataStoreOutput(
             buffers=named_data_buffers, pte_data=pte_named_data, external_data={}
         )
@@ -762,16 +760,16 @@ class TestProgram(unittest.TestCase):
         # Named data segments.
         expected_offset = aligned_size(
             (segment_table[2].offset + segment_table[2].size),
-            math.lcm(named_data_buffers[0].alignment, SEGMENT_ALIGNMENT),
+            math.lcm(buffer_alignment[0], SEGMENT_ALIGNMENT),
         )
         self.assertEqual(segment_table[3].offset, expected_offset)
-        self.assertEqual(segment_table[3].size, len(named_data_buffers[0].buffer))
+        self.assertEqual(segment_table[3].size, len(named_data_buffers[0]))
         expected_offset = aligned_size(
             (segment_table[3].offset + segment_table[3].size),
-            math.lcm(named_data_buffers[1].alignment, SEGMENT_ALIGNMENT),
+            math.lcm(buffer_alignment[1], SEGMENT_ALIGNMENT),
         )
         self.assertEqual(segment_table[4].offset, expected_offset)
-        self.assertEqual(segment_table[4].size, len(named_data_buffers[1].buffer))
+        self.assertEqual(segment_table[4].size, len(named_data_buffers[1]))
 
         # Named data.
         self.assertTrue(program_with_segments.named_data is not None)
@@ -874,7 +872,7 @@ class TestProgram(unittest.TestCase):
                 segment_table[3].offset : segment_table[3].offset
                 + segment_table[3].size
             ],
-            named_data_buffers[0].buffer,
+            named_data_buffers[0],
         )
 
         self.assertEqual(
@@ -882,7 +880,7 @@ class TestProgram(unittest.TestCase):
                 segment_table[4].offset : segment_table[4].offset
                 + segment_table[4].size
             ],
-            named_data_buffers[1].buffer,
+            named_data_buffers[1],
         )
 
         # Convert back.
@@ -903,17 +901,17 @@ class TestProgram(unittest.TestCase):
 
         # Create named data segments with different alignments.
         buffers = [
-            BufferEntry(
-                buffer=self.gen_blob_data(8, b"\x10\x11\x01"), alignment=8
-            ),  # expect lcm(8, 12) = 24
-            BufferEntry(
-                buffer=self.gen_blob_data(16, b"\x20\x22\x02"), alignment=32
-            ),  # expect lcm(32, 12) = 96
-            BufferEntry(
-                buffer=self.gen_blob_data(24, b"\x30\x33\x03"), alignment=24
-            ),  # expect lcm(24, 12) = 24
+            self.gen_blob_data(8, b"\x10\x11\x01"),
+            self.gen_blob_data(16, b"\x20\x22\x02"),
+            self.gen_blob_data(24, b"\x30\x33\x03"),
         ]
-        pte_named_data = {"key1": 0, "key2": 0, "key3": 1, "key4": 2}
+        buffer_alignment = [8, 16, 24]
+        pte_named_data = {
+            "key1": DataEntry(0, buffer_alignment[0], None),  # expect lcm(8, 12) = 24
+            "key2": DataEntry(0, buffer_alignment[0], None),  # expect lcm(8, 12) = 24
+            "key3": DataEntry(1, buffer_alignment[1], None),  # expect lcm(32, 12) = 96
+            "key4": DataEntry(2, buffer_alignment[2], None),
+        }  # expect lcm(24, 12) = 24
         named_data = NamedDataStoreOutput(
             buffers=buffers, pte_data=pte_named_data, external_data={}
         )
@@ -965,10 +963,10 @@ class TestProgram(unittest.TestCase):
                 segment_table[i - 1].offset + segment_table[i - 1].size if i > 0 else 0
             )
             expected_offset = aligned_size(
-                segment_length, math.lcm(SEGMENT_ALIGNMENT, buffers[i].alignment)
+                segment_length, math.lcm(SEGMENT_ALIGNMENT, buffer_alignment[i])
             )
             self.assertEqual(segment_table[i].offset, expected_offset)
-            self.assertEqual(segment_table[i].size, len(buffers[i].buffer))
+            self.assertEqual(segment_table[i].size, len(buffers[i]))
 
         # Check the pte data for buffer values.
         segment_data: bytes = pte_data[eh.segment_base_offset :]
@@ -980,21 +978,21 @@ class TestProgram(unittest.TestCase):
                 segment_table[0].offset : segment_table[0].offset
                 + segment_table[0].size
             ],
-            buffers[0].buffer,
+            buffers[0],
         )
         self.assertEqual(
             segment_data[
                 segment_table[1].offset : segment_table[1].offset
                 + segment_table[1].size
             ],
-            buffers[1].buffer,
+            buffers[1],
         )
         self.assertEqual(
             segment_data[
                 segment_table[2].offset : segment_table[2].offset
                 + segment_table[2].size
             ],
-            buffers[2].buffer,
+            buffers[2],
         )
 
 
