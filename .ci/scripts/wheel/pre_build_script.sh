@@ -48,27 +48,28 @@ fi
 # ----------------------------
 # Stage prebuilt glibc 2.34
 # ----------------------------
-
 set -euo pipefail
 
 GLIBC_VERSION=2.34
-PREFIX=/tmp/glibc-install-2.34
+PREFIX=/tmp/glibc-install-$GLIBC_VERSION
 mkdir -p "$PREFIX/lib"
 
-echo '>>> Downloading prebuilt glibc-libs-2.34 (EL9 family)'
-RPM_URL=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm
-curl -fsSL "$RPM_URL" -o /tmp/glibc-libs.rpm
+echo ">>> Downloading prebuilt glibc-$GLIBC_VERSION (Fedora 35 RPM)"
+RPM_URL="https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
 
-bsdtar -xf /tmp/glibc-libs.rpm
+# Download
+curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
 
-cp ./usr/lib64/libc.so.6 \
-   ./usr/lib64/ld-2.34.so \
-   ./usr/lib64/ld-linux-x86-64.so.2 \
-   "$PREFIX/lib/
+# Extract directly
+echo ">>> Extracting RPM with bsdtar"
+bsdtar -C /tmp -xf /tmp/glibc.rpm
 
-echo ">>> Staged glibc $GLIBC_VERSION to $PREFIX/lib"
+# Copy what we need
+cp -av /lib64/libc.so.6 /lib64/ld-linux-x86-64.so.2 "$PREFIX/lib/"
+
+# Check staged contents
+echo ">>> Contents staged in $PREFIX/lib"
 ls -l "$PREFIX/lib"
 
 # Verify
 "$PREFIX/lib/libc.so.6" --version || true
-"$PREFIX/lib/ld-2.34.so" --version || true
