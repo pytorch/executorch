@@ -17,34 +17,7 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
-  git clone https://github.com/pytorch/pytorch.git
-
-  # Fetch the target commit
-  pushd pytorch || true
-  git checkout "${TORCH_VERSION}"
-  git submodule update --init --recursive
-
-  chown -R ci-user .
-
-  export _GLIBCXX_USE_CXX11_ABI=1
-  # Then build and install PyTorch
-  conda_run python setup.py bdist_wheel
-  pip_install "$(echo dist/*.whl)"
-
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=release/2.9
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=release/0.24
-  export TORCHVISION_VERSION
-
-  install_domains
-
-  popd || true
-  # Clean up the cloned PyTorch repo to reduce the Docker image size
-  rm -rf pytorch
-
-  # Print sccache stats for debugging
-  as_ci_user sccache --show-stats
+  pip_install torch==2.9.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/test/cpu
 }
 
 install_pytorch_and_domains
