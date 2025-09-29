@@ -6,6 +6,7 @@ import pathlib
 import platform
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -34,70 +35,6 @@ def is_linux_x86() -> bool:
         "i386",
         "i686",
     )
-
-
-import subprocess
-
-MINIMUM_LIBC_VERSION = 2.29
-
-REQUIRED_LIBC_LIBS = [
-    "/lib/x86_64-linux-gnu/libc.so.6",
-    "/lib64/libc.so.6",
-    "/lib/libc.so.6",
-]
-
-
-def check_glibc_exist_and_validate() -> bool:
-    """
-    Check if users have glibc installed.
-    """
-    exists = False
-    for path in REQUIRED_LIBC_LIBS:
-        try:
-            output = subprocess.check_output(
-                [path, "--version"], stderr=subprocess.STDOUT
-            )
-            output = output.decode().split("\n")[0]
-            logger.debug(f"[QNN] glibc version for path {path} is: {output}")
-            match = re.search(r"version (\d+\.\d+)", output)
-            if match:
-                version = match.group(1)
-                if float(version) >= MINIMUM_LIBC_VERSION:
-                    logger.debug(f"[QNN] glibc version is {version}.")
-                    exists = True
-                    return True
-                else:
-                    logger.error(
-                        f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
-                    )
-            else:
-                logger.error("[QNN] glibc version not found.")
-
-        except Exception:
-            continue
-
-    if not exists:
-        logger.error(
-            r""""
-            [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
-            Ubuntu/Debian:
-                sudo apt update
-                sudo apt install libc6
-
-            Fedora/Red Hat:
-                sudo dnf install glibc
-
-            Arch Linux:
-                sudo pacman -S glibc
-            
-            Also please make sure the glibc version is >= MINIMUM_LIBC_VERSION. You can verify the glibc version by running the following command:
-            Option 1:
-                ldd --version
-            Option 2:
-                /path/to/libc.so.6 --version
-            """
-        )
-    return exists
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
@@ -252,6 +189,70 @@ GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LOADER = GLIBC_ROOT / "lib" / "ld-linux-x86-64.so.2"
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
+
+MINIMUM_LIBC_VERSION = 2.29
+
+GLIBC_CUSTOM = "/tmp/glibc-install-2.29/lib/libc.so.6"
+
+REQUIRED_LIBC_LIBS = [
+    "/lib/x86_64-linux-gnu/libc.so.6",
+    "/lib64/libc.so.6",
+    "/lib/libc.so.6",
+    GLIBC_CUSTOM,
+]
+
+
+def check_glibc_exist_and_validate() -> bool:
+    """
+    Check if users have glibc installed.
+    """
+    exists = False
+    for path in REQUIRED_LIBC_LIBS:
+        try:
+            output = subprocess.check_output(
+                [path, "--version"], stderr=subprocess.STDOUT
+            )
+            output = output.decode().split("\n")[0]
+            logger.debug(f"[QNN] glibc version for path {path} is: {output}")
+            match = re.search(r"version (\d+\.\d+)", output)
+            if match:
+                version = match.group(1)
+                if float(version) >= MINIMUM_LIBC_VERSION:
+                    logger.debug(f"[QNN] glibc version is {version}.")
+                    exists = True
+                    return True
+                else:
+                    logger.error(
+                        f"[QNN] glibc version is too low. The minimum libc version is {MINIMUM_LIBC_VERSION} Please install glibc following the commands below."
+                    )
+            else:
+                logger.error("[QNN] glibc version not found.")
+
+        except Exception:
+            continue
+
+    if not exists:
+        logger.error(
+            r""""
+            [QNN] glibc not found or the version is too low. Please install glibc following the commands below.
+            Ubuntu/Debian:
+                sudo apt update
+                sudo apt install libc6
+
+            Fedora/Red Hat:
+                sudo dnf install glibc
+
+            Arch Linux:
+                sudo pacman -S glibc
+            
+            Also please make sure the glibc version is >= MINIMUM_LIBC_VERSION. You can verify the glibc version by running the following command:
+            Option 1:
+                ldd --version
+            Option 2:
+                /path/to/libc.so.6 --version
+            """
+        )
+    return exists
 
 
 def _check_tmp_glibc() -> bool:
