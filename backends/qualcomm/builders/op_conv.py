@@ -7,7 +7,6 @@
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA
@@ -16,8 +15,10 @@ from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import (
     OpConv2d,
+    OpConv3d,
     OpDepthWiseConv2d,
     OpTransposeConv2d,
+    OpTransposeConv3d,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from .utils import get_parameter
@@ -66,7 +67,7 @@ class Conv2d(NodeVisitor):
             len(padding_shape),
             padding_shape,
             np.array(
-                [[padding[0], padding[0]], [padding[1], padding[1]]],
+                padding,
                 dtype=np.uint32,
             ),
             True,
@@ -108,8 +109,14 @@ class Conv2d(NodeVisitor):
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
         assert (
-            input_tensor.dim() == 4
+            input_tensor.dim() != 3
         ), "All Conv1D should be converted to Conv2D in CanonicalizeConv,"
+        assert input_tensor.dim() in {
+            4,
+            5,
+        }, "Only Conv2d and Conv3d is supported in conv builder,"
+
+        is_conv2d = input_tensor.dim() == 4
         input_tensor_wrapper = self.define_tensor(
             input_node,
             node,
@@ -120,9 +127,15 @@ class Conv2d(NodeVisitor):
 
         filter_node = self.get_node(node.args[1])
         filter_tensor = get_parameter(filter_node, self.edge_program)
-        # weight of pytorch OIHW(conv2d) | IOHW(conv_transpose2d), yet QNN is HWIO
+        # weight of pytorch OIHW(conv2d) / OIDHW(conv3d) or IOHW(conv_transpose2d) / IODHW(conv_transpose3d),
+        # yet QNN is HWIO or DHWIO
         is_transpose_conv = cast(bool, node.args[6])
-        filter_axis_order = (2, 3, 0, 1) if is_transpose_conv else (2, 3, 1, 0)
+        if is_conv2d:
+            filter_axis_order = (2, 3, 0, 1) if is_transpose_conv else (2, 3, 1, 0)
+        else:
+            filter_axis_order = (
+                (2, 3, 4, 0, 1) if is_transpose_conv else (2, 3, 4, 1, 0)
+            )
         filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
         filter_tensor_wrapper = self.define_tensor(
             filter_node,
@@ -132,7 +145,6 @@ class Conv2d(NodeVisitor):
             nodes_to_wrappers,
         )
         conv_input_tensors = [input_tensor_wrapper, filter_tensor_wrapper]
-
         if node.args[2] is not None:
             bias_node = self.get_node(node.args[2])
             bias_tensor = get_parameter(bias_node, self.edge_program)
@@ -159,11 +171,10 @@ class Conv2d(NodeVisitor):
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
         output_padding = cast(List[int], node.args[7])
-
         groups = cast(int, node.args[8])
-        # Qnn filter tensor is (H, W, Cin, Cout)
-        group_input_channels = filter_tensor.shape[2]
-        group_output_channels = int(filter_tensor.shape[3] / groups)
+        # Qnn filter tensor is (H, W, Cin, Cout) or (D, H, W, Cin, Cout)
+        group_input_channels = filter_tensor.shape[-2]
+        group_output_channels = int(filter_tensor.shape[-1] / groups)
         # 1) groups = input_channels (i.e. group_input_channels = 1)
         # 2) output_channels is a positive integer multiple of input channels
         # TODO: Currently, negative results will be zero with Depthwise conv2d when input_channel == groups == 1
@@ -175,18 +186,23 @@ class Conv2d(NodeVisitor):
         )
         if len(padding) == 1:
             padding = padding + padding
+        padding = [[x, x] for x in padding]
 
         stride_shape = [len(stride)]
-        padding_shape = [2, 2]
+        padding_shape = [len(padding), len(padding[0])]
         dilation_shape = [len(dilation)]
         output_padding_shape = [len(output_padding)]
 
-        if is_depthwise_conv:
+        if is_transpose_conv:
+            assert all(
+                val == 1 for val in dilation
+            ), "CanonicalizeConv pass should perform dilate for transpose_conv."
+            op_class = OpTransposeConv2d if is_conv2d else OpTransposeConv3d
+        elif is_depthwise_conv:
+            assert is_conv2d, "DepthWise only supports Conv2d"
             op_class = OpDepthWiseConv2d
-        elif is_transpose_conv:
-            op_class = OpTransposeConv2d
         else:
-            op_class = OpConv2d
+            op_class = OpConv2d if is_conv2d else OpConv3d
 
         conv_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,

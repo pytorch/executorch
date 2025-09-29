@@ -21,6 +21,7 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55NotSupported,
     EthosU55TransposeCheck,
@@ -140,6 +141,7 @@ def tosa_support_factory(
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
         negative_checks.append(EthosU55ViewCheck(reporter))
+        negative_checks.append(EthosU55CastCheck(reporter))
 
     return chain(
         reporter.wrap_check(
