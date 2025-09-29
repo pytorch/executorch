@@ -72,6 +72,20 @@ int pack_into_int32(const ivec4 quant_vals) {
   return packed;
 }
 
+vec4 unpack_and_dequantize(
+    const int packed_int8_vals,
+    const float scale,
+    const int zp) {
+  ivec4 unpacked = unpack_int8x4(packed_int8_vals);
+  return vec4(unpacked - zp) * scale;
+}
+
+int quantize_and_pack(const vec4 vals, const float inv_scale, const int zp) {
+  ivec4 quantized = ivec4(round(vals * inv_scale) + zp);
+  quantized = clamp(quantized, -128, 127);
+  return pack_into_int32(quantized);
+}
+
 #ifdef DEBUG_MODE
 
 #extension GL_EXT_debug_printf : require
