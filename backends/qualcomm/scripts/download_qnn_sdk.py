@@ -184,25 +184,24 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 # libc management
 ####################
 
+####################
+# libc management
+####################
+
 GLIBC_VERSION = "2.34"
 GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
+
+# Loader candidates: Fedora RPM may give us either ld-2.34.so or ld-linux-x86-64.so.2
 GLIBC_LOADER_CANDIDATES = [
     GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
     GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
 ]
 GLIBC_LOADER = next((p for p in GLIBC_LOADER_CANDIDATES if p.exists()), None)
-GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 
+GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 MINIMUM_LIBC_VERSION = GLIBC_VERSION
 GLIBC_CUSTOM = str(GLIBC_LIBDIR / "libc.so.6")
-
-REQUIRED_LIBC_LIBS = [
-    GLIBC_CUSTOM,
-    "/lib64/libc.so.6",
-    "/lib/x86_64-linux-gnu/libc.so.6",
-    "/lib/libc.so.6",
-]
 
 
 def _parse_version(v: str) -> tuple[int, int]:
@@ -212,10 +211,16 @@ def _parse_version(v: str) -> tuple[int, int]:
 
 def check_glibc_exist_and_validate() -> bool:
     """
-    Check if users have glibc installed (system or custom in /tmp).
+    Validate glibc in /tmp, fallback to system libc only if custom one not found.
     """
-    GLIBC_CUSTOM = f"/tmp/glibc-install-{GLIBC_VERSION}/lib/libc.so.6"
-    candidates = [GLIBC_CUSTOM, "/lib64/libc.so.6", "/lib/x86_64-linux-gnu/libc.so.6"]
+    candidates = [GLIBC_CUSTOM]
+
+    # Optional: keep fallbacks for debugging (not recommended in CI if you always stage custom)
+    candidates += [
+        "/lib64/libc.so.6",
+        "/lib/x86_64-linux-gnu/libc.so.6",
+        "/lib/libc.so.6",
+    ]
 
     for path in candidates:
         if not pathlib.Path(path).exists():
@@ -235,8 +240,7 @@ def check_glibc_exist_and_validate() -> bool:
                     return True
                 else:
                     logger.error(
-                        f"[QNN] glibc version {version} is too low at {path}. "
-                        f"Need >= {MINIMUM_LIBC_VERSION}."
+                        f"[QNN] glibc version {version} too low at {path}. Need >= {MINIMUM_LIBC_VERSION}."
                     )
             else:
                 logger.error(f"[QNN] Could not parse glibc version from {first_line}")
@@ -250,8 +254,8 @@ def check_glibc_exist_and_validate() -> bool:
 
 
 def _check_tmp_glibc() -> bool:
-    """Check if glibc in /tmp was installed correctly and log its version."""
-    libc_path = GLIBC_ROOT / "lib" / "libc.so.6"
+    """Check if staged glibc in /tmp was installed correctly and log its version."""
+    libc_path = GLIBC_LIBDIR / "libc.so.6"
     if not libc_path.exists():
         logger.error("[glibc] Expected glibc at %s but file not found", libc_path)
         return False
@@ -295,11 +299,11 @@ def _ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
 
     if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
         logger.info("[glibc] Already re-exec'd once; continuing under current loader.")
-        _log_current_loader()  # ✅ confirm loader after re-exec
+        _log_current_loader()
         return
 
-    if not GLIBC_LOADER.exists():
-        logger.error("[glibc] Loader not found at %s", GLIBC_LOADER)
+    if not GLIBC_LOADER or not GLIBC_LOADER.exists():
+        logger.error("[glibc] Loader not found in %s", GLIBC_LIBDIR)
         return
 
     logger.info(
