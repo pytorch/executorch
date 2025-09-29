@@ -1,0 +1,48 @@
+[
+  {
+    "name": "main (unstable)",
+    "version": "main",
+    "url": "https://pytorch.org/executorch/main/"
+  },
+  {
+    "name": "v1.0 (release candidate)",
+    "version": "1.0",
+    "url": "https://pytorch.org/executorch/1.0/"
+  },
+  {
+    "name": "v0.7 (stable)",
+    "version": "0.7",
+    "url": "https://pytorch.org/executorch/0.7/",
+    "preferred": true
+  },
+  {
+    "name": "v0.6",
+    "version": "0.6",
+    "url": "https://pytorch.org/executorch/0.6/"
+  },
+  {
+    "name": "v0.5",
+    "version": "0.5",
+    "url": "https://pytorch.org/executorch/0.5/"
+  },
+  {
+    "name": "v0.4",
+    "version": "0.4",
+    "url": "https://pytorch.org/executorch/0.4/"
+  },
+  {
+    "name": "v0.3",
+    "version": "0.3",
+    "url": "https://pytorch.org/executorch/0.3/"
+  },
+  {
+    "name": "v0.2.1",
+    "version": "0.2.1",
+    "url": "https://pytorch.org/executorch/0.2/"
+  },
+  {
+    "name": "v0.1",
+    "version": "0.1",
+    "url": "https://pytorch.org/executorch/0.1/"
+  }
+]
