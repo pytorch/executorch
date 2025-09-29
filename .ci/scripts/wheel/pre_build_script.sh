@@ -57,22 +57,23 @@ mkdir -p "$PREFIX/lib"
 
 echo ">>> Downloading prebuilt glibc-$GLIBC_VERSION (CentOS Stream 9)"
 
-# Choose a mirror (can switch if one dies)
+# Pick a mirror with real packages
 RPM_URL="http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/glibc-${GLIBC_VERSION}-100.el9.x86_64.rpm"
 
 # Download RPM
-curl -L "$RPM_URL" -o /tmp/glibc.rpm
+curl -fsSL "$RPM_URL" -o /tmp/glibc.rpm
 
-# Extract without root
-command -v rpm2cpio >/dev/null 2>&1 || {
-    echo ">>> rpm2cpio not found, downloading static helper..."
-    curl -L https://raw.githubusercontent.com/rpm-software-management/rpm/main/scripts/rpm2cpio.sh -o /tmp/rpm2cpio.sh
+echo ">>> Extracting RPM..."
+if command -v bsdtar >/dev/null 2>&1; then
+    bsdtar -xf /tmp/glibc.rpm
+elif command -v rpm2cpio >/dev/null 2>&1; then
+    rpm2cpio /tmp/glibc.rpm | cpio -idmv
+else
+    echo "Neither bsdtar nor rpm2cpio found, trying to fetch rpm2cpio.sh..."
+    curl -fsSL https://raw.githubusercontent.com/rpm-software-management/rpm/main/scripts/rpm2cpio.sh -o /tmp/rpm2cpio.sh
     chmod +x /tmp/rpm2cpio.sh
-    RPM2CPIO=/tmp/rpm2cpio.sh
-}
-RPM2CPIO=${RPM2CPIO:-rpm2cpio}
-
-$RPM2CPIO /tmp/glibc.rpm | cpio -idmv
+    /tmp/rpm2cpio.sh /tmp/glibc.rpm | cpio -idmv
+fi
 
 # Copy only runtime loader + libc
 cp ./usr/lib64/libc.so.6 \
