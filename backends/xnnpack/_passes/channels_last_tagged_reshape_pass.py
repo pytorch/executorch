@@ -493,7 +493,10 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
                 # The node requires nchw inputs
                 for input_node in node.all_input_nodes:
                     self.input_to_nchw(graph_module, input_node, node)
-            elif node.target == exir_ops.edge.aten._to_copy.default:
+            elif node.target in [
+                exir_ops.edge.aten._to_copy.default,
+                exir_ops.edge.aten.clone.default,
+            ]:
                 self.tag_node(node)
             else:
                 # The node can have inputs in any format (but all must be the

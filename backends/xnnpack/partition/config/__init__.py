@@ -22,6 +22,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     CatConfig,
     CeilConfig,
     ClampConfig,
+    CloneDimOrderConfig,
     ConstantPadConfig,
     DeQuantizedPerTensorConfig,
     DivConfig,
@@ -117,4 +118,5 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     QuantizeAffineConfig,
     DeQuantizeAffineConfig,
     ChooseQParamsAffineConfig,
+    CloneDimOrderConfig,
 ]
