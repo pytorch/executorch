@@ -1156,3 +1156,103 @@ class TestRefImplementations(unittest.TestCase):
             torch.ops.cadence.where_Scalar(input_tensor, 1.0, 0.0)
 
         self.assertIn("condition must be a bool tensor", str(context.exception))
+
+    @expand(
+        [
+            (
+                "h1xhd4",
+                torch.tensor([[[[1.0, 2.0, 3.0, 4.0]]]], dtype=torch.float32),
+                torch.tensor([[0.0, 0.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[[[1.0, 3.0, 2.0, 4.0]]]], dtype=torch.float32),
+            ),
+            (
+                "h2xhd4",
+                torch.tensor(
+                    [[[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]]],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [[[[1.0, -4.0, 2.0, 3.0], [5, -8.0, 6.0, 7.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "s2xh2xhd4",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                            [[9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 0.0], [1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
+                            [[9.0, -12.0, 10.0, 11.0], [13.0, -16.0, 14.0, 15.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "pos_not_none",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                            [[9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
+                            [[-10.0, 11.0, 9.0, 12.0], [-14.0, 15.0, 13.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([1, 0]),
+            ),
+        ]
+    )
+    def test_rope(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        sin_tensor: torch.Tensor,
+        cos_tensor: torch.Tensor,
+        expected_output: torch.Tensor,
+        pos: torch.Tensor | None = None,
+    ) -> None:
+        output = torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, pos)
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
