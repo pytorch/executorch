@@ -381,6 +381,9 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 "//executorch/backends/transforms:addmm_mm_to_linear",
                 "//executorch/backends/transforms:fuse_batch_norm_with_conv",
+                "//executorch/backends/transforms:fuse_clamp_with_binary_op",
+                "//executorch/backends/transforms:fuse_clamps",
+                "//executorch/backends/transforms:fuse_conv_with_binary_op",
                 "//executorch/backends/transforms:fuse_conv_with_clamp",
                 "//executorch/backends/transforms:fuse_view_copy",
                 "//executorch/backends/transforms:remove_clone_ops",
