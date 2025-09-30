@@ -25,6 +25,7 @@ def define_arm_tests():
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
+        "ops/test_to_copy.py",
     ]
 
     # Quantization

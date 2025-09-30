@@ -933,6 +933,51 @@ def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
+@impl(m, "convolution")
+def convolution(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    conv_is_1d = len(input_tensor.shape) == 3
+    if channel_last:
+        if conv_is_1d:
+            input_tensor = input_tensor.movedim(-1, 1).contiguous()
+            if len(weight.shape) != 3:
+                raise ValueError("Weight tensor must be 3D if input is 3D")
+            weight = weight.movedim(-1, 1).contiguous()
+        else:
+            input_tensor = input_tensor.movedim(-1, -3)
+            if len(weight.shape) != 4:
+                raise ValueError("Weight tensor must be 4D if input is nd > 3")
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+
+    _stride: tuple[int, int] | int = stride
+    _padding: tuple[int, int] | int = padding
+    _dilation: tuple[int, int] | int = dilation
+    if conv_is_1d:
+        conv = torch.nn.functional.conv1d
+        _stride = stride[0]
+        _padding = padding[0]
+        _dilation = dilation[0]
+    else:
+        conv = torch.nn.functional.conv2d
+
+    conv_out = conv(input_tensor, weight, bias, _stride, _padding, _dilation, groups)
+    if channel_last:
+        if conv_is_1d:
+            conv_out = conv_out.movedim(1, -1).contiguous()
+        else:
+            conv_out = conv_out.movedim(-3, -1).contiguous()
+
+    return conv_out
+
+
 def quantized_relu_common(
     X: torch.Tensor,
     X_zero_point: torch.Tensor | int,
@@ -1099,3 +1144,51 @@ def where_Scalar(
         raise ValueError("condition must be a bool tensor")
 
     return torch.where(condition, if_true, if_false)
+
+
+@impl(m, "rope")
+def rope(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+) -> torch.Tensor:
+    original_shape = input_tensor.shape
+
+    if len(original_shape) not in [4, 5]:
+        raise ValueError(
+            f"Input tensor must be 4D or 5D. Got {len(original_shape)}D tensor"
+        )
+    if original_shape[0] != 1:
+        raise ValueError("Input tensor must have batch size 1")
+    if len(original_shape) == 5:
+        input_tensor = input_tensor.view(
+            input_tensor.shape[0], input_tensor.shape[1], input_tensor.shape[2], -1
+        )
+
+    _, s, h, hd = input_tensor.shape
+
+    if hd % 2:
+        raise ValueError("Hidden dimension must be divisible by 2")
+
+    if sin_tensor.shape != (s, hd // 2) or cos_tensor.shape != (s, hd // 2):
+        raise ValueError(
+            f"sin_tensor and cos_tensor must have shape {s, hd // 2}. Got {sin_tensor.shape} and {cos_tensor.shape}"
+        )
+
+    if pos is not None:
+        if pos.shape != (input_tensor.shape[1],):
+            raise ValueError(
+                f"pos must have shape {input_tensor.shape[1]}. Got {pos.shape}"
+            )
+        sin_tensor = sin_tensor[pos]
+        cos_tensor = cos_tensor[pos]
+
+    sin_tensor = sin_tensor.unsqueeze(1)
+    cos_tensor = cos_tensor.unsqueeze(1)
+
+    x0, x1 = input_tensor[..., ::2], input_tensor[..., 1::2]
+    rotated = torch.cat(
+        [x0 * cos_tensor - x1 * sin_tensor, x0 * sin_tensor + x1 * cos_tensor], dim=-1
+    )
+    return rotated.view(original_shape)
