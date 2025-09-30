@@ -29,4 +29,3 @@ def define_common_targets():
     """
     cuda_shim_cpp_unittest("aoti_torch_empty_strided")
     cuda_shim_cpp_unittest("aoti_torch_delete_tensor_object")
-    cuda_shim_cpp_unittest("aoti_torch_create_tensor_from_blob_v2")

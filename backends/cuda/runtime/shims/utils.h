@@ -14,26 +14,6 @@
 #include <cstdint>
 #include <vector>
 
-// CUDA error checking macro
-#define ET_CUDA_CHECK_OR_RETURN_ERROR(EXPR) \
-  do {                                      \
-    const cudaError_t err = EXPR;           \
-    if (err == cudaSuccess) {               \
-      break;                                \
-    }                                       \
-    ET_LOG(                                 \
-        Error,                              \
-        "%s:%d CUDA error: %s",             \
-        __FILE__,                           \
-        __LINE__,                           \
-        cudaGetErrorString(err));           \
-    return Error::Internal;                 \
-  } while (0)
-
-// Kernel launch check macro
-#define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
-  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetLastError())
-
 namespace executorch {
 namespace backends {
 namespace cuda {

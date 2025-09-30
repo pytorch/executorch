@@ -15,9 +15,28 @@
 #include <cstdint>
 #include <cstdlib> // For posix_memalign
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+// CUDA error checking macro
+#define ET_CUDA_CHECK_OR_RETURN_ERROR(EXPR) \
+  do {                                      \
+    const cudaError_t err = EXPR;           \
+    if (err == cudaSuccess) {               \
+      break;                                \
+    }                                       \
+    ET_LOG(                                 \
+        Error,                              \
+        "%s:%d CUDA error: %s",             \
+        __FILE__,                           \
+        __LINE__,                           \
+        cudaGetErrorString(err));           \
+    return Error::Internal;                 \
+  } while (0)
+
+// Kernel launch check macro
+#define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetLastError())
 
 namespace executorch {
 namespace backends {
@@ -27,121 +46,11 @@ using executorch::aten::SizesType;
 using executorch::aten::StridesType;
 using executorch::backends::aoti::dtype_to_element_size;
 using executorch::backends::aoti::dtype_to_scalar_type;
-using executorch::backends::aoti::validate_storage_offset;
 
 // Global storage for tensors and their metadata
 std::unordered_set<std::shared_ptr<Tensor>> tensors;
 
-// Reference counting for memory addresses
-// Maps memory address to number of tensors using it
-// Special value: NOT_OWN (-1) means tensor never owns the memory
-constexpr int32_t NOT_OWN = -1;
-std::unordered_map<void*, int32_t> memory_to_n_tensor;
-
 extern "C" {
-
-AOTITorchError aoti_torch_create_tensor_from_blob_v2(
-    void* data,
-    int64_t ndim,
-    const int64_t* sizes_ptr,
-    const int64_t* strides_ptr,
-    int64_t storage_offset,
-    int32_t dtype,
-    int32_t device_type,
-    int32_t device_index,
-    Tensor** ret_new_tensor,
-    int32_t layout,
-    const uint8_t* opaque_metadata,
-    int64_t opaque_metadata_size) {
-  // TODO(gasoonjia): verify given data is on the target device
-  (void)device_type;
-  (void)opaque_metadata;
-  (void)layout;
-  (void)opaque_metadata_size;
-
-  // Validate input parameters first
-  if (data == nullptr) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed: data pointer is null");
-    return Error::InvalidArgument;
-  }
-
-  if (sizes_ptr == nullptr && ndim > 0) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed: sizes_ptr is null");
-    return Error::InvalidArgument;
-  }
-
-  if (ret_new_tensor == nullptr) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed: ret_new_tensor is null");
-    return Error::InvalidArgument;
-  }
-
-  // Check that device_index is always 0
-  if (device_index != 0) {
-    ET_LOG(Error, "device_index must be 0, got: %d", device_index);
-    return Error::InvalidArgument;
-  }
-
-  // Validate dtype using SupportedDTypes from utils.h
-  AOTITorchError dtype_error = validate_dtype(dtype);
-  if (dtype_error != Error::Ok) {
-    return dtype_error;
-  }
-
-  // Storage offset must be 0 since from_blob cannot handle different offsets
-  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
-  if (storage_offset_error != Error::Ok) {
-    return storage_offset_error;
-  }
-
-  // Convert sizes to the format expected by ExecutorTorch using SizesType
-  std::vector<executorch::aten::SizesType> sizes =
-      convert_sizes_to_vector(ndim, sizes_ptr);
-
-  // Convert strides using the common helper function with StridesType
-  std::vector<executorch::aten::StridesType> strides =
-      convert_strides_to_vector(ndim, sizes_ptr, strides_ptr);
-
-  // Create ExecutorTorch tensor that wraps the existing memory
-  // Note: We're NOT copying the data, just wrapping it
-  auto tensor = executorch::extension::from_blob(
-      data, // existing memory (don't copy!)
-      sizes, // tensor dimensions
-      strides, // tensor strides (allows different strides)
-      dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
-  );
-
-  if (!tensor) {
-    ET_LOG(Error, "Failed to create tensor from blob");
-    return Error::InvalidArgument;
-  }
-
-  // Store the tensor so it doesn't get destroyed
-  tensors.insert(tensor);
-
-  *ret_new_tensor = tensor.get();
-
-  // Check if this memory address is already being tracked
-  auto memory_it = memory_to_n_tensor.find(data);
-  if (memory_it != memory_to_n_tensor.end()) {
-    ET_LOG(
-        Error,
-        "Memory address %p is already being tracked by another tensor",
-        data);
-    return Error::InvalidArgument;
-  }
-
-  // Mark this memory as NOT_OWN since tensor created from blob never owns
-  // memory
-  memory_to_n_tensor[data] = NOT_OWN;
-
-  return Error::Ok;
-}
 
 AOTITorchError aoti_torch_empty_strided(
     int64_t ndim,
@@ -211,9 +120,6 @@ AOTITorchError aoti_torch_empty_strided(
   tensors.insert(tensor);
   *ret_new_tensor = tensor.get();
 
-  // This tensor owns the memory it allocated, set reference count to 1
-  memory_to_n_tensor[ptr] = 1;
-
   return Error::Ok;
 }
 
@@ -258,47 +164,26 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
     if (it->get() == tensor) {
       // Get the tensor before erasing
       auto tensor_ptr = *it;
+
       void* data_ptr = tensor_ptr->mutable_data_ptr();
 
-      // Find the reference count for this memory address
-      auto memory_it = memory_to_n_tensor.find(data_ptr);
-      if (memory_it != memory_to_n_tensor.end()) {
-        int32_t ref_count = memory_it->second;
+      // Determine if it's GPU memory
+      cudaPointerAttributes attributes{};
+      ET_CUDA_CHECK_OR_RETURN_ERROR(
+          cudaPointerGetAttributes(&attributes, data_ptr));
 
-        if (ref_count == NOT_OWN) {
-          // Tensor never owned the memory, skip freeing
-          // Just remove tensor from tracking
-          tensors.erase(it);
-          return Error::Ok;
-        } else if (ref_count == 1) {
-          // Only current tensor using this memory, free it
-          // Determine if it's GPU memory
-          cudaPointerAttributes attributes{};
-          ET_CUDA_CHECK_OR_RETURN_ERROR(
-              cudaPointerGetAttributes(&attributes, data_ptr));
-
-          if (attributes.type == cudaMemoryTypeManaged) {
-            // This is CUDA managed memory - free with proper synchronization
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
-          } else {
-            // This is CPU memory - free immediately
-            free(data_ptr);
-            data_ptr = nullptr;
-          }
-
-          // Remove from memory tracking
-          memory_to_n_tensor.erase(memory_it);
-        } else if (ref_count > 1) {
-          // Other tensors still using this memory, just decrement count
-          memory_to_n_tensor[data_ptr] = ref_count - 1;
-        }
+      // et tensor does not own data; need to free them manually.
+      if (attributes.type == cudaMemoryTypeManaged) {
+        // This is CUDA managed memory - free with proper synchronization
+        ET_CUDA_CHECK_OR_RETURN_ERROR(
+            cudaDeviceSynchronize()); // Wait for all operations to complete
+                                      // BEFORE freeing
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
       } else {
-        ET_LOG(Error, "Internal error: memory not found during deletion");
-        return Error::Internal;
+        // This is CPU memory - free immediately
+        free(data_ptr);
       }
-
-      // Remove tensor from set (this will call the destructor if it's the last
+      // Remove from set (this will call the destructor if it's the last
       // reference)
       tensors.erase(it);
       return Error::Ok;
