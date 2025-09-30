@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import importlib.resources
 import json
 import os
 import tempfile
@@ -11,7 +12,6 @@ import tempfile
 from dataclasses import dataclass
 from enum import IntEnum, unique
 
-import pkg_resources
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 from executorch.exir._serialize._flatbuffer import _flatc_compile
 from executorch.exir.backend.backend_details import CompileSpec
@@ -35,13 +35,12 @@ COMPILE_OPTION_SCHEMA_NAME = "compile_options_def"
 def gen_samsung_backend_compile_spec_core(options: EnnExecuTorchOptions) -> CompileSpec:
     with tempfile.TemporaryDirectory() as d:
         # schema
-        schema_path = os.path.join(d, "{}.fbs".format(COMPILE_OPTION_SCHEMA_NAME))
+        schema_name = f"{COMPILE_OPTION_SCHEMA_NAME}.fbs"
+        schema_path = os.path.join(d, schema_name)
+        resource_file = importlib.resources.files(__package__) / f"{schema-name}"
+        schema_content = resource_file.read_bytes()
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(
-                pkg_resources.resource_string(
-                    __name__, "{}.fbs".format(COMPILE_OPTION_SCHEMA_NAME)
-                )
-            )
+            schema_file.write(schema_content)
         # dump json
         json_path = os.path.join(d, "{}.json".format(COMPILE_OPTION_SCHEMA_NAME))
         enn_options_json = json.dumps(options, cls=_DataclassEncoder, indent=4)
