@@ -50,7 +50,7 @@ class SubVisitor_INT(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.INT32],
             output.tosa_spec,
         )
 
@@ -59,12 +59,18 @@ class SubVisitor_INT(NodeVisitor):
             rescaled_inputs, scale_back = tqutils.insert_rescale_ops_to_int32_maxscale(
                 tosa_graph, inputs, node, self.tosa_spec
             )
+        elif inputs[0].dtype == ts.DType.INT16:
+            rescaled_inputs, scale_back = (
+                tqutils.insert_rescale_ops_int16_to_int32_maxscale(
+                    tosa_graph, inputs, node, self.tosa_spec
+                )
+            )
         else:
             # input[0].dtype == ts.DType.INT32
             # Non quantized input, natively support by TOSA.SUB
             rescaled_inputs = inputs
 
-        if output.dtype == ts.DType.INT8:
+        if output.dtype in [ts.DType.INT8, ts.DType.INT16]:
             broadcasted_shape = tutils.tosa_shape(output.shape, output.dim_order)
             sub_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
         else:
@@ -88,6 +94,15 @@ class SubVisitor_INT(NodeVisitor):
             # Scale output back to 8 bit
             # pyre-ignore
             tqutils.insert_rescale_op_to_int8(
+                tosa_graph,
+                sub_output,
+                scale_back,
+                node,
+                compute_rescale=False,
+                tosa_spec=self.tosa_spec,
+            )  # type: ignore[possibly-undefined]
+        elif output.dtype == ts.DType.INT16:
+            tqutils.insert_rescale_op_to_int16(
                 tosa_graph,
                 sub_output,
                 scale_back,
