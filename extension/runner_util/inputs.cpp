@@ -78,7 +78,40 @@ Result<BufferCleanup> prepare_input_tensors(
       continue;
     }
     if (tag.get() != Tag::Tensor) {
-      ET_LOG(Debug, "Skipping non-tensor input %zu", i);
+      if (!hard_code_inputs_to_ones) {
+        Error err = Error::Ok;
+        auto [buffer, buffer_size] = input_buffers.at(i);
+
+        ET_LOG(
+            Debug, "Verifying and setting input for non-tensor input %zu", i);
+
+        if (tag.get() == Tag::Int) {
+          int64_t int_input;
+          std::memcpy(&int_input, buffer, buffer_size);
+          err = method.set_input(runtime::EValue(int_input), i);
+        } else if (tag.get() == Tag::Double) {
+          double double_input;
+          std::memcpy(&double_input, buffer, buffer_size);
+          err = method.set_input(runtime::EValue(double_input), i);
+        } else if (tag.get() == Tag::Bool) {
+          bool bool_input;
+          std::memcpy(&bool_input, buffer, buffer_size);
+          err = method.set_input(runtime::EValue(bool_input), i);
+        } else {
+          ET_LOG(
+              Error,
+              "Input %zu of type %zu not supported",
+              i,
+              static_cast<size_t>(tag.get()));
+          err = Error::InvalidArgument;
+        }
+        if (err != Error::Ok) {
+          BufferCleanup cleanup({inputs, num_allocated});
+          return err;
+        }
+      } else {
+        ET_LOG(Debug, "Skipping non-tensor input %zu", i);
+      }
       continue;
     }
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
@@ -114,7 +147,7 @@ Result<BufferCleanup> prepare_input_tensors(
       if (buffer_size != tensor_meta->nbytes()) {
         ET_LOG(
             Error,
-            "input size (%ld) and tensor size (%ld) mismatch!",
+            "input size (%zu) and tensor size (%zu) mismatch!",
             buffer_size,
             tensor_meta->nbytes());
         BufferCleanup cleanup({inputs, num_allocated});

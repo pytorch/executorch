@@ -129,8 +129,12 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kPhi4;
   } else if (decoder_model_version == "qwen2_5") {
     decoder_model_version_ = DecoderModelVersion::kQwen2_5;
+  } else if (decoder_model_version == "qwen3") {
+    decoder_model_version_ = DecoderModelVersion::kQwen3;
   } else if (decoder_model_version == "smollm2_135m") {
     decoder_model_version_ = DecoderModelVersion::kSmollm2_135m;
+  } else if (decoder_model_version == "smollm3") {
+    decoder_model_version_ = DecoderModelVersion::kSmollm3;
   } else {
     ET_CHECK_MSG(false, "Unsupported Decoder Model");
   }
@@ -178,8 +182,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
     eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
   } else {
-    tokenizer_ =
-        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
+    tokenizer_ = llm::load_tokenizer(tokenizer_path_);
     if (tokenizer_ == nullptr) {
       ET_LOG(
           Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
@@ -191,7 +194,10 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kPhi4) {
     eos_ids->insert(tokenizer_->encode("<|end|>", 0, 0).get()[0]);
-  } else if (decoder_model_version_ == DecoderModelVersion::kQwen3) {
+  } else if (
+      decoder_model_version_ == DecoderModelVersion::kQwen3 ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
+      decoder_model_version_ == DecoderModelVersion::kSmollm3) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
   } else if (decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
@@ -279,12 +285,6 @@ Error Runner<T>::load() {
           sliding_window,
           cache_mode_});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    // TODO: sliding window attention will be supported in future.
-    if (sliding_window < context_len_) {
-      ET_CHECK_MSG(
-          false,
-          "Lookahead decoding (eval_mode == 2) is not yet supported for sliding window attention.");
-    }
     token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
@@ -301,7 +301,8 @@ Error Runner<T>::load() {
             ngram_,
             window_,
             gcap_,
-            sliding_window},
+            sliding_window,
+            cache_mode_},
         &stats_);
   } else {
     token_generator_ = std::make_unique<TokenGenerator<T>>(
@@ -347,17 +348,6 @@ Error Runner<T>::generate(
     const llm::GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
-}
-
-template <typename T>
-Error Runner<T>::generate_from_pos(
-    const std::string& prompt,
-    int64_t start_pos,
-    const llm::GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  // TODO: currently only support start_pos == 0
   return generate_from_prompt_or_file(
       prompt, false, config, token_callback, stats_callback);
 }
@@ -428,7 +418,8 @@ Error Runner<T>::generate_from_prompt_or_file(
   stats_.first_token_ms = time_in_ms();
   stats_.prompt_eval_end_ms = time_in_ms();
 
-  // print the first token from prefill. No prev_token so use cur_token for it.
+  // print the first token from prefill. No prev_token so use cur_token for
+  // it.
   if (token_callback) {
     token_callback(
         ET_UNWRAP_TOKENIZER(tokenizer_->decode(cur_token, cur_token)));

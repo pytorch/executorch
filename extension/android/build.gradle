@@ -6,7 +6,7 @@ allprojects {
             compileSdkVersion = 34
             buildToolsVersion = '33.0.1'
 
-            fbjniJavaOnlyVersion = "0.5.1"
+            fbjniJavaOnlyVersion = "0.7.0"
             soLoaderNativeLoaderVersion = "0.10.5"
         }
 

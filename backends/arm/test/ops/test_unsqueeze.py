@@ -25,7 +25,7 @@ input_t1 = Tuple[torch.Tensor, torch.scalar_tensor]  # Input x, Input y
 
 
 class Unsqueeze(torch.nn.Module):
-    shapes: list[int | Sequence[int]] = [5, (5, 5), (5, 4), (5, 4, 3)]
+    shapes: list[int | Sequence[int]] = [5, (5, 5), (5, 4), (5, 4, 3), (1, 5, 4, 3)]
     test_parameters = {}
     for n in shapes:
         test_parameters[f"rand_{n}"] = (torch.randn(n),)

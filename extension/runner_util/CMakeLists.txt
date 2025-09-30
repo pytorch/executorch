@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -28,7 +29,7 @@ target_compile_options(extension_runner_util PUBLIC ${_common_compile_options})
 install(
   TARGETS extension_runner_util
   EXPORT ExecuTorchTargets
-  DESTINATION ${CMAKE_BINARY_DIR}/lib
+  DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

@@ -455,8 +455,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias_enabled: bool = True,
         channel_last: bool = False,
     ) -> None:
-        transposed = True
-        output_padding = [0]
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -477,7 +475,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x, [0, 2, 1]),
             )
         convolution = builder.call_operator(
-            op=exir_ops.edge.aten.convolution.default,
+            op=exir_ops.edge.cadence.convolution.default,
             args=(
                 x,
                 weights,
@@ -485,9 +483,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 [stride],
                 [padding],
                 [dilation],
-                transposed,
-                output_padding,
                 groups,
+                False,
             ),
         )
         if channel_last:
@@ -504,7 +501,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
             1,
         )
 
@@ -1666,7 +1663,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     out_multiplier,
                     out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nhwc.default,
+                op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
                 args=args,
             )
         else:
@@ -1680,7 +1677,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
                     out_multiplier,
                     out_shift,
                 ),
-                op=exir_ops.edge.cadence.quantized_conv_nchw.default,
+                op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
                 args=args,
             )
 
@@ -1688,7 +1685,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Create a graph with a single convolution node.
         gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nchw.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.default), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
@@ -1698,7 +1695,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
@@ -1714,7 +1712,7 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv_nhwc.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.default), 1
         )
 
         # Apply replacement pass.
@@ -1723,7 +1721,8 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv_nhwc.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )

@@ -9,15 +9,14 @@
 #include <executorch/backends/cadence/hifi/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
-using ::impl::reference::kernels::dequantize;
-using ::impl::reference::kernels::quantize;
+using ::impl::generic::kernels::dequantize;
+using ::impl::generic::kernels::quantize;
 
 void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
     KernelRuntimeContext& ctx,
@@ -169,4 +168,3 @@ void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

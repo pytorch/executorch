@@ -7,10 +7,16 @@
 # pyre-unsafe
 
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_meandim_pass import DecomposeMeanDimPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def get_var_decomposition(op) -> tuple:
@@ -46,6 +52,12 @@ class DecomposeVarPass(ArmPass):
         sum = sum(squared_diff, dim)
         y = div(sum, max(0, N-correction))
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        DecomposeMeanDimPass,
+        DecomposeSumPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (

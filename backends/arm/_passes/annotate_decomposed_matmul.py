@@ -7,10 +7,13 @@
 
 import itertools
 import operator
-from typing import cast, List
+from typing import cast, List, Set, Type
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    FoldAndAnnotateQParamsPass,
+)
 
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -28,6 +31,8 @@ class AnnotateDecomposedMatmulPass(ExportPass):
     difficult. This helper function find all matmul partitions and annotate its
     matmul-op (can be mm or bmm).
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
 
     def _match_partition_to_node(
         self, node: torch.fx.Node, partitioned_inputs: List[torch.fx.Node]
