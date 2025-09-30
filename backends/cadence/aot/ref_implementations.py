@@ -933,6 +933,51 @@ def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
+@impl(m, "convolution")
+def convolution(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    conv_is_1d = len(input_tensor.shape) == 3
+    if channel_last:
+        if conv_is_1d:
+            input_tensor = input_tensor.movedim(-1, 1).contiguous()
+            if len(weight.shape) != 3:
+                raise ValueError("Weight tensor must be 3D if input is 3D")
+            weight = weight.movedim(-1, 1).contiguous()
+        else:
+            input_tensor = input_tensor.movedim(-1, -3)
+            if len(weight.shape) != 4:
+                raise ValueError("Weight tensor must be 4D if input is nd > 3")
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+
+    _stride: tuple[int, int] | int = stride
+    _padding: tuple[int, int] | int = padding
+    _dilation: tuple[int, int] | int = dilation
+    if conv_is_1d:
+        conv = torch.nn.functional.conv1d
+        _stride = stride[0]
+        _padding = padding[0]
+        _dilation = dilation[0]
+    else:
+        conv = torch.nn.functional.conv2d
+
+    conv_out = conv(input_tensor, weight, bias, _stride, _padding, _dilation, groups)
+    if channel_last:
+        if conv_is_1d:
+            conv_out = conv_out.movedim(1, -1).contiguous()
+        else:
+            conv_out = conv_out.movedim(-3, -1).contiguous()
+
+    return conv_out
+
+
 def quantized_relu_common(
     X: torch.Tensor,
     X_zero_point: torch.Tensor | int,
