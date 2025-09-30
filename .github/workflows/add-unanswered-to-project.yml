@@ -20,7 +20,7 @@ jobs:
 
             // List of authors to exclude
             const excludedAuthors = new Set([
-              "nil-is-all", "cbilgin", "KimishPatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", "shoumikhin",
+              "nil-is-all", "cbilgin", "kimishpatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", "shoumikhin",
               "manuelcandales", "metascroy", "cccclai", "rohansjoshi", "kirklandsign", "abhinaykukkadapu", "JacobSzwejbka",
               "Conarnar", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", "jackzhxng",
               "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong",
