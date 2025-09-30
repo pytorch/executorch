@@ -2257,6 +2257,9 @@ class CommonReplacePasses:
         ReplaceRepeatWithCatPass,
         ReplaceFullLikeWithFullPass,
         ReplaceAtenConvolutionWithCadenceConvolutionPass,
+        ReplacePT2QuantWithCadenceQuantPass,
+        ReplacePT2DequantWithCadenceDequantPass,
+        ReplacePowWithMulPass,
     ]
 
 
@@ -2302,13 +2305,10 @@ class CadenceReplaceOpsInGraph:
         ReplaceScalarTensorWithFullPass,
         ReplaceInfArgInFullWithValuePass,
         ReplaceLogicalNotBooleanWhereWithWherePass,
-        ReplacePT2QuantWithCadenceQuantPass,
-        ReplacePT2DequantWithCadenceDequantPass,
         ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
         ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
         ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceAtenApproxGeluWithApproxGeluPass,
-        ReplacePowWithMulPass,
         ReplaceMulTensorWithMulAndFullOpsPass,
     ]
