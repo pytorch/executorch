@@ -15,9 +15,6 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
-from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
-    RemoveIOQuantOpsPass,
-)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -38,9 +35,9 @@ class ModelInputSpec:
     dtype: torch.dtype = torch.float32
 
 
-def _quantize_model(model, calibration_inputs: list[tuple[torch.Tensor, ...]]):
-    quantizer = NeutronQuantizer()
-
+def _quantize_model(
+    model, quantizer, calibration_inputs: list[tuple[torch.Tensor, ...]]
+):
     m = prepare_pt2e(model, quantizer)
     for data in calibration_inputs:
         m(*data)
@@ -91,6 +88,7 @@ def to_quantized_edge_program(
     neutron_converter_flavor="SDK_25_06",
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
+    get_quantizer_fn=lambda: NeutronQuantizer(),
 ) -> EdgeProgramManager:
     calibration_inputs = get_calibration_inputs_fn(to_model_input_spec(input_spec))
 
@@ -102,7 +100,9 @@ def to_quantized_edge_program(
     exir_program_aten = torch.export.export(model, example_input, strict=True)
 
     exir_program_aten__module_quant = _quantize_model(
-        exir_program_aten.module(), calibration_inputs
+        exir_program_aten.module(),
+        get_quantizer_fn(),
+        calibration_inputs,
     )
 
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
@@ -112,7 +112,9 @@ def to_quantized_edge_program(
         edge_compile_config=edge_compile_config,
     )
 
-    edge_program_manager = NeutronEdgePassManager()(edge_program_manager)
+    edge_program_manager = NeutronEdgePassManager(
+        remove_io_quant_ops=remove_quant_io_ops
+    )(edge_program_manager)
 
     compile_spec = generate_neutron_compile_spec(
         target,
@@ -121,11 +123,6 @@ def to_quantized_edge_program(
     )
     partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
     edge_program_manager = edge_program_manager.to_backend(partitioner)
-
-    if remove_quant_io_ops:
-        edge_program_manager = edge_program_manager.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
-        )
 
     return edge_program_manager
 

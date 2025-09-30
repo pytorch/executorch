@@ -465,6 +465,15 @@ class OpenvinoConfig:
     nncf_compression: bool = False
     nncf_compression_group_size: int = 32
 
+@dataclass
+class TorchAOKernelsConfig:
+    """
+    Configures the torchao-kernels backend.
+    """
+
+    use_torchao_kernels_linear: bool = False
+    use_torchao_kernels_tied_embedding: bool = False
+
 
 @dataclass
 class BackendConfig:
@@ -479,6 +488,7 @@ class BackendConfig:
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
     openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
+    torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
 ################################################################################
@@ -656,6 +666,28 @@ class LlmConfig:
             llm_config.backend.openvino.nncf_compression = args.nncf_compression
         if hasattr(args, "group_size") and args.group_size:
             llm_config.backend.openvino.nncf_compression_group_size = args.group_size
+
+        # TorchAoKernels
+        if any(
+            hasattr(args, a)
+            for a in [
+                "use_torchao_kernels",
+                "use_torchao_kernels_linear",
+                "use_torchao_kernels_tied_embedding",
+            ]
+        ):
+            if hasattr(args, "use_torchao_kernels") and args.use_torchao_kernels:
+                # Enable all conversions if torchao_kernels is specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = True
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = True
+            else:
+                # Otherwise, only enable the conversions that are specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = getattr(
+                    args, "use_torchao_kernels_linear", False
+                )
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = getattr(
+                    args, "use_torchao_kernels_tied_embedding", False
+                )
 
         # DebugConfig
         if hasattr(args, "profile_memory"):

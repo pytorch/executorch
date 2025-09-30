@@ -4,7 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
@@ -30,11 +33,11 @@ def get_decomposition(op) -> tuple:
             torch.ops.aten.avg_pool2d.default,
             torch.ops.aten.mul.Tensor,
         )
-    raise RuntimeError(f"Can't get div decomposition for op {op}")
+    raise RuntimeError(f"Can't get avg_pool2d decomposition for op {op}")
 
 
 class DecomposeAvgPool2d(ExportPass):
-    """ """
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_div_ops + aten_div_ops):

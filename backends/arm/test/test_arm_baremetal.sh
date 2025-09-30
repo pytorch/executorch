@@ -155,17 +155,18 @@ test_pytest_ethosu_fvp() { # Same as test_pytest but also sometime verify using 
 
 
 test_pytest_ops_vkml() { # Same as test_pytest but also sometime verify using VKML runtime
-    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+    echo "${TEST_SUITE_NAME}: Run pytest operator tests with VKML runtime"
 
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ --ignore=backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=10  backends/arm/test/ \
+            --ignore=backends/arm/test/models -k _vgf_
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
 test_pytest_models_vkml() { # Same as test_pytest but also sometime verify VKML runtime
-    echo "${TEST_SUITE_NAME}: Run pytest with VKML"
+    echo "${TEST_SUITE_NAME}: Run pytest model tests with VKML runtime"
 
     backends/arm/scripts/build_executorch.sh
     backends/arm/test/setup_testing_vkml.sh
@@ -173,7 +174,7 @@ test_pytest_models_vkml() { # Same as test_pytest but also sometime verify VKML 
     # Install model dependencies for pytest
     source backends/arm/scripts/install_models_for_test.sh
 
-    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models
+    pytest  --verbose --color=yes --numprocesses=auto --durations=0 backends/arm/test/models -k _vgf_
     echo "${TEST_SUITE_NAME}: PASS"
 }
 

@@ -62,12 +62,21 @@ namespace {
     if (model) {
         return model;
     }
-
-    if (error) {
-        *error = localError;
+    
+    if (localError) {
+        ETCoreMLLogError(localError,
+                         "Failed to load model from compiled asset with identifier = %@",
+                         identifier);
     }
-
-    return nil;
+    
+    // If store failed then we will load the model from compiledURL.
+    auto backingAsset = Asset::make(compiledModelURL, identifier, assetManager.fileManager, error);
+    if (!backingAsset) {
+        return nil;
+    }
+    
+    asset = [[ETCoreMLAsset alloc] initWithBackingAsset:backingAsset.value()];
+    return ::get_model_from_asset(asset, configuration, metadata, error);
 }
 
 @end

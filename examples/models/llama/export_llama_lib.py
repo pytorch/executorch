@@ -421,6 +421,21 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
+    parser.add_argument(
+        "--use-torchao-kernels",
+        action="store_true",
+        help="Delegate tied-embedding and quantized linear ops to torchao kernels",
+    )
+    parser.add_argument(
+        "--use-torchao-kernels-tied-embedding",
+        action="store_true",
+        help="Delegate tied-embedding ops to torchao kernels",
+    )
+    parser.add_argument(
+        "--use-torchao-kernels-linear",
+        action="store_true",
+        help="Delegate linear ops to torchao kernels",
+    )
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--vulkan-force-fp16", action="store_true")
     parser.add_argument("--mps", action="store_true")
@@ -753,6 +768,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
+            use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
+            use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
         )
     )
 
@@ -1360,6 +1377,8 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
+    use_torchao_kernels_linear: bool = False,
+    use_torchao_kernels_tied_embedding: bool = False,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1529,6 +1548,17 @@ def _get_source_transforms(  # noqa
             partial(
                 replace_kv_cache_with_ring_kv_cache,
                 layer_sizes=local_global_attention,
+            )
+        )
+
+    if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
+        from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64
+
+        transforms.append(
+            partial(
+                _convert_model_for_aarch64,
+                convert_linear=use_torchao_kernels_linear,
+                convert_tied_embedding=use_torchao_kernels_tied_embedding,
             )
         )
 

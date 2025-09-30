@@ -15,6 +15,12 @@
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
+@interface ExecuTorchLLMConfig ()
+
+- (const llm::GenerationConfig &)nativeConfig;
+
+@end
+
 @implementation ExecuTorchLLMImage
 
 - (instancetype)initWithData:(NSData *)data
@@ -156,10 +162,10 @@ using namespace executorch::runtime;
   return YES;
 }
 
-- (BOOL)generate:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
-   sequenceLength:(NSInteger)seq_len
-withTokenCallback:(nullable void (^)(NSString *))callback
-            error:(NSError **)error {
+- (BOOL)generateWithInputs:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString *))callback
+                     error:(NSError **)error {
   if (![self loadWithError:error]) {
     return NO;
   }
@@ -172,12 +178,12 @@ withTokenCallback:(nullable void (^)(NSString *))callback
       case ExecuTorchLLMMultimodalInputTypeImage: {
         ExecuTorchLLMImage *image = input.image;
         std::vector<uint8_t> data((uint8_t *)image.data.bytes, (uint8_t *)image.data.bytes + image.data.length);
-        nativeInputs.emplace_back(llm::MultimodalInput(llm::Image{
-          .data = std::move(data),
-          .width = (int32_t)image.width,
-          .height = (int32_t)image.height,
-          .channels = (int32_t)image.channels
-        }));
+        nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
+          std::move(data),
+          (int32_t)image.width,
+          (int32_t)image.height,
+          (int32_t)image.channels
+        )));
         break;
       }
       default: {
@@ -192,7 +198,7 @@ withTokenCallback:(nullable void (^)(NSString *))callback
   }
   auto status = _runner->generate(
     std::move(nativeInputs),
-    llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
+    config.nativeConfig,
     [callback](const std::string& token) {
       if (callback) {
         callback(@(token.c_str()));
@@ -213,6 +219,12 @@ withTokenCallback:(nullable void (^)(NSString *))callback
 - (void)stop {
   if (_runner) {
     _runner->stop();
+  }
+}
+
+- (void)reset {
+  if (_runner) {
+    _runner->reset();
   }
 }
 
