@@ -37,6 +37,11 @@ def is_linux_x86() -> bool:
     )
 
 
+####################
+# qnn sdk download management
+####################
+
+
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
     """Download archive from URL with progress reporting."""
     logger.debug("Archive will be saved to: %s", archive_path)
@@ -117,9 +122,6 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
     if not is_linux_x86():
         logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
-    elif not check_glibc_exist_and_validate():
-        logger.info("[QNN] Skipping Qualcomm SDK (glibc not found or version too old).")
-        return None
     else:
         logger.info("[QNN] Downloading Qualcomm SDK for Linux x86")
 
@@ -183,6 +185,7 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 ####################
 # libc management
 ####################
+
 GLIBC_VERSION = "2.34"
 GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
