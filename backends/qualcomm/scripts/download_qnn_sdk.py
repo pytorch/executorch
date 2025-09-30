@@ -498,8 +498,9 @@ def install_qnn_sdk() -> bool:
         True if both steps succeeded (or were already satisfied), else False.
     """
     logger.info("[QNN] Starting SDK installation")
-    _ensure_glibc_minimum(GLIBC_VERSION)
-    if not _check_tmp_glibc():
-        logger.error("[glibc] Pre-installed glibc check failed. Exiting early.")
-        return False
+
+    # Make sure we’re running under >= 2.34
+    ensure_glibc_minimum(GLIBC_VERSION)
+
+    # libc++ and QNN SDK setup
     return _ensure_libcxx_stack() and _ensure_qnn_sdk_lib()
