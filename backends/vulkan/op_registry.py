@@ -525,6 +525,19 @@ def register_quantized_conv_op():
 
 @update_features(
     [
+        exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default,
+    ]
+)
+def register_quantized_binary_op():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_4W4C_BUFFER,
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
         exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
     ]
 )
