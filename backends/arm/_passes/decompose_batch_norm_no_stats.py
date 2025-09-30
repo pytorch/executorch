@@ -6,12 +6,16 @@
 # pyre-unsafe
 
 import operator
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class DecomposeBatchNormNoStatsPass(ArmPass):
@@ -32,6 +36,11 @@ class DecomposeBatchNormNoStatsPass(ArmPass):
 
     Source: https://pytorch.org/docs/stable/generated/torch.nn.BatchNorm2d.html
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        InsertTableOpsPass,
+    }
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         bn_ops = (

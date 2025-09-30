@@ -1770,6 +1770,60 @@ class TestEmit(unittest.TestCase):
             len(edge_program_manager.executorch_program.backend_delegate_data), 1
         )
 
+    def test_delegate_deduplicate_with_different_compile_specs(self) -> None:
+        class LowerableSubModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        lowered = LowerableSubModel()
+        example_input = (torch.ones(1),)
+
+        lowered_edge = to_edge(export(lowered, example_input))
+
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        compile_specs1 = [CompileSpec("config", b"fast")]
+        compile_specs2 = [CompileSpec("config", b"small")]
+        lowered_module1 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs1
+        )
+        lowered_module2 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs2
+        )
+
+        class CompositeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowerable1 = lowered_module1
+                self.lowerable2 = lowered_module2
+
+            def forward(self, x):
+                a = self.lowerable1(x)
+                b = self.lowerable2(a)
+                return a, b
+
+        composite_model = CompositeModel()
+        model_inputs = (torch.ones(1),)
+        edge_prog = to_edge(export(composite_model, model_inputs)).to_executorch()
+
+        exported_program = edge_prog.exported_program()
+        program = emit_program({"method1": exported_program}, False).program
+        self.assertEqual(len(program.execution_plan), 1)
+
+        plan = program.execution_plan[0]
+        # Two delegates that point to the same blob.
+        self.assertEqual(len(plan.delegates), 2)
+        self.assertEqual(plan.delegates[0].processed.index, 0)
+        self.assertEqual(plan.delegates[1].processed.index, 0)
+        # Compile specs are different.
+        self.assertEqual(plan.delegates[0].compile_specs, compile_specs1)
+        self.assertEqual(plan.delegates[1].compile_specs, compile_specs2)
+        # Only one delegate blob in the backend_delegate_data.
+        self.assertEqual(len(program.backend_delegate_data), 1)
+
     def test_constant_tagged_mutable_tensors(self) -> None:
         class Net(nn.Module):
             def __init__(self):
@@ -1920,7 +1974,7 @@ class TestEmit(unittest.TestCase):
             program_buffer = et_program.buffer
             et_module = _load_for_executorch_from_buffer(program_buffer)
             for _, (inp, expected) in enumerate(zip(test_inputs, reference_outputs)):
-                # Execute with ExecutorTorch
+                # Execute with ExecuTorch
                 et_output = et_module.forward([inp])
                 et_result = et_output[0]  # Get first output
                 # Compare results

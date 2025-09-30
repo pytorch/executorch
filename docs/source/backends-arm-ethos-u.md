@@ -268,10 +268,18 @@ You can see how  this coupling between the memory mode and runtime application i
 
 The arm_executor_runner supports [bundled-io](https://docs.pytorch.org/executorch/0.4/bundled-io.html) and [ETdump](https://docs.pytorch.org/executorch/stable/etdump.html) debugging tools.
 
-To enable bundled-io, set `EXECUTORCH_BUILD_DEVTOOLS` when building Executorch and `DET_BUNDLE_IO` when building the executor_runner. Currently using bundled-io requires specifying your
-non delegated Aten ops manually by setting `EXECUTORCH_SELECT_OPS_LIST`. To enable ETdump, set `EXECUTORCH_BUILD_ARM_ETDUMP` when building Executorch and `DEXECUTORCH_ENABLE_EVENT_TRACER`
+To enable bundled-io, set `EXECUTORCH_BUILD_DEVTOOLS` when building Executorch and `DET_BUNDLE_IO` when building the executor_runner. To enable ETdump, set `EXECUTORCH_BUILD_ARM_ETDUMP` when building Executorch and `DEXECUTORCH_ENABLE_EVENT_TRACER`
 when building the executor_runner.
 
+
+## Memory formats
+
+Tensors of rank 4 and higher have two differing [memory format](https://pytorch.org/blog/tensor-memory-format-matters/) standards used.
+Pytorch defaults to contiguous/ channels first/ NCHW memory formats, compared to TOSA which only supports channels last/NHWC memory format.
+To support this, the backend inserts a transpose in the beginning if the incoming memory format is contiguous, and correspondingly a
+transpose in the end if the outgoing memory format is contiguous. Note that this means that you may avoid transposing the data unneccessarily if the runtime integration and
+full network is converted to use channels last. A word of caution must be given here however - changing memory format has been noted to have side effects such as
+unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.
 
 ## See Also
 - [Arm Ethos-U Backend Tutorial](tutorial-arm.md)

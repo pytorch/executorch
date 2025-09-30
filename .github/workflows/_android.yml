@@ -48,26 +48,13 @@ jobs:
         bash examples/models/llama/install_requirements.sh
         bash ".ci/scripts/test_llama.sh" -model stories110M -build_tool cmake -dtype fp16 -mode portable -upload ${ARTIFACTS_DIR_NAME}/fp32-xnnpack-custom
 
-        mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
-        cp aar-out/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
-        pushd examples/demo-apps/android/LlamaDemo
-        ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
-        popd
-
-        DEMO_APP_DIR="${ARTIFACTS_DIR_NAME}/llm_demo"
-        # The app directory is named using its build flavor as a suffix.
-        mkdir -p "${DEMO_APP_DIR}"
-        # Collect the app and its test suite
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${DEMO_APP_DIR}"
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${DEMO_APP_DIR}"
-
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     needs: build-llm-demo
     # NB: Use metal install for KVM support to run the emulator faster
     runs-on: linux.24xl.spr-metal
     env:
-      ANDROID_NDK_VERSION: r27b
+      ANDROID_NDK_VERSION: r28c
       API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)
@@ -103,8 +90,6 @@ jobs:
         shell: bash
         run: |
           set -eux
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug.apk
-          curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/llm_demo/app-debug-androidTest.apk
           curl -O https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/fp32-xnnpack-custom/model.zip
           curl -o android-test-debug-androidTest.apk https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifacts/library_test_dir/executorch_android-debug-androidTest.apk
           unzip model.zip

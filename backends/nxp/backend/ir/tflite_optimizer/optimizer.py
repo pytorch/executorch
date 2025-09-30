@@ -11,14 +11,8 @@ from typing import Callable
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.combine_hard_sigmoid_and_mul_to_hard_swish import (
-    CombineHardSigmoidAndMulIntoHardSwish,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
     FuseActivationFunctions,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_fully_connected_and_add_operators import (
-    FuseFullyConnectedAndAddOperators,
 )
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
     MoveActivationBeforeConcatenation,
@@ -34,7 +28,6 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
 
 class Optimization(Enum):
     FUSE_ACTIVATION_FUNCTIONS = 1
-    FUSE_FULLY_CONNECTED_AND_ADD = 2
 
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
@@ -42,7 +35,6 @@ class Optimization(Enum):
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
-    COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH = 16
 
 
 class Optimizer:
@@ -75,9 +67,6 @@ class Optimizer:
             Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
                 builder, conversion_config
             ),
-            Optimization.FUSE_FULLY_CONNECTED_AND_ADD: FuseFullyConnectedAndAddOperators(
-                builder, conversion_config
-            ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
                 builder, conversion_config
             ),
@@ -88,9 +77,6 @@ class Optimizer:
                 builder, conversion_config
             ),
             Optimization.MOVE_ACTIVATION_BEFORE_CONCAT: MoveActivationBeforeConcatenation(
-                builder, conversion_config
-            ),
-            Optimization.COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH: CombineHardSigmoidAndMulIntoHardSwish(
                 builder, conversion_config
             ),
         }

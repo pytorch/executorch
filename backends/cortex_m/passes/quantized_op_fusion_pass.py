@@ -36,7 +36,7 @@ class QuantizedOpFusionPass(ExportPass):
     # Generic operation mapping
     SUPPORTED_OPS_MAPPING = {
         exir_ops.edge.aten.add.Tensor: exir_ops.edge.cortex_m.quantized_add.default,
-        # Future ops to be added here:
+        # Future binary ops to be added here:
     }
 
     def __init__(self):

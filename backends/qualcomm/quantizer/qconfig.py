@@ -205,7 +205,6 @@ def get_16a8w_qnn_qat_config(
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
         qscheme=torch.per_tensor_affine,
-        reduce_range=True,
         observer=act_observer.with_args(**extra_args),
     )
     act_quantization_spec = QuantizationSpec(
@@ -220,7 +219,6 @@ def get_16a8w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int8).min + 1,
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_tensor_symmetric,
-        reduce_range=True,
         observer=MovingAverageMinMaxObserver,
     )
     weight_quantization_spec = QuantizationSpec(
@@ -421,7 +419,6 @@ def get_8a8w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int8).min + 1,
         quant_max=torch.iinfo(torch.int8).max,
         qscheme=torch.per_tensor_symmetric,
-        reduce_range=True,
         observer=MovingAverageMinMaxObserver,
     )
     weight_quantization_spec = QuantizationSpec(
@@ -438,7 +435,6 @@ def get_8a8w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        reduce_range=True,
         observer=MovingAverageMinMaxObserver,
     )
     bias_quantization_spec = QuantizationSpec(
@@ -467,7 +463,6 @@ def get_16a4w_qnn_qat_config(
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
         qscheme=torch.per_tensor_affine,
-        reduce_range=True,
         observer=act_observer,
     )
     act_quantization_spec = QuantizationSpec(
@@ -484,7 +479,6 @@ def get_16a4w_qnn_qat_config(
         quant_max=7,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        reduce_range=True,
         observer=MovingAverageMinMaxObserver,
     )
     weight_quantization_spec = QuantizationSpec(
@@ -501,7 +495,6 @@ def get_16a4w_qnn_qat_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        reduce_range=True,
         observer=MovingAverageMinMaxObserver,
     )
     bias_quantization_spec = QuantizationSpec(
@@ -551,7 +544,6 @@ def get_qat_per_channel_quant_config(
         act_fake_quant_ctr = FakeQuantize.with_args(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
             qscheme=torch.per_tensor_symmetric,
-            reduce_range=True,
             observer=act_observer,
         )
         act_quantization_spec = QuantizationSpec(
@@ -566,7 +558,6 @@ def get_qat_per_channel_quant_config(
             quant_min=torch.iinfo(act_dtype).min,
             quant_max=torch.iinfo(act_dtype).max,
             qscheme=torch.per_tensor_affine,
-            reduce_range=True,
             observer=act_observer,
         )
         act_quantization_spec = QuantizationSpec(

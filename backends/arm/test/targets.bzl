@@ -4,7 +4,7 @@ load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 
 def define_arm_tests():
-    # TODO Add more tests
+    # TODO [fbonly] Add more tests
     test_files = []
 
     # Passes
@@ -25,6 +25,7 @@ def define_arm_tests():
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
+        "ops/test_to_copy.py",
     ]
 
     # Quantization
@@ -39,7 +40,7 @@ def define_arm_tests():
         "misc/test_bn_relu_folding_qat.py",
         "misc/test_custom_partition.py",
         "misc/test_debug_hook.py",
-        "misc/test_dim_order_guards.py",
+        # "misc/test_dim_order.py", (TODO - T238390249)
         "misc/test_outputs_order.py",
     ]
 

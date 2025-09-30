@@ -25,6 +25,6 @@ tutorials and documentation. Here are some starting points:
 * [Exporting to ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial)
   * Learn the fundamentals of exporting a PyTorch `nn.Module` to ExecuTorch, and
     optimizing its performance using quantization and hardware delegation.
-* Running etLLM on [iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) and [Android](docs/source/llm/llama-demo-android.md) devices.
+* Running etLLM on [iOS](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) and [Android](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) devices.
   * Build and run LLaMA in a demo mobile app, and learn how to integrate models
     with your own apps.

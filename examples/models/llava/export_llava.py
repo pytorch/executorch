@@ -224,12 +224,12 @@ def export_all(llava_model: LlavaModel):
 
     lowered_and_edge = to_edge_transform_and_lower(
         {
-            "image_encoder": image_encoder_ep,
+            "vision_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
             "text_decoder": text_model_ep,
         },
         partitioner={
-            "image_encoder": [XnnpackPartitioner()],
+            "vision_encoder": [XnnpackPartitioner()],
             "text_decoder": [
                 # First partition the DQLinear nodes, then partition the rest of the nodes,
                 # to avoid multiple DQLinear nodes in the same partition,
@@ -254,7 +254,7 @@ def export_all(llava_model: LlavaModel):
             ],
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
-                "image_encoder": ConstraintBasedSymShapeEvalPass(),
+                "vision_encoder": ConstraintBasedSymShapeEvalPass(),
                 "text_decoder": ConstraintBasedSymShapeEvalPass(),
                 "token_embedding": HintBasedSymShapeEvalPass(),
             },
@@ -281,6 +281,7 @@ def create_llava_config_from_args(args):
     llm_config = LlmConfig()
 
     llm_config.model.use_sdpa_with_kv_cache = args.use_sdpa_with_kv_cache
+    llm_config.export.max_context_length = args.max_context_len
     llm_config.export.max_seq_length = args.max_seq_len
     llm_config.export.output_name = args.pte_name
     llm_config.debug.profile_memory = args.profile_memory
@@ -295,6 +296,12 @@ def main():
         default=True,
         action=BooleanOptionalAction,
         help="Use sdpa_with_kv_cache custom op in LLava text model.",
+    )
+    parser.add_argument(
+        "--max-context-len",
+        required=True,
+        type=int,
+        help="Maximum context length for the text model.",
     )
     parser.add_argument(
         "--max-seq-len",
@@ -325,12 +332,13 @@ def main():
     llm_config = create_llava_config_from_args(args)
 
     logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {llm_config.model.use_sdpa_with_kv_cache}, max_seq_len: {llm_config.export.max_seq_length}"
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {llm_config.model.use_sdpa_with_kv_cache}, max_seq_len: {llm_config.export.max_seq_length}, max_context_len: {llm_config.export.max_context_length}"
     )
 
     llava_model = LlavaModel(
         use_sdpa_with_kv_cache_op=llm_config.model.use_sdpa_with_kv_cache,
         max_seq_len=llm_config.export.max_seq_length,
+        max_context_len=llm_config.export.max_context_length,
     )
 
     executorch_program = export_all(llava_model)
