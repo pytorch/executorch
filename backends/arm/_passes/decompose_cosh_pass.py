@@ -3,8 +3,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 # For MI case
 edge_cosh = exir_ops.edge.aten.cosh.default
@@ -18,6 +27,13 @@ class DecomposeCoshPass(ArmPass):
         cosh(x) = 0.5 * (e^x + e^(-x))
 
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        InsertTableOpsPass,
+        MatchArgRanksPass,
+        ReplaceScalarWithTensorArgPassTOSAMI,
+        MatchArgDtypePass,
+    }
 
     def call_operator(self, op, args, kwargs, meta, updated=False):
         if op is not edge_cosh:

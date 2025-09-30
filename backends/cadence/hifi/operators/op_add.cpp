@@ -24,7 +24,6 @@ using executorch::runtime::CppTypeToScalarType;
 using executorch::runtime::KernelRuntimeContext;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -221,4 +220,3 @@ Tensor& add_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

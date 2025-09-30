@@ -4,8 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 from copy import copy
+from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -32,6 +34,8 @@ class DecomposeGroupedConv(ExportPass):
 
         x = cat(x1, x2)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {Conv1dUnsqueezePass}
 
     @staticmethod
     def _get_decomposition(op):

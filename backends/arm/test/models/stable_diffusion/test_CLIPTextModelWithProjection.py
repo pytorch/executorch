@@ -6,7 +6,6 @@
 
 import unittest
 
-import pytest
 import torch
 from executorch.backends.arm._passes import (
     ConvertInt64ConstOpsToInt32Pass,
@@ -28,13 +27,22 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
     CLIPTextModelWithProjection is one of the text_encoder used by Stable Diffusion 3.5 Medium
     """
 
-    # Adjust nbr below as we increase op support. Note: most of the delegates
-    # calls are directly consecutive to each other in the .pte. The reason
-    # for that is some assert ops are removed by passes in the
-    # .to_executorch step, i.e. after Arm partitioner.
-    ops_after_partitioner = {
+    # Adjust nbr below as we increase op support.
+    ops_after_partitioner_FP = {
         "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
+        "torch.ops.higher_order.executorch_call_delegate": 2,
+    }
+
+    ops_after_partitioner_INT = {
+        "executorch_exir_dialects_edge__ops_aten_argmax_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_full_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_index_select_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1,
+        "executorch_exir_dialects_edge__ops_aten_view_copy_default": 1,
+        "executorch_exir_dialects_edge__ops_aten_where_self": 1,
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default": 2,
+        "torch.ops.aten.scalar_tensor.default": 1,
         "torch.ops.higher_order.executorch_call_delegate": 2,
     }
 
@@ -78,14 +86,13 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
                 .export()
                 .to_edge_transform_and_lower()
                 .dump_operator_distribution()
-                .check_count(self.ops_after_partitioner)
+                .check_count(self.ops_after_partitioner_FP)
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=text_encoder_model_inputs,
                 )
             )
 
-    @pytest.mark.xfail(raises=AssertionError, reason="Output difference.")
     def test_CLIPTextModelWithProjection_tosa_INT(self):
         text_encoder_model, text_encoder_model_inputs = self.prepare_model_and_inputs()
         with torch.no_grad():
@@ -99,8 +106,10 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
                 .export()
                 .to_edge_transform_and_lower()
                 .dump_operator_distribution()
+                .check_count(self.ops_after_partitioner_INT)
                 .to_executorch()
                 .run_method_and_compare_outputs(
                     inputs=text_encoder_model_inputs,
+                    atol=0.8,
                 )
             )

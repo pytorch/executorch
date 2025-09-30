@@ -15,7 +15,6 @@
 #include <cmath>
 #include <optional>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -291,7 +290,6 @@ void quantized_linear_per_tensor_out(
   }
 }
 
-}; // namespace native
-}; // namespace HiFi
-}; // namespace impl
-}; // namespace cadence
+} // namespace native
+} // namespace HiFi
+} // namespace impl

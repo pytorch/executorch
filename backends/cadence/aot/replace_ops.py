@@ -438,11 +438,17 @@ class ReplaceConvolutionOptionalArgsWithConcreteArgsPass(ExportPass):
     """
 
     def call_operator(self, op, args, kwargs, meta):
-        if get_edge_overload_packet(op) != exir_ops.edge.aten.convolution:
+        op_packet = get_edge_overload_packet(op)
+        if op_packet not in {
+            exir_ops.edge.cadence.convolution,
+            exir_ops.edge.cadence.transposed_convolution,
+        }:
             return super().call_operator(op, args, kwargs, meta)
 
+        is_transposed = op_packet == exir_ops.edge.cadence.transposed_convolution
+        expected_args = 9 if is_transposed else 8
+        assert len(args) == expected_args
         # Check if the bias is already concrete
-        assert len(args) == 9
         if args[2] is not None:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -787,8 +793,8 @@ class ReplaceTrivialConvWithLinear(ExportPass):
 
     trivial_conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.quantized_conv_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
-        exir_ops.edge.cadence.quantized_conv_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -800,8 +806,8 @@ class ReplaceTrivialConvWithLinear(ExportPass):
         # extra args holding at least the zero point and scale of input, weight, bias,
         # and output tensor.
         quantized_op = (
-            op == exir_ops.edge.cadence.quantized_conv_nchw.default
-            or op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+            op == exir_ops.edge.cadence.quantized_conv2d_nchw.default
+            or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.default
         )
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
@@ -979,18 +985,18 @@ class ReplaceConvWithChannelLastConvPass(ExportPassWithTransposeHelper):
     ) -> ProxyValue:
         if op not in {
             exir_ops.edge.cadence.convolution.default,
-            exir_ops.edge.cadence.quantized_conv_nchw.default,
+            exir_ops.edge.cadence.quantized_conv2d_nchw.default,
         }:
             return super().call_operator(op, args, kwargs, meta)
 
-        quantized_op = op == exir_ops.edge.cadence.quantized_conv_nchw.default
+        quantized_op = op == exir_ops.edge.cadence.quantized_conv2d_nchw.default
 
         if not quantized_op and len(args) == 8 and args[-1] is True:
             # Already in NHWC layout.
             return super().call_operator(op, args, kwargs, meta)
 
         new_op = (
-            exir_ops.edge.cadence.quantized_conv_nhwc.default
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.default
             if quantized_op
             else exir_ops.edge.cadence.convolution.default
         )
@@ -1067,8 +1073,8 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
     # decompose to.
     conv_op_to_linear_op: Dict[EdgeOpOverload, EdgeOpOverload] = {
         exir_ops.edge.cadence.convolution.default: exir_ops.edge.aten.linear.default,
-        exir_ops.edge.cadence.quantized_conv_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
-        exir_ops.edge.cadence.quantized_conv_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nchw.default: exir_ops.edge.cadence.quantized_linear.default,
+        exir_ops.edge.cadence.quantized_conv2d_nhwc.default: exir_ops.edge.cadence.quantized_linear.default,
     }
 
     def call_operator(self, op, args, kwargs, meta):
@@ -1077,8 +1083,8 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
 
         # Get the relevant args from convolution node.
         quantized_op = (
-            op == exir_ops.edge.cadence.quantized_conv_nchw.default
-            or op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+            op == exir_ops.edge.cadence.quantized_conv2d_nchw.default
+            or op == exir_ops.edge.cadence.quantized_conv2d_nhwc.default
         )
         assert (len(args) == 8 and not quantized_op) or (
             len(args) >= 12 and quantized_op
@@ -1110,7 +1116,7 @@ class ReplaceConvWithIm2RowAndLinear(ExportPass):
         # channel_last layout is specified by the channel_last arg of conv
         # op, which is either the last argument (15th) or implicitely False
         # if the op is quantized, or the last argument if not.
-        channel_last = op == exir_ops.edge.cadence.quantized_conv_nhwc.default
+        channel_last = op == exir_ops.edge.cadence.quantized_conv2d_nhwc.default
         # The weight tensor is [out_channels, in_channels, X] for NCHW layout,
         # and [out_channels, X, in_channels] for NHWC layout. Here, X is the
         # kernel_width for conv1d, and X = kernel_height * kernel_width for
@@ -1622,12 +1628,12 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
             exir_ops.edge.cadence.quantized_add.per_tensor,
             [1, 2, 4, 5],
         ),
-        exir_ops.edge.cadence.quantized_conv_nchw: (
-            exir_ops.edge.cadence.quantized_conv_nchw.per_tensor,
+        exir_ops.edge.cadence.quantized_conv2d_nchw: (
+            exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor,
             [8, 9, 12, 13],
         ),
-        exir_ops.edge.cadence.quantized_conv_nhwc: (
-            exir_ops.edge.cadence.quantized_conv_nhwc.per_tensor,
+        exir_ops.edge.cadence.quantized_conv2d_nhwc: (
+            exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
             [8, 9, 12, 13],
         ),
         exir_ops.edge.cadence.quantized_fully_connected: (
@@ -2242,6 +2248,18 @@ class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
         )
 
 
+class CommonReplacePasses:
+    passes = [
+        ReplaceSqueezeAndUnsqueezeWithViewPass,
+        ReplaceSplitWithSlicePass,
+        ReplaceSelectWithViewOpPass,
+        ReplaceMMWithAddMMPass,
+        ReplaceRepeatWithCatPass,
+        ReplaceFullLikeWithFullPass,
+        ReplaceAtenConvolutionWithCadenceConvolutionPass,
+    ]
+
+
 @register_cadence_pass(CadencePassAttribute(opt_level=0))
 class ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass(ExportPass):
     """
@@ -2260,22 +2278,17 @@ class ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass(ExportPass):
 # This class encapsulates all the functions that replace/switch one op in the
 # graph with another.
 class CadenceReplaceOpsInGraph:
-    passes = [
+    passes = CommonReplacePasses.passes + [
         ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
         ReplaceEmptyTensorsWithFullPass,
         ReplaceFunctionallyEquivalentOpTargets,
         ReplacePermuteWithTransposePass,
         ReplaceScalarWithTensorArgPass,
         ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
-        ReplaceMMWithAddMMPass,
-        ReplaceSqueezeAndUnsqueezeWithViewPass,
         ReplaceAddMMWithLinearPass,
         RemoveNopSelectOpPass,
-        ReplaceSelectWithViewOpPass,
-        ReplaceRepeatWithCatPass,
         ReplacePadWithCatPass,
         ReplaceConstantPadNdWithSlicePass,
-        ReplaceAtenConvolutionWithCadenceConvolutionPass,
         ReplaceConvWithChannelLastConvPass,
         ReplaceTrivialConvWithLinear,
         ReplaceConvWithIm2RowAndLinear,
@@ -2287,7 +2300,6 @@ class CadenceReplaceOpsInGraph:
         ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
         ReplaceScalarTensorWithFullPass,
-        ReplaceFullLikeWithFullPass,
         ReplaceInfArgInFullWithValuePass,
         ReplaceLogicalNotBooleanWhereWithWherePass,
         ReplacePT2QuantWithCadenceQuantPass,
@@ -2297,7 +2309,6 @@ class CadenceReplaceOpsInGraph:
         ReplaceAtenAvgPoolWithCadenceAvgPoolPass,
         ReplaceWhereWithFullArgsWithWhereScalar,
         ReplaceAtenApproxGeluWithApproxGeluPass,
-        ReplaceSplitWithSlicePass,
         ReplacePowWithMulPass,
         ReplaceMulTensorWithMulAndFullOpsPass,
     ]

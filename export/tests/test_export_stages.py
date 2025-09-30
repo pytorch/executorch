@@ -300,11 +300,26 @@ class TestSourceTransformStage(unittest.TestCase):
         artifact = PipelineArtifact(data=models_dict, context={})
         stage.run(artifact)
 
-        # Verify quantize_ was called with the model and config
-        mock_quantize.assert_called_once_with(self.model, mock_config, mock_filter_fn)
+        # Verify quantize_ was called once (with the copied model, not the original)
+        self.assertEqual(mock_quantize.call_count, 1)
+        # Verify the config and filter_fn arguments are correct
+        call_args = mock_quantize.call_args[0]
+        self.assertNotEqual(self.model, call_args[0])
+        self.assertEqual(call_args[1], mock_config)
+        self.assertEqual(call_args[2], mock_filter_fn)
 
-        # Verify unwrap_tensor_subclass was called with the model
-        mock_unwrap.assert_called_once_with(self.model)
+        # Verify unwrap_tensor_subclass was called once (with the copied model)
+        self.assertEqual(mock_unwrap.call_count, 1)
+
+        # Verify that the original models_dict is unchanged
+        self.assertEqual(models_dict, {"forward": self.model})
+
+        # Verify that the result artifact data contains valid models
+        result_artifact = stage.get_artifacts()
+        self.assertIn("forward", result_artifact.data)
+        self.assertIsNotNone(result_artifact.data["forward"])
+        # verify the result model is NOT the same object as the original
+        self.assertIsNot(result_artifact.data["forward"], self.model)
 
 
 class TestQuantizeStage(unittest.TestCase):
@@ -397,6 +412,10 @@ class TestQuantizeStage(unittest.TestCase):
         result_artifact = stage.get_artifacts()
         self.assertIn("forward", result_artifact.data)
         self.assertEqual(result_artifact.data["forward"], mock_quantized_model)
+
+        # Verify that the original model in the input artifact is unchanged
+        self.assertEqual(artifact.data["forward"], self.model)
+        self.assertIsNot(result_artifact.data["forward"], self.model)
 
     def test_run_empty_example_inputs(self) -> None:
         """Test error when example inputs list is empty."""

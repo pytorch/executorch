@@ -46,6 +46,9 @@ from .decompose_gelu_pass import DecomposeGeluPass  # noqa
 from .decompose_glu_pass import DecomposeGluPass  # noqa
 from .decompose_grouped_conv import DecomposeGroupedConv  # noqa
 from .decompose_groupnorm_pass import DecomposeGroupNormPass  # noqa
+from .decompose_int16_activation_conv2d_pass import (  # noqa
+    DecomposeConv2dWithInt16ActivationPass,
+)
 from .decompose_layernorm_pass import DecomposeLayerNormPass  # noqa
 from .decompose_leaky_relu_pass import DecomposeLeakyReLUPass  # noqa
 from .decompose_linalg_vector_norm_pass import DecomposeLinearVectorNormPass  # noqa
@@ -88,6 +91,7 @@ from .replace_scalar_with_tensor_pass import (  # noqa
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
 )
+from .rewrite_upsample import RewriteUpsamplePass  # noqa
 from .scalars_to_attribute_pass import ScalarsToAttributePass  # noqa
 from .size_adjust_input_pass import SizeAdjustInputPass  # noqa
 from .to_tosa_memory_format_pass import ToTosaMemoryFormatPass  # noqa

@@ -36,12 +36,11 @@ class TestRefImplementations(unittest.TestCase):
     ) -> None:
         input_tensor = torch.tensor([input_value])
         scale = (f_max - f_min) / (q_max - q_min)
-        inv_scale = 1.0 / scale
-        zero_point = round(-f_min * inv_scale) + q_min
+        zero_point = round(-f_min * 1 / scale) + q_min
         expected_output = torch.tensor([expected_value], dtype=target_dtype)
 
         output = torch.ops.cadence.quantize_per_tensor(
-            input_tensor, inv_scale, zero_point, q_min, q_max, target_dtype
+            input_tensor, scale, zero_point, q_min, q_max, target_dtype
         )
 
         self.assertEqual(
@@ -85,7 +84,7 @@ class TestRefImplementations(unittest.TestCase):
         expected_output = torch.tensor([expected_value], dtype=torch.float32)
 
         output = torch.ops.cadence.dequantize_per_tensor(
-            input_tensor, scale, zero_point, q_min, q_max, torch.float32
+            input_tensor, scale, zero_point, q_min, q_max, input_tensor.dtype
         )
 
         self.assertEqual(
@@ -100,7 +99,7 @@ class TestRefImplementations(unittest.TestCase):
         [
             # Only these types need to be tested as per ET_FORALL_JARVIS_QUANTIZED_TYPES in
             # on_device_ai/Assistant/Jarvis/min_runtime/operators/generic/operators.h
-            ("int16", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int8),
+            ("int8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.int8),
             ("uint8", 5, 0.8, 4, 5, 0.8, 4, 0.8, 4, 6, torch.uint8),
         ]
     )
@@ -122,13 +121,34 @@ class TestRefImplementations(unittest.TestCase):
         Y_tensor = torch.tensor([Y], dtype=dtype)
         expected_output = torch.tensor([expected_value], dtype=dtype)
 
+        quantized_add = (
+            torch.ops.cadence.quantized_add_asym8sxasym8s_asym8s.per_tensor
+            if dtype == torch.int8
+            else torch.ops.cadence.quantized_add_asym8uxasym8u_asym8u.per_tensor
+        )
+        output = quantized_add(
+            X_tensor,
+            X_scale,
+            X_zero_point,
+            Y_tensor,
+            Y_scale,
+            Y_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Values don't match in {name}: got {output}, expected {expected_output}",
+        )
+
         output = torch.ops.cadence.quantized_add(
             X_tensor,
-            torch.tensor(X_scale),
-            torch.tensor(X_zero_point, dtype=dtype),
+            X_scale,
+            X_zero_point,
             Y_tensor,
-            torch.tensor(Y_scale),
-            torch.tensor(Y_zero_point, dtype=dtype),
+            Y_scale,
+            Y_zero_point,
             out_scale,
             out_zero_point,
         )
@@ -141,59 +161,195 @@ class TestRefImplementations(unittest.TestCase):
     @expand(
         [
             # Test case 1: 1x2 input, 1x2 weight (1 output feature)
-            (
-                torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
-                torch.Size([1, 2]),  # weight_shape: 1 output feature, 2 input features
-                0,  # in_zero_point
-                torch.tensor([0, 0], dtype=torch.int8),  # weight_zero_point
-                torch.tensor(
-                    [1073741824], dtype=torch.int32
-                ),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0], dtype=torch.int8),  # out_shift
-                0,  # out_zero_point
-                torch.tensor([[-2]], dtype=torch.int8),  # expected_output
-            ),
+            *[
+                (
+                    torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [1, 2]
+                    ),  # weight_shape: 1 output feature, 2 input features
+                    0,  # in_zero_point
+                    torch.tensor([0, 0], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [1073741824], dtype=torch.int32
+                    ),  # out_multiplier (0.5 * 2^31)
+                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    0,  # out_zero_point
+                    torch.tensor([[0]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    False,
+                    False,
+                )
+                for (per_tensor, dtype) in (
+                    (False, torch.int8),
+                    (True, torch.int8),
+                    (True, torch.uint8),
+                )
+            ],
             # Test case 2: 1x3 input, 2x3 weight (2 output features)
-            (
-                torch.Size([1, 3]),  # src_shape: 1 sample, 3 input features
-                torch.Size([2, 3]),  # weight_shape: 2 output features, 3 input features
-                0,  # in_zero_point
-                torch.tensor([0, 0, 0], dtype=torch.int8),  # weight_zero_point
-                torch.tensor(
-                    [1073741824], dtype=torch.int32
-                ),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0], dtype=torch.int8),  # out_shift
-                0,  # out_zero_point
-                torch.tensor([[-10, -30]], dtype=torch.int8),  # expected_output
-            ),
+            *[
+                (
+                    torch.Size([1, 3]),  # src_shape: 1 sample, 3 input features
+                    torch.Size(
+                        [2, 3]
+                    ),  # weight_shape: 2 output features, 3 input features
+                    0,  # in_zero_point
+                    torch.tensor([0, 0, 0], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [1073741824], dtype=torch.int32
+                    ),  # out_multiplier (0.5 * 2^31)
+                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    0,  # out_zero_point
+                    torch.tensor([[-2, -8]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    False,
+                    False,
+                )
+                for (per_tensor, dtype) in (
+                    (False, torch.int8),
+                    (True, torch.int8),
+                )
+            ],
+            *[
+                (
+                    torch.Size([1, 3]),  # src_shape: 1 sample, 3 input features
+                    torch.Size(
+                        [2, 3]
+                    ),  # weight_shape: 2 output features, 3 input features
+                    0,  # in_zero_point
+                    torch.tensor([0, 0, 0], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [1073741824], dtype=torch.int32
+                    ),  # out_multiplier (0.5 * 2^31)
+                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    0,  # out_zero_point
+                    torch.tensor([[0, 0]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    False,
+                    False,
+                )
+                for (per_tensor, dtype) in (
+                    (False, torch.uint8),
+                    (True, torch.uint8),
+                )
+            ],
             # Test case 3: Batch case with different dimensions
-            (
-                torch.Size([1, 2, 2]),  # src_shape: batch=1, seq=2, features=2
-                torch.Size([3, 2]),  # weight_shape: 3 output features, 2 input features
-                0,  # in_zero_point
-                torch.tensor([0, 0], dtype=torch.int8),  # weight_zero_point
-                torch.tensor(
-                    [1073741824], dtype=torch.int32
-                ),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0], dtype=torch.int8),  # out_shift
-                0,  # out_zero_point
-                torch.tensor(
-                    [[[-2, -8, -14], [-6, -28, -50]]], dtype=torch.int8
-                ),  # expected_output
-            ),
+            *[
+                (
+                    torch.Size([1, 2, 2]),  # src_shape: batch=1, seq=2, features=2
+                    torch.Size(
+                        [3, 2]
+                    ),  # weight_shape: 3 output features, 2 input features
+                    0,  # in_zero_point
+                    torch.tensor([0, 0], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [1073741824], dtype=torch.int32
+                    ),  # out_multiplier (0.5 * 2^31)
+                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    0,  # out_zero_point
+                    torch.tensor(
+                        [[[0, -2, -4], [-2, -7, -12]]], dtype=dtype
+                    ),  # expected_output
+                    per_tensor,
+                    False,
+                    False,
+                )
+                for (per_tensor, dtype) in (
+                    (False, torch.int8),
+                    (True, torch.int8),
+                )
+            ],
             # Test case 4: Non-zero zero points
-            (
-                torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
-                torch.Size([2, 2]),  # weight_shape: 2 output feature, 1 input feature
-                2,  # in_zero_point
-                torch.tensor([1, 1], dtype=torch.int8),  # weight_zero_point
-                torch.tensor(
-                    [268435456], dtype=torch.int32
-                ),  # out_multiplier (1.0 * 2^31)
-                torch.tensor([0]),  # out_shift
-                1,  # out_zero_point
-                torch.tensor([[-15, 25]], dtype=torch.int8),  # expected_output
-            ),
+            *[
+                (
+                    torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [2, 2]
+                    ),  # weight_shape: 2 output feature, 1 input feature
+                    2,  # in_zero_point
+                    torch.tensor([1, 1], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [268435456], dtype=torch.int32
+                    ),  # out_multiplier (1.0 * 2^31)
+                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    1,  # out_zero_point
+                    torch.tensor([[1, 1]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    False,
+                    False,
+                )
+                for (per_tensor, dtype) in (
+                    (False, torch.int8),
+                    (True, torch.int8),
+                    # (True, torch.uint8),
+                )
+            ],
+            # Test case 5: Non-uniform weight zero points
+            *[
+                (
+                    torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [2, 2]
+                    ),  # weight_shape: 2 output feature, 1 input feature
+                    2,  # in_zero_point
+                    torch.tensor([1, 2], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [268435456], dtype=torch.int32
+                    ),  # out_multiplier (1.0 * 2^31)
+                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    1,  # out_zero_point
+                    torch.tensor([[1, 1]], dtype=dtype),  # expected_output
+                    False,
+                    False,
+                    False,
+                )
+                for dtype in (torch.int8,)
+            ],
+            # Test case 6: Non-zero out_shift (shift=1)
+            *[
+                (
+                    torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [2, 2]
+                    ),  # weight_shape: 2 output features, 2 input features
+                    2,  # in_zero_point
+                    torch.tensor([1, 1], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [268435456], dtype=torch.int32
+                    ),  # out_multiplier (0.125 * 2^31)
+                    torch.tensor(
+                        [1], dtype=torch.int64
+                    ),  # out_shift (shift=1, doubles the scale)
+                    1,  # out_zero_point
+                    torch.tensor([[1, 2]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    False,
+                    False,
+                )
+                for (per_tensor, dtype) in ((False, torch.int8), (True, torch.int8))
+            ],
+            *[
+                (
+                    torch.Size([1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [2, 2]
+                    ),  # weight_shape: 2 output features, 2 input features
+                    2,  # in_zero_point
+                    torch.tensor([1, 1], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [268435456], dtype=torch.int32
+                    ),  # out_multiplier (0.125 * 2^31)
+                    torch.tensor(
+                        [1], dtype=torch.int64
+                    ),  # out_shift (shift=1, doubles the scale)
+                    1,  # out_zero_point
+                    torch.tensor([[1, 2]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    matmul,
+                    transposed_matmul,
+                )
+                for (matmul, transposed_matmul) in ((True, False), (True, True))
+                for (per_tensor, dtype) in ((True, torch.int8),)
+            ],
         ]
     )
     def test_quantized_linear(
@@ -206,7 +362,13 @@ class TestRefImplementations(unittest.TestCase):
         out_shift: torch.Tensor,
         out_zero_point: int,
         expected_output: torch.Tensor,
+        per_tensor: bool,
+        matmul: bool,
+        transposed_matmul: bool,
     ) -> None:
+        if not per_tensor and matmul:
+            self.skipTest("Only per_tensor supported for matmul")
+
         src = (
             torch.arange(np.prod(src_shape))
             .reshape(src_shape)
@@ -217,25 +379,93 @@ class TestRefImplementations(unittest.TestCase):
             .reshape(weight_shape)
             .to(expected_output.dtype)
         )
-        bias = torch.arange(weight_shape[0]).to(expected_output.dtype)
-        output = torch.ops.cadence.quantized_linear(
-            src,
-            weight,
-            bias,
-            in_zero_point,
-            weight_zero_point,
-            out_multiplier,
-            out_shift,
-            out_zero_point,
-            typing.cast(torch.Tensor, None),
-        )
+        if matmul and not transposed_matmul:
+            weight = weight.T
 
-        self.assertTrue(output.dtype == expected_output.dtype, "Dtype mismatch")
+        if per_tensor:
+            weight_zero_point = weight_zero_point[0]
+            out_multiplier = out_multiplier[0]
+            out_shift = out_shift[0]
 
-        self.assertTrue(
-            torch.equal(output, expected_output),
-            f"Values don't match: got {output}, expected {expected_output}",
-        )
+        if per_tensor:
+            match expected_output.dtype:
+                case torch.int8:
+                    if matmul:
+                        linear_ops = (
+                            # Doesn't have per tensor name, but it is per tensor
+                            torch.ops.cadence.quantized_matmul_asym8sxasym8s_asym8s,
+                        )
+                    else:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_linear_asym8sxasym8s_asym8s.per_tensor,
+                            torch.ops.cadence.quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor,
+                        )
+                case torch.uint8:
+                    if matmul:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_matmul_asym8uxasym8u_asym8u,
+                        )
+                    else:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_linear_asym8uxasym8u_asym8u.per_tensor,
+                            torch.ops.cadence.quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor,
+                        )
+                case _:
+                    if matmul:
+                        linear_ops = (torch.ops.cadence.quantized_matmul,)
+                    else:
+                        linear_ops = (
+                            torch.ops.cadence.quantized_linear.per_tensor,
+                            torch.ops.cadence.quantized_fully_connected.per_tensor,
+                        )
+        else:
+            linear_ops = (
+                torch.ops.cadence.quantized_linear,
+                torch.ops.cadence.quantized_fully_connected,
+            )
+
+        for linear_op in linear_ops:
+            # Get the function name for linear_op for debugging
+            op_name = (
+                linear_op.__name__ if hasattr(linear_op, "__name__") else str(linear_op)
+            )
+            if matmul:
+                assert "quantized_matmul" in op_name
+                output = linear_op(
+                    src,
+                    in_zero_point,
+                    weight,
+                    weight_zero_point,
+                    None,
+                    out_multiplier,
+                    out_shift,
+                    out_zero_point,
+                    transposed_matmul,
+                )
+            else:
+                assert (
+                    "quantized_linear" in op_name
+                    or "quantized_fully_connected" in op_name
+                )
+                bias = torch.arange(weight_shape[0]).to(torch.int32)
+                output = linear_op(
+                    src,
+                    weight,
+                    bias,
+                    in_zero_point,
+                    weight_zero_point,
+                    out_multiplier,
+                    out_shift,
+                    out_zero_point,
+                    typing.cast(torch.Tensor, None),
+                )
+
+            self.assertTrue(output.dtype == expected_output.dtype, "Dtype mismatch")
+
+            self.assertTrue(
+                torch.equal(output, expected_output),
+                f"Values don't match: got {output}, expected {expected_output}",
+            )
 
     @expand(
         [
@@ -696,9 +926,9 @@ class TestRefImplementations(unittest.TestCase):
 
         convs = [
             (
-                torch.ops.cadence.quantized_conv_nchw.per_tensor
+                torch.ops.cadence.quantized_conv2d_nchw.per_tensor
                 if memory_format == torch.contiguous_format
-                else torch.ops.cadence.quantized_conv_nhwc.per_tensor
+                else torch.ops.cadence.quantized_conv2d_nhwc.per_tensor
             )
         ]
 
@@ -706,30 +936,30 @@ class TestRefImplementations(unittest.TestCase):
         if input_tensor.dtype == torch.int8 and weight.dtype == torch.int8:
             if memory_format == torch.contiguous_format:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor,
                 ]
 
             else:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor,
                 ]
         elif input_tensor.dtype == torch.uint8 and weight.dtype == torch.uint8:
             if memory_format == torch.contiguous_format:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor,
                 ]
 
             else:
                 optimized_convs = [
-                    torch.ops.cadence.quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor,
-                    torch.ops.cadence.quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor,
+                    torch.ops.cadence.quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor,
                 ]
 
         convs.extend(optimized_convs)
@@ -774,73 +1004,137 @@ class TestRefImplementations(unittest.TestCase):
     @expand(
         [
             # Test case 1: Basic int8 case with negative scale
-            (
-                "basic_int8",
-                torch.tensor([-1, 0, 1, 3], dtype=torch.int8),  # input
-                torch.tensor([0], dtype=torch.int8),  # X_zero_point (scalar broadcast)
-                0,  # out_zero_point
-                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0]),  # out_shift
-                torch.int8,  # dtype
-                torch.tensor(
-                    [0, 0, 0, -2], dtype=torch.int8
-                ),  # expected: relu(-1,0,1,3) = (0,0,1,3) * (-0.5) + 0 = (0,0,-0.5,-1.5) -> (0,0,0,-2)
-            ),
+            *[
+                (
+                    "basic_int8",
+                    torch.tensor([-1, 0, 1, 3], dtype=dtype),  # input
+                    0,  # X_zero_point (scalar broadcast)
+                    0,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [0, 0, 0, -2], dtype=dtype
+                    ),  # expected: relu(-1,0,1,3) = (0,0,1,3) * (-0.5) + 0 = (0,0,-0.5,-1.5) -> (0,0,0,-2)
+                )
+                for dtype in [torch.int8]
+            ],
             # Test case 2: uint8 with non-zero zero point
-            (
-                "uint8_with_zp",
-                torch.tensor([126, 128, 130, 132], dtype=torch.uint8),  # input
-                torch.tensor([128], dtype=torch.uint8),  # X_zero_point
-                64,  # out_zero_point
-                torch.tensor([536870912]),  # out_multiplier (0.25 * 2^31)
-                torch.tensor([0]),  # out_shift
-                torch.uint8,  # dtype
-                torch.tensor(
-                    [64, 64, 64, 63], dtype=torch.uint8
-                ),  # expected: relu(-2,0,2,4) = (0,0,2,4) * (-0.25) + 64 = (64,64,63.5,63) -> (64,64,64,63)
-            ),
+            *[
+                (
+                    "uint8_with_zp",
+                    torch.tensor([126, 128, 130, 132], dtype=dtype),  # input
+                    128,  # X_zero_point
+                    64,  # out_zero_point
+                    536870912,  # out_multiplier (0.25 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [64, 64, 64, 63], dtype=dtype
+                    ),  # expected: relu(-2,0,2,4) = (0,0,2,4) * (-0.25) + 64 = (64,64,63.5,63) -> (64,64,64,63)
+                )
+                for dtype in [torch.uint8]
+            ],
             # Test case 3: All negative values (should all become zero after ReLU)
-            (
-                "all_negative_int8",
-                torch.tensor([-5, -3, -1], dtype=torch.int8),  # input
-                torch.tensor([0], dtype=torch.int8),  # X_zero_point
-                10,  # out_zero_point
-                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([0]),  # out_shift
-                torch.int8,  # dtype
-                torch.tensor(
-                    [10, 10, 10], dtype=torch.int8
-                ),  # expected: relu(-5,-3,-1) = (0,0,0) * (-0.5) + 10 = (10,10,10)
-            ),
+            *[
+                (
+                    "all_negative_int8",
+                    torch.tensor([-5, -3, -1], dtype=dtype),  # input
+                    0,  # X_zero_point
+                    10,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    0,  # out_shift
+                    dtype,  # dtype
+                    torch.tensor(
+                        [10, 10, 10], dtype=dtype
+                    ),  # expected: relu(-5,-3,-1) = (0,0,0) * (-0.5) + 10 = (10,10,10)
+                )
+                for dtype in [torch.int8]
+            ],
             # Test case 4: All positive values with shift (scale becomes -0.25)
-            (
-                "positive_with_shift",
-                torch.tensor([2, 4, 6, 8], dtype=torch.int8),  # input
-                torch.tensor([1], dtype=torch.int8),  # X_zero_point
-                5,  # out_zero_point
-                torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
-                torch.int8,  # dtype
-                torch.tensor(
-                    [4, 2, 0, -2], dtype=torch.int8
-                ),  # expected: relu(1,3,5,7) = (1,3,5,7) * (-1.0) + 5 = (4,2,0,-2)
-            ),
+            *[
+                (
+                    "positive_with_shift",
+                    torch.tensor([2, 4, 6, 8], dtype=dtype),  # input
+                    1,  # X_zero_point
+                    5,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    1,  # out_shift (multiply by 2^1 = 2)
+                    dtype,  # dtype
+                    torch.tensor(
+                        [4, 2, 0, -2], dtype=dtype
+                    ),  # expected: relu(1,3,5,7) = (1,3,5,7) * (-1.0) + 5 = (4,2,0,-2)
+                )
+                for dtype in [torch.int8]
+            ],
+            *[
+                (
+                    "positive_with_shift_unsigned",
+                    torch.tensor([2, 4, 6, 8], dtype=dtype),  # input
+                    1,  # X_zero_point
+                    5,  # out_zero_point
+                    1073741824,  # out_multiplier (0.5 * 2^31)
+                    1,  # out_shift (multiply by 2^1 = 2)
+                    dtype,  # dtype
+                    torch.tensor([4, 2, 0, 0], dtype=dtype),
+                )
+                for dtype in [torch.uint8]
+            ],
+            # Test case 4: Non-per-tensor
+            *[
+                (
+                    "non_per_tensor",
+                    torch.tensor([-1, -2, -3, 1, 2, 3], dtype=dtype),  # input
+                    torch.tensor([0, 0, 0, 1, 1, 1]),  # X_zero_point
+                    5,  # out_zero_point
+                    torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
+                    torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
+                    dtype,  # dtype
+                    torch.tensor([5, 5, 5, 5, 4, 3], dtype=dtype),
+                )
+                for dtype in [torch.int8]
+            ],
         ]
     )
     def test_quantized_relu(
         self,
         name: str,
         X: torch.Tensor,
-        X_zero_point: torch.Tensor,
+        X_zero_point: torch.Tensor | int,
         out_zero_point: int,
-        out_multiplier: torch.Tensor,
-        out_shift: torch.Tensor,
+        out_multiplier: torch.Tensor | int,
+        out_shift: torch.Tensor | int,
         dtype: torch.dtype,
         expected_output: torch.Tensor,
     ) -> None:
-        output = torch.ops.cadence.quantized_relu(
-            X, X_zero_point, out_zero_point, out_multiplier, out_shift
-        )
+
+        if isinstance(X_zero_point, int):
+            assert isinstance(out_multiplier, int)
+            assert isinstance(out_shift, int)
+
+            match dtype:
+                case torch.int8:
+                    quantized_relu = (
+                        torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
+                    )
+                case torch.uint8:
+                    quantized_relu = (
+                        torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
+                    )
+                case _:
+                    quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
+
+            output = quantized_relu(
+                X,
+                X_zero_point,
+                out_zero_point,
+                out_multiplier,
+                out_shift,
+            )
+        else:
+            output = torch.ops.cadence.quantized_relu(
+                X, X_zero_point, out_zero_point, out_multiplier, out_shift
+            )
 
         # Verify output properties
         self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
@@ -849,5 +1143,116 @@ class TestRefImplementations(unittest.TestCase):
         # Verify output matches expected values
         self.assertTrue(
             torch.equal(output, expected_output),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    def test_where_Scalar(self) -> None:
+        input_tensor = torch.tensor([1, 2, 3, 4], dtype=torch.int8)
+        out = torch.ops.cadence.where_Scalar(input_tensor > 2, 1.0, 0.0)
+        self.assertTrue(
+            torch.equal(out, torch.tensor([0.0, 0.0, 1.0, 1.0], dtype=torch.float32))
+        )
+        with self.assertRaises(ValueError) as context:
+            torch.ops.cadence.where_Scalar(input_tensor, 1.0, 0.0)
+
+        self.assertIn("condition must be a bool tensor", str(context.exception))
+
+    @expand(
+        [
+            (
+                "h1xhd4",
+                torch.tensor([[[[1.0, 2.0, 3.0, 4.0]]]], dtype=torch.float32),
+                torch.tensor([[0.0, 0.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[[[1.0, 3.0, 2.0, 4.0]]]], dtype=torch.float32),
+            ),
+            (
+                "h2xhd4",
+                torch.tensor(
+                    [[[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]]],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [[[[1.0, -4.0, 2.0, 3.0], [5, -8.0, 6.0, 7.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "s2xh2xhd4",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                            [[9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 0.0], [1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
+                            [[9.0, -12.0, 10.0, 11.0], [13.0, -16.0, 14.0, 15.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "pos_not_none",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                            [[9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
+                            [[-10.0, 11.0, 9.0, 12.0], [-14.0, 15.0, 13.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([1, 0]),
+            ),
+        ]
+    )
+    def test_rope(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        sin_tensor: torch.Tensor,
+        cos_tensor: torch.Tensor,
+        expected_output: torch.Tensor,
+        pos: torch.Tensor | None = None,
+    ) -> None:
+        output = torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, pos)
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
             f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
         )
