@@ -74,10 +74,10 @@ using namespace executorch::runtime;
   return YES;
 }
 
-- (BOOL)generate:(NSString*)prompt
-           config:(ExecuTorchLLMConfig *)config
-withTokenCallback:(nullable void (^)(NSString*))callback
-            error:(NSError**)error {
+- (BOOL)generateWithPrompt:(NSString*)prompt
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString*))callback
+                     error:(NSError**)error {
   if (![self loadWithError:error]) {
     return NO;
   }
