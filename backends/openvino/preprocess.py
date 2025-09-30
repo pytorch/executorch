@@ -8,7 +8,7 @@
 
 from typing import final, List
 
-from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -37,8 +37,7 @@ class OpenvinoBackend(BackendDetails):
         Returns:
             PreprocessResult: The result of preprocessing, including the compiled model bytes.
         """
-        # Apply RemoveCloneOpsTransform to eliminate unnecessary clone operations
-        transformed_ep = RemoveCloneOpsTransform()(edge_program.graph_module)
+        transformed_ep = DimOrderOpsRevertPass()(edge_program.graph_module)
 
         # Update the edge_program with the transformed graph
         if transformed_ep and transformed_ep.graph_module:

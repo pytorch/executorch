@@ -36,6 +36,7 @@ class PatternNode:
 class OpenvinoOperatorsSupport(OperatorSupportBase):
     extended_support_dict = {
         "torch.ops.dim_order_ops._clone_dim_order.default": None,
+        "torch.ops.dim_order_ops._to_dim_order_copy.default": None,
     }
 
     def __init__(
