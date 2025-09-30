@@ -1,88 +1,202 @@
 
-
-
 <!DOCTYPE html>
-<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
-<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
-<head>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
   <meta name="robots" content="noindex">
-  <meta charset="utf-8">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
+
+    <title>Concepts &#8212; ExecuTorch main documentation</title>
   
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Concepts &mdash; ExecuTorch main documentation</title>
   
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
 
   
-  
-    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
-  
-  
-  
+  <link href="_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
 
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=047068a3" />
+    <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=61a4c737" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
   
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
 
-  
-  
-    
-
-  
-
-  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
-  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
-  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
-  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
-  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
-  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
-  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <script src="_static/documentation_options.js?v=a8da1a53"></script>
+    <script src="_static/doctools.js?v=888ff710"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="_static/copybutton.js?v=f281be69"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'concepts';</script>
+    <script>
+        DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
+        DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
+        DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
+        DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
+        </script>
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/concepts.html" />
+    <link rel="icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Getting Started with ExecuTorch" href="getting-started.html" />
+    <link rel="next" title="Usage" href="usage.html" />
     <link rel="prev" title="Architecture and Components" href="getting-started-architecture.html" />
 
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/2.3.1/list.min.js"></script>
+<script>
+  if (window.location.hostname === 'docs.pytorch.org' || window.location.hostname === 'docs-preview.pytorch.org') {
+    const script = document.createElement('script');
+    script.src = 'https://cmp.osano.com/16A0DbT9yDNIaQkvZ/31b1b91a-e0b6-47ea-bde2-7f2bd13dbe5c/osano.js?variant=one';
+    document.head.appendChild(script);
+  }
+</script>
+<script>
+  // Cookie banner for non-LF projects
+  document.addEventListener('DOMContentLoaded', function () {
+    // Hide cookie banner on local environments and LF owned docs
+    if (window.location.hostname === 'localhost' ||
+      window.location.hostname === '0.0.0.0' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname === 'docs.pytorch.org' ||
+      window.location.hostname === 'docs-preview.pytorch.org' ||
+      window.location.hostname.startsWith('192.168.')) {
+      const banner = document.querySelector('.cookie-banner-wrapper');
+      if (banner) {
+        banner.style.display = 'none';
+      }
+    }
+  });
+</script>
+<!-- Conditional CSS for header and footer height adjustment -->
 
-  <!-- Google Tag Manager -->
-    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
-    <!-- End Google Tag Manager -->
+<link rel="stylesheet" type="text/css" href="_static/css/theme.css" crossorigin="anonymous">
+<script type="text/javascript" src="_static/js/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&display=swap" rel="stylesheet">
+<meta property="og:image" content="_static/img/pytorch_seo.png" />
+<link rel="stylesheet" href="_static/webfonts/all.min.css" crossorigin="anonymous">
+<meta http-equiv="Content-Security-Policy"
+  content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; script-src * 'unsafe-inline' 'unsafe-eval' blob:;">
+<meta name="pytorch_project" content="executorch">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS" height="0" width="0"
+    style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<!-- Google Tag Manager -->
+<script>(function (w, d, s, l, i) {
+    w[l] = w[l] || []; w[l].push({
+      'gtm.start':
+        new Date().getTime(), event: 'gtm.js'
+    }); var f = d.getElementsByTagName(s)[0],
+      j = d.createElement(s), dl = l != 'dataLayer' ? '&l=' + l : ''; j.async = true; j.src =
+        'https://www.googletagmanager.com/gtm.js?id=' + i + dl; f.parentNode.insertBefore(j, f);
+    j.onload = function () {
+      window.dispatchEvent(new Event('gtm_loaded'));
+      console.log('GTM loaded successfully');
+    };
+  })(window, document, 'script', 'dataLayer', 'GTM-T8XT4PS');
+</script>
+<!-- End Google Tag Manager -->
+<!-- Facebook Pixel Code -->
+<script>
+  !function (f, b, e, v, n, t, s) {
+    if (f.fbq) return; n = f.fbq = function () {
+      n.callMethod ?
+        n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+    };
+    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+    n.queue = []; t = b.createElement(e); t.async = !0;
+    t.src = v; s = b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t, s)
+  }(window, document, 'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '243028289693773');
+  fbq('track', 'PageView');
+</script>
+<script>
+  document.documentElement.setAttribute('data-version', 'main');
+</script>
+<noscript>
+  <img height="1" width="1" src="https://www.facebook.com/tr?id=243028289693773&ev=PageView&noscript=1" />
+</noscript>
+<script>
+  function gtag() {
+    window.dataLayer.push(arguments);
+  }
+</script>
+<!-- End Facebook Pixel Code -->
+<!-- Script to Fix scrolling -->
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Fix anchor scrolling
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const targetId = this.getAttribute('href').substring(1);
+        const targetElement = document.getElementById(targetId);
+
+        if (targetElement) {
+          const headerHeight =
+            (document.querySelector('.header-holder') ? document.querySelector('.header-holder').offsetHeight : 0) +
+            (document.querySelector('.bd-header') ? document.querySelector('.bd-header').offsetHeight : 0) + 20;
+
+          const targetPosition = targetElement.getBoundingClientRect().top + window.pageYOffset - headerHeight;
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+
+          // Update URL hash without scrolling
+          history.pushState(null, null, '#' + targetId);
+        }
+      });
+    });
+  });
+</script>
+
+<script async src="https://cse.google.com/cse.js?cx=e65585f8c3ea1440e"></script>
+
+<!--
+   Search engines should not index the main version of documentation.
+   Stable documentation are built without release == 'main'.
+   -->
+<meta name="robots" content="noindex">
+
+
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+
+  </head>
+
+<body data-feedback-url="https://github.com/pytorch/executorch" class="pytorch-body">
   
-
-
-  
-  <script src="_static/js/modernizr.min.js"></script>
-
-  <!-- Preload the theme fonts -->
-
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-
-<!-- Preload the katex fonts -->
-
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
-</head>
-
-<div class="container-fluid header-holder tutorials-header" id="header-holder">
-  <div class="container">
+    <div class="container-fluid header-holder tutorials-header" id="header-holder">
+   <div class="header-container-wrapper">
     <div class="header-container">
       <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
 
@@ -92,653 +206,1218 @@
           <li class="main-menu-item">
           <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
               <a class="with-down-arrow">
-                Learn
+                <span>Learn</span>
               </a>
               <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started/locally">
                   <span class=dropdown-title>Get Started</span>
-                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/tutorials">
                   <span class="dropdown-title">Tutorials</span>
-                  <p>Whats new in PyTorch tutorials</p>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
                   <span class="dropdown-title">Learn the Basics</span>
-                  <p>Familiarize yourself with PyTorch concepts and modules</p>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
                   <span class="dropdown-title">PyTorch Recipes</span>
-                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
                   <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
-                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/webinars/">
+                  <span class="dropdown-title">Webinars</span>
                 </a>
               </div>
             </div>
           </li>
 
-          <li>
+          <li class="main-menu-item">
           <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
               <a class="with-down-arrow">
-                Ecosystem
+              <span>Community</span>
               </a>
               <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
-                  <span class="dropdown-title">Tools</span>
-                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                <a class="nav-dropdown-item" href="https://landscape.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Landscape</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
-                  <span class=dropdown-title>Community</span>
-                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/join-ecosystem">
+                  <span class="dropdown-title">Join the Ecosystem</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
-                  <span class=dropdown-title>Forums</span>
-                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-hub/">
+                  <span class="dropdown-title">Community Hub</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/">
+                  <span class="dropdown-title">Forums</span>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/resources">
                   <span class=dropdown-title>Developer Resources</span>
-                  <p>Find resources and get questions answered</p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2024">
-                  <span class="dropdown-title">Contributor Awards - 2024</span>
-                  <p>Award winners announced at this year's PyTorch Conference</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contributor-awards/">
+                  <span class="dropdown-title">Contributor Awards</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-events/">
+                  <span class="dropdown-title">Community Events</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/programs/ambassadors/">
+                  <span class="dropdown-title">PyTorch Ambassadors</span>
                 </a>
               </div>
             </div>
           </li>
 
-          <li>
+          <li class="main-menu-item">
           <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
               <a class="with-down-arrow">
-                Edge
+              <span>Projects</span>
               </a>
               <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
-                  <span class="dropdown-title">About PyTorch Edge</span>
-                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/pytorch/">
+                  <span class="dropdown-title">PyTorch</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
-                  <span class="dropdown-title">ExecuTorch</span>
-                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/vllm/">
+                  <span class="dropdown-title">vLLM</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/executorch/stable/index.html">
-                  <span class="dropdown-title">ExecuTorch Docs</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/deepspeed/">
+                  <span class="dropdown-title">DeepSpeed</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/projects/host-your-project/">
+                  <span class="dropdown-title">Host Your Project</span>
                 </a>
               </div>
-            </div>  
+            </div>
           </li>
 
           <li class="main-menu-item">
             <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
               <a class="with-down-arrow">
-                Docs
+              <span> Docs</span>
               </a>
               <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                <a class="nav-dropdown-item" href="https://docs.pytorch.org/docs/stable/index.html">
                   <span class="dropdown-title">PyTorch</span>
-                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
-                  <span class="dropdown-title">PyTorch Domains</span>
-                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/domains">
+                  <span class="dropdown-title">Domains</span>
                 </a>
               </div>
             </div>
           </li>
 
-          <li>
+          <li class="main-menu-item">
             <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
               <a class="with-down-arrow">
-                Blogs & News 
+              <span>Blogs & News</span>
               </a>
               <div class="resources-dropdown-menu">
                 <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
-                  <span class="dropdown-title">PyTorch Blog</span>
-                  <p>Catch up on the latest technical news and happenings</p>
+                  <span class="dropdown-title">Blog</span>
                 </a>
-                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
-                  <span class="dropdown-title">Community Blog</span>
-                  <p>Stories from the PyTorch ecosystem</p>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/announcements">
+                  <span class="dropdown-title">Announcements</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
-                  <span class="dropdown-title">Videos</span>
-                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
-                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
-                  <span class="dropdown-title">Community Stories</span>
-                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
-                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/case-studies/">
+                  <span class="dropdown-title">Case Studies</span>
                 <a class="nav-dropdown-item" href="https://pytorch.org/events">
                   <span class="dropdown-title">Events</span>
-                  <p>Find events, webinars, and podcasts</p>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/newsletter">
                   <span class="dropdown-title">Newsletter</span>
-                  <p>Stay up-to-date with the latest updates</p>
                 </a>
             </div>
           </li>
 
-          <li>
+          <li class="main-menu-item">
             <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
               <a class="with-down-arrow">
-                About
+              <span>About</span>
               </a>
               <div class="resources-dropdown-menu">
                 <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
                   <span class="dropdown-title">PyTorch Foundation</span>
-                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/members">
+                  <span class="dropdown-title">Members</span>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
                   <span class="dropdown-title">Governing Board</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
-                  <span class="dropdown-title">Cloud Credit Program</span>
-                </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/tac">
                   <span class="dropdown-title">Technical Advisory Council</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/credits">
+                  <span class="dropdown-title">Cloud Credit Program</span>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/staff">
                   <span class="dropdown-title">Staff</span>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/contact-us">
-                  <span class="dropdown-title">Contact Us</span>
+                <a class="nav-dropdown-item" href="https://pytorch.org/contact">
+                  <span class="dropdown-title">Contact</span>
                 </a>
               </div>
             </div>
           </li>
 
           <li class="main-menu-item">
-            <div class="no-dropdown">
+            <div class="no-dropdown main-menu-button">
               <a href="https://pytorch.org/join" data-cta="join">
-                Become a Member
+                JOIN
               </a>
             </div>
           </li>
-          <li>
-           <div class="main-menu-item">
-             <a href="https://github.com/pytorch/pytorch" class="github-icon">
-             </a>
-           </div>
-          </li>
-          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
-          <li>
-            <div class="main-menu-item">
-             <a href="https://github.com/pytorch/pytorch" class="search-icon">
-             </a>
-            </div>
-          </li>
-          --->
         </ul>
       </div>
 
-      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu">
+        <i class="fa-solid fa-ellipsis"></i>
+      </a>
+    </div>
+  </div>
+ </div>
+
+ <!-- Begin Mobile Menu -->
+
+<div class="mobile-main-menu">
+  <div class="container-fluid">
+    <div class="header-container-wrapper">
+      <div class="mobile-main-menu-header-container">
+        <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu">
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="mobile-main-menu-links-container">
+    <div class="main-menu">
+      <ul>
+         <li class="resources-mobile-menu-title">
+           <a>Learn</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/get-started/locally">Get Started</a>
+           </li>
+           <li>
+             <a href="https://docs.pytorch.org/tutorials">Tutorials</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/webinars/">Webinars</a>
+          </li>
+        </ul>
+         <li class="resources-mobile-menu-title">
+           <a>Community</a>
+         </li>
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://landscape.pytorch.org/">Landscape</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/join-ecosystem">Join the Ecosystem</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/community-hub/">Community Hub</a>
+           </li>
+           <li>
+             <a href="https://discuss.pytorch.org/">Forums</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/resources">Developer Resources</a>
+           </li>
+           <li>
+             <a href="https://pytorch.org/contributor-awards/">Contributor Awards</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/community-events/">Community Events</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/programs/ambassadors/">PyTorch Ambassadors</a>
+          </li>
+       </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Projects</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+           <li>
+             <a href="https://pytorch.org/projects/pytorch/">PyTorch</a>
+           </li>
+
+           <li>
+             <a href="https://pytorch.org/projects/vllm/">vLLM</a>
+           </li>
+           <li>
+            <a href="https://pytorch.org/projects/deepspeed/">DeepSpeed</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/projects/host-your-project/">Host Your Project</a>
+           </li>
+         </ul>
+
+         <li class="resources-mobile-menu-title">
+           <a>Docs</a>
+         </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://docs.pytorch.org/docs/stable/index.html">PyTorch</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/domains">Domains</a>
+          </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>Blog & News</a>
+        </li>
+
+         <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/announcements">Announcements</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/case-studies/">Case Studies</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/events">Events</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/newsletter">Newsletter</a>
+           </li>
+        </ul>
+
+        <li class="resources-mobile-menu-title">
+          <a>About</a>
+        </li>
+
+        <ul class="resources-mobile-menu-items">
+          <li>
+            <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/members">Members</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/governing-board">Governing Board</a>
+          </li>
+          <li>
+            <a href="https://pytorch.org/tac">Technical Advisory Council</a>
+         </li>
+         <li>
+             <a href="https://pytorch.org/credits">Cloud Credit Program</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/staff">Staff</a>
+          </li>
+          <li>
+             <a href="https://pytorch.org/contact">Contact</a>
+          </li>
+        </ul>
+      </ul>
     </div>
   </div>
 </div>
 
-<body class="pytorch-body">
-
-   
-
-    
-
-    <div class="table-of-contents-link-wrapper">
-      <span>Table of Contents</span>
-      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
-    </div>
-
-    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
-      <div class="pytorch-side-scroll">
-        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
-          <div class="pytorch-left-menu-search">
-            
-    <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
-    </div>
-    
-
+<!-- End Mobile Menu -->
+  
+  
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
 
   
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
 
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
 
-<div role="search">
-  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
-    <input type="text" name="q" placeholder="Search Docs" />
-    <input type="hidden" name="check_keywords" value="yes" />
-    <input type="hidden" name="area" value="default" />
-  </form>
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
 </div>
 
-          </div>
-
-          
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class=" navbar-header-items__start">
     
-         
-         
-         
-              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul class="current">
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="_static/et-logo.png" class="logo__image only-light" alt="ExecuTorch main documentation - Home"/>
+    <script>document.write(`<img src="_static/et-logo.png" class="logo__image only-dark" alt="ExecuTorch main documentation - Home"/>`);</script>
+  
+  
+</a></div>
+    
+      <div class="navbar-item">
+<script>
+document.write(`
+  <div class="version-switcher__container dropdown">
+    <button id="pst-version-switcher-button-2"
+      type="button"
+      class="version-switcher__button btn btn-sm dropdown-toggle"
+      data-bs-toggle="dropdown"
+      aria-haspopup="listbox"
+      aria-controls="pst-version-switcher-list-2"
+      aria-label="Version switcher list"
+    >
+      Choose version  <!-- this text may get changed later by javascript -->
+      <span class="caret"></span>
+    </button>
+    <div id="pst-version-switcher-list-2"
+      class="version-switcher__menu dropdown-menu list-group-flush py-0"
+      role="listbox" aria-labelledby="pst-version-switcher-button-2">
+      <!-- dropdown will be populated by javascript on page load -->
+    </div>
+  </div>
+`);
+</script></div>
+    
+  </div>
+  
+  <div class=" navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="intro.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="usage.html">
+    Usage
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="examples.html">
+    Examples
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="developer-tools.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="runtime.html">
+    Runtime
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quantization.html">
+    Quantization
+  </a>
+</li>
+
+            <li class="nav-item dropdown">
+                <button class="btn dropdown-toggle nav-item" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="pst-nav-more-links">
+                    More
+                </button>
+                <ul id="pst-nav-more-links" class="dropdown-menu">
+                    
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="kernel-library.html">
+    Kernel Library
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="llm/working-with-llms.html">
+    Working with LLMs
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="backend-development.html">
+    Backend Development
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="ir-specification.html">
+    IR Specification
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="compiler-entry-points.html">
+    Compiler Entry Points
+  </a>
+</li>
+
+
+<li class=" ">
+  <a class="nav-link dropdown-item nav-internal" href="contributing.html">
+    Contributing to ExecuTorch
+  </a>
+</li>
+
+                </ul>
+            </li>
+            
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+      
+        <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+      
+        <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+      
+        <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+      
+    </div>
+    
+  </div>
+  
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="intro.html">
+    Intro
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="usage.html">
+    Usage
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="examples.html">
+    Examples
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backends.html">
+    Backends
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="developer-tools.html">
+    Tools
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="runtime.html">
+    Runtime
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="api.html">
+    API
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="quantization.html">
+    Quantization
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="kernel-library.html">
+    Kernel Library
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="llm/working-with-llms.html">
+    Working with LLMs
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="backend-development.html">
+    Backend Development
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="ir-specification.html">
+    IR Specification
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="compiler-entry-points.html">
+    Compiler Entry Points
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="contributing.html">
+    Contributing to ExecuTorch
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+  
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+</div>
+        
+          <div class="navbar-item">
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script></div>
+        
+          <div class="navbar-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://x.com/PyTorch" title="X" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-x-twitter fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">X</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/pytorch/executorch" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://discuss.pytorch.org/" title="Discourse" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-discourse fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">Discourse</span></a>
+        </li>
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://pypi.org/project/executorch" title="PyPi" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-python fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">PyPi</span></a>
+        </li>
+</ul></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">Architecture and Components</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Concepts</a></li>
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Concepts</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Usage</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-export.html">Model Export and Lowering</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-android.html">Using ExecuTorch on Android</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-cpp.html">Using ExecuTorch with C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-runtime-integration.html">Runtime Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-building-from-source.html">Building from Source</a></li>
-<li class="toctree-l1"><a class="reference internal" href="using-executorch-faqs.html">Frequently Asked Questions</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference external" href="https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-arm-vgf.html">Arm VGF Backend Tutorial</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backends</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="backends-overview.html">Backend Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-xnnpack.html">XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-coreml.html">Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-mps.html">MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-vulkan.html">Vulkan Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-ethos-u.html">Arm® Ethos™-U NPU Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-arm-vgf.html">Arm® VGF Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-qualcomm.html">Qualcomm AI Engine Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-mediatek.html">MediaTek Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-cadence.html">Cadence Xtensa Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-openvino.html">OpenVINO Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backends-nxp.html">NXP eIQ Neutron Backend</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Developer Tools</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="devtools-overview.html">Introduction to the ExecuTorch Developer Tools</a></li>
-<li class="toctree-l1"><a class="reference internal" href="bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="model-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="model-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="memory-planning-inspection.html">Memory Planning Inspection in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="delegate-debugging.html">Delegate Debugging</a></li>
-<li class="toctree-l1"><a class="reference internal" href="devtools-tutorial.html">Developer Tools Usage Tutorial</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-tensor.html">Managing Tensor Memory in C++</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ptd-file-format.html"><code class="docutils literal notranslate"><span class="pre">.ptd</span></code> file format</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-python-api-reference.html">Runtime Python API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">API Life Cycle and Deprecation Policy</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://pytorch.org/executorch/main/javadoc/">Javadoc</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html#quantization-in-executorch">Quantization in ExecuTorch</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/export-llm.html">Exporting LLMs with export_llm</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/export-custom-llm.html">Exporting custom LLMs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/run-with-c-plus-plus.html">Running with C++</a></li>
-<li class="toctree-l1"><a class="reference external" href="https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android">Running on Android &lt;XNNPack&gt;</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/build-run-llama3-qualcomm-ai-engine-direct-backend.html">Running on Android &lt;QNN&gt;</a></li>
-<li class="toctree-l1"><a class="reference internal" href="llm/run-on-ios.html">Running on iOS</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Backend Development</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-xnnpack-reference.html">XNNPACK Delegate Internals</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backends and Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debugging Delegation</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
-</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
 
-         
 
-        </div>
       </div>
-    </nav>
-
-    <div class="pytorch-container">
-      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
-        <div class="pytorch-breadcrumbs-wrapper">
-          
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<div role="navigation" aria-label="breadcrumbs navigation">
-
-  <ul class="pytorch-breadcrumbs">
-    
-      <li>
-        <a href="index.html">
-          
-            Docs
-          
-        </a> &gt;
-      </li>
-
+      
+      <main id="main-content" class="bd-main" role="main">
         
-      <li>Concepts</li>
-    
-    
-      <li class="pytorch-breadcrumbs-aside">
         
-            
-            <a href="_sources/concepts.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
-          
-        
-      </li>
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
     
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="intro.html" class="nav-link">Intro</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Concepts</li>
   </ul>
-
+</nav>
+</div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
+    </div>
+</div>
+</div>
+      
+    </div>
   
 </div>
-        </div>
-
-        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
-          Shortcuts
-        </div>
-      </div>
-
-      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
-        <div class="pytorch-content-left">
-
-        
-
-
-          <!-- Google Tag Manager (noscript) -->
-          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
-          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-          <!-- End Google Tag Manager (noscript) -->
-          
-          <div class="rst-content">
-          
-            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
-             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+</div>
               
-  <div class="section" id="concepts">
-<h1>Concepts<a class="headerlink" href="#concepts" title="Permalink to this heading">¶</a></h1>
+              
+  
+<div id="searchbox"></div>
+  <article class="bd-article" id="pytorch-article">
+    <!-- Hidden breadcrumb schema for SEO only -->
+    <div style="display:none;" itemscope itemtype="https://schema.org/BreadcrumbList">
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="intro.html">
+        <meta itemprop="name" content="Intro">
+        <meta itemprop="position" content="1">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Concepts">
+        <meta itemprop="position" content="2">
+      </div>
+    </div>
+
+    
+    
+
+    
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="concepts">
+<h1>Concepts<a class="headerlink" href="#concepts" title="Link to this heading">#</a></h1>
 <p>This page provides an overview of key concepts and terms used throughout the ExecuTorch documentation. It is intended to help readers understand the terminology and concepts used in PyTorch Edge and ExecuTorch.</p>
-<div class="section" id="concepts-map">
-<h2>Concepts Map<a class="headerlink" href="#concepts-map" title="Permalink to this heading">¶</a></h2>
+<section id="concepts-map">
+<h2>Concepts Map<a class="headerlink" href="#concepts-map" title="Link to this heading">#</a></h2>
 <p><img alt="" src="_images/concepts-map-overview.png" /></p>
 <p><a href="_static/img/concepts-map-overview.png" target="_blank">View in full size</a></p>
 <p><a href="_static/img/concepts-map-detailed.png" target="_blank">View detailed concept map</a></p>
-</div>
-<div class="section" id="aot-ahead-of-time">
-<h2><a class="reference internal" href="getting-started-architecture.html#program-preparation"><span class="std std-doc">AOT (Ahead of Time)</span></a><a class="headerlink" href="#aot-ahead-of-time" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="aot-ahead-of-time">
+<h2><a class="reference internal" href="getting-started-architecture.html#program-preparation"><span class="std std-ref">AOT (Ahead of Time)</span></a><a class="headerlink" href="#aot-ahead-of-time" title="Link to this heading">#</a></h2>
 <p>AOT generally refers to the program preparation that occurs before execution. On a high level, ExecuTorch workflow is split into an AOT compilation and a runtime. The AOT steps involve compilation into an Intermediate Representation (IR), along with optional transformations and optimizations.</p>
-</div>
-<div class="section" id="aten">
-<h2><a class="reference external" href="https://pytorch.org/cppdocs/#aten">ATen</a><a class="headerlink" href="#aten" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="aten">
+<h2><a class="reference external" href="https://pytorch.org/cppdocs/#aten">ATen</a><a class="headerlink" href="#aten" title="Link to this heading">#</a></h2>
 <p>Fundamentally, it is a tensor library on top of which almost all other Python and C++ interfaces in PyTorch are built. It provides a core Tensor class, on which many hundreds of operations are defined.</p>
-</div>
-<div class="section" id="aten-dialect">
-<h2><a class="reference internal" href="ir-exir.html#aten-dialect"><span class="std std-doc">ATen Dialect</span></a><a class="headerlink" href="#aten-dialect" title="Permalink to this heading">¶</a></h2>
-<p>ATen dialect is the immediate result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can lower to <span class="xref myst">Core ATen dialect</span> and <a class="reference internal" href="#edge-dialect"><span class="std std-doc">Edge dialect</span></a>.</p>
-<p>ATen dialect is a valid <a class="reference internal" href="#exir"><span class="std std-doc">EXIR</span></a> with additional properties. It consists of functional ATen operators, higher order operators (like control flow operators) and registered custom operators.</p>
+</section>
+<section id="aten-dialect">
+<h2><a class="reference internal" href="ir-exir.html#aten-dialect"><span class="std std-ref">ATen Dialect</span></a><a class="headerlink" href="#aten-dialect" title="Link to this heading">#</a></h2>
+<p>ATen dialect is the immediate result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can lower to <a class="reference internal" href="#concepts#core-aten-dialect"><span class="std std-ref">Core ATen dialect</span></a> and <a class="reference internal" href="#edge-dialect"><span class="std std-ref">Edge dialect</span></a>.</p>
+<p>ATen dialect is a valid <a class="reference internal" href="#exir"><span class="std std-ref">EXIR</span></a> with additional properties. It consists of functional ATen operators, higher order operators (like control flow operators) and registered custom operators.</p>
 <p>The goal of ATen dialect is to capture users’ programs as faithfully as possible.</p>
-</div>
-<div class="section" id="aten-mode">
-<h2>ATen mode<a class="headerlink" href="#aten-mode" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="aten-mode">
+<h2>ATen mode<a class="headerlink" href="#aten-mode" title="Link to this heading">#</a></h2>
 <p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to ETensor mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::ScalarType</span></code>.</p>
 <ul class="simple">
 <li><p>ATen kernels that rely on the full <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> API are usable in this configuration.</p></li>
 <li><p>ATen kernels tend to do dynamic memory allocation and often have extra flexibility (and thus overhead) to handle cases not needed by mobile/embedded clients. e.g.,  CUDA support, sparse tensor support, and dtype promotion.</p></li>
 <li><p>Note: ATen mode is currently a WIP.</p></li>
 </ul>
-</div>
-<div class="section" id="autograd-safe-aten-dialect">
-<h2>Autograd safe ATen Dialect<a class="headerlink" href="#autograd-safe-aten-dialect" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="autograd-safe-aten-dialect">
+<h2>Autograd safe ATen Dialect<a class="headerlink" href="#autograd-safe-aten-dialect" title="Link to this heading">#</a></h2>
 <p>Autograd safe ATen dialect includes only differentiable ATen operators, along with higher order operators (control flow ops) and registered custom operators.</p>
-</div>
-<div class="section" id="backend">
-<h2>Backend<a class="headerlink" href="#backend" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="backend">
+<h2>Backend<a class="headerlink" href="#backend" title="Link to this heading">#</a></h2>
 <p>A specific hardware (like GPU, NPU) or a software stack (like XNNPACK) that consumes a graph or part of it, with performance and efficiency benefits.</p>
-</div>
-<div class="section" id="backend-dialect">
-<h2><a class="reference internal" href="ir-exir.html#backend-dialect"><span class="std std-doc">Backend Dialect</span></a><a class="headerlink" href="#backend-dialect" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="backend-dialect">
+<h2><a class="reference internal" href="ir-exir.html#backend-dialect"><span class="std std-ref">Backend Dialect</span></a><a class="headerlink" href="#backend-dialect" title="Link to this heading">#</a></h2>
 <p>Backend dialect is the immediate result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.</p>
-</div>
-<div class="section" id="backend-registry">
-<h2>Backend registry<a class="headerlink" href="#backend-registry" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="backend-registry">
+<h2>Backend registry<a class="headerlink" href="#backend-registry" title="Link to this heading">#</a></h2>
 <p>A table mapping backend names to backend interfaces. This allows backends to be called via name during runtime.</p>
-</div>
-<div class="section" id="backend-specific-operator">
-<h2>Backend Specific Operator<a class="headerlink" href="#backend-specific-operator" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="backend-specific-operator">
+<h2>Backend Specific Operator<a class="headerlink" href="#backend-specific-operator" title="Link to this heading">#</a></h2>
 <p>These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.</p>
-</div>
-<div class="section" id="buck2">
-<h2><a class="reference external" href="https://buck2.build/">Buck2</a><a class="headerlink" href="#buck2" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="buck2">
+<h2><a class="reference external" href="https://buck2.build/">Buck2</a><a class="headerlink" href="#buck2" title="Link to this heading">#</a></h2>
 <p>An open-source, large scale build system. Used to build ExecuTorch.</p>
-</div>
-<div class="section" id="cmake">
-<h2><a class="reference external" href="https://cmake.org/">CMake</a><a class="headerlink" href="#cmake" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="cmake">
+<h2><a class="reference external" href="https://cmake.org/">CMake</a><a class="headerlink" href="#cmake" title="Link to this heading">#</a></h2>
 <p>An open-source, cross-platform family of tools designed to build, test and package software. Used to build ExecuTorch.</p>
-</div>
-<div class="section" id="codegen">
-<h2>Codegen<a class="headerlink" href="#codegen" title="Permalink to this heading">¶</a></h2>
-<p>At a high level, codegen performs two tasks; generating the <a class="reference internal" href="kernel-library-custom-aten-kernel.html"><span class="doc std std-doc">kernel registration</span></a> library, and optionally running <a class="reference internal" href="#selective-build"><span class="std std-doc">selective build</span></a>.</p>
+</section>
+<section id="codegen">
+<h2>Codegen<a class="headerlink" href="#codegen" title="Link to this heading">#</a></h2>
+<p>At a high level, codegen performs two tasks; generating the <a class="reference internal" href="kernel-library-custom-aten-kernel.html"><span class="std std-doc">kernel registration</span></a> library, and optionally running <a class="reference internal" href="#selective-build">selective build</a>.</p>
 <p>The kernel registration library connects operator names (referenced in the model) with the corresponding kernel implementation (from the kernel library).</p>
 <p>The selective build API collects operator information from models and/or other sources and only includes the operators required by them. This can reduce the binary size.</p>
 <p>The output of codegen is a set of C++ bindings (various <code class="docutils literal notranslate"><span class="pre">.h</span></code>, <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files) that glue together the kernel library and the ExecuTorch runtime.</p>
-</div>
-<div class="section" id="core-aten-dialect">
-<h2><a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler_ir.html#irs">Core ATen Dialect</a><a class="headerlink" href="#core-aten-dialect" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="core-aten-dialect">
+<h2><a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler_ir.html#irs">Core ATen Dialect</a><a class="headerlink" href="#core-aten-dialect" title="Link to this heading">#</a></h2>
 <p>Core ATen dialect contains the core ATen operators along with higher order operators (control flow) and registered custom operators.</p>
-</div>
-<div class="section" id="core-aten-operators-canonical-aten-operator-set">
-<h2><a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">Core ATen operators / Canonical ATen operator set</span></a><a class="headerlink" href="#core-aten-operators-canonical-aten-operator-set" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="core-aten-operators-canonical-aten-operator-set">
+<h2><a class="reference internal" href="ir-ops-set-definition.html"><span class="std std-doc">Core ATen operators / Canonical ATen operator set</span></a><a class="headerlink" href="#core-aten-operators-canonical-aten-operator-set" title="Link to this heading">#</a></h2>
 <p>A select subset of the PyTorch ATen operator library. Core ATen operators will not be decomposed when exported with the core ATen decomposition table. They serve as a reference for the baseline ATen ops that a backend or compiler should expect from upstream.</p>
-</div>
-<div class="section" id="core-aten-decomposition-table">
-<h2>Core ATen Decomposition Table<a class="headerlink" href="#core-aten-decomposition-table" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="core-aten-decomposition-table">
+<h2>Core ATen Decomposition Table<a class="headerlink" href="#core-aten-decomposition-table" title="Link to this heading">#</a></h2>
 <p>Decomposing an operator means expressing it as a combination of other operators. During the AOT process, a default list of decompositions is employed, breaking down ATen operators into core ATen operators. This is referred to as the Core ATen Decomposition Table.</p>
-</div>
-<div class="section" id="custom-operator">
-<h2><a class="reference external" href="https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit?fbclid=IwAR1qLTrChO4wRokhh_wHgdbX1SZwsU-DUv1XE2xFq0tIKsZSdDLAe6prTxg#heading=h.ahugy69p2jmz">Custom operator</a><a class="headerlink" href="#custom-operator" title="Permalink to this heading">¶</a></h2>
-<p>These are operators that aren’t part of the ATen library, but which appear in <a class="reference internal" href="#eager-mode"><span class="std std-doc">eager mode</span></a>. Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code> call. They are most likely associated with a specific target model or hardware platform. For example, <a class="reference external" href="https://pytorch.org/vision/main/generated/torchvision.ops.roi_align.html">torchvision::roi_align</a> is a custom operator widely used by torchvision (doesn’t target a specific hardware).</p>
-</div>
-<div class="section" id="dataloader">
-<h2>DataLoader<a class="headerlink" href="#dataloader" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="custom-operator">
+<h2><a class="reference external" href="https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit?fbclid=IwAR1qLTrChO4wRokhh_wHgdbX1SZwsU-DUv1XE2xFq0tIKsZSdDLAe6prTxg#heading=h.ahugy69p2jmz">Custom operator</a><a class="headerlink" href="#custom-operator" title="Link to this heading">#</a></h2>
+<p>These are operators that aren’t part of the ATen library, but which appear in <a class="reference internal" href="#eager-mode"><span class="std std-ref">eager mode</span></a>. Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code> call. They are most likely associated with a specific target model or hardware platform. For example, <a class="reference external" href="https://pytorch.org/vision/main/generated/torchvision.ops.roi_align.html">torchvision::roi_align</a> is a custom operator widely used by torchvision (doesn’t target a specific hardware).</p>
+</section>
+<section id="dataloader">
+<h2>DataLoader<a class="headerlink" href="#dataloader" title="Link to this heading">#</a></h2>
 <p>An interface that enables the ExecuTorch runtime to read from a file or other data source without directly depending on operating system concepts like files or memory allocation.</p>
-</div>
-<div class="section" id="delegation">
-<h2><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegation</span></a><a class="headerlink" href="#delegation" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="delegation">
+<h2><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">Delegation</span></a><a class="headerlink" href="#delegation" title="Link to this heading">#</a></h2>
 <p>To run parts (or all) of a program on a specific backend (eg. XNNPACK) while the rest of the program (if any) runs on the basic ExecuTorch runtime. Delegation enables us to leverage the performance and efficiency benefits of specialized backends and hardware.</p>
-</div>
-<div class="section" id="dim-order">
-<h2>Dim Order<a class="headerlink" href="#dim-order" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="dim-order">
+<h2>Dim Order<a class="headerlink" href="#dim-order" title="Link to this heading">#</a></h2>
 <p>ExecuTorch introduces <code class="docutils literal notranslate"><span class="pre">Dim</span> <span class="pre">Order</span></code> to describe tensor’s memory format by returning a permutation of the dimensions, from the outermost to the innermost one.</p>
 <p>For example, for a tensor with memory format [N, C, H, W], or <a class="reference external" href="https://pytorch.org/blog/tensor-memory-format-matters/">contiguous</a> memory format, [0, 1, 2, 3] will be its dim order.</p>
 <p>Also, for a tensor with memory format [N, H, W, C], or <a class="reference external" href="https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html">channels_last memory format</a>, we return [0, 2, 3, 1] for its dim order.</p>
 <p>Currently ExecuTorch only supports dim order representation for <a class="reference external" href="https://pytorch.org/blog/tensor-memory-format-matters/">contiguous</a> and <a class="reference external" href="https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html">channels_last</a> memory format.</p>
-</div>
-<div class="section" id="dsp-digital-signal-processor">
-<h2>DSP (Digital Signal Processor)<a class="headerlink" href="#dsp-digital-signal-processor" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="dsp-digital-signal-processor">
+<h2>DSP (Digital Signal Processor)<a class="headerlink" href="#dsp-digital-signal-processor" title="Link to this heading">#</a></h2>
 <p>Specialized microprocessor chip with architecture optimized for digital signal processing.</p>
-</div>
-<div class="section" id="dtype">
-<h2>dtype<a class="headerlink" href="#dtype" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="dtype">
+<h2>dtype<a class="headerlink" href="#dtype" title="Link to this heading">#</a></h2>
 <p>Data type, the type of data (eg. float, integer, etc.) in a tensor.</p>
-</div>
-<div class="section" id="dynamic-quantization">
-<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Dynamic Quantization</a><a class="headerlink" href="#dynamic-quantization" title="Permalink to this heading">¶</a></h2>
-<p>A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to <a class="reference internal" href="#static-quantization"><span class="std std-doc">static quantization</span></a>, where tensors are quantized before inference.</p>
-</div>
-<div class="section" id="dynamic-shapes">
-<h2>Dynamic shapes<a class="headerlink" href="#dynamic-shapes" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="dynamic-quantization">
+<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Dynamic Quantization</a><a class="headerlink" href="#dynamic-quantization" title="Link to this heading">#</a></h2>
+<p>A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to <a class="reference internal" href="#static-quantization"><span class="std std-ref">static quantization</span></a>, where tensors are quantized before inference.</p>
+</section>
+<section id="dynamic-shapes">
+<h2>Dynamic shapes<a class="headerlink" href="#dynamic-shapes" title="Link to this heading">#</a></h2>
 <p>Refers to the ability of a model to accept inputs with varying shapes during inference. For example, the ATen op <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.unique_consecutive.html">unique_consecutive</a> and the custom op <a class="reference external" href="https://pytorch.org/vision/main/models/mask_rcnn.html">MaskRCNN</a> have data dependent output shapes. Such operators are difficult to do memory planning on, as each invocation may produce a different output shape even for the same input shape. To support dynamic shapes in ExecuTorch, kernels can allocate tensor data using the <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code> provided by the client.</p>
-</div>
-<div class="section" id="eager-mode">
-<h2>Eager mode<a class="headerlink" href="#eager-mode" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="eager-mode">
+<h2>Eager mode<a class="headerlink" href="#eager-mode" title="Link to this heading">#</a></h2>
 <p>Python execution environment where operators in a model are immediately executed as they are encountered. e.g. Jupyter / Colab notebooks are run in eager mode. This is in contrast to graph mode, where operators are first synthesized into a graph which is then compiled and executed.</p>
-</div>
-<div class="section" id="edge-dialect">
-<h2><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge Dialect</span></a><a class="headerlink" href="#edge-dialect" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="edge-dialect">
+<h2><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-ref">Edge Dialect</span></a><a class="headerlink" href="#edge-dialect" title="Link to this heading">#</a></h2>
 <p>A dialect of EXIR with the following properties:</p>
 <ul class="simple">
 <li><p>All operators are from a predefined operator set, called ‘Edge Operators’ or are registered custom operators.</p></li>
 <li><p>Input and output of the graph, and of each node, must be Tensor. All Scalar types are converted to Tensor.</p></li>
 </ul>
 <p>Edge dialect introduces specializations that are useful for Edge devices, but not necessarily for general (server) export. However, Edge dialect does not contain specializations for specific hardware besides those already present in the original Python program.</p>
-</div>
-<div class="section" id="edge-operator">
-<h2>Edge operator<a class="headerlink" href="#edge-operator" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="edge-operator">
+<h2>Edge operator<a class="headerlink" href="#edge-operator" title="Link to this heading">#</a></h2>
 <p>An ATen operator with a dtype specialization.</p>
-</div>
-<div class="section" id="executorch">
-<h2><a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch</a><a class="headerlink" href="#executorch" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="executorch">
+<h2><a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch</a><a class="headerlink" href="#executorch" title="Link to this heading">#</a></h2>
 <p>A unified ML software stack within the PyTorch Edge platform designed for efficient on-device inference. ExecuTorch defines a workflow to prepare (export and transform) and execute a PyTorch program on Edge devices such as mobile, wearables, and embedded devices.</p>
-</div>
-<div class="section" id="executorch-method">
-<h2>ExecuTorch Method<a class="headerlink" href="#executorch-method" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="executorch-method">
+<h2>ExecuTorch Method<a class="headerlink" href="#executorch-method" title="Link to this heading">#</a></h2>
 <p>The executable equivalent of an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> Python method. For example, the <code class="docutils literal notranslate"><span class="pre">forward()</span></code> Python method would compile into an ExecuTorch <code class="docutils literal notranslate"><span class="pre">Method</span></code>.</p>
-</div>
-<div class="section" id="executorch-program">
-<h2>ExecuTorch Program<a class="headerlink" href="#executorch-program" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="executorch-program">
+<h2>ExecuTorch Program<a class="headerlink" href="#executorch-program" title="Link to this heading">#</a></h2>
 <p>An ExecuTorch <code class="docutils literal notranslate"><span class="pre">Program</span></code> maps string names like <code class="docutils literal notranslate"><span class="pre">forward</span></code> to specific ExecuTorch <code class="docutils literal notranslate"><span class="pre">Method</span></code> entries.</p>
-</div>
-<div class="section" id="executor-runner">
-<h2>executor_runner<a class="headerlink" href="#executor-runner" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="executor-runner">
+<h2>executor_runner<a class="headerlink" href="#executor-runner" title="Link to this heading">#</a></h2>
 <p>A sample wrapper around the ExecuTorch runtime which includes all the operators and backends.</p>
-</div>
-<div class="section" id="exir">
-<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a><a class="headerlink" href="#exir" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="exir">
+<h2><a class="reference internal" href="ir-exir.html"><span class="std std-doc">EXIR</span></a><a class="headerlink" href="#exir" title="Link to this heading">#</a></h2>
 <p>The <strong>EX</strong>port <strong>I</strong>ntermediate <strong>R</strong>epresentation (IR) from <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>. Contains the computational graph of the model. All EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
-</div>
-<div class="section" id="exportedprogram">
-<h2><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code><a class="headerlink" href="#exportedprogram" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="exportedprogram">
+<h2><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code><a class="headerlink" href="#exportedprogram" title="Link to this heading">#</a></h2>
 <p>The output of <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> that bundles the computational graph of a PyTorch model (usually an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>) with the parameters or weights that the model consumes.</p>
-</div>
-<div class="section" id="flatbuffer">
-<h2><a class="reference external" href="https://github.com/google/flatbuffers">flatbuffer</a><a class="headerlink" href="#flatbuffer" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="flatbuffer">
+<h2><a class="reference external" href="https://github.com/google/flatbuffers">flatbuffer</a><a class="headerlink" href="#flatbuffer" title="Link to this heading">#</a></h2>
 <p>Memory efficient, cross platform serialization library. In the context of ExecuTorch, eager mode Pytorch models are exported to flatbuffer, which is the format consumed by the ExecuTorch runtime.</p>
-</div>
-<div class="section" id="framework-tax">
-<h2>Framework tax<a class="headerlink" href="#framework-tax" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="framework-tax">
+<h2>Framework tax<a class="headerlink" href="#framework-tax" title="Link to this heading">#</a></h2>
 <p>The cost of various loading and initialization tasks (not inference). For example; loading a program, initializing executor, kernel and backend-delegate dispatch, and runtime memory utilization.</p>
-</div>
-<div class="section" id="functional-aten-operators">
-<h2>Functional ATen operators<a class="headerlink" href="#functional-aten-operators" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="functional-aten-operators">
+<h2>Functional ATen operators<a class="headerlink" href="#functional-aten-operators" title="Link to this heading">#</a></h2>
 <p>ATen operators that do not have any side effects.</p>
-</div>
-<div class="section" id="graph">
-<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Graph</span></a><a class="headerlink" href="#graph" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="graph">
+<h2><a class="reference internal" href="ir-exir.html"><span class="std std-doc">Graph</span></a><a class="headerlink" href="#graph" title="Link to this heading">#</a></h2>
 <p>An EXIR Graph is a PyTorch program represented in the form of a DAG (directed acyclic graph). Each node in the graph represents a particular computation or operation, and edges of this graph consist of references between nodes. Note: all EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
-</div>
-<div class="section" id="graph-mode">
-<h2>Graph mode<a class="headerlink" href="#graph-mode" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="graph-mode">
+<h2>Graph mode<a class="headerlink" href="#graph-mode" title="Link to this heading">#</a></h2>
 <p>In graph mode, operators are first synthesized into a graph, which will then be compiled and executed as a whole. This is in contrast to eager mode, where operators are executed as they are encountered. Graph mode typically delivers higher performance as it allows optimizations such as operator fusion.</p>
-</div>
-<div class="section" id="higher-order-operators">
-<h2>Higher Order Operators<a class="headerlink" href="#higher-order-operators" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="higher-order-operators">
+<h2>Higher Order Operators<a class="headerlink" href="#higher-order-operators" title="Link to this heading">#</a></h2>
 <p>A higher order operator (HOP) is an operator that:</p>
 <ul class="simple">
 <li><p>either accepts a Python function as input, returns a Python function as output, or both.</p></li>
 <li><p>like all PyTorch operators, higher-order operators also have an optional implementation for backends and functionalities. This lets us e.g. register an autograd formula for the higher-order operator or define how the higher-order operator behaves under ProxyTensor tracing.</p></li>
 </ul>
-</div>
-<div class="section" id="hybrid-quantization">
-<h2>Hybrid Quantization<a class="headerlink" href="#hybrid-quantization" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="hybrid-quantization">
+<h2>Hybrid Quantization<a class="headerlink" href="#hybrid-quantization" title="Link to this heading">#</a></h2>
 <p>A quantization technique where different parts of the model are quantized with different techniques based on computational complexity and sensitivity to accuracy loss. Some parts of the model may not be quantized to retain accuracy.</p>
-</div>
-<div class="section" id="intermediate-representation-ir">
-<h2>Intermediate Representation (IR)<a class="headerlink" href="#intermediate-representation-ir" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="intermediate-representation-ir">
+<h2>Intermediate Representation (IR)<a class="headerlink" href="#intermediate-representation-ir" title="Link to this heading">#</a></h2>
 <p>A representation of a program between the source and target languages. Generally, it is a data structure used internally by a compiler or virtual machine to represent source code.</p>
-</div>
-<div class="section" id="kernel">
-<h2>Kernel<a class="headerlink" href="#kernel" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="kernel">
+<h2>Kernel<a class="headerlink" href="#kernel" title="Link to this heading">#</a></h2>
 <p>An implementation of an operator. There can be multiple implementations of an operator for different backends/inputs/etc.</p>
-</div>
-<div class="section" id="kernel-registry-operator-registry">
-<h2>Kernel registry / Operator registry<a class="headerlink" href="#kernel-registry-operator-registry" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="kernel-registry-operator-registry">
+<h2>Kernel registry / Operator registry<a class="headerlink" href="#kernel-registry-operator-registry" title="Link to this heading">#</a></h2>
 <p>A table with mappings between kernel names and their implementations. This allows the ExecuTorch runtime to resolve references to kernels during execution.</p>
-</div>
-<div class="section" id="lowering">
-<h2>Lowering<a class="headerlink" href="#lowering" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="lowering">
+<h2>Lowering<a class="headerlink" href="#lowering" title="Link to this heading">#</a></h2>
 <p>The process of transforming a model to run on various backends. It is called ‘lowering’ as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation.</p>
-</div>
-<div class="section" id="memory-planning">
-<h2><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory planning</span></a><a class="headerlink" href="#memory-planning" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="memory-planning">
+<h2><a class="reference internal" href="compiler-memory-planning.html"><span class="std std-doc">Memory planning</span></a><a class="headerlink" href="#memory-planning" title="Link to this heading">#</a></h2>
 <p>The process of allocating and managing memory for a model. In ExecuTorch, a memory planning pass is run before the graph is saved to flatbuffer. This assigns a memory ID to each tensor and an offset in the buffer, marking where storage for the tensor starts.</p>
-</div>
-<div class="section" id="node">
-<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Node</span></a><a class="headerlink" href="#node" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="node">
+<h2><a class="reference internal" href="ir-exir.html"><span class="std std-doc">Node</span></a><a class="headerlink" href="#node" title="Link to this heading">#</a></h2>
 <p>A node in an EXIR graph represents a particular computation or operation, and is represented in Python using <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Node">torch.fx.Node</a> class.</p>
-</div>
-<div class="section" id="operator">
-<h2>Operator<a class="headerlink" href="#operator" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="operator">
+<h2>Operator<a class="headerlink" href="#operator" title="Link to this heading">#</a></h2>
 <p>Function on tensors. This is the abstraction; kernels are the implementation. There can be varying implementations for different backends/inputs/etc.</p>
-</div>
-<div class="section" id="operator-fusion">
-<h2>Operator fusion<a class="headerlink" href="#operator-fusion" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="operator-fusion">
+<h2>Operator fusion<a class="headerlink" href="#operator-fusion" title="Link to this heading">#</a></h2>
 <p>Operator fusion is the process of combining multiple operators into a single compound operator, resulting in faster computation due to fewer kernel launches and fewer memory read/writes. This is a performance advantage of graph mode vs eager mode.</p>
-</div>
-<div class="section" id="out-variant">
-<h2>Out variant<a class="headerlink" href="#out-variant" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="out-variant">
+<h2>Out variant<a class="headerlink" href="#out-variant" title="Link to this heading">#</a></h2>
 <p>Instead of allocating returned tensors in kernel implementations, an operator’s out variant will take in a pre-allocated tensor to its out kwarg, and store the result there.</p>
 <p>This makes it easier for memory planners to perform tensor lifetime analysis. In ExecuTorch, an out variant pass is performed before memory planning.</p>
-</div>
-<div class="section" id="pal-platform-abstraction-layer">
-<h2><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">PAL (Platform Abstraction Layer)</span></a><a class="headerlink" href="#pal-platform-abstraction-layer" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="pal-platform-abstraction-layer">
+<h2><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="std std-doc">PAL (Platform Abstraction Layer)</span></a><a class="headerlink" href="#pal-platform-abstraction-layer" title="Link to this heading">#</a></h2>
 <p>Provides a way for execution environments to override operations such as;</p>
 <ul class="simple">
 <li><p>Getting the current time.</p></li>
@@ -746,25 +1425,25 @@
 <li><p>Panicking the process/system.
 The default PAL implementation can be overridden if it doesn’t work for a particular client system.</p></li>
 </ul>
-</div>
-<div class="section" id="partial-kernels">
-<h2>Partial kernels<a class="headerlink" href="#partial-kernels" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="partial-kernels">
+<h2>Partial kernels<a class="headerlink" href="#partial-kernels" title="Link to this heading">#</a></h2>
 <p>Kernels that support a subset of tensor dtypes and/or dim orders.</p>
-</div>
-<div class="section" id="partitioner">
-<h2><a class="reference internal" href="compiler-custom-compiler-passes.html#partitioner"><span class="std std-ref">Partitioner</span></a><a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="partitioner">
+<h2><a class="reference internal" href="compiler-custom-compiler-passes.html#Partitioner"><span class="std std-ref">Partitioner</span></a><a class="headerlink" href="#partitioner" title="Link to this heading">#</a></h2>
 <p>Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.</p>
-</div>
-<div class="section" id="etensor-mode">
-<h2>ETensor mode<a class="headerlink" href="#etensor-mode" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="etensor-mode">
+<h2>ETensor mode<a class="headerlink" href="#etensor-mode" title="Link to this heading">#</a></h2>
 <p>ETensor mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch::runtime::etensor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
 <li><p>ETensor does not own or allocate memory on its own. To support dynamic shapes, kernels can allocate Tensor data using the MemoryAllocator provided by the client.</p></li>
 </ul>
-</div>
-<div class="section" id="portable-kernels">
-<h2>Portable kernels<a class="headerlink" href="#portable-kernels" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="portable-kernels">
+<h2>Portable kernels<a class="headerlink" href="#portable-kernels" title="Link to this heading">#</a></h2>
 <p>Portable kernels are operator implementations that are written to be compatible with ETensor. As ETensor is compatible with <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>, portable kernels can be built against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> and used in the same model as ATen kernels. Portable kernels are:</p>
 <ul class="simple">
 <li><p>Compatible with ATen operator signatures</p></li>
@@ -773,533 +1452,489 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><p>Generally smaller in size than ATen kernels</p></li>
 <li><p>Written to avoid dynamically allocating memory using new/malloc.</p></li>
 </ul>
-</div>
-<div class="section" id="program">
-<h2>Program<a class="headerlink" href="#program" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="program">
+<h2>Program<a class="headerlink" href="#program" title="Link to this heading">#</a></h2>
 <p>The set of codes and data to describe an ML model.</p>
-</div>
-<div class="section" id="program-source-code">
-<h2>Program source code<a class="headerlink" href="#program-source-code" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="program-source-code">
+<h2>Program source code<a class="headerlink" href="#program-source-code" title="Link to this heading">#</a></h2>
 <p>The Python source code to describe the program. It can be a Python function, or a method in PyTorch’s eager mode <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
-</div>
-<div class="section" id="ptq-post-training-quantization">
-<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PTQ (Post Training Quantization)</a><a class="headerlink" href="#ptq-post-training-quantization" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="ptq-post-training-quantization">
+<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PTQ (Post Training Quantization)</a><a class="headerlink" href="#ptq-post-training-quantization" title="Link to this heading">#</a></h2>
 <p>A quantization technique where the model is quantized after it has been trained (usually for performance benefits). PTQ applies the quantization flow after training, in contrast to QAT which applies it during training.</p>
-</div>
-<div class="section" id="qat-quantization-aware-training">
-<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html">QAT (Quantization Aware Training)</a><a class="headerlink" href="#qat-quantization-aware-training" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="qat-quantization-aware-training">
+<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html">QAT (Quantization Aware Training)</a><a class="headerlink" href="#qat-quantization-aware-training" title="Link to this heading">#</a></h2>
 <p>Models may lose accuracy after quantization. QAT enables higher accuracy compared to eg. PTQ, by modeling the effects of quantization while training. During training, all weights and activations are ‘fake quantized’; float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all weight adjustments during training are made ‘aware’ that the model will ultimately be quantized. QAT applies the quantization flow during training, in contrast to PTQ which applies it afterwards.</p>
-</div>
-<div class="section" id="quantization">
-<h2><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization</span></a><a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="quantization">
+<h2><a class="reference internal" href="quantization-overview.html"><span class="std std-doc">Quantization</span></a><a class="headerlink" href="#quantization" title="Link to this heading">#</a></h2>
 <p>Techniques for performing computations and memory accesses on tensors with lower precision data, usually <code class="docutils literal notranslate"><span class="pre">int8</span></code>. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. <code class="docutils literal notranslate"><span class="pre">int8</span></code> matmul vs <code class="docutils literal notranslate"><span class="pre">fp32</span></code> matmul. Often, quantization comes at the cost of model accuracy.</p>
-</div>
-<div class="section" id="runtime">
-<h2><a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime</span></a><a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="runtime">
+<h2><a class="reference internal" href="runtime-overview.html"><span class="std std-doc">Runtime</span></a><a class="headerlink" href="#runtime" title="Link to this heading">#</a></h2>
 <p>The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).</p>
-</div>
-<div class="section" id="developer-tools">
-<h2><a class="reference internal" href="devtools-overview.html"><span class="doc std std-doc">Developer Tools</span></a><a class="headerlink" href="#developer-tools" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="developer-tools">
+<h2><a class="reference internal" href="devtools-overview.html"><span class="std std-doc">Developer Tools</span></a><a class="headerlink" href="#developer-tools" title="Link to this heading">#</a></h2>
 <p>A collection of tools users need to profile, debug and visualize programs that are running with ExecuTorch.</p>
-</div>
-<div class="section" id="selective-build">
-<h2><a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">Selective build</span></a><a class="headerlink" href="#selective-build" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="selective-build">
+<h2><a class="reference internal" href="kernel-library-selective-build.html"><span class="std std-doc">Selective build</span></a><a class="headerlink" href="#selective-build" title="Link to this heading">#</a></h2>
 <p>An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings.</p>
-</div>
-<div class="section" id="static-quantization">
-<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Static Quantization</a><a class="headerlink" href="#static-quantization" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="static-quantization">
+<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Static Quantization</a><a class="headerlink" href="#static-quantization" title="Link to this heading">#</a></h2>
 <p>A method of quantizing wherein tensors are statically quantized. That is, floats are converted to a reduced-precision data type before inference.</p>
-</div>
-<div class="section" id="xnnpack">
-<h2><a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a><a class="headerlink" href="#xnnpack" title="Permalink to this heading">¶</a></h2>
+</section>
+<section id="xnnpack">
+<h2><a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a><a class="headerlink" href="#xnnpack" title="Link to this heading">#</a></h2>
 <p>An optimized library of neural network interface operators for ARM, x86, WebAssembly, and RISC-V platforms. It is an open-source project and used by PyTorch and ExecuTorch. It is a successor to the QNNPack library. The operators support both floating point and quantized values.</p>
-</div>
-</div>
+</section>
+</section>
 
 
-             </article>
-             
-            </div>
-            <footer>
+                </article>
+              
+  </article>
   
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="getting-started.html" class="btn btn-neutral float-right" title="Getting Started with ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="getting-started-architecture.html" class="btn btn-neutral" title="Architecture and Components" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
+              
+              
+                <footer class="bd-footer-article">
+                  <div class="footer-article-items footer-article__inner">
+  
+    <div class="footer-article-item">
+<div class="feedback">
+  
+<div class="rating">
+    Rate this Page
+    <div class="stars">
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="1" data-value="1">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="2" data-value="2">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="3" data-value="3">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="4" data-value="4">★</span>
+        
+        <span class="star" data-behavior="tutorial-rating" data-count="5" data-value="5">★</span>
+        
     </div>
-  
+</div>
 
-  
-
-    <hr>
-
-  
-
-  <div role="contentinfo">
-    <p>
-        &copy; Copyright 2024, ExecuTorch.
-
-    </p>
+  <div class="feedback-send">
+    <button class="feedback-btn"
+            onclick="openGitHubIssue()"
+            data-bs-title="Create a GitHub Issue"
+            data-bs-placement="bottom"
+            data-bs-toggle="tooltip"
+            data-gtm="feedback-btn-click">Send Feedback
+    </button>
   </div>
-    
-      <div>
-        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</div>
+
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="getting-started-architecture.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Architecture and Components</p>
       </div>
-     
+    </a>
+    <a class="right-next"
+       href="usage.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Usage</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
 
-</footer>
+<div class="footer-info">
+  <p class="copyright">
+    
+      
+        © Copyright 2024, ExecuTorch.
+      
+      <br/>
+    
+  </p>
 
-          </div>
-
-
-        </div>
-
-        <div class="pytorch-content-right" id="pytorch-content-right">
-          <div class="pytorch-right-menu" id="pytorch-right-menu">
-            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
-              <ul>
-<li><a class="reference internal" href="#">Concepts</a><ul>
-<li><a class="reference internal" href="#concepts-map">Concepts Map</a></li>
-<li><a class="reference internal" href="#aot-ahead-of-time"><span class="xref myst">AOT (Ahead of Time)</span></a></li>
-<li><a class="reference internal" href="#aten">ATen</a></li>
-<li><a class="reference internal" href="#aten-dialect"><span class="xref myst">ATen Dialect</span></a></li>
-<li><a class="reference internal" href="#aten-mode">ATen mode</a></li>
-<li><a class="reference internal" href="#autograd-safe-aten-dialect">Autograd safe ATen Dialect</a></li>
-<li><a class="reference internal" href="#backend">Backend</a></li>
-<li><a class="reference internal" href="#backend-dialect"><span class="xref myst">Backend Dialect</span></a></li>
-<li><a class="reference internal" href="#backend-registry">Backend registry</a></li>
-<li><a class="reference internal" href="#backend-specific-operator">Backend Specific Operator</a></li>
-<li><a class="reference internal" href="#buck2">Buck2</a></li>
-<li><a class="reference internal" href="#cmake">CMake</a></li>
-<li><a class="reference internal" href="#codegen">Codegen</a></li>
-<li><a class="reference internal" href="#core-aten-dialect">Core ATen Dialect</a></li>
-<li><a class="reference internal" href="#core-aten-operators-canonical-aten-operator-set"><span class="xref myst">Core ATen operators / Canonical ATen operator set</span></a></li>
-<li><a class="reference internal" href="#core-aten-decomposition-table">Core ATen Decomposition Table</a></li>
-<li><a class="reference internal" href="#custom-operator">Custom operator</a></li>
-<li><a class="reference internal" href="#dataloader">DataLoader</a></li>
-<li><a class="reference internal" href="#delegation"><span class="xref myst">Delegation</span></a></li>
-<li><a class="reference internal" href="#dim-order">Dim Order</a></li>
-<li><a class="reference internal" href="#dsp-digital-signal-processor">DSP (Digital Signal Processor)</a></li>
-<li><a class="reference internal" href="#dtype">dtype</a></li>
-<li><a class="reference internal" href="#dynamic-quantization">Dynamic Quantization</a></li>
-<li><a class="reference internal" href="#dynamic-shapes">Dynamic shapes</a></li>
-<li><a class="reference internal" href="#eager-mode">Eager mode</a></li>
-<li><a class="reference internal" href="#edge-dialect"><span class="xref myst">Edge Dialect</span></a></li>
-<li><a class="reference internal" href="#edge-operator">Edge operator</a></li>
-<li><a class="reference internal" href="#executorch">ExecuTorch</a></li>
-<li><a class="reference internal" href="#executorch-method">ExecuTorch Method</a></li>
-<li><a class="reference internal" href="#executorch-program">ExecuTorch Program</a></li>
-<li><a class="reference internal" href="#executor-runner">executor_runner</a></li>
-<li><a class="reference internal" href="#exir"><span class="xref myst">EXIR</span></a></li>
-<li><a class="reference internal" href="#exportedprogram"><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code></a></li>
-<li><a class="reference internal" href="#flatbuffer">flatbuffer</a></li>
-<li><a class="reference internal" href="#framework-tax">Framework tax</a></li>
-<li><a class="reference internal" href="#functional-aten-operators">Functional ATen operators</a></li>
-<li><a class="reference internal" href="#graph"><span class="xref myst">Graph</span></a></li>
-<li><a class="reference internal" href="#graph-mode">Graph mode</a></li>
-<li><a class="reference internal" href="#higher-order-operators">Higher Order Operators</a></li>
-<li><a class="reference internal" href="#hybrid-quantization">Hybrid Quantization</a></li>
-<li><a class="reference internal" href="#intermediate-representation-ir">Intermediate Representation (IR)</a></li>
-<li><a class="reference internal" href="#kernel">Kernel</a></li>
-<li><a class="reference internal" href="#kernel-registry-operator-registry">Kernel registry / Operator registry</a></li>
-<li><a class="reference internal" href="#lowering">Lowering</a></li>
-<li><a class="reference internal" href="#memory-planning"><span class="xref myst">Memory planning</span></a></li>
-<li><a class="reference internal" href="#node"><span class="xref myst">Node</span></a></li>
-<li><a class="reference internal" href="#operator">Operator</a></li>
-<li><a class="reference internal" href="#operator-fusion">Operator fusion</a></li>
-<li><a class="reference internal" href="#out-variant">Out variant</a></li>
-<li><a class="reference internal" href="#pal-platform-abstraction-layer"><span class="xref myst">PAL (Platform Abstraction Layer)</span></a></li>
-<li><a class="reference internal" href="#partial-kernels">Partial kernels</a></li>
-<li><a class="reference internal" href="#partitioner"><span class="xref myst">Partitioner</span></a></li>
-<li><a class="reference internal" href="#etensor-mode">ETensor mode</a></li>
-<li><a class="reference internal" href="#portable-kernels">Portable kernels</a></li>
-<li><a class="reference internal" href="#program">Program</a></li>
-<li><a class="reference internal" href="#program-source-code">Program source code</a></li>
-<li><a class="reference internal" href="#ptq-post-training-quantization">PTQ (Post Training Quantization)</a></li>
-<li><a class="reference internal" href="#qat-quantization-aware-training">QAT (Quantization Aware Training)</a></li>
-<li><a class="reference internal" href="#quantization"><span class="xref myst">Quantization</span></a></li>
-<li><a class="reference internal" href="#runtime"><span class="xref myst">Runtime</span></a></li>
-<li><a class="reference internal" href="#developer-tools"><span class="xref myst">Developer Tools</span></a></li>
-<li><a class="reference internal" href="#selective-build"><span class="xref myst">Selective build</span></a></li>
-<li><a class="reference internal" href="#static-quantization">Static Quantization</a></li>
-<li><a class="reference internal" href="#xnnpack">XNNPACK</a></li>
-</ul>
-</li>
-</ul>
-
+  <p class="theme-version">
+    Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+  </p>
+</div>
+</div>
+  
+</div>
+                </footer>
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="getting-started-architecture.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Architecture and Components</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="usage.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Usage</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
             </div>
-          </div>
-        </div>
-      </section>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc">
+<div class="sidebar-secondary-items sidebar-secondary__inner">
+    
+       <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#concepts-map">Concepts Map</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#aot-ahead-of-time"><span class="xref myst">AOT (Ahead of Time)</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#aten">ATen</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#aten-dialect"><span class="xref myst">ATen Dialect</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#aten-mode">ATen mode</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#autograd-safe-aten-dialect">Autograd safe ATen Dialect</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#backend">Backend</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#backend-dialect"><span class="xref myst">Backend Dialect</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#backend-registry">Backend registry</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#backend-specific-operator">Backend Specific Operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#buck2">Buck2</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#cmake">CMake</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#codegen">Codegen</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#core-aten-dialect">Core ATen Dialect</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#core-aten-operators-canonical-aten-operator-set"><span class="xref myst">Core ATen operators / Canonical ATen operator set</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#core-aten-decomposition-table">Core ATen Decomposition Table</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#custom-operator">Custom operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dataloader">DataLoader</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#delegation"><span class="xref myst">Delegation</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dim-order">Dim Order</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dsp-digital-signal-processor">DSP (Digital Signal Processor)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dtype">dtype</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dynamic-quantization">Dynamic Quantization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dynamic-shapes">Dynamic shapes</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#eager-mode">Eager mode</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#edge-dialect"><span class="xref myst">Edge Dialect</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#edge-operator">Edge operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch">ExecuTorch</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch-method">ExecuTorch Method</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch-program">ExecuTorch Program</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#executor-runner">executor_runner</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#exir"><span class="xref myst">EXIR</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#exportedprogram"><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#flatbuffer">flatbuffer</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#framework-tax">Framework tax</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#functional-aten-operators">Functional ATen operators</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#graph"><span class="xref myst">Graph</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#graph-mode">Graph mode</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#higher-order-operators">Higher Order Operators</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#hybrid-quantization">Hybrid Quantization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#intermediate-representation-ir">Intermediate Representation (IR)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#kernel">Kernel</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#kernel-registry-operator-registry">Kernel registry / Operator registry</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lowering">Lowering</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#memory-planning"><span class="xref myst">Memory planning</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#node"><span class="xref myst">Node</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#operator">Operator</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#operator-fusion">Operator fusion</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#out-variant">Out variant</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pal-platform-abstraction-layer"><span class="xref myst">PAL (Platform Abstraction Layer)</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#partial-kernels">Partial kernels</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#partitioner"><span class="xref myst">Partitioner</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#etensor-mode">ETensor mode</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#portable-kernels">Portable kernels</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#program">Program</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#program-source-code">Program source code</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#ptq-post-training-quantization">PTQ (Post Training Quantization)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#qat-quantization-aware-training">QAT (Quantization Aware Training)</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#quantization"><span class="xref myst">Quantization</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#runtime"><span class="xref myst">Runtime</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#developer-tools"><span class="xref myst">Developer Tools</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#selective-build"><span class="xref myst">Selective build</span></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#static-quantization">Static Quantization</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#xnnpack">XNNPACK</a></li>
+</ul>
+  </nav></div>
+    
+       <div class="sidebar-secondary-item">
+
+  
+  <div class="tocsection editthispage">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/concepts.md">
+      <i class="fa-solid fa-pencil"></i>
+      
+      
+        
+          Edit on GitHub
+        
+      
+    </a>
+  </div>
+</div>
+    
+       <div class="sidebar-secondary-item">
+    <div class="tocsection sourcelink">
+      <a href="_sources/concepts.md.txt">
+        <i class="fa-solid fa-file-lines"></i> Show Source
+      </a>
     </div>
+</div>
+    
 
+
+
+
+</div>
+</div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
   
-
-
-  
-
-     
-       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
-         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
-         <script src="_static/jquery.js"></script>
-         <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
-         <script src="_static/doctools.js"></script>
-         <script src="_static/sphinx_highlight.js"></script>
-         <script src="_static/clipboard.min.js"></script>
-         <script src="_static/copybutton.js"></script>
-         <script src="_static/design-tabs.js"></script>
-         <script src="_static/js/progress-bar.js"></script>
-     
-
-  
-
-  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
-  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
-  <script type="text/javascript" src="_static/js/theme.js"></script>
-
-  <script type="text/javascript">
-      jQuery(function () {
-          SphinxRtdTheme.Navigation.enable(false);
-      });
-  </script>
- 
-<script script type="text/javascript">
-  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
-</script>
-
- 
-<script type="text/javascript">
-// Handle the right navigation in third level pages. Without this
-// in third level, only the last item always selected. This is a hacky
-// way and we should revise it eventually.
-// #side-scroll-highlight is disabled in .css.
-// Get all menu items
-var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
-// Add a click event listener to each menu item
-for (var i = 0; i < menuItems.length; i++) {
-  menuItems[i].addEventListener('click', function(event) {
-    // Remove the 'side-scroll-highlight-local' class from all menu items
-    for (var j = 0; j < menuItems.length; j++) {
-      menuItems[j].classList.remove('side-scroll-highlight-local');
-    }
-    // Add the 'side-scroll-highlight-local' class to the clicked item
-    event.target.classList.add('side-scroll-highlight-local');
-  });
-}
-</script>
-
- 
-<script type="text/javascript">
-  $(document).ready(function () {
-    // Patch links on interactive tutorial pages to point
-    // to the correct ExecuTorch URLs.
-    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
-    if (downloadNote.length >= 1) {
-      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
-      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
-        notebookLink = $(".reference.download")[1].href,
-        notebookDownloadPath = notebookLink.split('_downloads')[1],
-        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
-
-      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
-      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
-    }
-
-    // Patch the "GitHub" link at the top of the page
-    // to point to the ExecuTorch repo.
-    var overwrite = function (_) {
-      if ($(this).length > 0) {
-        $(this)[0].href = "https://github.com/pytorch/executorch"
-      }
-    }
-    // PC
-    $(".main-menu a:contains('GitHub')").each(overwrite);
-    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
-    // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
-    // Mobile
-    $(".mobile-menu a:contains('Github')").each(overwrite);
-    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
-    // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/main/index#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/main/getting-started-setup");
-
-  });
-</script>
-
-
-  <!-- Begin Footer -->
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
 
   <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
-    <div class="container">
-      <div class="row">
-        <div class="col-md-4 text-center">
-          <h2>Docs</h2>
-          <p>Access comprehensive developer documentation for PyTorch</p>
-          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
-        </div>
+  <div class="container">
+    <div class="row">
+      <div class="col-md-4">
+        <h2>Docs</h2>
+        <p>Access comprehensive developer documentation for PyTorch</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/docs/stable/index.html">View Docs</a>
+      </div>
 
-        <div class="col-md-4 text-center">
-          <h2>Tutorials</h2>
-          <p>Get in-depth tutorials for beginners and advanced developers</p>
-          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
-        </div>
+      <div class="col-md-4">
+        <h2>Tutorials</h2>
+        <p>Get in-depth tutorials for beginners and advanced developers</p>
+        <a class="with-right-arrow" href="https://docs.pytorch.org/tutorials">View Tutorials</a>
+      </div>
 
-        <div class="col-md-4 text-center">
-          <h2>Resources</h2>
-          <p>Find development resources and get your questions answered</p>
-          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
-        </div>
+      <div class="col-md-4">
+        <h2>Resources</h2>
+        <p>Find development resources and get your questions answered</p>
+        <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
       </div>
     </div>
-  </div>
-
-  <footer class="site-footer">
-    <div class="container footer-container">
-      <div class="footer-logo-wrapper">
-        <a href="https://pytorch.org/" class="footer-logo"></a>
-      </div>
-
-      <div class="footer-links-wrapper">
-        <div class="footer-links-col">
-          <ul>
-            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
-            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
-            <li><a href="https://pytorch.org/features">Features</a></li>
-            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
-            <li><a href="https://pytorch.org/blog/">Blog</a></li>
-            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-links-col">
-          <ul>
-            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
-            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
-            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
-            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
-            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
-            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
-          </ul>
-        </div>
-
-        <div class="footer-links-col">
-          <ul>
-            <li class="list-title">Stay up to date</li>
-            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
-            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
-            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
-            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
-          </ul>  
-          </div>
-
-        <div class="footer-links-col">
-          <ul>
-            <li class="list-title">PyTorch Podcasts</li>
-            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
-            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
-            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
-            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
-          </ul>
-         </div>
-        </div>
-        
-        <div class="privacy-policy">
-          <ul>
-            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
-            <li class="privacy-policy-links">|</li>
-            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
-          </ul>
-        </div>
-        <div class="copyright">
-        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
-          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
-          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
-          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
-          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
-      </div>
-     </div>
-
-  </footer>
-
-  <div class="cookie-banner-wrapper">
-  <div class="container">
-    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/images/pytorch-x.svg">
   </div>
 </div>
 
-  <!-- End Footer -->
+<footer class="site-footer">
+  <div class="container footer-container">
 
-  <!-- Begin Mobile Menu -->
+    
+    <div class="newsletter" id="newsletter">
 
-  <div class="mobile-main-menu">
-    <div class="container-fluid">
-      <div class="container">
-        <div class="mobile-main-menu-header-container">
-          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
-          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
-        </div>
+      <p class="newsletter__title is-style-max-width-800"><strong>Stay in touch</strong> for updates, event info, and
+        the latest news</p>
+
+
+      <script charset="utf-8" type="text/javascript" src="//js.hsforms.net/forms/embed/v2.js"></script>
+      <script>
+        hbspt.forms.create({
+          region: "na1",
+          portalId: "8112310",
+          formId: "2fb2231c-000b-4ec5-88a0-1ab242549c9e"
+        });
+      </script>
+
+
+      <p class="newsletter__privacy">By submitting this form, I consent to receive marketing emails from the LF and its
+        projects regarding their events, training, research, developments, and related announcements. I understand that
+        I can unsubscribe at any time using the links in the footers of the emails I receive. <a
+          href="https://www.linuxfoundation.org/privacy/">Privacy Policy</a>.</p>
+
+    </div>
+    
+
+    <div class="lf-grid">
+      <ul class="social-links">
+        <li><a href="https://www.facebook.com/pytorch" target="_blank" title="PyTorch on Facebook">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-0.51 -0.26 26.45 26.45" aria-label="Facebook">
+              <path fill="currentColor"
+                d="M25.497 13.075c0-2.45-.698-4.848-2.011-6.911a12.765 12.765 0 0 0-5.398-4.73A12.671 12.671 0 0 0 11.008.38a12.705 12.705 0 0 0-6.529 2.95A12.827 12.827 0 0 0 .563 9.358a12.896 12.896 0 0 0-.07 7.201 12.831 12.831 0 0 0 3.801 6.103 12.709 12.709 0 0 0 6.471 3.078v-8.957H7.53v-3.708h3.235v-2.824c0-3.213 1.903-4.988 4.813-4.988.956.014 1.909.097 2.852.25V8.67h-1.607a1.83 1.83 0 0 0-1.518.497 1.854 1.854 0 0 0-.561 1.505v2.404h3.535l-.563 3.708h-2.97v8.957a12.725 12.725 0 0 0 7.697-4.337 12.87 12.87 0 0 0 3.054-8.328z" />
+            </svg>
+          </a></li>
+        <li><a href="https://twitter.com/pytorch" target="_blank" title="PyTorch on X">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 300 300" aria-label="X">
+              <path fill="currentColor"
+                d="M178.57 127.15 290.27 0h-26.46l-97.03 110.38L89.34 0H0l117.13 166.93L0 300.25h26.46l102.4-116.59 81.8 116.59h89.34M36.01 19.54H76.66l187.13 262.13h-40.66" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.youtube.com/pytorch" target="_blank" title="PyTorch on YouTube">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="0.21 0.27 34.45 25.07" aria-label="YouTube">
+              <path fill="currentColor"
+                d="M33.729 6.084s-.327-2.33-1.317-3.356a4.691 4.691 0 0 0-3.32-1.432c-4.634-.34-11.589-.34-11.589-.34h-.014s-6.954 0-11.59.342a4.692 4.692 0 0 0-3.32 1.432c-.993 1.025-1.315 3.354-1.315 3.354a52.189 52.189 0 0 0-.331 5.473v2.566c.014 1.829.125 3.656.331 5.472 0 0 .322 2.33 1.316 3.36 1.26 1.345 2.916 1.3 3.653 1.445 2.65.26 11.263.34 11.263.34s6.96-.01 11.597-.353a4.691 4.691 0 0 0 3.32-1.432c.993-1.026 1.316-3.356 1.316-3.356.206-1.817.316-3.644.33-5.473v-2.57a52.26 52.26 0 0 0-.33-5.472zM14.076 17.232V7.729l8.951 4.768-8.95 4.735z" />
+            </svg>
+          </a></li>
+        <li><a href="https://www.linkedin.com/company/pytorch" target="_blank" title="PyTorch on LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewbox="-10.23 -10.23 531.96 531.96" aria-label="LinkedIn">
+              <rect width="512" height="512" rx="0" fill="currentColor" />
+              <circle fill="#000" cx="142" cy="138" r="37" />
+              <path stroke="#000" stroke-width="66" d="M244 194v198M142 194v198" />
+              <path fill="#000"
+                d="M276 282c0-20 13-40 36-40 24 0 33 18 33 45v105h66V279c0-61-32-89-76-89-34 0-51 19-59 32" />
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.slack.com" target="_blank" title="PyTorch Slack">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.16 -0.03 21.19 21.19" aria-label="Slack">
+              <path fill="currentColor"
+                d="M4.896 13.27a2.147 2.147 0 0 1-2.141 2.142A2.147 2.147 0 0 1 .613 13.27c0-1.178.963-2.141 2.142-2.141h2.141v2.141zm1.08 0c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.363a2.147 2.147 0 0 1-2.142 2.141 2.147 2.147 0 0 1-2.141-2.142V13.27zm2.141-8.6a2.147 2.147 0 0 1-2.141-2.14c0-1.18.962-2.142 2.141-2.142s2.142.963 2.142 2.141v2.142H8.117zm0 1.08c1.179 0 2.141.962 2.141 2.141a2.147 2.147 0 0 1-2.141 2.142H2.755A2.147 2.147 0 0 1 .613 7.89c0-1.179.963-2.141 2.142-2.141h5.362zm8.599 2.141c0-1.179.963-2.141 2.141-2.141 1.179 0 2.143.962 2.143 2.14a2.147 2.147 0 0 1-2.142 2.142h-2.141V7.89zm-1.08 0a2.147 2.147 0 0 1-2.141 2.142 2.147 2.147 0 0 1-2.141-2.142V2.53c0-1.178.962-2.141 2.141-2.141s2.142.963 2.142 2.141v5.362zm-2.141 8.6c1.179 0 2.142.962 2.142 2.14a2.147 2.147 0 0 1-2.142 2.142 2.147 2.147 0 0 1-2.141-2.141V16.49h2.141zm0-1.08a2.147 2.147 0 0 1-2.141-2.141c0-1.179.962-2.142 2.141-2.142h5.362c1.179 0 2.142.963 2.142 2.142a2.147 2.147 0 0 1-2.142 2.142h-5.362z">
+              </path>
+            </svg>
+          </a></li>
+        <li><a href="https://pytorch.org/wechat" title="PyTorch on WeChat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.14 -0.17 38.02 33.02" aria-label="WeChat">
+              <path fill="currentColor"
+                d="M26.289 10.976a12.972 12.972 0 0 0-8.742 3.53 10.386 10.386 0 0 0-3.224 8.795c-1.326-.164-2.535-.345-3.75-.448a2.332 2.332 0 0 0-1.273.216c-1.18.666-2.311 1.418-3.652 2.255.246-1.112.405-2.087.687-3.024a1.15 1.15 0 0 0-.523-1.52C1.737 17.902.02 13.601 1.307 9.165c1.189-4.1 4.11-6.587 8.077-7.884A13.54 13.54 0 0 1 24.18 5.617a10.135 10.135 0 0 1 2.109 5.359zM10.668 9.594a1.564 1.564 0 0 0-2.095-1.472 1.52 1.52 0 0 0-.895 1.964 1.502 1.502 0 0 0 1.391.966 1.545 1.545 0 0 0 1.598-1.46v.002zm8.15-1.566a1.567 1.567 0 0 0-1.528 1.543 1.528 1.528 0 0 0 1.571 1.492 1.52 1.52 0 0 0 1.375-2.117 1.518 1.518 0 0 0-1.415-.919l-.003.001z">
+              </path>
+              <path fill="currentColor"
+                d="M33.914 32.137c-1.075-.478-2.062-1.196-3.11-1.306-1.049-.11-2.145.494-3.24.605a10.821 10.821 0 0 1-8.781-2.864c-4.682-4.33-4.013-10.97 1.403-14.518 4.811-3.154 11.874-2.102 15.268 2.273a8.671 8.671 0 0 1-1.002 12.095c-1.046.929-1.422 1.693-.751 2.917.102.257.174.525.213.798zM21.68 20.292a1.264 1.264 0 1 0 .01-2.528 1.264 1.264 0 0 0-.01 2.528zm7.887-2.526a1.266 1.266 0 0 0-1.256 1.21 1.247 1.247 0 1 0 1.256-1.21z">
+              </path>
+            </svg>
+          </a></li>
+      </ul>
+    </div>
+
+    <div class="privacy-policy">
+      <div class="copyright">
+        
+        <p>
+          &copy; PyTorch. Copyright © The Linux Foundation®. All rights reserved. The Linux Foundation has registered
+          trademarks and uses trademarks. For more information, including terms of use, privacy policy, and trademark
+          usage, please see our <a href="https://www.linuxfoundation.org/legal/policies">Policies</a> page. <a
+            href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a>. <a
+            href="http://www.linuxfoundation.org/privacy">Privacy Policy</a>.
+        </p>
+        
       </div>
     </div>
 
-    <div class="mobile-main-menu-links-container">
-      <div class="main-menu">
-        <ul>
-           <li class="resources-mobile-menu-title">
-             <a>Learn</a>
-           </li>
-           <ul class="resources-mobile-menu-items">
-             <li>
-               <a href="https://pytorch.org/get-started">Get Started</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials">Tutorials</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
-             </li>
-           </ul>
-           <li class="resources-mobile-menu-title">
-             <a>Ecosystem</a>
-           </li>
-           <ul class="resources-mobile-menu-items">
-             <li>
-               <a href="https://pytorch.org/ecosystem">Tools</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/#community-module">Community</a>
-             </li>
-             <li>
-               <a href="https://discuss.pytorch.org/">Forums</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/resources">Developer Resources</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2024</a>
-             </li>
-           </ul>
 
-           <li class="resources-mobile-menu-title">
-             <a>Edge</a>
-           </li>
-
-           <ul class="resources-mobile-menu-items">
-             <li>
-               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
-             </li>
-             
-             <li>
-               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/executorch/stable/index.html">ExecuTorch Documentation</a>
-             </li>
-           </ul>
-
-           <li class="resources-mobile-menu-title">
-             <a>Docs</a>
-           </li>
-
-           <ul class="resources-mobile-menu-items">
-            <li>
-              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
-            </li>
-
-            <li>
-              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
-            </li>
-          </ul>
-
-          <li class="resources-mobile-menu-title">
-            <a>Blog & News</a>
-          </li>
-            
-           <ul class="resources-mobile-menu-items">
-            <li>
-              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
-            </li>
-            <li>
-              <a href="https://pytorch.org/community-blog">Community Blog</a>
-            </li>
-
-            <li>
-              <a href="https://pytorch.org/videos">Videos</a>
-            </li>
-
-            <li>
-              <a href="https://pytorch.org/community-stories">Community Stories</a>
-            </li>
-            <li>
-              <a href="https://pytorch.org/events">Events</a>
-            </li>
-            <li>
-               <a href="https://pytorch.org/newsletter">Newsletter</a>
-             </li>
-          </ul>
-          
-          <li class="resources-mobile-menu-title">
-            <a>About</a>
-          </li>
-
-          <ul class="resources-mobile-menu-items">
-            <li>
-              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
-            </li>
-            <li>
-              <a href="https://pytorch.org/governing-board">Governing Board</a>
-            </li>
-            <li>
-               <a href="https://pytorch.org/credits">Cloud Credit Program</a>
-            </li>
-            <li>
-               <a href="https://pytorch.org/tac">Technical Advisory Council</a>
-            </li>
-            <li>
-               <a href="https://pytorch.org/staff">Staff</a>
-            </li>
-            <li>
-               <a href="https://pytorch.org/contact-us">Contact Us</a>
-            </li>
-          </ul>
-        </ul>
-      </div>
-    </div>
   </div>
+</footer>
 
-  <!-- End Mobile Menu -->
+<div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/img/pytorch-x.svg">
+  </div>
+</div>
+  
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
 
-  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+  <p class="copyright">
+    
+      © Copyright 2024, ExecuTorch.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
 
-  <script type="text/javascript">
-    $(document).ready(function() {
-      mobileMenu.bind();
-      mobileTOC.bind();
-      pytorchAnchors.bind();
-      sideMenus.bind();
-      scrollToAnchor.bind();
-      highlightNavigation.bind();
-      mainMenuDropdown.bind();
-      filterTags.bind();
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 7.2.6.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.15.4.
+</p></div>
+      
+    </div>
+  
+</div>
 
-      // Add class to links that have code blocks, since we cannot create links in code blocks
-      $("article.pytorch-article a span.pre").each(function(e) {
-        $(this).closest("a").addClass("has-code");
+  </footer>
+  <script type="application/ld+json">
+    {
+       "@context": "https://schema.org",
+       "@type": "Article",
+       "name": "Concepts",
+       "headline": "Concepts",
+       "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
+       "url": "/concepts.html",
+       "articleBody": "Concepts# This page provides an overview of key concepts and terms used throughout the ExecuTorch documentation. It is intended to help readers understand the terminology and concepts used in PyTorch Edge and ExecuTorch. Concepts Map# View in full size View detailed concept map AOT (Ahead of Time)# AOT generally refers to the program preparation that occurs before execution. On a high level, ExecuTorch workflow is split into an AOT compilation and a runtime. The AOT steps involve compilation into an Intermediate Representation (IR), along with optional transformations and optimizations. ATen# Fundamentally, it is a tensor library on top of which almost all other Python and C++ interfaces in PyTorch are built. It provides a core Tensor class, on which many hundreds of operations are defined. ATen Dialect# ATen dialect is the immediate result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can lower to Core ATen dialect and Edge dialect. ATen dialect is a valid EXIR with additional properties. It consists of functional ATen operators, higher order operators (like control flow operators) and registered custom operators. The goal of ATen dialect is to capture users\u2019 programs as faithfully as possible. ATen mode# ATen mode uses the ATen implementation of Tensor (at::Tensor) and related types, such as ScalarType, from the PyTorch core. This is in contrast to ETensor mode, which uses ExecuTorch\u2019s smaller implementation of tensor (executorch::runtime::etensor::Tensor) and related types, such as executorch::runtime::etensor::ScalarType. ATen kernels that rely on the full at::Tensor API are usable in this configuration. ATen kernels tend to do dynamic memory allocation and often have extra flexibility (and thus overhead) to handle cases not needed by mobile/embedded clients. e.g., CUDA support, sparse tensor support, and dtype promotion. Note: ATen mode is currently a WIP. Autograd safe ATen Dialect# Autograd safe ATen dialect includes only differentiable ATen operators, along with higher order operators (control flow ops) and registered custom operators. Backend# A specific hardware (like GPU, NPU) or a software stack (like XNNPACK) that consumes a graph or part of it, with performance and efficiency benefits. Backend Dialect# Backend dialect is the immediate result of exporting Edge dialect to specific backend. It\u2019s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect. Backend registry# A table mapping backend names to backend interfaces. This allows backends to be called via name during runtime. Backend Specific Operator# These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster. Buck2# An open-source, large scale build system. Used to build ExecuTorch. CMake# An open-source, cross-platform family of tools designed to build, test and package software. Used to build ExecuTorch. Codegen# At a high level, codegen performs two tasks; generating the kernel registration library, and optionally running selective build. The kernel registration library connects operator names (referenced in the model) with the corresponding kernel implementation (from the kernel library). The selective build API collects operator information from models and/or other sources and only includes the operators required by them. This can reduce the binary size. The output of codegen is a set of C++ bindings (various .h, .cpp files) that glue together the kernel library and the ExecuTorch runtime. Core ATen Dialect# Core ATen dialect contains the core ATen operators along with higher order operators (control flow) and registered custom operators. Core ATen operators / Canonical ATen operator set# A select subset of the PyTorch ATen operator library. Core ATen operators will not be decomposed when exported with the core ATen decomposition table. They serve as a reference for the baseline ATen ops that a backend or compiler should expect from upstream. Core ATen Decomposition Table# Decomposing an operator means expressing it as a combination of other operators. During the AOT process, a default list of decompositions is employed, breaking down ATen operators into core ATen operators. This is referred to as the Core ATen Decomposition Table. Custom operator# These are operators that aren\u2019t part of the ATen library, but which appear in eager mode. Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a TORCH_LIBRARY call. They are most likely associated with a specific target model or hardware platform. For example, torchvision::roi_align is a custom operator widely used by torchvision (doesn\u2019t target a specific hardware). DataLoader# An interface that enables the ExecuTorch runtime to read from a file or other data source without directly depending on operating system concepts like files or memory allocation. Delegation# To run parts (or all) of a program on a specific backend (eg. XNNPACK) while the rest of the program (if any) runs on the basic ExecuTorch runtime. Delegation enables us to leverage the performance and efficiency benefits of specialized backends and hardware. Dim Order# ExecuTorch introduces Dim Order to describe tensor\u2019s memory format by returning a permutation of the dimensions, from the outermost to the innermost one. For example, for a tensor with memory format [N, C, H, W], or contiguous memory format, [0, 1, 2, 3] will be its dim order. Also, for a tensor with memory format [N, H, W, C], or channels_last memory format, we return [0, 2, 3, 1] for its dim order. Currently ExecuTorch only supports dim order representation for contiguous and channels_last memory format. DSP (Digital Signal Processor)# Specialized microprocessor chip with architecture optimized for digital signal processing. dtype# Data type, the type of data (eg. float, integer, etc.) in a tensor. Dynamic Quantization# A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to static quantization, where tensors are quantized before inference. Dynamic shapes# Refers to the ability of a model to accept inputs with varying shapes during inference. For example, the ATen op unique_consecutive and the custom op MaskRCNN have data dependent output shapes. Such operators are difficult to do memory planning on, as each invocation may produce a different output shape even for the same input shape. To support dynamic shapes in ExecuTorch, kernels can allocate tensor data using the MemoryAllocator provided by the client. Eager mode# Python execution environment where operators in a model are immediately executed as they are encountered. e.g. Jupyter / Colab notebooks are run in eager mode. This is in contrast to graph mode, where operators are first synthesized into a graph which is then compiled and executed. Edge Dialect# A dialect of EXIR with the following properties: All operators are from a predefined operator set, called \u2018Edge Operators\u2019 or are registered custom operators. Input and output of the graph, and of each node, must be Tensor. All Scalar types are converted to Tensor. Edge dialect introduces specializations that are useful for Edge devices, but not necessarily for general (server) export. However, Edge dialect does not contain specializations for specific hardware besides those already present in the original Python program. Edge operator# An ATen operator with a dtype specialization. ExecuTorch# A unified ML software stack within the PyTorch Edge platform designed for efficient on-device inference. ExecuTorch defines a workflow to prepare (export and transform) and execute a PyTorch program on Edge devices such as mobile, wearables, and embedded devices. ExecuTorch Method# The executable equivalent of an nn.Module Python method. For example, the forward() Python method would compile into an ExecuTorch Method. ExecuTorch Program# An ExecuTorch Program maps string names like forward to specific ExecuTorch Method entries. executor_runner# A sample wrapper around the ExecuTorch runtime which includes all the operators and backends. EXIR# The EXport Intermediate Representation (IR) from torch.export. Contains the computational graph of the model. All EXIR graphs are valid FX graphs. ExportedProgram# The output of torch.export that bundles the computational graph of a PyTorch model (usually an nn.Module) with the parameters or weights that the model consumes. flatbuffer# Memory efficient, cross platform serialization library. In the context of ExecuTorch, eager mode Pytorch models are exported to flatbuffer, which is the format consumed by the ExecuTorch runtime. Framework tax# The cost of various loading and initialization tasks (not inference). For example; loading a program, initializing executor, kernel and backend-delegate dispatch, and runtime memory utilization. Functional ATen operators# ATen operators that do not have any side effects. Graph# An EXIR Graph is a PyTorch program represented in the form of a DAG (directed acyclic graph). Each node in the graph represents a particular computation or operation, and edges of this graph consist of references between nodes. Note: all EXIR graphs are valid FX graphs. Graph mode# In graph mode, operators are first synthesized into a graph, which will then be compiled and executed as a whole. This is in contrast to eager mode, where operators are executed as they are encountered. Graph mode typically delivers higher performance as it allows optimizations such as operator fusion. Higher Order Operators# A higher order operator (HOP) is an operator that: either accepts a Python function as input, returns a Python function as output, or both. like all PyTorch operators, higher-order operators also have an optional implementation for backends and functionalities. This lets us e.g. register an autograd formula for the higher-order operator or define how the higher-order operator behaves under ProxyTensor tracing. Hybrid Quantization# A quantization technique where different parts of the model are quantized with different techniques based on computational complexity and sensitivity to accuracy loss. Some parts of the model may not be quantized to retain accuracy. Intermediate Representation (IR)# A representation of a program between the source and target languages. Generally, it is a data structure used internally by a compiler or virtual machine to represent source code. Kernel# An implementation of an operator. There can be multiple implementations of an operator for different backends/inputs/etc. Kernel registry / Operator registry# A table with mappings between kernel names and their implementations. This allows the ExecuTorch runtime to resolve references to kernels during execution. Lowering# The process of transforming a model to run on various backends. It is called \u2018lowering\u2019 as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation. Memory planning# The process of allocating and managing memory for a model. In ExecuTorch, a memory planning pass is run before the graph is saved to flatbuffer. This assigns a memory ID to each tensor and an offset in the buffer, marking where storage for the tensor starts. Node# A node in an EXIR graph represents a particular computation or operation, and is represented in Python using torch.fx.Node class. Operator# Function on tensors. This is the abstraction; kernels are the implementation. There can be varying implementations for different backends/inputs/etc. Operator fusion# Operator fusion is the process of combining multiple operators into a single compound operator, resulting in faster computation due to fewer kernel launches and fewer memory read/writes. This is a performance advantage of graph mode vs eager mode. Out variant# Instead of allocating returned tensors in kernel implementations, an operator\u2019s out variant will take in a pre-allocated tensor to its out kwarg, and store the result there. This makes it easier for memory planners to perform tensor lifetime analysis. In ExecuTorch, an out variant pass is performed before memory planning. PAL (Platform Abstraction Layer)# Provides a way for execution environments to override operations such as; Getting the current time. Printing a log statement. Panicking the process/system. The default PAL implementation can be overridden if it doesn\u2019t work for a particular client system. Partial kernels# Kernels that support a subset of tensor dtypes and/or dim orders. Partitioner# Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation. ETensor mode# ETensor mode uses ExecuTorch\u2019s smaller implementation of tensor (executorch::runtime::etensor::Tensor) along with related types (executorch::runtime::etensor::ScalarType, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (at::Tensor) and related types (ScalarType, etc.) executorch::runtime::etensor::Tensor, also known as ETensor, is a source-compatible subset of at::Tensor. Code written against ETensor can build against at::Tensor. ETensor does not own or allocate memory on its own. To support dynamic shapes, kernels can allocate Tensor data using the MemoryAllocator provided by the client. Portable kernels# Portable kernels are operator implementations that are written to be compatible with ETensor. As ETensor is compatible with at::Tensor, portable kernels can be built against at::Tensor and used in the same model as ATen kernels. Portable kernels are: Compatible with ATen operator signatures Written in portable C++ so they can build for any target Written as reference implementations, prioritizing clarity and simplicity over optimization Generally smaller in size than ATen kernels Written to avoid dynamically allocating memory using new/malloc. Program# The set of codes and data to describe an ML model. Program source code# The Python source code to describe the program. It can be a Python function, or a method in PyTorch\u2019s eager mode nn.Module. PTQ (Post Training Quantization)# A quantization technique where the model is quantized after it has been trained (usually for performance benefits). PTQ applies the quantization flow after training, in contrast to QAT which applies it during training. QAT (Quantization Aware Training)# Models may lose accuracy after quantization. QAT enables higher accuracy compared to eg. PTQ, by modeling the effects of quantization while training. During training, all weights and activations are \u2018fake quantized\u2019; float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all weight adjustments during training are made \u2018aware\u2019 that the model will ultimately be quantized. QAT applies the quantization flow during training, in contrast to PTQ which applies it afterwards. Quantization# Techniques for performing computations and memory accesses on tensors with lower precision data, usually int8. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. int8 matmul vs fp32 matmul. Often, quantization comes at the cost of model accuracy. Runtime# The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources). Developer Tools# A collection of tools users need to profile, debug and visualize programs that are running with ExecuTorch. Selective build# An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings. Static Quantization# A method of quantizing wherein tensors are statically quantized. That is, floats are converted to a reduced-precision data type before inference. XNNPACK# An optimized library of neural network interface operators for ARM, x86, WebAssembly, and RISC-V platforms. It is an open-source project and used by PyTorch and ExecuTorch. It is a successor to the QNNPack library. The operators support both floating point and quantized values.",
+       "author": {
+         "@type": "Organization",
+         "name": "PyTorch Contributors",
+         "url": "https://pytorch.org"
+       },
+       "image": "_static/img/pytorch_seo.png",
+       "mainEntityOfPage": {
+         "@type": "WebPage",
+         "@id": "/concepts.html"
+       },
+       "datePublished": "2023-01-01T00:00:00Z",
+       "dateModified": "2023-01-01T00:00:00Z"
+     }
+ </script>
+  <script>
+    // Tutorials Call to action event tracking
+    $("[data-behavior='call-to-action-event']").on('click', function () {
+      fbq('trackCustom', "Download", {
+        tutorialTitle: $('h1:first').text(),
+        downloadLink: this.href,
+        tutorialLink: window.location.href,
+        downloadTitle: $(this).attr("data-response")
       });
-    })
+      if (typeof gtag === 'function') {
+        gtag('event', 'click', {
+          'event_category': $(this).attr("data-response"),
+          'event_label': $("h1").first().text(),
+          'tutorial_link': window.location.href
+        });
+      }
+    });
   </script>
-</body>
+  
+  </body>
 </html>
