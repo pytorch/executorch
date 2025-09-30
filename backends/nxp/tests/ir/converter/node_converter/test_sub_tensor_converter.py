@@ -103,19 +103,21 @@ def test_sub_tensor_one_input_quant_conversion(mocker, input_shape):
 
 
 @pytest.mark.parametrize(
-    "input_shape",
+    "x_input_shape, y_input_shape",
     [
-        pytest.param((1, 4, 8, 8), id="4D."),
-        pytest.param((1, 4, 5, 5), id="4D, product of dims is not a multiple of 8."),
+        pytest.param((1, 4, 8, 8), (1, 8, 8, 8), id="4D."),
+        pytest.param(
+            (1, 4, 5, 5), (1, 8, 5, 5), id="4D, product of dims is not a multiple of 8."
+        ),
     ],
 )
-def test_sub_tensor_w_conv_quant_conversion(mocker, input_shape):
+def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape, y_input_shape):
     model = SubTensorConvModule()
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
     # Run conversion
-    _ = to_quantized_edge_program(model, input_shape)
+    _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
@@ -123,14 +125,20 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, input_shape):
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+    input_data_1 = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(
+        np.int8
+    )
+    input_data_2 = (np.random.random(y_input_shape).astype(np.float32) * 50).astype(
+        np.int8
+    )
+    input_data = {0: input_data_1, 1: input_data_2}
 
     nodes = list(exported_program.graph.nodes)
-    assert nodes[9].name == "aten_sub_tensor"
+    assert nodes[11].name == "aten_sub_tensor"
 
     convert_run_compare(
         exported_program,
-        input_data,
+        input_data=input_data,
         tflite_input_preprocess=ToChannelLastPreprocess(),
         tfl_model=tflite_flatbuffers_model,
         tflite_output_preprocess=ToChannelFirstPreprocess(),

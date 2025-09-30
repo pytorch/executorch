@@ -465,9 +465,9 @@ class SubTensorConvModule(torch.nn.Module):
         super().__init__()
         self.conv = Conv2dModule(padding=1, stride=1)
 
-    def forward(self, x):
+    def forward(self, x, y):
         x = self.conv(x)
-        return x - x
+        return x - y
 
 
 class SubTensorOneInputModule(torch.nn.Module):
