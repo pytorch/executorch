@@ -125,44 +125,33 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
   (void)opaque_metadata_size;
 
   // Validate input parameters first
-  if (data == nullptr) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed: data pointer is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      data != nullptr,
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2 failed: data pointer is null");
 
-  if (sizes_ptr == nullptr && ndim > 0) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed: sizes_ptr is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2 failed: sizes_ptr is null");
 
-  if (ret_new_tensor == nullptr) {
-    ET_LOG(
-        Error,
-        "aoti_torch_create_tensor_from_blob_v2 failed: ret_new_tensor is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch_create_tensor_from_blob_v2 failed: ret_new_tensor is null");
 
   // Check that device_index is always 0
-  if (device_index != 0) {
-    ET_LOG(Error, "device_index must be 0, got: %d", device_index);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      device_index == 0,
+      InvalidArgument,
+      "device_index must be 0, got: %d",
+      device_index);
 
   // Validate dtype using SupportedDTypes from utils.h
-  AOTITorchError dtype_error = validate_dtype(dtype);
-  if (dtype_error != Error::Ok) {
-    return dtype_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
   // Storage offset must be 0 since from_blob cannot handle different offsets
-  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
-  if (storage_offset_error != Error::Ok) {
-    return storage_offset_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
 
   // Convert sizes to the format expected by ExecutorTorch using SizesType
   std::vector<executorch::aten::SizesType> sizes =
@@ -181,10 +170,8 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
       dtype_to_scalar_type(dtype) // map int32_t dtype to ScalarType
   );
 
-  if (!tensor) {
-    ET_LOG(Error, "Failed to create tensor from blob");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr, InvalidArgument, "Failed to create tensor from blob");
 
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
@@ -193,13 +180,11 @@ AOTITorchError aoti_torch_create_tensor_from_blob_v2(
 
   // Check if this memory address is already being tracked
   auto memory_it = memory_to_n_tensor.find(data);
-  if (memory_it != memory_to_n_tensor.end()) {
-    ET_LOG(
-        Error,
-        "Memory address %p is already being tracked by another tensor",
-        data);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it == memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is already being tracked by another tensor",
+      data);
 
   // Mark this memory as NOT_OWN since tensor created from blob never owns
   // memory
@@ -217,10 +202,11 @@ AOTITorchError aoti_torch_empty_strided(
     int32_t device_index,
     Tensor** ret_new_tensor) {
   // Check that device_index is always 0
-  if (device_index != 0) {
-    ET_LOG(Error, "device_index must be 0, got: %d", device_index);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      device_index == 0,
+      InvalidArgument,
+      "device_index must be 0, got: %d",
+      device_index);
 
   // This requires us to reserve CUDA memory and put it into a ETensor
   void* ptr;
@@ -229,16 +215,14 @@ AOTITorchError aoti_torch_empty_strided(
     numel *= sizes_ptr[i];
   }
 
-  AOTITorchError dtype_error = validate_dtype(dtype);
-  if (dtype_error != Error::Ok) {
-    return dtype_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
   size_t element_size = dtype_to_element_size(dtype);
-  if (element_size == 0) {
-    ET_LOG(Error, "Invalid element size for dtype: %d", dtype);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      element_size != 0,
+      InvalidArgument,
+      "Invalid element size for dtype: %d",
+      dtype);
   int64_t nbytes = numel * element_size;
 
   if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
@@ -247,20 +231,20 @@ AOTITorchError aoti_torch_empty_strided(
   } else if (device_type == static_cast<int32_t>(SupportedDevices::CPU)) {
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
     int result = posix_memalign(&ptr, 16, nbytes);
-    if (result != 0) {
-      ET_LOG(Error, "Failed to allocate aligned CPU memory");
-      return Error::MemoryAllocationFailed;
-    }
-    if (ptr == nullptr) {
-      ET_LOG(Error, "Failed to call posix_memalign");
-      return Error::MemoryAllocationFailed;
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        result == 0,
+        MemoryAllocationFailed,
+        "Failed to allocate aligned CPU memory");
+    ET_CHECK_OR_RETURN_ERROR(
+        ptr != nullptr,
+        MemoryAllocationFailed,
+        "Failed to call posix_memalign");
   } else {
-    ET_LOG(
-        Error,
+    ET_CHECK_OR_RETURN_ERROR(
+        false,
+        NotImplemented,
         "Need to implement empty_strided for non-CUDA non-CPU device type %d",
         device_type);
-    return Error::NotImplemented;
   }
 
   // ETensor sizes
@@ -299,10 +283,8 @@ void clear_all_tensors() {
 
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
   // Handle null tensor pointer
-  if (tensor == nullptr) {
-    ET_LOG(Error, "Cannot delete null tensor");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr, InvalidArgument, "Cannot delete null tensor");
 
   // Check if tensor exists in our tracking
   bool found_in_tensors = false;
@@ -314,10 +296,8 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
   }
 
   // If tensor not found in our tracking, it's invalid
-  if (!found_in_tensors) {
-    ET_LOG(Error, "Didn't find tensor %p", tensor);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      found_in_tensors, InvalidArgument, "Didn't find tensor %p", tensor);
 
   // Find and delete the tensor
   for (auto it = tensors.begin(); it != tensors.end(); ++it) {
@@ -360,8 +340,10 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
           memory_to_n_tensor[data_ptr] = ref_count - 1;
         }
       } else {
-        ET_LOG(Error, "Internal error: memory not found during deletion");
-        return Error::Internal;
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            Internal,
+            "Internal error: memory not found during deletion");
       }
 
       // Remove tensor from set (this will call the destructor if it's the last
@@ -372,8 +354,8 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
   }
 
   // This should never be reached since we found it above
-  ET_LOG(Error, "Internal error: tensor not found after validation");
-  return Error::Internal;
+  ET_CHECK_OR_RETURN_ERROR(
+      false, Internal, "Internal error: tensor not found after validation");
 }
 
 AOTITorchError
@@ -381,53 +363,43 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
   (void)non_blocking;
 
   // Check for null pointers first
-  if (self == nullptr) {
-    ET_LOG(Error, "aoti_torch_copy_ failed: self tensor is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr,
+      InvalidArgument,
+      "aoti_torch_copy_ failed: self tensor is null");
 
-  if (src == nullptr) {
-    ET_LOG(Error, "aoti_torch_copy_ failed: src tensor is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      src != nullptr,
+      InvalidArgument,
+      "aoti_torch_copy_ failed: src tensor is null");
 
   // Get dtype information and validate compatibility
   int32_t self_dtype, src_dtype;
   aoti_torch_get_dtype(self, &self_dtype);
   aoti_torch_get_dtype(src, &src_dtype);
 
-  AOTITorchError self_dtype_error = validate_dtype(self_dtype);
-  if (self_dtype_error != Error::Ok) {
-    return self_dtype_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(self_dtype));
 
-  AOTITorchError src_dtype_error = validate_dtype(src_dtype);
-  if (src_dtype_error != Error::Ok) {
-    return src_dtype_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(src_dtype));
 
   // Check dtype compatibility - both tensors must have the same dtype
-  if (self_dtype != src_dtype) {
-    ET_LOG(
-        Error,
-        "dtype mismatch. self.dtype=%d, src.dtype=%d. aoti_torch_copy_ requires same dtypes",
-        self_dtype,
-        src_dtype);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      self_dtype == src_dtype,
+      InvalidArgument,
+      "dtype mismatch. self.dtype=%d, src.dtype=%d. aoti_torch_copy_ requires same dtypes",
+      self_dtype,
+      src_dtype);
 
   // Check total number of elements compatibility (PyTorch copy_ behavior)
   int64_t self_numel = self->numel();
   int64_t src_numel = src->numel();
 
-  if (self_numel != src_numel) {
-    ET_LOG(
-        Error,
-        "numel mismatch. self.numel()=%ld, src.numel()=%ld",
-        self_numel,
-        src_numel);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      self_numel == src_numel,
+      InvalidArgument,
+      "numel mismatch. self.numel()=%ld, src.numel()=%ld",
+      self_numel,
+      src_numel);
 
   // Get tensor metadata
   int64_t* self_strides;
@@ -493,10 +465,11 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
     // This handles arbitrary tensor layouts and strides
 
     size_t element_size = dtype_to_element_size(self_dtype);
-    if (element_size == 0) {
-      ET_LOG(Error, "Invalid element size for dtype: %d", self_dtype);
-      return Error::InvalidArgument;
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        element_size != 0,
+        InvalidArgument,
+        "Invalid element size for dtype: %d",
+        self_dtype);
 
     // Allocate temporary host memory for GPU tensors
     float* src_host_data = nullptr;
@@ -507,10 +480,10 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
     if (srcIsDevice) {
       src_host_data =
           static_cast<float*>(malloc(total_elements * sizeof(float)));
-      if (src_host_data == nullptr) {
-        ET_LOG(Error, "Failed to allocate memory for src_host_data");
-        return Error::MemoryAllocationFailed;
-      }
+      ET_CHECK_OR_RETURN_ERROR(
+          src_host_data != nullptr,
+          MemoryAllocationFailed,
+          "Failed to allocate memory for src_host_data");
       ET_CUDA_CHECK_OR_RETURN_ERROR(cudaMemcpy(
           src_host_data, src->data_ptr(), total_bytes, cudaMemcpyDeviceToHost));
       need_free_src = true;
@@ -522,11 +495,13 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
       dst_host_data =
           static_cast<float*>(malloc(total_elements * sizeof(float)));
       if (dst_host_data == nullptr) {
-        ET_LOG(Error, "Failed to allocate memory for dst_host_data");
         if (need_free_src) {
           free(src_host_data);
         }
-        return Error::MemoryAllocationFailed;
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            MemoryAllocationFailed,
+            "Failed to allocate memory for dst_host_data");
       }
       need_free_dst = true;
     } else {
@@ -585,77 +560,60 @@ AOTITorchError aoti_torch__reinterpret_tensor(
     int64_t storage_offset,
     Tensor** ret_new_tensor) {
   // Validate input parameters first
-  if (self == nullptr) {
-    ET_LOG(Error, "aoti_torch__reinterpret_tensor failed: self tensor is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      self != nullptr,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor failed: self tensor is null");
 
-  if (sizes_ptr == nullptr && ndim > 0) {
-    ET_LOG(Error, "aoti_torch__reinterpret_tensor failed: sizes_ptr is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      !(sizes_ptr == nullptr && ndim > 0),
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor failed: sizes_ptr is null");
 
-  if (ret_new_tensor == nullptr) {
-    ET_LOG(
-        Error, "aoti_torch__reinterpret_tensor failed: ret_new_tensor is null");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      ret_new_tensor != nullptr,
+      InvalidArgument,
+      "aoti_torch__reinterpret_tensor failed: ret_new_tensor is null");
 
   // Check if storage_offset is not 0 - return error if not
-  AOTITorchError storage_offset_error = validate_storage_offset(storage_offset);
-  if (storage_offset_error != Error::Ok) {
-    return storage_offset_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_storage_offset(storage_offset));
 
   // Get the device info from the source tensor to perform device_index
   // validation
   int32_t device_type = 0;
   int32_t device_index = 0;
-  AOTITorchError device_error = aoti_torch_get_device_type(self, &device_type);
-  if (device_error != Error::Ok) {
-    return device_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_device_type(self, &device_type));
 
-  device_error = aoti_torch_get_device_index(self, &device_index);
-  if (device_error != Error::Ok) {
-    return device_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_device_index(self, &device_index));
 
   // Ensure device_index is always 0
-  if (device_index != 0) {
-    ET_LOG(Error, "device_index must be 0, got: %d", device_index);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      device_index == 0,
+      InvalidArgument,
+      "device_index must be 0, got: %d",
+      device_index);
 
   // Get the dtype from the source tensor
   int32_t dtype = 0;
-  AOTITorchError dtype_error = aoti_torch_get_dtype(self, &dtype);
-  if (dtype_error != Error::Ok) {
-    return dtype_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(aoti_torch_get_dtype(self, &dtype));
 
   // Validate dtype using SupportedDTypes
-  dtype_error = validate_dtype(dtype);
-  if (dtype_error != Error::Ok) {
-    return dtype_error;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
   // Get the original data pointer from the source tensor
   void* data_ptr = self->mutable_data_ptr();
-  if (data_ptr == nullptr) {
-    ET_LOG(Error, "Source tensor has null data pointer");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      data_ptr != nullptr,
+      InvalidArgument,
+      "Source tensor has null data pointer");
 
   // Check if the given memory is in the map, if not return error
   auto memory_it = memory_to_n_tensor.find(data_ptr);
-  if (memory_it == memory_to_n_tensor.end()) {
-    ET_LOG(
-        Error,
-        "Memory address %p is not being tracked by reference counting system",
-        data_ptr);
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      memory_it != memory_to_n_tensor.end(),
+      InvalidArgument,
+      "Memory address %p is not being tracked by reference counting system",
+      data_ptr);
 
   // Convert sizes using utility function from utils.h
   std::vector<SizesType> sizes = convert_sizes_to_vector(ndim, sizes_ptr);
@@ -673,10 +631,10 @@ AOTITorchError aoti_torch__reinterpret_tensor(
       dtype_to_scalar_type(dtype) // Convert dtype with explicit type casting
   );
 
-  if (!tensor) {
-    ET_LOG(Error, "Failed to create reinterpreted tensor view");
-    return Error::InvalidArgument;
-  }
+  ET_CHECK_OR_RETURN_ERROR(
+      tensor != nullptr,
+      InvalidArgument,
+      "Failed to create reinterpreted tensor view");
 
   // Store the tensor so it doesn't get destroyed
   tensors.insert(tensor);
