@@ -34,11 +34,11 @@ input_t1 = Tuple[torch.Tensor]  # Input x
 test_data_suite = {
     "ones_neg_3": lambda: (torch.ones(10), [(3, -3)]),
     "ones_neg_8": lambda: (torch.ones(10), [(-8, 3)]),
-    "ones_slice_2": lambda: (torch.ones(10, 10), [(1, 3), (3, None)]),
-    "ones_slice_3": lambda: (torch.ones(10, 10, 10), [(0, 7), (0, None), (0, 8)]),
+    "ones_slice_2": lambda: (torch.ones(10, 10), [(1, 3), (3, 10)]),
+    "ones_slice_3": lambda: (torch.ones(10, 10, 10), [(0, 7), (0, 10), (0, 8)]),
     "ones_slice_4": lambda: (
         torch.ones((1, 12, 10, 10)),
-        [(None, None), (None, 5), (3, 5), (4, 10)],
+        [(0, 1), (0, 5), (3, 5), (4, 10)],
     ),
 }
 
