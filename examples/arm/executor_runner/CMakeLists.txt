@@ -235,10 +235,10 @@ list(
   -Map=arm_executor_runner.map
 )
 
-# Prefer to generate kernel bindings from model file if possible, which is when
-# 1. Not building for semihosting 2. Not building with bundleio If that is not
-# the case, fallback to select_ops_list If the model file does not contain any
-# aten ops, a workaround is currently needed to avoid crashing.
+# Figure out which ops to include: For semihosting build, use
+# (user-set)SELECT_OPS_MODEL variable. For normal build, use
+# EXECUTORCH_SELECT_OPS_MODEL to include ops automatically. If the pte contains
+# no undelegated ops, use neither.
 execute_process(
   COMMAND
     python "${ET_DIR_PATH}/codegen/tools/gen_oplist.py"
@@ -263,11 +263,6 @@ elseif(${FOUND_OPS_IN_FILE})
   set(EXECUTORCH_SELECT_OPS_MODEL "${ET_PTE_FILE_PATH}")
   message(
     "gen_oplist:  EXECUTORCH_SELECT_OPS_MODEL=${ET_PTE_FILE_PATH} is used to auto generate ops from"
-  )
-elseif(NOT ${FOUND_OPS_IN_FILE} AND ${ET_BUNDLE_IO})
-  set(EXECUTORCH_SELECT_OPS_MODEL "")
-  message(
-    "gen_oplist: Building with ET_BUNDLE_IO and .bpte is not supported to auto generate ops from will use EXECUTORCH_SELECT_OPS_LIST=${EXECUTORCH_SELECT_OPS_LIST}"
   )
 else()
   set(EXECUTORCH_SELECT_OPS_LIST "")

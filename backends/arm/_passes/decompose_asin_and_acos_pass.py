@@ -12,6 +12,16 @@ from typing import Set, Type
 import torch
 
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
+)
+from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
+from executorch.backends.arm._passes.replace_scalar_with_tensor_pass import (
+    ReplaceScalarWithTensorArgPassTOSAMI,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -56,7 +66,14 @@ class DecomposeAsinAndAcosPass(ArmPass):
 
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSqrtPass,
+        DecomposeDivPass,
+        ConvertFullLikeToFullPass,
+        MatchArgRanksPass,
+        MatchArgDtypePass,
+        ReplaceScalarWithTensorArgPassTOSAMI,
+    }
 
     def _build_polynomial(
         self, coefficients: list[float], variable: torch.Tensor, meta: dict[str, str]

@@ -99,6 +99,7 @@ class vTensorStorage final {
   vTensorStorage(
       Context* context,
       const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout memory_layout,
       const std::vector<int64_t>& axis_map,
       const int32_t packed_dim,
       const std::vector<int64_t>& sizes,

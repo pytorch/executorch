@@ -75,7 +75,7 @@ void accumulate_out_tile_with_int_accum(
           input_zp_vec * weight_sums.data[n4] + accum.data[m][n4];
       out_tile.data[m][n4] =
           fma(VEC4_T(accum_adjusted),
-              VEC4_T(input_q_scale * weight_scales.data[0]),
+              VEC4_T(input_q_scale * weight_scales.data[n4]),
               out_tile.data[m][n4]);
     }
   }
