@@ -978,6 +978,58 @@ def convolution(
     return conv_out
 
 
+@impl(m, "avg_pool2d")
+def avg_pool2d(
+    input_tensor: torch.Tensor,
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    ceil_mode: bool = False,
+    count_include_pad: bool = False,
+    divisor_override: int | None = None,
+    in_zero_point: torch.Tensor | None = None,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    if channel_last:
+        raise NotImplementedError("Channel last is not yet supported for avg_pool2d")
+
+    in_dtype = input_tensor.dtype
+    pad_h, pad_w = padding
+    if in_zero_point is not None:
+        # Avg pool2d does not allow non-0 padding,
+        # so we manually pad the input
+        pad_value = in_zero_point.item()
+        if not count_include_pad:
+            # To simulate this, just pad with 0s
+            pad_value = 0
+
+        input_tensor = torch.nn.functional.pad(
+            input_tensor,
+            (pad_w, pad_w, pad_h, pad_h),
+            mode="constant",
+            value=pad_value,
+        ).float()
+
+        padding = (0, 0)
+
+    out = torch.nn.functional.avg_pool2d(
+        input_tensor,
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        count_include_pad,
+        divisor_override,
+    )
+
+    if in_zero_point is not None:
+        min_val = torch.iinfo(in_dtype).min
+        max_val = torch.iinfo(in_dtype).max
+        out = torch.clamp(torch.round(out), min_val, max_val)
+
+    return out.to(in_dtype)
+
+
 def quantized_relu_common(
     X: torch.Tensor,
     X_zero_point: torch.Tensor | int,
