@@ -198,7 +198,6 @@ supported_ops = {
     exir_ops.edge.aten._adaptive_avg_pool2d.default: AdaptiveAvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.addmm.default: AddMMConverter,  # noqa F405
     exir_ops.edge.aten.add.Tensor: AddTensorConverter,  # noqa F405
-    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.avg_pool2d.default: AvgPool2dConverter,  # noqa F405
     exir_ops.edge.aten.cat.default: CatConverter,  # noqa F405
     exir_ops.edge.aten.clone.default: CloneConverter,  # noqa F405
@@ -211,6 +210,7 @@ supported_ops = {
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405

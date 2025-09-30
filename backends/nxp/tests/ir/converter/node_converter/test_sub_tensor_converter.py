@@ -16,6 +16,7 @@ from executorch.backends.nxp.tests.models import (
     SubTensorModule,
     SubTensorOneInputModule,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
 
@@ -48,8 +49,16 @@ def test_sub_tensor_quant_conversion(mocker, input_shape):
     # Capture converted program
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-    input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
-    input_data = {0: input_data, 1: input_data}
+    input_data_1 = (np.random.random(input_shape).astype(np.float32) * 50).astype(
+        np.int8
+    )
+    input_data_2 = (np.random.random(input_shape).astype(np.float32) * 50).astype(
+        np.int8
+    )
+    input_data = {0: input_data_1, 1: input_data_2}
+
+    nodes = list(exported_program.graph.nodes)
+    assert nodes[4].name == "aten_sub_tensor"
 
     convert_run_compare(
         exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
@@ -81,6 +90,9 @@ def test_sub_tensor_one_input_quant_conversion(mocker, input_shape):
 
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
 
+    nodes = list(exported_program.graph.nodes)
+    assert nodes[2].name == "aten_sub_tensor"
+
     convert_run_compare(
         exported_program, tfl_model=tflite_flatbuffers_model, input_data=input_data
     )
@@ -108,6 +120,9 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, input_shape):
     exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
     input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(np.int8)
+
+    nodes = list(exported_program.graph.nodes)
+    assert nodes[9].name == "aten_sub_tensor"
 
     convert_run_compare(
         exported_program,
@@ -142,4 +157,6 @@ def test_sub_tensor_broadcasting_unsupported_quant_conversion(
     nodes = list(edge_program.graph.nodes)
 
     # Broadcast is not supported, node is not converted
-    assert nodes[6].target.__name__ == "aten.sub.Tensor"  # Sub Tensor is not delegated.
+    assert (
+        nodes[6].target == exir_ops.edge.aten.sub.Tensor
+    )  # Sub Tensor is not delegated.

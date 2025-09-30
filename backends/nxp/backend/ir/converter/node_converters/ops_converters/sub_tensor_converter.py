@@ -46,6 +46,8 @@ class SubTensorConverter(NodeConverter):
         if len(node.args) != 2:
             return False
 
+        # The `alpha` attribute can be represented by adding an extra `Mul` operator.
+        #  However, this is not implemented as `alpha` is rarely used.
         if hasattr(node.kwargs, "alpha"):
             return False
 
@@ -53,7 +55,7 @@ class SubTensorConverter(NodeConverter):
 
     # sub.Tensor Node format: (Tensor self, Tensor other, *, Scalar alpha=1)
     def convert(self, node: Node):
-        """Convert 'sub_tensor' operator to TFLite 'sub'."""
+        """Convert 'sub_tensor' operator to NeutronIR 'Sub'."""
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
