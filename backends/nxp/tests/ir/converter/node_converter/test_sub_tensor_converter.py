@@ -114,8 +114,8 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape):
 
     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-    n, c, w, h = x_input_shape
-    y_input_shape = (n, 8, w, h)
+    n, c, h, w = x_input_shape
+    y_input_shape = (n, 8, h, w)
 
     # Run conversion
     _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
