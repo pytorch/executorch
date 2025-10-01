@@ -89,7 +89,7 @@ example_inputs = (torch.ones(1,1,1,1),torch.ones(1,1,1,1))
 model = Add()
 model = model.eval()
 exported_program = torch.export.export_for_training(model, example_inputs)
-graph_module = exported_program.module()
+graph_module = exported_program.graph_module
 
 
 from executorch.backends.arm.vgf import VgfCompileSpec

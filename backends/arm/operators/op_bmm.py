@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+"""Provide a visitor for lowering batched matmul (BMM) to TOSA."""
+
 from typing import Any, List
 
 import torch
@@ -30,6 +32,13 @@ from tosa.RoundingMode import RoundingMode  # type: ignore
 
 @register_node_visitor
 class BMMVisitor(NodeVisitor):
+    """Provide a visitor that lowers ``aten.bmm`` to TOSA ``MATMUL``.
+
+    INT8 accumulates into INT32; add a rescale to INT8 using SINGLE_ROUND
+    rounding and output zero-point.
+
+    """
+
     target = "aten.bmm.default"
 
     tosa_specs = [
@@ -47,7 +56,7 @@ class BMMVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
+        """Define the TOSA ``MATMUL`` operator and optional rescale."""
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)

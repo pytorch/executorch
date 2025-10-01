@@ -650,15 +650,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
-  list(APPEND _executorch_extensions extension_llm_runner)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-endif()
-
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
   install(
@@ -738,9 +729,6 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
 
-  # Add codegen tools subdirectory for selective_build pybind module
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -748,6 +736,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
 
   # Create bundled_module target only for pybindings when bundled_program exists
   # This target has hard dependencies on devtools generated headers
@@ -869,6 +860,21 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
+  # Set RPATH to find PyTorch libraries relative to the installation location
+  # This goes from executorch/extension/pybindings up to site-packages, then to
+  # torch/lib
+  if(APPLE)
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                              INSTALL_RPATH "@loader_path/../../../torch/lib"
+    )
+  else()
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+    )
+  endif()
+
   install(
     TARGETS portable_lib
     EXPORT ExecuTorchTargets
@@ -887,6 +893,15 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
+  list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)

@@ -6,9 +6,10 @@
 
 # pyre-strict
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, cast, Dict, List, Tuple
 
 import torch
+from executorch.backends.cadence.aot.compiler_utils import get_shape
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
@@ -25,6 +26,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     MatmulPattern,
     ReluPattern0,
     ReluPattern1,
+    SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     check_out_zero_point_is_min_range,
@@ -388,6 +390,73 @@ def get_args_and_kwargs_relu(
     return args, kwargs
 
 
+def get_args_and_kwargs_softmax(
+    graph_module: GraphModule,
+    inputs_inputs: List[fx.Node],
+    dequants_inputs: List[fx.Node],
+    quant_node: fx.Node,
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    # Make a dummy mask tensor
+    mask_shape = get_shape(graph_module, cast(fx.Node, quant_node.args[0]))
+    mask_shape = list(mask_shape) if mask_shape else []
+    mask_shape[-1] = mask_shape[-1] // 16
+    mask_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            mask_shape,
+            0.0,
+        ),
+        {"dtype": torch.int32},
+    )
+    # Make the scale and zero_point tensors
+    in_scale_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            dequants_inputs[0].args[1],
+        ),
+        {"dtype": torch.float32},
+    )
+    in_zero_point_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            dequants_inputs[0].args[2],
+        ),
+        {"dtype": torch.int32},
+    )
+    out_scale_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            quant_node.args[1],
+        ),
+        {"dtype": torch.float32},
+    )
+    out_zero_point_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            quant_node.args[2],
+        ),
+        {"dtype": torch.int32},
+    )
+
+    # Make the args and kwargs for the replacement op
+    args = (
+        inputs_inputs[0],
+        mask_tensor,
+        op_node.args[1],
+        in_scale_tensor,
+        in_zero_point_tensor,
+        out_scale_tensor,
+        out_zero_point_tensor,
+    )
+    kwargs = {}
+    return args, kwargs
+
+
 class QuantFusion(ExportPass):
     # pyre-ignore[2]: Parameter `patterns` has no type specified
     def __init__(self, patterns) -> None:
@@ -402,7 +471,7 @@ class QuantFusion(ExportPass):
                 pattern.partition_types(),
             )
             for fused_partition in fused_partitions:
-                anchors = pattern.get_anchors(graph_module, fused_partition)
+                anchors, op_node = pattern.get_anchors(graph_module, fused_partition)
                 if not anchors or anchors.empty:
                     continue
                 if any(self.is_fused(p.nodes) for p in fused_partition):
@@ -443,13 +512,10 @@ class QuantFusion(ExportPass):
                 bias_inputs = [node.args[0] for node in dequants_biases]
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
-                # The node is the first index of the list and first of the tuple
-                anchor_output_node = anchors.output[0][0]
+                assert op_node is not None, "op_node is None"
+                quant_node = list(op_node.users.keys())[0]
 
-                assert len(anchor_output_node.users) == 1
-                quant_node = list(anchor_output_node.users.keys())[0]
-
-                with graph_module.graph.inserting_after(anchor_output_node):
+                with graph_module.graph.inserting_after(op_node):
                     args = tuple(
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
@@ -463,7 +529,7 @@ class QuantFusion(ExportPass):
                         )
                     elif isinstance(pattern, CatPattern):
                         args, kwargs = get_args_and_kwargs_cat(
-                            inputs_inputs, other_inputs, anchor_output_node
+                            inputs_inputs, other_inputs, op_node
                         )
                     elif isinstance(pattern, ConvReluPatterns):
                         # For ConvReLU, we are fusing Conv+ReLU
@@ -494,7 +560,7 @@ class QuantFusion(ExportPass):
                             dequants_weights,
                             bias_inputs,
                             quant_node,
-                            anchor_output_node,
+                            op_node,
                         )
                     elif isinstance(pattern, LinearPattern):
                         args, kwargs = get_args_and_kwargs_linear(
@@ -543,18 +609,34 @@ class QuantFusion(ExportPass):
                             dequants_inputs,
                             quant_node,
                         )
+                    elif isinstance(pattern, SoftmaxPattern):
+                        args, kwargs = get_args_and_kwargs_softmax(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            quant_node,
+                            op_node,
+                        )
+
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
                         args,
                         kwargs,
                     )
-                    fused.meta = quant_node.meta
-                    quant_node.replace_all_uses_with(fused)
+
+                    if len(anchors.output) > 0:
+                        fused.meta = quant_node.meta
+                        quant_node.replace_all_uses_with(fused)
+                    else:
+                        fused.meta = op_node.meta
+                        op_node.replace_all_uses_with(fused)
+                        if op_node.op == "output":
+                            _ = graph_module.graph.output((fused,))
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
-            # pyre-fixme[7]: Incompatible return type
             graph_module.recompile()
+        return PassResult(graph_module, True)
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified

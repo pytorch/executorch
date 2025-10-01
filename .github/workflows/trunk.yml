@@ -594,15 +594,22 @@ jobs:
     strategy:
       matrix:
         model: [qwen3_4b, phi_4_mini]
+        runner: [linux.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12]
+        backend: [xnnpack]
         include:
           - model: qwen3_4b
-            test_with_runner: true
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
           - model: phi_4_mini
-            test_with_runner: false
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: ${{ matrix.runner }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -612,38 +619,54 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+
+        if [[ "${{ matrix.backend }}" == "torchao" ]]; then
+          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install third-party/ao
+        fi
+
         pip install -U "huggingface_hub[cli]"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.model != 'phi_4_mini' && '--test_with_runner' || '' }}  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
-  # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
-  # test-llava-runner-macos:
-  #   name: test-llava-runner-macos
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-  #   strategy:
-  #     fail-fast: false
-  #   with:
-  #     runner: macos-14-xlarge
-  #     python-version: '3.11'
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 900
-  #     script: |
-  #       BUILD_TOOL=cmake
+  test-multimodal-macos:
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    name: test-multimodal-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b"] # llava gives segfault so not covering.
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: macos-15-xlarge
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        echo "::group::Set up ExecuTorch"
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
 
-  #       bash .ci/scripts/setup-conda.sh
-  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+        echo "::endgroup::"
 
-  #       # install Llava requirements
-  #       ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
-  #       ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
+        echo "::group::Set up Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
 
-  #       # run python unittest
-  #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
-
-  #       # run e2e (export, tokenizer and runner)
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
+        echo "::group::Test ${{ matrix.model }}"
+        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
+        echo "::endgroup::"
 
   test-qnn-model:
     name: test-qnn-model
@@ -961,6 +984,60 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
+
+  # this is for filtering out the qnn changes such that qnn jobs only triggered when the specific files are changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      qnn: ${{ steps.filter.outputs.qnn }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            qnn:
+              - 'backends/qualcomm/**'
+              - 'examples/qualcomm/**'
+              - 'examples/models/llama/**'
+
+  test-static-llama-qnn-eval-linux:
+    needs: changes # has dependency on changes jobs defined above
+    if: needs.changes.outputs.qnn == 'true'
+    name: test-static-llama-qnn-eval-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "baseline"
+            flags: ""
+            threshold: 62.0
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        BUILD_TOOL="cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Setup install_requirements for llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+
+        echo ">>> Running config: ${{ matrix.config.name }}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh \
+          --flags "${{ matrix.config.flags }}" \
+          --threshold "${{ matrix.config.threshold }}"
 
   unittest-release:
     uses: ./.github/workflows/_unittest.yml

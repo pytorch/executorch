@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0314AE3A2E2AAEE700DDE821 /* executorch_llm in Frameworks */ = {isa = PBXBuildFile; productRef = 0314AE392E2AAEE700DDE821 /* executorch_llm */; };
-		032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLaMATests.mm */; };
+		032A73CA2CAFBA8600932D36 /* LLMTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032A73C82CAFBA8600932D36 /* LLMTests.mm */; };
 		0351D9D72CAFC9A200607121 /* Resources in Resources */ = {isa = PBXBuildFile; fileRef = 03C7FA322C8AA24200E6E9AE /* Resources */; };
 		03B0118E2CAC567900054791 /* DynamicTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B0118C2CAC567900054791 /* DynamicTestCase.m */; };
 		03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = 03B011902CAD114E00054791 /* ResourceTestCase.m */; };
@@ -35,7 +35,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		032A73C82CAFBA8600932D36 /* LLaMATests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMATests.mm; sourceTree = "<group>"; };
+		032A73C82CAFBA8600932D36 /* LLMTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LLMTests.mm; sourceTree = "<group>"; };
 		037C96A02C8A570B00B3DF38 /* Tests.xctestplan */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = Tests.xctestplan; sourceTree = "<group>"; };
 		03B0118B2CAC567900054791 /* DynamicTestCase.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DynamicTestCase.h; sourceTree = "<group>"; };
 		03B0118C2CAC567900054791 /* DynamicTestCase.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DynamicTestCase.m; sourceTree = "<group>"; };
@@ -76,12 +76,12 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		032A73C92CAFBA8600932D36 /* LLaMA */ = {
+		032A73C92CAFBA8600932D36 /* LLM */ = {
 			isa = PBXGroup;
 			children = (
-				032A73C82CAFBA8600932D36 /* LLaMATests.mm */,
+				032A73C82CAFBA8600932D36 /* LLMTests.mm */,
 			);
-			path = LLaMA;
+			path = LLM;
 			sourceTree = "<group>";
 		};
 		03B0118D2CAC567900054791 /* TestUtils */ = {
@@ -127,7 +127,7 @@
 		03B2D3782C8A515C0046936E /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				032A73C92CAFBA8600932D36 /* LLaMA */,
+				032A73C92CAFBA8600932D36 /* LLM */,
 				03E7E6782CBDC1C900205E71 /* CoreMLTests.mm */,
 				03B2D3792C8A515C0046936E /* GenericTests.mm */,
 				037C96A02C8A570B00B3DF38 /* Tests.xctestplan */,
@@ -241,7 +241,7 @@
 				03B011912CAD114E00054791 /* ResourceTestCase.m in Sources */,
 				03E7E6792CBDCAE900205E71 /* CoreMLTests.mm in Sources */,
 				03B2D37A2C8A515C0046936E /* GenericTests.mm in Sources */,
-				032A73CA2CAFBA8600932D36 /* LLaMATests.mm in Sources */,
+				032A73CA2CAFBA8600932D36 /* LLMTests.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

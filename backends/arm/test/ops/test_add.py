@@ -211,10 +211,7 @@ def test_add_tensor_vgf_FP(test_data: input_t1):
         tosa_version="TOSA-1.0+FP",
         run_on_vulkan_runtime=True,
     )
-    try:
-        pipeline.run()
-    except FileNotFoundError as e:
-        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+    pipeline.run()
 
 
 @common.parametrize("test_data", Add.test_data)
@@ -228,10 +225,7 @@ def test_add_tensor_vgf_INT(test_data: input_t1):
         tosa_version="TOSA-1.0+INT",
         run_on_vulkan_runtime=True,
     )
-    try:
-        pipeline.run()
-    except FileNotFoundError as e:
-        pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+    pipeline.run()
 
 
 def get_symmetric_a16w8_add_quantizer(per_channel_quantization=False):
@@ -282,9 +276,6 @@ def test_add_tensor_16a8w_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 add operations. See: https://github.com/pytorch/executorch/issues/13730"
-)
 def test_add_tensor_16a8w_u55_INT16(test_data: input_t1):
     """Test add operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -310,9 +301,6 @@ def test_add_tensor_16a8w_u55_INT16(test_data: input_t1):
 
 @common.parametrize("test_data", Add.test_data)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 add operations. See: https://github.com/pytorch/executorch/issues/13730"
-)
 def test_add_tensor_16a8w_u85_INT16(test_data: input_t1):
     """Test add operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
