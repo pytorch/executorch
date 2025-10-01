@@ -220,7 +220,6 @@ def test_native_batch_norm_legit_no_training_u55_INT_conv(test_data: Tuple):
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_ops=BatchNorm2dConv.aten_ops[0],  # Bn is removed before check
-        run_on_fvp=True,
         qtol=1,
     )
     pipeline.run()
@@ -234,7 +233,6 @@ def test_native_batch_norm_legit_no_training_u85_INT_conv(test_data: Tuple):
         BatchNorm2dConv(*model_params),
         (test_data,),
         aten_ops=BatchNorm2dConv.aten_ops[0],  # Bn is removed before check
-        run_on_fvp=True,
         qtol=1,
     )
     pipeline.run()
@@ -336,7 +334,6 @@ def test_native_batch_norm_legit_no_stats_u55_INT(test_data: Tuple):
         BatchNorm2dNoStats(*model_params),
         (test_data,),
         aten_op=BatchNorm2dNoStats.aten_ops,
-        run_on_fvp=True,
         qtol=1,
     )
     pipeline.run()
@@ -353,7 +350,6 @@ def test_native_batch_norm_legit_no_stats_u85_INT(test_data: Tuple):
         BatchNorm2dNoStats(*model_params),
         (test_data,),
         aten_op=BatchNorm2dNoStats.aten_ops,
-        run_on_fvp=False,
         qtol=1,
     )
     pipeline.run()

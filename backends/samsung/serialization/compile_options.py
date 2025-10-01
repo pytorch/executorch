@@ -11,7 +11,8 @@ import tempfile
 from dataclasses import dataclass
 from enum import IntEnum, unique
 
-import pkg_resources
+from importlib.resources import files
+
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 from executorch.exir._serialize._flatbuffer import _flatc_compile
 from executorch.exir.backend.backend_details import CompileSpec
@@ -36,12 +37,15 @@ def gen_samsung_backend_compile_spec_core(options: EnnExecuTorchOptions) -> Comp
     with tempfile.TemporaryDirectory() as d:
         # schema
         schema_path = os.path.join(d, "{}.fbs".format(COMPILE_OPTION_SCHEMA_NAME))
+
+        schema_content = (
+            files(__package__)
+            .joinpath(f"{COMPILE_OPTION_SCHEMA_NAME}.fbs")
+            .read_bytes()
+        )
+
         with open(schema_path, "wb") as schema_file:
-            schema_file.write(
-                pkg_resources.resource_string(
-                    __name__, "{}.fbs".format(COMPILE_OPTION_SCHEMA_NAME)
-                )
-            )
+            schema_file.write(schema_content)
         # dump json
         json_path = os.path.join(d, "{}.json".format(COMPILE_OPTION_SCHEMA_NAME))
         enn_options_json = json.dumps(options, cls=_DataclassEncoder, indent=4)

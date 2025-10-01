@@ -258,7 +258,6 @@ def test_convolution_2d_u55_INT_meandim():
         model.get_inputs(),
         aten_ops=[],
         exir_ops=ComboConv2dMeandim.edge_op_list,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -271,7 +270,6 @@ def test_convolution_2d_u85_INT_meandim():
         model.get_inputs(),
         aten_ops=[],
         exir_ops=ComboConv2dMeandim.edge_op_list,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -346,7 +344,6 @@ def test_convolution_2d_u55_INT_batchnorm_relu6(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -362,7 +359,6 @@ def test_convolution_2d_u85_INT_batchnorm_relu6(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -441,7 +437,6 @@ def test_convolution_2d_u55_INT_relu6(test_data):
         input,
         aten_ops=[],
         exir_ops=ComboConvRelu6.edge_op_list,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -457,7 +452,6 @@ def test_convolution_2d_u85_INT_relu6(test_data):
         input,
         aten_ops=[],
         exir_ops=ComboConvRelu6.edge_op_list,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -533,7 +527,6 @@ def test_convolution_2d_u55_INT_block_bottleneck(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -549,7 +542,6 @@ def test_convolution_2d_u85_INT_block_bottleneck(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -626,7 +618,6 @@ def test_convolution_2d_u55_INT_avgpool2d(test_data):
         input,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -642,7 +633,6 @@ def test_convolution_2d_u85_INT_avgpool2d(test_data):
         input,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
