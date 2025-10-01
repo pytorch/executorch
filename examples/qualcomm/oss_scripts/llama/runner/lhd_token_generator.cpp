@@ -268,26 +268,8 @@ Result<int64_t> LhdTokenGenerator<T>::generate(
       }
     }
 
+    // Fill in the token and position data
     prepare_io(input_tokens, input_pos);
-    // Only update data pointer of the cache to the tensor for SHIFT_POINTER
-    // mode
-    bool updated = this->kv_manager_->update_cache_tensor(
-        this->k_cache_in_,
-        this->k_cache_out_,
-        this->v_cache_in_,
-        this->v_cache_out_,
-        metadata_.ar_len,
-        pos);
-    // Only update the output of module for SHIFT_POINTER mode
-    if (updated) {
-      // Update the output of the module
-      ET_CHECK_MSG(
-          this->decoder_runner_->set_outputs(
-              this->method_name_, this->output_tensors_) ==
-              executorch::runtime::Error::Ok,
-          "Failed to set output tensor for module %s",
-          this->method_name_.c_str());
-    }
 
     // Run inference
     auto logits_res =

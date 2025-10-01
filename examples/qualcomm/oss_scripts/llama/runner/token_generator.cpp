@@ -134,28 +134,25 @@ void TokenGenerator<T>::init_io(
   // [I] kv_cache
   size_t index = idx; // bypass input_tokens, atten_mask, input_pos
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
-    std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
+    std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_in_ : v_cache_in_);
-    std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
-        Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
+    for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
+      Result<TensorInfo> kv_cache = method_meta->input_tensor_meta(index);
 
-        T* cache_ptr = cache_ptrs[layer][head].buffer;
+      T* cache_ptr = cache_ptrs[layer].buffer;
 
-        cache[layer].emplace_back(std::make_unique<TensorImpl>(
-            kv_cache->scalar_type(),
-            kv_cache->sizes().size(),
-            const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-            cache_ptr,
-            const_cast<TensorImpl::DimOrderType*>(
-                kv_cache->dim_order().data())));
-        input_tensors_.emplace_back(cache[layer][head].get());
-        buffer_manager->add_memory_info(
-            cache_ptr, cache[layer][head]->nbytes(), kv_cache.get());
-      }
+      cache[layer] = std::make_unique<TensorImpl>(
+          kv_cache->scalar_type(),
+          kv_cache->sizes().size(),
+          const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+          cache_ptr,
+          const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
+      input_tensors_.emplace_back(cache[layer].get());
+      buffer_manager->add_memory_info(
+          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
     }
   }
 
@@ -175,26 +172,23 @@ void TokenGenerator<T>::init_io(
   // [O] kv_cache
   index = 1;
   for (int cache_group = 0; cache_group < 2; ++cache_group) {
-    std::vector<std::vector<std::unique_ptr<TensorImpl>>>& cache =
+    std::vector<std::unique_ptr<TensorImpl>>& cache =
         (cache_group == 0 ? k_cache_out_ : v_cache_out_);
-    std::vector<std::vector<KVCache<T>>> cache_ptrs = (cache_group == 0)
+    std::vector<KVCache<T>> cache_ptrs = (cache_group == 0)
         ? kv_manager_->get_k_cache_()
         : kv_manager_->get_v_cache_();
-    for (int layer = 0; layer < metadata_.num_layers; ++layer) {
-      for (int head = 0; head < metadata_.num_heads; ++head, ++index) {
-        Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
-        T* cache_ptr = cache_ptrs[layer][head].output_buffer;
-        cache[layer].emplace_back(std::make_unique<TensorImpl>(
-            kv_cache->scalar_type(),
-            kv_cache->sizes().size(),
-            const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-            cache_ptr,
-            const_cast<TensorImpl::DimOrderType*>(
-                kv_cache->dim_order().data())));
-        output_tensors_.emplace_back(cache[layer][head].get());
-        buffer_manager->add_memory_info(
-            cache_ptr, cache[layer][head]->nbytes(), kv_cache.get());
-      }
+    for (int layer = 0; layer < metadata_.num_layers; ++layer, ++index) {
+      Result<TensorInfo> kv_cache = method_meta->output_tensor_meta(index);
+      T* cache_ptr = cache_ptrs[layer].output_buffer;
+      cache[layer] = std::make_unique<TensorImpl>(
+          kv_cache->scalar_type(),
+          kv_cache->sizes().size(),
+          const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
+          cache_ptr,
+          const_cast<TensorImpl::DimOrderType*>(kv_cache->dim_order().data()));
+      output_tensors_.emplace_back(cache[layer].get());
+      buffer_manager->add_memory_info(
+          cache_ptr, cache[layer]->nbytes(), kv_cache.get());
     }
   }
   // Prepare the vector of EValue to run inference
@@ -261,24 +255,7 @@ Result<int64_t> TokenGenerator<T>::generate(
   while (pos < seq_len - 1) {
     // Fill in the token and position data
     prepare_io(cur_token, pos);
-    // Only update data pointer of the cache to the tensor for SHIFT_POINTER
-    // mode
-    bool updated = kv_manager_->update_cache_tensor(
-        k_cache_in_,
-        k_cache_out_,
-        v_cache_in_,
-        v_cache_out_,
-        metadata_.ar_len,
-        pos);
-    // Only update the output of module for SHIFT_POINTER mode
-    if (updated) {
-      // Update the output of the module
-      ET_CHECK_MSG(
-          decoder_runner_->set_outputs(method_name_, output_tensors_) ==
-              executorch::runtime::Error::Ok,
-          "Failed to set output tensor for module %s",
-          method_name_.c_str());
-    }
+
     // Run inference
     auto logits_res = decoder_runner_->step(method_name_, inputs_);
     if (dump_logits) {

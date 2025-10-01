@@ -9,7 +9,6 @@ from typing import cast, Tuple
 import torch
 
 from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
-from executorch.backends.qualcomm.utils.constants import QCOM_REQUANTIZE
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._guards import detect_fake_mode
 
@@ -196,14 +195,6 @@ class CanonicalizeConv(ExportPass):
                                 ),
                             )
                             squeeze_node.meta = copy_meta(node.meta)
-
-                            if QCOM_REQUANTIZE in input_node.meta:
-                                input_node.meta.pop(QCOM_REQUANTIZE)
-                            if QCOM_REQUANTIZE in node.meta:
-                                squeeze_node.meta[QCOM_REQUANTIZE] = node.meta[
-                                    QCOM_REQUANTIZE
-                                ]
-                                conv2d_node.meta.pop(QCOM_REQUANTIZE, None)
 
                 for user in node.users.copy():
                     user.replace_input_with(node, squeeze_node)
