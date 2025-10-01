@@ -37,6 +37,56 @@ def is_linux_x86() -> bool:
     )
 
 
+#########################
+# Cache directory helper
+#########################
+
+APP_NAMESPACE = ["executorch", "qnn"]
+
+
+def get_staging_dir(*parts: str) -> pathlib.Path:
+    """
+    Return a cross-platform staging directory for staging SDKs/libraries.
+
+    - On Linux:
+        ~/.cache/executorch/qnn/<parts...>
+        (falls back to $HOME/.cache if $XDG_CACHE_HOME is unset)
+
+    - On Windows:
+        %LOCALAPPDATA%\executorch\qnn\<parts...>
+        (falls back to $HOME/AppData/Local if %LOCALAPPDATA% is unset)
+
+    - Override:
+        If QNN_STAGING_DIR is set in the environment, that path is used instead.
+
+    Args:
+        parts (str): Subdirectories to append under the root staging dir.
+
+    Returns:
+        pathlib.Path: Fully qualified staging path.
+    """
+    # Environment override wins
+    base = os.environ.get("QNN_STAGING_DIR")
+    if base:
+        return pathlib.Path(base).joinpath(*parts)
+
+    system = platform.system().lower()
+    if system == "windows":
+        # On Windows, prefer %LOCALAPPDATA%, fallback to ~/AppData/Local
+        base = pathlib.Path(
+            os.environ.get("LOCALAPPDATA", pathlib.Path.home() / "AppData" / "Local")
+        )
+    elif is_linux_x86():
+        # On Linux/Unix, prefer $XDG_CACHE_HOME, fallback to ~/.cache
+        base = pathlib.Path(
+            os.environ.get("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")
+        )
+    else:
+        raise ValueError(f"Unsupported platform: {system}")
+
+    return base.joinpath(*APP_NAMESPACE, *parts)
+
+
 ####################
 # qnn sdk download management
 ####################
@@ -187,7 +237,7 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 ####################
 
 GLIBC_VERSION = "2.34"
-GLIBC_ROOT = pathlib.Path(f"/tmp/glibc-install-{GLIBC_VERSION}")
+GLIBC_ROOT = get_staging_dir(f"glibc-{GLIBC_VERSION}")
 GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 MINIMUM_LIBC_VERSION = GLIBC_VERSION
@@ -196,8 +246,8 @@ RPM_URL = (
     "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/"
     "Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
 )
-RPM_PATH = pathlib.Path("/tmp/glibc.rpm")
-WORKDIR = pathlib.Path("/tmp/glibc-extracted")
+RPM_PATH = get_staging_dir("glibc") / "glibc.rpm"
+WORKDIR = get_staging_dir("glibc") / "extracted"
 
 
 def _parse_version(v: str) -> tuple[int, int]:
@@ -321,8 +371,9 @@ def _stage_libcxx(target_dir: pathlib.Path):
         logger.info("[libcxx] Already staged at %s, skipping download", target_dir)
         return
 
-    temp_tar = pathlib.Path("/tmp") / f"{LIBCXX_BASE_NAME}.tar.xz"
-    temp_extract = pathlib.Path("/tmp") / LIBCXX_BASE_NAME
+    libcxx_stage = get_staging_dir(f"libcxx-{LLVM_VERSION}")
+    temp_tar = libcxx_stage / f"{LIBCXX_BASE_NAME}.tar.xz"
+    temp_extract = libcxx_stage / LIBCXX_BASE_NAME
 
     if not temp_tar.exists():
         logger.info("[libcxx] Downloading %s", LLVM_URL)
