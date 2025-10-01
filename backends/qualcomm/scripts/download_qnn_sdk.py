@@ -44,7 +44,7 @@ def is_linux_x86() -> bool:
 APP_NAMESPACE = ["executorch", "qnn"]
 
 
-def get_staging_dir(*parts: str) -> pathlib.Path:
+def _get_staging_dir(*parts: str) -> pathlib.Path:
     """
     Return a cross-platform staging directory for staging SDKs/libraries.
 
@@ -237,8 +237,6 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
 ####################
 
 GLIBC_VERSION = "2.34"
-GLIBC_ROOT = get_staging_dir(f"glibc-{GLIBC_VERSION}")
-GLIBC_LIBDIR = GLIBC_ROOT / "lib"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 MINIMUM_LIBC_VERSION = GLIBC_VERSION
 
@@ -246,8 +244,11 @@ RPM_URL = (
     "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/"
     "Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
 )
-RPM_PATH = get_staging_dir("glibc") / "glibc.rpm"
-WORKDIR = get_staging_dir("glibc") / "extracted"
+
+
+def _get_glibc_libdir() -> pathlib.Path:
+    glibc_root = _get_staging_dir(f"glibc-{GLIBC_VERSION}")
+    return glibc_root / "lib"
 
 
 def _parse_version(v: str) -> tuple[int, int]:
@@ -270,8 +271,8 @@ def _current_glibc_version() -> str:
 def _resolve_glibc_loader() -> pathlib.Path | None:
     """Return staged ld.so path if available."""
     for p in [
-        GLIBC_LIBDIR / f"ld-{GLIBC_VERSION}.so",
-        GLIBC_LIBDIR / "ld-linux-x86-64.so.2",
+        _get_glibc_libdir() / f"ld-{GLIBC_VERSION}.so",
+        _get_glibc_libdir() / "ld-linux-x86-64.so.2",
     ]:
         if p.exists():
             return p
@@ -281,16 +282,18 @@ def _resolve_glibc_loader() -> pathlib.Path | None:
 def _stage_prebuilt_glibc():
     """Download + extract Fedora 35 glibc RPM into /tmp."""
     logger.info(">>> Staging prebuilt glibc-%s from Fedora 35 RPM", GLIBC_VERSION)
-    GLIBC_LIBDIR.mkdir(parents=True, exist_ok=True)
+    _get_glibc_libdir().mkdir(parents=True, exist_ok=True)
+    rpm_path = _get_staging_dir("glibc") / "glibc.rpm"
+    work_dir = _get_staging_dir("glibc") / "extracted"
 
     # Download
-    subprocess.check_call(["curl", "-fsSL", RPM_URL, "-o", str(RPM_PATH)])
+    subprocess.check_call(["curl", "-fsSL", RPM_URL, "-o", str(rpm_path)])
 
     # Extract
-    if WORKDIR.exists():
-        shutil.rmtree(WORKDIR)
-    WORKDIR.mkdir(parents=True)
-    subprocess.check_call(["bsdtar", "-C", str(WORKDIR), "-xf", str(RPM_PATH)])
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    work_dir.mkdir(parents=True)
+    subprocess.check_call(["bsdtar", "-C", str(work_dir), "-xf", str(rpm_path)])
 
     # Copy runtime libs
     staged = [
@@ -303,9 +306,9 @@ def _stage_prebuilt_glibc():
         "libutil.so.1",
     ]
     for lib in staged:
-        src = WORKDIR / "lib64" / lib
+        src = work_dir / "lib64" / lib
         if src.exists():
-            shutil.copy2(src, GLIBC_LIBDIR / lib)
+            shutil.copy2(src, _get_glibc_libdir() / lib)
             logger.info("[glibc] Staged %s", lib)
         else:
             logger.warning("[glibc] Missing %s in RPM", lib)
@@ -332,21 +335,22 @@ def ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
         return
 
     # Stage prebuilt if not already staged
-    if not (GLIBC_LIBDIR / "libc.so.6").exists():
+    if not (_get_glibc_libdir() / "libc.so.6").exists():
         _stage_prebuilt_glibc()
 
     loader = _resolve_glibc_loader()
     if not loader:
-        logger.error("[glibc] Loader not found in %s", GLIBC_LIBDIR)
+        logger.error("[glibc] Loader not found in %s", _get_glibc_libdir())
         return
 
     logger.info(
-        "[glibc] Re-execing under loader %s with libdir %s", loader, GLIBC_LIBDIR
+        "[glibc] Re-execing under loader %s with libdir %s", loader, _get_glibc_libdir()
     )
     os.environ[GLIBC_REEXEC_GUARD] = "1"
     os.execv(
         str(loader),
-        [str(loader), "--library-path", str(GLIBC_LIBDIR), sys.executable] + sys.argv,
+        [str(loader), "--library-path", str(_get_glibc_libdir()), sys.executable]
+        + sys.argv,
     )
 
 
@@ -371,7 +375,7 @@ def _stage_libcxx(target_dir: pathlib.Path):
         logger.info("[libcxx] Already staged at %s, skipping download", target_dir)
         return
 
-    libcxx_stage = get_staging_dir(f"libcxx-{LLVM_VERSION}")
+    libcxx_stage = _get_staging_dir(f"libcxx-{LLVM_VERSION}")
     temp_tar = libcxx_stage / f"{LIBCXX_BASE_NAME}.tar.xz"
     temp_extract = libcxx_stage / LIBCXX_BASE_NAME
 
