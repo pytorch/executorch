@@ -139,11 +139,6 @@ def main() -> None:
     if args.force_fp16:
         compile_options["force_fp16"] = True
 
-    # Configure Edge compilation
-    edge_compile_config = EdgeCompileConfig(
-        _skip_dim_order=False,  # Proper handling for Vulkan memory format
-    )
-
     logging.info(f"Exporting model {args.model_name} with Vulkan delegate")
 
     # Export the model using torch.export
@@ -157,10 +152,6 @@ def main() -> None:
     # Transform and lower with Vulkan partitioner
     edge_program = to_edge_transform_and_lower(
         program,
-        compile_config=edge_compile_config,
-        transform_passes=[
-            I64toI32(edge_compile_config._skip_dim_order),
-        ],
         partitioner=[VulkanPartitioner(compile_options)],
         generate_etrecord=args.etrecord,
     )

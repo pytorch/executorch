@@ -8,7 +8,7 @@
 
 from functools import partial
 
-from typing import Any, Dict, final, List
+from typing import Any, Callable, Dict, final, List
 
 import executorch.backends.vulkan.utils as utils
 
@@ -56,7 +56,9 @@ from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
-from executorch.exir.program._program import _copy_module
+from executorch.exir.program._program import _copy_module, _transform
+
+from torch._export.verifier import Verifier
 
 from torch.export._remove_auto_functionalized_pass import (
     unsafe_remove_auto_functionalized_pass,
@@ -65,28 +67,24 @@ from torch.export._remove_auto_functionalized_pass import (
 DEFAULT_DEBUG_HANDLE = 65535
 
 
+class _any_op(Verifier):
+    dialect = "ANY_OP"
+
+    def allowed_op_types(self):
+        return (Callable,)
+
+
 # pyre-ignore
 def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     for p in passes:
-        if issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
-            new_gm = program.graph_module
-            # This is a workaround to allow the memory planning pass to work without
-            # having to first apply ToOutVarPass(). See the `greedy()` function in
-            # `exir.memory_planning`; if this attribute isn't set, assertions in
-            # `collect_spec_from_nodes()` will fail.
-            if isinstance(p, MemoryPlanningPass):
-                new_gm.encounter_to_out_var_failure = True
-
-            new_gm_res = p(new_gm)
-            assert new_gm_res is not None
-            new_gm = new_gm_res.graph_module
-
+        if isinstance(p, MemoryPlanningPass) and hasattr(p, "run"):
+            p.run(program.graph_module)
+        elif issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
+            program = _transform(program, p, override_verifiers=[_any_op])
             # See the application of this function in exir/program/_program.py for more
             # details on why this step is necessary.
             if isinstance(p, SpecPropPass):
-                p.update_placeholder_tensor_specs(program, new_gm)
-
-            _copy_module(program.graph_module, new_gm)
+                p.update_placeholder_tensor_specs(program, program.graph_module)
         else:
             program = p(program)
 
@@ -159,17 +157,17 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
+                FuseBatchNormPass(program),
                 FusePatternsPass(program),
-                RemoveRedundantOpsTransform(),
+                FuseClampPass(),
                 AddmmToLinearTransform(),
+                RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(program),
                 ReplaceQDQPass(),
                 FoldQDQPass(program),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
-                FuseBatchNormPass(program),
-                FuseClampPass(),
             ],
         )
 
@@ -215,6 +213,11 @@ class VulkanBackend(BackendDetails):
         mem_planning_suite = MemoryPlanningAlgorithmSuite(
             algo_list=[greedy_memory_planning]
         )
+        # This is a workaround to allow the memory planning pass to work without having
+        # to first apply ToOutVarPass(). See the `greedy()` function in
+        # `exir.memory_planning`; if this attribute isn't set, assertions in
+        # `collect_spec_from_nodes()` will fail.
+        program.graph_module.encounter_to_out_var_failure = True
         program = apply_passes(
             program,
             [

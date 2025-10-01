@@ -128,7 +128,7 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         is_get_attr_node(node)
         or is_param(program, node)
         or is_buffer(program, node)
-        or is_constant(program, node)
+        or is_lifted_tensor_constant(program, node)
     )
 
 
@@ -1226,6 +1226,16 @@ def is_in_8bit_range(tensor: torch.Tensor) -> bool:
 ##
 ## Misc
 ##
+
+
+def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
+    # Handle negative indices for nchw_dim
+    if nchw_dim < 0:
+        nchw_dim += ndim
+
+    assert nchw_dim >= 0 and nchw_dim < ndim
+    whcn_dim = (ndim - 1) - nchw_dim
+    return whcn_dim
 
 
 def get_tensor_val_str(tensor_val: FakeTensor) -> str:

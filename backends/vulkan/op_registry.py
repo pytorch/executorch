@@ -48,6 +48,9 @@ class OpFeatures:
         # Optional check function used during partitioning to determine if a node's
         # inputs are supported by the operator implementation.
         "are_node_inputs_supported_fn",
+        # Optional function to determine valid representation sets for input and outputs
+        # once a node's actual inputs are known.
+        "pick_io_storage_fn",
     ]
 
     def __init__(
@@ -61,6 +64,7 @@ class OpFeatures:
         supports_resize: bool = False,
         supports_prepacking: bool = False,
         are_node_inputs_supported_fn: Optional[Callable] = allow_node,
+        pick_io_storage_fn: Optional[Callable] = None,
     ):
         self.inputs_storage: utils.TensorRepSetList = utils.TensorRepSetList(
             inputs_storage if inputs_storage is not None else []
@@ -77,14 +81,22 @@ class OpFeatures:
         self.supports_prepacking = supports_prepacking
 
         self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
+        self.pick_io_storage_fn = pick_io_storage_fn
 
     def make_op_repsets(
         self,
         op_node: torch.fx.Node,
         texture_limits: utils.ImageExtents = utils.DEFAULT_TEXTURE_LIMITS,
     ) -> utils.OpRepSets:
+        inputs_storage = self.inputs_storage
+        outputs_storage = self.outputs_storage
+        if self.pick_io_storage_fn is not None:
+            i_storage, o_storage = self.pick_io_storage_fn(op_node)
+            inputs_storage = utils.TensorRepSetList(i_storage)
+            outputs_storage = utils.TensorRepSetList(o_storage)
+
         return utils.OpRepSets(
-            self.inputs_storage, self.outputs_storage, op_node, texture_limits
+            inputs_storage, outputs_storage, op_node, texture_limits
         )
 
 
@@ -411,26 +423,9 @@ def register_softmax_op():
 def register_reduce_op():
     def check_reduce_node(node: torch.fx.Node) -> bool:
         dim_list = node.args[1]
+        # Only 1D and 2D reductions are supported at the moment.
         if isinstance(dim_list, list) and len(dim_list) > 2:
             return False
-
-        if isinstance(dim_list, list) and len(dim_list) == 2:
-            # Try to get the memory layout for this node
-            try:
-                memory_layout = utils.get_node_memory_layout(node)
-
-                # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
-                if (
-                    memory_layout is not None
-                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
-                ):
-                    # For now only default layout is supported for 2D reduction.
-                    # Because we can't determine if the input is NCHW or NHWC here,
-                    # assume the reduction dimension is packed so we cannot support it.
-                    return False
-            except (AssertionError, KeyError, AttributeError):
-                # If we can't get memory layout information, we'll assume the dims aren't packed
-                pass
 
         def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
             for arg in node.args:
@@ -446,10 +441,41 @@ def register_reduce_op():
 
         return True
 
+    def pick_io_storage_for_reduce(node: torch.fx.Node):
+        inputs_storage = utils.ANY_TEXTURE
+        outputs_storage = utils.ANY_TEXTURE
+
+        input_tensor = node.args[0]
+        ndim = input_tensor.meta["val"].ndim
+        dim_list = node.args[1]
+        if isinstance(dim_list, list) and len(dim_list) == 2:
+            reduce_dim1_whcn = utils.nchw_dim_to_whcn_dim(dim_list[0], ndim)
+            reduce_dim2_whcn = utils.nchw_dim_to_whcn_dim(dim_list[1], ndim)
+
+            possible_packed_dims = {0, 1, 2}
+            possible_packed_dims.discard(reduce_dim1_whcn)
+            possible_packed_dims.discard(reduce_dim2_whcn)
+
+            packed_dim = possible_packed_dims.pop()
+            assert packed_dim in [0, 1, 2]
+
+            if (packed_dim == 0):
+                inputs_storage = utils.WIDTH_PACKED_TEXTURE
+                outputs_storage = utils.WIDTH_PACKED_TEXTURE
+            elif (packed_dim == 1):
+                inputs_storage = utils.HEIGHT_PACKED_TEXTURE
+                outputs_storage = utils.HEIGHT_PACKED_TEXTURE
+            else:
+                inputs_storage = utils.CHANNELS_PACKED_TEXTURE
+                outputs_storage = utils.CHANNELS_PACKED_TEXTURE
+
+        return inputs_storage, outputs_storage
+
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         supports_resize=True,
         are_node_inputs_supported_fn=check_reduce_node,
+        pick_io_storage_fn=pick_io_storage_for_reduce,
     )
 
 
