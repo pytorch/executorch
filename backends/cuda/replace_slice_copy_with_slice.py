@@ -98,7 +98,9 @@ class ReplaceSliceCopyWithSlicePass(ExportPass):
 
         return False
 
-    def _argument_mutates(self, schema: torch._C.FunctionSchema, key) -> bool:  # pyre-ignore[11]
+    def _argument_mutates(
+        self, schema: torch._C.FunctionSchema, key
+    ) -> bool:  # pyre-ignore[11]
         arguments = schema.arguments
         if isinstance(key, int):
             if key >= len(arguments):

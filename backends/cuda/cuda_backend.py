@@ -12,7 +12,9 @@ from enum import Enum
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
-from executorch.backends.cuda.replace_slice_copy_with_slice import ReplaceSliceCopyWithSlicePass
+from executorch.backends.cuda.replace_slice_copy_with_slice import (
+    ReplaceSliceCopyWithSlicePass,
+)
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import (
@@ -31,8 +33,10 @@ supported_fallback_kernels: Dict[str, Any] = {}
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
 
+
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
+
 
 # context manager for non-fallback guarantee
 # it will raise exception when generating fallback kernels during aoti compile
@@ -139,8 +143,10 @@ class CudaBackend(BackendDetails):
             "max_autotune_conv_backends": "TRITON",
         }
 
-        with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            torch._logging.set_logs(post_grad_graphs=True)
+        with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
+            [SDPBackend.MATH]
+        ), torch.no_grad():
+            # torch._logging.set_logs(post_grad_graphs=True)
             so_path = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
@@ -155,7 +161,9 @@ class CudaBackend(BackendDetails):
 
         named_data_store = NamedDataStore()
         method_name = CudaBackend.method_name_from_compile_specs(compile_specs)
-        named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, "aoti_cuda_blob")
+        named_data_store.add_named_data(
+            method_name + "_so_blob", so_data, 1, "aoti_cuda_blob"
+        )
 
         # Clean up the generated so file; it has been packaged into the NamdeDataStore
         # pyre-ignorep[6]: Incompatible parameter type
