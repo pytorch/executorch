@@ -699,43 +699,27 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
             # graph operation (in this case a transpose_copy op) to be an explicit
             # ProxyValue as well. If not, the view op can be done directly on the
             # tensor.
-            transposed_weight = (
-                super().call_operator(
-                    exir_ops.edge.aten.transpose_copy.int,
-                    (
-                        weight,
-                        0,
-                        1,
-                    ),
-                    kwargs,
-                    meta,
-                )
-                if isinstance(weight, ProxyValue)
-                else weight.transpose(0, 1)
+            transposed_weight = super().call_operator(
+                exir_ops.edge.aten.transpose_copy.int,
+                (
+                    weight,
+                    0,
+                    1,
+                ),
+                kwargs,
+                meta,
             )
 
-            flipped_weight = (
-                super().call_operator(
-                    exir_ops.edge.aten.flip.default,
-                    (
-                        transposed_weight,
-                        [-1] if transposed_weight.to_tensor().dim() == 3 else [-1, -2],
-                    ),
-                    kwargs,
-                    meta,
-                )
-                if isinstance(transposed_weight, ProxyValue)
-                else (
-                    transposed_weight.flip(-1)
-                    if transposed_weight.dim() == 3
-                    else transposed_weight.flip(-1, -2)
-                )
+            flipped_weight = super().call_operator(
+                exir_ops.edge.aten.flip.default,
+                (
+                    transposed_weight,
+                    [-1] if transposed_weight.to_tensor().dim() == 3 else [-1, -2],
+                ),
+                kwargs,
+                meta,
             )
 
-            # From the previous checks, if flipped_weight is a FakeTensor, it has to be
-            # a constant (if not, it would be a ProxyValue). Mark it as such.
-            if isinstance(flipped_weight, FakeTensor):
-                flipped_weight.constant = flipped_weight
             new_args = (
                 in_tensor,
                 flipped_weight,
@@ -751,16 +735,10 @@ class ReplaceAtenConvolutionWithCadenceConvolutionPass(ExportPass):
             # Verify that output_padding is 0.
             assert all(
                 x == 0 for x in output_padding
-            ), "Cannot handle padded output in convolution"
+            ), f"Cannot handle padded output in convolution. Got {output_padding=}"
 
-            # If the innermost dim of output tensor is 1, then the stride
-            # should be 1. Note that the first dimension of output tensor is
-            # channel
-            new_stride = stride.copy()
-            out_shape = meta["val"].shape
-            assert out_shape is not None
-            for i, e in enumerate(out_shape[2:]):
-                new_stride[i] = 1 if e == 1 else stride[i]
+            # Keep the original stride to maintain correct output dimensions
+            new_stride = stride
 
             new_args = (
                 in_tensor,
