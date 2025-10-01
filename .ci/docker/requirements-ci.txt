@@ -16,18 +16,21 @@ hypothesis==6.84.2
 parameterized==0.9.0
 
 # Doc build requirements, same as https://github.com/pytorch/pytorch/blob/main/.ci/docker/requirements-docs.txt
-sphinx==5.3.0
+sphinx==7.2.6
+sphinxcontrib.katex==0.9.10
+breathe==4.36.0  # only if generating C++
+exhale==0.3.7  # only if generating C++ docs
+docutils==0.18.1,<0.21
+sphinx-design==0.6.1
+sphinxcontrib-mermaid==1.0.0
+myst-parser==3.0.1  # if want to contribute in markdown
+sphinx-gallery==0.14.0  # only if hosting interactive tutorials
+sphinx-sitemap==2.7.1
 sphinx-reredirects==0.1.4
-sphinx-gallery==0.14.0
-breathe==4.34.0
-exhale==0.2.3
-docutils==0.16
 matplotlib>=3.9.4
+sphinx-copybutton==0.5.2
 # PyTorch Theme
--e git+https://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
-myst-parser==0.18.1
-sphinx_design==0.4.1
-sphinx-copybutton==0.5.0
+-e git+https://github.com/pytorch/pytorch_sphinx_theme.git@pytorch_sphinx_theme2#egg=pytorch_sphinx_theme2
 
 # script unit test requirements
 yaspin==3.1.0

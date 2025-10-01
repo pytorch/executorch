@@ -91,6 +91,7 @@ from executorch.backends.arm._passes import (
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
+    RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
     ToTosaMemoryFormatPass,
@@ -206,6 +207,7 @@ class ArmPassManager(PassManager):
         # needs to happen before AddBiasPass, but after the table ops are inserted
         # to be able to validate that conv2d has right dtype arguments.
         self.add_pass(DecomposeConv2dWithInt16ActivationPass())
+        self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
 
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
@@ -290,6 +292,7 @@ class ArmPassManager(PassManager):
         self.add_pass(FuseViewCopyTransform())
         self.add_pass(FuseConstantArgsPass(exported_program))
         self.add_pass(CastInt64BuffersToInt32Pass(exported_program))
+        self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))

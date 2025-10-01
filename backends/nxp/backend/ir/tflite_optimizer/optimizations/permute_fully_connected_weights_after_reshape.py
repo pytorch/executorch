@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -50,7 +50,7 @@ class PermuteFullyConnectedWeightsAfterReshape(BaseOptimization):
         How it works:
             - The original model doesn't have the `Transpose`. It just has `Reshape` into `MatMul` (or `Gemm`...).
             - The `Transpose` is added, because the `Reshape` has a channels last input, which was originally
-                channels first (in the ONNX model), and so the 2D output of the `Reshape` would have the same data.
+                channels first (in the ExecuTorch model), and so the 2D output of the `Reshape` would have the same data.
                 but at different locations. The `Transpose` makes the input channels first, which ensures correct
                 output of the `Reshape`.
             - In the scenario in the graph above, it is possible to omit the `Transpose`, which causes the `Reshape`
@@ -85,12 +85,12 @@ class PermuteFullyConnectedWeightsAfterReshape(BaseOptimization):
         for (transpose, reshape, fc), tensor_map, _, _ in matcher.match_patterns():
             # Make sure the `Transpose` is applying the expected permutation.
             y = tensor_map["y"]
-            to_onnx_perm = (
+            to_executorch_perm = (
                 translator.create_channels_last_to_channels_first_permutation(
                     y.shape.len()
                 )
             )
-            if not np.allclose(to_onnx_perm, tensor_map["perm"].tmp_buffer.data):
+            if not np.allclose(to_executorch_perm, tensor_map["perm"].tmp_buffer.data):
                 continue  # The `Transpose` has an unexpected permutation.
 
             w = tensor_map["w"]

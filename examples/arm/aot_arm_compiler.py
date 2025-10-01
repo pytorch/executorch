@@ -323,11 +323,14 @@ def get_compile_spec(
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
+        extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
+        if debug_mode is not None:
+            extra_flags.append("--enable-debug-db")
         compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags=["--verbose-operators", "--verbose-cycle-estimate"],
+            extra_flags=extra_flags,
             config_ini=config,
         )
     elif "vgf" in target:
@@ -473,7 +476,7 @@ def get_args():
         "--config",
         required=False,
         default="Arm/vela.ini",
-        help="Specify custom vela configuration file (vela.ini)",
+        help="Specify custom vela configuration file (vela.ini) for Ethos-U targets.",
     )
     parser.add_argument(
         "--non_strict_export",
@@ -491,7 +494,7 @@ def get_args():
         "--enable_debug_mode",
         required=False,
         choices=["json", "tosa"],
-        help="Flag to enable ATen-to-TOSA debug mode.",
+        help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
     )
     args = parser.parse_args()
 

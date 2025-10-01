@@ -60,10 +60,10 @@ __attribute__((deprecated("This API is experimental.")))
  @param error      On failure, populated with an NSError explaining the issue.
  @return YES if generation completes successfully, NO if an error occurred.
 */
-- (BOOL)generate:(NSString *)prompt
-           config:(ExecuTorchLLMConfig *)config
-withTokenCallback:(nullable void (^)(NSString *token))callback
-            error:(NSError **)error
+- (BOOL)generateWithPrompt:(NSString *)prompt
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString *token))callback
+                     error:(NSError **)error
     NS_SWIFT_NAME(generate(_:_:tokenCallback:));
 
 /**
