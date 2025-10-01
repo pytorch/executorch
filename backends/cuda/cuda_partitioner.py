@@ -44,12 +44,14 @@ class CudaPartitioner(Partitioner):
         """
 
         partition_tags: Dict[str, DelegationSpec] = {}
+        tag = "tag0"
+
         for node in exported_program.graph.nodes:
             if node.op != "call_function":
                 continue
-            tag = "tag0"
             node.meta["delegation_tag"] = tag
-            partition_tags[tag] = self.delegation_spec
+
+        partition_tags[tag] = self.delegation_spec
 
         tag_constant_data(exported_program)
 
