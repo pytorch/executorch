@@ -64,7 +64,7 @@ class NeutronCompileSpecBuilder:
         Args:
             config: Neutron accelerator configuration, e.g. "imxrt700"
             neutron_converter_flavor: Flavor of the neutron-converter module to use. Neutron-converter module named "
-             "'neutron_converter_SDK_25_06' has flavor 'SDK_25_06'.
+             "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
         """
