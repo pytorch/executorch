@@ -87,6 +87,28 @@ def _get_staging_dir(*parts: str) -> pathlib.Path:
     return base.joinpath(*APP_NAMESPACE, *parts)
 
 
+def _atomic_download(url: str, dest: pathlib.Path):
+    """
+    Download URL into dest atomically:
+      - Write to a temp file in the same dir
+      - Move into place if successful
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Temp file in same dir (guarantees atomic rename)
+    with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp:
+        tmp_path = pathlib.Path(tmp.name)
+
+    try:
+        urllib.request.urlretrieve(url, tmp_path)
+        tmp_path.replace(dest)  # atomic rename
+    except Exception:
+        # Clean up partial file on failure
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+
 ####################
 # qnn sdk download management
 ####################
@@ -385,7 +407,11 @@ def _stage_libcxx(target_dir: pathlib.Path):
 
     if not temp_tar.exists():
         logger.info("[libcxx] Downloading %s", LLVM_URL)
-        urllib.request.urlretrieve(LLVM_URL, temp_tar)
+        _atomic_download(LLVM_URL, temp_tar)
+
+    # Sanity check before extracting
+    if not temp_tar.exists() or temp_tar.stat().st_size == 0:
+        raise FileNotFoundError(f"[libcxx] Tarball missing or empty: {temp_tar}")
 
     logger.info("[libcxx] Extracting %s", temp_tar)
     with tarfile.open(temp_tar, "r:xz") as tar:
