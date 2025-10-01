@@ -52,7 +52,7 @@ def get_staging_dir(*parts: str) -> pathlib.Path:
         ~/.cache/executorch/qnn/<parts...>
         (falls back to $HOME/.cache if $XDG_CACHE_HOME is unset)
 
-    - On Windows:
+    - On Windows (not supported yet, but as placeholder):
         %LOCALAPPDATA%\executorch\qnn\<parts...>
         (falls back to $HOME/AppData/Local if %LOCALAPPDATA% is unset)
 
