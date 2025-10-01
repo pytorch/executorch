@@ -2244,10 +2244,10 @@ def avg_pool2d_meta(
     kernel_size: Tuple[int],
     stride: Tuple[int],
     padding: Tuple[int],
-    ceil_mode: bool,
-    count_include_pad: Optional[bool] = True,
+    ceil_mode: bool = False,
+    count_include_pad: bool = True,
     divisor_override: Optional[int] = None,
-    in_zero_point: Optional[int] = None,
+    in_zero_point: Optional[torch.Tensor] = None,
     channel_last: bool = False,
 ) -> torch.Tensor:
     # Use torch native meta kernels when operator semantics are similar
