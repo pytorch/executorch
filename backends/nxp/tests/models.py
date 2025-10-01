@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from typing import Callable, Collection, Union
 
 import torch
@@ -167,6 +168,32 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class AddmmModule(torch.nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        self.bias = torch.nn.Parameter(torch.empty(in_channels))
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+        bound = 1 / math.sqrt(fan_in)
+        torch.nn.init.uniform_(self.bias, -bound, bound)
+        self.eval()
+
+    def forward(self, x):
+        return torch.addmm(self.bias, x, self.weight)
+
+
+class MmModule(torch.nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        self.eval()
+
+    def forward(self, x):
+        return torch.mm(x, self.weight)
 
 
 class LinearSoftmaxModule(torch.nn.Module):
