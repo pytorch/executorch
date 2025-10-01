@@ -154,21 +154,24 @@ TEST(PrintEvalueTest, NaNDouble) {
 
 TEST(PrintEvalueTest, EmptyString) {
   std::string str = "";
-  EValue value(str.c_str(), str.size());
+  ArrayRef<char> str_ref(const_cast<char*>(str.c_str()), str.size());
+  EValue value(&str_ref);
   expect_output(value, "\"\"");
 }
 
 TEST(PrintEvalueTest, BasicString) {
   // No escaping required.
   std::string str = "Test Data";
-  EValue value(str.c_str(), str.size());
+  ArrayRef<char> str_ref(const_cast<char*>(str.c_str()), str.size());
+  EValue value(&str_ref);
   expect_output(value, "\"Test Data\"");
 }
 
 TEST(PrintEvalueTest, EscapedString) {
   // Contains characters that need to be escaped.
   std::string str = "double quote: \" backslash: \\";
-  EValue value(str.c_str(), str.size());
+  ArrayRef<char> str_ref(const_cast<char*>(str.c_str()), str.size());
+  EValue value(&str_ref);
   expect_output(value, "\"double quote: \\\" backslash: \\\\\"");
 }
 
@@ -267,31 +270,38 @@ TEST(PrintEvalueTest, UnelidedBoolLists) {
   // case; the other scalar types use the same underlying code, so they don't
   // need to test this again.
   {
-    EValue value(ArrayRef<bool>(list.data(), static_cast<size_t>(0ul)));
+    ArrayRef<bool> bool_ref(list.data(), static_cast<size_t>(0ul));
+    EValue value(&bool_ref);
     expect_output(value, "(len=0)[]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 1));
+    ArrayRef<bool> bool_ref(list.data(), 1);
+    EValue value(&bool_ref);
     expect_output(value, "(len=1)[True]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 2));
+    ArrayRef<bool> bool_ref(list.data(), 2);
+    EValue value(&bool_ref);
     expect_output(value, "(len=2)[True, False]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 3));
+    ArrayRef<bool> bool_ref(list.data(), 3);
+    EValue value(&bool_ref);
     expect_output(value, "(len=3)[True, False, True]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 4));
+    ArrayRef<bool> bool_ref(list.data(), 4);
+    EValue value(&bool_ref);
     expect_output(value, "(len=4)[True, False, True, False]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 5));
+    ArrayRef<bool> bool_ref(list.data(), 5);
+    EValue value(&bool_ref);
     expect_output(value, "(len=5)[True, False, True, False, True]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 6));
+    ArrayRef<bool> bool_ref(list.data(), 6);
+    EValue value(&bool_ref);
     expect_output(value, "(len=6)[True, False, True, False, True, False]");
   }
 }
@@ -302,16 +312,19 @@ TEST(PrintEvalueTest, ElidedBoolLists) {
 
   {
     // Default edge items is 3, so the shortest elided list length is 7.
-    EValue value(ArrayRef<bool>(list.data(), 7));
+    ArrayRef<bool> bool_ref(list.data(), 7);
+    EValue value(&bool_ref);
     expect_output(value, "(len=7)[True, False, True, ..., True, False, True]");
   }
   {
-    EValue value(ArrayRef<bool>(list.data(), 8));
+    ArrayRef<bool> bool_ref(list.data(), 8);
+    EValue value(&bool_ref);
     expect_output(value, "(len=8)[True, False, True, ..., False, True, False]");
   }
   {
     // Multi-digit length.
-    EValue value(ArrayRef<bool>(list.data(), 10));
+    ArrayRef<bool> bool_ref(list.data(), 10);
+    EValue value(&bool_ref);
     expect_output(
         value, "(len=10)[True, False, True, ..., False, True, False]");
   }
@@ -342,19 +355,19 @@ TEST(PrintEvalueTest, UnelidedIntLists) {
   {
     BoxedEvalueList<int64_t> list(
         wrapped_values.data(), unwrapped_values.data(), 0);
-    EValue value(list);
+    EValue value(&list);
     expect_output(value, "(len=0)[]");
   }
   {
     BoxedEvalueList<int64_t> list(
         wrapped_values.data(), unwrapped_values.data(), 3);
-    EValue value(list);
+    EValue value(&list);
     expect_output(value, "(len=3)[-2, -1, 0]");
   }
   {
     BoxedEvalueList<int64_t> list(
         wrapped_values.data(), unwrapped_values.data(), 6);
-    EValue value(list);
+    EValue value(&list);
     expect_output(value, "(len=6)[-2, -1, 0, 1, 2, 3]");
   }
 }
@@ -392,20 +405,20 @@ TEST(PrintEvalueTest, ElidedIntLists) {
     // Default edge items is 3, so the shortest elided list length is 7.
     BoxedEvalueList<int64_t> list(
         wrapped_values.data(), unwrapped_values.data(), 7);
-    EValue value(list);
+    EValue value(&list);
     expect_output(value, "(len=7)[-4, -3, -2, ..., 0, 1, 2]");
   }
   {
     BoxedEvalueList<int64_t> list(
         wrapped_values.data(), unwrapped_values.data(), 8);
-    EValue value(list);
+    EValue value(&list);
     expect_output(value, "(len=8)[-4, -3, -2, ..., 1, 2, 3]");
   }
   {
     // Multi-digit length.
     BoxedEvalueList<int64_t> list(
         wrapped_values.data(), unwrapped_values.data(), 10);
-    EValue value(list);
+    EValue value(&list);
     expect_output(value, "(len=10)[-4, -3, -2, ..., 3, 4, 5]");
   }
 }
@@ -419,15 +432,18 @@ TEST(PrintEvalueTest, UnelidedDoubleLists) {
   std::array<double, 6> list = {-2.2, -1, 0, INFINITY, NAN, 3.3};
 
   {
-    EValue value(ArrayRef<double>(list.data(), static_cast<size_t>(0ul)));
+    ArrayRef<double> double_ref(list.data(), static_cast<size_t>(0ul));
+    EValue value(&double_ref);
     expect_output(value, "(len=0)[]");
   }
   {
-    EValue value(ArrayRef<double>(list.data(), 3));
+    ArrayRef<double> double_ref(list.data(), 3);
+    EValue value(&double_ref);
     expect_output(value, "(len=3)[-2.2, -1., 0.]");
   }
   {
-    EValue value(ArrayRef<double>(list.data(), 6));
+    ArrayRef<double> double_ref(list.data(), 6);
+    EValue value(&double_ref);
     expect_output(value, "(len=6)[-2.2, -1., 0., inf, nan, 3.3]");
   }
 }
@@ -438,16 +454,19 @@ TEST(PrintEvalueTest, ElidedDoubleLists) {
 
   {
     // Default edge items is 3, so the shortest elided list length is 7.
-    EValue value(ArrayRef<double>(list.data(), 7));
+    ArrayRef<double> double_ref(list.data(), 7);
+    EValue value(&double_ref);
     expect_output(value, "(len=7)[-4.4, -3., -2.2, ..., 0., inf, nan]");
   }
   {
-    EValue value(ArrayRef<double>(list.data(), 8));
+    ArrayRef<double> double_ref(list.data(), 8);
+    EValue value(&double_ref);
     expect_output(value, "(len=8)[-4.4, -3., -2.2, ..., inf, nan, 3.3]");
   }
   {
     // Multi-digit length.
-    EValue value(ArrayRef<double>(list.data(), 10));
+    ArrayRef<double> double_ref(list.data(), 10);
+    EValue value(&double_ref);
     expect_output(value, "(len=10)[-4.4, -3., -2.2, ..., 3.3, 4., 5.5]");
   }
 }
@@ -503,7 +522,7 @@ void expect_tensor_list_output(size_t num_tensors, const char* expected) {
   ASSERT_LE(num_tensors, wrapped_values.size());
   BoxedEvalueList<executorch::aten::Tensor> list(
       wrapped_values.data(), unwrapped_values, num_tensors);
-  EValue value(list);
+  EValue value(&list);
   expect_output(value, expected);
 }
 
@@ -579,7 +598,7 @@ void expect_list_optional_tensor_output(
   ASSERT_LE(num_tensors, wrapped_values.size());
   BoxedEvalueList<std::optional<executorch::aten::Tensor>> list(
       wrapped_values.data(), unwrapped_values, num_tensors);
-  EValue value(list);
+  EValue value(&list);
   expect_output(value, expected);
 }
 
@@ -628,7 +647,8 @@ TEST(PrintEvalueTest, UnknownTag) {
 
 TEST(PrintEvalueTest, EdgeItemsOverride) {
   std::array<double, 7> list = {-3.0, -2.2, -1, 0, 3.3, 4.0, 5.5};
-  EValue value(ArrayRef<double>(list.data(), 7));
+  ArrayRef<double> double_ref(list.data(), 7);
+  EValue value(&double_ref);
 
   {
     // Default edge items is 3, so this should elide.
@@ -653,7 +673,8 @@ TEST(PrintEvalueTest, EdgeItemsOverride) {
 
 TEST(PrintEvalueTest, EdgeItemsDefaults) {
   std::array<double, 7> list = {-3.0, -2.2, -1, 0, 3.3, 4.0, 5.5};
-  EValue value(ArrayRef<double>(list.data(), 7));
+  ArrayRef<double> double_ref(list.data(), 7);
+  EValue value(&double_ref);
 
   {
     // Default edge items is 3, so this should elide.
@@ -680,7 +701,8 @@ TEST(PrintEvalueTest, EdgeItemsDefaults) {
 
 TEST(PrintEvalueTest, EdgeItemsSingleStream) {
   std::array<double, 7> list = {-3.0, -2.2, -1, 0, 3.3, 4.0, 5.5};
-  EValue value(ArrayRef<double>(list.data(), 7));
+  ArrayRef<double> double_ref(list.data(), 7);
+  EValue value(&double_ref);
   std::ostringstream os_before;
 
   // Print to the same stream multiple times, showing that evalue_edge_items
@@ -750,7 +772,8 @@ TEST(PrintEvalueTest, ListWrapping) {
 
   {
     // Should elide by default and print on a single line.
-    EValue value(ArrayRef<double>(list.data(), list.size()));
+    ArrayRef<double> double_ref(list.data(), list.size());
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << value;
@@ -759,7 +782,8 @@ TEST(PrintEvalueTest, ListWrapping) {
   {
     // Exactly the per-line length should not wrap when increasing the number of
     // edge items to disable elision.
-    EValue value(ArrayRef<double>(list.data(), kItemsPerLine));
+    ArrayRef<double> double_ref(list.data(), kItemsPerLine);
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << torch::executor::util::evalue_edge_items(1000) << value;
@@ -768,7 +792,8 @@ TEST(PrintEvalueTest, ListWrapping) {
   }
   {
     // One more than the per-line length should wrap; no elision.
-    EValue value(ArrayRef<double>(list.data(), kItemsPerLine + 1));
+    ArrayRef<double> double_ref(list.data(), kItemsPerLine + 1);
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << torch::executor::util::evalue_edge_items(1000) << value;
@@ -781,7 +806,8 @@ TEST(PrintEvalueTest, ListWrapping) {
   }
   {
     // Exactly twice the per-line length, without elision.
-    EValue value(ArrayRef<double>(list.data(), kItemsPerLine * 2));
+    ArrayRef<double> double_ref(list.data(), kItemsPerLine * 2);
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << torch::executor::util::evalue_edge_items(1000) << value;
@@ -795,7 +821,8 @@ TEST(PrintEvalueTest, ListWrapping) {
   }
   {
     // Exactly one whole line, with elision.
-    EValue value(ArrayRef<double>(list.data(), kItemsPerLine * 3));
+    ArrayRef<double> double_ref(list.data(), kItemsPerLine * 3);
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << torch::executor::util::evalue_edge_items(kItemsPerLine) << value;
@@ -810,7 +837,8 @@ TEST(PrintEvalueTest, ListWrapping) {
   }
   {
     // Edge item count slightly larger than per-line length, with elision.
-    EValue value(ArrayRef<double>(list.data(), kItemsPerLine * 3));
+    ArrayRef<double> double_ref(list.data(), kItemsPerLine * 3);
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << torch::executor::util::evalue_edge_items(kItemsPerLine + 1) << value;
@@ -829,7 +857,8 @@ TEST(PrintEvalueTest, ListWrapping) {
   }
   {
     // Large wrapped, ragged, elided example.
-    EValue value(ArrayRef<double>(list.data(), list.size()));
+    ArrayRef<double> double_ref(list.data(), list.size());
+    EValue value(&double_ref);
 
     std::ostringstream os;
     os << torch::executor::util::evalue_edge_items(33) << value;
@@ -946,7 +975,7 @@ TEST(PrintEvalueTest, WrappedTensorLists) {
   // Demonstrate the formatting when printing a list with multiple tensors.
   BoxedEvalueList<executorch::aten::Tensor> list(
       wrapped_values.data(), unwrapped_values, wrapped_values.size());
-  EValue value(list);
+  EValue value(&list);
 
   std::ostringstream os;
   os << torch::executor::util::evalue_edge_items(15) << value;
