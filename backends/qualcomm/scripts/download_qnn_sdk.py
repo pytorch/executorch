@@ -45,7 +45,7 @@ APP_NAMESPACE = ["executorch", "qnn"]
 
 
 def _get_staging_dir(*parts: str) -> pathlib.Path:
-    """
+    r"""
     Return a cross-platform staging directory for staging SDKs/libraries.
 
     - On Linux:
