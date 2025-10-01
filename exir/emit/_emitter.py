@@ -146,8 +146,6 @@ class _EmitterState:
     operators: List[Operator]
     delegates: List[BackendDelegate]
     operator_cache: Dict[Tuple[str, str], int]
-    # delegate_cache: the key is hash(delegated_payload) and the value is the index in delegates
-    delegate_cache: Dict[str, int]
     emit_stacktrace: bool
     emit_mutable_buffer_names: bool
 
@@ -1091,7 +1089,7 @@ class _Emitter(torch.fx.Interpreter):
         delegate's blob."""
         processed_bytes = lowered_module.processed_bytes
         hashed = hashlib.sha256(processed_bytes).hexdigest()
-        delegate_index = self.emitter_state.delegate_cache.get(hashed)
+        delegate_index = self.program_state.backend_delegate_data_cache.get(hashed)
         delegate_ret = None
 
         if isinstance(self.node.meta["spec"], list):
@@ -1129,28 +1127,20 @@ class _Emitter(torch.fx.Interpreter):
         if delegate_index is None:
             # Allocate an entry for the data. TODO(T150113674): Reuse any duplicate entries if
             # present.
-            hashed = hashlib.sha256(processed_bytes).hexdigest()
-            data_index: Optional[int] = (
-                self.program_state.backend_delegate_data_cache.get(hashed)
+            delegate_index = len(self.program_state.backend_delegate_data_cache)
+            self.program_state.backend_delegate_data_cache[hashed] = delegate_index
+            self.program_state.backend_delegate_data.append(
+                BackendDelegateInlineData(data=processed_bytes)
             )
-            if data_index is None:
-                data_index = len(self.program_state.backend_delegate_data)
-                self.program_state.backend_delegate_data_cache[hashed] = data_index
-                self.program_state.backend_delegate_data.append(
-                    BackendDelegateInlineData(data=processed_bytes)
-                )
 
-            backend_delegate = BackendDelegate(
-                id=lowered_module.backend_id,
-                processed=BackendDelegateDataReference(
-                    location=DataLocation.INLINE, index=data_index
-                ),
-                compile_specs=lowered_module.compile_specs,
-            )
-            delegate_index = len(self.emitter_state.delegate_cache)
-            self.emitter_state.delegates.append(backend_delegate)
-            self.emitter_state.delegate_cache[hashed] = delegate_index
-
+        backend_delegate = BackendDelegate(
+            id=lowered_module.backend_id,
+            processed=BackendDelegateDataReference(
+                location=DataLocation.INLINE, index=delegate_index
+            ),
+            compile_specs=lowered_module.compile_specs,
+        )
+        self.emitter_state.delegates.append(backend_delegate)
         # TODO(angelayi) Will need to emit the kwargs too, in the correct order according to the
         # function's spec and with default arguments. This requires us to store the function's spec
         # in to_backend()
@@ -1163,7 +1153,12 @@ class _Emitter(torch.fx.Interpreter):
             delegate_args.append(elem.id)
 
         self.chain.instructions.append(
-            Instruction(DelegateCall(delegate_index=delegate_index, args=delegate_args))
+            Instruction(
+                DelegateCall(
+                    delegate_index=len(self.emitter_state.delegates) - 1,
+                    args=delegate_args,
+                )
+            )
         )
 
         return delegate_ret
