@@ -18,23 +18,18 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-    VgfQuantizer,
-)
+from executorch.backends.arm.ethosu import EthosUCompileSpec
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     evaluate_model,
     evaluator_calibration_data,
 )
 
-from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
+from executorch.backends.arm.vgf import VgfCompileSpec
 
 # To use Cortex-M backend
 from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
@@ -158,15 +153,8 @@ def quantize(
     export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = None
-    if isinstance(compile_specs, EthosUCompileSpec):
-        quantizer = EthosUQuantizer(compile_specs)
-    elif isinstance(compile_specs, TosaCompileSpec):
-        quantizer = TOSAQuantizer(compile_specs)
-    elif isinstance(compile_specs, VgfCompileSpec):
-        quantizer = VgfQuantizer(compile_specs)
-    else:
-        raise RuntimeError("Unsupported compilespecs for quantization!")
+
+    quantizer = create_quantizer(compile_specs)
 
     operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
@@ -649,14 +637,7 @@ def to_edge_TOSA_delegate(
             args, model, example_inputs, compile_spec
         )
 
-    if isinstance(compile_spec, EthosUCompileSpec):
-        partitioner = EthosUPartitioner(compile_spec)
-    elif isinstance(compile_spec, TosaCompileSpec):
-        partitioner = TOSAPartitioner(compile_spec)
-    elif isinstance(compile_spec, VgfCompileSpec):
-        partitioner = VgfPartitioner(compile_spec)
-    else:
-        raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
+    partitioner = create_partitioner(compile_spec)
 
     edge = to_edge_transform_and_lower(
         exported_program,
