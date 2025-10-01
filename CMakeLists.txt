@@ -587,6 +587,16 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  # Build common AOTI functionality (required for CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
+  # Build CUDA-specific AOTI functionality
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda)
+  # Add aoti_cuda to backends - it already depends on aoti_common
+  list(APPEND _executorch_backends aoti_cuda)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -1020,6 +1030,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   set(_executor_runner_libs executorch extension_evalue_util
                             extension_runner_util gflags executorch_backends
   )
+
+  # Add flat tensor extension if it's built
+  if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+    list(APPEND _executor_runner_libs extension_flat_tensor)
+  endif()
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
