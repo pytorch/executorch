@@ -67,10 +67,11 @@ The XNNPACK delegate can also be used as a backend to execute symmetrically quan
 
 ### Supported Quantization Schemes
 The XNNPACK delegate supports the following quantization schemes:
+
 - 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
-    - Supports both static and dynamic activations.
-    - Supports per-channel and per-tensor schemes.
-    - Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.
+  - Supports both static and dynamic activations.
+  - Supports per-channel and per-tensor schemes.
+  - Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.
 
 Weight-only quantization is not currently supported on XNNPACK.
 
