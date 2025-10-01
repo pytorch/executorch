@@ -8,6 +8,7 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.add_bias_pass import AddBiasPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.quant_args import QuantArgs
 
@@ -40,7 +41,7 @@ class DecomposeCumsumPass(ArmPass):
     And the convolution is applied over dimension H.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {AddBiasPass}
 
     def call(self, graph_module):
         graph = graph_module.graph
