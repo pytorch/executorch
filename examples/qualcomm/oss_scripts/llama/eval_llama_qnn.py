@@ -255,8 +255,6 @@ def prequant_algorithm(model, prefill_config, args):
         reverse_quantize_module_swap(wrapped_model)
 
     for layer in model.layers:
-        if getattr(layer.attention, "prepare_sha", None):
-            layer.attention.prepare_sha()
         if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
             layer.feed_forward.prepare_feedfoward_conv()
     if args.embedding_quantize:
@@ -344,7 +342,6 @@ def eval_llm(args):
             tokenizer=tokenizer,
             ar_len=args.max_seq_len,
             max_seq_len=args.max_seq_len,
-            kv_updater=args.kv_updater,
             tasks=["wikitext"],
             tasks_limit=1,
             use_i64_token=use_i64_token,
@@ -366,7 +363,6 @@ def eval_llm(args):
         #     tokenizer=tokenizer,
         #     ar_len=args.max_seq_len,
         #     max_seq_len=args.max_seq_len,
-        #     kv_updater=args.kv_updater,
         #     prompt="Can you tell me about Facebook?",
         #     use_i64_token=use_i64_token,
         #     event_name="convert_pt2e_prompt",
@@ -380,7 +376,6 @@ def eval_llm(args):
         tokenizer=tokenizer,
         ar_len=args.max_seq_len,
         max_seq_len=args.max_seq_len,
-        kv_updater=args.kv_updater,
         tasks=["wikitext"],
         tasks_limit=0.1,
         use_i64_token=use_i64_token,
@@ -417,13 +412,6 @@ def main() -> None:
         "--quant_linear_only",
         help="if you select this option we quantize linear layers only",
         action="store_true",
-    )
-    parser.add_argument(
-        "--kv_updater",
-        help="Choose how to update kv cache during runtime",
-        choices=["smart_mask", "shift_pointer"],
-        default="smart_mask",
-        type=str,
     )
     parser.add_argument(
         "--decoder_model",
