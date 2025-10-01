@@ -30,7 +30,7 @@ def test_conv2d_neutron_conversion__default_flavor():
 
     neutron_converter_manager = NeutronConverterManager()
     neutron_model = neutron_converter_manager.convert(
-        tflite_model, "imxrt700", "SDK_25_06"
+        tflite_model, "imxrt700", "SDK_25_09"
     )
 
     assert len(

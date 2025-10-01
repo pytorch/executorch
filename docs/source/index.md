@@ -115,186 +115,20 @@ ExecuTorch provides support for:
 ```{toctree}
 :glob:
 :maxdepth: 1
-:caption: Introduction
 :hidden:
 
-intro-overview
-intro-how-it-works
-getting-started-architecture
-concepts
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Usage
-:hidden:
-
-getting-started
-using-executorch-export
-using-executorch-android
-using-executorch-ios
-using-executorch-cpp
-using-executorch-runtime-integration
-using-executorch-troubleshooting
-using-executorch-building-from-source
-using-executorch-faqs
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Examples
-:hidden:
-
-Building an ExecuTorch Android Demo App <https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo#executorch-android-demo-app>
-Building an ExecuTorch iOS Demo App <https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo>
-tutorial-arm-ethos-u
-tutorial-arm-vgf
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Backends
-:hidden:
-
-backends-overview
-backends-xnnpack
-backends-coreml
-backends-mps
-backends-vulkan
-backends-arm-ethos-u
-backends-arm-vgf
-backends-qualcomm
-backends-mediatek
-backends-cadence
-OpenVINO Backend <build-run-openvino>
-backends-nxp
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Developer Tools
-:hidden:
-
-devtools-overview
-bundled-io
-etrecord
-etdump
-runtime-profiling
-model-debugging
-model-inspector
-memory-planning-inspection
-delegate-debugging
-devtools-tutorial
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Runtime
-:hidden:
-
-runtime-overview
-extension-module
-extension-tensor
-running-a-model-cpp-tutorial
-runtime-backend-delegate-implementation-and-linking
-runtime-platform-abstraction-layer
-portable-cpp-programming
-pte-file-format
-ptd-file-format
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: API Reference
-:hidden:
-
-export-to-executorch-api-reference
-executorch-runtime-api-reference
-runtime-python-api-reference
-api-life-cycle
-Javadoc <https://pytorch.org/executorch/main/javadoc/>
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Quantization
-:hidden:
-
-quantization-overview
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Kernel Library
-:hidden:
-
-kernel-library-overview
-kernel-library-custom-aten-kernel
-kernel-library-selective-build
-```
-
-```{toctree}
-:glob:
-:maxdepth: 2
-:caption: Working with LLMs
-:hidden:
-
-Getting Started <llm/getting-started>
-Exporting LLMs with export_llm <llm/export-llm>
-Exporting custom LLMs <llm/export-custom-llm>
-Running with C++ <llm/run-with-c-plus-plus>
-Running on Android <XNNPack> <https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android>
-Running on Android <QNN> <llm/build-run-llama3-qualcomm-ai-engine-direct-backend>
-Running on iOS <llm/run-on-ios>
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Backend Development
-:hidden:
-
-backend-delegates-integration
-backend-delegates-xnnpack-reference
-backend-delegates-dependencies
-compiler-delegate-and-partitioner
-debug-backend-delegate
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: IR Specification
-:hidden:
-
-ir-exir
-ir-ops-set-definition
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Compiler Entry Points
-:hidden:
-
-compiler-backend-dialect
-compiler-custom-compiler-passes
-compiler-memory-planning
-```
-
-```{toctree}
-:glob:
-:maxdepth: 1
-:caption: Contributing
-:hidden:
-
+intro
+usage
+examples
+backends
+developer-tools
+runtime
+api
+quantization
+kernel-library
+llm/working-with-llms
+backend-development
+ir-specification
+compiler-entry-points
 contributing
 ```

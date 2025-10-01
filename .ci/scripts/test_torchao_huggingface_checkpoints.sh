@@ -5,6 +5,7 @@ set -euxo pipefail
 # Args / flags
 # -------------------------
 TEST_WITH_RUNNER=0
+USE_TORCHAO_KERNELS=0
 MODEL_NAME=""
 
 # Parse args
@@ -22,10 +23,14 @@ while [[ $# -gt 0 ]]; do
     --test_with_runner)
       TEST_WITH_RUNNER=1
       ;;
+    --use_torchao_kernels)
+      USE_TORCHAO_KERNELS=1
+      ;;
     -h|--help)
-      echo "Usage: $0 <model_name> [--test_with_runner]"
+      echo "Usage: $0 <model_name> [--test_with_runner] [--use_torchao_kernels]"
       echo "  model_name: qwen3_4b | phi_4_mini"
       echo "  --test_with_runner: build ET + run llama_main to sanity-check the export"
+      echo "  --use_torchao_kernels: use torchao kernels for linear and tied embedding"
       exit 0
       ;;
     *)
@@ -41,6 +46,13 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
 fi
 
 MODEL_OUT=model.pte
+
+
+# Default to XNNPACK
+BACKEND_ARGS="-X --xnnpack-extended-ops"
+if [[ "$USE_TORCHAO_KERNELS" -eq 1 ]]; then
+  BACKEND_ARGS="--use-torchao-kernels"
+fi
 
 case "$MODEL_NAME" in
   qwen3_4b)
@@ -58,12 +70,12 @@ case "$MODEL_NAME" in
       --output_name $MODEL_OUT \
       -kv \
       --use_sdpa_with_kv_cache \
-      -X \
-      --xnnpack-extended-ops \
       --max_context_length 1024 \
       --max_seq_length 1024 \
+      --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}' \
+      --verbose \
       --dtype fp32 \
-      --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}'
+      ${BACKEND_ARGS}
     ;;
 
   phi_4_mini)
@@ -81,12 +93,12 @@ case "$MODEL_NAME" in
       --output_name $MODEL_OUT \
       -kv \
       --use_sdpa_with_kv_cache \
-      -X \
-      --xnnpack-extended-ops \
       --max_context_length 1024 \
       --max_seq_length 1024 \
+      --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}' \
+      --verbose \
       --dtype fp32 \
-      --metadata '{"get_bos_id":199999, "get_eos_ids":[200020,199999]}'
+      ${BACKEND_ARGS}
     ;;
 
   *)
@@ -104,6 +116,10 @@ if [[ $MODEL_SIZE -gt $EXPECTED_MODEL_SIZE_UPPER_BOUND ]]; then
 fi
 
 # Install ET with CMake
+EXECUTORCH_BUILD_KERNELS_TORCHAO="OFF"
+if [[ "$USE_TORCHAO_KERNELS" -eq 1 ]]; then
+  EXECUTORCH_BUILD_KERNELS_TORCHAO="ON"
+fi
 if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
   echo "[runner] Building and testing llama_main ..."
     cmake -DPYTHON_EXECUTABLE=python \
@@ -120,6 +136,7 @@ if [[ "$TEST_WITH_RUNNER" -eq 1 ]]; then
         -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_TORCHAO=${EXECUTORCH_BUILD_KERNELS_TORCHAO} \
         -Bcmake-out .
     cmake --build cmake-out -j16 --config Release --target install
 

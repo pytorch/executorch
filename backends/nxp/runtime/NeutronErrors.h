@@ -39,6 +39,32 @@ typedef enum ERROR_COMPONENT_ID {
   ERROR_COMPONENT_DRIVER = 0x3
 } ERROR_COMPONENT_ID;
 
+/* Neutron Firmware error category codes */
+typedef enum ERROR_CATEGORY_FW {
+  ERROR_CATEGORY_FW_GENERIC, /* Generic error category */
+  ERROR_CATEGORY_FW_UCODE, /* Microcode bad magic or version incompatible. */
+  ERROR_CATEGORY_FW_BUFFER_OVERFLOW, /* Buffer overflow error category */
+  ERROR_CATEGORY_FW_NULL_POINTER, /* Pointer is null */
+  ERROR_CATEGORY_FW_INTR_ERROR, /* Interrupt triggering error */
+  ERROR_CATEGORY_FW_DMAPI_ERROR, /* DM API parameter error */
+} ERROR_CATEGORY_FW;
+
+/* Neutron Driver error category codes */
+typedef enum ERROR_CATEGORY_DRIVER {
+  ERROR_CATEGORY_DRIVER_GENERIC, /* Generic error category */
+  ERROR_CATEGORY_DRIVER_UNSUPPORTED, /* Unsupported function */
+  ERROR_CATEGORY_DRIVER_UCODE, /* Microcode bad magic or version incompatible.
+                                */
+  ERROR_CATEGORY_DRIVER_INVALID, /* Invalid arguments */
+  ERROR_CATEGORY_DRIVER_BAD_HANDLE, /* Bad inference handle */
+  ERROR_CATEGORY_DRIVER_NO_MEMORY, /* Not enough memory */
+  ERROR_CATEGORY_DRIVER_INTERNAL_FAULT, /* Internal error */
+  ERROR_CATEGORY_DRIVER_UNKNOWN_ARCH, /* Unknown architecture */
+  ERROR_CATEGORY_DRIVER_TRACE_NOT_RUN, /* Tracing did not run, but trace buffer
+                                          was requested. */
+  ERROR_CATEGORY_DRIVER_TIMEOUT /* Timeout error. */
+} ERROR_CATEGORY_DRIVER;
+
 /// Retrieve component name as string from NeutronError code.
 char* getNeutronErrorComponent(NeutronError ne);
 

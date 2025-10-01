@@ -14,6 +14,26 @@
 #include <cstdint>
 #include <vector>
 
+// CUDA error checking macro
+#define ET_CUDA_CHECK_OR_RETURN_ERROR(EXPR) \
+  do {                                      \
+    const cudaError_t err = EXPR;           \
+    if (err == cudaSuccess) {               \
+      break;                                \
+    }                                       \
+    ET_LOG(                                 \
+        Error,                              \
+        "%s:%d CUDA error: %s",             \
+        __FILE__,                           \
+        __LINE__,                           \
+        cudaGetErrorString(err));           \
+    return Error::Internal;                 \
+  } while (0)
+
+// Kernel launch check macro
+#define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
+  ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetLastError())
+
 namespace executorch {
 namespace backends {
 namespace cuda {
@@ -90,17 +110,15 @@ inline bool is_dtype_supported_in_et_cuda(int32_t dtype) {
 
 // Dtype validation utility function
 inline AOTITorchError validate_dtype(int32_t dtype) {
-  if (is_dtype_supported_in_et_cuda(dtype)) {
-    return Error::Ok;
-  }
-
-  ET_LOG(
-      Error,
+  ET_CHECK_OR_RETURN_ERROR(
+      is_dtype_supported_in_et_cuda(dtype),
+      InvalidArgument,
       "Unsupported dtype: %d. Supported dtypes: %d (float32), %d (bfloat16)",
       dtype,
       static_cast<int32_t>(SupportedDTypes::FLOAT32),
       static_cast<int32_t>(SupportedDTypes::BFLOAT16));
-  return Error::InvalidArgument;
+
+  return Error::Ok;
 }
 } // extern "C"
 

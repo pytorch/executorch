@@ -594,15 +594,22 @@ jobs:
     strategy:
       matrix:
         model: [qwen3_4b, phi_4_mini]
+        runner: [linux.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12]
+        backend: [xnnpack]
         include:
           - model: qwen3_4b
-            test_with_runner: true
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
           - model: phi_4_mini
-            test_with_runner: false
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: ${{ matrix.runner }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -612,9 +619,14 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+
+        if [[ "${{ matrix.backend }}" == "torchao" ]]; then
+          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install third-party/ao
+        fi
+
         pip install -U "huggingface_hub[cli]"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.model != 'phi_4_mini' && '--test_with_runner' || '' }}  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
     if: ${{ !github.event.pull_request.head.repo.fork }}

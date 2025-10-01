@@ -52,9 +52,10 @@ from executorch.backends.cadence.aot.replace_ops import (
 
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.infra.pass_base import PassResult
+from torch.utils import _pytree as pytree
 
 
 class TestReplaceOpsPasses(unittest.TestCase):
@@ -343,6 +344,194 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.unsafe_split.Tensor), 0, x
+        )
+
+    def assertTensorMetadataIsSame(
+        self, a: Sequence[torch.Tensor], b: Sequence[torch.Tensor]
+    ) -> None:
+        for i, (_a, _b) in enumerate(zip(a, b)):
+            # TODO: actually compare the tensors.
+            self.assertTrue(
+                _a.shape == _b.shape, f"Tensor {i}: {_a.shape} != {_b.shape}"
+            )
+            self.assertTrue(
+                _a.dtype == _b.dtype, f"Tensor {i}: {_a.dtype} != {_b.dtype}"
+            )
+
+    @expand(
+        [
+            [(1, 8, 18), 8, 16, 3],
+            [(1, 8, 18), 8, 16, 5, 2],
+            # depthwise + bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True],
+            # no bias
+            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            # bias + transposed
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+            # Stride of 2 needed.
+            [(1, 8, 3), 8, 8, 48, 2, 23],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_conv_with_cadence_conv(
+        self,
+        shape: Tuple[int, ...],
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        depthwise: bool = False,
+        bias_enabled: bool = True,
+        output_padding: Optional[int] = None,
+    ) -> None:
+        groups = in_channels if depthwise else 1
+        builder = GraphBuilder()
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        weights_tensor = torch.randn(
+            [out_channels, in_channels // groups, kernel], dtype=torch.float32
+        )
+        weights = builder.placeholder("weights", weights_tensor)
+        bias: Optional[ProxyValue] = None
+        bias_tensor: Optional[torch.Tensor] = None
+        if bias_enabled:
+            bias_tensor = torch.randn([out_channels], dtype=torch.float32)
+            bias = builder.placeholder("bias", bias_tensor)
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                bias,
+                [stride],
+                [padding],
+                [dilation],
+                False,
+                [output_padding] if output_padding else [0],
+                groups,
+            ),
+        )
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+
+        replacement_pass_result = (
+            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
+        )
+        self.assertIsNotNone(replacement_pass_result)
+        graph_after_passes = replacement_pass_result.graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
+            0,
+        )
+
+        inputs = (x.to_tensor(), weights.to_tensor())
+        if bias is not None:
+            inputs += (bias.to_tensor(),)
+        self.assertTensorMetadataIsSame(
+            pytree.tree_flatten(original_gm.forward(*inputs))[0],
+            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
+        )
+
+    @expand(
+        [
+            [(1, 8, 18), 8, 16, 3],
+            [(1, 8, 18), 8, 16, 5, 2],
+            # depthwise + bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True, True],
+            # no bias
+            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            # depthwise + no bias
+            [(1, 8, 18), 8, 16, 3, 1, 0, 1, True, False],
+            # bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_transposed_conv_with_cadence_transposed_conv(
+        self,
+        shape: Tuple[int, ...],
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        depthwise: bool = False,
+        bias_enabled: bool = True,
+        output_padding: Optional[int] = None,
+    ) -> None:
+        groups = in_channels if depthwise else 1
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
+        weights_shape = [in_channels, out_channels // groups, kernel]
+        weights = builder.placeholder(
+            "weights",
+            torch.randn(weights_shape, dtype=torch.float32),
+        )
+        bias = (
+            builder.placeholder(
+                "bias", torch.randn([out_channels], dtype=torch.float32)
+            )
+            if bias_enabled
+            else None
+        )
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                bias,
+                [stride],
+                [padding],
+                [dilation],
+                True,
+                [output_padding] if output_padding else [0],
+                groups,
+            ),
+        )
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+
+        replacement_pass_result = (
+            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
+        )
+        self.assertIsNotNone(replacement_pass_result)
+        graph_after_passes = replacement_pass_result.graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
+            1,
+        )
+
+        inputs = (x.to_tensor(), weights.to_tensor())
+        if bias is not None:
+            inputs += (bias.to_tensor(),)
+        self.assertTensorMetadataIsSame(
+            pytree.tree_flatten(original_gm.forward(*inputs))[0],
+            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
         )
 
     @expand(

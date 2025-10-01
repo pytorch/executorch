@@ -20,7 +20,8 @@ from executorch.backends.nxp.backend.edge_program_converter import (
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx import Graph
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.nn import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
@@ -33,6 +34,9 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
+
+NXP_DO_NOT_DELEGATE = "NXP_DO_NOT_DELEGATE"
+NXP_DELEGATION_TAG = "delegation_tag"
 
 
 class QDQClusterRecognizer:
@@ -246,6 +250,11 @@ class NeutronSupportedOperators(OperatorSupportBase):
         """
         Operator checking function for compute nodes.
         """
+
+        if hasattr(node, "meta") and node.meta.get(NXP_DO_NOT_DELEGATE, False):
+            # The delegation of this node has been prohibited.
+            return False
+
         if not self.is_node_delegatable(node):
             return False
 
@@ -304,6 +313,31 @@ class NeutronPartitioner(Partitioner):
             custom_delegation_options or CustomDelegationOptions()
         )
 
+    def validate_partitioning_result(
+        self,
+        graph: Graph,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        all_delegated_nodes = {
+            node for partition in partition_list for node in partition.nodes
+        }
+        partitioning_valid = True
+        for node in graph.nodes:
+            if (
+                node in all_delegated_nodes
+                and hasattr(node, "target")
+                and node.target in supported_ops
+            ):
+                if not supported_ops[node.target].supports_partitioning_result(
+                    node, partition_list, custom_delegation_options
+                ):
+                    # This node is not supported within its partition. Exclude it from delegation in the future.
+                    partitioning_valid = False
+                    node.meta[NXP_DO_NOT_DELEGATE] = True
+
+        return partitioning_valid
+
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
@@ -342,11 +376,24 @@ class NeutronPartitioner(Partitioner):
             allows_single_node_partition=True,
         )
 
-        partition_list = capability_partitioner.propose_partitions()
+        iteration_limit = len(exported_program.graph.nodes)
+        for _ in range(iteration_limit):
+            # Run the partitioning.
+            partition_list = capability_partitioner.propose_partitions()
+
+            # Check if the nodes support the partitioning result. Mark the problematic nodes with `NXP_DO_NOT_DELEGATE`.
+            partitioning_valid = self.validate_partitioning_result(
+                exported_program.graph, partition_list, self.custom_delegation_options
+            )
+            if partitioning_valid:
+                # The result of the partitioning is fine
+                break
+
+        # Mark the partitions in the node `meta` attribute.
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
+                node.meta[NXP_DELEGATION_TAG] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
 
         tag_constant_data(exported_program)
