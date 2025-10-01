@@ -38,7 +38,6 @@ from torch.nn import functional as F
 from torch.testing import FileCheck
 from torchao.quantization.granularity import PerAxis, PerGroup
 from torchao.quantization.quant_api import IntxWeightOnlyConfig, MappingType, quantize_
-from torchao.quantization.utils import compute_error
 
 
 class TestQuantFusionPass(unittest.TestCase):
