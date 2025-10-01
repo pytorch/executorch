@@ -240,11 +240,6 @@ GLIBC_VERSION = "2.34"
 GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
 MINIMUM_LIBC_VERSION = GLIBC_VERSION
 
-RPM_URL = (
-    "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/"
-    "Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
-)
-
 
 def _get_glibc_libdir() -> pathlib.Path:
     glibc_root = _get_staging_dir(f"glibc-{GLIBC_VERSION}")
@@ -285,9 +280,18 @@ def _stage_prebuilt_glibc():
     _get_glibc_libdir().mkdir(parents=True, exist_ok=True)
     rpm_path = _get_staging_dir("glibc") / "glibc.rpm"
     work_dir = _get_staging_dir("glibc") / "extracted"
+    rpm_url = (
+        "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/"
+        "Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
+    )
 
-    # Download
-    subprocess.check_call(["curl", "-fsSL", RPM_URL, "-o", str(rpm_path)])
+    rpm_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("[glibc] Downloading %s -> %s", rpm_url, rpm_path)
+    try:
+        urllib.request.urlretrieve(rpm_url, rpm_path)
+    except Exception as e:
+        logger.error("[glibc] Failed to download %s: %s", rpm_url, e)
+        raise
 
     # Extract
     if work_dir.exists():
