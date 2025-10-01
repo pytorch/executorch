@@ -465,6 +465,7 @@ class OpenvinoConfig:
     nncf_compression: bool = False
     nncf_compression_group_size: int = 32
 
+
 @dataclass
 class TorchAOKernelsConfig:
     """
