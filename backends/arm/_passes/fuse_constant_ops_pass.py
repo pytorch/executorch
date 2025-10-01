@@ -14,6 +14,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
     is_persistent_buffer,
 )
+from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
+    FuseEqualPlaceholdersPass,
+)
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
     delete_constant_placeholder,
@@ -111,8 +114,9 @@ class FuseConstantArgsPass(ExportPass):
             if node.op != "call_function":
                 continue
             if node.target in [
-                exir_ops.backend.tosa.TABLE.default,
                 exir_ops.backend.tosa.RESCALE.default,
+                exir_ops.backend.tosa.RESIZE.default,
+                exir_ops.backend.tosa.TABLE.default,
                 exir_ops.backend.tosa.TRANSPOSE.default,
             ]:
                 continue
@@ -171,7 +175,7 @@ class ComputeConstantOpsAOT(ExportPass):
             return node_name_pre_computed
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {FuseEqualPlaceholdersPass}
 
     targeted_ops = [
         exir_ops.edge.aten.full.default,

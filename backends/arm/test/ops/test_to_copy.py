@@ -192,20 +192,15 @@ _TO_COPY_TEST_DATA_REDUNDANT_CAST = {
     ),
 }
 
-redundant_xfails_FP = {
+redundant_xfails = {
     "rand_fp16_fp16": "FP16 is not supported",
     "rand_int8_int8": "Tracing graph with quantized input is not supported.",
     "rand_int16_int16": "Tracing graph with quantized input is not supported.",
 }
 
-redundant_xfails_INT = {
-    "rand_fp16_fp16": "FP16 is not supported",
-    "rand_int8_int8": "Tracing graph with quantized input is not supported.",
-}
-
 
 @common.parametrize(
-    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_FP
+    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails
 )
 def test_to_tosa_FP_REDUNDANT_CAST(test_data: Tuple):
     test_tensor, new_dtype = test_data()
@@ -220,7 +215,7 @@ def test_to_tosa_FP_REDUNDANT_CAST(test_data: Tuple):
 
 
 @common.parametrize(
-    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails_INT
+    "test_data", _TO_COPY_TEST_DATA_REDUNDANT_CAST, xfails=redundant_xfails
 )
 def test_to_tosa_INT_REDUNDANT_CAST(test_data: Tuple):
     test_tensor, new_dtype = test_data()

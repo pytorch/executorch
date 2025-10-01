@@ -9,6 +9,8 @@ from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -60,7 +62,10 @@ class DecomposeSoftmaxUnstablePass(ArmPass):
         (in logsoftmax case: %op5 = log(%op4))
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSumPass,
+        InsertTableOpsPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_softmax + edge_softmax:
