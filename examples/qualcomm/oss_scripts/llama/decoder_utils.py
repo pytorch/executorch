@@ -60,7 +60,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         ar_len: int,
         use_kv_cache: bool,
         get_example_inputs: Callable,
-        kv_updater: Callable,
         use_i64_token: bool,
         seq_mse_candidates: int,
     ):
@@ -74,7 +73,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         self._use_kv_cache = use_kv_cache
         self.get_example_inputs = get_example_inputs
         self.max_seq_length = max_seq_length
-        self.kv_updater = kv_updater
         self.use_i64_token = use_i64_token
         self.seq_mse_candidates = seq_mse_candidates
 
@@ -83,7 +81,6 @@ class GraphModuleCalibrationWrapper(EagerEvalWrapper):
         kwargs = {}
         if self._use_kv_cache:
             kwargs["ar_len"] = self.ar_len
-            kwargs["kv_updater"] = self.kv_updater
             kwargs["seq_mse_candidates"] = self.seq_mse_candidates
 
         all_logits = INFERENCE_REGISTRY[self._use_kv_cache](
@@ -389,7 +386,6 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                     f"--performance_output_path {self.args.artifact}/{performance_output_path}",
                     f"--eval_mode {EVAL_MODE[self.args.model_mode]}",
                     "--temperature 0",
-                    "--kv_updater ShiftPointer",
                     f"--dump_logits_path {self.args.artifact}/{dump_logits_path}",
                     f"--tokenized_prompt {input_file_name}",
                 ]
@@ -414,7 +410,6 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                     f"--seq_len {self.max_seq_length}",
                     f"--output_path {outputs_path}",
                     f"--performance_output_path {performance_output_path}",
-                    f"--kv_updater {'SmartMask' if self.args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
                     f"--window {self.args.window}",
                     f"--gcap {self.args.gcap}",
                     f"--ngram {self.args.ngram}",
@@ -422,6 +417,7 @@ class QnnRunnerEvalWrapper(EagerEvalWrapper):
                     "--temperature 0",
                     f"--dump_logits_path {dump_logits_path}",
                     f"--tokenized_prompt {os.path.basename(input_file_name)}",
+                    "--shared_buffer",
                 ]
             )
 
@@ -452,66 +448,19 @@ def smart_mask_updater(
             for i, offset in enumerate(lade_token_offset):
                 current_pos = pos + i
                 for j, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
-                    k_cache[:, :, current_pos] = new_k_caches[j][:, :, offset]
-                    v_cache[:, current_pos, :] = new_v_caches[j][:, offset, :]
+                    k_cache[:, :, :, current_pos] = new_k_caches[j][:, :, :, offset]
+                    v_cache[:, :, current_pos, :] = new_v_caches[j][:, :, offset, :]
         else:
             for i, k_cache in enumerate(k_caches):
-                k_cache[:, :, pos : pos + n_updates] = new_k_caches[i][:, :, :n_updates]
+                k_cache[:, :, :, pos : pos + n_updates] = new_k_caches[i][
+                    :, :, :, :n_updates
+                ]
             for i, v_cache in enumerate(v_caches):
-                v_cache[:, pos : pos + n_updates, :] = new_v_caches[i][:, :n_updates, :]
+                v_cache[:, :, pos : pos + n_updates, :] = new_v_caches[i][
+                    :, :, :n_updates, :
+                ]
 
         atten_mask.smart_mask_update(pos, n_updates, lade_pos_offset)
-
-    pos += n_updates
-    return pos, k_caches, v_caches
-
-
-def shift_pointer_updater(
-    n_updates: int,
-    atten_mask: AttentionMask,
-    pos,
-    k_caches,
-    v_caches,
-    new_k_caches,
-    new_v_caches,
-    # lookahead decoding related
-    lade_token_offset=None,
-    lade_pos_offset=None,
-):
-    max_cache_len = k_caches[0].size(-1)
-    if pos + n_updates <= max_cache_len:
-        if lade_token_offset is not None:
-            # lookahead decode update
-            for offset in lade_token_offset:
-                for i, (k_cache, v_cache) in enumerate(zip(k_caches, v_caches)):
-                    k_caches[i] = torch.cat(
-                        [
-                            k_cache[:, :, 1:],
-                            new_k_caches[i][:, :, offset].unsqueeze(-1),
-                        ],
-                        dim=-1,
-                    )
-                    v_caches[i] = torch.cat(
-                        [v_cache[:, 1:, :], new_v_caches[i][:, offset, :].unsqueeze(1)],
-                        dim=1,
-                    )
-        else:
-            k_caches = [
-                torch.cat(
-                    [k_cache[:, :, n_updates:], new_k_caches[i][:, :, :n_updates]],
-                    dim=-1,
-                )
-                for i, k_cache in enumerate(k_caches)
-            ]
-            v_caches = [
-                torch.cat(
-                    [v_cache[:, n_updates:, :], new_v_caches[i][:, :n_updates, :]],
-                    dim=1,
-                )
-                for i, v_cache in enumerate(v_caches)
-            ]
-
-        atten_mask.shift_pointer_update(pos, n_updates, lade_pos_offset)
 
     pos += n_updates
     return pos, k_caches, v_caches
@@ -525,7 +474,6 @@ def kv_inference(  # noqa: C901
     tokenizer,
     ar_len=1,
     max_seq_len=512,
-    kv_updater=smart_mask_updater,
     use_i64_token=False,
     collect_logits=False,
     seq_mse_candidates=0,
@@ -601,7 +549,7 @@ def kv_inference(  # noqa: C901
                     )
 
             # Update the pos, KV cache and attention mask.
-            pos, k_caches, v_caches = kv_updater(
+            pos, k_caches, v_caches = smart_mask_updater(
                 num_tokens_in_chunk,
                 atten_mask,
                 pos,
@@ -647,7 +595,7 @@ def kv_inference(  # noqa: C901
                     *v_caches,
                 )
 
-                pos, k_caches, v_caches = kv_updater(
+                pos, k_caches, v_caches = smart_mask_updater(
                     1,
                     atten_mask,
                     pos,
@@ -713,7 +661,7 @@ def kv_inference(  # noqa: C901
                         for e in range(num_match)
                     ]
                 # update kv cache
-                pos, k_caches, v_caches = kv_updater(
+                pos, k_caches, v_caches = smart_mask_updater(
                     len(lade_token_offset),
                     atten_mask,
                     pos,
@@ -811,7 +759,6 @@ def graph_module_inference(
     tokenizer,
     ar_len=1,
     max_seq_len=512,
-    kv_updater=smart_mask_updater,
     prompt=None,
     tasks=None,
     tasks_limit=1,
@@ -834,7 +781,6 @@ def graph_module_inference(
         kwargs = {}
         if use_kv_cache:
             kwargs["ar_len"] = ar_len
-            kwargs["kv_updater"] = kv_updater
             kwargs["lookahead_config"] = lookahead_config
 
         INFERENCE_REGISTRY[use_kv_cache](
@@ -855,7 +801,6 @@ def graph_module_inference(
             ar_len=ar_len,
             use_kv_cache=use_kv_cache,
             get_example_inputs=get_example_inputs,
-            kv_updater=kv_updater,
             use_i64_token=use_i64_token,
             seq_mse_candidates=seq_mse_candidates,
         )

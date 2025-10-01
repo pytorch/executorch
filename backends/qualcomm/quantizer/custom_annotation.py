@@ -57,9 +57,9 @@ class StaticLLMQuantConfig(Enum):
     Layer namespace configuration for Qualcomm's static LLaMA quantization.
     """
 
-    wq_sha = "wq_sha"  # Query weight (single head)
-    wk_sha = "wk_sha"  # Key weight (single head)
-    wv_sha = "wv_sha"  # Value weight (single head)
+    wq = "wq"  # Query weight
+    wk = "wk"  # Key weight
+    wv = "wv"  # Value weight
 
 
 def annotate_eurobert(gm: torch.fx.GraphModule):
@@ -373,7 +373,10 @@ def annotate_kv_8bit(  # noqa: C901
                 torch.ops.aten.transpose.int,
                 torch.ops.aten.view.default,
                 torch.ops.aten.reshape.default,
+                torch.ops.aten.select.int,
                 torch.ops.aten.slice.Tensor,
+                torch.ops.aten.expand.default,
+                torch.ops.aten.unsqueeze.default,
             ]:
                 annotate_single_in_single_out(node, quantization_config_8a8w)
                 node = node.args[0]

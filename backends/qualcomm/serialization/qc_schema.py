@@ -197,3 +197,4 @@ class QnnExecuTorchOptions:
     op_package_options: QnnExecuTorchOpPackageOptions = field(
         default_factory=QnnExecuTorchOpPackageOptions
     )
+    use_mha2sha: bool = False
