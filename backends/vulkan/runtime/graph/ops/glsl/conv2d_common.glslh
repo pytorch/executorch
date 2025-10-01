@@ -61,6 +61,18 @@ Conv2dBlockExtents make_block_extents(const ivec4 tensor_sizes) {
   return block_sizes;
 }
 
+Conv2dBlockIndex linear_idx_to_block_idx(
+    const int idx, const Conv2dBlockExtents block_extents) {
+  Conv2dBlockIndex block_idx;
+  block_idx.data.z = idx % block_extents.data.z;
+
+  const int row = idx / block_extents.data.z;
+  block_idx.data.x = row % block_extents.data.x;
+  block_idx.data.y = row / block_extents.data.x;
+
+  return block_idx;
+}
+
 bool block_idx_out_of_bounds(
     const Conv2dBlockIndex block_idx,
     const Conv2dBlockExtents block_extents) {

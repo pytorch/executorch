@@ -12,6 +12,7 @@ jobs:
       - name: Add open issues and open, non-draft PRs to org project (excluding certain authors)
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.ET_EXT_CONTRIB }}
           script: |
             const projectId = "PVT_kwDOAUB9vs4A_PUL"; // PyTorch org project 136
             const owner = 'pytorch';
@@ -19,20 +20,31 @@ jobs:
 
             // List of authors to exclude
             const excludedAuthors = new Set([
-              "nil-is-all", "cbilgin", "KimishPatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", "shoumikhin",
+              "nil-is-all", "cbilgin", "kimishpatel", "psiddh", "digantdesai", "SS-JIA", "ahmtox", "mcr229", "shoumikhin",
               "manuelcandales", "metascroy", "cccclai", "rohansjoshi", "kirklandsign", "abhinaykukkadapu", "JacobSzwejbka",
               "Conarnar", "lucylq", "larryliu0820", "BujSet", "Gasoonjia", "Juntian777", "guangy10", "jackzhxng",
               "GregoryComer", "leafs1", "swolchok", "mergennachin", "tarun292", "byjlw", "jathu", "Jack-Khuu", "georgehong",
-              "zhenyan-zhang-meta", "silverguo", "dbort", "jorgep31415", "huydhn", "mcremon-meta", "trivedivivek", "angelayi",
-              "helunwencser", "hsharma35", "zhxchen17", "iseeyuan", "svekars", "nathanaelsee", "dulinriley", "jerryzh168",
+              "zhenyan-zhang-meta", "silverguo", "harishs88ss", "AlannaBurke", "dbort", "huydhn", "mcremon-meta", "trivedivivek", 
+              "angelayi", "helunwencser", "hsharma35", "zhxchen17", "iseeyuan", "svekars", "nathanaelsee", "dulinriley", "jerryzh168",
               "cmodi-meta", "bigfootjon", "sxu", "ydwu4", "Riandy", "tugsbayasgalan", "bsoyluoglu", "yangw-dev", "YIWENX14",
               "namanahuja", "yushangdi", "limintang", "pianpwk", "viveknayakatmeta", "andreanicastro", "JakeStevens",
-              "gmagogsfm", "zonglinpeng", "eigen-k", "derekxu", "salilsdesai", "skrtskrtfb", "pssrawat", "r-barnes", "pytorchbot",
-              "pytorchmergebot", "pytorchupdatebot", "facebook-github-bot", "Erik-Lundell", "zingo", "AdrianLundell",
-              "oscarandersson8218", "per", "Sebastian-Larsson", "SaoirseARM", "robell", "mansnils", "martinlsm", "freddan80",
-              "YufengShi-dudu", "tom-arm", "perheld", "Jerry-Ge", "gggekov", "fumchin", "wwwind", "haowhsu-quic", "shewu-quic",
-              "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "cymbalrush", "DenisVieriu97", "billmguo",
-              "StrycekSimon", "jirioc", "robert-kalmar", "skywall", "neuropilot-captain"
+              "gmagogsfm", "zonglinpeng", "eigen-k", "derekxu", "salilsdesai", "skrtskrtfb", "pssrawat", "r-barnes",
+              "kalpit-meta-1", "Will-MingLun-Li", "KapJI", "piyengar", "j-bahr", "BoyuanFeng", "fgasperij", "DariusHolmgren",
+              "sammarden-meta", "kushrast", "meta-emilian", "Rittzz", "jeanschmidt", "copyrightly", "mikekgfb", "vmpuri",
+              "zonglinpengmeta", "maggiemoss", "aorenste", "hoangminhle98", "Solumin", "meyering", "rchen152",
+              "AishwaryaSivaraman", "migeed-z", "ebgraham", "Esteb37", "nausicaasnow", "Camyll", "ezyang", "huiyujie",
+              "dltn", "cjhopman", "blackm00n", "agunapal", "SamGondelman", "Ninja91", "ivayloen", "DrJessop", "rodrigos01meta",
+              "akrieger", "cmt0", "yiming0416", "ethansfng", "ThomasJannaud", "nirvanagth", "marcinkwiatkowski", "3l1",
+              "omerjerk", "nitish2112", "yipjustin", "ejnguyen", "andrewor14", "phaiting", "mgiordy", "LeeOHzzZ", "adicatana",
+              "Polyomino", "ezrilow", "navsud", "YifanShenSZ", "RdoubleA", "Olivia-liu", "Abhi-hpp", "Vysarat", "azad-meta",
+              "pytorchbot", "pytorchmergebot", "pytorchupdatebot", "facebook-github-bot", "app/dependabot", "Erik-Lundell",
+              "zingo", "AdrianLundell", "oscarandersson8218", "per", "Sebastian-Larsson", "SaoirseARM", "robell", "mansnils",
+              "martinlsm", "freddan80", "YufengShi-dudu", "tom-arm", "perheld", "Jerry-Ge", "gggekov", "fumchin", "wwwind",
+              "benkli01", "Tessil", "maddun01", "Michiel-Olieslagers", "armwaheed", "agrima1304", "emmakujala", "annietllnd", 
+              "haowhsu-quic", "shewu-quic", "winskuo-quic", "chunit-quic", "DannyYuyang-quic", "chuntl", "thchenqti", 
+              "jethroqti", "cymbalrush", "DenisVieriu97", "billmguo", "StrycekSimon", "jirioc", "robert-kalmar", "skywall", 
+              "MartinPavella", "roman-janik-nxp", "novak-vaclav ", "neuropilot-captain", "dijopaul", "cad-rlc", "cad-audio", 
+              "ynimmaga", "daniil-lyakhov", "emmanuel-ferdman", "cavusmustafa", "Jiseong-oh", "alexdean08"
             ]);
 
             async function addItem(contentId, type, number) {
@@ -79,11 +91,10 @@ jobs:
                   owner,
                   repo,
                   state: 'open',
-                  draft: false,
                 }
               );
               for (const pr of prs) {
-                if (!excludedAuthors.has(pr.user.login)) {
+                if (!pr.draft && !excludedAuthors.has(pr.user.login)) {
                   await addItem(pr.node_id, 'pr', pr.number);
                 }
               }
