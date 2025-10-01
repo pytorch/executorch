@@ -71,8 +71,6 @@ from executorch.examples.qualcomm.oss_scripts.llama.decoder_utils import (
     apply_prompt_template,
     graph_module_inference,
     QnnRunnerEvalWrapper,
-    shift_pointer_updater,
-    smart_mask_updater,
 )
 from executorch.examples.qualcomm.oss_scripts.llama.model.static_llama import (
     LlamaModel,
@@ -250,7 +248,6 @@ class SingleLlama:
                 tokenizer=tokenizer,
                 ar_len=self.llama_meta["get_ar_len"],
                 max_seq_len=self.llama_meta["get_max_seq_len"],
-                kv_updater=args.kv_updater,
                 tasks=args.tasks,
                 tasks_limit=args.limit,
                 num_fewshot=args.num_fewshot,
@@ -274,7 +271,6 @@ class SingleLlama:
             tokenizer=tokenizer,
             ar_len=self.llama_meta["get_ar_len"],
             max_seq_len=self.llama_meta["get_max_seq_len"],
-            kv_updater=args.kv_updater,
             prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
@@ -299,7 +295,6 @@ class SingleLlama:
                     tokenizer=tokenizer,
                     ar_len=self.llama_meta["get_ar_len"],
                     max_seq_len=self.llama_meta["get_max_seq_len"],
-                    kv_updater=args.kv_updater,
                     tasks=args.tasks,
                     tasks_limit=args.limit,
                     num_fewshot=args.num_fewshot,
@@ -328,7 +323,6 @@ class SingleLlama:
                 tokenizer=tokenizer,
                 ar_len=self.llama_meta["get_ar_len"],
                 max_seq_len=self.llama_meta["get_max_seq_len"],
-                kv_updater=args.kv_updater,
                 prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="convert_pt2e_prompt",
@@ -380,6 +374,7 @@ class SingleLlama:
                 soc_model=soc_model,
                 backend_options=backend_options,
                 shared_buffer=shared_buffer,
+                use_mha2sha=True,
             )
             skip_node_op_set = {"llama.fallback.default"}
 
@@ -643,9 +638,6 @@ def compile(
 
     for llama_instance in llama_instance_list:
         for layer in llama_instance.layers:
-            if getattr(layer.attention, "prepare_sha", None):
-                layer.attention.prepare_sha()
-
             if getattr(layer.feed_forward, "prepare_feedfoward_conv", None):
                 layer.feed_forward.prepare_feedfoward_conv()
 
@@ -791,7 +783,8 @@ def compile(
             args.artifact,
             use_fp16=use_fp16,
             soc_model=get_soc_to_chipset_map()[args.model],
-            shared_buffer=args.shared_buffer,
+            shared_buffer=not args.enable_x86_64,  # x86 emulator does not support shared buffer
+            verbose=args.verbose,
         )
     elif args.model_mode in ["hybrid", "lookahead"]:
         sample_inputs_list = [
@@ -807,8 +800,9 @@ def compile(
             generate_qnn_executorch_compiler_spec(
                 soc_model=get_soc_to_chipset_map()[args.model],
                 backend_options=backend_options,
-                shared_buffer=args.shared_buffer,
+                shared_buffer=not args.enable_x86_64,  # x86 emulator does not support shared buffer
                 graph_name=graph_name,
+                use_mha2sha=True,
             )
             for graph_name in graph_names
         ]
@@ -977,11 +971,6 @@ def inference(
         # x86 emulator is intended for CI and not performance. Check only the first few tokens.
         seq_len = min(seq_len, 16)
 
-        if args.kv_updater == smart_mask_updater:
-            logging.warning(
-                "x86 only support ShiftPointer, overwrite kv_updater to ShiftPointer"
-            )
-
         qnn_sdk = os.getenv("QNN_SDK_ROOT")
         target = "x86_64-linux-clang"
         runner_cmd = " ".join(
@@ -994,7 +983,6 @@ def inference(
                 f"--seq_len {seq_len}",
                 f"--output_path {args.artifact}/outputs/outputs.txt",
                 f"--performance_output_path {args.artifact}/{performance_output_path}",
-                f"--kv_updater ShiftPointer",
                 runner_args,
             ]
         )
@@ -1016,7 +1004,7 @@ def inference(
                 f"--seq_len {seq_len}",
                 "--output_path outputs/outputs.txt",
                 f"--performance_output_path {performance_output_path}",
-                f"--kv_updater {'SmartMask' if args.kv_updater == smart_mask_updater else 'ShiftPointer'}",
+                "--shared_buffer",
                 runner_args,
             ]
         )
@@ -1029,7 +1017,7 @@ def inference(
             device_id=args.device,
             host_id=args.host,
             soc_model=args.model,
-            shared_buffer=args.shared_buffer,
+            shared_buffer=True,
             target=args.target,
             runner=f"examples/qualcomm/oss_scripts/llama/qnn_llama_runner",
         )
@@ -1195,14 +1183,6 @@ def _build_parser():
     )
 
     parser.add_argument(
-        "--kv_updater",
-        help="Choose how to update kv cache during runtime",
-        choices=["smart_mask", "shift_pointer"],
-        default="smart_mask",
-        type=str,
-    )
-
-    parser.add_argument(
         "-E",
         "--embedding-quantize",
         default=None,
@@ -1335,14 +1315,6 @@ def export_llama(args) -> None:
             file.seek(0)
             json.dump(data, file, indent=4)
             file.truncate()
-
-    if args.kv_updater == "smart_mask":
-        args.shared_buffer = True
-        args.kv_updater = smart_mask_updater
-    elif args.kv_updater == "shift_pointer":
-        args.kv_updater = shift_pointer_updater
-    else:
-        raise RuntimeError(f"Using an unknown kv update {args.kv_updater}")
 
     if args.pre_gen_pte:
         inference(

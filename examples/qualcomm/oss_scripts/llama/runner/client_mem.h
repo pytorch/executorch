@@ -15,7 +15,7 @@ namespace example {
 /**
  * @class ClientMem
  * @brief Final class for client buffer allocation, implementing IBufferAlloc
- * interface. Used for SHIFT_POINTER mode.
+ * interface. This is specifically designed for use cases without shared buffer.
  */
 class ClientMem final : public IMemAlloc {
  public:
