@@ -23,6 +23,12 @@ else
 fi
 build_executorch_runner "${BUILD_TOOL}" "${BUILD_MODE}"
 
+# Fix for libcxx version issues with PyTorch prebuilts.
+# Tracking in https://github.com/pytorch/executorch/issues/14679.
+if [ "$(uname -m)" == "aarch64" ]; then
+  conda install -y -c conda-forge libstdcxx-ng
+fi
+
 if [[ "${GITHUB_BASE_REF:-}" == *main* || "${GITHUB_BASE_REF:-}" == *gh* ]]; then
   do_not_use_nightly_on_ci
 fi
