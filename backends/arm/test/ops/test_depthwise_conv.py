@@ -260,7 +260,6 @@ def test_convolution_2d_u55_INT_depthwise(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -275,7 +274,6 @@ def test_convolution_1d_u55_INT_depthwise(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -290,7 +288,6 @@ def test_convolution_2d_u85_INT_depthwise(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -305,7 +302,6 @@ def test_convolution_1d_u85_INT_depthwise(test_data):
         model.get_inputs(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()

@@ -78,7 +78,6 @@ def test_ceil_u55_INT(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -92,7 +91,6 @@ def test_ceil_u85_INT(test_data: input_t1):
         (data,),
         module.aten_op,
         module.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

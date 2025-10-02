@@ -53,7 +53,10 @@ def test_neg_tosa_INT(test_data: input_t1):
 @common.XfailIfNoCorstone300
 def test_neg_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
-        Neg(), test_data, Neg.aten_op, Neg.exir_op, run_on_fvp=True
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
     )
     pipeline.run()
 
@@ -62,7 +65,10 @@ def test_neg_u55_INT(test_data: input_t1):
 @common.XfailIfNoCorstone320
 def test_neg_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
-        Neg(), test_data, Neg.aten_op, Neg.exir_op, run_on_fvp=True
+        Neg(),
+        test_data,
+        Neg.aten_op,
+        Neg.exir_op,
     )
     pipeline.run()
 
