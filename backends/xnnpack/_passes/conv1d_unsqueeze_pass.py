@@ -8,7 +8,11 @@ from typing import Optional
 
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_quant,
+    tag_as_implicit_q_dq,
+)
 from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -51,7 +55,10 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                 op_target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
                 args=(),  # We add the argument last
             )
-            q.meta = anchor.meta
+            q.meta = anchor.meta.copy()
+
+            # Tag q as implicit
+            tag_as_implicit_q_dq(q)
 
         with graph.inserting_after(q):
             dq = self.create_node(
@@ -59,7 +66,10 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                 op_target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
                 args=(q,) + q_params,
             )
-            dq.meta = q.meta
+            dq.meta = q.meta.copy()
+
+            # Tag dq as implicit
+            tag_as_implicit_q_dq(dq)
 
         anchor.replace_all_uses_with(dq)
         # We add this last so the replace all uses above does not replace the quqntized

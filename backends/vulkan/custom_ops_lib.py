@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
+import executorch.backends.vulkan.patterns as vk_patterns
 import torch.library
 
 namespace = "et_vk"
@@ -152,41 +155,9 @@ lib.define(
 )
 lib.impl(name, grid_priors_out_impl, "CompositeExplicitAutograd")
 
-########################
-## linear_weight_int4 ##
-########################
-
-
-def linear_weight_int4_impl(
-    x: torch.Tensor,
-    weights_4x8: torch.Tensor,
-    groupsize: int,
-    scales_and_zeros: torch.Tensor,
-    inner_k_tiles: int,
-):
-    original_x_size = x.size()
-    out_features = weights_4x8.size(0)
-    x = x.reshape(-1, original_x_size[-1])
-    weight_int4pack = torch.ops.aten._convert_weight_to_int4pack(
-        weights_4x8, inner_k_tiles
-    )
-    out = torch.ops.aten._weight_int4pack_mm(
-        x, weight_int4pack, groupsize, scales_and_zeros
-    )
-    out_shape = original_x_size[:-1] + (out_features,)
-    return out.reshape(out_shape)
-
-
-name = "linear_weight_int4"
-lib.define(
-    f"{name}(Tensor self, Tensor mat2, int qGroupSize, Tensor qScaleAndZeros, int inner_k_tiles) -> Tensor"
-)
-lib.impl(name, linear_weight_int4_impl, "CompositeExplicitAutograd")
-linear_weight_int4_op = getattr(getattr(torch.ops, namespace), name)
-
-#################
+##################
 ## linear_qcs4w ##
-#################
+##################
 
 
 def linear_qcs4w(
@@ -231,47 +202,332 @@ lib.define(f"{name}(Tensor self, Tensor weight, Tensor scales) -> Tensor")
 lib.impl(name, linear_qcs4w, "CompositeExplicitAutograd")
 linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
 
+##################
+## linear_q4gsw ##
+##################
+
+
+def unpack_4bit_weight_tensor(
+    packed_weight_tensor: torch.Tensor, x: torch.Tensor
+) -> torch.Tensor:
+    """
+    Reverses the packing performed in quantized_linear.pack_4bit_weight_tensor
+    """
+    # Each packed byte contains two 4-bit values: high nibble and low nibble
+    K, N_half = packed_weight_tensor.shape
+    N = N_half * 2
+
+    # Unpack high and low nibbles
+    high_nibble = (packed_weight_tensor >> 4) & 0x0F
+    low_nibble = packed_weight_tensor & 0x0F
+
+    # Stack to shape (K, N)
+    unpacked = torch.empty(
+        (K, N), dtype=torch.uint8, device=packed_weight_tensor.device
+    )
+    unpacked[:, ::2] = low_nibble
+    unpacked[:, 1::2] = high_nibble
+
+    # Undo the +8 offset and convert to signed 4-bit range [-8, 7]
+    unpacked = unpacked.to(torch.int8) - 8
+
+    in_channels = x.shape[-1]
+    # Undo any padding that may have been added to input channels
+    if in_channels != unpacked.shape[-1]:
+        return unpacked[:, :in_channels]
+
+    return unpacked
+
+
+def linear_q4gsw(
+    x: torch.Tensor,
+    weights: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    bias: Optional[torch.Tensor] = None,
+):
+    # Unpack the packed weights
+    weights = unpack_4bit_weight_tensor(weights, x)
+
+    # Un-transpose the weight scales
+    weight_scales = weight_scales.transpose(0, 1)
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+
+    weights = torch.ops.torchao.dequantize_affine(
+        weights, [1, group_size], weight_scales, weight_zeros, torch.int8, -8, 7
+    )
+
+    out = torch.nn.functional.linear(x, weights)
+    return out
+
+
+def linear_dq8ca_q4gsw(
+    x: torch.Tensor,
+    input_scale: torch.Tensor,
+    input_zero_point: torch.Tensor,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    group_size: int,
+    bias: Optional[torch.Tensor] = None,
+):
+    return linear_q4gsw(x, weights, weight_scales, group_size)
+
+
+name = "linear_q4gsw"
+lib.define(
+    f"""
+            {name}(
+                Tensor self,
+                Tensor weights,
+                Tensor weight_scales,
+                int group_size,
+                Tensor? bias = None) -> Tensor
+            """
+)
+lib.impl(name, linear_q4gsw, "CompositeExplicitAutograd")
+linear_qc4w_op = getattr(getattr(torch.ops, namespace), name)
+
+name = "linear_dq8ca_q4gsw"
+lib.define(
+    f"""
+            {name}(
+                Tensor input,
+                Tensor input_scales,
+                Tensor input_zp,
+                Tensor weights,
+                Tensor weight_sums,
+                Tensor weight_scales,
+                int group_size,
+                Tensor? bias = None) -> Tensor
+            """
+)
+lib.impl(name, linear_dq8ca_q4gsw, "CompositeExplicitAutograd")
+linear_dq8ca_q4gsw_op = getattr(getattr(torch.ops, namespace), name)
+
+#################
+## qaqw_linear ##
+#################
+
+
+def linear_q8ta_q8csw(
+    x: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
+):
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+    weights = torch.ops.quantized_decomposed.dequantize_per_channel(
+        weights,
+        weight_scales,
+        weight_zeros,
+        0,
+        -127,
+        127,
+        torch.int8,
+    )
+
+    # Perform linear operation
+    out = torch.nn.functional.linear(x, weights)
+    if bias is not None:
+        out = out + bias
+
+    return out
+
+
+name = "linear_q8ta_q8csw"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        float input_scale,
+        int input_zero_point,
+        Tensor weights,
+        Tensor weight_sums,
+        Tensor weight_scales,
+        Tensor? bias = None) -> Tensor
+    """
+)
+lib.impl(name, linear_q8ta_q8csw, "CompositeExplicitAutograd")
+qa_q8csw_linear = getattr(getattr(torch.ops, namespace), name)
+
+############################
+## conv2d_q8ta_q8csw_q8to ##
+############################
+
+
+def conv2d_q8ta_q8csw_q8to(
+    x: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    bias: Optional[torch.Tensor],
+    kernel_size: list,
+    stride: list,
+    padding: list,
+    dilation: list,
+    groups: int,
+):
+    x = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        x, input_scale, input_zero_point, -128, 127, x.dtype
+    )
+
+    # Calculate weight dimensions
+    OC = weights.shape[0]
+    assert OC % groups == 0, "Output channels must be divisible by groups"
+    IC_per_group = int(x.shape[1] / groups)
+    K_h, K_w = kernel_size[0], kernel_size[1]
+
+    orig_weight_K_dim = K_h * K_w * IC_per_group
+    # Remove any padding added to in_features dim to align to a multiple of 4
+    if weights.shape[-1] > orig_weight_K_dim:
+        weights = weights[:, :orig_weight_K_dim]
+
+    # Remove any padding added to output channels dim to align to a multiple of 4
+    if weight_scales.shape[0] > OC:
+        weight_scales = weight_scales[:OC]
+        if bias is not None:
+            bias = bias[:OC]
+
+    # Reshape to original 4D format (OC, IC, H, W)
+    weights = weights.view(OC, IC_per_group, K_h, K_w)
+
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+    # Dequantize weights
+    weights = torch.ops.quantized_decomposed.dequantize_per_channel(
+        weights,
+        weight_scales,
+        weight_zeros,
+        0,  # axis=0 for output channel quantization
+        -127,
+        127,
+        torch.int8,
+    )
+
+    # Perform convolution
+    out = torch.nn.functional.conv2d(
+        x, weights, bias, stride, padding, dilation, groups
+    )
+
+    out = torch.ops.quantized_decomposed.quantize_per_tensor(
+        out, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return out
+
+
+name = "conv2d_q8ta_q8csw_q8to"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        float input_scale,
+        int input_zero_point,
+        Tensor weights,
+        Tensor weight_sums,
+        Tensor weight_scales,
+        float output_scale,
+        int output_zero_point,
+        Tensor? bias,
+        SymInt[] kernel_size,
+        SymInt[] stride,
+        SymInt[] padding,
+        SymInt[] dilation,
+        SymInt groups) -> Tensor
+    """
+)
+lib.impl(name, conv2d_q8ta_q8csw_q8to, "CompositeExplicitAutograd")
+conv2d_q8ta_q8csw_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def conv2d_q8ta_q8csw_q8to_dw(
+    x: torch.Tensor,
+    input_scale: float,
+    input_zero_point: int,
+    weights: torch.Tensor,
+    weight_sums: torch.Tensor,
+    weight_scales: torch.Tensor,
+    output_scale: float,
+    output_zero_point: int,
+    bias: Optional[torch.Tensor],
+    kernel_size: list,
+    stride: list,
+    padding: list,
+    dilation: list,
+    groups: int,
+):
+    x = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        x, input_scale, input_zero_point, -128, 127, x.dtype
+    )
+
+    # Restore weight to original data layout
+    K_h, K_w, OC = weights.shape
+    weights = weights.permute(2, 0, 1).reshape(OC, 1, K_h, K_w)
+
+    weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
+    # Dequantize weights
+    weights = torch.ops.quantized_decomposed.dequantize_per_channel(
+        weights,
+        weight_scales,
+        weight_zeros,
+        0,  # axis=0 for output channel quantization
+        -127,
+        127,
+        torch.int8,
+    )
+
+    # Perform convolution
+    out = torch.nn.functional.conv2d(
+        x, weights, bias, stride, padding, dilation, groups
+    )
+
+    out = torch.ops.quantized_decomposed.quantize_per_tensor(
+        out, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return out
+
+
+name = "conv2d_q8ta_q8csw_q8to_dw"
+lib.define(
+    f"""
+    {name}(
+        Tensor x,
+        float input_scale,
+        int input_zero_point,
+        Tensor weights,
+        Tensor weight_sums,
+        Tensor weight_scales,
+        float output_scale,
+        int output_zero_point,
+        Tensor? bias,
+        SymInt[] kernel_size,
+        SymInt[] stride,
+        SymInt[] padding,
+        SymInt[] dilation,
+        SymInt groups) -> Tensor
+    """
+)
+lib.impl(name, conv2d_q8ta_q8csw_q8to_dw, "CompositeExplicitAutograd")
+conv2d_q8ta_q8csw_dw_op = getattr(getattr(torch.ops, namespace), name)
+
 ######################
 ## apply_rotary_emb ##
 ######################
 
 
-# Note that this implementation is copied from executorch.examples.models.llama.rope
-# but it is copied here to avoid introducing a dependency on the llama code.
 def apply_rotary_emb_impl(
     xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
 ):
-    def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-        ndim = x.ndim
-        freqs_cis_ndim = freqs_cis.ndim
-        if freqs_cis_ndim == 3:
-            # freqs_cis: (seq_len, n_heads, head_dim // 2)
-            assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
-            shape = [
-                d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
-                for i, d in enumerate(x.shape)
-            ]
-        else:
-            # freqs_cis: (seq_len, head_dim // 2)
-            assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-            shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-        return freqs_cis.view(shape)
-
-    xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
-    xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
-
-    freqs_cos = reshape_for_broadcast(freqs_cos, xq_r)
-    freqs_sin = reshape_for_broadcast(freqs_sin, xq_r)
-
-    xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
-    xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
-    xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
-    xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
-
-    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
-    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
-
-    return xq_out.type_as(xq), xk_out.type_as(xk)
+    pattern = vk_patterns.RotaryEmbeddingPattern()
+    return pattern.forward(xq, xk, freqs_cos, freqs_sin)
 
 
 name = "apply_rotary_emb"
@@ -280,3 +536,81 @@ lib.define(
 )
 lib.impl(name, apply_rotary_emb_impl, "CompositeExplicitAutograd")
 apply_rotary_emb_op = getattr(getattr(torch.ops, namespace), name)
+
+#############################
+## quantize/dequantize ops ##
+#############################
+
+
+def quantize_q8ta_for_conv2d_impl(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+):
+    return torch.ops.quantized_decomposed.quantize_per_tensor(
+        input, scale, zero_point, -128, 127, torch.int8
+    )
+
+
+name = "quantize_q8ta_for_conv2d"
+lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
+lib.impl(name, quantize_q8ta_for_conv2d_impl, "CompositeExplicitAutograd")
+quantize_q8ta_for_conv2d_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def dequantize_q8to_from_conv2d_impl(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+):
+    return torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input, scale, zero_point, -128, 127, input.dtype
+    )
+
+
+name = "dequantize_q8to_from_conv2d"
+lib.define(f"{name}(Tensor input, float scale, int zero_point) -> Tensor")
+lib.impl(name, dequantize_q8to_from_conv2d_impl, "CompositeExplicitAutograd")
+dequantize_q8to_from_conv2d_op = getattr(getattr(torch.ops, namespace), name)
+
+########################
+## add_q8ta_q8ta_q8to ##
+########################
+
+
+def add_q8ta_q8ta_q8to_impl(
+    input_a: torch.Tensor,
+    input_b: torch.Tensor,
+    input_a_scale: float,
+    input_a_zero_point: int,
+    input_b_scale: float,
+    input_b_zero_point: int,
+    output_scale: float,
+    output_zero_point: int,
+    alpha: float,
+):
+    # Dequantize inputs to float
+    dequant_a = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input_a, input_a_scale, input_a_zero_point, -128, 127, input_a.dtype
+    )
+    dequant_b = torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input_b, input_b_scale, input_b_zero_point, -128, 127, input_b.dtype
+    )
+
+    # Perform addition with alpha scaling
+    result = dequant_a + alpha * dequant_b
+
+    # Quantize the result back to int8
+    quantized_result = torch.ops.quantized_decomposed.quantize_per_tensor(
+        result, output_scale, output_zero_point, -128, 127, torch.int8
+    )
+
+    return quantized_result
+
+
+name = "add_q8ta_q8ta_q8to"
+lib.define(
+    f"{name}(Tensor input_a, Tensor input_b, float input_a_scale, int input_a_zero_point, float input_b_scale, int input_b_zero_point, float output_scale, int output_zero_point, float alpha) -> Tensor"
+)
+lib.impl(name, add_q8ta_q8ta_q8to_impl, "CompositeExplicitAutograd")
+add_q8ta_q8ta_q8to_op = getattr(getattr(torch.ops, namespace), name)

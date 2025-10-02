@@ -7,15 +7,46 @@
       "binaryDir": "${sourceDir}/cmake-out"
     },
     {
+      "name": "android-arm64-v8a",
+      "displayName": "Build executorch core and JNI bindings on android arm64-v8a",
+      "inherits": ["common"],
+      "binaryDir": "${sourceDir}/cmake-out-android-arm64-v8a",
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/android.cmake",
+        "ANDROID_ABI": "arm64-v8a"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
+      }
+    },
+    {
+      "name": "android-x86_64",
+      "displayName": "Build executorch core and JNI bindings on android x86_64",
+      "inherits": ["common"],
+      "binaryDir": "${sourceDir}/cmake-out-android-x86_64",
+      "cacheVariables": {
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/android.cmake",
+        "ANDROID_ABI": "x86_64"
+      },
+      "condition": {
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Darwin", "Linux", "Windows"]
+      }
+    },
+    {
       "name": "macos",
-      "displayName": "Build everything buildable on macOS",
+      "displayName": "Build ExecuTorch for macOS",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/macos.cmake",
         "PLATFORM": "MAC_ARM64",
-        "DEPLOYMENT_TARGET": "12.0"
+        "DEPLOYMENT_TARGET": "12.0",
+        "CMAKE_MACOSX_BUNDLE": "OFF"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -25,14 +56,15 @@
     },
     {
       "name": "ios",
-      "displayName": "Build everything buildable on iOS",
+      "displayName": "Build ExecuTorch for iOS",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "OS64",
-        "DEPLOYMENT_TARGET": "17.0"
+        "DEPLOYMENT_TARGET": "17.0",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -42,14 +74,15 @@
     },
     {
       "name": "ios-simulator",
-      "displayName": "Build everything buildable on iOS simulator",
+      "displayName": "Build ExecuTorch for iOS Simulator",
       "inherits": ["common"],
       "generator": "Xcode",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/third-party/ios-cmake/ios.toolchain.cmake",
         "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/ios.cmake",
         "PLATFORM": "SIMULATORARM64",
-        "DEPLOYMENT_TARGET": "17.0"
+        "DEPLOYMENT_TARGET": "17.0",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
       },
       "condition": {
         "lhs": "${hostSystemName}",
@@ -59,7 +92,7 @@
     },
     {
       "name": "linux",
-      "displayName": "Build everything buildable on Linux",
+      "displayName": "Build ExecuTorch for Linux",
       "inherits": ["common"],
       "cacheVariables": {
         "CMAKE_SYSTEM_NAME": "Linux",
@@ -88,11 +121,25 @@
     {
         "name": "llm",
         "displayName": "Build LLM libraries",
+        "inherits": ["common"],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
+            "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        },
+        "condition": {
+            "type": "inList",
+            "string": "${hostSystemName}",
+            "list": ["Darwin", "Linux", "Windows"]
+        }
+    },
+    {
+        "name": "profiling",
+        "displayName": "Build ExecuTorch with Profiling Enabled",
         "inherits": [
             "common"
         ],
         "cacheVariables": {
-            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/llm.cmake",
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/profiling.cmake",
             "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
         },
         "condition": {
@@ -104,6 +151,39 @@
                 "Windows"
             ]
         }
+    },
+    {
+      "name": "windows",
+      "displayName": "Build ExecuTorch for Windows",
+      "inherits": ["common"],
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "Windows",
+        "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/windows.cmake"
+      },
+      "toolset": "ClangCL",
+      "condition": {
+        "lhs": "${hostSystemName}",
+        "type": "equals",
+        "rhs": "Windows"
+      }
+    },
+    {
+        "name": "zephyr",
+        "displayName": "Build ExecuTorch for Zephyr RTOS",
+        "inherits": ["common"],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/zephyr.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake"
+        }
+    },
+    {
+        "name": "arm-baremetal",
+        "displayName": "Build ExecuTorch for Arm baremetal",
+        "inherits": ["common"],
+        "cacheVariables": {
+            "EXECUTORCH_BUILD_PRESET_FILE": "${sourceDir}/tools/cmake/preset/arm_baremetal.cmake",
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake"
+          }
     }
   ]
 }

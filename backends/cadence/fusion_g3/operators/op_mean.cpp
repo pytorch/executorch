@@ -17,13 +17,12 @@
 #include <executorch/runtime/platform/assert.h>
 
 using ::executorch::aten::ArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -192,4 +191,3 @@ Tensor& mean_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

@@ -45,7 +45,7 @@ class FlatTensorDataMap final
       executorch::runtime::DataLoader* loader);
 
   /**
-   * Retrieve the metadata for the specified key.
+   * Retrieve the tensor_layout for the specified key.
    *
    * @param[in] key The name of the tensor to get metadata on.
    *
@@ -54,7 +54,7 @@ class FlatTensorDataMap final
   ET_NODISCARD
   executorch::runtime::Result<
       const executorch::ET_RUNTIME_NAMESPACE::TensorLayout>
-  get_metadata(const char* key) const override;
+  get_tensor_layout(executorch::aten::string_view key) const override;
 
   /**
    * Retrieve read-only data for the specified key.
@@ -65,7 +65,7 @@ class FlatTensorDataMap final
    */
   ET_NODISCARD
   executorch::runtime::Result<executorch::runtime::FreeableBuffer> get_data(
-      const char* key) const override;
+      executorch::aten::string_view key) const override;
 
   /**
    * Loads the data of the specified tensor into the provided buffer.
@@ -77,20 +77,22 @@ class FlatTensorDataMap final
    *
    * @returns an Error indicating if the load was successful.
    */
-  ET_NODISCARD executorch::runtime::Error
-  load_data_into(const char* key, void* buffer, size_t size) const override;
+  ET_NODISCARD executorch::runtime::Error load_data_into(
+      executorch::aten::string_view key,
+      void* buffer,
+      size_t size) const override;
 
   /**
    * @returns The number of keys in the map.
    */
-  ET_NODISCARD executorch::runtime::Result<size_t> get_num_keys()
+  ET_NODISCARD executorch::runtime::Result<uint32_t> get_num_keys()
       const override;
 
   /**
    * @returns The key at the specified index, error if index out of bounds.
    */
   ET_NODISCARD executorch::runtime::Result<const char*> get_key(
-      size_t index) const override;
+      uint32_t index) const override;
 
   FlatTensorDataMap(FlatTensorDataMap&&) noexcept = default;
 

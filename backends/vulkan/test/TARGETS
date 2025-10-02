@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
@@ -13,6 +14,7 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
     deps = [
+        ":test_utils",
         "//caffe2:torch",
         "//executorch/backends/transforms:convert_dtype_pass",
         "//executorch/backends/vulkan:vulkan_preprocess",
@@ -34,6 +36,7 @@ python_unittest(
         "//executorch/backends/vulkan/_passes:vulkan_passes",
         "//executorch/backends/vulkan/quantizer:vulkan_quantizer",
         "//executorch/backends/vulkan:vulkan_preprocess",
+        "//pytorch/ao:torchao",  # @manual
     ]
 )
 
@@ -55,5 +58,34 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
+runtime.python_library(
+    name = "tester",
+    srcs = ["tester.py"],
+    deps = [
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ]
+)
+
+runtime.python_library(
+    name = "test_utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
     ],
 )

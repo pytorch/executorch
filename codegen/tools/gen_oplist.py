@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from enum import IntEnum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 import yaml
@@ -19,7 +20,6 @@ except ImportError:
     # If we build from source, executorch.codegen is not available.
     # We can use relative import instead.
     from ..parse import strip_et_fields
-
 
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator
@@ -102,7 +102,6 @@ def _get_operators(model_file: str) -> List[str]:
 
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
-
     from executorch.codegen.tools.selective_build import (  # type: ignore[import-not-found]
         _get_io_metadata_for_program_operators,
         _get_program_from_buffer,
@@ -160,7 +159,7 @@ def _get_et_kernel_metadata_from_ops_yaml(ops_yaml_path: str) -> Dict[str, List[
 
 def _dump_yaml(
     op_list: List[str],
-    output_path: str,
+    output_path: Path,
     model_name: Optional[str] = None,
     et_kernel_metadata: Optional[Dict[str, List[str]]] = None,
     include_all_operators: bool = False,
@@ -214,20 +213,23 @@ def create_kernel_key(maybe_kernel_key: str) -> str:
 
 
 def gen_oplist(
-    output_path: str,
+    output_path: Path,
     model_file_path: Optional[str] = None,
     ops_schema_yaml_path: Optional[str] = None,
     root_ops: Optional[str] = None,
     ops_dict: Optional[str] = None,
     include_all_operators: bool = False,
 ):
-    assert (
+    if not (
         model_file_path
         or ops_schema_yaml_path
         or root_ops
         or ops_dict
         or include_all_operators
-    ), "Need to provide either model_file_path or ops_schema_yaml_path or root_ops or ops_dict or include_all_operators."
+    ):
+        # dump empty yaml file
+        _dump_yaml([], output_path)
+        return
 
     assert output_path, "Need to provide output_path for dumped yaml file."
     op_set = set()
@@ -328,9 +330,15 @@ def main(args: List[Any]) -> None:
     )
     options = parser.parse_args(args)
 
+    # check if the output_path is a directory, then generate operators
+    # under selected_operators.yaml
+    if Path(options.output_path).is_dir():
+        output_path = Path(options.output_path) / "selected_operators.yaml"
+    else:
+        output_path = Path(options.output_path)
     try:
         gen_oplist(
-            output_path=options.output_path,
+            output_path=output_path,
             model_file_path=options.model_file_path,
             ops_schema_yaml_path=options.ops_schema_yaml_path,
             root_ops=options.root_ops,

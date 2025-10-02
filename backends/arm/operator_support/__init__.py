@@ -6,14 +6,18 @@
 # pyre-unsafe
 
 from . import (  # noqa
+    clone_dim_order_support,
     convolution_support,
+    embedding_support,
     ethos_u55_support,
+    index_select_support,
+    index_tensor_support,
     minmax_support,
     pool_2d_support,
     reduce_sum_support,
     right_shift_support,
-    sin_cos_support,
     slice_copy_support,
-    to_copy_support,
+    to_dim_order_copy_support,
     tosa_supported_operators,
+    where_support,
 )

@@ -6,23 +6,30 @@
 
 # pyre-strict
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, cast, Dict, List, Tuple
 
 import torch
+from executorch.backends.cadence.aot.compiler_utils import get_shape
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
     AddPattern,
     BmmPattern,
     CatPattern,
     Conv1dPattern,
+    Conv1dReluPattern0,
+    Conv1dReluPattern1,
     Conv2dPattern,
+    Conv2dReluPattern0,
+    Conv2dReluPattern1,
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
     ReluPattern0,
     ReluPattern1,
+    SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
+    check_out_zero_point_is_min_range,
     create_zero_bias_int32,
     find_sequential_partitions_aten,
     get_conv_args,
@@ -41,6 +48,13 @@ ArgsType = Any
 
 # Use this part for patterns with multiple aten ops
 ReluPatterns = (ReluPattern0, ReluPattern1)
+ConvPatterns = (Conv1dPattern, Conv2dPattern)
+ConvReluPatterns = (
+    Conv1dReluPattern0,
+    Conv1dReluPattern1,
+    Conv2dReluPattern0,
+    Conv2dReluPattern1,
+)
 
 
 def get_args_and_kwargs_add(
@@ -331,7 +345,6 @@ def get_args_and_kwargs_conv(
         "out_zero_point": quant_node.args[2],
         "out_multiplier": out_multiplier_,
         "out_shift": out_shift_,
-        "channel_last": False,
     }
     return args, kwargs
 
@@ -377,6 +390,73 @@ def get_args_and_kwargs_relu(
     return args, kwargs
 
 
+def get_args_and_kwargs_softmax(
+    graph_module: GraphModule,
+    inputs_inputs: List[fx.Node],
+    dequants_inputs: List[fx.Node],
+    quant_node: fx.Node,
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    # Make a dummy mask tensor
+    mask_shape = get_shape(graph_module, cast(fx.Node, quant_node.args[0]))
+    mask_shape = list(mask_shape) if mask_shape else []
+    mask_shape[-1] = mask_shape[-1] // 16
+    mask_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            mask_shape,
+            0.0,
+        ),
+        {"dtype": torch.int32},
+    )
+    # Make the scale and zero_point tensors
+    in_scale_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            dequants_inputs[0].args[1],
+        ),
+        {"dtype": torch.float32},
+    )
+    in_zero_point_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            dequants_inputs[0].args[2],
+        ),
+        {"dtype": torch.int32},
+    )
+    out_scale_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            quant_node.args[1],
+        ),
+        {"dtype": torch.float32},
+    )
+    out_zero_point_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        (
+            [1],
+            quant_node.args[2],
+        ),
+        {"dtype": torch.int32},
+    )
+
+    # Make the args and kwargs for the replacement op
+    args = (
+        inputs_inputs[0],
+        mask_tensor,
+        op_node.args[1],
+        in_scale_tensor,
+        in_zero_point_tensor,
+        out_scale_tensor,
+        out_zero_point_tensor,
+    )
+    kwargs = {}
+    return args, kwargs
+
+
 class QuantFusion(ExportPass):
     # pyre-ignore[2]: Parameter `patterns` has no type specified
     def __init__(self, patterns) -> None:
@@ -391,7 +471,7 @@ class QuantFusion(ExportPass):
                 pattern.partition_types(),
             )
             for fused_partition in fused_partitions:
-                anchors = pattern.get_anchors(graph_module, fused_partition)
+                anchors, op_node = pattern.get_anchors(graph_module, fused_partition)
                 if not anchors or anchors.empty:
                     continue
                 if any(self.is_fused(p.nodes) for p in fused_partition):
@@ -432,10 +512,7 @@ class QuantFusion(ExportPass):
                 bias_inputs = [node.args[0] for node in dequants_biases]
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
-                # The node is the first index of the list and first of the tuple
-                op_node = anchors.output[0][0]
-
-                assert len(op_node.users) == 1
+                assert op_node is not None, "op_node is None"
                 quant_node = list(op_node.users.keys())[0]
 
                 with graph_module.graph.inserting_after(op_node):
@@ -454,7 +531,27 @@ class QuantFusion(ExportPass):
                         args, kwargs = get_args_and_kwargs_cat(
                             inputs_inputs, other_inputs, op_node
                         )
-                    elif isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
+                    elif isinstance(pattern, ConvReluPatterns):
+                        # For ConvReLU, we are fusing Conv+ReLU
+                        # This means that the op we want to get
+                        # the replacement args and kwargs for is the
+                        # *conv* op, which is the anchor input, NOT
+                        # the anchor output (which is the ReLU)
+                        check_out_zero_point_is_min_range(
+                            quant_node.args[2], quant_node.args[5]
+                        )
+                        anchor_input_node = anchors.inputs[0][0]
+                        args, kwargs = get_args_and_kwargs_conv(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            quant_node,
+                            anchor_input_node,
+                        )
+                    elif isinstance(pattern, ConvPatterns):
                         args, kwargs = get_args_and_kwargs_conv(
                             graph_module,
                             inputs_inputs,
@@ -512,18 +609,34 @@ class QuantFusion(ExportPass):
                             dequants_inputs,
                             quant_node,
                         )
+                    elif isinstance(pattern, SoftmaxPattern):
+                        args, kwargs = get_args_and_kwargs_softmax(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            quant_node,
+                            op_node,
+                        )
+
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
                         args,
                         kwargs,
                     )
-                    fused.meta = quant_node.meta
-                    quant_node.replace_all_uses_with(fused)
+
+                    if len(anchors.output) > 0:
+                        fused.meta = quant_node.meta
+                        quant_node.replace_all_uses_with(fused)
+                    else:
+                        fused.meta = op_node.meta
+                        op_node.replace_all_uses_with(fused)
+                        if op_node.op == "output":
+                            _ = graph_module.graph.output((fused,))
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
-            # pyre-fixme[7]: Incompatible return type
             graph_module.recompile()
+        return PassResult(graph_module, True)
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified

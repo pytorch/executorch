@@ -112,15 +112,24 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         result = self.gather_benchmark_configs.generate_compatible_configs(
             model_name, target_os
         )
-        expected = ["llama3_fb16", "llama3_coreml_ane"]
-        self.assertEqual(result, expected)
+        expected = [
+            "llama3_fb16",
+            "llama3_coreml_ane",
+            "et_xnnpack_custom_spda_kv_cache_8da4w",
+            "hf_xnnpack_custom_spda_kv_cache_8da4w",
+        ]
+        self.assertCountEqual(result, expected)
 
         target_os = "android"
         result = self.gather_benchmark_configs.generate_compatible_configs(
             model_name, target_os
         )
-        expected = ["llama3_fb16"]
-        self.assertEqual(result, expected)
+        expected = [
+            "llama3_fb16",
+            "et_xnnpack_custom_spda_kv_cache_8da4w",
+            "hf_xnnpack_custom_spda_kv_cache_8da4w",
+        ]
+        self.assertCountEqual(result, expected)
 
     def test_generate_compatible_configs_quantized_llama_model(self):
         model_name = "meta-llama/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8"
@@ -183,20 +192,28 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
 
     def test_device_pools_contains_all_devices(self):
         expected_devices = [
-            "apple_iphone_15",
-            "apple_iphone_15+ios_18",
-            "samsung_galaxy_s22",
-            "samsung_galaxy_s24",
-            "google_pixel_8_pro",
+            "apple_iphone_15+public",
+            "apple_iphone_15+ios_18_public",
+            "samsung_galaxy_s22+public",
+            "samsung_galaxy_s24+ultra_private",
+            "google_pixel_8+pro_public",
         ]
         for device in expected_devices:
-            self.assertIn(device, self.gather_benchmark_configs.DEVICE_POOLS)
+            m = re.match(self.gather_benchmark_configs.DEVICE_POOLS_REGEX, device)
+
+            device_name = m.group("device_name")
+            variant = m.group("variant")
+
+            self.assertIn(device_name, self.gather_benchmark_configs.DEVICE_POOLS)
+            self.assertIn(
+                variant, self.gather_benchmark_configs.DEVICE_POOLS[device_name]
+            )
 
     def test_gather_benchmark_configs_cli(self):
         args = {
             "models": "mv2,dl3",
             "os": "ios",
-            "devices": "apple_iphone_15",
+            "devices": "apple_iphone_15+pro_private",
             "configs": None,
         }
 
@@ -214,11 +231,29 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         self.assertIn('"config": "xnnpack_q8"', result.stdout)
         self.assertIn('"config": "mps"', result.stdout)
 
-    def test_gather_benchmark_configs_cli_specified_configs(self):
+    def test_gather_benchmark_configs_cli_invalid_device(self):
         args = {
             "models": "mv2,dl3",
             "os": "ios",
             "devices": "apple_iphone_15",
+            "configs": None,
+        }
+
+        cmd = ["python", ".ci/scripts/gather_benchmark_configs.py"]
+        for key, value in args.items():
+            if value is not None:
+                cmd.append(f"--{key}")
+                cmd.append(value)
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, f"Error: {result.stderr}")
+        self.assertIn('{"include": []}', result.stdout)
+
+    def test_gather_benchmark_configs_cli_specified_configs(self):
+        args = {
+            "models": "mv2,dl3",
+            "os": "ios",
+            "devices": "apple_iphone_15+private",
             "configs": "coreml_fp16,xnnpack_q8",
         }
 
@@ -240,7 +275,7 @@ class TestGatehrBenchmarkConfigs(unittest.TestCase):
         args = {
             "models": "mv2,dl3",
             "os": "ios",
-            "devices": "apple_iphone_15",
+            "devices": "apple_iphone_15+public",
             "configs": "qnn_q8",
         }
 

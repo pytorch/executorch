@@ -32,7 +32,7 @@ void scatter_src_helper(
     const Tensor& src,
     Tensor& out) {
   const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-  const long* index_data = index.const_data_ptr<long>();
+  const int64_t* index_data = index.const_data_ptr<int64_t>();
   const CTYPE* src_data = src.const_data_ptr<CTYPE>();
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -72,7 +72,7 @@ void scatter_value_helper(
     CTYPE_VAL val,
     Tensor& out) {
   const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-  const long* index_data = index.const_data_ptr<long>();
+  const int64_t* index_data = index.const_data_ptr<int64_t>();
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
   memcpy(out_data, in_data, in.nbytes());
@@ -104,25 +104,20 @@ void scatter_value_helper(
 } // namespace
 
 Tensor& scatter_src_out(
-    KernelRuntimeContext& context,
+    KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  (void)context;
-
   ET_KERNEL_CHECK(
-      context,
+      ctx,
       check_scatter_src_args(in, dim, index, src, out),
       InvalidArgument,
       out);
 
   ET_KERNEL_CHECK(
-      context,
-      resize_tensor(out, in.sizes()) == Error::Ok,
-      InvalidArgument,
-      out);
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   constexpr auto name = "scatter.src_out";
 
@@ -151,17 +146,13 @@ Tensor& scatter_value_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-  ScalarType val_type = utils::get_scalar_dtype(value);
-
   constexpr auto name = "scatter.value_out";
 
-  ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, name, CTYPE_VAL, [&] {
-    CTYPE_VAL val;
-    ET_KERNEL_CHECK(ctx, utils::extract_scalar(value, &val), InvalidArgument, );
-
-    ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
-      scatter_value_helper<CTYPE>(in, dim, index, val, out);
-    });
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+    auto opt_val = utils::internal::check_overflow_scalar_cast<CTYPE>(value);
+    ET_KERNEL_CHECK(ctx, opt_val.has_value(), InvalidArgument, );
+    auto val = opt_val.value();
+    scatter_value_helper<CTYPE>(in, dim, index, val, out);
   });
 
   return out;

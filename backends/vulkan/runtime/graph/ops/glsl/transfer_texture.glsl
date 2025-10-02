@@ -9,6 +9,7 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+#define UBO_PARAMS ${UBO_PARAMS}
 
 #define VEC4_T ${texel_type(DTYPE)}
 #define T ${buffer_scalar_type(DTYPE)}
@@ -23,17 +24,25 @@ layout(std430) buffer;
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, "texture3d")}
 ${layout_declare_tensor(B, "r", "t_in", DTYPE, "texture3d")}
 
-$if OP_NAME == "slice":
-  ${layout_declare_ubo(B, "int", "start")}
-  ${layout_declare_ubo(B, "int", "step")}
+$if UBO_PARAMS:
+  $if OP_NAME == "slice":
+    ${layout_declare_ubo(B, "int", "start")}
+    ${layout_declare_ubo(B, "int", "step")}
 
-$if OP_NAME == "select":
-  ${layout_declare_ubo(B, "int", "index")}
+  $if OP_NAME == "select":
+    ${layout_declare_ubo(B, "int", "index")}
 
 layout(push_constant) uniform restrict Block {
   ivec4 out_sizes;
   ivec4 in_sizes;
   int selected_dim;
+  $if not UBO_PARAMS:
+    $if OP_NAME == "slice":
+      int start;
+      int step;
+
+    $if OP_NAME == "select":
+      int index;
 };
 
 ${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_LAYOUT")}

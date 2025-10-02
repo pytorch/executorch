@@ -27,11 +27,11 @@ namespace {
 void check_embedding_byte_args(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
@@ -129,7 +129,7 @@ template <typename CTYPE_WEIGHT, typename CTYPE_PARAMS, typename CTYPE_OUT>
 void embedding_byte_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     const Tensor& indices,
     Tensor& out) {
   // An embedding layer nn.Embedding(num_embeddings, embedding_dim) has a
@@ -232,15 +232,18 @@ void resize_out_tensor(
 Tensor& quantized_embedding_byte_out(
     // TODO Evaluate whether this name is appropriate for an operator that takes
     // non quant input and returns fp output
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
     Tensor& out) {
   ScalarType w_type = weight.scalar_type();
   ScalarType out_type = out.scalar_type();
+
+  resize_out_tensor(weight, indices, out);
 
   // TODO (jakeszwe): improve these to account for the size of out in relation
   // to weight and indices accounting for a possible batch dimension
@@ -266,19 +269,18 @@ Tensor& quantized_embedding_byte_out(
 }
 
 Tensor& quantized_embedding_byte_out(
-    KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
-  (void)context;
-  resize_out_tensor(weight, indices, out);
-  return quantized_embedding_byte_out(
+  KernelRuntimeContext context;
+  auto& res = quantized_embedding_byte_out(
+      context,
       weight,
       weight_scales,
       opt_weight_zero_points,
@@ -286,19 +288,24 @@ Tensor& quantized_embedding_byte_out(
       weight_quant_max,
       indices,
       out);
+  ET_CHECK(context.failure_state() == Error::Ok);
+  return res;
 }
 
 Tensor& quantized_embedding_byte_dtype_out(
     // TODO Evaluate whether this name is appropriate for an operator that takes
     // non quant input and returns fp output
+    KernelRuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
+  resize_out_tensor(weight, indices, out);
+
   // TODO (jakeszwe): improve these to account for the size of out in relation
   // to weight and indices accounting for a possible batch dimension
   check_embedding_byte_args(
@@ -329,20 +336,19 @@ Tensor& quantized_embedding_byte_dtype_out(
 }
 
 Tensor& quantized_embedding_byte_dtype_out(
-    KernelRuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const executorch::aten::optional<Tensor>& opt_weight_zero_points,
+    const std::optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
-    executorch::aten::optional<ScalarType> out_dtype,
+    std::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
-  (void)context;
-  resize_out_tensor(weight, indices, out);
-  return quantized_embedding_byte_dtype_out(
+  KernelRuntimeContext context;
+  auto& res = quantized_embedding_byte_dtype_out(
+      context,
       weight,
       weight_scales,
       opt_weight_zero_points,
@@ -351,6 +357,8 @@ Tensor& quantized_embedding_byte_dtype_out(
       indices,
       out_dtype,
       out);
+  ET_CHECK(context.failure_state() == Error::Ok);
+  return res;
 }
 
 } // namespace native

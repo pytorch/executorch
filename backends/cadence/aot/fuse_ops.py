@@ -72,11 +72,13 @@ class FuseMMWithAdd(ExportPass):
         fuse it with mm.
         """
         graph = graph_module.graph
-        for node in graph.nodes:
+        for node in graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mm.default
+        ):
             # We want to discover a chain of mm -> add, or mm -> view -> add.
             # Only proceed if the current node is an mm node, and has only one
             # user/successor.
-            if node.target != exir_ops.edge.aten.mm.default or len(node.users) != 1:
+            if len(node.users) != 1:
                 continue
 
             # Our addmm implementation computes (mat1 * mat2 + bias). So the
@@ -128,6 +130,7 @@ class FuseMMWithAdd(ExportPass):
                 mm_arg_shape is None
                 or bias_arg_shape is None
                 or not broadcastable(mm_arg_shape, bias_arg_shape)
+                or len(bias_arg_shape) > 2
             ):
                 continue
 
@@ -712,32 +715,14 @@ class FuseQuantDequantToRequantizePass(FuseOpPairsAcrossBranchesPass):
         out_dtype: torch.dtype,
         graph: torch.fx.Graph,
     ) -> torch.fx.Node:
-        in_scale_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default, args=((1,), in_scale)
-        )
-        in_zero_point_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default,
-            args=((1,), in_zero_point),
-            kwargs={"dtype": torch.int32},
-        )
-        out_scale_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default, args=((1,), out_scale)
-        )
-        out_zero_point_tensor = graph.call_function(
-            exir_ops.edge.aten.full.default,
-            args=((1,), out_zero_point),
-            kwargs={"dtype": torch.int32},
-        )
-        # cadence::requantize(Tensor input, Tensor in_scale, Tensor in_zero_point, Tensor out_scale, Tensor out_zero_point, ScalarType out_dtype) -> Tensor Y
-        # TODO(hardiksharma): Add support for per-tensor requantize.
         return graph.call_function(
-            exir_ops.edge.cadence.requantize.default,
+            exir_ops.edge.cadence.requantize.per_tensor,
             args=(
                 in_tensor,
-                in_scale_tensor,
-                in_zero_point_tensor,
-                out_scale_tensor,
-                out_zero_point_tensor,
+                in_scale,
+                in_zero_point,
+                out_scale,
+                out_zero_point,
                 out_dtype,
             ),
         )
@@ -861,6 +846,84 @@ class FuseMulScalarIntoDequantPass(ExportPass):
             self.attempt_fusion(graph_module, node)
         result = super().call(graph_module)
         return result
+
+
+@register_cadence_pass(CadencePassAttribute(opt_level=1))
+class FuseMulTensorIntoQuantPass(ExportPass):
+    """
+    Looks for the pattern where aten.mul.Tensor is followed by quant node.
+    If found, updates the quant scale to reflect the multiplication and
+    removes the mul node.
+    """
+
+    def attempt_fusion(
+        self, graph_module: torch.fx.GraphModule, mul_node: torch.fx.Node
+    ) -> None:
+        if len(mul_node.args) != 2 or len(mul_node.users) != 1:
+            return
+
+        first_arg = cast(torch.fx.Node, mul_node.args[0])
+        second_arg = cast(torch.fx.Node, mul_node.args[1])
+
+        input_node = first_arg
+        full_node = second_arg
+        if second_arg.target == exir_ops.edge.aten.full.default:
+            # Most common case, nothing to change.
+            pass
+        elif first_arg.target == exir_ops.edge.aten.full.default:
+            # Input and full nodes are swapped.
+            full_node = first_arg
+            input_node = second_arg
+        else:
+            # Full node is not found, skip.
+            return
+
+        # Ensure that the mul op does not do any broadcasting.
+        if input_node.meta["val"].shape != mul_node.meta["val"].shape:
+            return
+
+        mul_user = list(mul_node.users.keys())[0]
+
+        # Ensure only the expected quant ops are using the current mul op.
+        if mul_user.target not in {
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
+        }:
+            return
+
+        quant_node = mul_user
+
+        # Calculate the new scale value.
+        old_scale = quant_node.args[1]
+        assert isinstance(old_scale, (int, float))
+        mul_scalar = full_node.args[1]
+        assert isinstance(mul_scalar, (int, float))
+        """ The reason why we divide old scale by the mul value to get a new scale:
+            y = x * mul_scalar
+            q = zp + y / old_scale
+            q = zp + x * mul_scalar / old_scale
+            new_scale = old_scale / mul_scalar
+            q = zp + x / new_scale
+        """
+        new_scale = float(old_scale) / float(mul_scalar)
+
+        logging.debug(
+            f"Fused {mul_node} and {full_node} into {quant_node}. Updated scale from {quant_node.args[1]} to {new_scale}"
+        )
+
+        # Update quant node input and scale.
+        old_quant_input = cast(torch.fx.Node, quant_node.args[0])
+        new_quant_input = cast(torch.fx.Node, mul_node.args[0])
+        quant_node.replace_input_with(old_quant_input, new_quant_input)
+        quant_node.update_arg(1, new_scale)
+
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.mul.Tensor
+        ):
+            self.attempt_fusion(graph_module, node)
+        graph_module.graph.eliminate_dead_code()
+        return super().call(graph_module)
 
 
 @register_cadence_pass(CadencePassAttribute(opt_level=1))
@@ -1067,6 +1130,7 @@ class CadenceFuseOpsInGraph:
         FuseCascadedTransposeOrPermuteOps,
         FuseCascadedViewOps,
         FuseQuantDequantToRequantizePass,
+        FuseMulTensorIntoQuantPass,
         FuseMulTensorIntoDequantPass,
         FuseMulScalarIntoDequantPass,
         FuseFullThenReshapePass,

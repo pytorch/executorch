@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 """
 ExecuTorch export module.
 
@@ -12,13 +14,27 @@ to the ExecuTorch format, including configuration, quantization, and
 export management.
 """
 
-# pyre-strict
-
 from .export import export, ExportSession
-from .recipe import ExportRecipe
+from .recipe import (
+    AOQuantizationConfig,
+    ExportRecipe,
+    LoweringRecipe,
+    QuantizationRecipe,
+    RecipeType,
+)
+from .recipe_provider import BackendRecipeProvider
+from .recipe_registry import recipe_registry
+from .types import StageType
 
 __all__ = [
+    "AOQuantizationConfig",
+    "StageType",
     "ExportRecipe",
+    "LoweringRecipe",
+    "QuantizationRecipe",
     "ExportSession",
     "export",
+    "BackendRecipeProvider",
+    "recipe_registry",
+    "RecipeType",
 ]

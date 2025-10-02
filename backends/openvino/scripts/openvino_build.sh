@@ -55,7 +55,7 @@ main() {
         export CMAKE_BUILD_ARGS="--target openvino_backend"
 
         # Build the package
-        ./install_executorch.sh "${args[@]}"
+        ./install_executorch.sh --minimal "${args[@]}"
 
         # Install torchao
         pip install third-party/ao

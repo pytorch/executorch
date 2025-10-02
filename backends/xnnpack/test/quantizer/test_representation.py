@@ -8,8 +8,7 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from torch._higher_order_ops.out_dtype import out_dtype  # noqa: F401
-from torch.ao.quantization.quantizer import Quantizer
-from torch.export import export_for_training
+from torch.export import export
 from torch.testing._internal.common_quantization import (
     NodeSpec as ns,
     QuantizationTestCase,
@@ -17,6 +16,7 @@ from torch.testing._internal.common_quantization import (
     TestHelperModules,
 )
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import Quantizer
 
 
 @skipIfNoQNNPACK
@@ -33,7 +33,7 @@ class TestPT2ERepresentation(QuantizationTestCase):
     ) -> None:
         # resetting dynamo cache
         torch._dynamo.reset()
-        model = export_for_training(model, example_inputs, strict=True).module()
+        model = export(model, example_inputs, strict=True).module()
         model_copy = copy.deepcopy(model)
 
         model = prepare_pt2e(model, quantizer)  # pyre-ignore[6]

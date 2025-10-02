@@ -10,11 +10,12 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.conv3d.default"
@@ -304,7 +305,7 @@ conv3d_4x3_1x3x7x7_st3_pd0_dl1 = Conv3d(
     batches=1,
 )
 
-test_modules = {
+test_data_FP = {
     "2x2_3x2x40x40_nobias": lambda: conv3d_2x2_3x2x40x40_nobias,
     "3x3_1x3x256x256_st1": lambda: conv3d_3x3_1x3x256x256_st1,
     "3x3_1x3x12x12_st2_pd1": lambda: conv3d_3x3_1x3x12x12_st2_pd1,
@@ -323,50 +324,93 @@ test_modules = {
     "3x3_1x3x224x224_st2_pd1": lambda: conv3d_3x3_1x3x224x224_st2_pd1,
 }
 
+# Generate a new test set paired with per_channel_quant=True/False.
+test_data_INT = {
+    f"{k},per_channel_quant={q}": (lambda v=v, q=q: (v(), q))
+    for (k, v) in test_data_FP.items()
+    for q in [True, False]
+}
+
 input_t = Tuple[torch.Tensor]
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_data", test_data_FP)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_tosa_MI_3d(test_module):
-    pipeline = TosaPipelineMI[input_t](
-        test_module(), test_module().get_inputs(), aten_op, exir_op
+def test_convolution_3d_tosa_FP(test_data):
+    pipeline = TosaPipelineFP[input_t](
+        test_data(), test_data().get_inputs(), aten_op, exir_op
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_data", test_data_INT)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_tosa_BI_3d(test_module):
-    pipeline = TosaPipelineBI[input_t](
-        test_module(), test_module().get_inputs(), aten_op, exir_op
-    )
-    pipeline.change_args("run_method_and_compare_outputs", qtol=1)
-    pipeline.run()
-
-
-@common.parametrize("test_module", test_modules)
-@pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_u55_BI_3d(test_module):
-    pipeline = EthosU55PipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+def test_convolution_3d_tosa_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = TosaPipelineINT[input_t](
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+        qtol=1,
     )
     pipeline.run()
 
 
-@common.parametrize("test_module", test_modules)
+@common.parametrize("test_data", test_data_INT)
 @pytest.mark.skip  # Not implemented, skip until it is.
-def test_convolution_u85_BI_3d(test_module):
-    pipeline = EthosU85PipelineBI[input_t](
-        test_module(),
-        test_module().get_inputs(),
+def test_convolution_3d_u55_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU55PipelineINT[input_t](
+        model,
+        model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@pytest.mark.skip  # Not implemented, skip until it is.
+def test_convolution_3d_u85_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = EthosU85PipelineINT[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        per_channel_quantization=per_channel_quantization,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_FP)
+@pytest.mark.skip  # Not implemented, skip until it is.
+@common.SkipIfNoModelConverter
+def test_convolution_3d_vgf_FP(test_data):
+    pipeline = VgfPipeline[input_t](
+        test_data(),
+        test_data().get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_INT)
+@pytest.mark.skip  # Not implemented, skip until it is.
+@common.SkipIfNoModelConverter
+def test_convolution_3d_vgf_INT(test_data):
+    model, per_channel_quantization = test_data()
+    pipeline = VgfPipeline[input_t](
+        model,
+        model.get_inputs(),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()
 
@@ -396,7 +440,7 @@ reject_suite = {
 
 
 @common.parametrize("module", reject_suite)
-def test_convolution_u55_BI_not_delegated_3d(module: Conv3d):
+def test_convolution_u55_INT_not_delegated_3d(module: Conv3d):
     OpNotSupportedPipeline(
         module(),
         module().get_inputs(),

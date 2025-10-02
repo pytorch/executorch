@@ -20,6 +20,7 @@ VulkanBuffer::VulkanBuffer()
       allocator_(VK_NULL_HANDLE),
       memory_{},
       owns_memory_(false),
+      memory_bundled_(false),
       is_copy_(false),
       handle_(VK_NULL_HANDLE) {}
 
@@ -33,6 +34,7 @@ VulkanBuffer::VulkanBuffer(
       allocator_(vma_allocator),
       memory_{},
       owns_memory_(allocate_memory),
+      memory_bundled_(allocate_memory),
       is_copy_(false),
       handle_(VK_NULL_HANDLE) {
   // If the buffer size is 0, allocate a buffer with a size of 1 byte. This is
@@ -77,6 +79,7 @@ VulkanBuffer::VulkanBuffer(
       allocator_(other.allocator_),
       memory_(other.memory_),
       owns_memory_(false),
+      memory_bundled_(false),
       is_copy_(true),
       handle_(other.handle_) {
   // TODO: set the offset and range appropriately
@@ -91,6 +94,7 @@ VulkanBuffer::VulkanBuffer(VulkanBuffer&& other) noexcept
       allocator_(other.allocator_),
       memory_(std::move(other.memory_)),
       owns_memory_(other.owns_memory_),
+      memory_bundled_(other.memory_bundled_),
       is_copy_(other.is_copy_),
       handle_(other.handle_) {
   other.handle_ = VK_NULL_HANDLE;
@@ -99,16 +103,19 @@ VulkanBuffer::VulkanBuffer(VulkanBuffer&& other) noexcept
 VulkanBuffer& VulkanBuffer::operator=(VulkanBuffer&& other) noexcept {
   VkBuffer tmp_buffer = handle_;
   bool tmp_owns_memory = owns_memory_;
+  bool tmp_memory_bundled = memory_bundled_;
 
   buffer_properties_ = other.buffer_properties_;
   allocator_ = other.allocator_;
   memory_ = std::move(other.memory_);
   owns_memory_ = other.owns_memory_;
+  memory_bundled_ = other.memory_bundled_;
   is_copy_ = other.is_copy_;
   handle_ = other.handle_;
 
   other.handle_ = tmp_buffer;
   other.owns_memory_ = tmp_owns_memory;
+  other.memory_bundled_ = tmp_memory_bundled;
 
   return *this;
 }
@@ -119,14 +126,22 @@ VulkanBuffer::~VulkanBuffer() {
   // ownership of the underlying resource.
   if (handle_ != VK_NULL_HANDLE && !is_copy_) {
     if (owns_memory_) {
-      vmaDestroyBuffer(allocator_, handle_, memory_.allocation);
+      if (memory_bundled_) {
+        vmaDestroyBuffer(allocator_, handle_, memory_.allocation);
+        // Prevent the underlying memory allocation from being freed; it was
+        // freed by vmaDestroyImage
+        memory_.allocation = VK_NULL_HANDLE;
+      } else {
+        vkDestroyBuffer(this->device(), handle_, nullptr);
+        // Allow underlying memory allocation to be freed by the destructor of
+        // Allocation class
+      }
     } else {
       vkDestroyBuffer(this->device(), handle_, nullptr);
+      // Prevent the underlying memory allocation from being freed since this
+      // object doesn't own it
+      memory_.allocation = VK_NULL_HANDLE;
     }
-    // Prevent the underlying memory allocation from being freed; it was either
-    // freed by vmaDestroyBuffer, or this resource does not own the underlying
-    // memory
-    memory_.allocation = VK_NULL_HANDLE;
   }
 }
 
@@ -134,6 +149,24 @@ VmaAllocationInfo VulkanBuffer::allocation_info() const {
   VmaAllocationInfo info;
   vmaGetAllocationInfo(allocator_, memory_.allocation, &info);
   return info;
+}
+
+void VulkanBuffer::bind_allocation_impl(const Allocation& memory) {
+  VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
+  if (!is_copy_) {
+    VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
+  }
+}
+
+void VulkanBuffer::bind_allocation(const Allocation& memory) {
+  bind_allocation_impl(memory);
+  memory_.allocation = memory.allocation;
+}
+
+void VulkanBuffer::acquire_allocation(Allocation&& memory) {
+  bind_allocation_impl(memory);
+  memory_ = std::move(memory);
+  owns_memory_ = true;
 }
 
 VkMemoryRequirements VulkanBuffer::get_memory_requirements() const {

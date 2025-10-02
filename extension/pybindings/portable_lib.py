@@ -13,6 +13,9 @@
     This API is experimental and subject to change without notice.
 """
 
+import logging
+import os
+import sys
 import warnings as _warnings
 
 import executorch.exir._warnings as _exir_warnings
@@ -27,6 +30,21 @@ _warnings.warn(
 # related libs, ensuring that the pybindings lib can resolve those runtime
 # dependencies.
 import torch as _torch
+
+logger = logging.getLogger(__name__)
+
+# Update the DLL search path on Windows. This is the recommended way to handle native
+# extensions.
+if sys.platform == "win32":
+    try:
+        # The extension DLL should be in the same directory as this file.
+        pybindings_dir = os.path.dirname(os.path.abspath(__file__))
+        os.add_dll_directory(pybindings_dir)
+    except Exception as e:
+        logger.error(
+            "Failed to add the pybinding extension DLL to the search path. The extension may not work.",
+            e,
+        )
 
 # Let users import everything from the C++ _portable_lib extension as if this
 # python file defined them. Although we could import these dynamically, it
@@ -44,10 +62,14 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     _load_for_executorch,  # noqa: F401
     _load_for_executorch_from_buffer,  # noqa: F401
     _load_for_executorch_from_bundled_program,  # noqa: F401
+    _load_program,  # noqa: F401
+    _load_program_from_buffer,  # noqa: F401
     _reset_profile_results,  # noqa: F401
     _unsafe_reset_threadpool,  # noqa: F401
     BundledModule,  # noqa: F401
+    ExecuTorchMethod,  # noqa: F401
     ExecuTorchModule,  # noqa: F401
+    ExecuTorchProgram,  # noqa: F401
     MethodMeta,  # noqa: F401
     Verification,  # noqa: F401
 )

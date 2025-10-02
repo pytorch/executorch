@@ -14,76 +14,126 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x, Input y
-aten_op = "torch.ops.aten.repeat.default"
 
 
 """Tests Tensor.repeat for different ranks and dimensions."""
 
 
 class Repeat(torch.nn.Module):
-    # (input tensor, multiples)
-    test_parameters = {
-        "1_x_1": lambda: (torch.randn(3), (2,)),
-        "2_x_2": lambda: (torch.randn(3, 4), (2, 1)),
-        "4_x_4": lambda: (torch.randn(1, 1, 2, 2), (1, 2, 3, 4)),
-        "1_x_2": lambda: (torch.randn(3), (2, 2)),
-        "1_x_3": lambda: (torch.randn(3), (1, 2, 3)),
-        "2_x_3": lambda: (torch.randn((3, 3)), (2, 2, 2)),
-        "1_x_4": lambda: (torch.randn((3, 3, 3)), (2, 1, 2, 4)),
-    }
+    aten_op = "torch.ops.aten.repeat.default"
 
-    def forward(self, x: torch.Tensor, multiples: Sequence):
-        return x.repeat(multiples)
+    def __init__(self, multiples: Sequence[int]):
+        super().__init__()
+        self.multiples = multiples
+
+    def forward(self, x: torch.Tensor):
+        return x.repeat(self.multiples)
 
 
-@common.parametrize("test_data", Repeat.test_parameters)
-def test_repeat_tosa_MI(test_data: Tuple):
-    pipeline = TosaPipelineMI[input_t1](
-        Repeat(),
-        test_data(),
-        aten_op,
+class RepeatInterleaveInt(torch.nn.Module):
+    aten_op = "torch.ops.aten.repeat_interleave.self_int"
+
+    def __init__(self, repeats: int, dim: int):
+        super().__init__()
+        self.repeats = repeats
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor):
+        return x.repeat_interleave(self.repeats, self.dim)
+
+
+test_data_suite = {
+    # test_name : lambda: (module, test_data)
+    "1_x_1": lambda: (Repeat((2,)), (torch.randn(3),)),
+    "2_x_2": lambda: (Repeat((2, 1)), (torch.randn(3, 4),)),
+    "4_x_4": lambda: (Repeat((1, 2, 3, 4)), (torch.randn(1, 1, 2, 2),)),
+    "1_x_2": lambda: (Repeat((2, 2)), (torch.randn(3),)),
+    "1_x_3": lambda: (Repeat((1, 2, 3)), (torch.randn(3),)),
+    "2_x_3": lambda: (Repeat((2, 2, 2)), (torch.randn((3, 3)),)),
+    "1_x_4": lambda: (Repeat((2, 1, 2, 4)), (torch.randn((3, 3, 3)),)),
+    "interleave_int_3_x_1": lambda: (RepeatInterleaveInt(3, 1), (torch.randn(3, 4),)),
+}
+
+
+@common.parametrize("test_data", test_data_suite)
+def test_repeat_tosa_FP(test_data: Tuple):
+    module, test_data = test_data()
+    pipeline = TosaPipelineFP[input_t1](
+        module,
+        test_data,
+        module.aten_op,
         exir_op=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Repeat.test_parameters)
-def test_repeat_tosa_BI(test_data: Tuple):
-    pipeline = TosaPipelineBI[input_t1](
-        Repeat(),
-        test_data(),
-        aten_op,
+@common.parametrize("test_data", test_data_suite)
+def test_repeat_tosa_INT(test_data: Tuple):
+    module, test_data = test_data()
+    pipeline = TosaPipelineINT[input_t1](
+        module,
+        test_data,
+        module.aten_op,
         exir_op=[],
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Repeat.test_parameters)
-def test_repeat_u55_BI(test_data: Tuple):
-    pipeline = EthosU55PipelineBI[input_t1](
-        Repeat(),
-        test_data(),
-        aten_op,
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
+def test_repeat_u55_INT(test_data: Tuple):
+    module, test_data = test_data()
+    pipeline = EthosU55PipelineINT[input_t1](
+        module,
+        test_data,
+        module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", Repeat.test_parameters)
-def test_repeat_u85_BI(test_data: Tuple):
-    pipeline = EthosU85PipelineBI[input_t1](
-        Repeat(),
-        test_data(),
-        aten_op,
+@common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
+def test_repeat_u85_INT(test_data: Tuple):
+    module, test_data = test_data()
+    pipeline = EthosU85PipelineINT[input_t1](
+        module,
+        test_data,
+        module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_repeat_vgf_FP(test_data: Tuple):
+    module, args = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        args,
+        module.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_repeat_vgf_INT(test_data: Tuple):
+    module, args = test_data()
+    pipeline = VgfPipeline[input_t1](
+        module,
+        args,
+        module.aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

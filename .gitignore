@@ -16,15 +16,21 @@ cmake-android-out/
 cmake-ios-out/
 cmake-out*
 cmake-out-android/
+build-android/
+build-x86/
 dist/
 ethos-u-scratch/
 executorch.egg-info
 pip-out/
+build-profiling/
 
 # Any exported models and profiling outputs
 *.bin
 *.model
+*.etdump
+tokenizer.json
 *.pte
+*.ptd
 !test_bpe_tokenizer.bin
 !test_tiktoken_tokenizer.model
 
@@ -41,6 +47,9 @@ xcuserdata/
 *.xcworkspace/
 *.xcframework/
 
+# clangd
+.cache/
+
 # misc
 /.vscode/
 *.so
@@ -53,6 +62,12 @@ xcuserdata/
 /include/
 /share/
 /version.py
+*.csv
+*_etdump
 
 # Android
 *.aar
+
+# Windows
+*.dll
+*.pyd

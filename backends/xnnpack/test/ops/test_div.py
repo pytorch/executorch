@@ -31,17 +31,20 @@ class TestDiv(unittest.TestCase):
             return z
 
     def _test_div(self, inputs):
-        (
-            Tester(self.Div(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.div.Tensor": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy_mode in (True, False):
+            tester = Tester(self.Div(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.div.Tensor": 1})
+            if legacy_mode:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()
 
     def test_fp16_div(self):
         # Adding 4 to move distribution away from 0, 4 Std Dev should be far enough
@@ -59,14 +62,17 @@ class TestDiv(unittest.TestCase):
     def test_fp32_div_single_input(self):
         # Adding 4 to move distribution away from 0, 4 Std Dev should be far enough
         inputs = (torch.randn(1) + 4,)
-        (
-            Tester(self.DivSingleInput(), inputs)
-            .export()
-            .check_count({"torch.ops.aten.div.Tensor": 1})
-            .to_edge_transform_and_lower()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
-            .to_executorch()
-            .serialize()
-            .run_method_and_compare_outputs()
-        )
+        for legacy_mode in (True, False):
+            tester = Tester(self.DivSingleInput(), inputs)
+            tester.export()
+            tester.check_count({"torch.ops.aten.div.Tensor": 1})
+            if legacy_mode:
+                tester.to_edge()
+                tester.partition()
+            else:
+                tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs()

@@ -4,13 +4,18 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from typing import Set, Type
 
 import torch._export.utils
+import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_first_fake_tensor,
     get_param_tensor,
     is_persistent_buffer,
+)
+from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
+    FuseEqualPlaceholdersPass,
 )
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -40,6 +45,8 @@ class FuseConstantArgsPass(ExportPass):
             return x
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
         self.exported_program = exported_program
@@ -50,22 +57,26 @@ class FuseConstantArgsPass(ExportPass):
         the operations already carried out on the data.
         """
 
-        # Extract tensors and args from the node
-        data_list = [
-            get_param_tensor(self.exported_program, input_node)
-            for input_node in node.all_input_nodes
-        ]
+        input_nodes = list(node.all_input_nodes)
+        qparams = node.meta.get("input_qparams", None)
 
-        args = node.args[len(node.all_input_nodes) :]
-        kwargs = node.kwargs
+        def resolve_arg(arg):
+            if isinstance(arg, torch.fx.Node) and arg in input_nodes:
+                idx = input_nodes.index(arg)
+                t = get_param_tensor(self.exported_program, arg)
+                if qparams:
+                    t = qparams[idx].dequantize_value(t)
+                return t
+            if isinstance(arg, tuple):
+                return tuple(resolve_arg(x) for x in arg)
+            if isinstance(arg, list):
+                return [resolve_arg(x) for x in arg]
+            return arg
 
-        if "input_qparams" in node.meta and len(node.meta["input_qparams"]) > 0:
-            for i in range(len(node.all_input_nodes)):
-                q_params = node.meta["input_qparams"][i]
-                data_list[i] = q_params.dequantize_value(data_list[i])
+        new_args = tuple(resolve_arg(a) for a in node.args)
+        new_kwargs = {k: resolve_arg(v) for k, v in node.kwargs.items()}
 
-        # Run the op on the extracted tensor
-        data = node.target(*data_list, *args, **kwargs)
+        data = node.target(*new_args, **new_kwargs)
 
         # Only fuse if the tensor does not get bigger.
         if data.numel() > get_first_fake_tensor(node).numel():
@@ -98,11 +109,16 @@ class FuseConstantArgsPass(ExportPass):
 
     def call(self, graph_module):
         modified = False
-        input_nodes_to_delete = []
+        input_nodes_to_maybe_delete = set()
         for node in graph_module.graph.nodes:
             if node.op != "call_function":
                 continue
-            if node.target == torch.ops.tosa._table.default:
+            if node.target in [
+                exir_ops.backend.tosa.RESCALE.default,
+                exir_ops.backend.tosa.RESIZE.default,
+                exir_ops.backend.tosa.TABLE.default,
+                exir_ops.backend.tosa.TRANSPOSE.default,
+            ]:
                 continue
 
             input_nodes = node.all_input_nodes
@@ -116,26 +132,29 @@ class FuseConstantArgsPass(ExportPass):
                 or torch._export.utils.is_buffer(self.exported_program, input_node)
                 for input_node in input_nodes
             )
-            input_nodes_single_users = (
-                len(input_node.users) == 1 for input_node in input_nodes
-            )
+            if not all(input_nodes_constant):
+                continue
 
-            if all(input_nodes_constant) and all(input_nodes_single_users):
-                try:
-                    did_fuse = self._fuse_nodes(node)
-                    modified |= did_fuse
-                    if did_fuse:
-                        graph_module.recompile()  # Recompile needed to catch chains of constant ops
-                        input_nodes_to_delete.extend(input_nodes)
-                except Exception as e:
-                    logger.warning(
-                        f"\nFailed to fuse constant op {node.name} due to exception:\n{str(e)}"
+            try:
+                did_fuse = self._fuse_nodes(node)
+                if did_fuse:
+                    logger.debug(
+                        f"Fused constant op: {node.name} with placeholder inputs:"
+                        f"{[input_node.name for input_node in input_nodes]}"
                     )
+                    modified |= did_fuse
+                    graph_module.recompile()  # Recompile needed to catch chains of constant ops
+                    input_nodes_to_maybe_delete.update(input_nodes)
+            except Exception as e:
+                logger.warning(
+                    f"\nFailed to fuse constant op {node.name} due to exception:\n{str(e)}"
+                )
 
         if modified:
             graph_module.graph.eliminate_dead_code()
-            for input_node in input_nodes_to_delete:
-                delete_constant_placeholder(self.exported_program, input_node)
+            for input_node in input_nodes_to_maybe_delete:
+                if len(input_node.users) == 0:
+                    delete_constant_placeholder(self.exported_program, input_node)
 
             graph_module = super().call(graph_module).graph_module
 
@@ -155,6 +174,8 @@ class ComputeConstantOpsAOT(ExportPass):
         def f(node_name_pre_computed):
             return node_name_pre_computed
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {FuseEqualPlaceholdersPass}
 
     targeted_ops = [
         exir_ops.edge.aten.full.default,

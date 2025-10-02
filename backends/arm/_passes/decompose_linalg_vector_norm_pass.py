@@ -3,7 +3,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.exir.pass_base import ExportPass
 
 
@@ -28,6 +32,11 @@ class DecomposeLinearVectorNormPass(ExportPass):
           dtype prior, but we dont know this from FX graph.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSqrtPass,
+        DecomposeSumPass,
+    }
+
     torch_linalg_vector_norm = (torch.ops.aten.linalg_vector_norm.default,)
 
     def call_operator(self, op, args, kwargs, meta):
@@ -51,10 +60,12 @@ class DecomposeLinearVectorNormPass(ExportPass):
                 f"is not supported for linalg_vector_norm operator"
             )
 
+        # Sum over all dimensions if dim is None
         if norm_dim is None:
-            raise ValueError("The norm_dim for linalg_vector_norm is None.")
-
-        dims = [norm_dim] if isinstance(norm_dim, int) else list(norm_dim)
+            rank = input_tensor.data.dim()
+            dims = list(range(rank))
+        else:
+            dims = [norm_dim] if isinstance(norm_dim, int) else list(norm_dim)
 
         # Decomposition based on norm order.
         if norm_order == 1:

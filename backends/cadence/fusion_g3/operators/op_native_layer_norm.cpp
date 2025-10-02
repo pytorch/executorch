@@ -19,13 +19,12 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 using ::executorch::aten::IntArrayRef;
-using ::executorch::aten::optional;
 using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
+using std::optional;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -221,12 +220,15 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       num_elm *= normalized_shape[i];
     }
 
+    constexpr size_t kAlignment =
+        16; // 16-byte alignment for vectorized operations
+
     float* weight_data;
     if (weight.has_value()) {
       weight_data = weight.value().mutable_data_ptr<float>();
     } else {
       executorch::runtime::Result<void*> temp_mem_weight =
-          ctx.allocate_temp(num_elm * sizeof(float));
+          ctx.allocate_temp(num_elm * sizeof(float), kAlignment);
       weight_data = (float*)(temp_mem_weight.get());
 
       for (int i = 0; i < num_elm; i++) {
@@ -238,7 +240,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       bias_data = bias.value().mutable_data_ptr<float>();
     } else {
       executorch::runtime::Result<void*> temp_mem_bias =
-          ctx.allocate_temp(num_elm * sizeof(float));
+          ctx.allocate_temp(num_elm * sizeof(float), kAlignment);
       bias_data = (float*)(temp_mem_bias.get());
 
       for (int i = 0; i < num_elm; i++) {
@@ -289,4 +291,3 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

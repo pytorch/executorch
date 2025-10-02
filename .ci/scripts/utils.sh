@@ -131,8 +131,6 @@ build_executorch_runner_cmake() {
   else
       CXXFLAGS=""
   fi
-  # This command uses buck2 to gather source files and buck2 could crash flakily
-  # on MacOS
   CXXFLAGS="$CXXFLAGS" retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
   popd || return
 
@@ -156,13 +154,14 @@ build_executorch_runner() {
 }
 
 cmake_install_executorch_lib() {
+  build_type="${1:-Release}"
   echo "Installing libexecutorch.a and libportable_kernels.a"
   clean_executorch_install_folders
   retry cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_BUILD_TYPE=${build_type} \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j9 --target install --config ${build_type}
 }
 
 download_stories_model_artifacts() {

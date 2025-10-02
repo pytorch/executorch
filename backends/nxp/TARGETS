@@ -1,0 +1,75 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_pytest.bzl", "python_pytest")
+load(
+    "@fbsource//arvr/tools/build_defs:oxx_python.bzl",
+    "oxx_prebuilt_python_library",
+)
+
+oncall("executorch")
+
+
+runtime.python_library(
+    name = "aten_passes",
+    srcs = glob([
+        "aten_passes/*.py",
+    ]),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_manager",
+    ],
+)
+
+runtime.python_library(
+    name = "edge_passes",
+    srcs = glob([
+        "edge_passes/*.py",
+    ]),
+    deps = [
+        ":neutron_backend",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+    ],
+)
+
+runtime.python_library(
+    name = "quantizer",
+    srcs = [
+        "quantizer/neutron_quantizer.py",
+        "quantizer/patterns.py",
+        "quantizer/utils.py",
+    ],
+    deps = [
+        ":aten_passes",
+        "//caffe2:torch",
+        "//pytorch/ao:torchao",  # @manual
+    ],
+)
+
+runtime.python_library(
+    name = "neutron_sdk",
+    srcs = glob(["backend/**/*.py"]),
+    deps = [
+        "fbsource//third-party/pypi/neutron_converter:neutron_converter",
+    ],
+)
+
+runtime.python_library(
+    name = "neutron_backend",
+    srcs = [
+        "nxp_backend.py",
+        "neutron_partitioner.py",
+        "neutron_node_extraction.py",
+        "neutron_pass_manager.py",
+    ],
+    deps = [
+        ":neutron_sdk",
+        ":aten_passes",
+        ":quantizer",
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
+        "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
+        "//executorch/exir:lib",
+        "//executorch/backends/transforms:remove_getitem_op",
+        "//caffe2:torch",
+    ],
+)

@@ -6,7 +6,7 @@ allprojects {
             compileSdkVersion = 34
             buildToolsVersion = '33.0.1'
 
-            fbjniJavaOnlyVersion = "0.5.1"
+            fbjniJavaOnlyVersion = "0.7.0"
             soLoaderNativeLoaderVersion = "0.10.5"
         }
 
@@ -17,7 +17,7 @@ allprojects {
 
         dependencies {
             classpath 'com.android.tools.build:gradle:8.9.0'
-            classpath 'com.vanniktech:gradle-maven-publish-plugin:0.31.0'
+            classpath 'com.vanniktech:gradle-maven-publish-plugin:0.34.0'
         }
 
     }

@@ -122,7 +122,8 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       prepack_descriptor_counts_{},
       execute_descriptor_counts_{},
       context_{new api::Context(
-          vkapi::runtime()->default_adapter_i(),
+          config.external_adapter ? config.external_adapter
+                                  : vkapi::runtime()->get_adapter_p(),
           config_.context_config)},
       shared_objects_{},
       values_{},
@@ -144,7 +145,21 @@ ComputeGraph::ComputeGraph(GraphConfig config)
   execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
   execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
-  context_->set_cmd(/*reusable = */ true);
+  // If certain graph config variables are not specified, then set them
+  // automatically.
+  if (config_.prepack_threshold_nbytes == 0) {
+    config_.prepack_threshold_nbytes = 10 * MB;
+    config_.prepack_initial_threshold_nbytes = 10 * MB;
+  }
+  if (config_.execute_threshold_node_count == 0) {
+    config_.execute_threshold_node_count = 128;
+    config_.execute_initial_threshold_node_count = 64;
+  }
+
+  // Check if the underlying GPU can access accelerated integer dot product
+  // instructions
+  can_use_int8_dot_product_ =
+      context_->adapter_ptr()->supports_int8_dot_product();
 }
 
 ComputeGraph::~ComputeGraph() {
@@ -152,6 +167,7 @@ ComputeGraph::~ComputeGraph() {
 
   prepack_nodes_.clear();
   execute_nodes_.clear();
+  clear_deferred_cmds();
 
   context_->flush();
 }
@@ -195,6 +211,29 @@ utils::StorageType ComputeGraph::suggested_storage_type() {
   return utils::kTexture3D;
 }
 
+bool ComputeGraph::was_value_updated(const ValueRef idx) const noexcept {
+  if (!is_valid_value_idx(idx)) {
+    return false;
+  }
+
+  // Check if this ValueRef itself was updated
+  if (updated_values_.find(idx) != updated_values_.end()) {
+    return true;
+  }
+
+  // If this is a ValueList, check each ValueRef in the list
+  if (val_is_value_list(idx)) {
+    const auto& value_list = values_.at(idx).toConstValueList();
+    for (const auto& nested_idx : value_list) {
+      if (was_value_updated(nested_idx)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     const std::vector<int64_t>& sizes) {
   if (config_.enable_memory_layout_override) {
@@ -223,6 +262,10 @@ void ComputeGraph::check_no_active_value_ptrs() {
       "`ComputeGraph::get_*()` functions in scope before adding Values to the "
       "graph. Modifying the graph's values may cause existing pointers to be "
       "invalidated.");
+}
+
+bool ComputeGraph::is_valid_value_idx(const ValueRef idx) const noexcept {
+  return idx >= 0 && idx < static_cast<int>(values_.size());
 }
 
 std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
@@ -267,8 +310,95 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
     return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
     return val.toConstTensorRef().dtype;
+  } else if (val.isStaging()) {
+    return val.toConstStaging().dtype();
+  } else if (val.isBool()) {
+    return vkapi::ScalarType::Bool;
+  } else if (val.isDouble()) {
+    // We downcast anyway in the shader and we want to avoid having to
+    // write special cases there.
+    return vkapi::ScalarType::Float;
+  } else if (val.isInt()) {
+    return vkapi::ScalarType::Int;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
+}
+
+bool ComputeGraph::is_contiguous_buffer_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (!is_buffer_storage(idx)) {
+    return false;
+  }
+  return is_contiguous(idx);
+}
+
+bool ComputeGraph::is_contiguous_texture_tensor(const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 0;
+}
+
+bool ComputeGraph::is_standard_channels_packed_texture_tensor(
+    const ValueRef idx) const {
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return false;
+  }
+  return has_standard_axis_map(idx) && packed_dim_of(idx) == 2;
+}
+
+bool ComputeGraph::is_2d_matrix(const ValueRef idx) const {
+  std::vector<int64_t> sizes = sizes_of(idx);
+  const size_t ndim = sizes.size();
+  if (sizes.size() < 2) {
+    return false;
+  }
+  if (sizes.size() == 2) {
+    return true;
+  }
+
+  // Check that outermost dims have size of 1
+  for (int d = 0; d < ndim - 2; d++) {
+    if (sizes[d] != 1) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool ComputeGraph::is_vectorizable_contiguous_2d_matrix(
+    const ValueRef idx) const {
+  if (!is_2d_matrix(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return is_contiguous_buffer_tensor(idx) &&
+        size_at<int32_t>(-1, idx) % 4 == 0;
+  }
+  return is_contiguous_texture_tensor(idx);
+}
+
+bool ComputeGraph::is_vectorizable_width_packed_tensor(
+    const ValueRef idx) const {
+  // Not a tensor - return false
+  if (!val_is_tensor(idx)) {
+    return false;
+  }
+  if (is_buffer_storage(idx)) {
+    return is_contiguous_buffer_tensor(idx) &&
+        size_at<int32_t>(-1, idx) % 4 == 0;
+  }
+
+  return is_standard_channels_packed_texture_tensor(idx);
 }
 
 ValueRef ComputeGraph::add_tensor(
@@ -278,8 +408,6 @@ ValueRef ComputeGraph::add_tensor(
     const utils::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx,
     const utils::AxisMapLayout axis_map_layout) {
-  bool allocate_memory = shared_object_idx < 0;
-
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(api::vTensor(
@@ -288,10 +416,10 @@ ValueRef ComputeGraph::add_tensor(
       dtype,
       storage_type,
       memory_layout,
-      allocate_memory,
+      false,
       axis_map_layout));
 
-  if (!allocate_memory) {
+  if (shared_object_idx >= 0) {
     get_shared_object(shared_object_idx).add_user(this, idx);
   }
   return idx;
@@ -378,27 +506,16 @@ ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(api::vTensor(*t));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
   return idx;
 }
 
 ValueRef ComputeGraph::add_tensor_view(
     const ValueRef vref,
     const std::vector<int64_t>& sizes,
-    const std::vector<int64_t>& strides,
-    const size_t offset_numel) {
+    const std::vector<int64_t>& strides) {
   const vTensorPtr t = get_tensor(vref);
   ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
-  for (SharedObject& sobj : shared_objects_) {
-    if (sobj.has_user(vref)) {
-      sobj.add_user(this, idx);
-    }
-  }
+  values_.emplace_back(api::vTensor(*t, sizes, strides));
   return idx;
 }
 
@@ -409,6 +526,18 @@ ValueRef ComputeGraph::add_tensorref(
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(TensorRef(sizes, dtype, data));
+  total_constant_nbytes_ += values_.back().toConstTensorRef().nbytes();
+  return idx;
+}
+
+ValueRef ComputeGraph::add_tensorref(
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    executorch::runtime::FreeableBuffer&& buffer) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(TensorRef(sizes, dtype, std::move(buffer)));
+  total_constant_nbytes_ += values_.back().toConstTensorRef().nbytes();
   return idx;
 }
 
@@ -460,19 +589,43 @@ ValueRef ComputeGraph::get_or_add_value_for_int(const int64_t val) {
 
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
+    vkapi::ScalarType staging_dtype) {
+  // For texture storage, the buffer size needs to account for the zero
+  // padding applied by unused texel elements.
+  size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  add_staging_to_tensor_node(*this, staging_idx, idx);
+  inputs_.push_back({idx, staging_idx});
+  return staging_idx;
+}
+
+ValueRef ComputeGraph::set_input_tensor(
+    const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    // For texture storage, the buffer size needs to account for the zero
-    // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
-    add_staging_to_tensor_node(*this, staging_idx, idx);
-    inputs_.push_back({idx, staging_idx});
-    return staging_idx;
+    return set_input_tensor(idx, dtype);
+  } else {
+    inputs_.push_back({idx, kDummyValueRef});
+    return idx;
   }
-  inputs_.push_back({idx, kDummyValueRef});
-  return idx;
+}
+
+ValueRef ComputeGraph::set_output_tensor(
+    const ValueRef idx,
+    vkapi::ScalarType staging_dtype) {
+  // For texture storage, the buffer size needs to account for the zero
+  // padding applied by unused texel elements.
+  size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+  ValueRef staging_idx = add_staging(staging_dtype, buf_numel);
+  // We only run this when the tensor is non-empty.  When the underlying
+  // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
+  // tensor, we will not be able to bind the node for execution.
+  if (buf_numel > 0) {
+    add_tensor_to_staging_node(*this, idx, staging_idx);
+  }
+  outputs_.push_back({idx, staging_idx});
+  return staging_idx;
 }
 
 ValueRef ComputeGraph::set_output_tensor(
@@ -480,18 +633,16 @@ ValueRef ComputeGraph::set_output_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    // For texture storage, the buffer size needs to account for the zero
-    // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
-    // We only run this when the tensor is non-empty.  When the underlying
-    // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
-    // tensor, we will not be able to bind the node for execution.
-    if (buf_numel > 0) {
-      add_tensor_to_staging_node(*this, idx, staging_idx);
-    }
-    outputs_.push_back({idx, staging_idx});
-    return staging_idx;
+    return set_output_tensor(idx, dtype);
+  } else {
+    outputs_.push_back({idx, kDummyValueRef});
+    return idx;
+  }
+}
+
+ValueRef ComputeGraph::set_output_value(const ValueRef idx) {
+  if (values_.at(idx).isTensor()) {
+    return set_output_tensor(idx);
   }
   outputs_.push_back({idx, kDummyValueRef});
   return idx;
@@ -520,7 +671,12 @@ vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
 }
 
 void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
-  get_symint(idx)->set(val);
+  int32_t cur_val = read_symint(idx);
+  if (cur_val != val) {
+    get_symint(idx)->set(val);
+    // Track that this ValueRef was updated
+    updated_values_.insert(idx);
+  }
 }
 
 int32_t ComputeGraph::read_symint(const ValueRef idx) {
@@ -532,6 +688,17 @@ SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
     shared_objects_.resize(static_cast<size_t>(idx + 1));
   }
   return shared_objects_.at(idx);
+}
+
+void ComputeGraph::create_dedicated_allocation_for(const ValueRef idx) {
+  vTensorPtr tensor = get_tensor(idx);
+  if (!tensor->memory_is_bound()) {
+    VmaAllocationCreateInfo alloc_create_info =
+        context()->adapter_ptr()->vma().gpuonly_resource_create_info();
+    tensor->acquire_allocation(
+        context()->adapter_ptr()->vma().create_allocation(
+            tensor->get_memory_requirements(), alloc_create_info));
+  }
 }
 
 void ComputeGraph::update_descriptor_counts(
@@ -655,6 +822,38 @@ utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
   return create_local_wg_size(create_global_wg_size(idx));
 }
 
+void ComputeGraph::bind_tensor_to_descriptor_set(
+    const ValueRef ref,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags access_type,
+    vkapi::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  vTensorPtr tensor = get_tensor(ref);
+  if (tensor->buffer()) {
+    vkapi::VulkanBuffer& buffer = tensor->buffer(
+        pipeline_barrier, vkapi::PipelineStage::COMPUTE, access_type);
+    descriptor_set.bind(idx, buffer);
+  } else {
+    vkapi::VulkanImage& image = tensor->image(
+        pipeline_barrier, vkapi::PipelineStage::COMPUTE, access_type);
+    descriptor_set.bind(idx, image);
+  }
+}
+
+void ComputeGraph::bind_value_to_descriptor_set(
+    const ValueRef ref,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessFlags access_type,
+    vkapi::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  if (val_is_tensor(ref)) {
+    bind_tensor_to_descriptor_set(
+        ref, pipeline_barrier, access_type, descriptor_set, idx);
+  } else if (val_is_staging(ref)) {
+    descriptor_set.bind(idx, get_staging(ref)->buffer());
+  }
+}
+
 void ComputeGraph::copy_into_staging(
     const ValueRef idx,
     const void* data,
@@ -664,6 +863,36 @@ void ComputeGraph::copy_into_staging(
   staging->copy_from(data, nbytes);
 }
 
+void ComputeGraph::maybe_cast_and_copy_into_staging(
+    const ValueRef idx,
+    const void* data,
+    const size_t numel,
+    const vkapi::ScalarType src_data_dtype) {
+  StagingPtr staging = get_staging(idx);
+  vkapi::ScalarType staging_dtype = staging->dtype();
+  if (src_data_dtype == staging_dtype) {
+    size_t nbytes = numel * vkapi::element_size(staging_dtype);
+    staging->copy_from(data, nbytes);
+    return;
+  } else {
+    // Hard-coded type conversion cases
+    if (src_data_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
+      const int64_t* casted_data = reinterpret_cast<const int64_t*>(data);
+      staging->cast_and_copy_from<int64_t, int32_t>(casted_data, numel);
+    } else if (
+        src_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
+      const double* casted_data = reinterpret_cast<const double*>(data);
+      staging->cast_and_copy_from<double, float>(casted_data, numel);
+    } else {
+      VK_THROW(
+          "Unsupported type conversion from ",
+          src_data_dtype,
+          " to staging dtype ",
+          staging_dtype);
+    }
+  }
+}
+
 void ComputeGraph::copy_from_staging(
     const ValueRef idx,
     void* data,
@@ -671,6 +900,36 @@ void ComputeGraph::copy_from_staging(
   StagingPtr staging = get_staging(idx);
   size_t nbytes = numel * vkapi::element_size(staging->dtype());
   staging->copy_to(data, nbytes);
+}
+
+void ComputeGraph::maybe_cast_and_copy_from_staging(
+    const ValueRef idx,
+    void* data,
+    const size_t numel,
+    const vkapi::ScalarType dst_data_dtype) {
+  StagingPtr staging = get_staging(idx);
+  vkapi::ScalarType staging_dtype = staging->dtype();
+  if (dst_data_dtype == staging_dtype) {
+    size_t nbytes = numel * vkapi::element_size(staging_dtype);
+    staging->copy_to(data, nbytes);
+    return;
+  } else {
+    // Hard-coded type conversion cases
+    if (dst_data_dtype == vkapi::kLong && staging_dtype == vkapi::kInt) {
+      int64_t* casted_data = reinterpret_cast<int64_t*>(data);
+      staging->cast_and_copy_to<int32_t, int64_t>(casted_data, numel);
+    } else if (
+        dst_data_dtype == vkapi::kDouble && staging_dtype == vkapi::kFloat) {
+      double* casted_data = reinterpret_cast<double*>(data);
+      staging->cast_and_copy_to<float, double>(casted_data, numel);
+    } else {
+      VK_THROW(
+          "Unsupported type conversion from staging dtype ",
+          staging_dtype,
+          " to ",
+          dst_data_dtype);
+    }
+  }
 }
 
 void ComputeGraph::prepare() {
@@ -700,10 +959,34 @@ void ComputeGraph::prepare() {
     context_->initialize_querypool();
   }
 
-  for (SharedObject& shared_object : shared_objects_) {
-    shared_object.allocate(this);
-    shared_object.bind_users(this);
+  // Calculate the threshold at which a new command buffer should be created
+  // during execute()
+  const size_t total_node_count = execute_nodes_.size();
+  size_t init_threshold = config_.execute_initial_threshold_node_count;
+  size_t count_threshold = config_.execute_threshold_node_count;
+
+  // If max command buffer count is set, we need to adjust the thresholds to
+  // accommodate execution within the limit, if total command buffers with
+  // current thresholds would exceed execute_max_cmds
+  if (config_.execute_max_cmds > 0) {
+    // Worse case scenario we have one command buffer for nodes before init
+    // threshold and config_.execute_max_cmds - 1 command buffers for the rest
+    // of dispatches
+
+    // If command buffers created after offsetting init_threshold would exceed
+    // max command buffer count, we need to adjust init and count thresholds
+    const bool slicing_exceeds_max_cmds = (total_node_count - init_threshold) >
+        count_threshold * (config_.execute_max_cmds - 1);
+    if (total_node_count > init_threshold && slicing_exceeds_max_cmds) {
+      // Increase count threshold so remaining nodes after offsetting init fits
+      // in config_.execute_max_cmds - 1
+      count_threshold = static_cast<size_t>(ceil(
+          (total_node_count - init_threshold) /
+          double(config_.execute_max_cmds - 1)));
+    }
   }
+
+  execute_threshold_node_count_ = count_threshold;
 }
 
 void ComputeGraph::prepare_pipelines() {
@@ -720,59 +1003,190 @@ void ComputeGraph::prepare_pipelines() {
       vkapi::ComputePipelineCache::Hasher>();
 }
 
-void ComputeGraph::encode_prepack() {
-  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
-    node->encode(this);
+void ComputeGraph::submit_current_cmd(const bool final_use) {
+  context_->submit_cmd_to_gpu(VK_NULL_HANDLE, final_use);
+}
+
+void ComputeGraph::submit_current_cmd_and_wait(const bool final_use) {
+  vkapi::VulkanFence fence = context_->fences().get_fence();
+  context_->submit_cmd_to_gpu(fence.get_submit_handle(), final_use);
+  fence.wait();
+  context_->fences().return_fence(fence);
+}
+
+void ComputeGraph::submit_cmd(vkapi::CommandBuffer& cmd_buf, VkFence fence) {
+  if (cmd_buf) {
+    cmd_buf.end();
+    context_->adapter_ptr()->submit_cmd(
+        context_->queue(), cmd_buf.get_submit_handle(false), fence);
   }
 }
 
-void ComputeGraph::prepack() const {
-  // Submit and execute the command buffer
+void ComputeGraph::submit_deferred_cmds_and_wait() {
   vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle(), /*final_use = */ true);
+
+  for (uint32_t i = 0; i < deferred_cmd_list_.size(); i++) {
+    auto& cmd = deferred_cmd_list_[i];
+
+    submit_cmd(
+        cmd,
+        i == (deferred_cmd_list_.size() - 1) ? fence.get_submit_handle()
+                                             : VK_NULL_HANDLE);
+  }
   fence.wait();
   context_->fences().return_fence(fence);
-
-  context_->flush();
 }
 
-void ComputeGraph::encode_execute() {
-  context_->flush();
-  context_->set_cmd(/*reusable = */ true);
+void ComputeGraph::clear_deferred_cmds() {
+  for (auto& cmd : deferred_cmd_list_) {
+    if (cmd) {
+      cmd.end();
+      cmd.invalidate();
+    }
+  }
+  deferred_cmd_list_.clear();
+}
 
-  context_->cmd_reset_querypool();
+void ComputeGraph::prepack() {
+  int i = 0;
+  bool submitted = false;
+  const bool reduce_peak_memory = total_constant_nbytes_ > 500 * MB;
+  // int count = 0;
+  context_->set_cmd();
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    // Do not trigger on the first or last prepack node.
+    const bool not_terminal = i != 0 && i != (prepack_nodes_.size() - 1);
+    size_t threshold = submitted ? config_.prepack_threshold_nbytes
+                                 : config_.prepack_initial_threshold_nbytes;
+    if (not_terminal && staging_nbytes_in_cmd_ > threshold) {
+      // If reducing peak memory usage, wait for the current command buffer to
+      // finish executing and flush to recycle the staging memory. This will
+      // reduce peak memory usage, but will slightly increase load latency.
+      // Otherwise, just submit the current command buffer for execution and
+      // proceed. This results in lower load latency at the cost of higher peak
+      // memory usage.
+      if (reduce_peak_memory) {
+        submit_current_cmd_and_wait();
+        context_->flush();
+      } else {
+        submit_current_cmd();
+      }
+      staging_nbytes_in_cmd_ = 0;
+      context_->set_cmd();
+      submitted = true;
+    }
 
-  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->encode(this);
+    i++;
+  }
+  submit_current_cmd_and_wait(/*final_use=*/true);
+  context_->flush();
+  staging_nbytes_in_cmd_ = 0;
+
+  // Initialize allocations for intermediate tensors
+  for (SharedObject& shared_object : shared_objects_) {
+    shared_object.allocate(this);
+    shared_object.bind_users(this);
+  }
+  // Make sure all remaining tensors have allocations
+  for (int i = 0; i < values_.size(); i++) {
+    if (values_.at(i).isTensor()) {
+      create_dedicated_allocation_for(i);
+    }
   }
 }
 
 void ComputeGraph::execute() {
-  vkapi::VulkanFence fence = context_->fences().get_fence();
-  context_->submit_cmd_to_gpu(fence.get_submit_handle());
-  fence.wait();
-  context_->fences().return_fence(fence);
+  if (deferred_cmd_list_.empty()) {
+    context_->flush();
+    context_->set_cmd(/*reusable = */ true);
+
+    context_->cmd_reset_querypool();
+    const size_t total_node_count = execute_nodes_.size();
+    uint32_t encoded_node_count = 0;
+
+    for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+      node->encode(this);
+      encoded_node_count++;
+
+      // Threshold is reached when the node count reached
+      // execute_initial_threshold_node_count or if its a multiple of
+      // execute_threshold_node_count.
+      const bool reached_threshold =
+          encoded_node_count >= config_.execute_initial_threshold_node_count &&
+          ((encoded_node_count - config_.execute_initial_threshold_node_count) %
+               execute_threshold_node_count_ ==
+           0);
+
+      // Create a new command buffer when threashold is reached
+      // But avoid it if this is the last node, since last cmd buf is submitted
+      // after the loop
+      if (reached_threshold && encoded_node_count != total_node_count) {
+        context_->submit_cmd_to_gpu(VK_NULL_HANDLE, false);
+        deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+        context_->set_cmd(true);
+      }
+    }
+
+    vkapi::VulkanFence fence = context_->fences().get_fence();
+    context_->submit_cmd_to_gpu(fence.get_submit_handle(), false);
+    fence.wait();
+    context_->fences().return_fence(fence);
+    deferred_cmd_list_.emplace_back(std::move(context_->extract_cmd()));
+  } else {
+    submit_deferred_cmds_and_wait();
+  }
+
   execute_count_++;
+
+  // Clear the set of updated values at the end of inference
+  updated_values_.clear();
+
+  // Reset the re-encoding flag at the end of inference
+  requires_reencode_ = false;
+}
+
+void ComputeGraph::virtual_clone(const ValueRef dst, const ValueRef src) {
+  get_tensor(dst)->virtual_clone(*get_tensor(src));
+}
+
+void ComputeGraph::virtual_transpose(
+    const ValueRef tensor,
+    const int64_t dim0,
+    const int64_t dim1) {
+  get_tensor(tensor)->virtual_transpose(dim0, dim1);
 }
 
 void ComputeGraph::resize_input(
     const int64_t idx,
     const std::vector<int64_t>& new_sizes) {
   IOValueRef io_val = inputs_.at(idx);
-  get_tensor(io_val.value)->virtual_resize(new_sizes);
+  virtual_resize(io_val.value, new_sizes);
+  updated_values_.insert(io_val.staging);
 }
 
 void ComputeGraph::virtual_resize(
     const ValueRef idx,
     const std::vector<int64_t>& new_sizes) {
-  get_tensor(idx)->virtual_resize(new_sizes);
+  std::vector<int64_t> cur_sizes = sizes_of(idx);
+  if (cur_sizes != new_sizes) {
+    get_tensor(idx)->virtual_resize(new_sizes);
+    // Track that this ValueRef was updated
+    updated_values_.insert(idx);
+  }
 }
 
 void ComputeGraph::propagate_resize() {
   for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
     node->trigger_resize(this);
   }
-  encode_execute();
+  // A command buffer re-encode will be needed if:
+  // 1. Any push constant data (used for tensor metadata) was updated
+  // 2. Compute shader dispatch parameters (i.e. compute shader, global and
+  //    local work group sizes) were updated
+  if (requires_reencode_) {
+    clear_deferred_cmds();
+  }
 }
 
 } // namespace vkcompute

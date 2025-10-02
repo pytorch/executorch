@@ -4,50 +4,35 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 import collections
 import itertools
 import logging
-import math
-import typing
-from functools import partial
-from typing import Iterable, List, Optional, Set, Tuple
+from typing import Callable, Iterable, Optional, Sequence, TypeAlias
 
 import torch
-from executorch.backends.cadence.aot.memory_constraints import (
-    GenerateMemConstraints,
-    MemConstraints,
+from executorch.backends.cadence.aot.memory_constraints import MemConstraints
+from executorch.backends.cadence.aot.memory_planning_algo import (
+    ConstraintsGenPass,
+    get_aligned_offset,
+    MemoryPlanningAlgo,
+    MemoryPlanningState,
 )
-from executorch.backends.cadence.aot.utils import MemoryConfig
+from executorch.backends.cadence.aot.utils import (
+    MemoryConfig,
+    MemoryPlanningAlgoFailure,
+)
 
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import collect_specs_from_nodes, Verifier
+from executorch.exir.pass_base import PassBase
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.tensor import TensorSpec
 from tabulate import tabulate
 from torch.export.exported_program import ExportGraphSignature
 from torch.fx.passes.infra.pass_base import PassResult
-
-
-# get num memories indexed from 1..N, compatible with EXIR's spec.mem_id
-def get_num_memories(memory_config: MemoryConfig) -> int:
-    return len(memory_config.memory_sizes) + 1
-
-
-# memory_space module provides num_memories indexed 0..num_memories-1.
-def get_size(memory_config: MemoryConfig, exir_id: int) -> int:
-    return memory_config.memory_sizes[exir_id - 1]
-
-
-def get_alignment(memory_config: MemoryConfig, exir_id: int) -> int:
-    # EXIR's spec.mem_id is indexed from 1..N.
-    assert memory_config.memory_alignments is not None
-    return memory_config.memory_alignments[exir_id - 1]
-
-
-def get_aligned_offset(pre_aligned_offset: int, alignment: int) -> int:
-    return int(math.ceil(pre_aligned_offset / alignment) * alignment)
 
 
 def collect_specs_from_graph_module(
@@ -69,198 +54,138 @@ def collect_specs_from_graph_module(
     )
 
 
-# baseline tensor placement algorithm, that greedily tries to place the tensor in
-# the fastest memory available
-# flake8: noqa 'position_based_greedy_with_hierarchy' is too complex (13)
-def position_based_greedy_with_hierarchy(
-    alignment: int,
-    specs: Set[TensorSpec],
-    graph_module: torch.fx.GraphModule,
-    graph_signature: ExportGraphSignature,
-    extra_padding: int = 0,
-    *,
-    memory_config: MemoryConfig,
-    mem_constraints: MemConstraints,
-    additional_constraint_gen_passes: Optional[
-        List[
-            typing.Callable[
-                [MemConstraints],
-                typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
-            ]
-        ]
-    ] = None,
-) -> List[int]:
-    # We do not use the `alignment` parameter and instead use the per-memory alignment
-    # constraints from `memory_config`.
-    del alignment
+class PositionBasedGreedyWithHierarchy(MemoryPlanningAlgo):
+    """Greedily place tensor in the fastest memory available."""
 
-    num_memories = get_num_memories(memory_config)
-    bufsizes = [0] * num_memories
-    allocated_buffers: List[List[TensorSpec]] = [[] for _ in range(num_memories)]
-
-    # Generate the memory constraints
-    GenerateMemConstraints(mem_constraints, additional_constraint_gen_passes)(
-        graph_module
-    )
-
-    def overlap(spec: TensorSpec) -> Optional[TensorSpec]:
-        for allocated_spec in allocated_buffers[spec.mem_id]:
-            if Verifier.lifetime_overlap(
-                spec, allocated_spec
-            ) and Verifier.storage_overlap(spec, allocated_spec):
-                return allocated_spec
-        return None
-
-    def memory_available(spec: TensorSpec) -> bool:
-        return get_aligned_offset(
-            spec.mem_offset + spec.allocated_memory,
-            get_alignment(memory_config, spec.mem_id),
-        ) <= get_size(memory_config, spec.mem_id)
-
-    # Iterate over all the specs in sorted order
-    for spec in sorted(
-        specs,
-        key=lambda spec: spec.allocated_memory,
-        reverse=True,
-    ):
-        # Skip allocation memory to any tensor whose spec id is in skip list.
-        if mem_constraints.skipped_spec(spec):
-            continue
-
-        for spec.mem_id in range(1, num_memories):
-            if mem_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
-                continue
+    def plan_spec(
+        self,
+        spec: TensorSpec,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
+        """
+        Greedily place the spec in the first memory that can fit it.
+        """
+        for spec.mem_id in range(1, self.get_num_memories()):
             spec.mem_offset = 0
-            while memory_available(spec) and (overlapped := overlap(spec)):
+            while self.is_valid_placement(spec, placement_constraints) and (
+                overlapped := state.get_overlapping_spec(spec)
+            ):
+                # Found an overlapping spec, so we need to adjust the offset = end of the overlapping spec + alignment.
                 spec.mem_offset = get_aligned_offset(
                     overlapped.mem_offset + overlapped.allocated_memory,
-                    get_alignment(memory_config, spec.mem_id),
+                    self.get_alignment(spec.mem_id),
                 )
-            if memory_available(spec):
-                allocated_buffers[spec.mem_id].append(spec)
-                bufsizes[spec.mem_id] = max(
-                    spec.mem_offset + spec.allocated_memory, bufsizes[spec.mem_id]
-                )
+
+            if self.is_valid_placement(spec, placement_constraints):
+                # Found a valid `spec.mem_offset` which is both valid and has no overlap.
+                state.place_spec(spec)
                 break
-        if (
-            not allocated_buffers[spec.mem_id]
-            or allocated_buffers[spec.mem_id][-1] is not spec
+
+    def plan(
+        self,
+        specs: Iterable[TensorSpec],
+        graph_module: torch.fx.GraphModule,
+        graph_signature: ExportGraphSignature,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+        extra_padding: int = 0,
+    ) -> None:
+
+        # Iterate over all the specs in sorted order
+        for spec in sorted(
+            specs,
+            key=lambda spec: spec.allocated_memory,
+            reverse=True,
         ):
-            raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
-
-        # And now honor the various memory location constraints (i.e., infer the memory
-        # location of tensors in skip_specs from the constraints) for this spec.
-        if mem_constraints.relative_loc_constraints_exist():
-            mem_constraints.resolve_relative_loc_constraints(spec)
-
-    # At the end, all the keys in relative_loc_constraints should have been visited
-    # and emptied.
-    assert not mem_constraints.relative_loc_constraints_exist()
-
-    logging.debug(
-        f"position based greedy algorithm with hierarchy returns bufsizes: {bufsizes}"
-    )
-    return bufsizes
+            self.plan_spec(spec, state, placement_constraints)
+            if not state.is_placed(spec):
+                raise MemoryPlanningAlgoFailure(
+                    f"Cannot fit {spec} {spec.allocated_memory=} in any memory hierarchy for {self.memory_config}"
+                )
 
 
-# Greedy tensor placement with the heuristics from arxiv.org/pdf/2001.03288.pdf
-def greedy_by_size_for_offset_calculation_with_hierarchy(
-    alignment: int,
-    specs: Set[TensorSpec],
-    graph_module: torch.fx.GraphModule,
-    graph_signature: ExportGraphSignature,
-    extra_padding: int = 0,
-    *,
-    memory_config: MemoryConfig,
-    mem_constraints: MemConstraints,
-    additional_constraint_gen_passes: Optional[
-        List[
-            typing.Callable[
-                [MemConstraints],
-                typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
-            ]
-        ]
-    ] = None,
-) -> List[int]:
-    # We do not use the `alignment` parameter and instead use the per-memory alignment
-    # constraints from `memory_config`.
-    del alignment
+class GreedyWithHeuristic(MemoryPlanningAlgo):
+    """Greedy tensor placement with the heuristics from arxiv.org/pdf/2001.03288.pdf."""
 
-    num_memories = get_num_memories(memory_config)
-    bufsizes = [0] * num_memories
-    allocated_buffers = [[] for _ in range(num_memories)]
-
-    # Generate the memory constraints
-    GenerateMemConstraints(mem_constraints, additional_constraint_gen_passes)(
-        graph_module
-    )
-
-    # Iterate over all the specs in sorted order
-    for spec in sorted(
-        specs,
-        key=lambda spec: spec.allocated_memory,
-        reverse=True,
-    ):
-        # Skip allocation memory to any tensor whose spec id is in skip list.
-        if mem_constraints.skipped_spec(spec):
-            continue
-
-        for spec.mem_id in range(1, num_memories):
-            if mem_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+    def plan_spec(
+        self,
+        spec: TensorSpec,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+    ) -> None:
+        """
+        Greedily place the spec in the first memory that can fit it.
+        """
+        for spec.mem_id in range(1, self.get_num_memories()):
+            if placement_constraints.is_mem_id_in_blocklist(spec, spec.mem_id):
+                # Skip placement for blocked memory id.
                 continue
             prev_offset, smallest_gap = 0, float("inf")
-            for allocated_spec in allocated_buffers[spec.mem_id]:
-                if Verifier.lifetime_overlap(spec, allocated_spec):
-                    if (
-                        gap := allocated_spec.mem_offset - prev_offset
-                    ) >= spec.allocated_memory and gap < smallest_gap:
-                        smallest_gap = gap
-                        spec.mem_offset = prev_offset
-                    # Note that different from the paper, which updates prev_offset for all
-                    # allocated tensors, we only update tensors with overlapping lifetime.
-                    # Updating prev_offset outside the if statement will include tensors without
-                    # overlapping lifetime, causing unnecessary waste of memory and make the
-                    # calculation of gap incorrect. Moving it out will make the algorithm degenerate
-                    # to the naive one, reusing 0 tensor. The paper may have a typo here.
-                    prev_offset = max(
-                        get_aligned_offset(
-                            allocated_spec.mem_offset + allocated_spec.allocated_memory,
-                            get_alignment(memory_config, spec.mem_id),
-                        ),
-                        prev_offset,
-                    )
-            if spec.mem_offset is None:
-                if get_aligned_offset(
-                    prev_offset + spec.allocated_memory,
-                    get_alignment(memory_config, spec.mem_id),
-                ) > get_size(memory_config, spec.mem_id):
+            for allocated_spec in state.allocated_buffers[spec.mem_id]:
+                if not Verifier.lifetime_overlap(spec, allocated_spec):
                     continue
-                else:
+
+                if (
+                    gap := allocated_spec.mem_offset - prev_offset
+                ) >= spec.allocated_memory and gap < smallest_gap:
+                    smallest_gap = gap
                     spec.mem_offset = prev_offset
-            bufsizes[spec.mem_id] = max(
-                spec.mem_offset + spec.allocated_memory, bufsizes[spec.mem_id]
-            )
-            allocated_buffers[spec.mem_id].append(spec)
-            allocated_buffers[spec.mem_id].sort(key=lambda spec: spec.mem_offset)
+                # Note that different from the paper, which updates prev_offset for all
+                # allocated tensors, we only update tensors with overlapping lifetime.
+                # Updating prev_offset outside the if statement will include tensors without
+                # overlapping lifetime, causing unnecessary waste of memory and make the
+                # calculation of gap incorrect. Moving it out will make the algorithm degenerate
+                # to the naive one, reusing 0 tensor. The paper may have a typo here.
+                prev_offset = max(
+                    get_aligned_offset(
+                        allocated_spec.mem_offset + allocated_spec.allocated_memory,
+                        self.get_alignment(spec.mem_id),
+                    ),
+                    prev_offset,
+                )
+            if spec.mem_offset is None:
+                spec.mem_offset = prev_offset
+
+            if not self.is_valid_placement(spec, placement_constraints):
+                # Skip placement for invalid memory id.
+                spec.mem_offset = None
+                continue
+
+            state.place_spec(spec)
             # A data structure used for maintaining the tensor order
             # by offset, named ordered_allocated_ids in the paper
+            state.allocated_buffers[spec.mem_id].sort(key=lambda spec: spec.mem_offset)
             break
-        if spec not in allocated_buffers[spec.mem_id]:
-            raise MemoryError(f"Cannot fit {spec} in any memory hierarchy")
 
-        # And now honor the various memory location constraints (i.e., infer the memory
-        # location of tensors in skip_specs from the constraints) for this spec.
-        if mem_constraints.relative_loc_constraints_exist():
-            mem_constraints.resolve_relative_loc_constraints(spec)
+    def plan(
+        self,
+        specs: Iterable[TensorSpec],
+        graph_module: torch.fx.GraphModule,
+        graph_signature: ExportGraphSignature,
+        state: MemoryPlanningState,
+        placement_constraints: MemConstraints,
+        extra_padding: int = 0,
+    ) -> None:
+        """Plan memory allocation for the given tensor specs."""
+        # We do not use the `alignment` parameter and instead use the per-memory alignment
+        # constraints from `memory_config`.
 
-    # At the end, all the keys in relative_loc_constraints should have been visited
-    # and emptied.
-    assert not mem_constraints.relative_loc_constraints_exist()
+        # Iterate over all the specs in sorted order
+        for spec in sorted(
+            specs,
+            key=lambda spec: spec.allocated_memory,
+            reverse=True,
+        ):
+            self.plan_spec(spec, state, placement_constraints)
+            if not state.is_placed(spec):
+                raise MemoryPlanningAlgoFailure(
+                    f"Cannot fit {spec} in any memory hierarchy for {self.memory_config}"
+                )
 
-    logging.debug(
-        f"greedy by size for offset calculation with hierarchy returns bufsizes: {bufsizes}"
-    )
-    return bufsizes
+        logging.debug(
+            f"greedy by size for offset calculation with hierarchy returns bufsizes: {state.bufsizes}"
+        )
 
 
 def find_peak_memory_usages_per_memory(
@@ -269,7 +194,7 @@ def find_peak_memory_usages_per_memory(
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
-) -> List[int]:
+) -> list[int]:
     """
     Given a GraphModule with a memory plan, find the peak memory usages for each memory
     in the memory hierarchy.
@@ -308,7 +233,7 @@ def find_peak_memory_usage(
     alloc_graph_input: bool,
     alloc_graph_output: bool,
     mem_constraints: Optional[MemConstraints] = None,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Given a GraphModule with a memory plan, find the peak usage over time across all
     memories in the memory hierarchy. The resulting peak memory usage should be:
@@ -436,6 +361,35 @@ def print_memory_planning_info(
     )
 
 
+class SimplifyIdmaOpsPass(PassBase):
+    """Replace idma_load and idma_store with idma_copy."""
+
+    def call(self, graph_module: torch.fx.GraphModule) -> Optional[PassResult]:
+        modified = False
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_load.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+            node.args = (node.args[0], *node.args[2:])
+
+        for node in graph_module.graph.find_nodes(
+            op="call_function", target=torch.ops.cadence.idma_store.out
+        ):
+            modified = True
+            node.target = torch.ops.cadence.idma_copy.out
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.recompile()
+        return PassResult(graph_module, modified)
+
+
+ConstraintGenPassType: TypeAlias = Callable[
+    [MemConstraints],
+    Callable[[torch.fx.GraphModule], Optional[PassResult]],
+]
+
+
 class CadenceMemoryPlanning:
     def __init__(
         self,
@@ -444,28 +398,44 @@ class CadenceMemoryPlanning:
         mem_algo: int,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
-        additional_constraint_gen_passes: Optional[
-            List[
-                typing.Callable[
-                    [MemConstraints],
-                    typing.Callable[[torch.fx.GraphModule], Optional[PassResult]],
-                ]
-            ]
-        ] = None,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]] = None,
     ) -> None:
-        self._init_mem_algos()
-
         self.memory_config = memory_config
         self.opt_level = opt_level
-        self.mem_algo = mem_algo
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
-        self.additional_constraint_gen_passes = additional_constraint_gen_passes
 
-    def _init_mem_algos(self) -> None:
-        self.available_mem_algos = [
-            position_based_greedy_with_hierarchy,
-            greedy_by_size_for_offset_calculation_with_hierarchy,
+        self.algo: MemoryPlanningAlgo = self.get_mem_algos(
+            memory_config,
+            opt_level,
+            alloc_graph_input,
+            alloc_graph_output,
+            additional_constraint_gen_passes,
+        )[mem_algo]
+
+    @staticmethod
+    def get_mem_algos(
+        memory_config: MemoryConfig,
+        opt_level: int,
+        alloc_graph_input: bool,
+        alloc_graph_output: bool,
+        additional_constraint_gen_passes: Optional[Sequence[ConstraintsGenPass]],
+    ) -> list[MemoryPlanningAlgo]:
+        return [
+            PositionBasedGreedyWithHierarchy(
+                memory_config=memory_config,
+                opt_level=opt_level,
+                alloc_graph_input=alloc_graph_input,
+                alloc_graph_output=alloc_graph_output,
+                additional_constraint_gen_passes=additional_constraint_gen_passes,
+            ),
+            GreedyWithHeuristic(
+                memory_config=memory_config,
+                opt_level=opt_level,
+                alloc_graph_input=alloc_graph_input,
+                alloc_graph_output=alloc_graph_output,
+                additional_constraint_gen_passes=additional_constraint_gen_passes,
+            ),
         ]
 
     def __call__(
@@ -479,26 +449,21 @@ class CadenceMemoryPlanning:
         graph_module: torch.fx.GraphModule,
         graph_signature: Optional[ExportGraphSignature] = None,
     ) -> PassResult:
-        mem_constraints = MemConstraints(
-            opt_level=self.opt_level,
-            alloc_graph_input=self.alloc_graph_input,
-            alloc_graph_output=self.alloc_graph_output,
-        )
-        algo = partial(
-            self.available_mem_algos[self.mem_algo],
-            memory_config=self.memory_config,
-            mem_constraints=mem_constraints,
-            additional_constraint_gen_passes=self.additional_constraint_gen_passes,
-        )
         # Create the memory planning pass. We allocate memory for input
         # (output) tensors if alloc_graph_input (alloc_graph_output) is
         # True.
         mem_planning = MemoryPlanningPass(
-            algo,
-            allow_lifetime_and_storage_overlap=(self.opt_level >= 2),
+            self.algo,
+            # Always allow lifetime and storage overlap.
+            # At opt level 0, we need overlap for idma wait.
+            allow_lifetime_and_storage_overlap=True,
             alloc_graph_input=self.alloc_graph_input,
             alloc_graph_output=self.alloc_graph_output,
         )
         mem_planning.run(graph_module, graph_signature)
+
+        graph_module = PassManager(passes=[SimplifyIdmaOpsPass()])(
+            graph_module
+        ).graph_module
 
         return PassResult(graph_module, True)

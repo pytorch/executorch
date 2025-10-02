@@ -12,6 +12,8 @@
 #include <cinttypes>
 #include <cstdint>
 
+#include <c10/util/safe_numerics.h>
+
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -84,7 +86,7 @@ class MemoryAllocator {
 
     // If the end of this allocation exceeds the end of this allocator, print
     // error messages and return nullptr
-    if (end > end_) {
+    if (end > end_ || end < start) {
       ET_LOG(
           Error,
           "Memory allocation failed: %zuB requested (adjusted for alignment), %zuB available",
@@ -137,7 +139,16 @@ class MemoryAllocator {
     // Some users of this method allocate lists of pointers, causing the next
     // line to expand to `sizeof(type *)`, which triggers a clang-tidy warning.
     // NOLINTNEXTLINE(bugprone-sizeof-expression)
-    return static_cast<T*>(this->allocate(size * sizeof(T), alignment));
+    size_t bytes_size = 0;
+    bool overflow = c10::mul_overflows(size, sizeof(T), &bytes_size);
+    if (overflow) {
+      ET_LOG(
+          Error,
+          "Failed to allocate list of type %zu: size * sizeof(T) overflowed",
+          size);
+      return nullptr;
+    }
+    return static_cast<T*>(this->allocate(bytes_size, alignment));
   }
 
   // Returns the allocator memory's base address.

@@ -1,5 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
+# Copyright 2024 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.

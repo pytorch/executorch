@@ -44,7 +44,7 @@ void conv2d_impl(
     const CTYPE* const w_ptr,
     SizesArrayRef w_sizes,
     StridesArrayRef w_strides,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     const char* const bias_ptr,
     LoadFn load_bias,
     IntArrayRef stride,
@@ -195,7 +195,7 @@ template <typename CTYPE, typename LoadFn = CTYPE (*)(const void*)>
 void convolution_wrapper(
     const Tensor& in,
     const Tensor& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     LoadFn load_bias,
     IntArrayRef stride,
     IntArrayRef padding,
@@ -350,7 +350,7 @@ Tensor& convolution_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     const Tensor& weight,
-    const executorch::aten::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -412,10 +412,10 @@ Tensor& convolution_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char name[] = "convolution.out";
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     const auto load_bias = bias.has_value()
         ? utils::internal::get_load_to_compute_fn<CTYPE, name>(
-              bias.value(), utils::SupportedTensorDtypes::REALHBF16)
+              ctx, bias.value(), utils::SupportedTensorDtypes::REALHBF16)
         : nullptr;
     convolution_wrapper<CTYPE>(
         in,

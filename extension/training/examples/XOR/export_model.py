@@ -23,7 +23,6 @@ def _export_model(external_mutable_weights: bool = False):
     x = torch.randn(1, 2)
 
     # Captures the forward graph. The graph will look similar to the model definition now.
-    # Will move to export_for_training soon which is the api planned to be supported in the long term.
     ep = export(net, (x, torch.ones(1, dtype=torch.int64)), strict=True)
     # Captures the backward graph. The exported_program now contains the joint forward and backward graph.
     ep = _export_forward_backward(ep)

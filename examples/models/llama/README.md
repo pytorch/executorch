@@ -65,7 +65,7 @@ Please see the [Llama 3.2 model card](https://github.com/meta-llama/llama-models
 
 ### Performance
 
-Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-4-run-benchmark-on-android-phone) with prompt length of 64. It is measured with KleidiAI library. KleidiAI is not enabled by default yet. Use `-DEXECUTORCH_XNNPACK_ENABLE_KLEIDI=ON` to enable it in the build.
+Llama 3.2 1B and 3B performance was measured on Android OnePlus 12 device. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-4-run-benchmark-on-android-phone) with prompt length of 64. It is measured with KleidiAI library. KleidiAI is enabled by default on the XNNPACK Backend for all ARM devices.
 
 |Model  | Decode (tokens/s) | Time-to-first-token (sec) | Prefill (tokens/s) | Model size (PTE file size in MiB) | Memory size (RSS in MiB) |
 |-------|------------------:|--------------------------:| ------------------:|----------------------------------:| ------------------------:|
@@ -167,15 +167,11 @@ Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 LLAMA_CHECKPOINT=path/to/consolidated.00.pth
 LLAMA_PARAMS=path/to/params.json
 
-python -m examples.models.llama.export_llama \
-  --model "llama3_2" \
-  --checkpoint "${LLAMA_CHECKPOINT:?}" \
-  --params "${LLAMA_PARAMS:?}" \
-  -kv \
-  --use_sdpa_with_kv_cache \
-  -d bf16 \
-  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-  --output_name="llama3_2.pte"
+python -m extension.llm.export.export_llm \
+  --config examples/models/llama/config/llama_bf16.yaml \
+  +base.model_class="llama3_2" \
+  +base.checkpoint="${LLAMA_CHECKPOINT:?}" \
+  +base.params="${LLAMA_PARAMS:?}" \
 ```
 For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/llama3_2-1B.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-ET/blob/main/ExportRecipe_1B.ipynb).
 
@@ -189,23 +185,11 @@ For convenience, an [exported ExecuTorch bf16 model](https://huggingface.co/exec
 LLAMA_QUANTIZED_CHECKPOINT=path/to/spinquant/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/spinquant/params.json
 
-python -m examples.models.llama.export_llama \
-   --model "llama3_2" \
-   --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-   --params "${LLAMA_PARAMS:?}" \
-   --use_sdpa_with_kv_cache \
-   -X \
-   --xnnpack-extended-ops \
-   --preq_mode 8da4w_output_8da8w \
-   --preq_group_size 32 \
-   --max_seq_length 2048 \
-   --max_context_length 2048 \
-   --output_name "llama3_2.pte" \
-   -kv \
-   -d fp32 \
-   --preq_embedding_quantize 8,0 \
-   --use_spin_quant native \
-   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+python -m extension.llm.export.export_llm \
+  --config examples/models/llama/config/llama_xnnpack_spinquant.yaml \
+  +base.model_class="llama3_2" \
+  +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+  +base.params="${LLAMA_PARAMS:?}"
 ```
 For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-SpinQuant_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_SpinQuant_INT4_EO8.ipynb).
 
@@ -218,24 +202,11 @@ For convenience, an [exported ExecuTorch SpinQuant model](https://huggingface.co
 LLAMA_QUANTIZED_CHECKPOINT=path/to/qlora/consolidated.00.pth.pth
 LLAMA_PARAMS=path/to/qlora/params.json
 
-python -m examples.models.llama.export_llama \
-   --model "llama3_2" \
-   --checkpoint "${LLAMA_QUANTIZED_CHECKPOINT:?}" \
-   --params "${LLAMA_PARAMS:?}" \
-   -qat \
-   -lora 16 \
-   --preq_mode 8da4w_output_8da8w \
-   --preq_group_size 32 \
-   --preq_embedding_quantize 8,0 \
-   --use_sdpa_with_kv_cache \
-   -kv \
-   -X \
-   --xnnpack-extended-ops \
-   -d fp32 \
-   --max_seq_length 2048 \
-   --max_context_length 2048 \
-   --output_name "llama3_2.pte" \
-   --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+python -m extension.llm.export.export_llm \
+    --config examples/models/llama/config/llama_xnnpack_qat.yaml \
+    +base.model_class="llama3_2" \
+    +base.checkpoint="${LLAMA_QUANTIZED_CHECKPOINT:?}" \
+    +base.params="${LLAMA_PARAMS:?}" \
 ```
 For convenience, an [exported ExecuTorch QAT+LoRA model](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Llama-3.2-1B-Instruct-QLORA_INT4_EO8.pte) is available on Hugging Face. The export was created using [this detailed recipe notebook](https://huggingface.co/executorch-community/Llama-3.2-1B-Instruct-QLORA_INT4_EO8-ET/blob/main/Export_Recipe_Llama_3_2_1B_Instruct_QLORA_INT4_EO8.ipynb).
 
@@ -246,66 +217,44 @@ You can export and run the original Llama 3 8B instruct model.
 1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
 
 2. Export model and generate `.pte` file
-    ```
-    python -m examples.models.llama.export_llama \
-	    --checkpoint <consolidated.00.pth.pth> \
-		-p <params.json> \
-		-kv \
-		--use_sdpa_with_kv_cache \
-		-X \
-		-qmode 8da4w \
-		--group_size 128 \
-		-d fp32 \
-		--metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-		--embedding-quantize 4,32 \
-		--output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
-    ```
-    Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
+```
+python -m extension.llm.export.export_llm \
+    --config examples/models/llama/config/llama_q8da4w.yaml \
+    +base.model_class="llama3" \
+    +base.checkpoint=<consolidated.00.pth.pth> \
+    +base.params=<params.json>
+```
+
+Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `quantization.embedding_quantize=\'4,32\'` as shown above to further reduce the model size.
 
 
-    If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
+If you're interested in deploying on non-CPU backends, [please refer the non-cpu-backend section](non_cpu_backends.md)
 
 ## Step 3: Run on your computer to validate
 
 1. Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
     ```
-    cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DEXECUTORCH_ENABLE_LOGGING=1 \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-        -Bcmake-out .
+    cmake --preset llm -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake-out
 
     cmake --build cmake-out -j16 --target install --config Release
     ```
 Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the section of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
-    ```
-    cmake -DPYTHON_EXECUTABLE=python \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DSUPPORT_REGEX_LOOKAHEAD=ON
-        -Bcmake-out/examples/models/llama \
-        examples/models/llama
+```
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+	-DBUILD_TESTING=OFF \
+	-DCMAKE_BUILD_TYPE=Release \
+	-Bcmake-out/examples/models/llama \
+	examples/models/llama
 
-    cmake --build cmake-out/examples/models/llama -j16 --config Release
-    ```
+cmake --build cmake-out/examples/models/llama -j16 --config Release
+```
 
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama/main.cpp#L18-L40).
-    ```
-    cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
-    ```
+```
+cmake-out/examples/models/llama/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
+```
 
 To build for CoreML backend and validate on Mac, replace `-DEXECUTORCH_BUILD_XNNPACK=ON` with `-DEXECUTORCH_BUILD_COREML=ON`
 
@@ -315,7 +264,7 @@ If you an error about "RE2 failed to compile pattern with lookahead:...SUPPORT_R
 
 **1. Build llama runner binary for Android**
 
-*Pre-requisite*: Android NDK (tested with r27b) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
+*Pre-requisite*: Android NDK (tested with r28c) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
 
 **1.1 Set Android NDK**
 ```
@@ -329,6 +278,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out-android \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
@@ -336,7 +286,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out-android .
 
 cmake --build cmake-out-android -j16 --target install --config Release
@@ -353,7 +303,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -DSUPPORT_REGEX_LOOKAHEAD=ON
     -Bcmake-out-android/examples/models/llama \
     examples/models/llama
@@ -383,14 +333,21 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios) to for full instructions on building the iOS LLAMA Demo App. Rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple) to for full instructions on building the iOS etLLM Demo App.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) to for full instructions on building the Android LLAMA Demo App.
 
 ## Running with low-bit kernels
 
-We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac.  Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
+We now give instructions for quantizating and running your model with low-bit kernels.  These are still experimental, and require you do development on an Arm-based Mac, and install executorch from source with the environment variable EXECUTORCH_BUILD_KERNELS_TORCHAO=1 defined:
+```
+EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
+```
+
+(If you'd like lowbit to use KleidiAI when available, you can instead install with `EXECUTORCH_BUILD_KERNELS_TORCHAO=1 TORCHAO_BUILD_KLEIDIAI=1 python install_executorch.py`.)
+
+Also note that low-bit quantization often requires QAT (quantization-aware training) to give good quality results.
 
 First export your model for lowbit quantization (step 2 above):
 
@@ -405,22 +362,22 @@ QLINEAR_GROUP_SIZE=128 # Must be multiple of 16
 QEMBEDDING_BITWIDTH=4 # Can be 1-8
 QEMBEDDING_GROUP_SIZE=32 # Must be multiple of 16
 
-python -m examples.models.llama.export_llama \
-  --model "llama3_2" \
-  --checkpoint "${LLAMA_CHECKPOINT:?}" \
-  --params "${LLAMA_PARAMS:?}" \
-  -kv \
-  --use_sdpa_with_kv_cache \
-  --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' \
-  --output_name="llama3_2.pte" \
-  -qmode "torchao:8da${QLINEAR_BITWIDTH}w" \
-  --group_size ${QLINEAR_GROUP_SIZE} \
-  -E "torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}" \
-  -d fp32
+python -m extension.llm.export.export_llm \
+  base.model_class="llama3_2" \
+  base.checkpoint="${LLAMA_CHECKPOINT:?}" \
+  base.params="${LLAMA_PARAMS:?}" \
+  model.use_kv_cache=True \
+  model.use_sdpa_with_kv_cache=True \
+  base.metadata='"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"' \
+  export.output_name="llama3_2.pte" \
+  quantization.qmode="torchao:8da${QLINEAR_BITWIDTH}w" \
+  quantization.group_size=${QLINEAR_GROUP_SIZE} \
+  quantization.embedding_quantize=\'torchao:${QEMBEDDING_BITWIDTH},${QEMBEDDING_GROUP_SIZE}\' \
+  model.dtype_override="fp32"
 ```
 
 A few notes:
-- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `--use_shared_embedding` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized asymmetrically or not by specifying a third argument.  For example, `-E "torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and is asymmetric (this is the default behavior if you simply use `-E "torchao:4,32"`), whereas `-E "torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32 and is symmetric.  If `--use_shared_embedding` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
+- If your model shares embedding/unembedding weights (like Llama1B and Llama3B do), you can add `model.use_shared_embedding=True` to take advantage of this and reduce memory.  When this option is enabled, you can specify whether embeddings are quantized asymmetrically or not by specifying a third argument.  For example, `quantization.embedding_quantize="torchao:4,32,true"` means that the embedding is quantized to 4-bits with group_size=32 and is asymmetric (this is the default behavior if you simply use `quantization.embedding_quantize="torchao:4,32"`), whereas `quantization.embedding_quantize="torchao:4,32,false"` means that the embedding is quantized to 4-bits with group_size=32 and is symmetric.  If `model.use_shared_embedding=True` is specified, the unembedding (i.e., the final linear layer) is quantized in the same way, but also uses 8-bit dynamically quantized activations.
 - To do channelwise quantization, specify group_size to 0.  This works for both linear and embedding layers.
 
 Once the model is exported, we need to build ExecuTorch and the runner with the low-bit kernels.
@@ -433,14 +390,18 @@ cmake -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_TORCHAO=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
     -Bcmake-out .
-cmake --build cmake-out -j16 --target install --config Release
+cmake --build cmake-out -j16 --config Release --target install
 ```
 
 Next install the llama runner with torchao kernels enabled (similar to step 3.2 above):
@@ -448,11 +409,6 @@ Next install the llama runner with torchao kernels enabled (similar to step 3.2 
 ```
 cmake -DPYTHON_EXECUTABLE=python \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF \
-    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-    -DEXECUTORCH_BUILD_TORCHAO=ON \
     -Bcmake-out/examples/models/llama \
     examples/models/llama
 cmake --build cmake-out/examples/models/llama -j16 --config Release
@@ -495,7 +451,7 @@ python -m examples.models.llama.eval_llama \
 	-d <checkpoint dtype> \
 	--tasks mmlu \
 	--num_fewshot 5 \
-	--max_seq_len <max sequence length>
+	--max_seq_len <max sequence length> \
 	--max_context_len <max context length>
 ```
 

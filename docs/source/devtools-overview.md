@@ -15,6 +15,7 @@ The ExecuTorch Developer Tools support the following features:
 - **Delegate Integration** - Surfacing performance details from delegate backends
     - Link back delegate operator execution to the nodes they represent in the edge dialect graph (and subsequently linking back to source code and module hierarchy)
 - **Debugging** - Intermediate outputs and output quality analysis
+- **Numerical Discrepancy Detection** - Operator-level numerical discrepancy detection between AOT and runtime intermediate outputs to streamline numerical debugging and validation.
 - **Memory Allocation Insights** - Visualize how memory is planned, where all the live tensors are at any point in time
 - **Visualization** - Coming soon
 

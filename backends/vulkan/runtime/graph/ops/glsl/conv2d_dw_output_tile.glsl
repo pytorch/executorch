@@ -60,17 +60,17 @@ void main() {
   const uint div_by_x = gl_GlobalInvocationID.x / out_limits_xy_scaled.x;
   ivec3 pos = ivec3(
     gl_GlobalInvocationID.x % out_limits_xy_scaled.x,
-    div_by_x % out_limits_xy_scaled.y,
-    div_by_x / out_limits_xy_scaled.y);
+    div_by_x,
+    gl_GlobalInvocationID.y);
+
+  // do not process if top pixel does not fit within the output range
+  if (pos.y >= out_limits_xy_scaled.y || pos.z >= out_limits.z) {
+    return;
+  }
 
   // scale pos.xy by batch sizes, because that's the top pixel to be processed
   pos.x *= BATCH_SIZE_X;
   pos.y *= BATCH_SIZE_Y;
-
-  // do not process if top pixel does not fit within the output range
-  if (pos.z >= out_limits.z) {
-    return;
-  }
 
   // Compute the index of the top-left element of the overlay region. Negative
   // indices indicate that the top-left element is in a region added by padding.
@@ -79,7 +79,6 @@ void main() {
   // Compute the start and end of the input indices to load. Padding is assumed
   // to be constant 0 padding, so any reads from the padding region is skipped.
   const ivec2 start = ipos;
-  const ivec2 end = ipos + overlay_region.xy;
 
   // sum outputs
   VEC4_T sum[BATCH_SIZE_Y * BATCH_SIZE_X];

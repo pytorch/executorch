@@ -12,10 +12,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.log.default"
@@ -40,36 +41,60 @@ class Log(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_log_tosa_MI(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](Log(), (test_data(),), aten_op, exir_op)
+def test_log_tosa_FP(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](Log(), (test_data(),), aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_log_tosa_BI(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](Log(), (test_data(),), aten_op, exir_op)
+def test_log_tosa_INT(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](Log(), (test_data(),), aten_op, exir_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_log_u55_BI(test_data: input_t1):
-    EthosU55PipelineBI[input_t1](
+def test_log_u55_INT(test_data: input_t1):
+    EthosU55PipelineINT[input_t1](
         Log(),
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     ).run()
 
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_log_u85_BI(test_data: input_t1):
-    EthosU85PipelineBI[input_t1](
+def test_log_u85_INT(test_data: input_t1):
+    EthosU85PipelineINT[input_t1](
         Log(),
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     ).run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_log_vgf_FP(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Log(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_log_vgf_INT(test_data: input_t1):
+    pipeline = VgfPipeline[input_t1](
+        Log(),
+        (test_data(),),
+        aten_op,
+        exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

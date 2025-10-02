@@ -16,6 +16,12 @@
 
 #include <executorch/runtime/executor/program.h>
 
+#ifdef USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module::aten
+#else // !USE_ATEN_LIB
+#define ET_MODULE_NAMESPACE module
+#endif // USE_ATEN_LIB
+
 namespace executorch {
 namespace extension {
 
@@ -24,6 +30,9 @@ using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::NamedDataMap;
 using ET_RUNTIME_NAMESPACE::Program;
 
+class ExecuTorchJni;
+
+namespace ET_MODULE_NAMESPACE {
 /**
  * A facade class for loading programs and executing methods within them.
  */
@@ -61,13 +70,28 @@ class Module {
    * memory locking behavior.
    *
    * @param[in] file_path The path to the ExecuTorch program file to load.
-   * @param[in] data_map_path The path to a .ptd file
+   * @param[in] data_map_path The path to a .ptd file.
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
       const std::string& file_path,
       const std::string& data_map_path,
+      const LoadMode load_mode = LoadMode::File,
+      std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
+
+  /**
+   * Constructs an instance by loading a program from a file with specified
+   * memory locking behavior.
+   *
+   * @param[in] file_path The path to the ExecuTorch program file to load.
+   * @param[in] data_files The path to one or more .ptd file/s.
+   * @param[in] load_mode The loading mode to use.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   */
+  explicit Module(
+      const std::string& file_path,
+      std::vector<std::string> data_files,
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
@@ -186,6 +210,32 @@ class Module {
   }
 
   /**
+   * Unload a specific method from the program.
+   *
+   * @param[in] method_name The name of the method to unload.
+   *
+   * @returns True if the method is unloaded, false if no-op.
+   */
+  inline bool unload_method(const std::string& method_name) {
+    return methods_.erase(method_name);
+  }
+
+  /**
+   * DEPRECATED: Module manages each Method exclusively.
+   *
+   * Get a method by it's name. Not recommended to use this method directly as
+   * an end user. It's exposed to allow for composability of module in apis that
+   * operate on method.
+   *
+   * @param[in] method_name The name of the method to get.
+   *
+   * @returns A Result object containing either a pointer to the requested
+   *          method or an error to indicate failure.
+   */
+  ET_DEPRECATED ET_NODISCARD runtime::Result<Method*> method(
+      const std::string& method_name);
+
+  /**
    * Load the 'forward' method from the program and set up memory management if
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
@@ -208,6 +258,15 @@ class Module {
   }
 
   /**
+   * Unload the 'forward' method from the program.
+   *
+   * @returns True if the 'forward' method is unloaded, false if no-op.
+   */
+  inline bool unload_forward() {
+    return unload_method("forward");
+  }
+
+  /**
    * Checks if a specific method is loaded.
    *
    * @param[in] method_name The name of the method to check.
@@ -221,7 +280,7 @@ class Module {
 
   /**
    * Get a method metadata struct by method name.
-   * Loads the program and method if needed.
+   * Loads the program if needed.
    *
    * @param[in] method_name The name of the method to get the metadata for.
    *
@@ -458,6 +517,91 @@ class Module {
   }
 
   /**
+   * Sets all output tensors for a specific method.
+   *
+   * Loads the program and method if needed, and for each output uses
+   * the provided tensor's data buffer as the method's output buffer.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_values A vector of EValues to set as the method outputs.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   * @note Will fail for outputs that are memory-planned or constants.
+   */
+  ET_NODISCARD
+  runtime::Error set_outputs(
+      const std::string& method_name,
+      const std::vector<runtime::EValue>& output_values);
+
+  /**
+   * Sets all output tensors for the "forward" method.
+   *
+   * @param[in] output_values A vector of EValues to set as the method outputs.
+   *
+   * @returns An Error to indicate success or failure.
+   *
+   * @note Only Tensor outputs are currently supported for setting.
+   * @note Will fail for outputs that are memory-planned or constants.
+   */
+  ET_NODISCARD
+  inline runtime::Error set_outputs(
+      const std::vector<runtime::EValue>& output_values) {
+    return set_outputs("forward", output_values);
+  }
+
+  /**
+   * Retrieve all current output values of a specific method without executing
+   * it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] method_name The name of the method.
+   *
+   * @returns A Result containing the vector of output values, or an error.
+   */
+  ET_NODISCARD
+  runtime::Result<std::vector<runtime::EValue>> get_outputs(
+      const std::string& method_name);
+
+  /**
+   * Retrieve all current output values of the "forward" method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @returns A Result containing the vector of output values, or an error.
+   */
+  ET_NODISCARD
+  inline runtime::Result<std::vector<runtime::EValue>> get_outputs() {
+    return get_outputs("forward");
+  }
+
+  /**
+   * Retrieve a single current output value of a specific method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] method_name The name of the method.
+   * @param[in] output_index Zero-based index of the output to retrieve.
+   *
+   * @returns A Result containing the requested output value, or an error.
+   */
+  ET_NODISCARD
+  runtime::Result<runtime::EValue> get_output(
+      const std::string& method_name,
+      size_t output_index = 0);
+
+  /**
+   * Retrieve a single current output value of the "forward" method without
+   * executing it. Loads the program and method before retrieval if needed.
+   *
+   * @param[in] output_index Zero-based index of the output to retrieve.
+   *
+   * @returns A Result containing the requested output value, or an error.
+   */
+  ET_NODISCARD
+  inline runtime::Result<runtime::EValue> get_output(size_t output_index = 0) {
+    return get_output("forward", output_index);
+  }
+
+  /**
    * Retrieves the EventTracer instance being used by the Module.
    * EventTracer is used for tracking and logging events during the execution
    * of methods.
@@ -469,6 +613,12 @@ class Module {
     return event_tracer_.get();
   }
 
+  // Note: this debug_buffer will always be empty. The one being used is in
+  // the event_tracer attached to module. Please use that one.
+  ET_DEPRECATED ET_NODISCARD runtime::Span<uint8_t> debug_buffer() {
+    return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
+  }
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;
@@ -476,26 +626,28 @@ class Module {
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
     std::unique_ptr<runtime::MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
-    std::vector<runtime::EValue> inputs;
   };
 
   std::string file_path_;
-  std::string data_map_path_;
+  std::vector<std::string> data_files_;
   LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
   std::unique_ptr<runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<runtime::MemoryAllocator> temp_allocator_;
   std::unique_ptr<runtime::EventTracer> event_tracer_;
-  std::unique_ptr<runtime::DataLoader> data_map_loader_;
-  std::unique_ptr<NamedDataMap> data_map_;
+  std::vector<std::unique_ptr<runtime::DataLoader>> data_map_loaders_;
+  std::vector<std::unique_ptr<NamedDataMap>> named_data_maps_;
+  std::unique_ptr<NamedDataMap> merged_data_map_;
+  ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;
 
-  friend class ExecuTorchJni;
+  friend class executorch::extension::ExecuTorchJni;
 };
 
+} // namespace ET_MODULE_NAMESPACE
 } // namespace extension
 } // namespace executorch
 
@@ -503,6 +655,13 @@ namespace torch {
 namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
-using ::executorch::extension::Module;
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace extension {
+// backward compatible namespace alias
+using ::executorch::extension::ET_MODULE_NAMESPACE::Module;
+} // namespace extension
+} // namespace executorch

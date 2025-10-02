@@ -13,14 +13,18 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pytest
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.ethosu import EthosUCompileSpec
+
 from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,
     corstone320_installed,
+    model_converter_installed,
+    vkml_emulation_layer_installed,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.vgf import VgfCompileSpec
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
@@ -32,7 +36,7 @@ def get_time_formatted_path(path: str, log_prefix: str) -> str:
         log_prefix: The name of the test.
 
     Example output:
-        './my_log_folder/test_BI_artifact_28-Nov-14:14:38.log'
+        './my_log_folder/test_INT_artifact_28-Nov-14:14:38.log'
     """
     return str(
         Path(path) / f"{log_prefix}_{datetime.now().strftime('%d-%b-%H:%M:%S')}.log"
@@ -47,12 +51,12 @@ def maybe_get_tosa_collate_path() -> str | None:
     tosa_test_base = os.environ.get("TOSA_TESTCASES_BASE_PATH")
     if tosa_test_base:
         current_test = os.environ.get("PYTEST_CURRENT_TEST")
-        # '::test_collate_tosa_BI_tests[randn] (call)'
+        # '::test_collate_tosa_INT_tests[randn] (call)'
         test_name = current_test.split("::")[1].split(" ")[0]  # type: ignore[union-attr]
-        if "BI" in test_name:
-            tosa_test_base = os.path.join(tosa_test_base, "tosa-bi")
-        elif "MI" in test_name:
-            tosa_test_base = os.path.join(tosa_test_base, "tosa-mi")
+        if "INT" in test_name:
+            tosa_test_base = os.path.join(tosa_test_base, "tosa-int")
+        elif "FP" in test_name:
+            tosa_test_base = os.path.join(tosa_test_base, "tosa-fp")
         else:
             tosa_test_base = os.path.join(tosa_test_base, "other")
         return os.path.join(tosa_test_base, test_name)
@@ -61,32 +65,22 @@ def maybe_get_tosa_collate_path() -> str | None:
 
 
 def get_tosa_compile_spec(
-    tosa_spec: str | TosaSpecification, custom_path=None
-) -> list[CompileSpec]:
-    """
-    Default compile spec for TOSA tests.
-    """
-    return get_tosa_compile_spec_unbuilt(tosa_spec, custom_path).build()
-
-
-def get_tosa_compile_spec_unbuilt(
-    tosa_spec: str | TosaSpecification, custom_path=None
-) -> ArmCompileSpecBuilder:
-    """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
-    the compile spec before calling .build() to finalize it.
-    """
+    tosa_spec: str | TosaSpecification,
+    custom_path=None,
+    tosa_debug_mode: TosaCompileSpec.DebugMode | None = None,
+) -> TosaCompileSpec:
+    """Get the compile spec for default TOSA tests."""
     if not custom_path:
         custom_path = maybe_get_tosa_collate_path()
-
     if custom_path is not None:
         os.makedirs(custom_path, exist_ok=True)
-    compile_spec_builder = (
-        ArmCompileSpecBuilder()
-        .tosa_compile_spec(tosa_spec)
-        .dump_intermediate_artifacts_to(custom_path)
-    )
 
-    return compile_spec_builder
+    compile_spec = (
+        TosaCompileSpec(tosa_spec)
+        .dump_intermediate_artifacts_to(custom_path)
+        .dump_debug_info(tosa_debug_mode)
+    )
+    return compile_spec
 
 
 def get_u55_compile_spec(
@@ -95,48 +89,10 @@ def get_u55_compile_spec(
     memory_mode: str = "Shared_Sram",
     extra_flags: str = "--debug-force-regor --output-format=raw",
     custom_path: Optional[str] = None,
-) -> list[CompileSpec]:
-    """
-    Compile spec for Ethos-U55.
-    """
-    return get_u55_compile_spec_unbuilt(
-        macs=macs,
-        system_config=system_config,
-        memory_mode=memory_mode,
-        extra_flags=extra_flags,
-        custom_path=custom_path,
-    ).build()
-
-
-def get_u85_compile_spec(
-    macs: int = 128,
-    system_config="Ethos_U85_SYS_DRAM_Mid",
-    memory_mode="Shared_Sram",
-    extra_flags="--output-format=raw",
-    custom_path=None,
-) -> list[CompileSpec]:
-    """
-    Compile spec for Ethos-U85.
-    """
-    return get_u85_compile_spec_unbuilt(  # type: ignore[attr-defined]
-        macs=macs,
-        system_config=system_config,
-        memory_mode=memory_mode,
-        extra_flags=extra_flags,
-        custom_path=custom_path,
-    ).build()
-
-
-def get_u55_compile_spec_unbuilt(
-    macs: int,
-    system_config: str,
-    memory_mode: str,
-    extra_flags: str,
-    custom_path: Optional[str],
-) -> ArmCompileSpecBuilder:
-    """Get the ArmCompileSpecBuilder for the Ethos-U55 tests, to modify
-    the compile spec before calling .build() to finalize it.
-    """
+    config: Optional[str] = None,
+    tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
+) -> EthosUCompileSpec:
+    """Default compile spec for Ethos-U55 tests."""
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
@@ -144,46 +100,91 @@ def get_u55_compile_spec_unbuilt(
     # https://gitlab.arm.com/artificial-intelligence/ethos-u/ethos-u-vela/-/blob/main/OPTIONS.md
     assert macs in [32, 64, 128, 256], "Unsupported MACs value"
 
+    if extra_flags is not None:
+        extra_flags_list = extra_flags.split(" ")
+    else:
+        extra_flags_list = []
     compile_spec = (
-        ArmCompileSpecBuilder()
-        .ethosu_compile_spec(
+        EthosUCompileSpec(
             f"ethos-u55-{macs}",
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags=extra_flags,
+            extra_flags=extra_flags_list,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
+        .dump_debug_info(tosa_debug_mode)
     )
     return compile_spec
 
 
-def get_u85_compile_spec_unbuilt(
-    macs: int,
-    system_config: str,
-    memory_mode: str,
-    extra_flags: str,
-    custom_path: Optional[str],
-) -> list[CompileSpec]:
-    """Get the ArmCompileSpecBuilder for the Ethos-U85 tests, to modify
-    the compile spec before calling .build() to finalize it.
-    """
+def get_u85_compile_spec(
+    macs: int = 128,
+    system_config="Ethos_U85_SYS_DRAM_Mid",
+    memory_mode="Shared_Sram",
+    extra_flags="--output-format=raw",
+    custom_path: Optional[str] = None,
+    config: Optional[str] = None,
+    tosa_debug_mode: EthosUCompileSpec.DebugMode | None = None,
+) -> EthosUCompileSpec:
+    """Default compile spec for Ethos-U85 tests."""
+
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u85_")
     if not os.path.exists(artifact_path):
         os.makedirs(artifact_path, exist_ok=True)
 
     assert macs in [128, 256, 512, 1024, 2048], "Unsupported MACs value"
 
+    if extra_flags is not None:
+        extra_flags_list = extra_flags.split(" ")
+    else:
+        extra_flags_list = []
+
     compile_spec = (
-        ArmCompileSpecBuilder()
-        .ethosu_compile_spec(
+        EthosUCompileSpec(
             f"ethos-u85-{macs}",
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags=extra_flags,
+            extra_flags=extra_flags_list,
+            config_ini=config,
         )
         .dump_intermediate_artifacts_to(artifact_path)
+        .dump_debug_info(tosa_debug_mode)
     )
     return compile_spec  # type: ignore[return-value]
+
+
+def get_vgf_compile_spec(
+    tosa_spec: str | TosaSpecification,
+    compiler_flags: Optional[str] = "",
+    custom_path=None,
+    tosa_debug_mode: VgfCompileSpec.DebugMode | None = None,
+) -> VgfCompileSpec:
+    """Get the ArmCompileSpec for the default VGF tests, to modify
+    the compile spec before calling .build() to finalize it.
+    """
+    if "FP" in repr(tosa_spec):
+        artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_fp_")
+    elif "INT" in repr(tosa_spec):
+        artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_vgf_int_")
+    else:
+        raise ValueError(f"Unsupported vgf compile_spec: {repr(tosa_spec)}")
+
+    if not os.path.exists(artifact_path):
+        os.makedirs(artifact_path, exist_ok=True)
+
+    if compiler_flags is not None:
+        compiler_flags_list = compiler_flags.split(" ")
+    else:
+        compiler_flags_list = []
+
+    compile_spec = (
+        VgfCompileSpec(tosa_spec, compiler_flags_list)
+        .dump_intermediate_artifacts_to(artifact_path)
+        .dump_debug_info(tosa_debug_mode)
+    )
+
+    return compile_spec
 
 
 XfailIfNoCorstone300 = pytest.mark.xfail(
@@ -203,6 +204,20 @@ XfailIfNoCorstone320 = pytest.mark.xfail(
     reason="Did not find Corstone-320 FVP or executor_runner on path",
 )
 """Xfails a test if Corsone320 FVP is not installed, or if the executor runner is not built"""
+
+SkipIfNoModelConverter = pytest.mark.skipif(
+    condition=not (model_converter_installed()),
+    raises=FileNotFoundError,
+    reason="Did not find model-converter on path",
+)
+"""Skips a test if model-converter is not installed"""
+
+XfailfNoVKMLEmulationLayer = pytest.mark.xfail(
+    condition=not (vkml_emulation_layer_installed()),
+    raises=TypeError,
+    reason="VKML environment is not set properly or executor_runner path is misused",
+)
+"""Xfails a test if VKML Emulation Layer is not installed"""
 
 xfail_type = str | tuple[str, type[Exception]]
 

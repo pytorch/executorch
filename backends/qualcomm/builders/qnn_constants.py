@@ -15,6 +15,13 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 
 @dataclass(init=False, frozen=True)
+class OpArgmax:
+    op_name: str = "Argmax"
+    param_axis: str = "axis"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpArgmin:
     op_name: str = "Argmin"
     param_axis: str = "axis"
@@ -46,6 +53,15 @@ class OpContextLoader:
 @dataclass(init=False, frozen=True)
 class OpConv2d:
     op_name: str = "Conv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_dilation: str = "dilation"
+
+
+@dataclass(init=False, frozen=True)
+class OpConv3d:
+    op_name: str = "Conv3d"
     param_stride: str = "stride"
     param_pad_amount: str = "pad_amount"
     param_group: str = "group"
@@ -106,6 +122,22 @@ class OpElementWiseAnd:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseAsin:
+    op_name: str = "ElementWiseAsin"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseAtan:
+    op_name: str = "ElementWiseAtan"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseBinary:
+    op_name: str = "ElementWiseBinary"
+    param_operation: str = "operation"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseCeil:
     op_name = "ElementWiseCeil"
 
@@ -128,6 +160,11 @@ class OpElementWiseExp:
 @dataclass(init=False, frozen=True)
 class OpElementWiseEqual:
     op_name: str = "ElementWiseEqual"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseFloor:
+    op_name: str = "ElementWiseFloor"
 
 
 @dataclass(init=False, frozen=True)
@@ -204,6 +241,11 @@ class OpElementWisePower:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseRound:
+    op_name: str = "ElementWiseRound"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseRsqrt:
     op_name: str = "ElementWiseRsqrt"
 
@@ -219,6 +261,11 @@ class OpElementWiseSelect:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseSign:
+    op_name: str = "ElementWiseSign"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseSquareRoot:
     op_name = "ElementWiseSquareRoot"
 
@@ -226,6 +273,11 @@ class OpElementWiseSquareRoot:
 @dataclass(init=False, frozen=True)
 class OpElementWiseSubtract:
     op_name = "ElementWiseSubtract"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseXor:
+    op_name: str = "ElementWiseXor"
 
 
 @dataclass(init=False, frozen=True)
@@ -385,6 +437,13 @@ class OpReduceMean:
 
 
 @dataclass(init=False, frozen=True)
+class OpReduceMin:
+    op_name: str = "ReduceMin"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpReduceSum:
     op_name: str = "ReduceSum"
     param_axes: str = "axes"
@@ -517,6 +576,15 @@ class OpTranspose:
 @dataclass(init=False, frozen=True)
 class OpTransposeConv2d:
     op_name: str = "TransposeConv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_output_padding: str = "output_padding"
+
+
+@dataclass(init=False, frozen=True)
+class OpTransposeConv3d:
+    op_name: str = "TransposeConv3d"
     param_stride: str = "stride"
     param_pad_amount: str = "pad_amount"
     param_group: str = "group"

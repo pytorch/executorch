@@ -19,13 +19,42 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import to_edge
-from torch.export import export_for_training
+from executorch.exir import to_edge_transform_and_lower
+from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from torch.export import export as torch_export
+from torch.nn.attention import SDPBackend
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from transformers import Phi3ForCausalLM
+from transformers.cache_utils import StaticCacheConfig
 
-from .phi_3_mini import Phi3Mini
+from transformers.integrations.executorch import TorchExportableModuleForDecoderOnlyLM
+
+
+def _prepare_export_inputs(max_seq_len: int, sliding_window: int):
+    """
+    Prepare example inputs and configurations for export.
+
+    Returns:
+        example_input_ids (torch.Tensor): Example input IDs tensor.
+        example_cache_position (torch.Tensor): Example cache position tensor.
+        dynamic_shapes (dict or None): Dynamic shape specifications for export.
+        strict (bool): Whether to use strict export mode.
+    """
+    # Prepare inputs with dynamic shapes
+    seq_length = 3  # Sequence length > 1 to avoid specialization issues
+    example_input_ids = torch.zeros((1, seq_length), dtype=torch.long)
+    example_cache_position = torch.arange(seq_length, dtype=torch.long)
+    max_dim = min(max_seq_len, sliding_window) - 1
+    seq_len_dim = torch.export.Dim("seq_length_dim", max=max_dim)
+    dynamic_shapes = {
+        "input_ids": {1: seq_len_dim},
+        "cache_position": {0: seq_len_dim},
+    }
+
+    return example_input_ids, example_cache_position, dynamic_shapes
 
 
 def export(args) -> None:
@@ -40,23 +69,34 @@ def export(args) -> None:
             f"Invalid context length {args.context_length}. Should be either 4k or 128k"
         )
 
-    with torch.no_grad():
-        model = Phi3Mini(
-            # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
-            model=Phi3ForCausalLM.from_pretrained(model_name),
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        model = Phi3ForCausalLM.from_pretrained(model_name)
+        model.generation_config.cache_implementation = "static"
+        model.generation_config.cache_config = StaticCacheConfig(
+            batch_size=1, max_cache_len=model.config.max_position_embeddings
+        )
+
+        exportable_module = TorchExportableModuleForDecoderOnlyLM(
+            model,
             max_batch_size=1,
-            max_seq_len=args.seq_len,
+            max_cache_len=model.config.max_position_embeddings,
         )
-        example_inputs = (
-            torch.tensor(
-                [[1048, 263, 931, 746]], dtype=torch.long, requires_grad=False
-            ),
+        input_ids, cache_position, dynamic_shapes = _prepare_export_inputs(
+            model.config.max_position_embeddings, model.config.sliding_window
         )
-        dynamic_shapes = {
-            "input_ids": {
-                1: torch.export.Dim("sequence_length", min=1, max=args.seq_len)
-            }
-        }
+        example_inputs = (input_ids, cache_position)
+        exported_program = exportable_module.export(
+            input_ids, cache_position, dynamic_shapes, strict=False
+        )
+        # Apply RemoveTransposes pass to remove
+        # any back-to-back transpose ops that are not needed
+        # e.g. output of update_cache is transposed and
+        # input to custom_sdpa is transposed.
+        from executorch.extension.llm.export.export_passes import (
+            RemoveRedundantTransposes,
+        )
+
+        mutated_gm = RemoveRedundantTransposes()(exported_program.module())[0]
 
         xnnpack_quant_config = get_symmetric_quantization_config(
             is_per_channel=True, is_dynamic=True
@@ -64,27 +104,35 @@ def export(args) -> None:
         xnnpack_quantizer = XNNPACKQuantizer()
         xnnpack_quantizer.set_global(xnnpack_quant_config)
 
-        model = export_for_training(
-            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
-        ).module()
-        model = prepare_pt2e(model, xnnpack_quantizer)  # pyre-fixme[6]
-        model(*example_inputs)
-        model = convert_pt2e(model)
-        DuplicateDynamicQuantChainPass()(model)
-        # TODO(lunwenh): update it to use export once
-        # https://github.com/pytorch/pytorch/issues/128394 is resolved.
-        model = torch.export._trace._export(
-            model,
-            example_inputs,
-            dynamic_shapes=dynamic_shapes,
-            strict=False,
-            pre_dispatch=False,
+        gm = prepare_pt2e(mutated_gm, xnnpack_quantizer)  # pyre-fixme[6]
+        gm(*example_inputs)
+        gm = convert_pt2e(gm)
+        DuplicateDynamicQuantChainPass()(gm)
+        exported_program = torch_export(
+            gm, example_inputs, dynamic_shapes=dynamic_shapes, strict=False
         )
 
     edge_config = get_xnnpack_edge_compile_config()
-    edge_manager = to_edge(model, compile_config=edge_config)
+    edge_manager = to_edge_transform_and_lower(
+        exported_program,
+        partitioner=[XnnpackPartitioner()],
+        compile_config=edge_config,
+        constant_methods={
+            "get_eos_ids": [32000],
+            "use_kv_cache": True,
+            "enable_dynamic_shape": True,
+            "get_max_seq_len": model.config.max_position_embeddings - 1,
+        },
+    )
     edge_manager = edge_manager.to_backend(XnnpackPartitioner())
-    et_program = edge_manager.to_executorch()
+    et_program = edge_manager.to_executorch(
+        ExecutorchBackendConfig(
+            extract_delegate_segments=True,
+            do_quant_fusion_and_const_prop=True,
+            memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+        )
+    )
 
     with open(args.output_name, "wb") as file:
         file.write(et_program.buffer)

@@ -4,31 +4,28 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
+# pyre-strict
 
 import operator
 import unittest
-from typing import Any, Callable, cast, List, Optional, Sequence, Tuple, Union
+from typing import cast, List, Optional, Sequence, Tuple, Union
 
 import torch
-from executorch.backends.cadence.aot import compiler
-from executorch.backends.cadence.aot.compiler import (
-    export_to_edge,
-    quantize_and_export_to_edge,
-)
 from executorch.backends.cadence.aot.graph_builder import (
     GraphBuilder,
     single_op_builder,
 )
-from executorch.backends.cadence.aot.pass_utils import count_node
+from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.replace_ops import (
-    ForceChannelLastForConvPass,
     MakeSliceAndCatDimOutermostPass,
+    ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
     ReplaceAtenApproxGeluWithApproxGeluPass,
-    ReplaceAtenConvolutionWithJarvisConvolutionPass,
+    ReplaceAtenConvolutionWithCadenceConvolutionPass,
+    ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
+    ReplaceConvWithChannelLastConvPass,
     ReplaceConvWithIm2RowAndLinear,
     ReplaceEmptyTensorsWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
@@ -36,6 +33,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceLinearWithFullyConnectedOpPass,
     ReplaceMatmulWithTransposedMatmulPass,
     ReplaceMMWithAddMMPass,
+    ReplaceMulTensorWithMulAndFullOpsPass,
     ReplaceNopTransposeOrPermuteWithViewPass,
     ReplacePadWithCatPass,
     ReplacePermuteWithTransposePass,
@@ -51,21 +49,22 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceTrivialConvWithLinear,
     ReplaceWhereWithFullArgsWithWhereScalar,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
-from executorch.exir.passes import dead_code_elimination_pass
 
-from parameterized.parameterized import parameterized
+from executorch.backends.cadence.aot.typing_stubs import expand
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.infra.pass_base import PassResult
+from torch.utils import _pytree as pytree
 
 
 class TestReplaceOpsPasses(unittest.TestCase):
     def assertTargetCountEqual(
         self,
         graph_module: torch.fx.GraphModule,
-        target: Union[Callable[..., Any], str],
+        target: torch.fx.node.Target,
         expected_count: int,
-    ):
+    ) -> None:
         """Helper function to check the number of nodes with a given target."""
         actual_count = count_node(graph_module, target)
         self.assertEqual(
@@ -77,13 +76,13 @@ class TestReplaceOpsPasses(unittest.TestCase):
     def assertTargetCountsEqual(
         self,
         graph_module: torch.fx.GraphModule,
-        targets_and_counts: List[Tuple[Union[Callable[..., Any], str], int]],
-    ):
+        targets_and_counts: List[Tuple[torch.fx.node.Target, int]],
+    ) -> None:
         """Helper function to check the number of nodes of all types for a given target."""
         for target, expected_count in targets_and_counts:
             self.assertTargetCountEqual(graph_module, target, expected_count)
 
-    @parameterized.expand(
+    @expand(
         [
             (
                 "regular",
@@ -100,7 +99,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_matmul_with_transposed_matmul(
         self,
-        _,
+        _: str,
         x_shape: Tuple[int],
         y_shape: Tuple[int],
     ) -> None:
@@ -122,9 +121,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             ),
         )
         builder.output([matmul])
-        original = builder.get_graph_module()
+        original_gm = builder.get_graph_module()
         p = ReplaceMatmulWithTransposedMatmulPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int),
             1,
@@ -136,7 +135,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             ("2d", (3, 5), [0, 0]),  # shape  # padding
             ("3d", (20, 1, 80), [0, 0, 0]),  # shape  # padding
@@ -145,7 +144,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_constant_pad_nd_with_slice(
         self, _, shape: Tuple[int], padding: Tuple[int]
-    ):
+    ) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         matmul = builder.call_operator(
@@ -153,9 +152,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, [0, 0, 0, 0]),
         )
         builder.output([matmul])
-        original = builder.get_graph_module()
+        original_gm = builder.get_graph_module()
         p = ReplaceConstantPadNdWithSlicePass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.slice.Tensor),
             1,
@@ -166,7 +165,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             ["3d", (7, 5, 6), 1.23],
             ["2d", (7, 5), 2],
@@ -176,15 +175,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_add_replace_scalar_with_tensor_arg(
         self, _, shape: Tuple[int], other: float
-    ):
+    ) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.add.Scalar,
             args=(x, other),
         )
         p = ReplaceScalarWithTensorArgPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.add.Tensor),
             1,
@@ -194,7 +193,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             ["3d", (7, 5, 6), 1.23],
             ["2d", (7, 5), 2],
@@ -204,15 +203,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_sub_replace_scalar_with_tensor_arg(
         self, _, shape: Tuple[int], other: float
-    ):
+    ) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.sub.Scalar,
             args=(x, other),
         )
         p = ReplaceScalarWithTensorArgPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.sub.Tensor),
             1,
@@ -222,7 +221,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             ["3d", (7, 5, 6), 1.23],
             ["2d", (7, 5), 2],
@@ -232,15 +231,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_mul_replace_scalar_with_tensor_arg(
         self, _, shape: Tuple[int], other: float
-    ):
+    ) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.mul.Scalar,
             args=(x, other),
         )
         p = ReplaceScalarWithTensorArgPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.mul.Tensor),
             1,
@@ -250,7 +249,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             ["3d", (7, 5, 6), 1.23],
             ["2d", (7, 5), 2],
@@ -263,15 +262,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
         _,
         shape: Tuple[int],
         other: float,
-    ):
+    ) -> None:
         x = torch.randn(*shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.div.Scalar,
             args=(x, other),
         )
         p = ReplaceScalarWithTensorArgPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.div.Tensor),
             1,
@@ -281,7 +280,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             ["4d", (2, 3, 5, 6)],
             ["3d", (7, 6, 5)],
@@ -292,15 +291,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_functionally_equivalent_op_targets_relu(
         self, _, shape: Tuple[int]
-    ):
+    ) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.relu_.default,
             args=(x,),
         )
         p = ReplaceFunctionallyEquivalentOpTargets()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.relu.default),
@@ -311,24 +310,34 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
-        [["split_linear_tensor", (50,), i, 0] for i in range(2, 7)]
-        + [["split_leading_dim", (10, 2, 3), i, 0] for i in range(2, 7)]
-        + [["split_trailing_dim", (3, 3, 6), i, 2] for i in range(2, 6)]
-        + [["split_middle_dim", (3, 5, 14, 2, 3), i, 2] for i in range(2, 7)]
+    @expand(
+        [
+            ("split_linear_tensor_split_size_2", (50,), 2, 0),
+            ("split_linear_tensor_split_size_5", (50,), 5, 0),
+            ("split_linear_tensor_split_size_7", (50,), 7, 0),
+            ("split_leading_dim_split_size_2", (10, 2, 3), 2, 0),
+            ("split_leading_dim_split_size_5", (10, 2, 3), 5, 0),
+            ("split_leading_dim_split_size_7", (10, 2, 3), 7, 0),
+            ("split_trailing_dim_split_size_2", (3, 3, 6), 2, 2),
+            ("split_trailing_dim_split_size_4", (3, 3, 6), 4, 2),
+            ("split_trailing_dim_split_size_6", (3, 3, 6), 6, 2),
+            ("split_middle_dim_split_size_2", (3, 5, 14, 2, 3), 2, 2),
+            ("split_middle_dim_split_size_5", (3, 5, 14, 2, 3), 5, 2),
+            ("split_middle_dim_split_size_7", (3, 5, 14, 2, 3), 7, 2),
+        ]
     )
     @torch.no_grad()
     def test_replace_functionally_equivalent_op_targets_unsafe_split(
         self, _, shape: Tuple[int], split_size: int, dim: int
-    ):
+    ) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.unsafe_split.Tensor,
             args=(x, split_size, dim),
         )
         p = ReplaceFunctionallyEquivalentOpTargets()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.split_copy.Tensor),
             1,
@@ -337,7 +346,195 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.unsafe_split.Tensor), 0, x
         )
 
-    @parameterized.expand(
+    def assertTensorMetadataIsSame(
+        self, a: Sequence[torch.Tensor], b: Sequence[torch.Tensor]
+    ) -> None:
+        for i, (_a, _b) in enumerate(zip(a, b)):
+            # TODO: actually compare the tensors.
+            self.assertTrue(
+                _a.shape == _b.shape, f"Tensor {i}: {_a.shape} != {_b.shape}"
+            )
+            self.assertTrue(
+                _a.dtype == _b.dtype, f"Tensor {i}: {_a.dtype} != {_b.dtype}"
+            )
+
+    @expand(
+        [
+            [(1, 8, 18), 8, 16, 3],
+            [(1, 8, 18), 8, 16, 5, 2],
+            # depthwise + bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True],
+            # no bias
+            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            # bias + transposed
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+            # Stride of 2 needed.
+            [(1, 8, 3), 8, 8, 48, 2, 23],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_conv_with_cadence_conv(
+        self,
+        shape: Tuple[int, ...],
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        depthwise: bool = False,
+        bias_enabled: bool = True,
+        output_padding: Optional[int] = None,
+    ) -> None:
+        groups = in_channels if depthwise else 1
+        builder = GraphBuilder()
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        weights_tensor = torch.randn(
+            [out_channels, in_channels // groups, kernel], dtype=torch.float32
+        )
+        weights = builder.placeholder("weights", weights_tensor)
+        bias: Optional[ProxyValue] = None
+        bias_tensor: Optional[torch.Tensor] = None
+        if bias_enabled:
+            bias_tensor = torch.randn([out_channels], dtype=torch.float32)
+            bias = builder.placeholder("bias", bias_tensor)
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                bias,
+                [stride],
+                [padding],
+                [dilation],
+                False,
+                [output_padding] if output_padding else [0],
+                groups,
+            ),
+        )
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+
+        replacement_pass_result = (
+            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
+        )
+        self.assertIsNotNone(replacement_pass_result)
+        graph_after_passes = replacement_pass_result.graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
+            0,
+        )
+
+        inputs = (x.to_tensor(), weights.to_tensor())
+        if bias is not None:
+            inputs += (bias.to_tensor(),)
+        self.assertTensorMetadataIsSame(
+            pytree.tree_flatten(original_gm.forward(*inputs))[0],
+            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
+        )
+
+    @expand(
+        [
+            [(1, 8, 18), 8, 16, 3],
+            [(1, 8, 18), 8, 16, 5, 2],
+            # depthwise + bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True, True],
+            # no bias
+            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            # depthwise + no bias
+            [(1, 8, 18), 8, 16, 3, 1, 0, 1, True, False],
+            # bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_transposed_conv_with_cadence_transposed_conv(
+        self,
+        shape: Tuple[int, ...],
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        depthwise: bool = False,
+        bias_enabled: bool = True,
+        output_padding: Optional[int] = None,
+    ) -> None:
+        groups = in_channels if depthwise else 1
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
+        weights_shape = [in_channels, out_channels // groups, kernel]
+        weights = builder.placeholder(
+            "weights",
+            torch.randn(weights_shape, dtype=torch.float32),
+        )
+        bias = (
+            builder.placeholder(
+                "bias", torch.randn([out_channels], dtype=torch.float32)
+            )
+            if bias_enabled
+            else None
+        )
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                bias,
+                [stride],
+                [padding],
+                [dilation],
+                True,
+                [output_padding] if output_padding else [0],
+                groups,
+            ),
+        )
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+
+        replacement_pass_result = (
+            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
+        )
+        self.assertIsNotNone(replacement_pass_result)
+        graph_after_passes = replacement_pass_result.graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
+            1,
+        )
+
+        inputs = (x.to_tensor(), weights.to_tensor())
+        if bias is not None:
+            inputs += (bias.to_tensor(),)
+        self.assertTensorMetadataIsSame(
+            pytree.tree_flatten(original_gm.forward(*inputs))[0],
+            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
+        )
+
+    @expand(
         [
             [(1, 8, 33), 8, 16, 3],
             [(1, 8, 33), 8, 16, 5, 2],
@@ -360,7 +557,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         depthwise: bool = False,
         bias_enabled: bool = True,
         channel_last: bool = False,
-    ):
+    ) -> None:
         transposed = True
         output_padding = [0]
         groups = in_channels if depthwise else 1
@@ -402,12 +599,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(convolution, [0, 2, 1]),
             )
         builder.output([convolution])
-        original = builder.get_graph_module()
+        original_gm = builder.get_graph_module()
 
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         p2 = ReplaceTransposedConvWithLinearPass()
         graph_after_passes = cast(
-            PassResult, p2(cast(PassResult, p1(original)).graph_module)
+            PassResult, p2(cast(PassResult, p1(original_gm)).graph_module)
         ).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default),
@@ -422,7 +619,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(1, 8, 33), 8, 16, 3, 2, 4, 3, False, False, False],
             # # depthwise
@@ -446,9 +643,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         depthwise: bool = False,
         bias_enabled: bool = True,
         channel_last: bool = False,
-    ):
-        transposed = True
-        output_padding = [0]
+    ) -> None:
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -469,7 +664,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x, [0, 2, 1]),
             )
         convolution = builder.call_operator(
-            op=exir_ops.edge.aten.convolution.default,
+            op=exir_ops.edge.cadence.convolution.default,
             args=(
                 x,
                 weights,
@@ -477,9 +672,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 [stride],
                 [padding],
                 [dilation],
-                transposed,
-                output_padding,
                 groups,
+                False,
             ),
         )
         if channel_last:
@@ -488,19 +682,19 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(convolution, [0, 2, 1]),
             )
         builder.output([convolution])
-        original = builder.get_graph_module()
+        original_gm = builder.get_graph_module()
         p = ReplaceConvolutionOptionalArgsWithConcreteArgsPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
             1,
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
             1,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(1, 2, 3), [1, 1]],
             [
@@ -510,15 +704,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
         ]
     )
     @torch.no_grad()
-    def test_replace_pad_with_cat(self, shape: Tuple[int], padding: Tuple[int]):
+    def test_replace_pad_with_cat(self, shape: Tuple[int], padding: Tuple[int]) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.constant_pad_nd.default,
             args=(x, padding),
         )
         p = ReplacePadWithCatPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default),
             1,
@@ -529,15 +723,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_repeat_with_cat(self):
+    def test_replace_repeat_with_cat(self) -> None:
         x = torch.randn([3, 5])
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.repeat.default,
             args=(x, [1, 2]),
         )
         p = ReplaceRepeatWithCatPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.cat.default),
             1,
@@ -547,7 +741,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             # x, mask
             [(1,)],
@@ -566,7 +760,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self,
         shape: Tuple[int],
         mask_shape: Union[Tuple[int, ...], None] = None,
-    ):
+    ) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
         mask = builder.placeholder(
@@ -587,9 +781,9 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(mask, scalar_tensor, x),
         )
         builder.output([aten_where_self])
-        original = builder.get_graph_module()
+        original_gm = builder.get_graph_module()
         p = ReplaceScalarTensorWithFullPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
             1,
@@ -606,14 +800,14 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_scalar_tensor_with_full(
         self,
-    ):
-        original = single_op_builder(
+    ) -> None:
+        original_gm = single_op_builder(
             placeholders=(),
             op=exir_ops.edge.aten.scalar_tensor.default,
             args=(0.123,),
         )
         p = ReplaceScalarTensorWithFullPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.full.default),
             1,
@@ -624,7 +818,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_linear_with_fully_connected(self):
+    def test_replace_linear_with_fully_connected(self) -> None:
         shape, in_channels, out_channels = (1, 14), 14, 128
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -640,8 +834,10 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, permute_copy),
         )
         builder.output([mm])
-        original = builder.get_graph_module()
-        gm = cast(PassResult, ReplacePermuteWithTransposePass()(original)).graph_module
+        original_gm = builder.get_graph_module()
+        gm = cast(
+            PassResult, ReplacePermuteWithTransposePass()(original_gm)
+        ).graph_module
         gm = cast(PassResult, ReplaceMMWithAddMMPass()(gm)).graph_module
         gm = cast(PassResult, ReplaceAddMMWithLinearPass()(gm)).graph_module
         graph_after_passes = cast(
@@ -663,7 +859,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(4, 16, 256), 256, 512, True],
             [(7, 17, 12), 12, 34, False],
@@ -672,7 +868,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
     @torch.no_grad()
     def test_replace_addmm_with_linear(
         self, shape: Tuple[int], in_features: int, out_features: int, bias: bool
-    ):
+    ) -> None:
         M, K, N, alpha, beta = 14, 48, 24, 1.0, 1.0
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(N, dtype=torch.float32))
@@ -688,8 +884,10 @@ class TestReplaceOpsPasses(unittest.TestCase):
             kwargs={"beta": beta, "alpha": alpha},
         )
         builder.output([addmm])
-        original = builder.get_graph_module()
-        gm = cast(PassResult, ReplacePermuteWithTransposePass()(original)).graph_module
+        original_gm = builder.get_graph_module()
+        gm = cast(
+            PassResult, ReplacePermuteWithTransposePass()(original_gm)
+        ).graph_module
         graph_after_passes = cast(
             PassResult, ReplaceAddMMWithLinearPass()(gm)
         ).graph_module
@@ -704,17 +902,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_mm_with_addmm(self):
+    def test_replace_mm_with_addmm(self) -> None:
         M, K, N = 14, 48, 24
         x = torch.randn([M, K])
         y = torch.randn([K, N])
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x, y),
             op=exir_ops.edge.aten.mm.default,
             args=(x, y),
         )
         p = ReplaceMMWithAddMMPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.addmm.default),
@@ -725,11 +923,11 @@ class TestReplaceOpsPasses(unittest.TestCase):
             0,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             # shape
             [(5, 1, 6, 7)],
-            [(1)],
+            [1],
             [(4, 3, 2)],
             # shape, dim to squeeze
             [(2, 1), 0],
@@ -738,22 +936,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
         ]
     )
     @torch.no_grad()
-    def test_replace_squeeze_with_view(self, shape: Tuple[int], dim=None):
+    def test_replace_squeeze_with_view(
+        self, shape: Tuple[int], dim: Optional[int] = None
+    ) -> None:
         x = torch.randn(shape)
         if dim:
-            original = single_op_builder(
+            original_gm = single_op_builder(
                 placeholders=(x,),
                 op=exir_ops.edge.aten.squeeze_copy.dim,
                 args=(x, dim),
             )
         else:
-            original = single_op_builder(
+            original_gm = single_op_builder(
                 placeholders=(x,),
                 op=exir_ops.edge.aten.squeeze_copy.default,
                 args=(x,),
             )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -770,7 +970,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 0,
             )
 
-    @parameterized.expand(
+    @expand(
         [
             # shape, dim to unsqueeze
             [(5, 6, 7), 0],
@@ -780,15 +980,15 @@ class TestReplaceOpsPasses(unittest.TestCase):
         ]
     )
     @torch.no_grad()
-    def test_replace_unsqueeze_with_view(self, shape: Tuple[int], dim: int):
+    def test_replace_unsqueeze_with_view(self, shape: Tuple[int], dim: int) -> None:
         x = torch.randn(shape)
-        original = single_op_builder(
+        original_gm = single_op_builder(
             placeholders=(x,),
             op=exir_ops.edge.aten.unsqueeze_copy.default,
             args=(x, dim),
         )
         p = ReplaceSqueezeAndUnsqueezeWithViewPass()
-        graph_after_passes = cast(PassResult, p(original)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertIsNotNone(graph_after_passes)
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default),
@@ -804,34 +1004,57 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self,
         in_features: int = 16,
         out_features: int = 16,
-    ):
-        # Tensors - these will be inputs to graph.
-        x = torch.randn([1, in_features])
-
-        inputs = (x,)
-        model = torch.nn.Linear(in_features=in_features, out_features=out_features)
-
-        exported_program = quantize_and_export_to_edge(model, inputs).exported_program()
-
-        # By default, the quantized linear op should have constant scalar attributes.
-        self.assertTargetCountsEqual(
-            exported_program.graph_module,
-            [
-                # One quantized linear op.
-                (exir_ops.edge.cadence.quantized_linear.default, 1),
-                # No per tensor quantized linear ops.
-                (exir_ops.edge.cadence.quantized_linear.per_tensor, 0),
-                # Three aten.full ops.
-                (exir_ops.edge.aten.full.default, 3),
-            ],
+    ) -> None:
+        src_zero_point = 0
+        out_zero_point = 0
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn([1, in_features]))
+        weights = builder.placeholder(
+            "weights", torch.randn([in_features, out_features], dtype=torch.float32)
         )
-
-        # Apply replacement pass.
+        bias = builder.placeholder(
+            "bias", torch.randn([out_features], dtype=torch.float32)
+        )
+        quantized_input = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 0.01431146077811718, 57, -128, 127, torch.int8),
+        )
+        weight_zero_point = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], 0),
+        )
+        out_multiplier = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], 0),
+        )
+        out_shift = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], 0),
+        )
+        output = builder.call_operator(
+            op=exir_ops.edge.cadence.quantized_linear.default,
+            args=(
+                quantized_input,
+                weights,
+                bias,
+                src_zero_point,
+                weight_zero_point,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+                None,
+            ),
+        )
+        dequantized_output = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(output, 0.010696045123040676, -31, -128, 127, torch.int8),
+        )
+        builder.output([dequantized_output])
+        original_gm = builder.get_graph_module()
         p = ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass()
-        graph_after_passes = p(exported_program.graph_module)
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertIsNotNone(graph_after_passes)
-        gm = dead_code_elimination_pass(graph_after_passes.graph_module).graph_module
-
+        gm = dead_code_elimination_pass(graph_after_passes).graph_module
         # By default, the quantized linear op should have constant scalar attributes.
         self.assertTargetCountsEqual(
             gm,
@@ -850,38 +1073,64 @@ class TestReplaceOpsPasses(unittest.TestCase):
         self,
         in_features: int = 16,
         out_features: int = 16,
-    ):
-        # Tensors - these will be inputs to graph.
-        x = torch.randn([1, in_features])
-
-        inputs = (x,)
-        model = torch.nn.Linear(in_features=in_features, out_features=out_features)
-
-        exported_program = quantize_and_export_to_edge(model, inputs).exported_program()
-
-        # By default, the quantized linear op should have constant scalar attributes.
-        self.assertTargetCountsEqual(
-            exported_program.graph_module,
-            [
-                # One quantized linear op.
-                (exir_ops.edge.cadence.quantized_linear.default, 1),
-                # No per tensor quantized linear ops.
-                (exir_ops.edge.cadence.quantized_linear.per_tensor, 0),
-                # Three aten.full ops.
-                (exir_ops.edge.aten.full.default, 3),
-            ],
+    ) -> None:
+        src_zero_point = 0
+        out_zero_point = 0
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn([1, in_features]))
+        weights = builder.placeholder(
+            "weights", torch.randn([in_features, out_features], dtype=torch.float32)
         )
+        bias = builder.placeholder(
+            "bias", torch.randn([out_features], dtype=torch.float32)
+        )
+        quantized_input = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            args=(x, 0.01431146077811718, 57, -128, 127, torch.int8),
+        )
+        weight_zero_point = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], 0),
+        )
+        out_multiplier = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], 0),
+        )
+        out_shift = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([1], 0),
+        )
+        output = builder.call_operator(
+            op=exir_ops.edge.cadence.quantized_linear.default,
+            args=(
+                quantized_input,
+                weights,
+                bias,
+                src_zero_point,
+                weight_zero_point,
+                out_multiplier,
+                out_shift,
+                out_zero_point,
+                None,
+            ),
+        )
+        dequantized_output = builder.call_operator(
+            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            args=(output, 0.010696045123040676, -31, -128, 127, torch.int8),
+        )
+        builder.output([dequantized_output])
+        original_gm = builder.get_graph_module()
 
-        for node in exported_program.graph_module.graph.nodes:
+        for node in original_gm.graph.nodes:
             # Replace the `shape` argument for aten.full op with a tuple.
             if node.target == exir_ops.edge.aten.full.default:
                 node.args = (tuple(node.args[0]), node.args[1])
 
         # Apply replacement pass.
         p = ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass()
-        graph_after_passes = p(exported_program.graph_module)
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertIsNotNone(graph_after_passes)
-        gm = dead_code_elimination_pass(graph_after_passes.graph_module).graph_module
+        gm = dead_code_elimination_pass(graph_after_passes).graph_module
 
         # By default, the quantized linear op should have constant scalar attributes.
         self.assertTargetCountsEqual(
@@ -897,28 +1146,23 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_conv1d_with_linear(self):
-        class Conv(torch.nn.Module):
-            def __init__(self, in_features: int, out_features: int, kernel_size: int):
-                super().__init__()
-                self.conv1d = torch.nn.Conv1d(in_features, out_features, kernel_size)
-
-            def forward(self, x):
-                return self.conv1d(x)
-
-        model_conv1d = Conv(96, 192, 7)
+    def test_replace_conv1d_with_linear(self) -> None:
         x = torch.randn(1, 96, 7)
-        graph_module = (
-            export_to_edge(model_conv1d, (x,)).exported_program().graph_module
+        weights = torch.randn(192, 96, 7)
+        bias = torch.randn(192)
+        original_gm = single_op_builder(
+            placeholders=(x, weights, bias),
+            op=exir_ops.edge.cadence.convolution.default,
+            args=(x, weights, bias, [1], [0], [1], 1, False),
         )
-
         # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
-        temp_graph = p1(graph_module).graph_module
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
+        temp_graph = cast(PassResult, p1(original_gm)).graph_module
+        # temp_graph = p1(original_gm).graph_module
         self.assertIsNotNone(temp_graph)
 
         p2 = ReplaceTrivialConvWithLinear()
-        graph_after_passes = p2(temp_graph).graph_module
+        graph_after_passes = cast(PassResult, p2(temp_graph)).graph_module
 
         # Assert that conv1d is trivially converted to linear
         self.assertEqual(
@@ -936,28 +1180,22 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_conv2d_with_linear(self):
-        class Conv(torch.nn.Module):
-            def __init__(self, in_features: int, out_features: int, kernel_size: int):
-                super().__init__()
-                self.conv2d = torch.nn.Conv2d(in_features, out_features, kernel_size)
-
-            def forward(self, x):
-                return self.conv2d(x)
-
-        model_conv2d = Conv(96, 192, 7)
+    def test_replace_conv2d_with_linear(self) -> None:
         x = torch.randn(1, 96, 7, 7)
-        graph_module = (
-            export_to_edge(model_conv2d, (x,)).exported_program().graph_module
+        weights = torch.randn(192, 96, 7, 7)
+        bias = torch.randn(192)
+        original_gm = single_op_builder(
+            placeholders=(x, weights, bias),
+            op=exir_ops.edge.cadence.convolution.default,
+            args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1, False),
         )
-
         # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
-        temp_graph = p1(graph_module).graph_module
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
+        temp_graph = cast(PassResult, p1(original_gm)).graph_module
         self.assertIsNotNone(temp_graph)
 
         p2 = ReplaceTrivialConvWithLinear()
-        graph_after_passes = p2(temp_graph).graph_module
+        graph_after_passes = cast(PassResult, p2(temp_graph)).graph_module
 
         # Assert that conv2d is trivially converted to linear
         self.assertEqual(
@@ -975,25 +1213,17 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_conv2d_with_im2row_and_linear(self):
-        class Conv(torch.nn.Module):
-            def __init__(self, in_features: int, out_features: int, kernel_size: int):
-                super().__init__()
-                self.conv2d = torch.nn.Conv2d(in_features, out_features, kernel_size)
-
-            def forward(self, x):
-                return self.conv2d(x)
-
-        model_conv2d = Conv(96, 192, 7)
+    def test_replace_conv2d_with_im2row_and_linear(self) -> None:
         x = torch.randn(1, 96, 47, 37)
-        graph_module = (
-            compiler.export_to_cadence(model_conv2d, (x,))
-            .exported_program()
-            .graph_module
+        weights = torch.randn(192, 96, 7, 7)
+        bias = torch.randn(192)
+        original_gm = single_op_builder(
+            placeholders=(x, weights, bias),
+            op=exir_ops.edge.cadence.convolution.default,
+            args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1, False),
         )
-
         p = ReplaceConvWithIm2RowAndLinear()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         # Assert that the convolution is converted to im2row + linear
         self.assertEqual(
@@ -1006,25 +1236,24 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default), 1
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(3, 1, 5), 1, 0],
             [(3, 4, 1), 2, -1],
         ]
     )
     @torch.no_grad()
-    def test_replace_select_with_view(self, shape: Tuple[int], dim: int, index: int):
-        class Select(torch.nn.Module):
-            def forward(self, x):
-                return x.select(dim, index)
-
+    def test_replace_select_with_view(
+        self, shape: Tuple[int], dim: int, index: int
+    ) -> None:
         x = torch.randn(shape)
-        graph_module = export_to_edge(Select(), (x,)).exported_program().graph_module
-
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.select_copy.int,
+            args=(x, dim, index),
+        )
         p = ReplaceSelectWithViewOpPass()
-
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         # Assert that select op was replaced with view op
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.select_copy.int), 0
@@ -1033,7 +1262,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 1
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [(2, 1, 3, 1), 1, 3, torch.float32],
             [(2, 1, 5), 1, 0, torch.int64],
@@ -1047,18 +1276,18 @@ class TestReplaceOpsPasses(unittest.TestCase):
         dim0: int,
         dim1: int,
         dtype: torch.dtype = torch.float32,
-    ):
-        class Transpose(torch.nn.Module):
-            def forward(self, x):
-                return x.transpose(dim0, dim1)
-
-        _max_value = 127
-        x = (torch.rand(shape) * _max_value).to(dtype=dtype)
-        graph_module = export_to_edge(Transpose(), (x,)).exported_program().graph_module
-
+    ) -> None:
+        if dtype == torch.float32:
+            x = torch.randn(shape)
+        else:
+            x = torch.randint(low=0, high=100, size=shape, dtype=torch.int64)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.transpose_copy.int,
+            args=(x, dim0, dim1),
+        )
         p = ReplaceNopTransposeOrPermuteWithViewPass()
-
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         # Assert that transpose op was removed, and a view op was placed instead
         self.assertEqual(
@@ -1068,24 +1297,25 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 1
         )
 
-    @parameterized.expand(
+    @expand(
         [
             # permutations that can be replaced by view
-            [(3, 1, 3, 1, 4), (0, 2, 4, 1, 3), torch.float32],
-            [(1, 3, 4), (1, 2, 0), torch.float32],
+            [(3, 1, 3, 1, 4), (0, 2, 4, 1, 3)],
+            [(1, 3, 4), (1, 2, 0)],
         ]
     )
     @torch.no_grad()
-    def test_replace_nop_permute_with_view(self, input_shape, dims, dtype):
-        class Permute(torch.nn.Module):
-            def forward(self, x):
-                return torch.permute(x, dims)
-
-        x = torch.randn(input_shape).to(dtype=dtype)
-        graph_module = export_to_edge(Permute(), (x,)).exported_program().graph_module
-
+    def test_replace_nop_permute_with_view(
+        self, shape: Tuple[int], dims: Tuple[int]
+    ) -> None:
+        x = torch.randn(shape)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, dims),
+        )
         p = ReplaceNopTransposeOrPermuteWithViewPass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         # Assert that permute op was removed, and a view op was placed instead
         self.assertEqual(
@@ -1095,24 +1325,25 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.view_copy.default), 1
         )
 
-    @parameterized.expand(
+    @expand(
         [
             # permutations replaced by transpose
-            [(3, 4), [1, 0], torch.float32],
-            [(3, 4, 6), (0, 2, 1), torch.float32],
+            [(3, 4), (1, 0)],
+            [(3, 4, 6), (0, 2, 1)],
         ]
     )
     @torch.no_grad()
-    def test_replace_permute_with_transpose(self, input_shape, dims, dtype):
-        class Permute(torch.nn.Module):
-            def forward(self, x):
-                return torch.permute(x, dims)
-
-        x = torch.randn(input_shape).to(dtype=dtype)
-        graph_module = export_to_edge(Permute(), (x,)).exported_program().graph_module
-
+    def test_replace_permute_with_transpose(
+        self, shape: Tuple[int], dims: Tuple[int]
+    ) -> None:
+        x = torch.randn(shape)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, dims),
+        )
         p = ReplacePermuteWithTransposePass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         # Assert that permute op was replaced by a transpose op
         self.assertEqual(
@@ -1122,23 +1353,18 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 1
         )
 
-    @parameterized.expand(
-        [
-            # permutations replaced by transpose
-            [(3, 4), [0, 1], torch.float32],
-        ]
-    )
     @torch.no_grad()
-    def test_replace_permute_with_transpose_nop(self, input_shape, dims, dtype):
-        class Permute(torch.nn.Module):
-            def forward(self, x):
-                return torch.permute(x, dims)
-
-        x = torch.randn(input_shape).to(dtype=dtype)
-        graph_module = export_to_edge(Permute(), (x,)).exported_program().graph_module
-
+    def test_replace_permute_with_transpose_nop(
+        self,
+    ) -> None:
+        x = torch.randn(3, 4)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.permute_copy.default,
+            args=(x, [0, 1]),
+        )
         p = ReplacePermuteWithTransposePass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         # Assert that permute op was replaced by a transpose op
         self.assertEqual(
@@ -1148,25 +1374,29 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.transpose_copy.int), 0
         )
 
-    def test_replace_aten_where_with_cadence_where_Scalar(self):
-        class WhereScalarModel(torch.nn.Module):
-            def forward(self, cond: torch.Tensor):
-                a = torch.ops.aten.full.default(a_shape, val1)
-                b = torch.ops.aten.full.default(b_shape, val2)
-                return torch.where(cond > 0, a, b)
-
-        cond_shape, a_shape, b_shape, val1, val2 = [(4, 8), (4, 8), (4, 8), 0.0, 1.0]
-        cond = torch.randn(cond_shape)
-
-        graph_module = (
-            export_to_edge(WhereScalarModel(), (cond,)).exported_program().graph_module
+    def test_replace_aten_where_with_cadence(self) -> None:
+        builder = GraphBuilder()
+        cond = builder.placeholder("cond", torch.randn(4, 8))
+        aten_gt_scalar = builder.call_operator(
+            op=exir_ops.edge.aten.gt.Scalar,
+            args=(cond, 0),
         )
-
+        aten_full_default = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([4, 8], 0.0),
+        )
+        aten_full_default_1 = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=([4, 8], 1.0),
+        )
+        aten_where_self = builder.call_operator(
+            op=exir_ops.edge.aten.where.self,
+            args=(aten_gt_scalar, aten_full_default, aten_full_default_1),
+        )
+        builder.output([aten_where_self])
+        original_gm = builder.get_graph_module()
         p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
-        # Assert that aten.where op was replaced by a
-        # cadence.where_Scalar op
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1179,27 +1409,44 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
 
-        class WhereBroadcastModel(torch.nn.Module):
-            def forward(self, cond: torch.Tensor):
-                a = torch.ops.aten.full.default(a_shape, val1)
-                b = torch.ops.aten.full.default(b_shape, val2)
-                return torch.where(cond > 0, a, b)
-
-        # a tensor bigger than cond and b
-        cond_shape, a_shape, b_shape, val1, val2 = [(8,), (4, 8), (8,), 0.0, 1.0]
-        cond = torch.randn(cond_shape)
-
-        graph_module = (
-            export_to_edge(WhereBroadcastModel(), (cond,))
-            .exported_program()
-            .graph_module
+    @expand(
+        [
+            [(4, 8), (4, 8), (4, 8), 0.0, 1.0],
+            [(8,), (4, 8), (8,), 0.0, 1.0],
+            [(4, 8), (8,), (8,), 0.0, 1.0],
+        ]
+    )
+    def test_replace_aten_where_with_cadence_broadcast(
+        self,
+        cond_shape: Tuple[int],
+        a_shape: Tuple[int],
+        b_shape: Tuple[int],
+        val1: float,
+        val2: float,
+    ) -> None:
+        # cond_shape, a_shape, b_shape, val1, val2 =
+        builder = GraphBuilder()
+        cond = builder.placeholder("cond", torch.randn(cond_shape))
+        aten_gt_scalar = builder.call_operator(
+            op=exir_ops.edge.aten.gt.Scalar,
+            args=(cond, 0),
         )
-
+        aten_full_default = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=(a_shape, val1),
+        )
+        aten_full_default_1 = builder.call_operator(
+            op=exir_ops.edge.aten.full.default,
+            args=(b_shape, val2),
+        )
+        aten_where_self = builder.call_operator(
+            op=exir_ops.edge.aten.where.self,
+            args=(aten_gt_scalar, aten_full_default, aten_full_default_1),
+        )
+        builder.output([aten_where_self])
+        original_gm = builder.get_graph_module()
         p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
-        # Assert that aten.where op is still in the graph since where_Scalar does not
-        # support broadcast
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1208,30 +1455,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
 
-        # cond tensor bigger than a and b
-        cond_shape, a_shape, b_shape, val1, val2 = [(4, 8), (8,), (8,), 0.0, 1.0]
-        cond = torch.randn(cond_shape)
-
-        graph_module = (
-            export_to_edge(WhereBroadcastModel(), (cond,))
-            .exported_program()
-            .graph_module
-        )
-
-        p = ReplaceWhereWithFullArgsWithWhereScalar()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
-        # Assert that aten.where op is still in the graph since where_Scalar does not
-        # support broadcast
-        self.assertEqual(
-            count_node(
-                graph_after_passes,
-                exir_ops.edge.aten.where.self,
-            ),
-            1,
-        )
-
-    def test_no_replace_aten_gelu_with_approximate_gelu(self):
+    def test_no_replace_aten_gelu_with_approximate_gelu(self) -> None:
         inputs = torch.randn(2, 1, 64)
 
         gm = single_op_builder(
@@ -1253,7 +1477,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
 
-    def test_replace_split_with_sizes_with_slice(self):
+    def test_replace_split_with_sizes_with_slice(self) -> None:
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(1, 16, 8, 4))
         split = builder.call_operator(
@@ -1279,19 +1503,16 @@ class TestReplaceOpsPasses(unittest.TestCase):
             2,
         )
 
-    @parameterized.expand([[2], [3], [4]])
-    def test_replace_pow_with_mul(self, exponent: int):
-        class Pow(torch.nn.Module):
-            def forward(self, input):
-                return torch.ops.aten.pow.Tensor_Scalar(input, exponent)
-
-        input = torch.randn(2, 1, 64)
-
-        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
-
+    @expand([[2], [3], [4]])
+    def test_replace_pow_with_mul(self, exponent: int) -> None:
+        x = torch.randn(2, 1, 64)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
         p = ReplacePowWithMulPass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
-
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1299,7 +1520,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
             ),
             0,
         )
-
         self.assertEqual(
             count_node(
                 graph_after_passes,
@@ -1308,23 +1528,21 @@ class TestReplaceOpsPasses(unittest.TestCase):
             exponent - 1,
         )
 
-    @parameterized.expand(
+    @expand(
         [
             [1],
             [1.5],
         ]
     )
-    def test_replace_pow_with_mul_not_applied(self, exponent):
-        class Pow(torch.nn.Module):
-            def forward(self, input):
-                return torch.ops.aten.pow.Tensor_Scalar(input, exponent)
-
-        input = torch.randn(2, 1, 64)
-
-        graph_module = export_to_edge(Pow(), (input,)).exported_program().graph_module
-
+    def test_replace_pow_with_mul_not_applied(self, exponent: float) -> None:
+        x = torch.randn(2, 1, 64)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten.pow.Tensor_Scalar,
+            args=(x, exponent),
+        )
         p = ReplacePowWithMulPass()
-        graph_after_passes = cast(PassResult, p(graph_module)).graph_module
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
 
         self.assertEqual(
             count_node(
@@ -1344,7 +1562,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
 
 
 class TestReplaceIm2rowWithViewPass(unittest.TestCase):
-    def test_no_replacement_for_conv(self):
+    def test_no_replacement_for_conv(self) -> None:
         # Create a graph with a single im2row node.
         x = torch.randn(1, 3, 224, 224)
         pad_value = torch.randn(1)
@@ -1370,7 +1588,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.view_copy.default), 0
         )
 
-    def test_no_replace_for_dilation(self):
+    def test_no_replace_for_dilation(self) -> None:
         # Create a graph with a single im2row node.
         x = torch.randn(1, 3, 5, 7)
         pad_value = torch.randn(1)
@@ -1395,7 +1613,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.view_copy.default), 0
         )
 
-    def test_replace_linear_like_conv(self):
+    def test_replace_linear_like_conv(self) -> None:
         # Create a graph with a single im2row node.
         in_h, in_w = 13, 15
         x = torch.randn(1, 3, in_h, in_w)
@@ -1423,7 +1641,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         )
 
 
-class TestForceChannelLastForConvPass(unittest.TestCase):
+class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
     def create_conv1d_graphmodule(
         self, channels_last: Optional[bool] = None
     ) -> torch.fx.GraphModule:
@@ -1449,7 +1667,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             args=args,
         )
 
-    def test_conv1d_default_channel_last(self):
+    def test_conv1d_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
         # Check if graph module is valid by running exportpass on it.
         gm = self.create_conv1d_graphmodule()
@@ -1458,7 +1676,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.transpose_copy.int), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1477,13 +1695,13 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             self.assertEqual(len(node.args), 8, f"{node=}")
             self.assertTrue(node.args[7])
 
-    def test_conv1d_no_transpose_if_already_channel_last(self):
+    def test_conv1d_no_transpose_if_already_channel_last(self) -> None:
         gm = self.create_conv1d_graphmodule(channels_last=True)
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1526,7 +1744,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             args=args,
         )
 
-    def test_convolution_default_channel_last(self):
+    def test_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
         # Check if graph module is valid by running exportpass on it.
         gm = self.create_convolution_graph_module()
@@ -1535,7 +1753,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1554,13 +1772,13 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             self.assertEqual(len(node.args), 8, f"{node=}")
             self.assertTrue(node.args[7])
 
-    def test_no_transpose_if_already_channel_last(self):
+    def test_no_transpose_if_already_channel_last(self) -> None:
         gm = self.create_convolution_graph_module(channels_last=True)
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1624,28 +1842,50 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             out_shift,
         )
         if channels_last is not None:
-            args = args + (channels_last,)
-        return single_op_builder(
-            placeholders=(x, w, b, w_zero_point, b_scale, out_multiplier, out_shift),
-            op=exir_ops.edge.cadence.quantized_conv.default,
-            args=args,
-        )
+            return single_op_builder(
+                placeholders=(
+                    x,
+                    w,
+                    b,
+                    w_zero_point,
+                    b_scale,
+                    out_multiplier,
+                    out_shift,
+                ),
+                op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+                args=args,
+            )
+        else:
+            return single_op_builder(
+                placeholders=(
+                    x,
+                    w,
+                    b,
+                    w_zero_point,
+                    b_scale,
+                    out_multiplier,
+                    out_shift,
+                ),
+                op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+                args=args,
+            )
 
-    def test_quantized_convolution_default_channel_last(self):
+    def test_quantized_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
         gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.default), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
@@ -1654,39 +1894,28 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,
         )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.quantized_conv.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 15, f"{node=}")
-            self.assertTrue(node.args[14])
 
-    def test_no_transpose_if_already_quantized_conv_channel_last(self):
+    def test_no_transpose_if_already_quantized_conv_channel_last(self) -> None:
         # Create a graph with a single im2row node.
         gm = self.create_quantized_convolution_graph_module(channels_last=True)
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.default), 1
         )
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.quantized_conv.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 15, f"{node=}")
-            self.assertTrue(node.args[14])
 
 
 class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
@@ -1704,7 +1933,7 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
             args=(x, slice_dim, slice_begin, slice_end),
         )
 
-    def test_slice_no_transpose_if_already_outermost(self):
+    def test_slice_no_transpose_if_already_outermost(self) -> None:
         # Create a graph with a single slice node.
         gm = self.create_slice_graph((3, 224, 224), 0, 1, 2)
         # Check if graph module is valid by running exportpass on it.
@@ -1712,7 +1941,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
         # Apply replacement pass.
-        gm_after_pass = MakeSliceAndCatDimOutermostPass()(gm).graph_module
+        p = MakeSliceAndCatDimOutermostPass()
+        gm_after_pass = cast(PassResult, p(gm)).graph_module
 
         # Assert that no transpose ops were added.
         self.assertEqual(
@@ -1720,7 +1950,7 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
             0,
         )
 
-    def test_slice_no_transpose_if_outermost_dimensions_are_one(self):
+    def test_slice_no_transpose_if_outermost_dimensions_are_one(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
         gm = self.create_slice_graph((1, 3, 4, 6), 1, 1, 2)
         # Check if graph module is valid by running exportpass on it.
@@ -1728,7 +1958,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
         # Apply replacement pass.
-        gm_after_pass = MakeSliceAndCatDimOutermostPass()(gm).graph_module
+        p = MakeSliceAndCatDimOutermostPass()
+        gm_after_pass = cast(PassResult, p(gm)).graph_module
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -1737,7 +1968,7 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
             0,
         )
 
-    def test_slice_insert_transpose(self):
+    def test_slice_insert_transpose(self) -> None:
         # Create a graph with a single slice node.
         gm = self.create_slice_graph((1, 3, 4, 6), 2, 1, 2)
         # Check if graph module is valid by running exportpass on it.
@@ -1745,7 +1976,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.slice_copy.Tensor), 1)
 
         # Apply replacement pass.
-        gm_after_pass = MakeSliceAndCatDimOutermostPass()(gm).graph_module
+        p = MakeSliceAndCatDimOutermostPass()
+        gm_after_pass = cast(PassResult, p(gm)).graph_module
 
         # Assert that there are two transpose ops added.
         self.assertEqual(
@@ -1765,7 +1997,7 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
             args=(input_tensors, cat_dim),
         )
 
-    def test_cat_no_transpose_if_already_outermost(self):
+    def test_cat_no_transpose_if_already_outermost(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
         gm = self.create_cat_graph(input_shapes=((1, 3, 5), (2, 3, 5)), cat_dim=0)
         # Check if graph module is valid by running exportpass on it.
@@ -1773,7 +2005,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
         # Apply replacement pass.
-        gm_after_pass = MakeSliceAndCatDimOutermostPass()(gm).graph_module
+        p = MakeSliceAndCatDimOutermostPass()
+        gm_after_pass = cast(PassResult, p(gm)).graph_module
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -1782,7 +2015,7 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
             0,
         )
 
-    def test_cat_no_transpose_if_outermost_dimensions_are_one(self):
+    def test_cat_no_transpose_if_outermost_dimensions_are_one(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
         gm = self.create_cat_graph(input_shapes=((1, 1, 3, 5), (1, 2, 3, 5)), cat_dim=1)
         # Check if graph module is valid by running exportpass on it.
@@ -1790,7 +2023,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
         # Apply replacement pass.
-        gm_after_pass = MakeSliceAndCatDimOutermostPass()(gm).graph_module
+        p = MakeSliceAndCatDimOutermostPass()
+        gm_after_pass = cast(PassResult, p(gm)).graph_module
 
         # Assert that no transpose ops were added. The slice is on the second
         # outermost dimension, but the outermost dimension is already 1.
@@ -1799,7 +2033,7 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
             0,
         )
 
-    def test_cat_insert_transpose(self):
+    def test_cat_insert_transpose(self) -> None:
         # Create a graph with a single slice node on second outermost dimension.
         gm = self.create_cat_graph(
             input_shapes=((1, 1, 3, 5), (1, 1, 3, 3)), cat_dim=-1
@@ -1809,7 +2043,8 @@ class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.cat.default), 1)
 
         # Apply replacement pass.
-        gm_after_pass = MakeSliceAndCatDimOutermostPass()(gm).graph_module
+        p = MakeSliceAndCatDimOutermostPass()
+        gm_after_pass = cast(PassResult, p(gm)).graph_module
 
         # Assert that transpose ops were added to make cat on outermost dimension.
         self.assertEqual(
@@ -1835,7 +2070,7 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
         builder.output([cat])
         return builder.get_graph_module()
 
-    def test_empty_slice(self):
+    def test_empty_slice(self) -> None:
         gm = self._get_slice_empty_gm()
         self.assertEqual(
             len(
@@ -1853,7 +2088,8 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
             ),
             0,
         )
-        updated_gm = ReplaceEmptyTensorsWithFullPass()(gm).graph_module
+        p = ReplaceEmptyTensorsWithFullPass()
+        updated_gm = cast(PassResult, p(gm)).graph_module
         self.assertEqual(
             len(
                 updated_gm.graph.find_nodes(
@@ -1868,5 +2104,168 @@ class TestReplaceEmptyTensorsWithFullPass(unittest.TestCase):
                     op="call_function", target=exir_ops.edge.aten.full.default
                 )
             ),
+            1,
+        )
+
+    @expand(
+        [
+            ("int", int(123)),
+            ("float", float(456.0)),
+        ],
+    )
+    @torch.no_grad()
+    def test_extract_mul_argument_to_full(
+        self, _: str, value: Union[int, float]
+    ) -> None:
+        x = torch.randn(2, 1, 64)
+        gm = single_op_builder(
+            placeholders=(x,),
+            op=torch.ops.aten.mul.Tensor,
+            args=(x, value),
+            kwargs={},
+        )
+        p = ReplaceMulTensorWithMulAndFullOpsPass()
+        graph_after_passes = p.call(gm).graph_module
+        self.assertTrue(
+            op_counts_match(
+                graph_after_passes,
+                expected_op_counts={
+                    torch.ops.aten.mul.Tensor: 1,
+                    torch.ops.aten.full.default: 1,
+                },
+            )
+        )
+
+
+class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
+    def _get_adaptive_avg_pool_gm(
+        self, input_shape: Tuple[int, int, int, int], output_shape: Tuple[int, int]
+    ) -> torch.fx.GraphModule:
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(*input_shape))
+        adaptive_avg_pool2d = builder.call_operator(
+            exir_ops.edge.aten._adaptive_avg_pool2d.default, (x, output_shape)
+        )
+        builder.output([adaptive_avg_pool2d])
+        return builder.get_graph_module()
+
+    def test_replace_adaptive_avg_pool_with_aten_avg_pool(self) -> None:
+        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (8, 8))
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten.avg_pool2d.default,
+                )
+            ),
+            0,
+        )
+        p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
+        updated_gm = p.call(gm).graph_module
+        self.assertEqual(
+            len(
+                updated_gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            0,
+        )
+        avg_pool2d_nodes = updated_gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.avg_pool2d.default
+        )
+        self.assertEqual(
+            len(avg_pool2d_nodes),
+            1,
+        )
+        avg_pool2d_node = avg_pool2d_nodes[0]
+
+        self.assertEqual(avg_pool2d_node.args[1], [16, 16])  # kernel_size is 16x16
+        self.assertEqual(avg_pool2d_node.args[2], [16, 16])  # stride is 16, 16
+        self.assertEqual(avg_pool2d_node.args[3], [0, 0])  # padding is 0, 0
+        self.assertEqual(avg_pool2d_node.args[4], False)  # ceil_mode is False
+        self.assertEqual(avg_pool2d_node.args[5], True)  # count_include_pad is True
+        self.assertEqual(avg_pool2d_node.args[6], None)  # divisor_override is None
+
+    def test_replace_adaptive_avg_pool_with_aten_avg_pool_irregular(self) -> None:
+        gm = self._get_adaptive_avg_pool_gm((1, 64, 128, 128), (9, 9))
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                gm.graph.find_nodes(
+                    op="call_function", target=exir_ops.edge.aten.avg_pool2d.default
+                )
+            ),
+            0,
+        )
+        # Shapes are not multiples of each other, so pass will not trigger
+        p = ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass()
+        updated_gm = p.call(gm).graph_module
+        self.assertEqual(
+            len(
+                updated_gm.graph.find_nodes(
+                    op="call_function",
+                    target=exir_ops.edge.aten._adaptive_avg_pool2d.default,
+                )
+            ),
+            1,
+        )
+        avg_pool2d_nodes = updated_gm.graph.find_nodes(
+            op="call_function", target=exir_ops.edge.aten.avg_pool2d.default
+        )
+        self.assertEqual(
+            len(avg_pool2d_nodes),
+            0,
+        )
+
+
+class TestReplaceLinalgSvdPass(unittest.TestCase):
+    @expand(
+        [
+            ("2x2", (2, 2)),
+            ("3x3", (3, 3)),
+            ("4x5", (4, 5)),
+            ("10x10", (10, 10)),
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_linalg_svd_with_cadence_linalg_svd(
+        self, _: str, shape: Tuple[int, int]
+    ) -> None:
+        x = torch.randn(shape, dtype=torch.float32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten._linalg_svd.default,
+            args=(x, False, True),
+            kwargs={"driver": None},
+        )
+
+        p = ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        # Assert that the aten linalg_svd op was replaced with cadence linalg_svd op
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten._linalg_svd.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.linalg_svd.default),
             1,
         )

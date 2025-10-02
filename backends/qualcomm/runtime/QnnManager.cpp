@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/qualcomm/runtime/QnnBackendOptions.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 
 namespace executorch {
 namespace backends {
@@ -33,6 +35,16 @@ bool CompareExportedInput(
   int numA = std::stoi(a->GetName().substr(a->GetName().find('_') + 1));
   int numB = std::stoi(b->GetName().substr(b->GetName().find('_') + 1));
   return numA < numB;
+}
+
+int ExtractMutableBufferNumber(const std::string& name) {
+  std::string prefix = "mutbuf_";
+  size_t startPos = name.find(prefix);
+  if (startPos != std::string::npos) {
+    startPos += prefix.length();
+    return std::stoi(name.substr(startPos));
+  }
+  return -1;
 }
 
 QnnManager::~QnnManager() {
@@ -52,7 +64,8 @@ QnnManager::QnnManager(
       options->backend_options()->backend_type();
   std::string library_path = options->library_path()->str();
 
-  if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+  if (get_option(options_->log_level()) >=
+      QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "soc_model in soc_info: %s",
         EnumNameQcomChipset(options_->soc_info()->soc_model()));
@@ -64,10 +77,12 @@ QnnManager::QnnManager(
     QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
     QNN_EXECUTORCH_LOG_INFO("dump intermediate outputs: %s", IsTensorDump());
     QNN_EXECUTORCH_LOG_INFO(
-        "log_level: %s", EnumNameQnnExecuTorchLogLevel(options_->log_level()));
+        "log_level: %s",
+        EnumNameQnnExecuTorchLogLevel(get_option(options_->log_level())));
     QNN_EXECUTORCH_LOG_INFO(
         "profile_level: %s",
-        EnumNameQnnExecuTorchProfileLevel(options_->profile_level()));
+        EnumNameQnnExecuTorchProfileLevel(
+            get_option(options_->profile_level())));
     QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
@@ -75,6 +90,9 @@ QnnManager::QnnManager(
         "Is on-device graph construction: %d", options->online_prepare());
     QNN_EXECUTORCH_LOG_INFO(
         "Enable shared buffer: %d", options->shared_buffer());
+    QNN_EXECUTORCH_LOG_INFO(
+        "The number of op packages: %d",
+        options_->op_package_options()->op_package_infos()->size());
   }
 
   if (library_path.empty()) {
@@ -188,7 +206,8 @@ Error QnnManager::RegisterIonMem(
     return Error::Internal;
   } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
                  tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
           tensor_wrapper->GetName().c_str());
@@ -217,7 +236,8 @@ Error QnnManager::RegisterCustomMem(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
   if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
           tensor_wrapper->GetMemHandle(), data_ptr)) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
           tensor_wrapper->GetName().c_str());
@@ -237,7 +257,8 @@ Error QnnManager::RegisterCustomMem(
   Qnn_MemHandle_t pre_registered_handle =
       backend_params_ptr_->qnn_mem_manager_ptr_->GetPreRegisteredHandle(info);
   if (pre_registered_handle != nullptr) {
-    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+    if (get_option(options_->log_level()) >=
+        QnnExecuTorchLogLevel::kLogLevelInfo) {
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s found a pre-registered memHandle.",
           tensor_wrapper->GetName().c_str());
@@ -270,7 +291,8 @@ Error QnnManager::RegisterCustomMem(
           data_ptr,
           unaligned_custom_mem_base,
           total_custom_mem_size,
-          tensor_offset) == Error::Ok,
+          tensor_offset,
+          info) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
@@ -281,7 +303,7 @@ Error QnnManager::Init() {
   ET_CHECK_OR_RETURN_ERROR(
       LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
   logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, options_->log_level());
+      qnn_loaded_backend_, LoggingCallback, get_option(options_->log_level()));
   std::vector<std::string> graph_names;
   for (auto name : *options_->graph_name()) {
     graph_names.emplace_back(name->str());
@@ -308,7 +330,8 @@ Error QnnManager::Init() {
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_ptr_->Configure(
+            options_->op_package_options()) == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
     ET_CHECK_OR_RETURN_ERROR(
@@ -359,9 +382,21 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
   std::vector<Qnn_Tensor_t> output_tensors =
       backend_params_ptr_->qnn_context_ptr_->GetGraphOutputs(graph_name);
 
+  // Mapping memory address for the input and output of mutable buffer
+  std::unordered_map<int, const void*> mutable_buffer_id_to_memory_map;
+
   for (auto& tensor : input_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
+
+    int mutable_buffer_id =
+        ExtractMutableBufferNumber(tensor_wrapper->GetName());
+    if (mutable_buffer_id != -1) {
+      // Delegate maintains the memory for mutable buffer
+      tensor_wrapper->AllocateDataBuffer();
+      mutable_buffer_id_to_memory_map[mutable_buffer_id] =
+          tensor_wrapper->GetStaticTensorData();
+    }
     input_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
   if (!options_->is_from_context_binary()) {
@@ -383,6 +418,16 @@ Error QnnManager::AllocateTensor(const std::string& graph_name) {
     }
     if (IsTensorDump()) {
       tensor_wrapper->AllocateDataBuffer();
+    }
+    int mutable_buffer_id =
+        ExtractMutableBufferNumber(tensor_wrapper->GetName());
+    if (mutable_buffer_id != -1 &&
+        mutable_buffer_id_to_memory_map.find(mutable_buffer_id) !=
+            mutable_buffer_id_to_memory_map.end()) {
+      // Fill the same memory for I/O of mutable buffer
+      tensor_wrapper->FillDataBuffer(
+          mutable_buffer_id_to_memory_map[mutable_buffer_id],
+          false /* copy_data */);
     }
     output_tensors_[graph_name].emplace_back(std::move(tensor_wrapper));
   }
@@ -455,7 +500,8 @@ Error QnnManager::ProfileExecuteData(
     const std::string& graph_name,
     executorch::runtime::EventTracer* event_tracer) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
+  if (get_option(options_->profile_level()) !=
+      QnnExecuTorchProfileLevel::kProfileOff) {
     error = backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(
         graph_name, event_tracer);
     if (error != QNN_SUCCESS) {

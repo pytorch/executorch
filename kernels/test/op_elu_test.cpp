@@ -17,8 +17,8 @@
 
 using executorch::aten::Scalar;
 using executorch::aten::ScalarType;
-using executorch::aten::string_view;
 using executorch::aten::Tensor;
+using std::string_view;
 using torch::executor::testing::TensorFactory;
 
 class OpEluTest : public OperatorTest {
@@ -43,7 +43,7 @@ class OpEluTest : public OperatorTest {
 
     Tensor out = tf.zeros(sizes);
 
-    // Run full gelu.
+    // Run full elu.
     op_elu_out(in, 1.25, 1, 1, out);
 
     // Check that it matches the expected output.
@@ -92,4 +92,19 @@ TEST_F(OpEluTest, MismatchedOutputDtypeDies) {
   Tensor out = tf_double.zeros(sizes);
 
   ET_EXPECT_KERNEL_FAILURE(context_, op_elu_out(a, 1, 1, 1, out));
+}
+
+TEST_F(OpEluTest, MixedScalarTypes) {
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor in = tf_float.ones(sizes);
+  Tensor out = tf_float.zeros(sizes);
+
+  op_elu_out(in, true, 1.0, 1.0, out);
+  EXPECT_TENSOR_CLOSE(out, tf_float.ones(sizes));
+
+  op_elu_out(in, false, true, 3, out);
+  EXPECT_TENSOR_CLOSE(out, tf_float.ones(sizes));
 }

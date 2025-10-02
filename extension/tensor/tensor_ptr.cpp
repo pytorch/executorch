@@ -80,15 +80,27 @@ TensorPtr make_tensor_ptr(
     }
   }
   std::vector<executorch::aten::StridesType> computed_strides(dim);
+
   auto error = runtime::dim_order_to_stride(
       sizes.data(), dim_order.data(), dim, computed_strides.data());
   ET_CHECK_MSG(error == runtime::Error::Ok, "Failed to compute strides.");
 
   if (!strides.empty()) {
-    ET_CHECK_MSG(computed_strides == strides, "Invalid strides provided.");
-  } else {
-    strides = std::move(computed_strides);
+    for (size_t i = 0; i < dim; i++) {
+      ET_CHECK_MSG(
+          strides[i] == computed_strides[i] || sizes[i] == 1,
+          "invalid strides for dim %zu: %" ET_PRI_SIZES_AND_STRIDES
+          "!= %" ET_PRI_SIZES_AND_STRIDES
+          " while its size is %" ET_PRI_SIZES_AND_STRIDES " != 1",
+          i,
+          strides[i],
+          computed_strides[i],
+          sizes[i]);
+    }
   }
+
+  strides = std::move(computed_strides);
+
 #ifndef USE_ATEN_LIB
   executorch::aten::TensorImpl tensor_impl(
       type,
@@ -136,10 +148,10 @@ TensorPtr make_tensor_ptr(
     executorch::aten::ScalarType type,
     executorch::aten::TensorShapeDynamism dynamism) {
   ET_CHECK_MSG(
-      data.size() >=
+      data.size() ==
           executorch::aten::compute_numel(sizes.data(), sizes.size()) *
               executorch::aten::elementSize(type),
-      "Data size is smaller than required by sizes and scalar type.");
+      "Data size does not match tensor size.");
   auto data_ptr = data.data();
   return make_tensor_ptr(
       std::move(sizes),

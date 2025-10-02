@@ -1,7 +1,3 @@
-# Lintrunner itself
-lintrunner==0.12.7
-lintrunner-adapters==0.12.4
-
 # Flake 8 and its dependencies
 flake8==6.1.0
 flake8-breakpoint==1.1.0
@@ -19,6 +15,7 @@ usort==1.0.8.post1
 
 # Other linters
 clang-format==18.1.3
+cmakelang==0.6.13
 cmakelint==1.4.1
 
 # MyPy

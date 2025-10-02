@@ -1,6 +1,6 @@
 # Model Export and Lowering
 
-The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as "exporting", as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend.
+The section describes the process of taking a PyTorch model and converting to the runtime format used by ExecuTorch. This process is commonly known as "exporting", as it uses the PyTorch export functionality to convert a PyTorch model into a format suitable for on-device execution. This process yields a .pte file which is optimized for on-device execution using a particular backend. If using program-data separation, it also yields a corresponding .ptd file containing only the weights/constants from the model.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ As part of the .pte file creation process, ExecuTorch identifies portions of the
 
 ### Available Backends
 
-Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information. 
+Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information.
 
 - [XNNPACK (Mobile CPU)](backends-xnnpack.md)
 - [Core ML (iOS)](backends-coreml.md)
@@ -61,7 +61,7 @@ class Model(torch.nn.Module):
             torch.nn.AdaptiveAvgPool2d((1,1))
        )
         self.linear = torch.nn.Linear(16, 10)
-    
+
     def forward(self, x):
         y = self.seq(x)
         y = torch.flatten(y, 1)
@@ -97,7 +97,7 @@ class Model(torch.nn.Module):
             torch.nn.AdaptiveAvgPool2d((1,1))
         )
         self.linear = torch.nn.Linear(16, 10)
-    
+
     def forward(self, x):
         y = self.seq(x)
         y = torch.flatten(y, 1)
@@ -124,6 +124,32 @@ with open("model.pte", "wb") as file:
 ```
 
 This yields a `model.pte` file which can be run on mobile devices.
+
+To generate a `model.pte`, `model.ptd` pair with the weights inside `model.ptd`, add the following transform function to tag constants as external:
+
+```python
+from executorch.exir.passes.external_constants_pass import (
+    delegate_external_constants_pass_unlifted,
+)
+# Tag the unlifted ep.module().
+tagged_module = exported_program.module()
+delegate_external_constants_pass_unlifted(
+    module=tagged_module,
+    gen_tag_fn=lambda x: "model", # This is the filename the weights will be saved to. In this case, weights will be saved as "model.ptd"
+)
+# Re-export to get the EP.
+exported_program = export(tagged_module, inputs, dynamic_shapes=dynamic_shapes)
+executorch_program = to_edge_transform_and_lower(
+    exported_program,
+    partitioner = [XnnpackPartitioner()]
+).to_executorch()
+```
+
+To save the PTD file:
+```
+executorch_program.write_tensor_data_to_file(output_directory)
+```
+It will be saved to the file `model.ptd`, with the file name coming from `gen_tag_fn` in the transform pass.
 
 ### Supporting Varying Input Sizes (Dynamic Shapes)
 
@@ -157,6 +183,7 @@ For more complex use cases, dynamic shape specification allows for mathematical 
 Before integrating the runtime code, it is common to test the exported model from Python. This can be used to evaluate model accuracy and sanity check behavior before moving to the target device. Note that not all hardware backends are available from Python, as they may require specialized hardware to function. See the specific backend documentation for more information on hardware requirements and the availablilty of simulators. The XNNPACK delegate used in this example is always available on host machines.
 
 ```python
+import torch
 from executorch.runtime import Runtime
 
 runtime = Runtime.get()
@@ -166,6 +193,18 @@ program = runtime.load_program("model.pte")
 method = program.load_method("forward")
 outputs = method.execute([input_tensor])
 ```
+
+To run a model with program and data separated, please use the [ExecuTorch Module pybindings](https://github.com/pytorch/executorch/blob/main/extension/pybindings/README.md).
+```python
+import torch
+from executorch.extension.pybindings import portable_lib
+
+input_tensor = torch.randn(1, 3, 32, 32)
+module = portable_lib._load_for_executorch("model.pte", "model.ptd")
+outputs = module.forward([input_tensor])
+```
+
+There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
 
 For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
 
@@ -227,7 +266,7 @@ class EncodeWrapper(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
-    
+
     def forward(self, *args, **kwargs):
         return self.model.encode(*args, **kwargs)
 

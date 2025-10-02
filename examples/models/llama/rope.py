@@ -9,7 +9,7 @@
 
 import math
 from functools import partial
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 from executorch.examples.models.llama.model_args import ModelArgs
@@ -47,9 +47,10 @@ def precompute_freqs_cis(
     use_scaled: bool = False,
     scale_factor: Optional[int] = None,
     high_freq_factor: int = 4,
+    device: Union[str, torch.device] = "cpu",
 ):
     freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
+        theta ** (torch.arange(0, dim, 2, device=device)[: (dim // 2)].float() / dim)
     )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     if use_scaled:
@@ -306,3 +307,15 @@ class Rope(torch.nn.Module):
             freqs_cos = self.freqs_cos[:seq_len]
             freqs_sin = self.freqs_sin[:seq_len]
         return freqs_cos, freqs_sin
+
+    def get_freqs_using_indices(self, indices: torch.Tensor):
+        """
+        Get the precomputed frequencies for given input indices.
+
+        Args:
+            indices (torch.Tensor): The input indices tensor.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: The precomputed frequencies for given input indices.
+        """
+        return self.freqs_cos[indices], self.freqs_sin[indices]

@@ -164,6 +164,7 @@ class ETRunnerEvalWrapper(EagerEvalWrapper):
 def gen_eval_wrapper(
     model_name: str,
     args: argparse.ArgumentParser,
+    llm_config=None,
 ):
     """
     Generates a wrapper interface around the provided model and tokenizer for
@@ -172,7 +173,13 @@ def gen_eval_wrapper(
     Returns:
         eval_wrapper (LM): A wrapper interface for the lm-evaluation-harness library.
     """
-    tokenizer = get_tokenizer(args.tokenizer_path)  # pyre-ignore
+    # If llm_config is not provided, convert args to llm_config
+    if llm_config is None:
+        from executorch.extension.llm.export.config.llm_config import LlmConfig
+
+        llm_config = LlmConfig.from_args(args)
+
+    tokenizer = get_tokenizer(llm_config.base.tokenizer_path)
 
     # ExecuTorch Binary Evaluation
     if (model := args.pte) is not None:  # pyre-ignore
@@ -182,7 +189,7 @@ def gen_eval_wrapper(
                 model=model,
                 tokenizer=tokenizer,
                 tokenizer_bin=tokenizer_bin,
-                max_seq_length=args.max_seq_length,  # pyre-ignore
+                max_seq_length=llm_config.export.max_seq_length,
             )
 
         # ETPybindEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated with pybindings
@@ -191,12 +198,14 @@ def gen_eval_wrapper(
             tokenizer=tokenizer,
             # Exported model takes at most (max_seq_length - 1) tokens.
             # Note that the eager model takes at most max_seq_length tokens.
-            max_seq_length=args.max_seq_length - 1,
+            max_seq_length=llm_config.export.max_seq_length - 1,
         )
 
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+        llm_config
+    )
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
-    manager: LLMEdgeManager = _prepare_for_llama_export(args)
+    manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)
 
     if len(quantizers) != 0:
         manager = manager.export().pt2e_quantize(quantizers)
@@ -208,13 +217,13 @@ def gen_eval_wrapper(
         return GraphModuleEvalWrapper(
             model=model,
             tokenizer=tokenizer,
-            max_seq_length=args.max_seq_length,
-            use_kv_cache=args.use_kv_cache,  # pyre-ignore
-            enable_dynamic_shape=args.enable_dynamic_shape,  # pyre-ignore
+            max_seq_length=llm_config.export.max_seq_length,
+            use_kv_cache=llm_config.model.use_kv_cache,
+            enable_dynamic_shape=llm_config.model.enable_dynamic_shape,
         )
     else:
         # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
-        # for quantizers. Currently export_for_training only works with --kv_cache, but
+        # for quantizers. Currently export only works with --kv_cache, but
         # fails without the kv_cache mode
         model = (
             manager.model.eval().to(device="cuda")
@@ -234,8 +243,8 @@ def gen_eval_wrapper(
         return EagerEvalWrapper(
             model=model,
             tokenizer=tokenizer,
-            max_seq_length=args.max_seq_length,
-            use_kv_cache=args.use_kv_cache,
+            max_seq_length=llm_config.export.max_seq_length,
+            use_kv_cache=llm_config.model.use_kv_cache,
         )
 
 
@@ -296,12 +305,16 @@ def eval_llama(
     model_name: str,
     args: argparse.ArgumentParser,
 ) -> None:
+    # Convert args to LlmConfig
+    from executorch.extension.llm.export.config.llm_config import LlmConfig
+
+    llm_config = LlmConfig.from_args(args)
+
     # Generate the eval wrapper
-    eval_wrapper = gen_eval_wrapper(model_name, args)
+    eval_wrapper = gen_eval_wrapper(model_name, args, llm_config)
 
     # Needed for loading mmlu dataset.
     # See https://github.com/EleutherAI/lm-evaluation-harness/pull/1998/files
-    # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `tasks`
     if args.tasks and "mmlu" in args.tasks:
         import datasets
 
@@ -312,8 +325,8 @@ def eval_llama(
         eval_results = simple_evaluate(
             model=eval_wrapper,
             tasks=args.tasks,
-            num_fewshot=args.num_fewshot,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `num_fewshot`
-            limit=args.limit,  # pyre-ignore: Undefined attribute [16]: `argparse.ArgumentParser` has no attribute `limit`
+            num_fewshot=args.num_fewshot,
+            limit=args.limit,
         )
 
     for task, res in eval_results["results"].items():
@@ -326,19 +339,24 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
 
     This is mostly copied from https://github.com/mit-han-lab/streaming-llm/blob/main/examples/eval_long_ppl.py
     """
-    assert args.use_attention_sink is not None  # pyre-ignore [16]
-    assert args.attention_sink_eval_tokens > 0  # pyre-ignore [16]
-    attention_sink_params = args.use_attention_sink.split(",")
+    # Convert args to LlmConfig
+    from executorch.extension.llm.export.config.llm_config import LlmConfig
+
+    llm_config = LlmConfig.from_args(args)
+
+    assert llm_config.model.use_attention_sink is not None
+    assert args.attention_sink_eval_tokens > 0
+    attention_sink_params = llm_config.model.use_attention_sink.split(",")
     assert len(attention_sink_params) == 3
     sink_size = int(attention_sink_params[0])
     window_size = int(attention_sink_params[1])
 
-    assert args.max_seq_length == sink_size + window_size  # pyre-ignore [16]
+    assert llm_config.export.max_seq_length == sink_size + window_size
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    manager: LLMEdgeManager = _prepare_for_llama_export(args)
+    manager: LLMEdgeManager = _prepare_for_llama_export(llm_config)
     model = manager.model.eval().to(device=device)
-    tokenizer = get_tokenizer(args.tokenizer_path)  # pyre-ignore [16]
+    tokenizer = get_tokenizer(llm_config.base.tokenizer_path)
 
     eval_data = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
 
@@ -347,7 +365,7 @@ def eval_llama_with_attention_sink(model_name: str, args: argparse.ArgumentParse
     progress_bar = tqdm(total=args.attention_sink_eval_tokens)
     input_pos = 0
     while input_pos < args.attention_sink_eval_tokens:
-        for text in eval_data["text"]:  # pyre-ignore [16]
+        for text in eval_data["text"]:
             tokens = tokenizer.encode(text, bos=False, eos=False)
             if len(tokens) <= 0:
                 continue

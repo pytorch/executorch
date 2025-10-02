@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ctypes
+import hashlib
 import logging
 import operator
 from types import NoneType
@@ -20,9 +22,12 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
 from executorch.backends.vulkan.utils import (
     is_constant,
     is_get_attr_node,
+    is_mutable_buffer_node,
     is_param_node,
     is_symint_node,
+    TensorRepr,
 )
+from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.tensor import TensorSpec
@@ -44,14 +49,19 @@ class VkGraphBuilder:
         self,
         program: ExportedProgram,
         delegate_mapping_builder: DelegateMappingBuilder,
+        downcast_64_bit: bool = True,
+        force_fp16: bool = False,
     ) -> None:
         self.program = program
         self.delegate_mapping_builder = delegate_mapping_builder
+        self.downcast_64_bit = downcast_64_bit
+        self.force_fp16 = force_fp16
         self.chain = []
         self.values = []
         self.input_ids = []
         self.output_ids = []
         self.const_tensors = []
+        self.named_data_store = NamedDataStore()
 
         # Mapping from Node to VkValue id
         self.node_to_value_ids = {}
@@ -71,13 +81,14 @@ class VkGraphBuilder:
             return vk_graph_schema.VkDataType.INT8
         elif torch_dtype == torch.int32:
             return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.int64:
+            return vk_graph_schema.VkDataType.INT64
         elif torch_dtype == torch.float16:
             return vk_graph_schema.VkDataType.FLOAT16
         elif torch_dtype == torch.float32:
             return vk_graph_schema.VkDataType.FLOAT32
-        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
-        elif torch_dtype == torch.int64:
-            return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.float64:
+            return vk_graph_schema.VkDataType.FLOAT64
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
@@ -124,14 +135,48 @@ class VkGraphBuilder:
     def maybe_add_constant_tensor(self, node: Node) -> int:
         constant_id = -1
         if is_param_node(self.program, node):
-            constant_id = len(self.const_tensors)
-            self.const_tensors.append(self.get_param_tensor(node))
+            tensor = self.get_param_tensor(node)
+
+            effective_dtype = self.get_effective_dtype(tensor.dtype)
+
+            # Convert the tensor dtype if needed
+            if tensor.dtype != effective_dtype:
+                tensor = tensor.to(effective_dtype)
+
+            # Serialize tensor data to bytes
+            tensor = tensor.contiguous()
+            size = tensor.untyped_storage().nbytes()
+
+            if size > 0:
+                array_type = ctypes.c_char * size
+                array = ctypes.cast(
+                    tensor.untyped_storage().data_ptr(),
+                    ctypes.POINTER(array_type),
+                ).contents
+
+                # Generate SHA256 hash as the named key
+                tensor_bytes = bytes(array)
+                sha256_hash = hashlib.sha256(tensor_bytes)
+                named_key = sha256_hash.hexdigest()
+
+                # Add to named data store with 16-byte alignment (matching XNNPACK)
+                self.named_data_store.add_named_data(
+                    named_key, tensor_bytes, alignment=16
+                )
+
+                # Create VkBytes entry with named_key and set offset to indicate named data usage
+                constant_id = len(self.const_tensors)
+                self.const_tensors.append((named_key, size))
+            else:
+                # Handle empty tensors
+                constant_id = len(self.const_tensors)
+                self.const_tensors.append(None)
 
         return constant_id
 
     def create_node_value(self, node: Node) -> int:
         # If the node has been marked as a scalar tensor, create a SymInt instead of a tensor
-        if is_symint_node(node) or node.meta.get("vkdg_is_scalar_tensor", False):
+        if is_symint_node(node) or node.meta.get("etvk_is_scalar_tensor", False):
             new_id = self.create_symint_value()
             self.node_to_value_ids[node] = new_id
             return new_id
@@ -185,6 +230,29 @@ class VkGraphBuilder:
         self.values.append(vk_graph_schema.VkValue(vk_graph_schema.SymInt(0)))
         return new_id
 
+    def get_effective_dtype(self, dtype: torch.dtype) -> torch.dtype:
+        if self.downcast_64_bit and dtype == torch.float64:
+            return torch.float32
+        elif self.downcast_64_bit and dtype == torch.int64:
+            return torch.int32
+        elif self.force_fp16 and dtype == torch.float32:
+            return torch.float16
+        else:
+            return dtype
+
+    def get_staging_dtype(self, dtype: torch.dtype) -> torch.dtype:
+        # Since 64 bit types are not guaranteed to be supported on all GPUs,
+        # the conversion between 32 bit and 64 bit types is handled on the CPU
+        # side. The conversion will occur when copying the staging buffer
+        # contents to/from ETensor data pointers, rather than in the shader to
+        # copy between GPU buffer/image to staging buffer.
+        if self.downcast_64_bit and dtype == torch.float64:
+            return torch.float32
+        elif self.downcast_64_bit and dtype == torch.int64:
+            return torch.int32
+        else:
+            return dtype
+
     def create_tensor_value(self, spec: TensorSpec, constant_id: int = -1) -> int:
         # Negative id indicates that this tensor will have its own dedicated memory.
         mem_obj_id = -1
@@ -193,23 +261,34 @@ class VkGraphBuilder:
 
         storage_type = VkStorageType.DEFAULT_STORAGE
         memory_layout = VkMemoryLayout.DEFAULT_LAYOUT
-        if hasattr(spec, "vk_storage_type"):
+        if hasattr(spec, "etvk_node_repr"):
             # pyre-ignore[16]
-            storage_type = spec.vk_storage_type
-        if hasattr(spec, "vk_memory_layout"):
-            # pyre-ignore[16]
-            memory_layout = spec.vk_memory_layout
+            assert isinstance(spec.etvk_node_repr, TensorRepr)
+            storage_type = spec.etvk_node_repr.storage_type
+            memory_layout = spec.etvk_node_repr.memory_layout
+
+        effective_dtype = self.get_effective_dtype(spec.dtype)
+        # For constant tensors, the datatype of the original tensor will have been
+        # converted to the effective dtype. Otherwise, the type of the staging buffer
+        # for inputs/outputs should match the original tensor dtype.
+        staging_dtype = (
+            effective_dtype if constant_id >= 0 else self.get_staging_dtype(spec.dtype)
+        )
+
+        datatype = self.get_vk_datatype(effective_dtype)
+        staging_datatype = self.get_vk_datatype(staging_dtype)
 
         new_id = len(self.values)
         self.values.append(
             vk_graph_schema.VkValue(
                 value=vk_graph_schema.VkTensor(
-                    datatype=self.get_vk_datatype(spec.dtype),
+                    datatype=datatype,
                     dims=spec.shape,
                     constant_id=constant_id,
                     mem_obj_id=mem_obj_id,
                     storage_type=storage_type,
                     memory_layout=memory_layout,
+                    staging_datatype=staging_datatype,
                 )
             )
         )
@@ -382,6 +461,11 @@ class VkGraphBuilder:
                     "the output node is being serialized before its corresponding "
                     "internal node which is not allowed."
                 )
+            # Mutable buffers outputs are not included as an output to the
+            # delegate call. Skip marking them as an output.
+            if is_mutable_buffer_node(out_node, self.program):
+                continue
+
             self.output_ids.append(self.node_to_value_ids[out_node])
 
     def process_node(self, node: Node, call_node_debug_hdl: int) -> None:

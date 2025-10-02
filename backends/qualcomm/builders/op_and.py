@@ -9,13 +9,14 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWiseAnd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
 class OpAnd(NodeVisitor):
-    target = ["aten.bitwise_and.Tensor"]
+    target = ["aten.bitwise_and.Tensor", "aten.logical_and.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

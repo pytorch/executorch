@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
@@ -17,6 +18,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using executorch::extension::BufferDataLoader;
+using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
 using executorch::extension::FlatTensorHeader;
 using executorch::runtime::DataLoader;
@@ -24,7 +27,6 @@ using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
 using executorch::runtime::TensorLayout;
-using torch::executor::util::FileDataLoader;
 
 class FlatTensorDataMapTest : public ::testing::Test {
  protected:
@@ -33,8 +35,8 @@ class FlatTensorDataMapTest : public ::testing::Test {
     // first.
     executorch::runtime::runtime_init();
 
-    // Load data map. The eager linear model is defined at:
-    // //executorch/test/models/linear_model.py
+    // Load data map. The eager addmul model is defined at:
+    // //executorch/test/models/export_program.py
     const char* path = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
@@ -51,7 +53,7 @@ TEST_F(FlatTensorDataMapTest, LoadFlatTensorDataMap) {
   EXPECT_EQ(data_map.error(), Error::Ok);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
+TEST_F(FlatTensorDataMapTest, GetMetadata) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
@@ -60,7 +62,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
   // From //executorch/test/models/linear_model.py, we have the tensors
   // self.a = 3 * torch.ones(2, 2, dtype=torch.float)
   // self.b = 2 * torch.ones(2, 2, dtype=torch.float)
-  Result<const TensorLayout> const_a_res = data_map->get_metadata("a");
+  Result<const TensorLayout> const_a_res = data_map->get_tensor_layout("a");
   ASSERT_EQ(Error::Ok, const_a_res.error());
 
   const TensorLayout const_a = const_a_res.get();
@@ -74,7 +76,7 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
   EXPECT_EQ(dim_order_a[0], 0);
   EXPECT_EQ(dim_order_a[1], 1);
 
-  Result<const TensorLayout> const_b_res = data_map->get_metadata("b");
+  Result<const TensorLayout> const_b_res = data_map->get_tensor_layout("b");
   ASSERT_EQ(Error::Ok, const_b_res.error());
 
   const TensorLayout const_b = const_b_res.get();
@@ -88,12 +90,12 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetMetadata) {
   EXPECT_EQ(dim_order_b[0], 0);
   EXPECT_EQ(dim_order_b[1], 1);
 
-  // Check get_metadata fails when key is not found.
-  Result<const TensorLayout> const_c_res = data_map->get_metadata("c");
+  // Check get_tensor_layout fails when key is not found.
+  Result<const TensorLayout> const_c_res = data_map->get_tensor_layout("c");
   EXPECT_EQ(const_c_res.error(), Error::NotFound);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
+TEST_F(FlatTensorDataMapTest, GetData) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
@@ -114,13 +116,13 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_GetData) {
   EXPECT_EQ(data_c_res.error(), Error::NotFound);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
+TEST_F(FlatTensorDataMapTest, GetKeys) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // Check num tensors is 2.
-  Result<size_t> num_tensors_res = data_map->get_num_keys();
+  Result<uint32_t> num_tensors_res = data_map->get_num_keys();
   ASSERT_EQ(Error::Ok, num_tensors_res.error());
   EXPECT_EQ(num_tensors_res.get(), 2);
 
@@ -138,13 +140,13 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_Keys) {
   EXPECT_EQ(key2_res.error(), Error::InvalidArgument);
 }
 
-TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
+TEST_F(FlatTensorDataMapTest, LoadInto) {
   Result<FlatTensorDataMap> data_map =
       FlatTensorDataMap::load(data_map_loader_.get());
   EXPECT_EQ(data_map.error(), Error::Ok);
 
   // get the metadata
-  auto meta_data_res = data_map->get_metadata("a");
+  auto meta_data_res = data_map->get_tensor_layout("a");
   ASSERT_EQ(meta_data_res.error(), Error::Ok);
 
   // get data blob
@@ -159,4 +161,24 @@ TEST_F(FlatTensorDataMapTest, FlatTensorDataMap_LoadInto) {
     EXPECT_EQ(data_a[i], 3.0);
   }
   free(data);
+}
+
+TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
+  Result<FlatTensorDataMap> data_map =
+      FlatTensorDataMap::load(data_map_loader_.get());
+  EXPECT_EQ(data_map.error(), Error::Ok);
+
+  // Truncate the file.
+  size_t trunc_size = data_map_loader_->size().get() - 8;
+  Result<FreeableBuffer> truncated_file = data_map_loader_->load(
+      0,
+      trunc_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::External));
+  ASSERT_EQ(truncated_file.error(), Error::Ok);
+
+  BufferDataLoader truncated_loader =
+      BufferDataLoader(truncated_file->data(), trunc_size);
+  Result<FlatTensorDataMap> truncated_program =
+      FlatTensorDataMap::load(&truncated_loader);
+  ASSERT_EQ(truncated_program.error(), Error::InvalidExternalData);
 }

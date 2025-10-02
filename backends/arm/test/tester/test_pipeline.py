@@ -4,21 +4,39 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Callable, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+import warnings as _warnings
+
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import torch
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
     get_symmetric_quantization_config,
     TOSAQuantizer,
+    VgfQuantizer,
 )
 from executorch.backends.arm.test import common, conftest
 from executorch.backends.arm.test.tester.arm_tester import ArmTester, RunPasses
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    TosaLoweringContext,
+    TosaSpecification,
+)
 
 from executorch.backends.xnnpack.test.tester.tester import Quantize
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_base import ExportPass
 from torch._export.pass_base import PassType
 
@@ -85,10 +103,13 @@ class BasePipelineMaker(Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         aten_ops: str | List[str],
-        compile_spec: List[CompileSpec],
+        compile_spec: ArmCompileSpec,
         exir_ops: Optional[str | List[str]] = None,
         use_to_edge_transform_and_lower: bool = True,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
     ):
 
         self.tester = ArmTester(
@@ -96,6 +117,7 @@ class BasePipelineMaker(Generic[T]):
             example_inputs=test_data,
             compile_spec=compile_spec,
             dynamic_shapes=dynamic_shapes,
+            transform_passes=transform_passes,
         )
 
         self.aten_ops = aten_ops if isinstance(aten_ops, list) else [aten_ops]
@@ -208,6 +230,12 @@ class BasePipelineMaker(Generic[T]):
 
         raise Exception(f"Stage id {stage_id} not found in pipeline")
 
+    def has_stage(self, stage_id: str):
+        try:
+            return self.find_pos(stage_id) >= 0
+        except:
+            return False
+
     def add_stage_after(self, stage_id: str, func: Callable, *args, **kwargs):
         """Adds a stage after the given stage id."""
         pos = self.find_pos(stage_id) + 1
@@ -253,9 +281,36 @@ class BasePipelineMaker(Generic[T]):
                 raise e
 
 
-class TosaPipelineBI(BasePipelineMaker, Generic[T]):
+class TOSAPipelineMaker(BasePipelineMaker, Generic[T]):
+
+    @staticmethod
+    def is_tosa_ref_model_available():
+        """Checks if the TOSA reference model is available."""
+        # Not all deployments of ET have the TOSA reference model available.
+        # Make sure we don't try to use it if it's not available.
+        try:
+            import tosa_reference_model
+
+            # Check if the module has content
+            return bool(dir(tosa_reference_model))
+        except ImportError:
+            return False
+
+    def run(self):
+        if (
+            self.has_stage("run_method_and_compare_outputs")
+            and not self.is_tosa_ref_model_available()
+        ):
+            _warnings.warn(
+                "Warning: Skipping run_method_and_compare_outputs stage. TOSA reference model is not available."
+            )
+            self.pop_stage("run_method_and_compare_outputs")
+        super().run()
+
+
+class TosaPipelineINT(TOSAPipelineMaker, Generic[T]):
     """
-    Lowers a graph to BI TOSA spec (with quantization) and tests it with the TOSA reference model.
+    Lowers a graph to INT TOSA spec (with quantization) and tests it with the TOSA reference model.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -280,34 +335,40 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
         run_on_tosa_ref_model: bool = True,
-        tosa_version: str = "TOSA-0.80+BI",
         symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        tosa_extensions: Optional[List[str]] = None,
     ):
+        if tosa_extensions is None:
+            tosa_extensions = []
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
-            "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
+            "1.0": TosaSpecification.create_from_string(
+                "TOSA-1.0+INT" + "".join([f"+{ext}" for ext in tosa_extensions])
+            ),
         }
         tosa_version = conftest.get_option("tosa_version")
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            tosa_profiles[tosa_version],
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
-        quant_stage = (
-            Quantize(
-                TOSAQuantizer(tosa_profiles[tosa_version]).set_io(
-                    get_symmetric_quantization_config()
-                ),
-                get_symmetric_quantization_config(),
-            )
-            if symmetric_io_quantization
-            else None
+
+        quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=per_channel_quantization
         )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
+
         super().__init__(
             module,
             test_data,
@@ -354,9 +415,9 @@ class TosaPipelineBI(BasePipelineMaker, Generic[T]):
             )
 
 
-class TosaPipelineMI(BasePipelineMaker, Generic[T]):
+class TosaPipelineFP(TOSAPipelineMaker, Generic[T]):
     """
-    Lowers a graph to MI TOSA spec and tests it with the TOSA reference model.
+    Lowers a graph to FP TOSA spec and tests it with the TOSA reference model.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -381,22 +442,31 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
         aten_op: str | List[str],
         exir_op: Optional[str | List[str]] = None,
         run_on_tosa_ref_model: bool = True,
-        tosa_version: str = "TOSA-0.80+MI",
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 0,
         dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
+        tosa_extensions: Optional[List[str]] = None,
     ):
+        if tosa_extensions is None:
+            tosa_extensions = []
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string("TOSA-0.80+MI"),
-            "1.0": TosaSpecification.create_from_string("TOSA-1.0+FP"),
+            "1.0": TosaSpecification.create_from_string(
+                "TOSA-1.0+FP" + "".join([f"+{ext}" for ext in tosa_extensions])
+            ),
         }
         tosa_version = conftest.get_option("tosa_version")
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            tosa_profiles[tosa_version],
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
         super().__init__(
             module,
@@ -405,7 +475,8 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             compile_spec,
             exir_op,
             use_to_edge_transform_and_lower,
-            dynamic_shapes,
+            dynamic_shapes=dynamic_shapes,
+            transform_passes=transform_passes,
         )
         self.add_stage_after(
             "export",
@@ -427,9 +498,9 @@ class TosaPipelineMI(BasePipelineMaker, Generic[T]):
             )
 
 
-class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
+class EthosU55PipelineINT(BasePipelineMaker, Generic[T]):
     """
-    Lowers a graph to u55 BI TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true.
+    Lowers a graph to u55 INT TOSA spec and tests it on the Corstone300 FVP, if run_on_fvp is true.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -451,23 +522,26 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
         exir_ops: Optional[str | List[str]] = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
     ):
-        compile_spec = common.get_u55_compile_spec(custom_path=custom_path)
-        quant_stage = (
-            Quantize(
-                EthosUQuantizer(compile_spec).set_io(
-                    get_symmetric_quantization_config()
-                ),
-                get_symmetric_quantization_config(),
-            )
-            if symmetric_io_quantization
-            else None
+        compile_spec = common.get_u55_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
+        quantizer = EthosUQuantizer(compile_spec)
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=per_channel_quantization
+        )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
+
         super().__init__(
             module,
             test_data,
@@ -515,9 +589,9 @@ class EthosU55PipelineBI(BasePipelineMaker, Generic[T]):
             )
 
 
-class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
+class EthosU85PipelineINT(BasePipelineMaker, Generic[T]):
     """
-    Lowers a graph to u85 BI TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true.
+    Lowers a graph to u85 INT TOSA spec and tests it on the Corstone320 FVP, if run_on_fvp is true.
 
     Attributes:
        module: The module which the pipeline is applied to.
@@ -539,23 +613,26 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
         exir_ops: str | List[str] = None,
         run_on_fvp: bool = True,
         symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
         use_to_edge_transform_and_lower: bool = True,
         custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
         atol: float = 1e-03,
         rtol: float = 1e-03,
         qtol: int = 1,
     ):
-        compile_spec = common.get_u85_compile_spec(custom_path=custom_path)
-        quant_stage = (
-            Quantize(
-                EthosUQuantizer(compile_spec).set_io(
-                    get_symmetric_quantization_config()
-                ),
-                get_symmetric_quantization_config(),
-            )
-            if symmetric_io_quantization
-            else None
+        compile_spec = common.get_u85_compile_spec(
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
         )
+        quantizer = EthosUQuantizer(compile_spec)
+        quantization_config = get_symmetric_quantization_config(
+            is_per_channel=per_channel_quantization
+        )
+        if symmetric_io_quantization:
+            quantizer.set_io(quantization_config)
+        quant_stage = Quantize(quantizer, quantization_config)
+
         super().__init__(
             module,
             test_data,
@@ -603,7 +680,7 @@ class EthosU85PipelineBI(BasePipelineMaker, Generic[T]):
             )
 
 
-class PassPipeline(BasePipelineMaker, Generic[T]):
+class PassPipeline(TOSAPipelineMaker, Generic[T]):
     """
     Runs single passes directly on an edge_program and checks operators before/after.
 
@@ -639,19 +716,22 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
         pass_functions: Optional[List[Callable]] = None,
         passes_with_exported_program: Optional[List[Type[ExportPass]]] = None,
         custom_path: str = None,
+        tosa_extensions: Optional[List[str]] = None,
     ):
+        if tosa_extensions is None:
+            tosa_extensions = []
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string(
-                "TOSA-0.80+" + ("BI" if quantize else "MI")
-            ),
             "1.0": TosaSpecification.create_from_string(
-                "TOSA-1.0+" + ("INT" if quantize else "FP")
+                "TOSA-1.0+"
+                + ("INT" if quantize else "FP")
+                + "".join([f"+{ext}" for ext in tosa_extensions]),
             ),
         }
         tosa_version = conftest.get_option("tosa_version")
+        self.tosa_spec = tosa_profiles[tosa_version]
 
         compile_spec = common.get_tosa_compile_spec(
-            tosa_profiles[tosa_version], custom_path=custom_path
+            self.tosa_spec, custom_path=custom_path
         )
         super().__init__(
             module,
@@ -690,8 +770,12 @@ class PassPipeline(BasePipelineMaker, Generic[T]):
             self.add_stage(self.tester.check_not, ops_not_after_pass, suffix="after")
         self.add_stage(self.tester.run_method_and_compare_outputs)
 
+    def run(self):
+        with TosaLoweringContext(self.tosa_spec):
+            super().run()
 
-class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
+
+class TransformAnnotationPassPipeline(TOSAPipelineMaker, Generic[T]):
     """
     Runs transform_for_annotation_pipeline passes directly on an exported program and checks output.
 
@@ -708,10 +792,14 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         module: torch.nn.Module,
         test_data: T,
         custom_path: str = None,
+        tosa_extensions: Optional[List[str]] = None,
     ):
+        if tosa_extensions is None:
+            tosa_extensions = []
         tosa_profiles = {
-            "0.80": TosaSpecification.create_from_string("TOSA-0.80+BI"),
-            "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT"),
+            "1.0": TosaSpecification.create_from_string(
+                "TOSA-1.0+INT" + "".join([f"+{ext}" for ext in tosa_extensions]),
+            ),
         }
         tosa_version = conftest.get_option("tosa_version")
 
@@ -743,7 +831,7 @@ class TransformAnnotationPassPipeline(BasePipelineMaker, Generic[T]):
         )
 
 
-class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
+class OpNotSupportedPipeline(TOSAPipelineMaker, Generic[T]):
     """
     Runs the partitioner on a module and checks that ops are not delegated to test
     SupportedTOSAOperatorChecks.
@@ -767,19 +855,23 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
         custom_path: str = None,
         quantize: Optional[bool] = False,
         u55_subset: Optional[bool] = False,
+        tosa_extensions: Optional[List[str]] = None,
     ):
+        if tosa_extensions is None:
+            tosa_extensions = []
         tosa_profiles = {
-            "0.80": "TOSA-0.80+" + ("BI" if quantize else "MI"),
-            "1.0": "TOSA-1.0+" + ("INT" if quantize else "FP"),
+            "1.0": TosaSpecification.create_from_string(
+                "TOSA-1.0+"
+                + ("INT" if quantize else "FP")
+                + ("+u55" if u55_subset and quantize else "")
+                + "".join([f"+{ext}" for ext in tosa_extensions]),
+            ),
         }
-        tosa_version = tosa_profiles[conftest.get_option("tosa_version")]
+        tosa_version = conftest.get_option("tosa_version")
 
-        if u55_subset and quantize:
-            tosa_version = f"{tosa_version}+u55"
+        tosa_spec = tosa_profiles[tosa_version]
 
-        compile_spec = common.get_tosa_compile_spec(
-            tosa_version, custom_path=custom_path
-        )
+        compile_spec = common.get_tosa_compile_spec(tosa_spec, custom_path=custom_path)
         super().__init__(
             module,
             test_data,
@@ -788,7 +880,7 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
             [],
         )
 
-        if "INT" in tosa_version or "BI" in tosa_version:
+        if tosa_spec.support_integer():
             self.add_stage(self.tester.quantize, pos=0)
 
         self.change_args("check_not.exir", [])
@@ -800,3 +892,142 @@ class OpNotSupportedPipeline(BasePipelineMaker, Generic[T]):
             },
         )
         self.pop_stage("to_executorch")
+
+
+class VgfPipeline(BasePipelineMaker, Generic[T]):
+    """
+    Lowers a graph based on TOSA spec (with or without quantization) and converts TOSA to VFG.
+
+    Attributes:
+       module: The module which the pipeline is applied to.
+       test_data: Data used for quantizing and testing the module.
+
+       aten_ops: Aten dialect ops expected to be found in the graph after export.
+       exir_ops: Exir dialect ops expected to be found in the graph after to_edge.
+       if not using use_edge_to_transform_and_lower.
+
+       run_on_vulkan_runtime: Whether to test VGF output on VKML runtime.
+
+       vgf_compiler_flags: Optional compiler flags.
+
+       tosa_version: A string for identifying the TOSA version.
+
+       use_edge_to_transform_and_lower: Selects betweeen two possible ways of lowering the module.
+       custom_path : Path to dump intermediate artifacts such as tosa and pte to.
+    """
+
+    def __init__(
+        self,
+        module: torch.nn.Module,
+        test_data: T,
+        aten_op: str | List[str],
+        exir_op: Optional[str | List[str]] = None,
+        run_on_vulkan_runtime: bool = True,
+        vgf_compiler_flags: Optional[str] = "",
+        tosa_version: str = "TOSA-1.0+FP",
+        symmetric_io_quantization: bool = False,
+        per_channel_quantization: bool = True,
+        use_to_edge_transform_and_lower: bool = True,
+        custom_path: str = None,
+        tosa_debug_mode: Optional[ArmCompileSpec.DebugMode] = None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+        qtol: int = 1,
+        dynamic_shapes: Optional[Tuple[Any]] = None,
+        transform_passes: Optional[
+            Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+        ] = None,
+        tosa_extensions: Optional[List[str]] = None,
+    ):
+
+        if tosa_extensions is None:
+            tosa_extensions = []
+        tosa_spec = TosaSpecification.create_from_string(
+            tosa_version + "".join([f"+{ext}" for ext in tosa_extensions])
+        )
+        compile_spec = common.get_vgf_compile_spec(
+            tosa_spec,
+            compiler_flags=vgf_compiler_flags,
+            custom_path=custom_path,
+            tosa_debug_mode=tosa_debug_mode,
+        )
+
+        super().__init__(
+            module,
+            test_data,
+            aten_op,
+            compile_spec,
+            exir_op,
+            use_to_edge_transform_and_lower,
+            dynamic_shapes,
+            transform_passes=transform_passes,
+        )
+
+        if tosa_spec.support_integer():
+            quantizer = VgfQuantizer(compile_spec)
+            quantization_config = get_symmetric_quantization_config(
+                is_per_channel=per_channel_quantization
+            )
+            if symmetric_io_quantization:
+                quantizer.set_io(quantization_config)
+            quant_stage = Quantize(quantizer, quantization_config)
+
+            self.add_stage(self.tester.quantize, quant_stage, pos=0)
+
+            self.add_stage_after(
+                "quantize",
+                self.tester.check,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+
+            remove_quant_nodes_stage = (
+                "to_edge_transform_and_lower"
+                if use_to_edge_transform_and_lower
+                else "partition"
+            )
+            self.add_stage_after(
+                remove_quant_nodes_stage,
+                self.tester.check_not,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+        else:
+            self.add_stage_after(
+                "export",
+                self.tester.check_not,
+                [
+                    "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                    "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                ],
+                suffix="quant_nodes",
+            )
+
+        if run_on_vulkan_runtime:
+            self.add_stage(self.tester.serialize)
+            self.add_stage(
+                self.tester.run_method_and_compare_outputs,
+                atol=atol,
+                rtol=rtol,
+                qtol=qtol,
+                inputs=self.test_data,
+            )
+        self.run_on_vulkan_runtime = run_on_vulkan_runtime
+
+    # TODO: Remove once CI fully working
+    def run(self):
+        import pytest
+
+        if self.run_on_vulkan_runtime:
+            try:
+                super().run()
+            except FileNotFoundError as e:
+                pytest.skip(f"VKML executor_runner not found - not built - skip {e}")
+        else:
+            super().run()

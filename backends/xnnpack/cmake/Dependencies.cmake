@@ -35,24 +35,36 @@ set(XNNPACK_BUILD_TESTS
 set(XNNPACK_ENABLE_AVXVNNI
     OFF
     CACHE BOOL ""
-  )
-# Work around observed failure: https://github.com/pytorch/executorch/pull/10362#issuecomment-2906391232
+)
+# Work around observed failure:
+# https://github.com/pytorch/executorch/pull/10362#issuecomment-2906391232
 set(XNNPACK_ENABLE_AVX512VNNIGFNI
-  OFF
-  CACHE BOOL "")
-
+    OFF
+    CACHE BOOL ""
+)
+set(XNNPACK_ENABLE_ARM_SME2
+    ON
+    CACHE BOOL ""
+)
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-    set(XNNPACK_ENABLE_KLEIDIAI
-        ON
-        CACHE BOOL ""
-    )
+  set(XNNPACK_ENABLE_KLEIDIAI
+      ON
+      CACHE BOOL ""
+  )
 else()
-    set(XNNPACK_ENABLE_KLEIDIAI
-        OFF
-        CACHE BOOL ""
-    )
+  set(XNNPACK_ENABLE_KLEIDIAI
+      OFF
+      CACHE BOOL ""
+  )
 endif()
 
+if(WIN32)
+  # These XNNPACK options don't currently build on Windows.
+  set_overridable_option(XNNPACK_ENABLE_AVX256SKX OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX256VNNIGFNI OFF)
+  set_overridable_option(XNNPACK_ENABLE_AVX512BF16 OFF)
+endif()
 
 set(XNNPACK_BUILD_ALL_MICROKERNELS
     OFF
@@ -61,17 +73,24 @@ set(XNNPACK_BUILD_ALL_MICROKERNELS
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
 include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
 list(APPEND xnnpack_third_party XNNPACK)
-install(TARGETS microkernels-prod
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
+install(
+  TARGETS xnnpack-microkernels-prod
+  EXPORT ExecuTorchTargets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
 if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
-    install(TARGETS kleidiai
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  if(TARGET kleidiai)
+    install(
+      TARGETS kleidiai
+      EXPORT ExecuTorchTargets
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+  endif()
 endif()
 
 # Revert PIC Flag to what it originally was

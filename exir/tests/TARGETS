@@ -1,10 +1,10 @@
 load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = [
         "common.py",
@@ -15,7 +15,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "models",
     srcs = [
         "models.py",
@@ -27,7 +27,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "control_flow_models",
     srcs = [
         "control_flow_models.py",
@@ -37,7 +37,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "dynamic_shape_models",
     srcs = [
         "dynamic_shape_models.py",
@@ -47,7 +47,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "transformer",
     srcs = [
         "transformer.py",
@@ -57,7 +57,7 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "asr_joiner",
     srcs = [
         "asr_joiner.py",
@@ -133,6 +133,19 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
+    ],
+)
+
+python_unittest(
+    name = "reinplace_pass",
+    srcs = [
+        "test_reinplace_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/extension/pybindings:portable_lib",
     ],
 )
 
@@ -406,7 +419,7 @@ python_unittest(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "test_memory_format_ops_pass_utils",
     srcs = [
         "test_memory_format_ops_pass_utils.py",

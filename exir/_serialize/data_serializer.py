@@ -1,41 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Dict, Optional, Sequence
 
 from executorch.exir._serialize._cord import Cord
-
-from executorch.exir.schema import ScalarType
-
-
-@dataclass
-class TensorLayout:
-    """Tensor layout information for externally-serialized tensors.
-
-    Attributes:
-        scalar_type: type of the elements in the tensor.
-        sizes: size of each dim in the tensor.
-        dim_order: specifies the order the dimensions are laid out in memory,
-            from outer to inner.
-    """
-
-    scalar_type: ScalarType
-    sizes: List[int]
-    dim_order: List[int]
-
-
-@dataclass
-class TensorEntry:
-    """Represents a single tensor in `DataPayload`, specifying its location
-    and metadata.
-
-    Attributes:
-       buffer_index: The index inside `DataPayload.buffers` that this
-            TensorEntry refers to.
-       layout: Metadata about the tensor.
-    """
-
-    buffer_index: int
-    layout: TensorLayout
+from executorch.extension.flat_tensor.serialize.flat_tensor_schema import TensorLayout
 
 
 @dataclass
@@ -47,10 +15,12 @@ class DataEntry:
        buffer_index: The index inside `DataPayload.buffers` that this
             DataEntry refers to.
        alignment: The alignment of the data.
+       tensor_layout: If this is a tensor, the tensor layout information.
     """
 
     buffer_index: int
     alignment: int
+    tensor_layout: Optional[TensorLayout]
 
 
 @dataclass
@@ -58,22 +28,20 @@ class DataPayload:
     """Contains the data and metadata required for serialization.
 
     Having an index-based arrangement instead of embedding the buffers in
-    TensorEntry allows the caller to deduplicate buffers and point multiple
-    fully qualified names (FQNs) to the same entry.
+    DataEntry allows the caller to deduplicate buffers and point multiple
+    keys to the same entry.
 
     Attributes:
-        buffers: a sequence of tensor buffers.
-        fqn_to_tensor: a map from fully qualified names to serializable tensors.
-        key_to_data: a map from unique keys to serializable opaque data.
+        buffers: a sequence of byte buffers.
+        key_to_data: a map from unique keys to serializable data.
     """
 
     buffers: Sequence[bytes]
-    fqn_to_tensor: Dict[str, TensorEntry]
-    key_to_data: Dict[str, DataEntry]
+    named_data: Dict[str, DataEntry]
 
 
 class DataSerializer(ABC):
-    """Serializes and deserializes FQN-tagged tensor data.
+    """Serializes and deserializes data. Data can be referenced by a unique key.
 
     This base class enables serialization into different formats. See
     executorch/extension/flat_tensor/ for an example.
@@ -85,11 +53,11 @@ class DataSerializer(ABC):
         data: DataPayload,
     ) -> Cord:
         """
-        Serializes a list of tensors emitted by ExecuTorch into a binary blob.
+        Serializes a list of bytes emitted by ExecuTorch into a binary blob.
 
         Args:
-            data: the tensor buffers and tensor layout information required for
-            serialization.
+            data: buffers and corresponding metadata used for serialization.
+
 
         Returns:
             A binary blob that contains the serialized data.
@@ -99,14 +67,14 @@ class DataSerializer(ABC):
     @abstractmethod
     def deserialize(self, blob: Cord) -> DataPayload:
         """
-        Deserializes a blob into a list of tensors. Reverses the effect of
+        Deserializes a blob into a DataPayload. Reverses the effect of
         serialize.
 
         Args:
             blob: A binary blob that contains the serialized data.
 
         Returns:
-            DataPayload: tensor buffers and tensor layout information
-            deserialized from `blob`.
+            DataPayload: buffers and corresponding metadata deserialized
+            from `blob`.
         """
         raise NotImplementedError("deserialize_data")

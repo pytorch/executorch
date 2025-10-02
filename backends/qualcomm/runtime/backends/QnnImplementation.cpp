@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
-
 #include "QnnInterface.h"
 namespace executorch {
 namespace backends {
@@ -51,8 +50,12 @@ Error QnnImplementation::StartBackend(
     const std::string& lib_path,
     const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-  void* lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
-
+  void* lib_handle = nullptr;
+  // If the library is already loaded, return the handle.
+  lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_NOLOAD);
+  if (!lib_handle) {
+    lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+  }
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",

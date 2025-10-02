@@ -19,9 +19,9 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
+using std::optional;
 using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
@@ -72,12 +72,12 @@ class OpIndexTensorOutTest : public OperatorTest {
     // clang-format on
 
     // indices [0, 1, 2], [1, 0, 3], expressed two different ways
-    optional<Tensor> indices[] = {
+    std::array<optional<Tensor>, 3> indices = {
         optional<Tensor>(tfl.make({2}, {0, 1})),
         optional<Tensor>(tfl.make({2}, {1, 0})),
         optional<Tensor>(tfl.make({2}, {2, 3}))};
 
-    optional<Tensor> indices_mixed[] = {
+    std::array<optional<Tensor>, 3> indices_mixed = {
         optional<Tensor>(tfl.make({2}, {0, 1})),
         optional<Tensor>(tfb.make({2}, {false, true})),
         optional<Tensor>(tfl.make({2}, {2, 3}))};
@@ -106,6 +106,36 @@ class OpIndexTensorOutTest : public OperatorTest {
   void test_dtype_enumerate_in_types() {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long, ScalarType::dtype>();
+
+    ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
+
+#undef TEST_ENTRY
+  }
+
+  template <executorch::aten::ScalarType INPUT_DTYPE>
+  void test_indices_with_only_null_tensors_supported() {
+    TensorFactory<INPUT_DTYPE> tf;
+
+    Tensor x = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+    Tensor out = tf.zeros({2, 3});
+
+    std::array<optional<Tensor>, 1> indices1 = {optional<Tensor>()};
+    op_index_tensor_out(x, indices1, out);
+    EXPECT_TENSOR_EQ(out, x);
+
+    out = tf.zeros({2, 3});
+    std::array<optional<Tensor>, 2> indices2 = {
+        optional<Tensor>(), std::optional<Tensor>()};
+    op_index_tensor_out(x, indices2, out);
+    EXPECT_TENSOR_EQ(out, x);
+  }
+
+  /**
+   * Test indices with only null tensors for all input data types
+   */
+  void test_indices_with_only_null_tensors_enumerate_in_types() {
+#define TEST_ENTRY(ctype, dtype) \
+  test_indices_with_only_null_tensors_supported<ScalarType::dtype>();
 
     ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 
@@ -203,27 +233,27 @@ TEST_F(OpIndexTensorOutTest, SelectFrontDimAllIndexes) {
   // Try to select the input value at indices
   // [1, 0, 1], [1, 0, 2]. This is expressed in various ways to test different
   // indexing expressions.
-  optional<Tensor> indices[] = {
+  std::array<optional<Tensor>, 3> indices = {
       optional<Tensor>(tfl.make({1}, {1})),
       optional<Tensor>(tfl.make({1}, {0})),
       optional<Tensor>(tfl.make({2}, {1, 2}))};
 
-  optional<Tensor> indices_int[] = {
+  std::array<optional<Tensor>, 3> indices_int = {
       optional<Tensor>(tfi.make({1}, {1})),
       optional<Tensor>(tfi.make({1}, {0})),
       optional<Tensor>(tfi.make({2}, {1, 2}))};
 
-  optional<Tensor> indices_negative[] = {
+  std::array<optional<Tensor>, 3> indices_negative = {
       optional<Tensor>(tfl.make({1}, {-1})),
       optional<Tensor>(tfl.make({1}, {0})),
       optional<Tensor>(tfl.make({2}, {-3, -2}))};
 
-  optional<Tensor> indices_bool[] = {
+  std::array<optional<Tensor>, 3> indices_bool = {
       optional<Tensor>(tfb.make({2}, {false, true})),
       optional<Tensor>(tfb.make({3}, {true, false, false})),
       optional<Tensor>(tfl.make({2}, {-3, -2}))};
 
-  optional<Tensor> indices_mixed[] = {
+  std::array<optional<Tensor>, 3> indices_mixed = {
       optional<Tensor>(tfb.make({2}, {false, true})),
       optional<Tensor>(tfl.make({1}, {0})),
       optional<Tensor>(tfl.make({2}, {-3, -2}))};
@@ -264,7 +294,7 @@ TEST_F(OpIndexTensorOutTest, SelectTwoValuesAtSameIndex) {
   // clang-format on
 
   // Try to select the value at the same index
-  optional<Tensor> indices[] = {
+  std::array<optional<Tensor>, 3> indices = {
       optional<Tensor>(tfl.make({1, 2}, {0, 0})),
       optional<Tensor>(tfl.make({1, 2}, {1, 1})),
       optional<Tensor>(tfl.make({1, 2}, {2, 2}))};
@@ -306,11 +336,11 @@ TEST_F(OpIndexTensorOutTest, IndicesFewerThanInputDimSupported) {
   // [1, 0, :], [1, 1, :]. This is expressed in various ways to test different
   // indexing expressions.
 
-  optional<Tensor> indices[] = {
+  std::array<optional<Tensor>, 2> indices = {
       optional<Tensor>(tfl.make({1}, {1})),
       optional<Tensor>(tfl.make({2}, {0, 1}))};
 
-  optional<Tensor> indices_mixed[] = {
+  std::array<optional<Tensor>, 2> indices_mixed = {
       optional<Tensor>(tfi.make({1}, {-1})),
       optional<Tensor>(tfb.make({3}, {true, true, false}))};
 
@@ -349,7 +379,7 @@ TEST_F(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
       });
   // clang-format on
 
-  optional<Tensor> indices0[] = {
+  std::array<optional<Tensor>, 3> indices0 = {
       optional<Tensor>(),
       optional<Tensor>(tfl.make({1}, {1})),
       optional<Tensor>(tfl.make({2}, {0, 1}))};
@@ -366,7 +396,7 @@ TEST_F(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
 
   run_test_cases(x, /*indices=*/indices0, expected0);
 
-  optional<Tensor> indices1[] = {
+  std::array<optional<Tensor>, 3> indices1 = {
       optional<Tensor>(tfl.make({1}, {1})),
       optional<Tensor>(),
       optional<Tensor>(tfl.make({2}, {0, 1}))};
@@ -383,7 +413,7 @@ TEST_F(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
 
   run_test_cases(x, /*indices=*/indices1, expected1);
 
-  optional<Tensor> indices2[] = {
+  std::array<optional<Tensor>, 3> indices2 = {
       optional<Tensor>(tfl.make({1}, {1})),
       optional<Tensor>(tfl.make({2}, {0, 1})),
       optional<Tensor>()};
@@ -405,20 +435,19 @@ TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
+  test_indices_with_only_null_tensors_enumerate_in_types();
+}
+
+TEST_F(OpIndexTensorOutTest, TooManyNullIndices) {
   TensorFactory<ScalarType::Double> tf;
-
   Tensor x = tf.make({2, 3}, {1., 2., 3., 4., 5., 6.});
-  optional<Tensor> indices0[] = {optional<Tensor>()};
-  run_test_cases(x, indices0, x);
-
-  optional<Tensor> indices1[] = {optional<Tensor>(), optional<Tensor>()};
-  run_test_cases(x, indices1, x);
-
-  optional<Tensor> indices2[] = {
-      optional<Tensor>(), optional<Tensor>(), optional<Tensor>()};
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(), std::optional<Tensor>(), std::optional<Tensor>()};
   Tensor out = tf.ones({2, 3});
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_, op_index_tensor_out(x, indices2, out), "");
+      context_,
+      op_index_tensor_out(x, indices, out),
+      "Indexing too many dimensions");
 }
 
 TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {
@@ -550,7 +579,7 @@ TEST_F(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
 
   Tensor x = tf.zeros({2, 4, 7, 5});
   // clang-format off
-  optional<Tensor> indices[] = {
+  std::array<optional<Tensor>, 2> indices = {
       optional<Tensor>(tfl.make({3}, {1, 1, 1,})),
       optional<Tensor>(tfl.make({2}, {1, 2}))};
 
@@ -570,7 +599,7 @@ TEST_F(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
 
   Tensor x = tf.zeros({4, 4});
   // clang-format off
-  optional<Tensor> indices[] = {
+  std::array<optional<Tensor>, 2> indices = {
       optional<Tensor>(tfl.make({2, 2}, {1, 1, 1, 1,})),
       optional<Tensor>(tfl.make({1, 2}, {3, 0,}))};
 
@@ -607,7 +636,7 @@ TEST_F(OpIndexTensorOutTest, UpperBoundOutTensor) {
 
   // Try to select the tensor from the input
   // indices [0, 2, 2], [1, 1, 2]
-  optional<Tensor> indices[] = {
+  std::array<optional<Tensor>, 3> indices = {
       optional<Tensor>(tfl.make({1, 2}, {0, 1})),
       optional<Tensor>(tfl.make({1, 2}, {2, 1})),
       optional<Tensor>(tfl.make({1, 2}, {2, 2}))};
@@ -626,4 +655,264 @@ TEST_F(OpIndexTensorOutTest, UpperBoundOutTensor) {
   Tensor ret = op_index_tensor_out(x, indices, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
+}
+
+//
+// Fast Path Tests
+//
+
+TEST_F(OpIndexTensorOutTest, FastPathFirstDim) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // clang-format off
+  Tensor x = tf.make(
+    {2, 3, 4},
+    {
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(tfl.make({3}, {1, 0, 1})),
+      optional<Tensor>(),
+      optional<Tensor>()};
+
+  Tensor out = tf.zeros({3, 3, 4});
+  // clang-format off
+  Tensor expected = tf.make(
+    {3, 3, 4},
+    {
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPathMiddleDim) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // clang-format off
+  Tensor x = tf.make(
+    {2, 3, 4},
+    {
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  std::array<optional<Tensor>, 2> indices = {
+      optional<Tensor>(), optional<Tensor>(tfl.make({5}, {2, 0, 1, 0, 2}))};
+
+  Tensor out = tf.zeros({2, 5, 4});
+  // clang-format off
+  Tensor expected = tf.make(
+    {2, 5, 4},
+    {
+        // [0, :, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -9., -10., -11., -12., // [1, 2, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPathLastDim) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // clang-format off
+  Tensor x = tf.make(
+    {2, 3, 4},
+    {
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(),
+      optional<Tensor>(),
+      optional<Tensor>(tfl.make({3}, {2, 0, 1}))};
+
+  Tensor out = tf.zeros({2, 3, 3});
+  // clang-format off
+  Tensor expected = tf.make(
+    {2, 3, 3},
+    {
+        3.,   1.,   2.,
+        7.,   5.,   6.,
+       11.,   9.,  10.,
+
+       -3.,  -1.,  -2.,
+       -7.,  -5.,  -6.,
+      -11.,  -9., -10.,
+    });
+  // clang-format on
+
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPathZeroDim) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.ones({0});
+  std::array<optional<Tensor>, 1> indices = {optional<Tensor>(tfl.zeros({0}))};
+  Tensor out = tf.zeros({0});
+  Tensor expected = tf.ones({0});
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPath1DLessElements) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.make({5}, {1., 2., 3., 4., 5.});
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfl.make({3}, {2, 0, 1}))};
+  Tensor out = tf.zeros({3});
+  Tensor expected = tf.make({3}, {3., 1., 2.});
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPath1DMoreElements) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.make({5}, {1., 2., 3., 4., 5.});
+  std::array<optional<Tensor>, 1> indices = {
+      optional<Tensor>(tfl.make({7}, {2, 0, 1, 3, 3, 4, 1}))};
+  Tensor out = tf.zeros({7});
+  Tensor expected = tf.make({7}, {3., 1., 2., 4., 4., 5., 2.});
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPathUpperBoundOutTensor) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // clang-format off
+  Tensor x = tf.make(
+    {2, 3, 4},
+    {
+        // [0, :, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(),
+      optional<Tensor>(tfl.make({5}, {2, 0, 1, 0, 2})),
+      optional<Tensor>()};
+
+  Tensor out =
+      tf.zeros({5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+  // clang-format off
+  Tensor expected = tf.make(
+    {2, 5, 4},
+    {
+        // [0, :, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        5.,   6.,   7.,   8., // [0, 1, :]
+        1.,   2.,   3.,   4., // [0, 0, :]
+        9.,  10.,  11.,  12., // [0, 2, :]
+
+        // [1, :, :]
+       -9., -10., -11., -12., // [1, 2, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -5.,  -6.,  -7.,  -8., // [1, 1, :]
+       -1.,  -2.,  -3.,  -4., // [1, 0, :]
+       -9., -10., -11., -12., // [1, 2, :]
+    });
+  // clang-format on
+
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpIndexTensorOutTest, FastPathEmptyInput) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  Tensor x = tf.ones({2, 3, 0, 4});
+  std::array<optional<Tensor>, 3> indices = {
+      optional<Tensor>(),
+      optional<Tensor>(tfl.make({5}, {2, 0, 1, 0, 2})),
+      optional<Tensor>()};
+  Tensor out = tf.zeros(
+      {5, 5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+  Tensor expected = tf.ones({2, 5, 0, 4});
+  op_index_tensor_out(x, indices, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
 }

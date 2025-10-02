@@ -10,8 +10,9 @@ The following are required to install the ExecuTorch host libraries, needed to e
 
 - Python 3.10 - 3.12
 - g++ version 7 or higher, clang++ version 5 or higher, or another C++17-compatible toolchain.
-- Linux or MacOS operating system (Arm or x86).
-  - Windows is supported via WSL.
+- Linux (x86_64 or ARM64) or macOS (ARM64).
+    - Intel-based macOS systems require building PyTorch from source (see [Building From Source](using-executorch-building-from-source.md) for instructions).
+    - Windows is supported via WSL.
 
 ## Installation
 To use ExecuTorch, you will need to install both the Python package and the appropriate platform-specific runtime libraries. Pip is the recommended way to install the ExecuTorch python package.
@@ -100,7 +101,7 @@ print("Comparing against original PyTorch module")
 print(torch.allclose(output[0], eager_reference_output, rtol=1e-3, atol=1e-5))
 ```
 
-For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/python).
+For complete examples of exporting and running the model, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/python).
 
 Additionally, if you work with Hugging Face models, the [*huggingface/optimum-executorch*](https://github.com/huggingface/optimum-executorch) library simplifies running these models end-to-end with ExecuTorch, using familiar Hugging Face APIs. Visit the repository for specific examples and supported models.
 
@@ -123,7 +124,7 @@ To add the library to your app, add the following dependency to gradle build rul
 ```
 # app/build.gradle.kts
 dependencies {
-  implementation("org.pytorch:executorch-android:0.6.0")
+  implementation("org.pytorch:executorch-android:${executorch_version}")
 }
 
 # See latest available versions in https://mvnrepository.com/artifact/org.pytorch/executorch-android
@@ -146,7 +147,7 @@ EValue[] output = model.forward(input_evalue);
 float[] scores = output[0].toTensor().getDataAsFloatArray();
 ```
 
-For a full example of running a model on Android, see the [DeepLabV3AndroidDemo](https://github.com/pytorch-labs/executorch-examples/tree/main/dl3/android/DeepLabV3Demo). For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](using-executorch-android.md).
+For a full example of running a model on Android, see the [DeepLabV3AndroidDemo](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3/android/DeepLabV3Demo). For more information on Android development, including building from source, a full description of the Java APIs, and information on using ExecuTorch from Android native code, see [Using ExecuTorch on Android](using-executorch-android.md).
 
 ### iOS
 
@@ -213,7 +214,7 @@ if (result.ok()) {
 
 For more information on the C++ APIs, see [Running an ExecuTorch Model Using the Module Extension in C++](extension-module.md) and [Managing Tensor Memory in C++](extension-tensor.md).
 
-For complete examples of building and running C++ application, please refer to our [examples GitHub repository](https://github.com/pytorch-labs/executorch-examples/tree/main/mv2/cpp).
+For complete examples of building and running C++ application, please refer to our [examples GitHub repository](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2/cpp).
 
 <hr/>
 

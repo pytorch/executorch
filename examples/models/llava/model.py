@@ -31,7 +31,6 @@ from torchvision.transforms.v2 import functional as F
 from transformers import (
     AutoProcessor,
     CLIPImageProcessor,
-    LlamaForCausalLM,
     LlavaForConditionalGeneration,
 )
 
@@ -67,6 +66,7 @@ class Llava(torch.nn.Module):
         llava_model: LlavaForConditionalGeneration,
         image_processor: CLIPImageProcessor,
         use_sdpa_with_kv_cache_op: bool = True,
+        max_context_len: int = 768,
         max_seq_len: int = 768,
     ):
         super().__init__()
@@ -88,6 +88,7 @@ class Llava(torch.nn.Module):
             enable_dynamic_shape=True,  # allow parallel prefill
             use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
+            max_context_len=max_context_len,
             max_seq_len=max_seq_len,
         )
         self.text_model = construct_transformer(self.text_model_args)
@@ -104,19 +105,19 @@ class Llava(torch.nn.Module):
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
         # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `language_model`.
-        state_dict = self.model_.language_model.state_dict()
+        state_dict = self.model_.state_dict()
         key_map = {
             # fmt: off
-            r"model.layers.([0-9]+).self_attn.q_proj.": r"layers.\1.attention.wq.",
-            r"model.layers.([0-9]+).self_attn.k_proj.": r"layers.\1.attention.wk.",
-            r"model.layers.([0-9]+).self_attn.v_proj.": r"layers.\1.attention.wv.",
-            r"model.layers.([0-9]+).self_attn.o_proj.": r"layers.\1.attention.wo.",
-            r"model.layers.([0-9]+).input_layernorm.": r"layers.\1.attention_norm.",
-            r"model.layers.([0-9]+).mlp.gate_proj.": r"layers.\1.feed_forward.w1.",
-            r"model.layers.([0-9]+).mlp.down_proj.": r"layers.\1.feed_forward.w2.",
-            r"model.layers.([0-9]+).mlp.up_proj.": r"layers.\1.feed_forward.w3.",
-            r"model.layers.([0-9]+).post_attention_layernorm.": r"layers.\1.ffn_norm.",
-            r"model.norm.": r"norm.",
+            r"model.language_model.layers.([0-9]+).self_attn.q_proj.": r"layers.\1.attention.wq.",
+            r"model.language_model.layers.([0-9]+).self_attn.k_proj.": r"layers.\1.attention.wk.",
+            r"model.language_model.layers.([0-9]+).self_attn.v_proj.": r"layers.\1.attention.wv.",
+            r"model.language_model.layers.([0-9]+).self_attn.o_proj.": r"layers.\1.attention.wo.",
+            r"model.language_model.layers.([0-9]+).input_layernorm.": r"layers.\1.attention_norm.",
+            r"model.language_model.layers.([0-9]+).mlp.gate_proj.": r"layers.\1.feed_forward.w1.",
+            r"model.language_model.layers.([0-9]+).mlp.down_proj.": r"layers.\1.feed_forward.w2.",
+            r"model.language_model.layers.([0-9]+).mlp.up_proj.": r"layers.\1.feed_forward.w3.",
+            r"model.language_model.layers.([0-9]+).post_attention_layernorm.": r"layers.\1.ffn_norm.",
+            r"model.language_model.norm.": r"norm.",
             # r"model.embed_tokens.": r"tok_embeddings.", # load separately
             r"lm_head.": r"output.",
             # fmt: on
@@ -157,7 +158,7 @@ class Llava(torch.nn.Module):
 
     def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
         # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `language_model`.
-        return self.model_.language_model.model.embed_tokens(tokens)
+        return self.model_.language_model.embed_tokens(tokens)
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `dtype`.
@@ -289,13 +290,8 @@ class Llava(torch.nn.Module):
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `LlamaForCausalLM`.
-        return LlamaForCausalLM.forward(
-            # pyre-ignore: Undefined attribute [16]: `transformers.utils.dummy_pt_objects.LlavaForConditionalGeneration` has no attribute `language_model`.
-            self.model_.language_model,
-            inputs_embeds=embeds,
-            return_dict=False,
-            use_cache=False,
-            output_hidden_states=False,
+        return self.model_.forward(
+            inputs_embeds=embeds, use_cache=False, return_dict=False, logits_to_keep=1
         )
 
     def forward(
@@ -306,28 +302,48 @@ class Llava(torch.nn.Module):
 
 
 class LlavaModel(EagerModelBase):
-    def __init__(self, use_sdpa_with_kv_cache_op=True, max_seq_len=768):
+    def __init__(
+        self, use_sdpa_with_kv_cache_op=True, max_seq_len=768, max_context_len=768
+    ):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
+        self.max_context_len = max_context_len
         self.max_seq_len = max_seq_len
-        self.processor = AutoProcessor.from_pretrained(
-            "llava-hf/llava-1.5-7b-hf",
-            revision="a272c74b2481d8aff3aa6fc2c4bf891fe57334fb",  # Need this for transformers >= 4.44.2
-        )
-        self.tokenizer = self.processor.tokenizer
-        self.image_processor = self.processor.image_processor
         self.model = LlavaForConditionalGeneration.from_pretrained(
             "llava-hf/llava-1.5-7b-hf",
             device_map="cpu",
             revision="a272c74b2481d8aff3aa6fc2c4bf891fe57334fb",  # Need this for transformers >= 4.44.2
         )
-        self.image = Image.open(
-            requests.get(
-                "https://llava-vl.github.io/static/images/view.jpg", stream=True
-            ).raw
+        self.processor = AutoProcessor.from_pretrained(
+            "llava-hf/llava-1.5-7b-hf",
+            revision="a272c74b2481d8aff3aa6fc2c4bf891fe57334fb",  # Need this for transformers >= 4.44.2
+            patch_size=self.model.vision_tower.config.patch_size,  # Required after transformers >= 4.52.0
         )
-        self.prompt = """A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: <image>
-What are the things I should be cautious about when I visit here? ASSISTANT:"""
+        self.tokenizer = self.processor.tokenizer
+        self.image_processor = self.processor.image_processor
+        self.image_url = "https://llava-vl.github.io/static/images/view.jpg"
+        self.image = Image.open(requests.get(self.image_url, stream=True).raw)
+        self.system_prompt = """A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. """
+        current_template = self.processor.chat_template
+        # Prepend the system prompt to the template
+        new_template = self.system_prompt + current_template
+
+        # Set the modified template back to the tokenizer
+        self.processor.chat_template = new_template
+
         self.model_name = "llava-1.5-7b-hf"
+
+        self.conversation = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "url": self.image_url},
+                    {
+                        "type": "text",
+                        "text": "What are the things I should be cautious about when I visit here?",
+                    },
+                ],
+            },
+        ]
         # set input to None and initialize them lazily
         self.input = None
         self.resized_image = None
@@ -337,6 +353,7 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
             self.model,
             self.image_processor,
             self.use_sdpa_with_kv_cache_op,
+            self.max_context_len,
             self.max_seq_len,
         )
         model.to(dtype=torch.float32)
@@ -358,11 +375,18 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
         """Returns prompts as well as image."""
         if self.input:
             return self.input
-        self.input_ids = self.tokenizer.encode(self.prompt, return_tensors="pt").cpu()
+        inputs = self.processor.apply_chat_template(
+            self.conversation,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        self.input_ids = inputs["input_ids"]
         index = torch.where(self.input_ids == self.model.config.image_token_index)[1]
-        self.prompt_before_image = self.input_ids[:, :index]
+        self.prompt_before_image = self.input_ids[:, : index[0]]
         # print(prompt_before_image.shape)
-        self.prompt_after_image = self.input_ids[:, index + 1 :]
+        self.prompt_after_image = self.input_ids[:, index[-1] + 1 :]
         # print(prompt_after_image.shape)
         self.input = (
             self.prompt_before_image,
@@ -387,5 +411,5 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
 
     def _get_prompt_dynamic_shapes(self):
         dim = torch.export.Dim("token_dim", min=2, max=self.max_seq_len)
-        text_model_dynamic_shapes = ({0: 1}, {1: dim})
+        text_model_dynamic_shapes = ({1: dim}, {0: 1})
         return text_model_dynamic_shapes

@@ -17,8 +17,8 @@
 
 namespace executorch::etdump {
 
-using ::executorch::aten::string_view;
 using ::executorch::runtime::Result;
+using std::string_view;
 
 /**
  * ETDumpFilter is a class that filters intermediate output based on output's

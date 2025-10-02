@@ -15,8 +15,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using executorch::aten::optional;
 using executorch::aten::Tensor;
+using std::optional;
 
 namespace {
 
@@ -160,10 +160,12 @@ Tensor& _cdist_forward_out(
       out);
 
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "_cdist_forward.out";
+
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "_cdist_forward.out";
 
   ET_SWITCH_FLOATHBF16_TYPES(
-      out_type, ctx, name, CTYPE, [&] { cdist<CTYPE>(x1, x2, out, p); });
+      out_type, ctx, op_name, CTYPE, [&] { cdist<CTYPE>(x1, x2, out, p); });
 
   return out;
 }

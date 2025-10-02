@@ -504,6 +504,7 @@ class GraphModuleSerializer:
             assert len(node.kwargs) == 0
             meta_val = node.meta["val"]
             ex_node = Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_sym_op_inputs(node.target, node.args),
                 outputs=[
@@ -517,6 +518,7 @@ class GraphModuleSerializer:
             assert len(node.kwargs) == 0
             meta_val = node.meta["val"]
             ex_node = Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_sym_op_inputs(node.target, node.args),
                 outputs=[
@@ -528,6 +530,7 @@ class GraphModuleSerializer:
             )
         elif isinstance(node.target, torch._ops.OpOverload):
             ex_node = Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_inputs(node.target, node.args, node.kwargs),
                 outputs=self.serialize_outputs(node),
@@ -536,6 +539,7 @@ class GraphModuleSerializer:
             )
         elif isinstance(node.target, torch._ops.HigherOrderOperator):
             ex_node = Node(
+                name=node.name,
                 target=self.serialize_operator(node.target),
                 inputs=self.serialize_hoo_inputs(node.args, node.kwargs),
                 outputs=self.serialize_hoo_outputs(node),
@@ -1207,7 +1211,7 @@ class GraphModuleSerializer:
         """
         meta_val = node.meta["val"]
 
-        if isinstance(meta_val, tuple):
+        if isinstance(meta_val, (tuple, list)):
             # Note: Since we don't have a schema, we just serialize all tuple
             # outputs to be a list of values. Even if the output is supposed to
             # be a tensor list (Tensor[]), we will serialize it to be a list of
@@ -1658,7 +1662,7 @@ class GraphModuleDeserializer:
 
     def deserialize_node(self, serialized_node: Node, target: Callable) -> None:
         if target in _SYM_BOOL_OPS or target in _SYM_INT_OPS:
-            name = serialized_node.outputs[0].value.as_name
+            name = serialized_node.name
             args = self.deserialize_sym_op_inputs(serialized_node.inputs)
 
             fx_node = self.graph.create_node("call_function", target, args, {}, name)
@@ -1671,12 +1675,7 @@ class GraphModuleDeserializer:
             # have names that are consistent with serialized.
             #
             # HOPs don't have schema yet, just check the output lengths and as_tensor attribute
-            name = (
-                serialized_node.outputs[0].as_tensor.name
-                if len(serialized_node.outputs) == 1
-                and hasattr(serialized_node.outputs[0], "as_tensor")
-                else None
-            )
+            name = serialized_node.name
             fx_node = self.graph.create_node(
                 "call_function", target, args, kwargs, name
             )
@@ -1687,11 +1686,9 @@ class GraphModuleDeserializer:
             # For convenience: if this node returns a single tensor, name the
             # newly-created node after it. This ensures that these tensor values
             # have names that are consistent with serialized.
-            name = (
-                serialized_node.outputs[0].as_tensor.name
-                if _is_single_tensor_return(target)
-                else None  # FX will generate a name for us.
-            )
+
+            name = serialized_node.name
+
             args, kwargs = self.deserialize_inputs(target, serialized_node)
             fx_node = self.graph.create_node(
                 "call_function", target, args, kwargs, name

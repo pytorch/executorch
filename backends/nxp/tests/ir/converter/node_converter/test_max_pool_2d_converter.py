@@ -61,7 +61,8 @@ def test_max_pool_2d_conversion(input_shape, padding):
     # Otherwise, we get violation that this op is not part of ATen Core ops.
     edge_program._verifiers = [
         EXIREdgeDialectVerifier(
-            class_only=True, exception_list=[torch.ops.aten.max_pool2d.default]
+            class_only=True,
+            core_aten_ops_exception_list=[torch.ops.aten.max_pool2d.default],
         )
     ]
 

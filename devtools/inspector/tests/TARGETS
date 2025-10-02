@@ -1,11 +1,15 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//tools/target_determinator/macros:ci.bzl", "ci")
 
 oncall("executorch")
 
 python_unittest(
     name = "inspector_test",
     srcs = ["inspector_test.py"],
+    labels = ci.labels(
+        ci.buckconfig("executorch.event_tracer_enabled", "true"),
+    ),
     deps = [
         "//executorch/devtools:lib",
         "//executorch/devtools/debug_format:et_schema",
@@ -54,7 +58,31 @@ python_unittest(
     ],
 )
 
-python_library(
+python_unittest(
+    name = "l1_comparator_test",
+    srcs = ["l1_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+python_unittest(
+    name = "mse_comparator_test",
+    srcs = ["mse_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+python_unittest(
+    name = "snr_comparator_test",
+    srcs = ["snr_comparator_test.py"],
+    deps = [
+        "//executorch/devtools/inspector/numerical_comparator:lib",
+    ],
+)
+
+runtime.python_library(
     name = "inspector_test_utils",
     srcs = [
         "inspector_test_utils.py",

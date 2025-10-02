@@ -12,7 +12,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpReduceMax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
@@ -39,14 +40,19 @@ class AMax(NodeVisitor):
         )
 
         # mean dims and keep dims
-        mean_dims = cast(List[int], node.args[1])
-        mean_dims = [
-            mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
-        ]
-        if QCOM_AXIS_ORDER in node.meta:
+        if len(node.args) > 1:
+            mean_dims = cast(List[int], node.args[1])
             mean_dims = [
-                node.meta[QCOM_AXIS_ORDER].index(mean_dim) for mean_dim in mean_dims
+                mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
             ]
+            if QCOM_AXIS_ORDER in node.meta:
+                mean_dims = [
+                    node.meta[QCOM_AXIS_ORDER].index(mean_dim) for mean_dim in mean_dims
+                ]
+        else:
+            # reduce all dimensions
+            mean_dims = list(range(input_node.meta["val"].dim()))
+
         mean_dims_shape = [len(mean_dims)]
 
         output_tensor = self.get_tensor(node, node)

@@ -41,7 +41,7 @@ def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
         (DEFAULT_OUTPUT_PATH if not output_path else output_path),
         edge_dialect_program=edge_program,
         executorch_program=et_program,
-        export_modules={
+        extra_recorded_export_modules={
             "aten_dialect_output": aten_dialect,
         },
     )

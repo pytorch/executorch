@@ -11,8 +11,10 @@ set -o xtrace
 
 build_qnn_backend() {
   echo "Start building qnn backend."
-  export ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-/opt/ndk}
-  export QNN_SDK_ROOT=${QNN_SDK_ROOT:-/tmp/qnn/2.28.0.241029}
+  # Source QNN configuration
+  source "$(dirname "${BASH_SOURCE[0]}")/../../backends/qualcomm/scripts/install_qnn_sdk.sh"
+  setup_android_ndk
+  install_qnn
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
   parallelism=$(( $(nproc) - 1 ))
@@ -32,6 +34,10 @@ set_up_aot() {
       -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
       -DEXECUTORCH_BUILD_DEVTOOLS=ON \
       -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_EXTENSION_LLM=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_EXTENSION_LLM_RUNNER=ON \
+      -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
       -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
       -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
       -DPYTHON_EXECUTABLE=python3

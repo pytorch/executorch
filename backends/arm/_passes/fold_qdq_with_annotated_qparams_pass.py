@@ -8,9 +8,18 @@
 
 import copy
 
-from typing import cast, Dict, Set, Tuple
+from typing import cast, Dict, Set, Tuple, Type
 
-from executorch.backends.arm.tosa_quant_utils import QuantArgs
+from executorch.backends.arm._passes import ArmPass
+from executorch.backends.arm._passes.arm_pass_utils import (
+    get_param_tensor,
+    is_param_node,
+)
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+
+from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
+from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -23,9 +32,6 @@ from executorch.exir.pass_base import (
     ProxyValue,
 )
 from torch.fx import GraphModule, Node
-
-q_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-dq_op: EdgeOpOverload = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
 
 def get_input_qparams(node: Node) -> dict[int, QuantArgs]:
@@ -66,13 +72,51 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
     return output_qparams
 
 
-class FoldAndAnnotateQParamsPass(ExportPass):
+class RetraceFoldedDtypesPass(ExportPass):
+    """
+    FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
+    some operators are retraced to types that cannot be handled by TOSA. One
+    such example is sum.dim_IntList:
+        q (int8) -> dq (fp32) -> sum (fp32) -> q (int8) ...
+    After folding it becomes:
+        q (int8)              -> sum (int64) ->         ...
+    This pass changes types of ops in self.targeted_ops, such as sum, so that
+    the output type of that matches the type of the output_qparams.
+    """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
+    targeted_ops: Set[EdgeOpOverload] = {
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in self.targeted_ops:
+            return super().call_operator(op, args, kwargs, meta)
+
+        node_kwargs = kwargs.copy()
+        output_qparams = meta["output_qparams"]
+        if len(output_qparams) == 0:
+            return super().call_operator(op, args, kwargs, meta)
+
+        output_dtype = output_qparams[0].dtype
+        node_kwargs["dtype"] = output_dtype
+        return super().call_operator(op, args, node_kwargs, meta)
+
+
+class FoldAndAnnotateQParamsPass(ArmPass):
     """
     A pass that walks the graph and removes any DQ and Q nodes before and after the target
      node.
      The quantization parameters from the DQ/Q nodes are stored as meta values to be
      accessible for later lowering and serialization passes.
-     The assumption is that the quantization annotatation adds DQ nodes for all tensor
+     The assumption is that the quantization annotation adds DQ nodes for all tensor
      inputs to the target one Q node to the output.
 
      Example ('executorch_exir_dialects_edge__ops_' prefix removed from operators for readability):
@@ -92,12 +136,15 @@ class FoldAndAnnotateQParamsPass(ExportPass):
 
         output_dq: "f32[5]" = quantized_decomposed_dequantize_per_tensor_default(aten_add_tensor_q, 0.05487706884741783, -128, -128, 127, torch.int8)
 
-    The quantization parameters for x_dq and aten_add_tensor_q are store in meta for the aten_add_tensor node.
+    The quantization parameters for x_dq and aten_add_tensor_q are stored in meta for the aten_add_tensor node.
 
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        RetraceFoldedDtypesPass,
+        InsertTableOpsPass,
+        RemoveNoopPass,
+    }
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
@@ -109,22 +156,42 @@ class FoldAndAnnotateQParamsPass(ExportPass):
                 return
 
             arg_quant_params = None
-            if arg.target == dq_op:
-                arg_quant_params = QuantArgs.from_operator(arg.target, arg.args)
+            if arg.target in DQ_OPS:
+                args = arg.args
+                scales = args[1]
+                if (
+                    isinstance(args[1], Node)
+                    and self.exported_program is not None
+                    and is_param_node(self.exported_program, args[1])
+                ):
+                    scales = get_param_tensor(self.exported_program, args[1])
+                zps = args[2]
+                if (
+                    isinstance(args[2], Node)
+                    and self.exported_program is not None
+                    and is_param_node(self.exported_program, args[2])
+                ):
+                    zps = get_param_tensor(self.exported_program, args[2])
+                arg_quant_params = QuantArgs.from_operator(
+                    arg.target, (args[0], scales, zps, *args[3:])
+                )
                 # add arg to nodes_to_remove to fold the dq-node
                 nodes_to_remove.add(arg)
             if input_qparams is not None and input_qparams != arg_quant_params:
                 # Two args are quantized differently
-                raise RuntimeError("Input qparams does not match!")
+                raise RuntimeError("Input qparams do not match")
             input_qparams = arg_quant_params
         if input_qparams is not None:
             node.meta["input_qparams"][i] = input_qparams
             for n in nodes_to_remove:
-                if n.target != dq_op:
-                    raise RuntimeError(f"Expected {dq_op} dq_op, got {n.target}")
+                if n.target not in DQ_OPS:
+                    raise RuntimeError(
+                        f"Expected one of {DQ_OPS} dq_op, got {n.target}"
+                    )
 
-                n.replace_all_uses_with(n.args[0])  # type: ignore[arg-type]
-                graph_module.graph.erase_node(n)
+                node.replace_input_with(n, cast(Node, n.args[0]))
+                if len(n.users) == 0:
+                    graph_module.graph.erase_node(n)
 
     def call(self, graph_module: GraphModule) -> PassResult:
 
@@ -134,7 +201,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             if n.op != "call_function":
                 continue
             # Don't fold chains of quant-ops into each other.
-            if n.target in (q_op, dq_op):
+            if n.target in (*Q_OPS, *DQ_OPS):
                 continue
 
             # Make sure we haven't already set qparams meta information on the node
@@ -164,7 +231,7 @@ class FoldAndAnnotateQParamsPass(ExportPass):
             # Copy the users, since we are modifying it.
             users_copy = copy.copy(n.users)
             for i, user in enumerate(users_copy):
-                if user.target != q_op:
+                if user.target not in Q_OPS:
                     continue
 
                 # quantization node found here, store the quantization parameters in meta value
@@ -189,6 +256,8 @@ class QuantizeOperatorArguments(ExportPass):
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
+
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         # Loop over the graph nodes and find full.default nodes.
@@ -201,7 +270,7 @@ class QuantizeOperatorArguments(ExportPass):
 
             # Make sure we have a quantized operator
             user = list(n.users)[0]
-            if user.target != q_op:
+            if user.target not in Q_OPS:
                 continue
 
             qargs = QuantArgs.from_operator(user.target, user.args)
@@ -222,39 +291,3 @@ class QuantizeOperatorArguments(ExportPass):
                 modified = True
 
         return PassResult(graph_module, modified)
-
-
-class RetraceFoldedDtypesPass(ExportPass):
-    """
-    FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
-    some operators are retraced to types that cannot be handled by TOSA. One
-    such example is sum.dim_IntList:
-        q (int8) -> dq (fp32) -> sum (fp32) -> q (int8) ...
-    After folding it becomes:
-        q (int8)              -> sum (int64) ->         ...
-    This pass changes types of ops in self.targeted_ops, such as sum, so that
-    the output type of that matches the type of the output_qparams.
-    """
-
-    targeted_ops: Set[EdgeOpOverload] = {
-        exir_ops.edge.aten.sum.dim_IntList,
-    }
-
-    def call_operator(
-        self,
-        op,  # pyre-ignore
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op not in self.targeted_ops:
-            return super().call_operator(op, args, kwargs, meta)
-
-        node_kwargs = kwargs.copy()
-        output_qparams = meta["output_qparams"]
-        if len(output_qparams) == 0:
-            return super().call_operator(op, args, kwargs, meta)
-
-        output_dtype = output_qparams[0].dtype
-        node_kwargs["dtype"] = output_dtype
-        return super().call_operator(op, args, node_kwargs, meta)

@@ -1,11 +1,11 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "static_llama",
     srcs = [
         "model/static_llama.py",
@@ -15,10 +15,41 @@ python_library(
     ],
 )
 
-python_library(
-    name = "llama_lib",
-    srcs = ["llama.py"],
+runtime.python_library(
+    name = "decoder_utils",
+    srcs = [
+        "decoder_utils.py",
+    ],
     deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama:eval_library",
+    ],
+)
+
+runtime.python_library(
+    name = "masking_utils",
+    srcs = [
+        "masking_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "decoder_constants",
+    srcs = [
+        "decoder_constants.py",
+    ],
+)
+
+runtime.python_library(
+    name = "llama_lib",
+    srcs = ["__init__.py", "llama.py"],
+    deps = [
+        ":decoder_constants",
+        ":decoder_utils",
+        ":masking_utils",
         "//executorch/examples/models/llama:source_transformation",
         "//caffe2:torch",
         "//executorch/backends/qualcomm/partition:partition",
@@ -26,11 +57,23 @@ python_library(
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/devtools:lib",
         "//executorch/examples/models:models",
+        "//executorch/examples/models/llama:hf_download",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
         "//executorch/examples/qualcomm/oss_scripts/llama:static_llama",
         "//executorch/examples/qualcomm:utils",
         "//executorch/extension/export_util:export_util",
         "//executorch/extension/llm/export:export_lib",
         "//executorch/extension/pybindings:aten_lib",
+    ],
+)
+
+runtime.python_library(
+    name = "range_setting_pt2e",
+    srcs = [
+        "range_setting_pt2e.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 
@@ -43,6 +86,22 @@ python_binary(
     deps = [
         ":llama_lib",
     ],
+)
+
+python_binary(
+    name = "eval_llama_qnn",
+    srcs = ["eval_llama_qnn.py"],
+    main_function = "executorch.examples.qualcomm.oss_scripts.llama.eval_llama_qnn.main",
+    preload_deps = [
+        "//executorch/extension/llm/custom_ops:model_sharding_py",
+    ],
+    deps = [
+        ":llama_lib",
+        "//executorch/examples/models/llama:eval_library",
+        "//executorch/examples/qualcomm/oss_scripts/llama:range_setting_pt2e",
+        "fbsource//third-party/pypi/lm-eval:lm-eval",
+    ],
+    keep_gpu_sections = True,
 )
 
 runtime.command_alias(

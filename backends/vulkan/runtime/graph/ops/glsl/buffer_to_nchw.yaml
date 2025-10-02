@@ -7,16 +7,19 @@
 buffer_to_nchw:
   parameter_names_with_default_values:
     DTYPE: float
+    BUF_DTYPE: float
     STORAGE: buffer
     USE_PUSH_CONST: True
   generate_variant_forall:
-    DTYPE:
-      - VALUE: half
-      - VALUE: float
-      - VALUE: int
-      - VALUE: int8
-      - VALUE: uint8
+    combination:
+      parameter_names: [DTYPE, BUF_DTYPE]
+      combos:
+        - parameter_values: [half, half]
+        - parameter_values: [half, float]
+        - parameter_values: [float, float]
+        - parameter_values: [double, double]
+        - parameter_values: [int8, int8]
+        - parameter_values: [uint8, uint8]
+        - parameter_values: [int32, int32]
   shader_variants:
     - NAME: buffer_to_nchw
-    - NAME: buffer_to_nchw_no_pc
-      USE_PUSH_CONST: False

@@ -12,10 +12,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 from torchvision import models, transforms  # type: ignore[import-untyped]
@@ -32,20 +33,45 @@ model_inputs = (normalize(torch.rand((1, 3, 224, 224))),)
 input_t = Tuple[torch.Tensor]
 
 
-def test_mv2_tosa_MI():
-    pipeline = TosaPipelineMI[input_t](
+quant_test_data = {
+    "per_channel_quantization=true": True,
+    "per_channel_quantization=false": False,
+}
+
+
+def test_mv2_tosa_FP():
+    pipeline = TosaPipelineFP[input_t](
         mv2, model_inputs, aten_op=[], exir_op=[], use_to_edge_transform_and_lower=True
     )
     pipeline.run()
 
 
-def test_mv2_tosa_BI():
-    pipeline = TosaPipelineBI[input_t](
+def test_mv2_tosa_FP_channels_last():
+    input_tensor = model_inputs[0].to(memory_format=torch.channels_last)
+    pipeline = TosaPipelineFP[input_t](
+        mv2,
+        (input_tensor,),
+        aten_op=[],
+        exir_op=[],
+        use_to_edge_transform_and_lower=True,
+    )
+    # Changing memory format leads to an unsupported as_strided_copy op being inserted into the graph,
+    # leading to a graph break.
+    pipeline.change_args(
+        "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
+    )
+    pipeline.run()
+
+
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_tosa_INT(per_channel_quantization):
+    pipeline = TosaPipelineINT[input_t](
         mv2,
         model_inputs,
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
     )
@@ -54,14 +80,15 @@ def test_mv2_tosa_BI():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone300
-def test_mv2_u55_BI():
-    pipeline = EthosU55PipelineBI[input_t](
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_u55_INT(per_channel_quantization):
+    pipeline = EthosU55PipelineINT[input_t](
         mv2,
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
     )
@@ -70,15 +97,48 @@ def test_mv2_u55_BI():
 
 @pytest.mark.slow
 @common.XfailIfNoCorstone320
-def test_mv2_u85_BI():
-    pipeline = EthosU85PipelineBI[input_t](
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_u85_INT(per_channel_quantization):
+    pipeline = EthosU85PipelineINT[input_t](
         mv2,
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+@common.parametrize("per_channel_quantization", quant_test_data)
+def test_mv2_vgf_INT(per_channel_quantization):
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
+        use_to_edge_transform_and_lower=True,
+        per_channel_quantization=per_channel_quantization,
+        atol=0.25,
+        qtol=1,
+        run_on_vulkan_runtime=False,
+    )
+    pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_mv2_vgf_FP():
+    pipeline = VgfPipeline[input_t](
+        mv2,
+        model_inputs,
+        aten_op=[],
+        exir_op=[],
+        tosa_version="TOSA-1.0+FP",
+        use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,
     )
     pipeline.run()

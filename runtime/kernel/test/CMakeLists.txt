@@ -20,7 +20,8 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_executable(operator_registry_test operator_registry_test.cpp)
 target_link_libraries(
-  operator_registry_test GTest::gtest GTest::gtest_main GTest::gmock executorch_core
+  operator_registry_test GTest::gtest GTest::gtest_main GTest::gmock
+  executorch_core
 )
 target_include_directories(operator_registry_test PRIVATE ${EXECUTORCH_ROOT}/..)
 add_test(operator_registry_test operator_registry_test)
@@ -38,12 +39,6 @@ add_test(kernel_runtime_context_test kernel_runtime_context_test)
 add_executable(
   operator_registry_max_kernel_num_test
   operator_registry_max_kernel_num_test.cpp
-  ../operator_registry.cpp
-  ../../core/evalue.cpp
-  ../../platform/abort.cpp
-  ../../platform/log.cpp
-  ../../platform/runtime.cpp
-  ../../platform/default/posix.cpp
 )
 target_link_libraries(
   operator_registry_max_kernel_num_test GTest::gtest GTest::gtest_main
@@ -53,7 +48,8 @@ target_compile_definitions(
   operator_registry_max_kernel_num_test PRIVATE "-DMAX_KERNEL_NUM=1"
 )
 # TODO: This is currently not working!
-# add_test(operator_registry_max_kernel_num_test operator_registry_max_kernel_num_test)
+# add_test(operator_registry_max_kernel_num_test
+# operator_registry_max_kernel_num_test)
 
 # TODO: Migrate kernel_double_registration_test and
 # test_kernel_manual_registration. Make sure dtype selective build is working.

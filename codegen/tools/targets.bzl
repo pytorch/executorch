@@ -17,10 +17,8 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             "//executorch/codegen:gen_lib",
-        ] + select({
-            "DEFAULT": [],
-            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/codegen/tools/fb:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
-        }),
+            "//executorch/codegen/tools:selective_build",
+        ],
     )
 
     runtime.python_binary(
@@ -29,7 +27,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":gen_oplist_lib",
         ],
-        preload_deps = [] if runtime.is_oss else ["//executorch/codegen/tools/fb:selective_build"],  # TODO(larryliu0820) :selective_build doesn't build in OSS yet
+        preload_deps = ["//executorch/codegen/tools:selective_build"],
         package_style = "inplace",
         visibility = [
             "//executorch/...",
@@ -103,6 +101,26 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
+    runtime.python_library(
+        name = "combine_prim_ops_headers_lib",
+        srcs = ["combine_prim_ops_headers.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = ["//executorch/..."],
+    )
+
+    runtime.python_binary(
+        name = "combine_prim_ops_headers",
+        main_module = "executorch.codegen.tools.combine_prim_ops_headers",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":combine_prim_ops_headers_lib",
+        ],
+        _is_external_target = True,
+    )
+
     runtime.python_test(
         name = "test_gen_all_oplist",
         srcs = [
@@ -155,6 +173,50 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
+    runtime.python_library(
+        name = "gen_selected_prim_ops_lib",
+        srcs = ["gen_selected_prim_ops.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = ["//executorch/..."],
+        external_deps = ["torchgen"],
+    )
+
+    runtime.python_binary(
+        name = "gen_selected_prim_ops",
+        main_module = "executorch.codegen.tools.gen_selected_prim_ops",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_selected_prim_ops_lib",
+        ],
+        _is_external_target = True,
+    )
+
+    
+    runtime.cxx_python_extension(
+        name = "selective_build",
+        srcs = [
+            "selective_build.cpp",
+        ],
+        base_module = "executorch.codegen.tools",
+        types = ["selective_build.pyi"],
+        preprocessor_flags = [
+            "-DEXECUTORCH_PYTHON_MODULE_NAME=selective_build",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+            "//executorch/schema:program",
+        ],
+        external_deps = [
+            "pybind11",
+        ],
+        use_static_deps = True,
+        visibility = ["//executorch/codegen/..."],
+    )
+
+
     # TODO(larryliu0820): This is a hack to only run these two on fbcode. These targets depends on exir which is only available in fbcode.
     if not runtime.is_oss and is_fbcode:
         runtime.python_binary(
@@ -189,4 +251,24 @@ def define_common_targets(is_fbcode = False):
                 ":gen_oplist_lib",
                 "//libfb/py:parutil",
             ],
+        )
+
+    if runtime.is_oss or is_fbcode:
+        # Doesn't work on xplat. But works on fbcode and OSS.
+        runtime.python_test(
+            name = "test_tools_selective_build",
+            srcs = [
+                "test/test_tools_selective_build.py",
+            ],
+            package_style = "inplace",
+            visibility = [
+                "PUBLIC",
+            ],
+            deps = [
+                ":selective_build",
+                "fbsource//third-party/pypi/expecttest:expecttest",
+                "//caffe2:torch",
+                "//executorch/exir:lib",
+            ],
+            _is_external_target = True,
         )

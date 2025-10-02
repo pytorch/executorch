@@ -17,7 +17,6 @@ from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from executorch.examples.models.llama.export_llama_lib import (
-    build_args_parser,
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
@@ -44,6 +43,7 @@ from executorch.exir.passes.sym_shape_eval_pass import (
     HintBasedSymShapeEvalPass,
 )
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from pytorch_tokenizers.llama2c import Llama2cTokenizer as Tokenizer
 from torch.export import Dim
@@ -77,7 +77,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
             super().__init__()
             self.text_model = llava.text_model
 
-        def forward(self, input_pos, embeddings):
+        def forward(self, embeddings, input_pos):
             return self.text_model(None, {"input_pos": input_pos}, embeddings)
 
     llava_text_model = LlavaTextModel(llava)
@@ -88,36 +88,30 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         max_seq_len=llava.text_model_args.max_seq_len,
         dtype=DType.fp32,
         use_kv_cache=True,
-        example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
+        example_inputs=(embeddings, torch.tensor([0], dtype=torch.int64)),
         dynamic_shapes=dynamic_shapes,
     )
 
+    # Manually set some LlmConfig options.
+    llm_config = LlmConfig()
+    llm_config.base.params = "params.json"
+    llm_config.backend.xnnpack.enabled = True
+    llm_config.quantization.qmode = "8da4w"
+    llm_config.quantization.group_size = 128
+    llm_config.quantization.embedding_quantize = "4,32"
+
     dtype_override = DType.fp32
-    parser = build_args_parser()
-    args = parser.parse_args(
-        [
-            "-p",
-            "params.json",
-            "-X",
-            "-qmode",
-            "8da4w",
-            "--group_size",
-            "128",
-            "--embedding-quantize",
-            "4,32",
-        ]
-    )
     quant_transform = get_quant_weight_transform(
-        quantization_mode=args.quantization_mode,
-        group_size=args.group_size,
+        quantization_mode=llm_config.quantization.qmode,
+        group_size=llm_config.quantization.group_size,
         computation_dtype=dtype_override,
-        checkpoint_path=args.checkpoint,
-        tokenizer_path=args.tokenizer_path,
-        calibration_tasks=args.calibration_tasks,
-        calibration_limit=args.calibration_limit,
-        calibration_seq_length=args.calibration_seq_length,
+        checkpoint_path=llm_config.base.checkpoint,
+        tokenizer_path=llm_config.base.tokenizer_path,
+        calibration_tasks=llm_config.quantization.calibration_tasks,
+        calibration_limit=llm_config.quantization.calibration_limit,
+        calibration_seq_length=llm_config.quantization.calibration_seq_length,
     )
-    _, quantizers, _ = get_quantizer_and_quant_params(args)
+    _, quantizers, _ = get_quantizer_and_quant_params(llm_config)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
         source_transforms.append(replace_kv_cache_with_custom_kv_cache)
@@ -192,7 +186,7 @@ def export_token_embedding(llava, prompt):
             packed=False,
         ).quantized_model()
 
-    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    quantized_token_embed = quant_embedding(llava.model_.model.language_model)
     token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -230,13 +224,13 @@ def export_all(llava_model: LlavaModel):
 
     lowered_and_edge = to_edge_transform_and_lower(
         {
-            "image_encoder": image_encoder_ep,
+            "vision_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
-            "text_model": text_model_ep,
+            "text_decoder": text_model_ep,
         },
         partitioner={
-            "image_encoder": [XnnpackPartitioner()],
-            "text_model": [
+            "vision_encoder": [XnnpackPartitioner()],
+            "text_decoder": [
                 # First partition the DQLinear nodes, then partition the rest of the nodes,
                 # to avoid multiple DQLinear nodes in the same partition,
                 # to avoid holding multiple unpacked and packed weight buffers in memory,
@@ -248,6 +242,7 @@ def export_all(llava_model: LlavaModel):
                 XnnpackPartitioner(),
             ],
         },
+        constant_methods={"get_max_seq_len": llava_model.max_seq_len},
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
@@ -259,8 +254,8 @@ def export_all(llava_model: LlavaModel):
             ],
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass={
-                "image_encoder": ConstraintBasedSymShapeEvalPass(),
-                "text_model": ConstraintBasedSymShapeEvalPass(),
+                "vision_encoder": ConstraintBasedSymShapeEvalPass(),
+                "text_decoder": ConstraintBasedSymShapeEvalPass(),
                 "token_embedding": HintBasedSymShapeEvalPass(),
             },
         )
@@ -279,6 +274,21 @@ def get_tokenizer_for_llava_runner(llava_model):
     t.export("tokenizer.bin")
 
 
+def create_llava_config_from_args(args):
+    """
+    Create an LlmConfig from command line arguments for LLaVA export
+    """
+    llm_config = LlmConfig()
+
+    llm_config.model.use_sdpa_with_kv_cache = args.use_sdpa_with_kv_cache
+    llm_config.export.max_context_length = args.max_context_len
+    llm_config.export.max_seq_length = args.max_seq_len
+    llm_config.export.output_name = args.pte_name
+    llm_config.debug.profile_memory = args.profile_memory
+
+    return llm_config
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument(
@@ -286,6 +296,12 @@ def main():
         default=True,
         action=BooleanOptionalAction,
         help="Use sdpa_with_kv_cache custom op in LLava text model.",
+    )
+    parser.add_argument(
+        "--max-context-len",
+        required=True,
+        type=int,
+        help="Maximum context length for the text model.",
     )
     parser.add_argument(
         "--max-seq-len",
@@ -311,28 +327,34 @@ def main():
         help="Generate chrome trace of activation memory for intermediate tensors.",
     )
     args = parser.parse_args()
+
+    # Create LlmConfig from args
+    llm_config = create_llava_config_from_args(args)
+
     logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}, max_seq_len: {args.max_seq_len}"
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {llm_config.model.use_sdpa_with_kv_cache}, max_seq_len: {llm_config.export.max_seq_length}, max_context_len: {llm_config.export.max_context_length}"
     )
+
     llava_model = LlavaModel(
-        use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache,
-        max_seq_len=args.max_seq_len,
+        use_sdpa_with_kv_cache_op=llm_config.model.use_sdpa_with_kv_cache,
+        max_seq_len=llm_config.export.max_seq_length,
+        max_context_len=llm_config.export.max_context_length,
     )
 
     executorch_program = export_all(llava_model)
 
     # memory profiling
-    if args.profile_memory:
+    if llm_config.debug.profile_memory:
         for method_name in executorch_program.methods:
             generate_memory_trace(
                 executorch_program,
-                f"{args.pte_name}_{method_name}.json",
+                f"{llm_config.export.output_name}_{method_name}.json",
                 method_name=method_name,
             )
 
-    with open(args.pte_name, "wb") as f:
+    with open(llm_config.export.output_name, "wb") as f:
         executorch_program.write_to_file(f)
-    logging.info(f"Exported ExecuTorch program to {args.pte_name}")
+    logging.info(f"Exported ExecuTorch program to {llm_config.export.output_name}")
 
     # artifacts
     if args.with_artifacts:

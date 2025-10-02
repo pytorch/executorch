@@ -6,7 +6,7 @@
 # pyre-unsafe
 
 
-from typing import Dict
+from typing import Dict, Set, Type, Union
 
 import torch
 from executorch.backends.transforms.replace_scalar_with_tensor import (
@@ -15,10 +15,14 @@ from executorch.backends.transforms.replace_scalar_with_tensor import (
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
+from executorch.exir.pass_base import ExportPass
 
 
 # Operators that are included for both TOSA profiles
-_common_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
+_common_ops: Dict[
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+    Union[EdgeOpOverload, torch._ops.OpOverload],
+] = {
     exir_ops.edge.aten.add.Scalar: exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Scalar: exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.mul.Scalar: exir_ops.edge.aten.mul.Tensor,
@@ -29,7 +33,11 @@ _common_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
     exir_ops.edge.aten.gt.Scalar: exir_ops.edge.aten.gt.Tensor,
     exir_ops.edge.aten.ge.Scalar: exir_ops.edge.aten.ge.Tensor,
     exir_ops.edge.aten.lt.Scalar: exir_ops.edge.aten.lt.Tensor,
+    exir_ops.edge.aten.le.Scalar: exir_ops.edge.aten.le.Tensor,
     exir_ops.edge.aten.ne.Scalar: exir_ops.edge.aten.ne.Tensor,
+    exir_ops.edge.aten.bitwise_and.Scalar: exir_ops.edge.aten.bitwise_and.Tensor,
+    exir_ops.edge.aten.bitwise_or.Scalar: exir_ops.edge.aten.bitwise_or.Tensor,
+    exir_ops.edge.aten.bitwise_xor.Scalar: exir_ops.edge.aten.bitwise_xor.Tensor,
     torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
     torch.ops.aten.sub.Scalar: torch.ops.aten.sub.Tensor,
     torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
@@ -40,11 +48,17 @@ _common_ops: Dict[EdgeOpOverload, EdgeOpOverload] = {
     torch.ops.aten.gt.Scalar: torch.ops.aten.gt.Tensor,
     torch.ops.aten.ge.Scalar: torch.ops.aten.ge.Tensor,
     torch.ops.aten.lt.Scalar: torch.ops.aten.lt.Tensor,
+    torch.ops.aten.le.Scalar: torch.ops.aten.le.Tensor,
     torch.ops.aten.ne.Scalar: torch.ops.aten.ne.Tensor,
+    torch.ops.aten.bitwise_and.Scalar: torch.ops.aten.bitwise_and.Tensor,
+    torch.ops.aten.bitwise_or.Scalar: torch.ops.aten.bitwise_or.Tensor,
+    torch.ops.aten.bitwise_xor.Scalar: torch.ops.aten.bitwise_xor.Tensor,
 }
 
 
 class ReplaceScalarWithTensorArgPassTOSAMI(ReplaceScalarWithTensorArgPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     scalar_to_tensor_ops = _common_ops | {
         exir_ops.edge.aten.pow.Tensor_Scalar: exir_ops.edge.aten.pow.Tensor_Tensor,
         torch.ops.aten.pow.Tensor_Scalar: torch.ops.aten.pow.Tensor_Tensor,
@@ -55,6 +69,8 @@ class ReplaceScalarWithTensorArgPassTOSAMI(ReplaceScalarWithTensorArgPass):
 
 
 class ReplaceScalarWithTensorArgPassTOSABI(ReplaceScalarWithTensorArgPass):
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     scalar_to_tensor_ops = _common_ops
 
     def __init__(self):

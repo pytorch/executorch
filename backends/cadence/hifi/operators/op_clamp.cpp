@@ -43,7 +43,6 @@ using torch::executor::native::utils::promote_type_with_scalar;
 using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -51,8 +50,8 @@ namespace native {
 Tensor& clamp_Tensor_out(
     RuntimeContext& ctx,
     const Tensor& in,
-    const executorch::aten::optional<Tensor>& min_opt,
-    const executorch::aten::optional<Tensor>& max_opt,
+    const std::optional<Tensor>& min_opt,
+    const std::optional<Tensor>& max_opt,
     Tensor& out) {
   (void)ctx;
 
@@ -322,16 +321,6 @@ Tensor& clamp_Tensor_out(
   return out;
 }
 
-Tensor& clamp_tensor_out(
-    RuntimeContext& ctx,
-    const Tensor& in,
-    const executorch::aten::optional<Tensor>& min_opt,
-    const executorch::aten::optional<Tensor>& max_opt,
-    Tensor& out) {
-  return clamp_Tensor_out(ctx, in, min_opt, max_opt, out);
-}
-
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

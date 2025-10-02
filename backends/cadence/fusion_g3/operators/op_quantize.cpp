@@ -33,7 +33,6 @@ enum datatype { Bits4u = 21, Bits4 = 22 };
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
  */
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -329,8 +328,8 @@ Tensor& quantize_impl(
           }
         }
 
-        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+        std::optional<::executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+            ::executorch::aten::ArrayRef<int64_t>{
                 dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
@@ -534,8 +533,8 @@ Tensor& quantize_impl(
           }
         }
 
-        ::executorch::aten::optional<::executorch::aten::ArrayRef<int64_t>>
-            optional_dim_list{::executorch::aten::ArrayRef<int64_t>{
+        std::optional<::executorch::aten::ArrayRef<int64_t>> optional_dim_list{
+            ::executorch::aten::ArrayRef<int64_t>{
                 dims, size_t(input.dim() - 1)}};
 
 // Actual quantization logic
@@ -840,4 +839,3 @@ Tensor& quantize_per_token_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

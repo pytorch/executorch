@@ -8,8 +8,8 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 
@@ -28,8 +28,8 @@ class MultipleDelegatesModule(torch.nn.Module):
 
 
 @common.parametrize("test_data", MultipleDelegatesModule.inputs)
-def test_tosa_MI_pipeline(test_data: input_t1):
-    pipeline = TosaPipelineMI[input_t1](MultipleDelegatesModule(), test_data, [], [])
+def test_tosa_FP_pipeline(test_data: input_t1):
+    pipeline = TosaPipelineFP[input_t1](MultipleDelegatesModule(), test_data, [], [])
     pipeline.change_args(
         "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
     )
@@ -37,8 +37,8 @@ def test_tosa_MI_pipeline(test_data: input_t1):
 
 
 @common.parametrize("test_data", MultipleDelegatesModule.inputs)
-def test_tosa_BI_pipeline(test_data: input_t1):
-    pipeline = TosaPipelineBI[input_t1](
+def test_tosa_INT_pipeline(test_data: input_t1):
+    pipeline = TosaPipelineINT[input_t1](
         MultipleDelegatesModule(), test_data, [], [], qtol=1
     )
     pipeline.change_args(

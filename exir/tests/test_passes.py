@@ -9,7 +9,7 @@ import copy
 import os
 import tempfile
 import unittest
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import executorch.exir as exir
 
@@ -67,11 +67,11 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
-from executorch.exir.tests.models import MLP, Mul
+from executorch.exir.tests.models import FeedForwardBlock, MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
-from torch.ao.quantization.quantizer import QuantizationSpec
+from torch._prims_common import ELEMENTWISE_TYPE_PROMOTION_KIND
 from torch.export import export
 from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
@@ -81,6 +81,7 @@ from torch.testing import FileCheck
 from torch.utils import _pytree as pytree
 
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torchao.quantization.pt2e.quantizer import QuantizationSpec
 
 
 # pyre-ignore
@@ -121,91 +122,121 @@ def foo_out(
     return a + 1, None
 
 
+def simple_promote_dtype(
+    dtype: torch.dtype, promotion_kind: ELEMENTWISE_TYPE_PROMOTION_KIND
+) -> torch.dtype:
+    if promotion_kind == ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT:
+        return dtype
+    if promotion_kind == ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT:
+        return dtype if dtype.is_floating_point else torch.float
+    else:
+        raise Exception(f"Unsupported promotion kind {promotion_kind}")
+
+
+def count_nodes_with_target_asserting_arguments_have_dtype(
+    self, module, target, arg_dtype
+) -> int:
+    count = 0
+    for node in module.graph.nodes:
+        if node.op == "call_function" and node.target == target:
+            count += 1
+            for arg in node.args:
+                self.assertEqual(arg.meta["val"].dtype, arg_dtype)
+    return count
+
+
 class TestPasses(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         register_additional_test_aten_ops()
 
     def test_remove_mixed_type_operators(self) -> None:
-        class Add(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                return (x + y) + x
+        def make_module(fwd: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]):
+            class Module(torch.nn.Module):
+                def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return fwd(x, y)
 
-        add = Add()
+            return Module
 
-        int_tensor = torch.tensor([[1, 2, 3]])
-        float_tensor = torch.tensor([[1.0, 2.0, 3.0]])
-        edge_prog = to_edge(export(add, (int_tensor, float_tensor), strict=True))
+        Add = make_module(lambda x, y: (x + y) + x)
+        Sub = make_module(lambda x, y: (x - y) - x)
+        Mult = make_module(lambda x, y: x * y)
+        Minimum = make_module(torch.minimum)
+        DivWithoutMode = make_module(torch.div)
+        DivWithNoneMode = make_module(lambda x, y: torch.div(x, y, rounding_mode=None))
+        DivWithTruncMode = make_module(
+            lambda x, y: torch.div(x, y, rounding_mode="trunc")
+        )
+        DivWithFloorMode = make_module(
+            lambda x, y: torch.div(x, y, rounding_mode="floor")
+        )
 
-        new_prog = edge_prog.transform([RemoveMixedTypeOperators()])
-        new_graph_module = new_prog.exported_program().graph_module
-        self.assertIsNotNone(new_graph_module)
+        for module, op, expected_count, promotion_kind in (
+            (
+                Add,
+                exir_ops.edge.aten.add.Tensor,
+                2,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                Sub,
+                exir_ops.edge.aten.sub.Tensor,
+                2,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                Mult,
+                exir_ops.edge.aten.mul.Tensor,
+                1,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                Minimum,
+                exir_ops.edge.aten.minimum.default,
+                1,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                DivWithoutMode,
+                exir_ops.edge.aten.div.Tensor,
+                1,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT,
+            ),
+            (
+                DivWithNoneMode,
+                exir_ops.edge.aten.div.Tensor_mode,
+                1,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.INT_TO_FLOAT,
+            ),
+            (
+                DivWithTruncMode,
+                exir_ops.edge.aten.div.Tensor_mode,
+                1,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+            (
+                DivWithFloorMode,
+                exir_ops.edge.aten.div.Tensor_mode,
+                1,
+                ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            ),
+        ):
+            for second_arg_dtype in (torch.int64, torch.float, torch.double):
+                int_tensor = torch.tensor([[1, 2, 3]], dtype=torch.int64)
+                float_tensor = torch.tensor([[1.0, 2.0, 3.0]], dtype=second_arg_dtype)
+                edge_prog = to_edge(
+                    export(module(), (int_tensor, float_tensor), strict=True)
+                )
 
-        add_count = 0
+                new_prog = edge_prog.transform([RemoveMixedTypeOperators()])
+                new_graph_module = new_prog.exported_program().graph_module
+                self.assertIsNotNone(new_graph_module)
 
-        for node in new_graph_module.graph.nodes:
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.edge.aten.add.Tensor
-            ):
-                add_count += 1
-                node_args = node.args
-                for arg in node_args:
-                    self.assertEqual(arg.meta["val"].dtype, torch.float)
-
-        self.assertEqual(add_count, 2)
-
-        double_tensor = torch.tensor([[1.0, 2.0, 3.0]])
-        double_tensor = double_tensor.to(torch.double)
-
-        double_prog = to_edge(export(add, (int_tensor, double_tensor), strict=True))
-
-        double_prog.transform([RemoveMixedTypeOperators()])
-        new_graph_module_double = double_prog.exported_program().graph_module
-        self.assertIsNotNone(new_graph_module_double)
-
-        add_count_double = 0
-
-        for node in new_graph_module_double.graph.nodes:
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.edge.aten.add.Tensor
-            ):
-                add_count_double += 1
-                node_args = node.args
-                for arg in node_args:
-                    self.assertEqual(arg.meta["val"].dtype, torch.double)
-
-        self.assertEqual(add_count_double, 2)
-
-        class Mult(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                return x * y
-
-        mult = Mult()
-
-        float_tensor_vert = float_tensor.T
-        mult_prog = to_edge(export(mult, (int_tensor, float_tensor_vert), strict=True))
-
-        # graph_module_mult.graph.print_tabular()
-
-        mult_prog = mult_prog.transform([RemoveMixedTypeOperators()])
-        new_graph_module_mult = mult_prog.exported_program().graph_module
-        self.assertIsNotNone(new_graph_module_mult)
-
-        mult_count = 0
-
-        for node in new_graph_module_mult.graph.nodes:
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.edge.aten.mul.Tensor
-            ):
-                mult_count += 1
-                node_args = node.args
-                for arg in node_args:
-                    self.assertEqual(arg.meta["val"].dtype, torch.float)
-
-        self.assertEqual(mult_count, 1)
+                promoted_type = simple_promote_dtype(second_arg_dtype, promotion_kind)
+                count = count_nodes_with_target_asserting_arguments_have_dtype(
+                    self, new_graph_module, op, promoted_type
+                )
+                self.assertEqual(count, expected_count)
 
     def test_remove_noop_pass(self) -> None:
         class Foo(torch.nn.Module):
@@ -571,33 +602,78 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(counter, 1)
 
     def test_compile_fix_broken_ops(self) -> None:
-        # When pass an input of more than 4 dimensions to Linear
-        # aten._unsafe_view is used under the hood
-        x = torch.randn([2, 3, 4, 5])
-        model: torch.nn.Linear = torch.nn.Linear(5, 5)
-
-        class Foo(torch.nn.Module):
-            def __init__(self):
+        class ExportableLoop(nn.Module):
+            def __init__(self, hidden_size, out_channels):
                 super().__init__()
-                self.model = model
+                self.hidden_size = hidden_size
+                self.B = nn.Parameter(torch.randn(hidden_size, 1))  # (H, in_channels)
+                self.C = nn.Parameter(
+                    torch.randn(out_channels, hidden_size)
+                )  # (C_out, H)
+                A = torch.randn(2, hidden_size)
+                self.A_real = nn.Parameter(A[0].clone())
+                self.A_imag = nn.Parameter(A[1].clone())
 
-            def forward(self, inp: torch.Tensor) -> torch.Tensor:
-                return self.model(inp)
+            def update_state(self, h, x_t):
+                # h: [B, 2, H], x_t: [B, H]
+                hr, hi = h[:, 0, :], h[:, 1, :]  # [B, H]
+                hrn = hr * self.A_real - hi * self.A_imag + x_t  # [B, H]
+                hin = hi * self.A_real + hr * self.A_imag  # [B, H]
+                hn = torch.stack([hrn, hin], dim=1)  # [B, 2, H]
+                return hn, hrn
 
-        f = Foo()
+            def forward(self, u):
+                # u: [B, 1, T]
+                x = torch.matmul(self.B, u)  # (B, H, T)
+                B, H, T = x.shape
 
-        # ReplaceBrokenOpsWithFunctionalOpsPass is used in to_edge()
+                h = torch.zeros(B, 2, H, device=x.device, dtype=x.dtype)  # [B, 2, H]
+                h_accum = torch.zeros(
+                    B, H, T, device=x.device, dtype=x.dtype
+                )  # [B, H, T]
+                i = torch.tensor(0, device=x.device, dtype=torch.int64)
+                one = torch.tensor(1, device=x.device, dtype=torch.int64)
+
+                def cond(i, h, h_accum):
+                    return i < T
+
+                def body(i, h, h_accum):
+                    x_t = x.index_select(-1, i.unsqueeze(0)).squeeze(
+                        -1
+                    )  # ✅ safe for export
+                    h, hr = self.update_state(h, x_t)  # h: [B, 2, H], hr: [B, H]
+                    h_accum = h_accum.index_copy(
+                        -1, i.unsqueeze(0), hr.unsqueeze(-1)
+                    )  # [B, H, T]
+                    i_next = i + one
+                    return i_next, h, h_accum
+
+                _, h, h_accum = torch._higher_order_ops.while_loop(
+                    cond, body, (i, h, h_accum)
+                )
+                y = torch.matmul(self.C, h_accum).transpose(0, 1)  # (B, C_out, T)
+                return y
+
+        # Instantiate and export
+        model = ExportableLoop(hidden_size=128, out_channels=10)
+        inp = torch.randn(1, 1, 32)  # (B, in_channels=1, T=32)
+        ep = export(model, (inp,))
         prog = to_edge(
-            export(f, (x,), strict=True),
+            ep,
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
         gm = prog.exported_program().graph_module
         count_after = 0
         for node in gm.graph.nodes:
-            if node.target == torch.ops.aten._unsafe_view.default:
+            if (
+                node.target == torch.ops.aten.squeeze.dims
+                or node.target == torch.ops.aten.select.int
+            ):
                 count_after += 1
         self.assertEqual(count_after, 0)
-        self.assertTrue(torch.allclose(prog.exported_program().module()(x), f(x)))
+        self.assertTrue(
+            torch.allclose(prog.exported_program().module()(inp), model(inp))
+        )
 
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
@@ -859,11 +935,79 @@ class TestPasses(unittest.TestCase):
             .exported_program()
             .graph_module
         )
+
+        # Every node except input and output should have debug handle
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
         ScalarToTensorPass()(graph_module)
+
         for node in graph_module.graph.nodes:
-            self.assertIn("debug_handle", node.meta)
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
+
+    def test_debug_handle_generator_pass_generate_same_debug_handle_on_ops_sharing_same_source(
+        self,
+    ) -> None:
+        eager_model = FeedForwardBlock(256, 512)
+        inputs = (torch.randn(12, 256),)
+
+        graph_module = (
+            to_edge(export(eager_model, inputs, strict=True))
+            .exported_program()
+            .graph_module
+        )
+
+        same_source_nodes = {
+            "aten_native_layer_norm_default": (
+                "aten_native_layer_norm_default",
+                "getitem",
+            ),
+            "getitem": ("aten_native_layer_norm_default", "getitem"),
+            "aten_permute_copy_default": (
+                "aten_permute_copy_default",
+                "aten_addmm_default",
+            ),
+            "aten_addmm_default": ("aten_permute_copy_default", "aten_addmm_default"),
+            "aten_native_dropout_default": ("aten_native_dropout_default", "getitem_1"),
+            "getitem_1": ("aten_native_dropout_default", "getitem_1"),
+            "aten_relu_default": ("aten_relu_default",),
+            "aten_permute_copy_default_1": (
+                "aten_permute_copy_default_1",
+                "aten_addmm_default_1",
+            ),
+            "aten_addmm_default_1": (
+                "aten_permute_copy_default_1",
+                "aten_addmm_default_1",
+            ),
+            "aten_native_dropout_default_1": (
+                "aten_native_dropout_default_1",
+                "getitem_2",
+            ),
+            "getitem_2": ("aten_native_dropout_default_1", "getitem_2"),
+        }
+
+        node_name_to_debug_handle = {}
+
+        # Node having same source should have same debug handle
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder" and node.op != "output":
+                self.assertIn("debug_handle", node.meta)
+                if node.name in node_name_to_debug_handle:
+                    for node_name_with_same_debug_handle in same_source_nodes[
+                        node.name
+                    ]:
+                        self.assertEqual(
+                            node_name_to_debug_handle[node_name_with_same_debug_handle],
+                            node.meta["debug_handle"],
+                        )
+                else:
+                    for node_name_with_same_debug_handle in same_source_nodes[
+                        node.name
+                    ]:
+                        node_name_to_debug_handle[node_name_with_same_debug_handle] = (
+                            node.meta["debug_handle"]
+                        )
 
     def test_generate_missing_debug_handles(self) -> None:
         eager_model = MLP(2, output_size=4)
@@ -871,10 +1015,15 @@ class TestPasses(unittest.TestCase):
 
         ep = to_edge(export(eager_model, inputs, strict=True)).exported_program()
 
-        list(ep.graph.nodes)[0].meta.pop("debug_handle")
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is None)
+        # get the first non-placeholder node
+        first_non_placeholder_node = [
+            n for n in ep.graph.nodes if n.op != "placeholder"
+        ][0]
+
+        first_non_placeholder_node.meta.pop("debug_handle")
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is None)
         generate_missing_debug_handles(ep)
-        self.assertTrue(list(ep.graph.nodes)[0].meta.get("debug_handle") is not None)
+        self.assertTrue(first_non_placeholder_node.meta.get("debug_handle") is not None)
 
     def test_debug_handle_generator_pass_with_control_flow(self) -> None:
         def true_nested(y: torch.Tensor) -> torch.Tensor:
@@ -928,7 +1077,8 @@ class TestPasses(unittest.TestCase):
             while queue:
                 current_graph_module = queue.pop(0)
                 for node in current_graph_module.graph.nodes:
-                    self.assertIn("debug_handle", node.meta)
+                    if node.op != "placeholder" and node.op != "output":
+                        self.assertIn("debug_handle", node.meta)
                 control_flow_submodules = [
                     submodule
                     for _, submodule, _ in get_control_flow_submodules(
@@ -939,7 +1089,6 @@ class TestPasses(unittest.TestCase):
 
         DebugHandleGeneratorPass()(graph_module)
         check_debug_handle_metadata(graph_module)
-        generate_missing_debug_handles(ep)
 
         # Check debug handle still preserved after ScalarToTensorPass
         ScalarToTensorPass()(graph_module)
@@ -1043,7 +1192,7 @@ class TestPasses(unittest.TestCase):
         )
 
         edge._edge_programs["forward"] = constant_prop_pass(
-            edge.exported_program("forward")
+            edge.exported_program("forward"), _skip_dim_order=False
         )
 
         # Check (c_lifted_tensor_*) nodes are all replaced by _prop_tensor_constant.
@@ -1191,15 +1340,10 @@ class TestPasses(unittest.TestCase):
         value = torch.randn(32, 32, 32, 32)
 
         # Capture the model
-        m = torch.export.export_for_training(
-            M(32), (query, key, value), strict=True
-        ).module()
+        m = torch.export.export(M(32), (query, key, value), strict=True).module()
 
         # 8w16a quantization
-        from torch.ao.quantization.observer import (
-            MinMaxObserver,
-            PerChannelMinMaxObserver,
-        )
+        from torchao.quantization.pt2e import MinMaxObserver, PerChannelMinMaxObserver
 
         activation_qspec = QuantizationSpec(
             dtype=torch.int16,
@@ -1324,9 +1468,7 @@ class TestPasses(unittest.TestCase):
                 out = torch.nn.functional.linear(
                     x, self.w.to(torch.float16).to(torch.float32)
                 )
-                return torch.ops.higher_order.cond(
-                    pred, self.true_fn, self.false_fn, [out]
-                )
+                return torch.cond(pred, self.true_fn, self.false_fn, [out])
 
         mod = Module()
         x = torch.randn([3, 3])
@@ -1471,9 +1613,7 @@ class TestPasses(unittest.TestCase):
             m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
         ) -> Tuple[EdgeProgramManager, int, int]:
             # program capture
-            m = torch.export.export_for_training(
-                m_eager, example_inputs, strict=True
-            ).module()
+            m = torch.export.export(m_eager, example_inputs, strict=True).module()
 
             quantizer = XNNPACKQuantizer()
             quantization_config = get_symmetric_quantization_config()

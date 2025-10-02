@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import warnings
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -16,7 +15,8 @@ from executorch.backends.qualcomm.utils.constants import (
     QCOM_ZERO_POINTS,
 )
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpFullyConnected, QNN_OP_PACKAGE_NAME_QTI_AISW
 from .utils import get_parameter
 
@@ -68,13 +68,6 @@ class LinearVisitor(NodeVisitor):
 
         if len(node.args) >= 3:
             bias_node = self.get_node(node.args[2])
-
-            # TODO remove this when qnn sdk support
-            if QCOM_SCALES in bias_node.meta.get(QCOM_QUANT_ATTRS, {}):
-                warnings.warn(
-                    f"[QNN Delegate Op Builder]: Fallback linear bias, {bias_node}. per channel bias quantization is not support yet.",
-                    stacklevel=1,
-                )
 
             bias_tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
             bias_tensor = get_parameter(bias_node, self.edge_program)

@@ -10,10 +10,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.log_softmax.default"  # Used for checking that we do not have log_softmax in the graph
@@ -43,9 +44,9 @@ class LogSoftmax(torch.nn.Module):
 
 
 @common.parametrize("test_data", LogSoftmax.test_data)
-def test_log_softmax_tosa_MI(test_data):
+def test_log_softmax_tosa_FP(test_data):
     data, dim = test_data()
-    pipeline = TosaPipelineMI[input_t1](LogSoftmax(dim), data, [])
+    pipeline = TosaPipelineFP[input_t1](LogSoftmax(dim), data, [])
     pipeline.add_stage_after(
         "to_edge_transform_and_lower", pipeline.tester.check_not, [exir_op]
     )
@@ -55,51 +56,65 @@ def test_log_softmax_tosa_MI(test_data):
 
 @pytest.mark.flaky(reruns=5)
 @common.parametrize("test_data", LogSoftmax.test_data)
-def test_log_softmax_tosa_BI(test_data):
+def test_log_softmax_tosa_INT(test_data):
     data, dim = test_data()
-    pipeline = TosaPipelineBI[input_t1](LogSoftmax(dim), data, [])
+    pipeline = TosaPipelineINT[input_t1](LogSoftmax(dim), data, [])
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    LogSoftmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", LogSoftmax.test_data)
 @common.XfailIfNoCorstone300()
-def test_log_softmax_u55_BI(test_data):
+def test_log_softmax_u55_INT(test_data):
     data, dim = test_data()
-    pipeline = EthosU55PipelineBI[input_t1](
+    pipeline = EthosU55PipelineINT[input_t1](
         LogSoftmax(dim),
         data,
         [],
-        run_on_fvp=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    LogSoftmax.test_data,
-    xfails={
-        "randn_mult_batches": "MLETORCH-433: Multiple batches not supported on FVP"
-    },
-)
+@common.parametrize("test_data", LogSoftmax.test_data)
 @common.XfailIfNoCorstone320
-def test_log_softmax_u85_BI(test_data):
+def test_log_softmax_u85_INT(test_data):
     data, dim = test_data()
-    pipeline = EthosU85PipelineBI[input_t1](
+    pipeline = EthosU85PipelineINT[input_t1](
         LogSoftmax(dim),
         data,
         [],
-        run_on_fvp=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
+    pipeline.run()
+
+
+@common.parametrize("test_data", LogSoftmax.test_data)
+@common.SkipIfNoModelConverter
+def test_log_softmax_vgf_FP(test_data):
+    data, dim = test_data()
+    pipeline = VgfPipeline[input_t1](
+        LogSoftmax(dim), data, [], [], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.add_stage_after(
+        "to_edge_transform_and_lower", pipeline.tester.check_not, [aten_op]
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", LogSoftmax.test_data)
+@common.SkipIfNoModelConverter
+def test_log_softmax_vgf_INT(test_data):
+    data, dim = test_data()
+    pipeline = VgfPipeline[input_t1](
+        LogSoftmax(dim),
+        data,
+        [],
+        [],
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.run()

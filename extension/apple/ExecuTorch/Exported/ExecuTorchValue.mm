@@ -29,6 +29,24 @@ static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
   }
 }
 
+static inline NSString *valueTagDescription(ExecuTorchValueTag tag) {
+  switch (tag) {
+    case ExecuTorchValueTagNone:
+      return @"none";
+    case ExecuTorchValueTagTensor:
+      return @"tensor";
+    case ExecuTorchValueTagString:
+      return @"string";
+    case ExecuTorchValueTagDouble:
+      return @"double";
+    case ExecuTorchValueTagInteger:
+      return @"integer";
+    case ExecuTorchValueTagBoolean:
+      return @"boolean";
+  }
+  return @"undefined";
+}
+
 @interface ExecuTorchValue ()
 
 - (instancetype)initWithTag:(ExecuTorchValueTag)tag
@@ -64,6 +82,11 @@ static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
 }
 
 + (instancetype)valueWithDouble:(ExecuTorchDoubleValue)value {
+  return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagDouble
+                                        value:@(value)];
+}
+
++ (instancetype)valueWithFloat:(ExecuTorchFloatValue)value {
   return [[ExecuTorchValue alloc] initWithTag:ExecuTorchValueTagDouble
                                         value:@(value)];
 }
@@ -188,6 +211,26 @@ static inline ExecuTorchValueTag deduceValueTag(NSNumber *number) {
     return NO;
   }
   return [self isEqualToValue:(ExecuTorchValue *)other];
+}
+
+- (NSString *)description {
+  NSMutableString *string = [NSMutableString new];
+  [string appendString:@"Value {"];
+  [string appendFormat:@"\n  tag: %@", valueTagDescription(_tag)];
+  [string appendString:@","];
+  [string appendString:@"\n  value: "];
+  if (_value) {
+    NSString *valueDescription = [_value description];
+    [string appendString:valueDescription];
+    [string replaceOccurrencesOfString:@"\n"
+                            withString:@"\n  "
+                               options:0
+                                 range:NSMakeRange(string.length - valueDescription.length, valueDescription.length)];
+  } else {
+    [string appendString:@"nil"];
+  }
+  [string appendString:@"\n}"];
+  return string;
 }
 
 @end

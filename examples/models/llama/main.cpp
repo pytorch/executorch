@@ -42,6 +42,16 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_int32(
+    num_bos,
+    0,
+    "Number of BOS tokens to prepend to the prompt. Defaults to 0. If > 0, the prompt will be prepended with BOS tokens. This is useful for models that expect one or more BOS token at the start.");
+
+DEFINE_int32(
+    num_eos,
+    0,
+    "Number of EOS tokens to append to the prompt. Defaults to 0. If > 0, the prompt will be appended with EOS tokens. This is useful for models that expect one or more EOS token at the end.");
+
 DEFINE_bool(warmup, false, "Whether to run a warmup run.");
 
 int32_t main(int32_t argc, char** argv) {
@@ -90,12 +100,22 @@ int32_t main(int32_t argc, char** argv) {
   }
 
   if (warmup) {
-    runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    auto error = runner->warmup(prompt, /*max_new_tokens=*/seq_len);
+    if (error != executorch::runtime::Error::Ok) {
+      ET_LOG(Error, "Failed to warmup llama runner");
+      return 1;
+    }
+    // reset kv cache pos to 0
+    runner->reset();
   }
   // generate
   executorch::extension::llm::GenerationConfig config{
       .seq_len = seq_len, .temperature = temperature};
-  runner->generate(prompt, config);
+  auto error = runner->generate(prompt, config);
+  if (error != executorch::runtime::Error::Ok) {
+    ET_LOG(Error, "Failed to warmup llama runner");
+    return 1;
+  }
 
   return 0;
 }

@@ -16,11 +16,12 @@
 ${define_active_storage_type(STORAGE)}
 
 ${define_required_extensions(DTYPE)}
+${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
 ${layout_declare_tensor(B, "w", "t_out", DTYPE, STORAGE)}
-${layout_declare_buffer(B, "r", "buf_in", DTYPE)}
+${layout_declare_buffer(B, "r", "buf_in", BUF_DTYPE)}
 
 $if USE_PUSH_CONST:
   layout(push_constant) uniform restrict Block {
@@ -87,5 +88,9 @@ void main() {
     return;
   }
 
-  write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
+  $if DTYPE == "double" and DTYPE == "int64":
+    VEC4_T texel = read_texel(tidx);
+    write_texel(t_out, lpos_to_pos(lpos, axis_map), texel);
+  $else:
+    write_texel(t_out, lpos_to_pos(lpos, axis_map), read_texel(tidx));
 }

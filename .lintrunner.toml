@@ -10,7 +10,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -19,7 +19,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -41,7 +41,7 @@ exclude_patterns = [
     'exir/serde/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -50,7 +50,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -73,9 +73,9 @@ exclude_patterns = [
     '**/third-party/**',
     # NB: Objective-C is not supported
     'examples/apple/**',
-    'examples/demo-apps/apple_ios/**',
     'examples/demo-apps/react-native/rnllama/ios/**',
     'extension/apple/**',
+    'extension/llm/apple/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
@@ -83,7 +83,7 @@ exclude_patterns = [
     'runtime/core/portable_type/c10/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -94,7 +94,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -116,7 +116,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -126,7 +126,37 @@ command = [
     '@{{PATHSFILE}}',
 ]
 init_command = [
-    'python3',
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
+    '--dry-run={{DRYRUN}}',
+    '--requirement=requirements-lintrunner.txt',
+]
+
+[[linter]]
+code = 'CMAKEFORMAT'
+include_patterns = [
+    "**/*.cmake",
+    "**/*.cmake.in",
+    "**/CMakeLists.txt",
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'cmake_format_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+init_command = [
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -150,7 +180,7 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -176,6 +206,7 @@ exclude_patterns = [
     '**/*.png',
     '**/*.webp',
     '**/*.jpeg',
+    '**/*.mp3',
     '**/*.mp4',
     '**/*.pte',
     '**/*.pth',
@@ -186,12 +217,14 @@ exclude_patterns = [
     '**/*.jpg',
     '**/*.jar',
     '**/*.gif',
+    'extension/llm/tokenizers',
+    'extension/llm/tokenizers/**',
     # File contains @generated
     'extension/llm/custom_ops/spinquant/fast_hadamard_transform_special.h',
     'extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -233,7 +266,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -271,6 +304,10 @@ exclude_patterns = [
     'examples/**',
     'exir/verification/bindings.cpp',
     'extension/**',
+    # Uses properly-gated (ET_USE_PYTORCH_HEADERS) ATen include.
+    'kernels/portable/cpu/util/elementwise_util.h',
+    'kernels/portable/cpu/util/math_util.h',
+    'kernels/portable/cpu/util/vectorized_math.h',
     'kernels/optimized/**',
     'runtime/core/exec_aten/**',
     # Want to be able to keep c10 in sync with PyTorch core.
@@ -282,7 +319,7 @@ exclude_patterns = [
     'util/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -332,7 +369,7 @@ exclude_patterns = [
     'backends/arm/test/**',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -344,7 +381,7 @@ command = [
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -363,7 +400,7 @@ exclude_patterns = [
     '.lintrunner.toml',
 ]
 command = [
-    'python3',
+    'python',
     '-m',
     'lintrunner_adapters',
     'run',
@@ -386,19 +423,13 @@ exclude_patterns = [
     "third-party/**",
     # TODO: remove exceptions as we migrate
     # backends
-    "backends/vulkan/quantizer/**",
-    "backends/vulkan/test/**",
-    "backends/xnnpack/quantizer/**",
-    "backends/xnnpack/test/**",
-    "exir/tests/test_passes.py",
-    "extension/llm/export/builder.py",
-    "extension/llm/export/quantizer_lib.py",
     "exir/tests/test_memory_planning.py",
     "exir/backend/test/demos/test_xnnpack_qnnpack.py",
+    "backends/xnnpack/test/test_xnnpack_utils.py",
 ]
 
 command = [
-  "python3",
+  "python",
   "-m",
   "lintrunner_adapters",
   "run",

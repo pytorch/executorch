@@ -19,7 +19,6 @@ from executorch.devtools.bundled_program.config import MethodTestCase, MethodTes
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -29,6 +28,8 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+
+from executorch.extension.llm.export.config.llm_config import LlmConfig
 
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
@@ -131,28 +132,31 @@ def parse_args():
     return args
 
 
-def get_model_config(args):
-    model_config = {}
-    model_config["module_name"] = MODEL_NAME_TO_MODEL[args.model_name][0]
-    model_config["model_class_name"] = MODEL_NAME_TO_MODEL[args.model_name][1]
-
-    if args.model_name == "llama2":
-        if args.checkpoint:
-            model_config["checkpoint"] = args.checkpoint
-        if args.params:
-            model_config["params"] = args.params
-        model_config["use_kv_cache"] = True
-    return model_config
-
-
-if __name__ == "__main__":
+if __name__ == "__main__":  # noqa: C901
     args = parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
         raise RuntimeError(f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}.")
 
-    model_config = get_model_config(args)
-    model, example_inputs, _, _ = EagerModelFactory.create_model(**model_config)
+    if args.model_name == "llama2":
+        # Building LLM example.
+        llm_config = LlmConfig()
+        if args.checkpoint:
+            llm_config.base.checkpoint = args.checkpoint
+        if args.params:
+            llm_config.base.params = args.params
+        llm_config.model.use_kv_cache = True
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
+            module_name=MODEL_NAME_TO_MODEL[args.model_name][0],
+            model_class_name=MODEL_NAME_TO_MODEL[args.model_name][1],
+            llm_config=llm_config,
+        )
+    else:
+        # Building non-LLM example.
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
+            module_name=MODEL_NAME_TO_MODEL[args.model_name][0],
+            model_class_name=MODEL_NAME_TO_MODEL[args.model_name][1],
+        )
 
     model = model.eval()
 
@@ -166,9 +170,7 @@ if __name__ == "__main__":
 
     # pre-autograd export. eventually this will become torch.export
     with torch.no_grad():
-        model = torch.export.export_for_training(
-            model, example_inputs, strict=True
-        ).module()
+        model = torch.export.export(model, example_inputs, strict=True).module()
         edge: EdgeProgramManager = export_to_edge(
             model,
             example_inputs,

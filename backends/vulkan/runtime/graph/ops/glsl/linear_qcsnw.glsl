@@ -62,7 +62,7 @@ void main() {
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, 0);
+  const ivec4 out_tidx = contiguous_bufi_to_tidx(out_bufi, out_strides);
 
   const FLOAT_T scale = t_scales[out_tidx.x];
 

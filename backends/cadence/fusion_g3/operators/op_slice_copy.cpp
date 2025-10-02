@@ -28,7 +28,6 @@ using ::executorch::runtime::KernelRuntimeContext;
  * operator need to be updated accordingly
  */
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -37,8 +36,8 @@ Tensor& slice_copy_Tensor_out(
     KernelRuntimeContext& ctx,
     const Tensor& in,
     int64_t dim,
-    ::executorch::aten::optional<int64_t> start_val,
-    ::executorch::aten::optional<int64_t> end_val,
+    std::optional<int64_t> start_val,
+    std::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
   (void)ctx;
@@ -133,4 +132,3 @@ Tensor& slice_copy_Tensor_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

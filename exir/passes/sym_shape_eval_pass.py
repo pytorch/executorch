@@ -225,7 +225,7 @@ class HintBasedSymShapeEvalPass(PassBase):
                                 for i, v in enumerate(spec.shape):
                                     if concrete_shape[i] is None:
                                         # get updated shape from var_to_range
-                                        _value_range = shape_env.var_to_range[
+                                        _value_range = shape_env.var_to_range[  # pyre-fixme[16] `Optional` has no attribute `var_to_range`.
                                             v._sympy_()  # pyre-fixme[16] Undefined attribute: `int` has no attribute `_sympy_`.
                                         ]
                                         # cannot handle unbounded, unbacked symints; add a range to bound it.

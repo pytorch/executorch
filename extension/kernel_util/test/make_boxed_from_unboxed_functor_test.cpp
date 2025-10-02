@@ -16,7 +16,6 @@
 
 using namespace ::testing;
 using executorch::aten::ArrayRef;
-using executorch::aten::optional;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::aten::TensorImpl;
@@ -26,6 +25,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::get_op_function_from_registry;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::registry_has_op_function;
+using std::optional;
 
 Tensor& my_op_out(KernelRuntimeContext& ctx, const Tensor& a, Tensor& out) {
   (void)ctx;
@@ -133,7 +133,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
   EValue evalues[2] = {storage[0], storage[1]};
   EValue* values_p[2] = {&evalues[0], &evalues[1]};
   BoxedEvalueList<Tensor> a_box(values_p, storage, 2);
-  EValue boxed_array_ref(a_box);
+  EValue boxed_array_ref(&a_box);
   // prepare out tensor.
   EValue out(tf.zeros({5}));
 
@@ -186,7 +186,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
   EValue evalues[2] = {EValue(tf.ones({5})), EValue()};
   EValue* values_p[2] = {&evalues[0], &evalues[1]};
   BoxedEvalueList<optional<Tensor>> a_box(values_p, storage, 2);
-  EValue boxed_array_ref(a_box);
+  EValue boxed_array_ref(&a_box);
 
   // prepare out tensor.
   EValue out(tf.zeros({5}));

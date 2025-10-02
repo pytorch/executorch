@@ -40,26 +40,20 @@ Tensor& hardtanh_out(
       ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
-  ScalarType min_type = utils::get_scalar_dtype(min);
-  ScalarType max_type = utils::get_scalar_dtype(max);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REALHBF16_TYPES(in_type, ctx, "hardtanh.out", CTYPE, [&]() {
-    CTYPE min_casted;
-    ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "hardtanh.out", CTYPE_MIN, [&]() {
-      CTYPE_MIN min_val = 0;
-      utils::extract_scalar(min, &min_val);
-      min_casted = static_cast<CTYPE>(min_val);
-    });
+    auto opt_min_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE>(min);
+    ET_KERNEL_CHECK(ctx, opt_min_casted.has_value(), InvalidArgument, );
+    auto min_casted = opt_min_casted.value();
 
-    CTYPE max_casted;
-    ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "hardtanh.out", CTYPE_MAX, [&]() {
-      CTYPE_MAX max_val = 0;
-      utils::extract_scalar(max, &max_val);
-      max_casted = static_cast<CTYPE>(max_val);
-    });
+    auto opt_max_casted =
+        utils::internal::check_overflow_scalar_cast<CTYPE>(max);
+    ET_KERNEL_CHECK(ctx, opt_max_casted.has_value(), InvalidArgument, );
+    auto max_casted = opt_max_casted.value();
 
     apply_unary_map_fn(
         [min_casted, max_casted](const CTYPE val_in) {

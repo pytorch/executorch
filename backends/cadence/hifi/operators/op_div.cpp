@@ -23,7 +23,6 @@ using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using torch::executor::Error;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -178,7 +177,7 @@ Tensor& div_out_mode(
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
-    executorch::aten::optional<executorch::aten::string_view> mode,
+    std::optional<std::string_view> mode,
     Tensor& out) {
   ET_KERNEL_CHECK(
       ctx,
@@ -322,4 +321,3 @@ Tensor& div_out_mode(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

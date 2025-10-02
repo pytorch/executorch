@@ -6,6 +6,7 @@ import json
 import logging
 
 import shutil
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -16,8 +17,12 @@ from typing import Any, Dict, final, List, Optional, Tuple
 
 import coremltools as ct
 import coremltools.optimize as cto
-
 from executorch.backends.apple.coreml import executorchcoreml
+from executorch.backends.apple.coreml.compiler.enumerated_shape_utils import (
+    _get_ct_inputs,
+    _SymbolicShapeToEnumeratedShapeMap,
+)
+from executorch.backends.apple.coreml.logging import get_coreml_log_level
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     ExportedProgram,
@@ -25,8 +30,10 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
+from executorch.backends.apple.coreml.compiler.torch_ops import *  # noqa: F401, F403
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(get_coreml_log_level(default_level=logging.WARNING))
 
 
 class COMPILE_SPEC_KEYS(Enum):
@@ -35,6 +42,7 @@ class COMPILE_SPEC_KEYS(Enum):
     MIN_DEPLOYMENT_TARGET = "min_deployment_target"
     MODEL_COMPUTE_PRECISION = "model_compute_precision"
     OP_LINEAR_QUANTIZER_CONFIG = "op_linear_quantizer_config"
+    ENUMERATED_SHAPES = "enumerated_shapes"
 
 
 class MODEL_PATHS(Enum):
@@ -124,30 +132,36 @@ class CoreMLBackend(BackendDetails):
 
     @staticmethod
     def generate_minimum_deployment_target_compile_spec(
-        min_deployment_target: ct.target,
+        min_deployment_target: Optional[ct.target],
     ) -> CompileSpec:
         """
         Returns the compile spec representing the minimum deployment target on which the model can run,
         for additional details please refer to the documentation for ``coremltools.target``.
         """
+        value = str("").encode("utf-8")
+        if min_deployment_target is not None:
+            value = str(min_deployment_target.value).encode("utf-8")
         return CompileSpec(
             COMPILE_SPEC_KEYS.MIN_DEPLOYMENT_TARGET.value,
-            str(min_deployment_target.value).encode("utf-8"),
+            value,
         )
 
     @staticmethod
     def min_deployment_target_from_compile_specs(
         compile_specs: List[CompileSpec],
-    ) -> ct.target:
+    ) -> Optional[ct.target]:
         """
         Returns the minimum deployment target by parsing the list of compile specs.
         """
         for compile_spec in compile_specs:
             if compile_spec.key == COMPILE_SPEC_KEYS.MIN_DEPLOYMENT_TARGET.value:
-                compile_spec_value: int = int(compile_spec.value.decode("utf-8"))
+                value = compile_spec.value.decode("utf-8")
+                if value == "":
+                    return None
+                compile_spec_value: int = int(value)
                 return ct.target(compile_spec_value)
 
-        return ct.target.iOS15
+        return None
 
     @staticmethod
     def compute_unit_from_compile_specs(
@@ -207,9 +221,57 @@ class CoreMLBackend(BackendDetails):
         return None
 
     @staticmethod
+    def generate_enumerated_shapes_compile_spec(
+        ep: ExportedProgram,
+        enumerated_shapes: Dict[str, List[List[int]]],
+    ) -> CompileSpec:
+        """
+        Returns the compile spec representing the model enumerated shapes
+        enumerated_shapes is a dictionary for each input to its enumerated shapes, e.g.,
+
+        enumerated_shapes = {
+         {"x": [[1, 1, 24], [8, 9, 24]]
+         {"y": [[1, 6], [30, 6]],
+        ]
+
+        means the model can handle x can be shape [1, 1, 24] or [8, 9, 24] and y can be shape [1, 6] or [30, 6].
+
+        Only multiple inputs can have enumerated shapes if using iOS18 or later.
+        In this case, each input must have the same number of enumerated shapes, and these shapes are tied together
+        by their order in the list. For example, the model above can handle x with shape [1, 1, 24] and y with shape [1, 6],
+        or x with shape [8, 9, 24] and y with shape [30, 6], but not x with shape [1, 1, 24] and y with shape [30, 6].
+
+        Passing incorrect shapes at runtime will result in an error.
+        """
+        emap = _SymbolicShapeToEnumeratedShapeMap.from_exported_program(
+            ep,
+            enumerated_shapes,
+        )
+        str_representation = emap.to_json()
+        byte_representation = str_representation.encode("utf-8")
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value,
+            byte_representation,
+        )
+
+    @staticmethod
+    def enumerated_shapes_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> cto.coreml.OpLinearQuantizerConfig:
+        """
+        Returns the model's post conversion quantization by parsing the list of compile specs.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.ENUMERATED_SHAPES.value:
+                emap_json = compile_spec.value.decode("utf-8")
+                emap = _SymbolicShapeToEnumeratedShapeMap.from_json(emap_json)
+                return emap
+        return None
+
+    @staticmethod
     def generate_compile_specs(
         compute_unit: ct.ComputeUnit = ct.ComputeUnit.ALL,
-        minimum_deployment_target: ct.target = ct.target.iOS15,
+        minimum_deployment_target: Optional[ct.target] = None,
         compute_precision: ct.precision = ct.precision.FLOAT16,
         model_type: MODEL_TYPE = MODEL_TYPE.MODEL,
         op_linear_quantizer_config: Optional[Dict] = None,
@@ -245,6 +307,13 @@ class CoreMLBackend(BackendDetails):
     ) -> ModelMetadata:
         input_names: List[str] = [input.name for input in model_spec.description.input]
         output_names = [output.name for output in model_spec.description.output]
+
+        if len(output_names) == 0:
+            raise ValueError("Cannot lower a model with no outputs in CoreML.")
+        if len(input_names) == 0:
+            assert (
+                model_spec.specificationVersion >= 9
+            ), "Deploying a model with no inputs in CoreML requires you set minimum_deployment_target to iOS18 or later in the CoreMLPartitioner."
 
         return ModelMetadata(
             inputNames=input_names, outputNames=output_names, identifier=identifier
@@ -347,9 +416,15 @@ class CoreMLBackend(BackendDetails):
         mlmodel: ct.models.MLModel, model_type: MODEL_TYPE
     ) -> PreprocessResult:
         identifier = "executorch_" + str(uuid.uuid4())
-        dir_path: Path = Path("tmp") / identifier
+        dir_path: Path = Path(tempfile.gettempdir()) / identifier
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()
+        logger.warning(
+            f"The model with identifier {identifier} was exported with CoreML specification version {model_spec.specificationVersion}, and it will not run on all version of iOS/macOS."
+            " See https://apple.github.io/coremltools/mlmodel/Format/Model.html#model for information on what OS versions are compatible with this specifcation version."
+            " If you want to control the deployment target, please set the minimum_deployment_target compile spec in the CoreMLPartitioner."
+        )
+
         model_metadata: ModelMetadata = CoreMLBackend.model_metadata_from_spec(
             model_spec=model_spec,
             identifier=identifier,
@@ -407,6 +482,7 @@ class CoreMLBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+        logger.info(f"Edge program: {edge_program}")
         model_type: CoreMLBackend.MODEL_TYPE = (
             CoreMLBackend.model_type_from_compile_specs(
                 compile_specs,
@@ -415,7 +491,7 @@ class CoreMLBackend(BackendDetails):
         model_compute_precision: ct.precision = (
             CoreMLBackend.model_compute_precision_from_compile_specs(compile_specs)
         )
-        minimum_deployment_target: ct.target = (
+        minimum_deployment_target: Optional[ct.target] = (
             CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
         )
         compute_units: ct.ComputeUnit = CoreMLBackend.compute_unit_from_compile_specs(
@@ -424,6 +500,28 @@ class CoreMLBackend(BackendDetails):
         op_linear_quantizer_config = (
             CoreMLBackend.op_linear_quantizer_config_from_compile_specs(compile_specs)
         )
+        enumerated_shapes = CoreMLBackend.enumerated_shapes_from_compile_specs(
+            compile_specs
+        )
+
+        # If using enumerated shapes, we need to pass the inputs to CoreML's convert() function
+        # explicitly
+        ct_inputs = None
+        if enumerated_shapes is not None:
+            ct_inputs = _get_ct_inputs(edge_program, enumerated_shapes)
+
+            # Check there are not multiple enumerated inputs if iOS is below 18
+            if (minimum_deployment_target is None) or (
+                minimum_deployment_target < ct.target.iOS18
+            ):
+                n_enumerated_inputs = 0
+                for ct_in in ct_inputs:
+                    if isinstance(ct_in.shape, ct.EnumeratedShapes):
+                        n_enumerated_inputs += 1
+                if n_enumerated_inputs > 1:
+                    raise ValueError(
+                        f"You're program has {n_enumerated_inputs}, but the minimum_deployment_target is set to {minimum_deployment_target}.  Multiple enumerated inputs requires iOS18 or later."
+                    )
 
         # Load the model if MODEL_TYPE is 'COMPILED_MODEL'. This step is necessary because
         # get_compiled_model_path() requires a loaded model.
@@ -437,6 +535,7 @@ class CoreMLBackend(BackendDetails):
             compute_precision=model_compute_precision,
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,
+            inputs=ct_inputs,
         )
 
         if op_linear_quantizer_config is not None:

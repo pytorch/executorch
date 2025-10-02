@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 import logging
+from typing import Set, Type
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -18,6 +19,8 @@ class CastInt64BuffersToInt32Pass(ExportPass):
     """
     Cast int64 buffers to int32 if the int64 data is in int32 range.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: torch.export.ExportedProgram):
         super(CastInt64BuffersToInt32Pass, self).__init__()
@@ -35,6 +38,8 @@ class CastInt64BuffersToInt32Pass(ExportPass):
 
     def _to_int32(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
+            if len(node.users) == 0:
+                continue
             fake_tensor = node.meta["val"]
             if not isinstance(fake_tensor, torch._subclasses.fake_tensor.FakeTensor):
                 continue
@@ -45,7 +50,7 @@ class CastInt64BuffersToInt32Pass(ExportPass):
                 buffer_name = self.exported_program.graph_signature.inputs_to_buffers[
                     node.name
                 ]
-                buffer = self.exported_program.state_dict[node.name]
+                buffer = self.exported_program.state_dict[buffer_name]
                 self._assert_within_int32(buffer, node)
                 logger.warning(
                     f"Casting buffer {node.name} from torch.int64 to torch.int32"

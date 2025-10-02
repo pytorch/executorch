@@ -49,6 +49,10 @@ struct GenerationConfig {
   // Temperature for sampling (higher = more random)
   float temperature = 0.8f;
 
+  // Number of eos and bos to add to the prompt
+  int32_t num_bos = 0;
+  int32_t num_eos = 0;
+
   /**
    * Resolve the maximum number of new tokens to generate based on constraints.
    *
@@ -125,6 +129,14 @@ class ET_EXPERIMENTAL IRunner {
    * Stop the generation process.
    */
   virtual void stop() = 0;
+
+  /**
+   * Force remove prefilled tokens and reset KV cache start position
+   *
+   * This method removes the prefilled tokens from the KV cache and resets the
+   * start position to 0.
+   */
+  virtual void reset() = 0;
 };
 
 } // namespace llm

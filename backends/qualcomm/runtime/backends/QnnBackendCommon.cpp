@@ -30,7 +30,46 @@ QnnBackend::~QnnBackend() {
   }
 }
 
-Error QnnBackend::Configure() {
+void QnnBackend::BackendRegisterOpPackage(
+    const flatbuffers::Vector<
+        flatbuffers::Offset<qnn_delegate::QnnExecuTorchOpPackageInfo>>*
+        op_packages_infos) {
+  const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
+  Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  QnnExecuTorchOpPackagePlatform current_platform =
+      QnnExecuTorchOpPackagePlatform::UNKNOWN;
+#if defined(__x86_64__)
+  current_platform = QnnExecuTorchOpPackagePlatform::X86_64;
+#elif defined(__ANDROID__)
+  current_platform = QnnExecuTorchOpPackagePlatform::AARCH64_ANDROID;
+#endif
+  if (current_platform == QnnExecuTorchOpPackagePlatform::UNKNOWN)
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to detect the platform. Only support x86_64 or android.");
+  for (const auto op_package_info : *op_packages_infos) {
+    if (current_platform != op_package_info->platform() ||
+        op_package_manager_.Has(op_package_info->op_package_path()->c_str()))
+      continue;
+
+    error = qnn_interface.qnn_backend_register_op_package(
+        handle_,
+        op_package_info->op_package_path()->c_str(),
+        op_package_info->interface_provider()->c_str(),
+        EnumNameQnnExecuTorchOpPackageTarget(op_package_info->target()));
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to register op package: "
+          "%s , error=%d",
+          op_package_info->op_package_path()->c_str(),
+          QNN_GET_ERROR_CODE(error));
+    } else {
+      op_package_manager_.Add(op_package_info->op_package_path()->c_str());
+    }
+  }
+}
+
+Error QnnBackend::Configure(
+    const QnnExecuTorchOpPackageOptions* op_package_options) {
   // create qnn backend
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -54,6 +93,11 @@ Error QnnBackend::Configure() {
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
+
+  if (op_package_options->op_package_infos()->size() > 0) {
+    BackendRegisterOpPackage(op_package_options->op_package_infos());
+  }
+
   return Error::Ok;
 }
 

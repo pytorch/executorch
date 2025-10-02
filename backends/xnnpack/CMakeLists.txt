@@ -35,7 +35,6 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
   add_definitions(-DENABLE_XNNPACK_KLEIDI)
 endif()
 
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
@@ -60,10 +59,10 @@ foreach(fbs_file ${_xnnpack_schema__srcs})
   )
 endforeach()
 
-if(WIN32)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
   set(MV_COMMAND
       powershell -Command
-      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs}"
+      "Move-Item -Path ${_xnnpack_flatbuffer__outputs} -Destination ${_xnnpack_schema__outputs} -Force"
   )
 else()
   set(MV_COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs})
@@ -88,8 +87,10 @@ unset(MV_COMMAND)
 add_library(xnnpack_schema INTERFACE ${_xnnpack_schema__outputs})
 set_target_properties(xnnpack_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
-  xnnpack_schema INTERFACE ${_xnnpack_schema__include_dir}
-                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  xnnpack_schema
+  INTERFACE
+    $<BUILD_INTERFACE:${_xnnpack_schema__include_dir}>
+    $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
 
 set(xnnpack_third_party pthreadpool extension_threadpool cpuinfo)
@@ -102,28 +103,65 @@ target_link_libraries(
   xnnpack_backend PUBLIC ${xnnpack_third_party} executorch_core xnnpack_schema
                          extension_threadpool
 )
-
 target_include_directories(
   xnnpack_backend PUBLIC ${_common_include_directories}
 )
-target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
+target_include_directories(xnnpack_backend PRIVATE ${XNNPACK_INCLUDE_DIR})
 target_include_directories(
   xnnpack_backend
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pthreadpool/include
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/pthreadpool/include
 )
 target_include_directories(
   xnnpack_backend
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include
 )
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
-target_link_options_shared_lib(xnnpack_backend)
+executorch_target_link_options_shared_lib(xnnpack_backend)
 
+executorch_move_interface_include_directories_to_build_time_only(XNNPACK)
 install(
-  TARGETS xnnpack_backend
+  TARGETS xnnpack_backend xnnpack_schema
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
 
+# Without this, XNNPACK fails to install because of a failure to find
+# backends/xnnpack/include/xnnpack.h.
+set_target_properties(XNNPACK PROPERTIES PUBLIC_HEADER "")
+
+set_target_properties(cpuinfo PROPERTIES PUBLIC_HEADER "")
+executorch_move_interface_include_directories_to_build_time_only(fxdiv)
+executorch_move_interface_include_directories_to_build_time_only(pthreadpool)
+executorch_move_interface_include_directories_to_build_time_only(
+  pthreadpool_interface
+)
+install(
+  TARGETS XNNPACK
+          xnnpack-base
+          xnnpack-allocator
+          xnnpack-cache
+          xnnpack-hardware-config
+          xnnpack-indirection
+          xnnpack-memory
+          xnnpack-microkernel-utils
+          xnnpack-microparams-init
+          xnnpack-mutex
+          xnnpack-normalization
+          xnnpack-operators
+          xnnpack-operator-run
+          xnnpack-operator-utils
+          xnnpack-pack-lh
+          xnnpack-packing
+          xnnpack-sanitizers
+          xnnpack-subgraph
+          xnnpack-datatype
+          xnnpack-reference-ukernels
+          xnnpack-logging
+  EXPORT ExecuTorchTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

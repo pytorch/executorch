@@ -29,6 +29,9 @@ def define_common_targets():
         exported_deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable/cpu/util:broadcast_indexes_range",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
         ],
     )
 
@@ -67,6 +70,7 @@ def define_common_targets():
         exported_headers = ["moments_utils.h"],
         visibility = ["//executorch/kernels/optimized/...", "@EXECUTORCH_CLIENTS",],
         exported_deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
             "//executorch/kernels/optimized:libvec",
             "//executorch/kernels/optimized:libutils",
         ],

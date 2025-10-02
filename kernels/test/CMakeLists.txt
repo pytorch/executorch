@@ -17,7 +17,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
-set(_kernels portable optimized quantized)
+set(_kernels portable optimized_portable optimized quantized)
 foreach(kernel ${_kernels})
   set(_wrapper_dir
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/test"
@@ -26,8 +26,8 @@ foreach(kernel ${_kernels})
   set(_functions_include "#include <executorch/kernels/${kernel}/Functions.h>")
   add_custom_command(
     OUTPUT "${_wrapper_path}"
-    COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo ${_functions_include} > "${_wrapper_path}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_wrapper_dir}
+    COMMAND ${CMAKE_COMMAND} -E echo ${_functions_include} > "${_wrapper_path}"
     DEPENDS
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
@@ -37,13 +37,17 @@ foreach(kernel ${_kernels})
     VERBATIM
   )
 
+  set(_supported_features_kernel ${kernel})
+  if(${kernel} STREQUAL "optimized_portable")
+    set(_supported_features_kernel "portable")
+  endif()
   add_custom_command(
     OUTPUT "${_wrapper_dir}/supported_features.cpp"
            "${_wrapper_dir}/supported_features.h"
-    COMMAND mkdir -p ${_wrapper_dir}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${_wrapper_dir}
     COMMAND
       ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
-      kernels/${kernel}/test/supported_features_def.yaml >
+      kernels/${_supported_features_kernel}/test/supported_features_def.yaml >
       ${_wrapper_dir}/supported_features.cpp
     COMMAND
       ${PYTHON_EXECUTABLE} kernels/test/gen_supported_features.py
@@ -58,23 +62,46 @@ foreach(kernel ${_kernels})
     set(_kernel_ops_lib_path
         "${CMAKE_CURRENT_BINARY_DIR}/../../configurations/optimized_native_cpu_ops_lib"
     )
+  elseif(${kernel} STREQUAL "optimized_portable")
+    set(_kernel_ops_lib "${kernel}_ops_lib")
+    set(_kernel_ops_lib_path
+        "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/portable/${kernel}_ops_lib"
+    )
   else()
     set(_kernel_ops_lib "${kernel}_ops_lib")
     set(_kernel_ops_lib_path
         "${CMAKE_CURRENT_BINARY_DIR}/../../kernels/${kernel}/${kernel}_ops_lib"
     )
   endif()
+
+  # Copy with glob needs to be handle in a platform-specific manner.
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+    # The quoting here is complicated, because there are three levels of
+    # interpretation: CMake -> Batch -> Powershell. The invoked (batch) command
+    # should look like `powershell -Command "Copy-Item ... -Path \"...\" ...".
+    # Powershell sees `Copy-Item -Path "..." ...`.
+    set(_copy_headers_cmd
+        powershell
+        -Command
+        "Copy-Item -Path \\\"${_kernel_ops_lib_path}/*.h\\\" -Destination \\\"${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/\\\""
+    )
+  else()
+    set(_copy_headers_cmd
+        cp
+        "${_kernel_ops_lib_path}/*.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+    )
+  endif()
+
   add_custom_command(
     OUTPUT
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/Functions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/NativeFunctions.h"
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/RegisterKernels.h"
     COMMAND
-      mkdir -p
+      ${CMAKE_COMMAND} -E make_directory
       "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
-    COMMAND
-      cp "${_kernel_ops_lib_path}/*.h"
-      "${CMAKE_CURRENT_BINARY_DIR}/include/${kernel}/executorch/kernels/${kernel}/"
+    COMMAND ${_copy_headers_cmd}
     DEPENDS ${_kernel_ops_lib}
   )
 endforeach()
@@ -88,6 +115,9 @@ add_custom_target(
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/optimized/executorch/kernels/test/supported_features.cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/FunctionHeaderWrapper.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.cpp"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/FunctionHeaderWrapper.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.h"
     "${CMAKE_CURRENT_BINARY_DIR}/include/quantized/executorch/kernels/test/supported_features.cpp"
@@ -96,6 +126,7 @@ add_custom_target(
 set(all_test_sources
     "BinaryLogicalOpTest.cpp"
     "op__to_dim_order_copy_test.cpp"
+    "op__clone_dim_order_test.cpp"
     "op_abs_test.cpp"
     "op_acos_test.cpp"
     "op_acosh_test.cpp"
@@ -243,6 +274,7 @@ set(all_test_sources
     "op_unbind_copy_test.cpp"
     "op_unsqueeze_copy_test.cpp"
     "op_upsample_bilinear2d_test.cpp"
+    "op_upsample_bilinear2d_aa_test.cpp"
     "op_upsample_nearest2d_test.cpp"
     "op_var_test.cpp"
     "op_view_as_real_copy_test.cpp"
@@ -299,6 +331,22 @@ set(_optimized_kernels_test_sources
 if(TARGET optimized_portable_kernels)
   list(APPEND _optimized_kernels_test_sources ${all_test_sources})
   list(REMOVE_DUPLICATES _optimized_kernels_test_sources)
+
+  # Make sure that we still test optimized versions of portable kernels even if
+  # they would currently be shadowed by specific optimized implementations.
+  et_cxx_test(
+    optimized_portable_kernels_test
+    SOURCES
+    ${all_test_sources}
+    ${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable/executorch/kernels/test/supported_features.cpp
+    EXTRA_LIBS
+    optimized_portable_kernels
+  )
+  add_dependencies(optimized_portable_kernels_test generate_wrapper)
+  target_include_directories(
+    optimized_portable_kernels_test
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized_portable"
+  )
 endif()
 
 et_cxx_test(

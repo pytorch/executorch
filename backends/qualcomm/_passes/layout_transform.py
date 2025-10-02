@@ -63,7 +63,11 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.abs.default,
         exir_ops.edge.aten.add.Tensor,
         exir_ops.edge.aten.amax.default,
+        exir_ops.edge.aten.amin.default,
+        exir_ops.edge.aten.asin.default,
+        exir_ops.edge.aten.atan.default,
         exir_ops.edge.aten.bitwise_or.Tensor,
+        exir_ops.edge.aten.bitwise_xor.Tensor,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.bitwise_and.Tensor,
         exir_ops.edge.aten.cat.default,
@@ -75,6 +79,9 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.elu.default,
         exir_ops.edge.aten.eq.Tensor,
         exir_ops.edge.aten.exp.default,
+        exir_ops.edge.aten.flip.default,
+        exir_ops.edge.aten.floor.default,
+        exir_ops.edge.aten.floor_divide.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.full_like.default,
         exir_ops.edge.aten.ge.Tensor,
@@ -86,11 +93,14 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.log.default,
+        exir_ops.edge.aten.logical_and.default,
         exir_ops.edge.aten.logical_not.default,
         exir_ops.edge.aten.lt.Scalar,
         exir_ops.edge.aten.lt.Tensor,
+        exir_ops.edge.aten.max.dim,
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.min.dim,
         exir_ops.edge.aten.minimum.default,
         exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.ne.Scalar,
@@ -100,7 +110,10 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.prelu.default,
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.round.default,
         exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.sign.default,
+        exir_ops.edge.aten.slice_copy.Tensor,
         exir_ops.edge.aten.split_with_sizes.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,
         exir_ops.edge.aten.sqrt.default,
@@ -164,10 +177,13 @@ class LayoutTransform(ExportPass):
         return node.target in self.layout_sensitive_ops
 
     def is_layout_agnostic(self, node: torch.fx.Node) -> bool:
-        if node.target in [
+        if node.target in {
+            exir_ops.edge.aten.max.dim,
             exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.min.dim,
             exir_ops.edge.aten.sum.dim_IntList,
-        ]:
+            exir_ops.edge.aten.amax.default,
+        }:
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:
                 return False

@@ -7,6 +7,7 @@ load(
     "get_vec_deps",
     "get_vec_preprocessor_flags",
 )
+load("@fbsource//xplat/executorch/kernels/prim_ops:selective_build.bzl", "prim_ops_registry_selective")
 
 # Headers that declare the function signatures of the C++ functions that
 # map to entries in functions.yaml and custom_ops.yaml.
@@ -81,6 +82,83 @@ ScalarType = enum(
     "Uint64",
 )
 
+def _get_prim_ops_registry_target(name, deps, aten_suffix, platforms):
+    """
+    Helper function to determine which prim ops registry target to use.
+
+    Args:
+        name: Base name for creating selective registry target
+        deps: List of dependencies for the selective registry target, it will filter out
+              the deps with label et_operator_library
+        aten_suffix: Suffix for aten mode (e.g. "_aten")
+        platforms: Platforms configuration
+
+    Returns:
+        String: Target name for the appropriate prim ops registry
+    """
+    # If selective build targets are specified, create a selective prim ops registry
+    # Create a selective prim ops registry using the existing function
+    selective_prim_ops_registry_name = name + "_selected_prim_ops_registry"
+    combined_prim_ops_header_target_name = name + "_combined_prim_ops_header"
+    selected_prim_operators_genrule(combined_prim_ops_header_target_name, deps, platforms)
+    # Use the existing prim_ops_registry_selective function
+    prim_ops_registry_selective(
+        name = selective_prim_ops_registry_name,
+        selected_prim_ops_header_target = ":"+combined_prim_ops_header_target_name,
+        aten_suffix = aten_suffix,
+        platforms = platforms,
+    )
+
+    # Return the selective registry target
+    return ":" + selective_prim_ops_registry_name
+
+def _extract_prim_ops_from_lists(ops, ops_dict):
+    """
+    Utility function to extract prim ops from ops list and ops_dict.
+
+    Args:
+        ops: List of operator names
+        ops_dict: Dictionary mapping ops to metadata
+
+    Returns:
+        Tuple of (prim_ops, remaining_ops, remaining_ops_dict)
+    """
+    def _is_aten_prim_op(op_name):
+        if not op_name.startswith("aten::"):
+            return False
+        for prim_suffix in [
+            "sym_size", "sym_numel", "sym_max", "sym_min", "sym_float"
+        ]:
+            if prim_suffix in op_name:
+                return True
+        return False
+
+    def _is_prim_op(op_name):
+        """Check if an operator is a primitive operation."""
+        return op_name.startswith("executorch_prim::") or (
+            _is_aten_prim_op(op_name)
+        )
+
+    prim_ops = []
+    remaining_ops = []
+    remaining_ops_dict = {}
+
+    # Extract from ops list
+    for op in ops:
+        if _is_prim_op(op):
+            prim_ops.append(op)
+        else:
+            remaining_ops.append(op)
+
+    # Extract from ops_dict
+    for op, metadata in ops_dict.items():
+        if _is_prim_op(op):
+            prim_ops.append(op)
+        else:
+            remaining_ops_dict[op] = metadata
+
+    return prim_ops, remaining_ops, remaining_ops_dict
+
 # Hide the dependency to caffe2 internally.
 def et_operator_library(
         name,
@@ -91,6 +169,27 @@ def et_operator_library(
         ops_schema_yaml_target = None,
         server_generated_yaml_target = None,
         **kwargs):
+
+    # Check if we should extract prim ops from the operator lists
+    # Note that selective build for prim ops doesnt support model or ops_schema_yaml_target or server_generated_yaml_target
+    # TODO: Add support for selective build for prim ops with model or ops_schema_yaml_target or server_generated_yaml_target
+    should_extract_prim_ops = (ops or ops_dict) and not (model or ops_schema_yaml_target or server_generated_yaml_target or include_all_operators)
+
+    if should_extract_prim_ops:
+        # Extract prim ops from ops and ops_dict
+        prim_ops, remaining_ops, remaining_ops_dict = _extract_prim_ops_from_lists(ops, ops_dict)
+        # Use the remaining ops (with prim ops removed) for the main et_operator_library
+        final_ops = remaining_ops
+        final_ops_dict = remaining_ops_dict
+    else:
+        # No prim ops extraction needed - use original ops and ops_dict
+        prim_ops = []
+        final_ops = ops
+        final_ops_dict = ops_dict
+
+    selected_operator_yaml_filename = "selected_operators.yaml"
+    selected_prim_ops_filename = "selected_prim_ops.h"
+    # Generate the main operator library with the final ops
     # do a dummy copy if server_generated_yaml_target is set
     if server_generated_yaml_target:
         if include_all_operators or ops_schema_yaml_target or model or ops or ops_dict:
@@ -98,7 +197,7 @@ def et_operator_library(
         genrule_cmd = [
             "cp",
             "$(location {})".format(server_generated_yaml_target),
-            "$OUT",
+            "$OUT/{}".format(selected_operator_yaml_filename),
         ]
     else:
         genrule_cmd = [
@@ -109,12 +208,12 @@ def et_operator_library(
             genrule_cmd.append(
                 "--ops_schema_yaml_path=$(location {})".format(ops_schema_yaml_target),
             )
-        if ops:
+        if final_ops:
             genrule_cmd.append(
-                "--root_ops=" + ",".join(ops),
+                "--root_ops=" + ",".join(final_ops),
             )
-        if ops_dict:
-            ops_dict_json = struct_to_json(ops_dict)
+        if final_ops_dict:
+            ops_dict_json = struct_to_json(final_ops_dict)
             genrule_cmd.append(
                 "--ops_dict='{}'".format(ops_dict_json),
             )
@@ -127,6 +226,15 @@ def et_operator_library(
                 "--include_all_operators",
             )
 
+    prim_ops_genrule_cmd = [
+        "$(exe //executorch/codegen/tools:gen_selected_prim_ops)",
+        "--prim_op_names=" + ",".join(prim_ops),
+        "--output_dir=${OUT}",
+    ]
+    # Here we generate the selected_prim_ops.h and the selected_operators.yaml file
+    # both with single genrule
+    genrule_cmd = genrule_cmd + [" && "] + prim_ops_genrule_cmd
+
     # TODO(larryliu0820): Remove usages of this flag.
     if "define_static_targets" in kwargs:
         kwargs.pop("define_static_targets")
@@ -134,7 +242,8 @@ def et_operator_library(
         name = name,
         macros_only = False,
         cmd = " ".join(genrule_cmd),
-        out = "selected_operators.yaml",
+        outs = {selected_operator_yaml_filename: [selected_operator_yaml_filename], selected_prim_ops_filename: [selected_prim_ops_filename]},
+        default_outs = ["."],
         labels = ["et_operator_library"],
         **kwargs
     )
@@ -615,6 +724,31 @@ def selected_operators_genrule(
         platforms = platforms,
     )
 
+def selected_prim_operators_genrule(
+    name,
+    deps,
+    platforms = get_default_executorch_platforms(),
+):
+    """Generates selected_prim_ops.h from the list of deps. We look into the transitive closure of all the deps,
+    and look for targets with label `et_operator_library`.
+
+    `combine_prim_ops_headers` is the python binary we use to aggregate all the `selected_prim_ops.h` headers
+    from `et_prim_ops_library` targets into a single combined `selected_prim_ops.h` file.
+
+    This file can be used to enable selective build for prim ops across multiple dependencies.
+    """
+    cmd = ("$(exe //executorch/codegen/tools:combine_prim_ops_headers) " +
+           "--header_files $(@query_outputs \'attrfilter(labels, et_operator_library, deps(set({deps})))\') " +
+           "--output_dir $OUT ").format(deps = " ".join(["\"{}\"".format(d) for d in deps]))
+    runtime.genrule(
+        name = name,
+        macros_only = False,
+        cmd = cmd,
+        outs = {"selected_prim_ops.h": ["selected_prim_ops.h"]},
+        default_outs = ["."],
+        platforms = platforms,
+    )
+
 def dtype_header_genrule(
     name,
     visibility,
@@ -677,7 +811,8 @@ def executorch_generated_lib(
         dtype_selective_build = False,
         feature = None,
         expose_operator_symbols = False,
-        support_exceptions = True):
+        support_exceptions = True,
+        include_all_prim_ops = True):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -738,6 +873,9 @@ def executorch_generated_lib(
         support_exceptions: enable try/catch wrapper around operator implementations
             to make sure exceptions thrown will not bring down the process. Disable if your
             use case disables exceptions in the build.
+        include_all_prim_ops: If true, include all prim ops in the generated library. This option
+            allows for selecting only some prim ops to reduce code size for extremely constrained
+            environments. For selecting only some prim ops, see examples in //executorch/examples/selective_build
     """
     if functions_yaml_target and aten_mode:
         fail("{} is providing functions_yaml_target in ATen mode, it will be ignored. `native_functions.yaml` will be the source of truth.".format(name))
@@ -752,7 +890,7 @@ def executorch_generated_lib(
             See: https://www.internalfb.com/wiki/PyTorch/Teams/Edge/PyTorch_Edge_Core_Team/Dtype_Selective_Build/""")
 
     if dtype_selective_build:
-        if not expose_operator_symbols and not is_xplat():
+        if not expose_operator_symbols and not (is_xplat() or runtime.is_oss):
             fail("""
                 Dtype selective build with expose_operator_symbols=False works only in xplat -
                 there are undefined symbols otherwise. Please try to use xplat, or talk to the
@@ -896,12 +1034,19 @@ def executorch_generated_lib(
             exported_deps = [
                 "//executorch/codegen:macros",
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             feature = feature,
         )
 
     if name in libs:
         lib_name = name
+
+        if include_all_prim_ops:
+            prim_ops_registry_target = "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix
+        else:
+            prim_ops_registry_target = _get_prim_ops_registry_target(name, deps, aten_suffix, platforms)
+
         runtime.cxx_library(
             name = lib_name,
             srcs = [
@@ -926,13 +1071,14 @@ def executorch_generated_lib(
             }) + compiler_flags,
             deps = [
                 "//executorch/runtime/kernel:operator_registry" + aten_suffix,
-                "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
+                prim_ops_registry_target,  # Use the appropriate prim ops registry
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
             ] + deps + kernel_deps,
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             xplat_deps = xplat_deps,
             fbcode_deps = fbcode_deps,

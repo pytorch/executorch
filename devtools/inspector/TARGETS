@@ -1,9 +1,9 @@
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_library(
+runtime.python_library(
     name = "inspector",
     srcs = [
         "_inspector.py",
@@ -19,6 +19,7 @@ python_library(
         "//executorch/devtools/etrecord:etrecord",
         "//executorch/exir:lib",
         "//executorch/devtools/inspector:intermediate_output_capturer",
+        "//executorch/devtools/inspector/numerical_comparator:lib",
     ],
 )
 
@@ -32,7 +33,7 @@ python_binary(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "inspector_utils",
     srcs = [
         "_inspector_utils.py",
@@ -49,16 +50,17 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "intermediate_output_capturer",
     srcs = [
         "_intermediate_output_capturer.py",
     ],
     deps = [
+        "//executorch/devtools/inspector:inspector_utils",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [

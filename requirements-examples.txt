@@ -1,6 +1,7 @@
 # pip packages needed to run examples.
 # TODO: Make each example publish its own requirements.txt
+datasets == 3.6.0 # 4.0.0 deprecates trust_remote_code and load scripts. For now pin to 3.6.0
 timm == 1.0.7
 torchsr == 1.0.4
 torchtune >= 0.6.1
-transformers ==4.47.1
+transformers == 4.53.1

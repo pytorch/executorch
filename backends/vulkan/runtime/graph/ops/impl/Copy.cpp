@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -28,21 +29,18 @@ void add_copy_offset_node(
     const ValueRef out,
     bool calc_out_pos_using_src_chnl,
     bool calc_in_pos_using_dst_chnl) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-
   std::string kernel_name = "copy_offset";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
-  add_storage_type_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       // Inputs and Outputs
       {
           {out, vkapi::kWrite},
@@ -75,27 +73,27 @@ void add_copy_packed_dim_offset_node(
     const ivec4& src_offset,
     const ivec4& dst_offset,
     const ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-
   // Check the packed dimension is same for both tensors, also check if the
   // packed dimension is Width or Height. Since the function does not support
   // channel packing.
   VK_CHECK_COND(
-      check_same_packed_dim(*t_in, *t_out) &&
-      (check_packed_dim_is(*t_in, WHCN::kWidthDim) ||
-       check_packed_dim_is(*t_in, WHCN::kHeightDim)));
+      graph.packed_dim_of(in) == graph.packed_dim_of(out) &&
+      (graph.packed_dim_of(in) == WHCN::kWidthDim ||
+       graph.packed_dim_of(in) == WHCN::kHeightDim));
 
   std::string kernel_name = "copy_packed_dim_offset";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(out);
 
   // A copy of range with the last element set to batch size of the input tensor
   ivec4 final_range = {
-      range[0], range[1], range[2], dim_at(t_in->sizes(), kBatch4D)};
-  ivec3 global_wg_size = t_out->logical_limits();
+      range[0], range[1], range[2], dim_at(in_sizes, kBatch4D)};
+  ivec3 global_wg_size = graph.logical_limits_of(out);
 
-  const auto packed_dim = t_in->packed_dim();
+  const auto packed_dim = graph.packed_dim_of(in);
   // The starting offset in a texel where this tensor will start copying from
   const auto src_lane_offset = src_offset[packed_dim] & 0x3;
   // The starting offset in a texel where this tensor will start copying to
@@ -106,16 +104,14 @@ void add_copy_packed_dim_offset_node(
   // remaining lanes from current source Hence (4 - src_lane_offset) is added
   // to tensor size in packed dimension
   const auto src_packed_size = utils::div_up_4(
-      (4 - src_lane_offset) +
-      dim_at(t_out->sizes(), normalize_to_dim_index(*t_out, packed_dim)));
+      (4 - src_lane_offset) + utils::val_at(-packed_dim, out_sizes));
 
   // The total packed texels this tensor will be copied to
   // The first texel of tensor data in packed dimension will be copied to
   // remaining lanes from previous write Hence (4 - dst_lane_offset) is added
   // to tensor size in packed dimension
   const auto dst_packed_size = utils::div_up_4(
-      (4 - dst_lane_offset) +
-      dim_at(t_in->sizes(), normalize_to_dim_index(*t_in, packed_dim)));
+      (4 - dst_lane_offset) + utils::val_at(-packed_dim, in_sizes));
 
   // If the starting src offset is not 0, and the total packed texels is
   // greater than the source texel range
@@ -169,20 +165,17 @@ void add_copy_channel_offset_node(
     int32_t src_channel_offset,
     int32_t dst_channel_offset,
     const ValueRef out) {
-  vTensorPtr t_in = graph.get_tensor(in);
-  vTensorPtr t_out = graph.get_tensor(out);
-
   // Likely need to prepad these numbers.
-  std::vector<int64_t> in_sizes = t_in->sizes();
-  std::vector<int64_t> out_sizes = t_out->sizes();
+  const std::vector<int64_t> in_sizes = graph.sizes_of(in);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(out);
 
-  VK_CHECK_COND(check_packed_dim_is(*t_in, WHCN::kChannelsDim));
-  VK_CHECK_COND(check_packed_dim_is(*t_out, WHCN::kChannelsDim));
+  VK_CHECK_COND(graph.packed_dim_of(in) == WHCN::kChannelsDim);
+  VK_CHECK_COND(graph.packed_dim_of(out) == WHCN::kChannelsDim);
 
   // NOTE: This function should be able to support 1d and 2d tensors when
   // range=1, src_offset=dst_offset=1.
-  VK_CHECK_COND(t_in->dim() >= 3, "Src dim should be at least 3");
-  VK_CHECK_COND(t_out->dim() >= 3, "Dst dim should be at least 3");
+  VK_CHECK_COND(graph.dim_of(in) >= 3, "Src dim should be at least 3");
+  VK_CHECK_COND(graph.dim_of(out) >= 3, "Dst dim should be at least 3");
 
   VK_CHECK_COND(
       dim_at<kChannel4D>(in_sizes) >= src_channel_offset + channel_range,
@@ -212,7 +205,7 @@ void add_copy_channel_offset_node(
 
   std::string kernel_name = "copy_channel_offset";
   kernel_name.reserve(kShaderNameReserve);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   int32_t out_channels = dim_at<kChannel4D>(out_sizes);
 

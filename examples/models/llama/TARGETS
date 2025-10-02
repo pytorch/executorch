@@ -13,6 +13,25 @@ runtime.python_library(
     name = "llama_transformer",
     srcs = [
         "llama_transformer.py",
+    ],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":transformer_modules",
+        "//caffe2:torch",
+        "//executorch/examples/models/lfm2:lfm2",
+    ],
+)
+
+runtime.python_library(
+    name = "transformer_modules",
+    srcs = [
+        "feed_forward.py",
+        "lora.py",
         "rope.py",
         "attention.py",
         "model_args.py",
@@ -23,9 +42,6 @@ runtime.python_library(
     visibility = [
         "//executorch/...",
         "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        "//caffe2:torch",
     ],
 )
 
@@ -67,6 +83,7 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models/llama:llama_transformer",
+        "//executorch/extension/llm/export/config:llm_config",
         "//executorch/examples/models:checkpoint",
     ],
 )
@@ -82,8 +99,10 @@ runtime.python_binary(
     ],
     deps = [
         ":export_library",
+        ":eval_library",
         "//caffe2:torch",
         "//executorch/extension/pybindings:aten_lib",
+        "//executorch/extension/llm/export:export_llm_lib",
     ],
 )
 
@@ -113,7 +132,6 @@ runtime.python_library(
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
         "source_transformation/spin_quant.py",
-        "source_transformation/vulkan_rope.py",
         "source_transformation/attention_sink.py",
     ],
 )
@@ -148,10 +166,12 @@ runtime.python_library(
         ":source_transformation",
         "//ai_codesign/gen_ai/fast_hadamard_transform:fast_hadamard_transform",
         "//caffe2:torch",
+        "//executorch/extension/llm/export/config:llm_config",
+        "//executorch/backends/vulkan/_passes:vulkan_passes",
+        "//executorch/exir/passes:external_constants_pass",
         "//executorch/exir/passes:init_mutable_pass",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
-        "//executorch/exir/passes:init_mutable_pass",
         "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
         "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary

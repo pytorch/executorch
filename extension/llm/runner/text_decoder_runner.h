@@ -10,10 +10,8 @@
 
 #pragma once
 
+#include <executorch/extension/llm/runner/io_manager/io_manager.h>
 #include <executorch/extension/llm/sampler/sampler.h>
-#include <executorch/extension/module/module.h>
-#include <executorch/extension/tensor/tensor.h>
-#include <executorch/runtime/platform/compiler.h>
 
 namespace executorch {
 namespace extension {
@@ -21,7 +19,7 @@ namespace llm {
 
 class ET_EXPERIMENTAL TextDecoderRunner {
  public:
-  TextDecoderRunner(Module* module, bool use_kv_cache);
+  explicit TextDecoderRunner(Module* module, IOManager* io_manager);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -34,7 +32,7 @@ class ET_EXPERIMENTAL TextDecoderRunner {
    */
   virtual ::executorch::runtime::Result<executorch::aten::Tensor> step(
       TensorPtr& input,
-      TensorPtr& start_pos);
+      int64_t start_pos);
 
   /**
    * Load the Module for text decode purpose.
@@ -67,12 +65,21 @@ class ET_EXPERIMENTAL TextDecoderRunner {
       const executorch::aten::Tensor& logits_tensor,
       const float temperature = 0.0f) {
     int32_t result = 0;
-    ET_SWITCH_THREE_TYPES(
+
+    // Create a minimal context for error handling in ET_SWITCH
+    struct {
+      [[noreturn]] void fail(torch::executor::Error /* error */) {
+        ET_CHECK_MSG(false, "Unsupported dtype in logits_to_token");
+      }
+    } ctx;
+
+    ET_SWITCH_FOUR_TYPES(
         Float,
         Half,
         BFloat16,
+        UInt16,
         logits_tensor.scalar_type(),
-        unused,
+        ctx,
         "logits_to_token",
         CTYPE,
         [&]() {
@@ -94,14 +101,14 @@ class ET_EXPERIMENTAL TextDecoderRunner {
 
  protected:
   /**
-   * Note: TextDecoderRunner does not own the Module instance. It is expected
-   * that the outer class (likely Runner) manages the lifecycle of the Module.
-   * This means that the responsibility for creating, maintaining, and
+   * Note: TextDecoderRunner does not own the Module or IOManager instance. It
+   * is expected that the outer class (likely Runner) manages the lifecycle of
+   * them. This means that the responsibility for creating, maintaining, and
    * destroying the Module lies outside of TextDecoderRunner. Ensure that the
    * Module remains valid for the duration of TextDecoderRunner's usage.
    */
   Module* module_;
-  bool use_kv_cache_;
+  IOManager* io_manager_;
   bool should_stop_{false};
 };
 

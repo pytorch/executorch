@@ -37,13 +37,12 @@ $if STORAGE == "buffer":
   ${layout_declare_ubo(B, "ivec4", "cond_strides")}
   ${layout_declare_ubo(B, "ivec4", "self_strides")}
   ${layout_declare_ubo(B, "ivec4", "other_strides")}
-
-  ${layout_declare_spec_const(C, "int", "out_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "cond_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "self_packed_dim", "DEFAULT_LAYOUT")}
-  ${layout_declare_spec_const(C, "int", "other_packed_dim", "DEFAULT_LAYOUT")}
 $else:
   ${layout_declare_ubo(B, "ivec3", "out_limits")}
+
+${layout_declare_spec_const(C, "int", "out_layout", "DEFAULT_DIM_ORDER")}
+
+const lowp ivec4 out_dim_order = unhash_dim_order(out_layout);
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -51,26 +50,15 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
   int out_bufi = int(gl_GlobalInvocationID.x);
-  // ivec4 tidx = ivec4(gl_GlobalInvocationID, 0);
-  // int out_bufi = tidx_to_bufi(tidx, out_strides);
-  // int cond_bufi = tidx_to_bufi(tidx, cond_strides);
-  // int self_bufi = tidx_to_bufi(tidx, self_strides);
-  // int other_bufi = tidx_to_bufi(tidx, other_strides);
   if (out_bufi >= out_numl) {
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
-  out_bufi = tidx_to_bufi(out_tidx, out_strides);
+  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
 
-  const ivec4 cond_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
-  const int cond_bufi = tidx_to_bufi(cond_tidx, cond_strides);
-
-  const ivec4 self_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
-  const int self_bufi = tidx_to_bufi(self_tidx, self_strides);
-
-  const ivec4 other_tidx = bufi_to_tidx(out_bufi, out_strides, out_packed_dim);
-  const int other_bufi = tidx_to_bufi(other_tidx, other_strides);
+  const int cond_bufi = tidx_to_bufi(out_tidx, cond_strides);
+  const int self_bufi = tidx_to_bufi(out_tidx, self_strides);
+  const int other_bufi = tidx_to_bufi(out_tidx, other_strides);
 
   COND_T cond = t_condition[cond_bufi] ;
   T v_self = t_self[self_bufi];

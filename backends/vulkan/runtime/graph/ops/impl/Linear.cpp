@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/MatMul.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
@@ -17,6 +18,70 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 namespace vkcompute {
+
+// Custom global workgroup size function for addmm_naive_texture
+utils::uvec3 addmm_naive_texture_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  return graph->logical_limits_of(out);
+}
+
+// Custom global workgroup size function for addmm_naive_buffer
+utils::uvec3 addmm_naive_buffer_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  return {
+      graph->size_at<uint32_t>(-1, out),
+      graph->size_at<uint32_t>(-2, out),
+      graph->size_at<uint32_t>(-3, out) * graph->size_at<uint32_t>(-4, out)};
+}
+
+// Custom global workgroup size function for addmm_optimized
+utils::uvec3 addmm_optimized_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+
+  std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  int mat1_dims = mat1_sizes.size();
+
+  utils::uvec3 global_size = graph->logical_limits_of(out);
+
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    global_size = utils::divup_vec(global_size, {4, 2, 1});
+  } else {
+    global_size = utils::divup_vec(global_size, {4, 4, 1});
+  }
+  return global_size;
+}
+
+// Custom local workgroup size function for addmm_optimized
+utils::uvec3 addmm_optimized_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)args;
+  (void)resize_args;
+  return adaptive_work_group_size(global_workgroup_size);
+}
 
 void check_addmm_args(
     ComputeGraph& graph,
@@ -54,29 +119,31 @@ void resize_addmm_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
-  vTensorPtr self = graph->get_tensor(args[1].refs[2]);
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef mat1 = args.at(1).refs.at(0);
+  const ValueRef mat2 = args.at(1).refs.at(1);
 
-  bool mat2_is_transposed = graph->get_bool(extra_args[0]);
+  const bool mat2_is_transposed = graph->get_bool(extra_args.at(0));
 
-  const int out_cols = utils::val_at(-2, mat1->sizes());
-  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
-                                          : utils::val_at(-1, mat2->sizes());
+  const std::vector<int64_t> mat1_sizes = graph->sizes_of(mat1);
+  const std::vector<int64_t> mat2_sizes = graph->sizes_of(mat2);
+
+  const int out_cols = utils::val_at(-2, mat1_sizes);
+  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2_sizes)
+                                          : utils::val_at(-1, mat2_sizes);
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1->sizes().size() == 2) {
+  if (mat1_sizes.size() == 2) {
     new_out_sizes.resize(2);
     new_out_sizes.at(0) = out_cols;
     new_out_sizes.at(1) = out_rows;
   } else {
-    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(0) = mat1_sizes.at(0);
     new_out_sizes.at(1) = out_cols;
     new_out_sizes.at(2) = out_rows;
   }
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 struct Params final {
@@ -107,11 +174,11 @@ void add_addmm_naive_texture_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   utils::uvec3 global_wg_size = graph.logical_limits_of(out);
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
+      addmm_naive_texture_global_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
       // Shader params buffers
@@ -174,11 +241,11 @@ void add_addmm_naive_buffer_node(
       ? 1
       : 0;
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      graph.create_local_wg_size(global_size),
+      addmm_naive_buffer_global_wg_size,
+      pick_hw_square_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{mat1, mat2, self}, vkapi::kRead}},
       // Shader params buffers
@@ -248,31 +315,13 @@ void add_addmm_optimized_node(
   } else {
     kernel_name += "_tile_row_4";
   }
-
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  utils::uvec3 global_size = graph.logical_limits_of(out);
-
-  // Each thread computes a W=(2/4) x H=4 x C=(1/4) output tile. Therefore, the
-  // total number of threads is W/(2 or 4) x H/4 x C/1. Since the out tensor is
-  // channels packed, C does not need to be divided by 4. The "identity" of each
-  // thread is the (x, y, z) coordinate of the output tile it is computing, and
-  // this identity can be used to compute the tensor index of the top left
-  // element in the tile, which will be [W=x*(2 or 4), H=y*4, C=z*(1 or 4), N=0]
-  if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    // Use `logical_extents` instead of `image_extents` because the workgroup
-    // axes need to correspond to tensor dimensions.
-    global_size = utils::divup_vec(global_size, {4, 2, 1});
-  } else {
-    global_size = utils::divup_vec(global_size, {4, 4, 1});
-  }
-  utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      addmm_optimized_global_wg_size,
+      addmm_optimized_local_wg_size,
       // Inputs and Outputs
       {{out, vkapi::kWrite},
        {{mat1_W_packed, mat2_packed, self}, vkapi::kRead}},
@@ -351,7 +400,11 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
   ValueRef weight = prepack_standard(
-      graph, weight_data, graph.storage_type_of(out), utils::kWidthPacked);
+      graph,
+      weight_data,
+      graph.storage_type_of(out),
+      utils::kWidthPacked,
+      /*passthrough = */ true);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
 
   if (graph.val_is_none(bias)) {

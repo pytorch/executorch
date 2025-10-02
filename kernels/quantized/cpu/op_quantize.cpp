@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <algorithm>
 #include <cinttypes>
@@ -150,7 +149,7 @@ Tensor& quantize_per_tensor_out(
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
+    ET_FORALL_FLOATH_TYPES(CALCULATE_FLOAT_TYPE);
     default:
       ET_CHECK_MSG(
           false,
@@ -282,56 +281,34 @@ Tensor& quantize_per_channel_out(
 
   check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
-  // a list contains all dimensions except axis
-  int64_t dims[kTensorDimensionLimit];
-  for (int64_t i = 0; i < input.dim() - 1; i++) {
-    if (i < axis) {
-      dims[i] = i;
-    } else {
-      dims[i] = i - 1;
-    }
-  }
   const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
 
-  executorch::aten::optional<executorch::aten::ArrayRef<int64_t>>
-      optional_dim_list{
-          executorch::aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
-
-  // Actual quantization logic
-  // input, out are the input and output tensors
-  // channel_ix is the index along the axis dimension. 0 <= channel_ix <
-  // input.size(axis).
-  //   i.e. if the tensor has shape (N,C,H,W), axis being 1, then channel_ix
-  //   will be 0, 1, 2, ... C-1
-  // in_ix is the flat index of the element you are quantizing.
-  //   in other words you are quantizing in_data[in_ix]
+  // High-performance single loop with direct channel calculation
 #define QUANTIZE_IMPL(CTYPE_IN, CTYPE_OUT, out_dtype)                          \
-  case ScalarType::out_dtype:                                                  \
-    for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
-      double _scale = scale_data[channel_ix];                                  \
-      int64_t _zero_point = zero_point_data[channel_ix];                       \
-      auto* out_data_ptr = out.mutable_data_ptr<CTYPE_OUT>();                  \
-      const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
-      apply_over_dim_list(                                                     \
-          [input_data_ptr,                                                     \
-           out_data_ptr,                                                       \
-           _scale,                                                             \
-           _zero_point,                                                        \
-           quant_min,                                                          \
-           quant_max](size_t in_ix) {                                          \
-            out_data_ptr[in_ix] = quantize_val<CTYPE_OUT, CTYPE_IN>(           \
-                _scale,                                                        \
-                _zero_point,                                                   \
-                input_data_ptr[in_ix],                                         \
-                quant_min,                                                     \
-                quant_max);                                                    \
-          },                                                                   \
-          input,                                                               \
-          optional_dim_list,                                                   \
-          channel_ix);                                                         \
+  case ScalarType::out_dtype: {                                                \
+    auto* out_data_ptr = out.mutable_data_ptr<CTYPE_OUT>();                    \
+    const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();             \
+    const int64_t input_numel = input.numel();                                 \
+    const int64_t axis_size = input.size(axis);                                \
+    /* Calculate the stride pattern for efficient channel index calculation */ \
+    int64_t axis_block_size = 1;                                               \
+    for (int64_t i = axis + 1; i < input.dim(); i++) {                         \
+      axis_block_size *= input.size(i);                                        \
     }                                                                          \
-    break;
+    /* Single loop over all elements */                                        \
+    for (int64_t i = 0; i < input_numel; i++) {                                \
+      /* Calculate which channel this element belongs to */                    \
+      int64_t channel_idx = (i / axis_block_size) % axis_size;                 \
+      /* Get quantization parameters for this channel */                       \
+      double _scale = scale_data[channel_idx];                                 \
+      int64_t _zero_point = zero_point_data[channel_idx];                      \
+      /* Apply quantization */                                                 \
+      out_data_ptr[i] = quantize_val<CTYPE_OUT, CTYPE_IN>(                     \
+          _scale, _zero_point, input_data_ptr[i], quant_min, quant_max);       \
+    }                                                                          \
+  } break;
+
 #define CALCULATE_FLOAT_TYPE(CTYPE_IN, in_dtype)         \
   case ScalarType::in_dtype:                             \
     switch (out.scalar_type()) {                         \
@@ -347,7 +324,7 @@ Tensor& quantize_per_channel_out(
     break;
 
   switch (input.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
+    ET_FORALL_FLOATH_TYPES(CALCULATE_FLOAT_TYPE);
     default:
       ET_CHECK_MSG(
           false,

@@ -40,7 +40,6 @@ from . import (  # noqa
     op_quant_dequant,
     op_relu,
     op_rsqrt,
-    op_sdpa,
     op_sigmoid,
     op_skip_ops,
     op_slice_copy,

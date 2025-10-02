@@ -19,14 +19,14 @@ from torch.fx.passes.utils.source_matcher_utils import (
     SourcePartition,
 )
 from torchao.quantization.pt2e import ObserverOrFakeQuantize
+from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
 
 
 def is_annotated(nodes: List[fx.Node]) -> bool:
     annotated = False
     for node in nodes:
         annotated = annotated or (
-            "quantization_annotation" in node.meta
-            and node.meta["quantization_annotation"]._annotated
+            Q_ANNOTATION_KEY in node.meta and node.meta[Q_ANNOTATION_KEY]._annotated
         )
     return annotated
 
@@ -49,7 +49,7 @@ def get_bias_qparams(
     act_scale, _ = obs_or_fqs[0].calculate_qparams()
     weight_scale, _ = obs_or_fqs[1].calculate_qparams()
     bias_scale = act_scale * weight_scale
-    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int32)
+    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int64)
     return bias_scale, bias_zero_point
 
 

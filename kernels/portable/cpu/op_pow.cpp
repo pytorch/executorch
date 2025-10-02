@@ -57,9 +57,8 @@ Tensor& pow_Tensor_Tensor_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
-        [](const CTYPE_COMPUTE val_a, const CTYPE_COMPUTE val_b) {
-          // TODO: rewrite this to be vectorization-capable.
-          return std::pow(val_a, val_b);
+        [](const auto val_a, const auto val_b) {
+          return executorch::math::pow(val_a, val_b);
         },
         ctx,
         a,
@@ -111,8 +110,13 @@ Tensor& pow_Tensor_Scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
-        // TODO: rewrite this to be vectorization-capable.
-        [val_b](const CTYPE_COMPUTE val_a) { return std::pow(val_a, val_b); },
+        // Casting val_b here supports vectorization; it does
+        // nothing if we are not vectorizing (casts to
+        // CTYPE_COMPUTE) and casts to a vectorized type
+        // otherwise.
+        [val_b](const auto val_a) {
+          return executorch::math::pow(val_a, decltype(val_a)(val_b));
+        },
         ctx,
         a,
         utils::SupportedTensorDtypes::REALHBBF16,
@@ -161,8 +165,13 @@ Tensor& pow_Scalar_out(
         CTYPE_COMPUTE,
         op_name,
         utils::SupportedTensorDtypes::REALHBF16>(
-        // TODO: rewrite this to be vectorization-capable.
-        [val_a](const CTYPE_COMPUTE val_b) { return std::pow(val_a, val_b); },
+        // Casting val_a here supports vectorization; it does
+        // nothing if we are not vectorizing (casts to
+        // CTYPE_COMPUTE) and casts to a vectorized type
+        // otherwise.
+        [val_a](const auto val_b) {
+          return executorch::math::pow(decltype(val_b)(val_a), val_b);
+        },
         ctx,
         b,
         utils::SupportedTensorDtypes::REALHBBF16,

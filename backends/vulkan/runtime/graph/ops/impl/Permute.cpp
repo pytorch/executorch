@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Common.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -100,29 +101,33 @@ void add_permute_node(
     const ValueRef out) {
   check_args(graph, in, permute_dims, out);
 
-  ivec4 out_dims{0, 1, 2, 3};
-
-  // Special cases of squeeze/unsqueeze. Because the input dim size can be
-  // different with output dim size. So pick graph.dim_of(in) if squeeze, and
-  // graph.dim_of(out) if unsqueeze to create parameter for permute.
-  const int64_t out_ndim = std::max(graph.dim_of(in), graph.dim_of(out));
-  std::vector<bool> seen(out_ndim);
+  // Convert the permute dims to WHCN dimension order, which is the standard in
+  // our compute shaders. The following transformations are applied.
+  // 1. Change dimension index values from NCHW order valueto WHCN order value
+  // 2. Reverse the order of the permute array from NCHW order to WHCN order
+  ivec4 whcn_permute_dims{0, 1, 2, 3};
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
-    for (int i = 0; i < out_ndim; i++) {
-      int64_t permute_dim = permute_dims_ptr->at(i);
-      VK_CHECK_COND(
-          !seen[permute_dim], "Argument dim ", permute_dim, "  is repeated");
-      seen[permute_dim] = true;
+    const int32_t permute_ndim =
+        utils::safe_downcast<int>(permute_dims_ptr->size());
 
-      out_dims[(4u - out_ndim) + i] =
-          utils::safe_downcast<int32_t>(permute_dim + (4 - out_ndim));
+    for (int32_t nchw_i = permute_ndim - 1, whcn_i = 0; nchw_i >= 0;
+         nchw_i--, whcn_i++) {
+      const int32_t permute_dim_nchw = permute_dims_ptr->at(nchw_i);
+      const int32_t permute_dim_whcn = permute_ndim - 1 - permute_dim_nchw;
+
+      whcn_permute_dims[whcn_i] = permute_dim_whcn;
     }
   }
 
   std::string kernel_name = "permute";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  vkapi::ParamsBindList param_buffers;
+  std::vector<PushConstantDataInfo> push_constants;
+  vkapi::SpecVarList spec_vars;
 
   const int32_t out_channels = dim_at<kChannel4D>(graph.sizes_of(out));
   const int32_t in_channels = dim_at<kChannel4D>(graph.sizes_of(in));
@@ -134,20 +139,23 @@ void add_permute_node(
     channel_info[1] = utils::align_up_4(channel_info[1]);
   }
 
-  const vkapi::SpecVarList spec_vars = {packed_dim};
+  push_constants = {
+      graph.sizes_pc_of(out),
+      graph.sizes_pc_of(in),
+      PushConstantDataInfo(&whcn_permute_dims, sizeof(whcn_permute_dims))};
 
-  graph.execute_nodes().emplace_back(new DispatchNode(
+  spec_vars = {graph.hashed_layout_of(out), graph.hashed_layout_of(in)};
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      graph.create_global_wg_size(out),
-      graph.create_local_wg_size(out),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
       {{out, vkapi::kWrite}, {in, vkapi::kRead}},
-      {},
+      // Parameter buffers
+      param_buffers,
       // Push Constants
-      {{graph.logical_limits_pc_of(out),
-        graph.sizes_pc_of(in),
-        PushConstantDataInfo(&out_dims, sizeof(out_dims)),
-        PushConstantDataInfo(&channel_info, sizeof(channel_info))}},
+      push_constants,
       // Specialization Constants
       spec_vars,
       // Resize Args
@@ -156,8 +164,83 @@ void add_permute_node(
       resize_permute_node));
 }
 
+struct WHCNPermuteDims {
+  int32_t whcn_permute_dims[api::kTensorDimLimit];
+
+  void initialize(const std::vector<int64_t>& permute_dims) {
+    const int32_t permute_ndim = permute_dims.size();
+    for (int32_t whcn_i = 0; whcn_i < permute_ndim; whcn_i++) {
+      const int32_t nchw_i = permute_ndim - 1 - whcn_i;
+      int64_t index_val = permute_dims.at(nchw_i);
+      if (index_val < 0) {
+        index_val += permute_ndim;
+      }
+      const int32_t permute_dim_whcn = permute_ndim - 1 - index_val;
+      whcn_permute_dims[whcn_i] = permute_dim_whcn;
+    }
+    for (int32_t whcn_i = permute_ndim; whcn_i < api::kTensorDimLimit;
+         whcn_i++) {
+      whcn_permute_dims[whcn_i] = whcn_i;
+    }
+  }
+};
+
+void add_permute_buffer_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef permute_dims,
+    const ValueRef out) {
+  check_args(graph, in, permute_dims, out);
+
+  WHCNPermuteDims whcn_permute_dims;
+  // Convert the permute dims to WHCN dimension order, which is the standard in
+  // our compute shaders. The following transformations are applied.
+  // 1. Change dimension index values from NCHW order valueto WHCN order value
+  // 2. Extend the permute array to kTensorDimLimit
+  {
+    IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
+    whcn_permute_dims.initialize(*permute_dims_ptr);
+  }
+
+  std::string kernel_name = "permute";
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  vkapi::ParamsBindList param_buffers = {
+      graph.buffer_meta_ubo(out),
+      graph.buffer_meta_ubo(in),
+      graph.create_params_buffer(whcn_permute_dims),
+  };
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      default_pick_local_wg_size,
+      {{out, vkapi::kWrite}, {in, vkapi::kRead}},
+      // Parameter buffers
+      param_buffers,
+      // Push Constants
+      {},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {permute_dims},
+      // Resizing Logic
+      resize_permute_node));
+}
+
 void permute(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_permute_node(graph, args[0], args[1], args[2]);
+  int idx = 0;
+  const ValueRef in = args.at(idx++);
+  const ValueRef permute_dims = args.at(idx++);
+  const ValueRef out = args.at(idx++);
+
+  if (graph.is_buffer_storage(args[2])) {
+    return add_permute_buffer_node(graph, in, permute_dims, out);
+  }
+  return add_permute_node(graph, in, permute_dims, out);
 }
 
 REGISTER_OPERATORS {

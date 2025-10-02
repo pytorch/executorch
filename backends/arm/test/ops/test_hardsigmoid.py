@@ -10,10 +10,11 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 aten_op = "torch.ops.aten.hardsigmoid.default"
@@ -40,8 +41,8 @@ class Hardsigmoid(torch.nn.Module):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_hardsigmoid_tosa_MI(test_data: torch.Tensor):
-    pipeline = TosaPipelineMI[input_t1](
+def test_hardsigmoid_tosa_FP(test_data: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
         Hardsigmoid(),
         (test_data(),),
         aten_op,
@@ -51,8 +52,8 @@ def test_hardsigmoid_tosa_MI(test_data: torch.Tensor):
 
 
 @common.parametrize("test_data", test_data_suite)
-def test_hardsigmoid_tosa_BI(test_data: torch.Tensor):
-    pipeline = TosaPipelineBI[input_t1](
+def test_hardsigmoid_tosa_INT(test_data: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
         Hardsigmoid(),
         (test_data(),),
         aten_op,
@@ -63,13 +64,12 @@ def test_hardsigmoid_tosa_BI(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-def test_hardsigmoid_u55_BI(test_data: torch.Tensor):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_hardsigmoid_u55_INT(test_data: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
         Hardsigmoid(),
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -77,13 +77,34 @@ def test_hardsigmoid_u55_BI(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-def test_hardsigmoid_u85_BI(test_data: torch.Tensor):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_hardsigmoid_u85_INT(test_data: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
         Hardsigmoid(),
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_hardsigmoid_vgf_FP(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Hardsigmoid(), (test_data(),), aten_op, exir_op=[], tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", test_data_suite)
+@common.SkipIfNoModelConverter
+def test_hardsigmoid_vgf_INT(test_data: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Hardsigmoid(),
+        (test_data(),),
+        aten_op,
+        exir_op=[],
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

@@ -14,7 +14,7 @@ The XNNPACK delegate is the ExecuTorch solution for CPU execution on mobile CPUs
 - ARM64 on Android, iOS, macOS, Linux, and Windows.
 - ARMv7 (with NEON) on Android.
 - ARMv6 (with VFPv2) on Linux.
-- x86 and x86-64 (up to AVX512) on Windows, Linux, macOS, Android, and iOS simulator.
+- x86 and x86-64 (up to AVX512) on Windows, Linux, Android.
 
 ## Development Requirements
 
@@ -79,7 +79,7 @@ Weight-only quantization is not currently supported on XNNPACK.
 To perform 8-bit quantization with the PT2E flow, perform the following steps prior to exporting the model:
 
 1) Create an instance of the `XnnpackQuantizer` class. Set quantization parameters.
-2) Use `torch.export.export_for_training` to prepare for quantization.
+2) Use `torch.export.export` to prepare for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
 4) For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
 5) Call `convert_pt2e` to quantize the model.
@@ -91,11 +91,10 @@ The output of `convert_pt2e` is a PyTorch model which can be exported and lowere
 import torch
 import torchvision.models as models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
-from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import XNNPACKQuantizer, get_symmetric_quantization_config
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge_transform_and_lower
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import get_symmetric_quantization_config
 
 model = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
@@ -104,7 +103,7 @@ qparams = get_symmetric_quantization_config(is_per_channel=True) # (1)
 quantizer = XNNPACKQuantizer()
 quantizer.set_global(qparams)
 
-training_ep = torch.export.export_for_training(model, sample_inputs).module() # (2)
+training_ep = torch.export.export(model, sample_inputs).module() # (2)
 prepared_model = prepare_pt2e(training_ep, quantizer) # (3)
 
 for cal_sample in [torch.randn(1, 3, 224, 224)]: # Replace with representative model inputs
@@ -118,7 +117,43 @@ et_program = to_edge_transform_and_lower( # (6)
 ).to_executorch()
 ```
 
-See [PyTorch 2 Export Post Training Quantization](https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html) for more information.
+See [PyTorch 2 Export Post Training Quantization](https://docs.pytorch.org/ao/main/tutorials_source/pt2e_quant_ptq.html) for more information.
+
+### LLM quantization with quantize_
+
+The XNNPACK backend also supports quantizing models with the [torchao](https://github.com/pytorch/ao) quantize_ API.  This is most commonly used for LLMs, requiring more advanced quantization.  Since quantize_ is not backend aware, it is important to use a config that is compatible with CPU/XNNPACK:
+
+* Quantize embeedings with IntxWeightOnlyConfig (with weight_dtype torch.int2, torch.int4, or torch.int8, using PerGroup or PerAxis granularity)
+* Quantize linear layers with Int8DynamicActivationIntxWeightConfig (with weight_dtype=torch.int4, using PerGroup or PerAxis granularity)
+
+Below is a simple example, but a more detailed tutorial including accuracy evaluation on popular LLM benchmarks can be found in the [torchao documentation](https://docs.pytorch.org/ao/main/serving.html#mobile-deployment-with-executorch).
+
+```python
+from torchao.quantization.granularity import PerGroup, PerAxis
+from torchao.quantization.quant_api import (
+    IntxWeightOnlyConfig,
+    Int8DynamicActivationIntxWeightConfig,
+    quantize_,
+)
+
+# Quantize embeddings with 8-bits, per channel
+embedding_config = IntxWeightOnlyConfig(
+    weight_dtype=torch.int8,
+    granularity=PerAxis(0),
+)
+qunatize_(
+    eager_model,
+    lambda m, fqn: isinstance(m, torch.nn.Embedding),
+)
+
+
+# Quatize linear layers with 8-bit dynamic activations and 4-bit weights
+linear_config = Int8DynamicActivationIntxWeightConfig(
+    weight_dtype=torch.int4,
+    weight_granularity=PerGroup(32),
+)
+quantize_(eager_model, linear_config)
+```
 
 ----
 

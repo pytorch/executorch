@@ -138,7 +138,7 @@ modules = {
 
 
 @common.parametrize("module", modules)
-def test_fuse_batchnorm_tosa_MI(module: torch.nn.Module):
+def test_fuse_batchnorm_tosa_FP(module: torch.nn.Module):
     """Test various cases where the batchnorm should either be fused with a previous
     conv, or converted to a new conv."""
     pipeline = PassPipeline[input_t](

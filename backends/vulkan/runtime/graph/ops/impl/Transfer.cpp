@@ -40,46 +40,58 @@ void add_transfer_copy_node(
 
   int64_t dim_whcn = nchw_dim_to_whcn_dim(dim, ndim);
 
-  vkapi::ParamsBindList param_buffers;
-  if (transfer_type == TransferType::SELECT) {
-    param_buffers = {
-        graph.get_or_create_int_param_buffer(index_or_start_ref, 0)};
-  } else { // TransferType::SLICE
-    param_buffers = {
-        graph.get_or_create_int_param_buffer(index_or_start_ref, 0),
-        graph.get_or_create_int_param_buffer(step_ref, 1)};
-  }
+  struct TransferParams {
+    int32_t dim;
+    int32_t index_or_start_ref;
+    int32_t step_ref;
+  } transfer_params{static_cast<int32_t>(dim_whcn), 0, 0};
 
-  const struct TransferParams {
-    const int32_t dim;
-  } transfer_params{static_cast<int32_t>(dim_whcn)};
+  const bool param_is_scalar = graph.is_scalar_or_none(index_or_start_ref) &&
+      (transfer_type == TransferType::SELECT ||
+       graph.is_scalar_or_none(step_ref));
+
+  vkapi::ParamsBindList param_buffers;
+  if (!param_is_scalar) {
+    if (transfer_type == TransferType::SELECT) {
+      param_buffers = {
+          graph.get_or_create_int_param_buffer(index_or_start_ref, 0)};
+    } else { // TransferType::SLICE
+      param_buffers = {
+          graph.get_or_create_int_param_buffer(index_or_start_ref, 0),
+          graph.get_or_create_int_param_buffer(step_ref, 1)};
+    }
+  } else {
+    transfer_params.index_or_start_ref =
+        graph.extract_scalar_or<int32_t>(index_or_start_ref, 0);
+    if (transfer_type != TransferType::SELECT) {
+      transfer_params.step_ref = graph.extract_scalar_or<int32_t>(step_ref, 1);
+    }
+  }
 
   std::vector<PushConstantDataInfo> push_constants;
-  vkapi::SpecVarList spec_vars;
+  push_constants.reserve(graph.is_buffer_storage(out) ? 5 : 3);
 
   if (graph.is_buffer_storage(out)) {
-    push_constants = {
-        graph.sizes_pc_of(in),
-        graph.strides_pc_of(out),
-        graph.strides_pc_of(in),
-        graph.numel_pc_of(out),
-        PushConstantDataInfo(&transfer_params, sizeof(transfer_params))};
-
-    spec_vars = {
-        graph.packed_dim_of(out),
-        graph.packed_dim_of(in),
-    };
+    push_constants.emplace_back(graph.sizes_pc_of(in));
+    push_constants.emplace_back(graph.strides_pc_of(out));
+    push_constants.emplace_back(graph.strides_pc_of(in));
+    push_constants.emplace_back(graph.numel_pc_of(out));
   } else {
-    push_constants = {
-        graph.sizes_pc_of(out),
-        graph.sizes_pc_of(in),
-        PushConstantDataInfo(&transfer_params, sizeof(transfer_params))};
-
-    spec_vars = {
-        graph.hashed_layout_of(out),
-        graph.hashed_layout_of(in),
-    };
+    push_constants.emplace_back(graph.sizes_pc_of(out));
+    push_constants.emplace_back(graph.sizes_pc_of(in));
   }
+
+  if (param_is_scalar) {
+    push_constants.emplace_back(&transfer_params, sizeof(transfer_params));
+  } else {
+    push_constants.emplace_back(
+        &transfer_params.dim, sizeof(transfer_params.dim));
+  }
+
+  vkapi::SpecVarList spec_vars = {
+      graph.hashed_layout_of(out),
+      graph.hashed_layout_of(in),
+  };
 
   // Determine the shader directly
   std::string kernel_name;
@@ -87,6 +99,9 @@ void add_transfer_copy_node(
     kernel_name = "select";
   } else { // TransferType::SLICE
     kernel_name = "slice";
+  }
+  if (!param_is_scalar) {
+    kernel_name += "_ubo";
   }
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));

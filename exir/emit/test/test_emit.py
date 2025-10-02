@@ -66,7 +66,7 @@ from executorch.runtime import Runtime
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import Dim, export, export_for_training
+from torch.export import Dim, export
 from torch.export.experimental import _export_forward_backward
 
 
@@ -1751,8 +1751,8 @@ class TestEmit(unittest.TestCase):
         module_1(*example_inputs)
         module_2(*example_inputs)
 
-        ep1 = export_for_training(module_1, example_inputs, strict=True)
-        ep2 = export_for_training(module_2, example_inputs, strict=True)
+        ep1 = export(module_1, example_inputs, strict=True)
+        ep2 = export(module_2, example_inputs, strict=True)
 
         edge_program_manager = exir.to_edge(
             {"forward1": ep1, "forward2": ep2},
@@ -1769,6 +1769,60 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             len(edge_program_manager.executorch_program.backend_delegate_data), 1
         )
+
+    def test_delegate_deduplicate_with_different_compile_specs(self) -> None:
+        class LowerableSubModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        lowered = LowerableSubModel()
+        example_input = (torch.ones(1),)
+
+        lowered_edge = to_edge(export(lowered, example_input))
+
+        from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+        compile_specs1 = [CompileSpec("config", b"fast")]
+        compile_specs2 = [CompileSpec("config", b"small")]
+        lowered_module1 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs1
+        )
+        lowered_module2 = to_backend(
+            "BackendWithCompilerDemo", lowered_edge.exported_program(), compile_specs2
+        )
+
+        class CompositeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowerable1 = lowered_module1
+                self.lowerable2 = lowered_module2
+
+            def forward(self, x):
+                a = self.lowerable1(x)
+                b = self.lowerable2(a)
+                return a, b
+
+        composite_model = CompositeModel()
+        model_inputs = (torch.ones(1),)
+        edge_prog = to_edge(export(composite_model, model_inputs)).to_executorch()
+
+        exported_program = edge_prog.exported_program()
+        program = emit_program({"method1": exported_program}, False).program
+        self.assertEqual(len(program.execution_plan), 1)
+
+        plan = program.execution_plan[0]
+        # Two delegates that point to the same blob.
+        self.assertEqual(len(plan.delegates), 2)
+        self.assertEqual(plan.delegates[0].processed.index, 0)
+        self.assertEqual(plan.delegates[1].processed.index, 0)
+        # Compile specs are different.
+        self.assertEqual(plan.delegates[0].compile_specs, compile_specs1)
+        self.assertEqual(plan.delegates[1].compile_specs, compile_specs2)
+        # Only one delegate blob in the backend_delegate_data.
+        self.assertEqual(len(program.backend_delegate_data), 1)
 
     def test_constant_tagged_mutable_tensors(self) -> None:
         class Net(nn.Module):
@@ -1794,7 +1848,6 @@ class TestEmit(unittest.TestCase):
         net = TrainingNet(Net())
 
         # Captures the forward graph. The graph will look similar to the model definition now.
-        # Will move to export_for_training soon which is the api planned to be supported in the long term.
         ep = export(
             net, (torch.randn(1, 2), torch.ones(1, dtype=torch.int64)), strict=True
         )
@@ -1875,3 +1928,55 @@ class TestEmit(unittest.TestCase):
                     ),
                 )
             )
+
+    def test_emit_sym_min_max(self) -> None:
+        class SymMaxModel(nn.Module):
+            def __init__(self, test_min=False):
+                super().__init__()
+                self.test_min = test_min
+
+            def forward(self, x):
+                # Get size of 0th dimension - this creates sym_size op
+                batch_size = x.shape[0]
+                # Compute max of batch_size and 10 - this should create sym_max op
+                if self.test_min:
+                    out_size = min(batch_size, 10)
+                else:
+                    out_size = max(batch_size, 10)
+                # Create a 1D tensor of zeros with the computed size
+                result = torch.zeros(out_size, dtype=x.dtype, device=x.device)
+                return result
+
+        for validate_min in [True, False]:
+            model = SymMaxModel(test_min=validate_min)
+            test_inputs = [
+                torch.randn(5, 3),  # should output zeros(10) for max zeros(5) for min
+                torch.randn(15, 3),  # should output zeros(15) for max zeros(10) for min
+                torch.randn(10, 3),  # should output zeros(10) for max zeros(10) for min
+            ]
+            model.eval()
+            reference_outputs = []
+            with torch.no_grad():
+                for _, inp in enumerate(test_inputs):
+                    output = model(inp)
+                    reference_outputs.append(output)
+
+            batch_dim = Dim("batch", min=1, max=20)
+            dynamic_shapes = {"x": {0: batch_dim}}  # 0th dimension is dynamic
+            exported_program = torch.export.export(
+                model, (test_inputs[0],), dynamic_shapes=dynamic_shapes
+            )
+            edge_program = to_edge(
+                exported_program,
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            )
+            et_program = edge_program.to_executorch()
+            program_buffer = et_program.buffer
+            et_module = _load_for_executorch_from_buffer(program_buffer)
+            for _, (inp, expected) in enumerate(zip(test_inputs, reference_outputs)):
+                # Execute with ExecuTorch
+                et_output = et_module.forward([inp])
+                et_result = et_output[0]  # Get first output
+                # Compare results
+                self.assertTrue(expected.shape == et_result.shape)
+                self.assertTrue(torch.allclose(expected, et_result))

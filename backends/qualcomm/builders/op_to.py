@@ -10,7 +10,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
-from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP, register_node_visitor
+from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpCast, OpConvert, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 

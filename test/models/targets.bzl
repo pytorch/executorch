@@ -63,11 +63,15 @@ def define_common_targets():
         "ModuleAddHalf",
         "ModuleAddMul",
         "ModuleBasic",
+        "ModuleKVCacheCachePos",
+        "ModuleKVCacheInputPos",
         "ModuleMultipleEntry",
+        "ModuleNoKVCache",
         "ModuleIndex",
         "ModuleDynamicCatUnallocatedIO",
         "ModuleSimpleTrain",
         "ModuleStateful",
+        "ModuleSharedState",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

@@ -6,25 +6,26 @@
 /backends/apple @shoumikhin @cccclai
 /backends/apple/mps @cccclai @DenisVieriu97
 /backends/arm @digantdesai
-/backends/cadence @tarun292
-/backends/example @iseeyuan @JacobSzwejbka @larryliu0820
+/backends/cadence
+/backends/example @JacobSzwejbka @larryliu0820
 /backends/mediatek @cccclai @neuropilot-captain
 /backends/qualcomm @cccclai @chunit-quic @haowhsu-quic @shewu-quic @winskuo-quic
 /backends/test @cccclai
 /backends/transforms @kimishpatel
 /backends/vulkan @SS-JIA
 /backends/xnnpack @digantdesai @mcr229
+/backends/nxp @robert-kalmar
 
-/devtools @tarun292 @Gasoonjia
+/devtools @Gasoonjia
 
 /docs @mergennachin
 
 /examples/apple @shoumikhin
 /examples/apple/coreml @cccclai @metascroy @cymbalrush @YifanShenSZ
 /examples/arm @digantdesai
-/examples/cadence @tarun292
+/examples/cadence
 /examples/demo-apps @shoumikhin @kirklandsign
-/examples/devtools @tarun292
+/examples/devtools @Gasoonjia
 /examples/llm_manual @larryliu0820
 /examples/llm_pte_finetuning @JacobSzwejbka
 /examples/mediatek @cccclai
@@ -33,22 +34,23 @@
 /examples/qualcomm @cccclai
 /examples/selective_build @lucylq @larryliu0820 @JacobSzwejbka
 /examples/xnnpack @digantdesai @mcr229
+/examples/nxp @robert-kalmar
 
-/exir/backend @cccclai @kimishpatel @JacobSzwejbka @tarun292
-/exir @JacobSzwejbka @tarun292 @larryliu0820
+/exir/backend @cccclai @kimishpatel @JacobSzwejbka
+/exir @JacobSzwejbka @larryliu0820
 
 /extension/android @kirklandsign
 /extension/android_test @kirklandsign
 /extension/apple @shoumikhin
 /extension/aten_util @JacobSzwejbka
-/extension/benchmark @tarun292
+/extension/benchmark @Gasoonjia
 /extension/data_loader @JacobSzwejbka @lucylq
 /extension/evalue_util @GregoryComer
 /extension/export_util @kimishpatel
 /extension/flat_tensor @lucylq
 /extension/gguf_util @larryliu0820
 /extension/kernel_util @kimishpatel @manuelcandales @swolchok
-/extension/llm @jackzhxng @iseeyuan @larryliu0820 @swolchok
+/extension/llm @jackzhxng @larryliu0820 @swolchok @mergennachin
 /extension/memory_allocator @JacobSzwejbka @swolchok
 /extension/module @shoumikhin
 /extension/parallel @kimishpatel @swolchok
@@ -62,7 +64,7 @@
 
 /kernels @manuelcandales @swolchok
 
-/profiler @tarun292 @Gasoonjia
+/profiler @Gasoonjia
 
 /runtime @JacobSzwejbka @lucylq @swolchok
 /runtime/backend @cccclai
@@ -77,12 +79,12 @@
 
 /test @larryliu0820 @kirklandsign
 
-/util @tarun292
+/util @Gasoonjia
 
 # Build System -----------------------------------------------------------------
 
-CMakeLists.txt @jathu @larryliu0820 @kirklandsign
-CMakePresets.json @jathu @larryliu0820 @kirklandsign
+CMakeLists.txt @larryliu0820 @kirklandsign
+CMakePresets.json @larryliu0820 @kirklandsign
 
 /codegen @larryliu0820 @lucylq
-/tools/cmake @jathu @larryliu0820 @kirklandsign
+/tools/cmake @larryliu0820 @kirklandsign

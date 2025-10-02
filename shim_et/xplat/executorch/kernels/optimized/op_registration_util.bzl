@@ -153,6 +153,10 @@ OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
@@ -164,10 +168,25 @@ OPTIMIZED_ATEN_OPS = (
     ),
     op_target(
         name = "op_div",
+        # A bug in instruction selection in clang 19 for android seems to trigger some
+        # terrible, multiple hour, backend generation when building for asan with thinlto.
+        # generally maybe a good idea to just make this fully optimized anyway, but -O2
+        # is not sufficient to avoid it.
+        compiler_flags = [] if runtime.is_oss else select({
+            "DEFAULT": [],
+            "ovr_config//os:android": select({
+                "DEFAULT": [],
+                "ovr_config//toolchain/clang/constraints:17": ["-O3"],
+                "ovr_config//toolchain/clang/constraints:19": ["-O3"],
+            }),
+        }),
         deps = [
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
@@ -178,7 +197,12 @@ OPTIMIZED_ATEN_OPS = (
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
-    op_target(name = "op_exp"),
+    op_target(
+        name = "op_exp",
+        deps = [
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
+        ],
+    ),
     op_target(
         name = "op_fft_c2r",
         compiler_flags = [] if runtime.is_oss else [
@@ -195,7 +219,6 @@ OPTIMIZED_ATEN_OPS = (
         ],
         deps = [":fft_utils"],
     ),
-    op_target(name = "op_sigmoid"),
     op_target(
         name = "op_gelu",
         deps = [
@@ -206,8 +229,12 @@ OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_le",
         deps = [
+            ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/pattern:comparison_op",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
@@ -220,6 +247,7 @@ OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_log_softmax",
         deps = [
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
@@ -237,7 +265,10 @@ OPTIMIZED_ATEN_OPS = (
             ":binary_ops",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(
@@ -245,9 +276,9 @@ OPTIMIZED_ATEN_OPS = (
         deps = [
             ":moments_utils",
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
-    op_target(name = "op_neg"),
     op_target(
         name = "op_sub",
         deps = [
@@ -255,6 +286,9 @@ OPTIMIZED_ATEN_OPS = (
             ":add_sub_impl",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:dtype_util",
+            "//executorch/kernels/portable/cpu/util:elementwise_util",
+            "//executorch/runtime/core/portable_type/c10/c10:aten_headers_for_executorch",
         ],
     ),
     op_target(

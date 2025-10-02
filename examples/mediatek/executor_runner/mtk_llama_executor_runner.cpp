@@ -30,6 +30,7 @@
 #include "llama_runner/llm_helper/include/llm_types.h"
 
 #include <executorch/examples/models/llama/tokenizer/llama_tiktoken.h>
+#include <pytorch/tokenizers/hf_tokenizer.h>
 #include <pytorch/tokenizers/llama2c_tokenizer.h>
 #include <pytorch/tokenizers/tiktoken.h>
 
@@ -42,10 +43,13 @@ DEFINE_uint64(cache_size, 1024, "Model cache size.");
 DEFINE_uint64(hidden_size, 4096, "Model hidden size.");
 DEFINE_uint64(num_head, 32, "Number of attention heads in each layer.");
 DEFINE_uint64(num_layer, 32, "Number of layers in the model.");
+DEFINE_uint64(head_dim, 0, "Head dimension of the model.");
+DEFINE_uint64(window_size, 0, "Window size of Sliding Window Attention.");
 DEFINE_uint64(
     max_token_length,
     2048,
     "Maximum token length that the model supports.");
+DEFINE_double(partial_rotary_factor, 1, "Partial rotary factor of the model.");
 DEFINE_double(
     rot_emb_base,
     10000,
@@ -66,14 +70,12 @@ DEFINE_string(
     token_embedding_path,
     "embedding.bin",
     "Input token embedding lookup table path.");
+DEFINE_string(prompt_model_paths, "", "Comma-separated prompt model paths.");
+DEFINE_string(gen_model_paths, "", "Comma-separated generative model paths.");
 DEFINE_string(
-    prompt_model_paths,
-    "model_128t.pte",
-    "Comma-separated prompt model paths.");
-DEFINE_string(
-    gen_model_paths,
-    "model_1t.pte",
-    "Comma-separated generative model paths.");
+    model_package_paths,
+    "",
+    "Comma-separated weight-shared model package paths.");
 
 // Tokenizer
 DEFINE_string(tokenizer_path, "tokenizer.model", "tokenizer.model vocab path.");
@@ -104,6 +106,7 @@ using example::utils::Timer;
 using example::utils::to_string;
 using executorch::runtime::Error;
 using executorch::runtime::Result;
+using tokenizers::HFTokenizer;
 using tokenizers::Llama2cTokenizer;
 using tokenizers::Tokenizer;
 
@@ -115,7 +118,10 @@ LlamaModelOptions get_model_options() {
       .hidden_size = FLAGS_hidden_size,
       .num_head = FLAGS_num_head,
       .num_layer = FLAGS_num_layer,
+      .head_dim = FLAGS_head_dim,
+      .window_size = FLAGS_window_size,
       .max_token_length = FLAGS_max_token_length,
+      .partial_rotary_factor = FLAGS_partial_rotary_factor,
       .rot_emb_base = FLAGS_rot_emb_base,
 
       // Types
@@ -132,7 +138,9 @@ LlamaModelPaths get_model_paths() {
       .tokenizer_path = FLAGS_tokenizer_path,
       .token_embedding_path = FLAGS_token_embedding_path,
       .prompt_model_paths = split(FLAGS_prompt_model_paths, ','),
-      .gen_model_paths = split(FLAGS_gen_model_paths, ',')};
+      .gen_model_paths = split(FLAGS_gen_model_paths, ','),
+      .model_package_paths = split(FLAGS_model_package_paths, ','),
+  };
   return model_paths;
 }
 
@@ -271,6 +279,8 @@ Error inference(
   const auto input_tokens = std::move(encode_res.get());
 
   std::cout << "\n[Input Prompt]\n" << prompt << std::endl;
+  std::cout << "\n[Input Prompt Tokens]\n"
+            << to_string(input_tokens) << std::endl;
 
   // Run prompt mode (pre-fill)
   auto prefill_res = digest_prompt(llama_runtime, tokenizer, input_tokens);
@@ -285,9 +295,11 @@ Error inference(
 std::unique_ptr<Tokenizer> load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
   if (FLAGS_tokenizer_type == "bpe") {
-    tokenizer = std::make_unique<BPETokenizer>();
+    tokenizer = std::make_unique<Llama2cTokenizer>();
   } else if (FLAGS_tokenizer_type == "tiktoken") {
     tokenizer = example::get_tiktoken_for_llama();
+  } else if (FLAGS_tokenizer_type == "hf") {
+    tokenizer = std::make_unique<HFTokenizer>();
   }
   ET_CHECK_MSG(
       tokenizer, "Invalid tokenizer type: %s", FLAGS_tokenizer_type.c_str());
@@ -311,7 +323,8 @@ int main(int argc, char** argv) {
   LlamaModelOptions model_options = get_model_options();
   LlamaModelPaths model_paths = get_model_paths();
 
-  if (model_paths.prompt_model_paths.empty()) {
+  if (model_paths.prompt_model_paths.empty() &&
+      model_paths.model_package_paths.empty()) {
     model_options.prompt_token_batch_size = 1;
     ET_LOG(
         Info,

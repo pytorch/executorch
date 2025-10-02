@@ -88,6 +88,8 @@ TEST_F(AllocationFailureStressTest, End2EndIncreaseRuntimeMemUntilSuccess) {
     // once load was successful.
     auto input_cleanup = prepare_input_tensors(*method);
     ASSERT_EQ(input_cleanup.error(), Error::Ok);
+    auto input_err = method->set_input(executorch::runtime::EValue(1.0), 2);
+    ASSERT_EQ(input_err, Error::Ok);
     err = method->execute();
     ASSERT_EQ(err, Error::Ok);
   }
@@ -123,6 +125,8 @@ TEST_F(AllocationFailureStressTest, End2EndNonConstantMemUntilSuccess) {
     // once load was successful.
     auto input_cleanup = prepare_input_tensors(*method);
     ASSERT_EQ(input_cleanup.error(), Error::Ok);
+    auto input_err = method->set_input(executorch::runtime::EValue(1.0), 2);
+    ASSERT_EQ(input_err, Error::Ok);
     err = method->execute();
     ASSERT_EQ(err, Error::Ok);
   }

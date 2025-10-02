@@ -1,0 +1,7 @@
+base:
+  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
+
+model:
+  use_kv_cache: True
+  use_sdpa_with_kv_cache: True
+  dtype_override: bf16

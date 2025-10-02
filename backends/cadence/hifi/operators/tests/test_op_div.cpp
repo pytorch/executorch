@@ -19,22 +19,21 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
 namespace {
 
-using ::executorch::aten::optional;
 using ::executorch::aten::Scalar;
 using ::executorch::aten::ScalarType;
-using ::executorch::aten::string_view;
 using ::executorch::aten::Tensor;
 using ::executorch::aten::TensorImpl;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 using ::executorch::runtime::runtime_init;
 using ::executorch::runtime::testing::TensorFactory;
+using std::optional;
+using std::string_view;
 
 class HiFiDivTest : public OperatorTest {
  public:
@@ -44,8 +43,7 @@ class HiFiDivTest : public OperatorTest {
       const Tensor& b,
       optional<string_view> mode,
       Tensor& out) {
-    return ::cadence::impl::HiFi::native::div_out_mode(
-        context_, a, b, mode, out);
+    return ::impl::HiFi::native::div_out_mode(context_, a, b, mode, out);
   }
 };
 
@@ -70,4 +68,3 @@ TEST_F(HiFiDivTest, DISABLED_Int32FloorDivideTest) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

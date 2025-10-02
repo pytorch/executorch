@@ -19,8 +19,9 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
     validate_same_dtype,
+    validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa.mapping import TosaArg
 
 
 def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int]:
@@ -30,64 +31,17 @@ def get_negate_zero_points(node: torch.fx.Node, is_int8: bool) -> tuple[int, int
     """
     if is_int8:
         return (
-            get_input_qparams(node)[0].zp,
-            get_output_qparams(node)[0].zp,
+            get_input_qparams(node)[0].get_zp_per_tensor(),
+            get_output_qparams(node)[0].get_zp_per_tensor(),
         )
     return (0, 0)
-
-
-@register_node_visitor
-class NegVisitor_0_80(NodeVisitor):
-    target = "aten.neg.default"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        supported_dtypes = {
-            ts.DType.INT8,
-            ts.DType.INT16,
-            ts.DType.INT32,
-            ts.DType.FP16,
-            ts.DType.BF16,
-            ts.DType.FP32,
-        }
-
-        validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if inputs[0].dtype not in supported_dtypes:
-            raise ValueError(f"Unsupported dtype for NEGATE: {inputs[0].dtype}")
-
-        input_zp, output_zp = get_negate_zero_points(
-            node, inputs[0].dtype == ts.DType.INT8
-        )
-
-        attr = ts.TosaSerializerAttribute()
-        attr.NegateAttribute(input1_zp=input_zp, output_zp=output_zp)
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().NEGATE,
-            [inputs[0].name],
-            [output.name],
-            attributes=attr,
-        )
 
 
 @register_node_visitor
 class NegVisitor(NodeVisitor):
     target = "aten.neg.default"
 
-    tosa_specs = NodeVisitor.tosa_specs_1_00
+    tosa_specs = NodeVisitor.tosa_specs
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -101,20 +55,20 @@ class NegVisitor(NodeVisitor):
     ) -> None:
         import serializer.tosa_serializer as ts  # type: ignore
 
-        supported_dtypes = {
+        supported_dtypes = [
             ts.DType.INT8,
             ts.DType.INT16,
             ts.DType.INT32,
             ts.DType.FP16,
             ts.DType.BF16,
             ts.DType.FP32,
-        }
+        ]
 
         validate_num_inputs(self.target, inputs, 1)
-        validate_same_dtype(self.target, [*inputs, output])
-
-        if inputs[0].dtype not in supported_dtypes:
-            raise ValueError(f"Unsupported dtype for NEGATE: {inputs[0].dtype}")
+        validate_same_dtype(self.target, [*inputs, output], ts)
+        validate_valid_dtype(
+            self.target, [*inputs, output], supported_dtypes, output.tosa_spec
+        )
 
         input_zp, output_zp = get_negate_zero_points(
             node, inputs[0].dtype == ts.DType.INT8
@@ -128,7 +82,9 @@ class NegVisitor(NodeVisitor):
             (1,), output.dtype, [output_zp], name=output.name + "_output_zp"
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().NEGATE,
             [inputs[0].name, input_zp_tensor.name, output_zp_tensor.name],
             [output.name],

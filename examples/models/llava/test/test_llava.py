@@ -41,8 +41,9 @@ class TestLlava(unittest.TestCase):
         # The reference implementation in HF genetates the full logits. Get the last one.
         prefill_logits_ref = self.llava.prefill_ref(
             self.prompt_before_image, self.resized, self.prompt_after_image
-        )[0][:, -1, :]
-        self.assertTrue(torch.allclose(prefill_logits, prefill_logits_ref, atol=3e-2))
+        )[0]
+
+        torch.testing.assert_close(prefill_logits, prefill_logits_ref.squeeze(0))
 
     def test_generated_output(self):
         # source of truth, using HF llava
@@ -95,8 +96,8 @@ class TestLlava(unittest.TestCase):
             "token_embedding", (prompt_before_image,)
         )[0]
         llava_module.run_method(
-            "text_model",
-            (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_before_img),
+            "text_decoder",
+            (pte_embeds_before_img, torch.tensor([start_pos], dtype=torch.int64)),
         )
 
         # Update the start_pos. start_pos is used in kv cache. The source of truth
@@ -104,12 +105,12 @@ class TestLlava(unittest.TestCase):
         start_pos += pte_embeds_before_img.shape[1]
 
         # pte prefill image
-        pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
+        pte_embeds_img = llava_module.run_method("vision_encoder", (resized,))[0]
         llava_module.run_method(
-            "text_model",
+            "text_decoder",
             (
-                torch.tensor([start_pos], dtype=torch.int64),
                 pte_embeds_img,
+                torch.tensor([start_pos], dtype=torch.int64),
             ),
         )
 
@@ -121,8 +122,8 @@ class TestLlava(unittest.TestCase):
             "token_embedding", (prompt_after_image,)
         )[0]
         pte_prefill_after_img = llava_module.run_method(
-            "text_model",
-            (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_after_img),
+            "text_decoder",
+            (pte_embeds_after_img, torch.tensor([start_pos], dtype=torch.int64)),
         )[0]
 
         # Update the logits for each prefill (kv cache) step.
@@ -138,8 +139,8 @@ class TestLlava(unittest.TestCase):
                 "token_embedding", (torch.tensor([[new_tokens[i]]], dtype=torch.int64),)
             )[0]
             logits = llava_module.run_method(
-                "text_model",
-                (torch.tensor([start_pos + i], dtype=torch.int64), token_embeds),
+                "text_decoder",
+                (token_embeds, torch.tensor([start_pos + i], dtype=torch.int64)),
             )[0]
             new_tokens.append(torch.argmax(logits).item())
 

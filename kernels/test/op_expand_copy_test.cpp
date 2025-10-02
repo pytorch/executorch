@@ -196,9 +196,10 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferentTwo) {
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out,
-      tf.make(/*sizes*/ {2, 6, 2}, /*data=*/{42, 96, 42, 96, 42, 96, 42, 96,
-                                             42, 96, 42, 96, 42, 96, 42, 96,
-                                             42, 96, 42, 96, 42, 96, 42, 96}));
+      tf.make(
+          /*sizes*/ {2, 6, 2},
+          /*data=*/{42, 96, 42, 96, 42, 96, 42, 96, 42, 96, 42, 96,
+                    42, 96, 42, 96, 42, 96, 42, 96, 42, 96, 42, 96}));
 }
 
 TEST_F(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {

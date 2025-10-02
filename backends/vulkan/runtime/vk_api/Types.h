@@ -17,6 +17,11 @@
 #include <cstddef>
 #include <cstdint>
 
+// X11 headers via volk define Bool, so we need to undef it
+#if defined(__linux__)
+#undef Bool
+#endif
+
 #ifdef USE_VULKAN_FP16_INFERENCE
 #define VK_FORMAT_FLOAT4 VK_FORMAT_R16G16B16A16_SFLOAT
 #else
@@ -25,14 +30,21 @@
 
 #define VK_FORALL_SCALAR_TYPES(_)                  \
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, Byte)        \
-  _(int8_t, VK_FORMAT_R8G8B8A8_SINT, Char)         \
-  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int)     \
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, Bool)        \
+  _(int8_t, VK_FORMAT_R8G8B8A8_SINT, Char)         \
   _(uint16_t, VK_FORMAT_R16G16B16A16_SFLOAT, Half) \
+  _(uint16_t, VK_FORMAT_R16G16B16A16_UINT, UInt16) \
+  _(int16_t, VK_FORMAT_R16G16B16A16_SINT, Short)   \
+  _(uint32_t, VK_FORMAT_R32G32B32A32_UINT, UInt)   \
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int)     \
+  _(uint64_t, VK_FORMAT_R64G64B64A64_UINT, UInt64) \
+  _(int64_t, VK_FORMAT_R64G64B64A64_SINT, Long)    \
   _(float, VK_FORMAT_FLOAT4, Float)                \
+  _(double, VK_FORMAT_R64G64B64A64_SFLOAT, Double) \
   _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)        \
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, QUInt8)      \
-  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)  \
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int8x4)
 
 namespace vkcompute {
 namespace vkapi {
@@ -81,17 +93,29 @@ inline VkFormat to_vkformat(const ScalarType t) {
  */
 inline ScalarType element_scalartype(const VkFormat vkformat) {
   switch (vkformat) {
+    case VK_FORMAT_R64G64B64A64_SFLOAT:
+      return kDouble;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+      return kFloat;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+      return kHalf;
     case VK_FORMAT_R8G8B8A8_SINT:
       return kChar;
     case VK_FORMAT_R8G8B8A8_UINT:
     case VK_FORMAT_R8G8B8A8_UNORM:
       return kByte;
+    case VK_FORMAT_R16G16B16A16_SINT:
+      return kShort;
+    case VK_FORMAT_R16G16B16A16_UINT:
+      return kUInt16;
     case VK_FORMAT_R32G32B32A32_SINT:
       return kInt;
-    case VK_FORMAT_R32G32B32A32_SFLOAT:
-      return kFloat;
-    case VK_FORMAT_R16G16B16A16_SFLOAT:
-      return kHalf;
+    case VK_FORMAT_R32G32B32A32_UINT:
+      return kUInt;
+    case VK_FORMAT_R64G64B64A64_SINT:
+      return kLong;
+    case VK_FORMAT_R64G64B64A64_UINT:
+      return kUInt64;
     default:
       VK_THROW("No corresponding scalar type for unknown VkFormat: ", vkformat);
   }
