@@ -63,7 +63,7 @@ executorch_target_link_options_shared_lib(aoti_cuda)
 
 # Add runtime
 add_executable(voxtral_runner tests/voxtral_runner.cpp)
-target_link_libraries(voxtral_runner PUBLIC aoti_cuda extension_module_static extension_flat_tensor)
+target_link_libraries(voxtral_runner PUBLIC aoti_cuda extension_module_static extension_flat_tensor portable_ops_lib)
 
 install(
   TARGETS aoti_cuda
