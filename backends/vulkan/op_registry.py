@@ -16,8 +16,6 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkMemoryLayout
-
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -95,9 +93,7 @@ class OpFeatures:
             inputs_storage = utils.TensorRepSetList(i_storage)
             outputs_storage = utils.TensorRepSetList(o_storage)
 
-        return utils.OpRepSets(
-            inputs_storage, outputs_storage, op_node, texture_limits
-        )
+        return utils.OpRepSets(inputs_storage, outputs_storage, op_node, texture_limits)
 
 
 #######################
@@ -459,10 +455,10 @@ def register_reduce_op():
             packed_dim = possible_packed_dims.pop()
             assert packed_dim in [0, 1, 2]
 
-            if (packed_dim == 0):
+            if packed_dim == 0:
                 inputs_storage = utils.WIDTH_PACKED_TEXTURE
                 outputs_storage = utils.WIDTH_PACKED_TEXTURE
-            elif (packed_dim == 1):
+            elif packed_dim == 1:
                 inputs_storage = utils.HEIGHT_PACKED_TEXTURE
                 outputs_storage = utils.HEIGHT_PACKED_TEXTURE
             else:
@@ -742,6 +738,7 @@ def register_ported_ops_with_prepacking():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         supports_prepacking=True,
+        supports_resize=True,
     )
 
 
@@ -772,6 +769,7 @@ def register_ported_ops_with_prepacking_all_dims():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         supports_prepacking=True,
+        supports_resize=True,
     )
 
 

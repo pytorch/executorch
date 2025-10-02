@@ -56,7 +56,7 @@ from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
-from executorch.exir.program._program import _copy_module, _transform
+from executorch.exir.program._program import _transform
 
 from torch._export.verifier import Verifier
 
@@ -68,7 +68,8 @@ DEFAULT_DEBUG_HANDLE = 65535
 
 
 class _any_op(Verifier):
-    dialect = "ANY_OP"
+    # Set training dialect to skip functional check in base verifier
+    dialect = "TRAINING"
 
     def allowed_op_types(self):
         return (Callable,)
@@ -79,12 +80,21 @@ def apply_passes(program: ExportedProgram, passes) -> ExportedProgram:
     for p in passes:
         if isinstance(p, MemoryPlanningPass) and hasattr(p, "run"):
             p.run(program.graph_module)
+
         elif issubclass(type(p), ExportPass) or issubclass(type(p), PassBase):
+            # Some passes require the ep to be provided. However, since the ep may be
+            # updated with each pass applied, the ep must be set right before calling
+            # the pass. _exported_program is the attribute used by XNNPACK and Vulkan
+            # passes to store the exported program.
+            if hasattr(p, "_exported_program"):
+                p._exported_program = program
+
             program = _transform(program, p, override_verifiers=[_any_op])
             # See the application of this function in exir/program/_program.py for more
             # details on why this step is necessary.
             if isinstance(p, SpecPropPass):
                 p.update_placeholder_tensor_specs(program, program.graph_module)
+
         else:
             program = p(program)
 
@@ -158,13 +168,13 @@ class VulkanBackend(BackendDetails):
             program,
             [
                 FuseBatchNormPass(program),
-                FusePatternsPass(program),
+                FusePatternsPass(),
                 FuseClampPass(),
                 AddmmToLinearTransform(),
                 RemoveRedundantOpsTransform(),
-                FuseQuantizedOpsTransform(program),
+                FuseQuantizedOpsTransform(),
                 ReplaceQDQPass(),
-                FoldQDQPass(program),
+                FoldQDQPass(),
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),

@@ -970,9 +970,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
 
         # Test models serially
-        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3"
+        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3 ic4 convnext_small vit"
         for model in $models; do
           python -m examples.vulkan.export --model_name=$model --test
+
+        # For selected vision models, test with dynamic shapes
+        models="mv2 mv3 resnet18 resnet50 ic3 ic4 densenet161"
+        for model in $models; do
+          python -m examples.vulkan.export --model_name=$model --test -d
+
         done
 
 
