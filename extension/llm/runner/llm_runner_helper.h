@@ -113,7 +113,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
  *
  * @param model_path Path to the model file
  * @param tokenizer Initialized tokenizer instance
- * @param data_files Set of paths to additional data required by the model
+ * @param data_files Vector of paths to additional data required by the model
  * @param temperature Optional temperature parameter for controlling randomness
  * (deprecated)
  * @return std::unique_ptr<TextLLMRunner> Initialized TextLLMRunner instance, or

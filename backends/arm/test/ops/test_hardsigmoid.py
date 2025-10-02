@@ -70,7 +70,6 @@ def test_hardsigmoid_u55_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -84,7 +83,6 @@ def test_hardsigmoid_u85_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
