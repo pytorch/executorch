@@ -6,20 +6,23 @@
 
 # pyre-strict
 
-from typing import Iterable
+from typing import Dict, Iterable, Tuple
 
 import torch
 from executorch.exir.dialects._ops import ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch import fx
 
 
-_SLICE_COPY_TARGETS = (
+_SLICE_COPY_TARGETS: Tuple[torch._ops.OpOverload | EdgeOpOverload] = (
     torch.ops.aten.slice_copy.Tensor,
     ops.edge.aten.slice_copy.Tensor,
 )
 
-_SLICE_TARGETS = {
+_SLICE_TARGETS: Dict[
+    torch._ops.OpOverload | EdgeOpOverload, torch._ops.OpOverload | EdgeOpOverload
+] = {
     torch.ops.aten.slice_copy.Tensor: torch.ops.aten.slice.Tensor,
     ops.edge.aten.slice_copy.Tensor: ops.edge.aten.slice.Tensor,
 }
@@ -99,8 +102,8 @@ class ReplaceSliceCopyWithSlicePass(ExportPass):
         return False
 
     def _argument_mutates(
-        self, schema: torch._C.FunctionSchema, key
-    ) -> bool:  # pyre-ignore[11]
+        self, schema: torch._C.FunctionSchema, key: int | str
+    ) -> bool:
         arguments = schema.arguments
         if isinstance(key, int):
             if key >= len(arguments):
