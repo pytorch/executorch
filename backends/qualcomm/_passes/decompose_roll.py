@@ -7,7 +7,7 @@ import torch
 
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import copy_nn_module_stack
+from .utils import merge_decomposed_graph
 
 
 class SliceCopy(torch.nn.Module):
@@ -65,27 +65,12 @@ class DecomposeRoll(ExportPass):
                     # remap is used to map original node values to new node values,
                     # which ensures that reference to nodes are correctly updated in the new graph
                     remap = {"x": input_node}
-
-                    for decomposed_node in decomposed_module.graph.nodes:
-                        copy_nn_module_stack(node, decomposed_node)
-                        # no need to copy existent 'output'
-                        if decomposed_node.op == "output":
-                            for user in node.users.copy():
-                                # remap
-                                user.replace_input_with(
-                                    node,
-                                    remap[decomposed_node.args[0][0]],
-                                )
-                        # no need to copy existent placeholders
-                        elif decomposed_node.op == "placeholder":
-                            # replace node map from string to graph node
-                            remap[decomposed_node] = remap.pop(decomposed_node.name)
-                        else:
-                            remap[decomposed_node] = graph.node_copy(
-                                decomposed_node,
-                                arg_transform=lambda x, remap=remap: remap[x],
-                            )
-
+                    merge_decomposed_graph(
+                        remap=remap,
+                        target_node=node,
+                        target_graph=graph,
+                        decomposed_graph_module=decomposed_module,
+                    )
                     graph.erase_node(node)
 
         graph.eliminate_dead_code()

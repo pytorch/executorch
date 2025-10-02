@@ -91,7 +91,7 @@ class Module {
    */
   explicit Module(
       const std::string& file_path,
-      std::unordered_set<std::string>& data_files,
+      std::vector<std::string> data_files,
       const LoadMode load_mode = LoadMode::File,
       std::unique_ptr<runtime::EventTracer> event_tracer = nullptr);
 
@@ -613,8 +613,9 @@ class Module {
     return event_tracer_.get();
   }
 
-  ET_NODISCARD
-  runtime::Span<uint8_t> debug_buffer() {
+  // Note: this debug_buffer will always be empty. The one being used is in
+  // the event_tracer attached to module. Please use that one.
+  ET_DEPRECATED ET_NODISCARD runtime::Span<uint8_t> debug_buffer() {
     return runtime::Span<uint8_t>(debug_buffer_.data(), debug_buffer_.size());
   }
 
@@ -628,7 +629,7 @@ class Module {
   };
 
   std::string file_path_;
-  std::unordered_set<std::string> data_files_;
+  std::vector<std::string> data_files_;
   LoadMode load_mode_{LoadMode::File};
   std::shared_ptr<Program> program_;
   std::unique_ptr<runtime::DataLoader> data_loader_;
@@ -638,7 +639,7 @@ class Module {
   std::vector<std::unique_ptr<runtime::DataLoader>> data_map_loaders_;
   std::vector<std::unique_ptr<NamedDataMap>> named_data_maps_;
   std::unique_ptr<NamedDataMap> merged_data_map_;
-  std::vector<uint8_t> debug_buffer_;
+  ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
 
  protected:
   std::unordered_map<std::string, MethodHolder> methods_;

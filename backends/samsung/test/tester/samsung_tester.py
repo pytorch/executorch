@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 import executorch.backends.test.harness.stages as BaseStages
 import torch
 from executorch.backends.samsung.partition.enn_partitioner import EnnPartitioner
+from executorch.backends.samsung.utils.export_utils import get_edge_compile_config
 
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
@@ -33,9 +34,7 @@ class ToEdgeTransformAndLower(BaseStages.ToEdgeTransformAndLower):
     ):
         compile_specs = compile_specs or []
         self.partitioners = [EnnPartitioner(compile_specs=compile_specs)]
-        self.edge_compile_config = edge_compile_config or EdgeCompileConfig(
-            _skip_dim_order=True, _check_ir_validity=False
-        )
+        self.edge_compile_config = edge_compile_config or get_edge_compile_config()
         self.edge_dialect_program = None
 
     def run(

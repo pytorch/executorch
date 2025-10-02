@@ -23,7 +23,6 @@ using torch::executor::apply_binary_elementwise_fn;
 using torch::executor::Error;
 using torch::executor::resize_to_broadcast_target_size;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -170,4 +169,3 @@ Tensor& minimum_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

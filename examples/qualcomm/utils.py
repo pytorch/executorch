@@ -384,6 +384,7 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     passes_job=None,
+    passes_dependency=None,
     qat_training_data=None,
     online_prepare=False,
     optrace=False,
@@ -406,6 +407,7 @@ def build_executorch_binary(
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
+        passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
@@ -449,6 +451,7 @@ def build_executorch_binary(
             compile_spec,
             constant_methods=metadata,
             passes_job=passes_job,
+            dep_table=passes_dependency,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )

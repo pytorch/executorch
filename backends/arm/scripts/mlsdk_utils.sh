@@ -7,29 +7,17 @@
 set -euo pipefail
 
 mlsdk_manifest_url="https://github.com/arm/ai-ml-sdk-manifest.git"
+mlsdk_manifest_tag="refs/tags/dev-snapshot-2025-09-12"
 
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
 source ${script_dir}/utils.sh
 
-usage() { echo "Usage: $0 [-u <mlsdk-manifest-url>]" 1>&2; exit 1; }
-
-while getopts ":u:" opt; do
-    case "${opt}" in
-        u)
-            mlsdk_manifest_url=${OPTARG}
-            ;;
-        *)
-            usage
-            ;;
-    esac
-done
-
 function download_ai_mlsdk_manifest() {
-    local _dada_dir="$1"
+    local _manifest_dir="$1"
 
-    if [[ -z "${_dada_dir}" ]]; then
-        echo "Error: _dada_dir parameter missing?"
+    if [[ -z "${_manifest_dir}" ]]; then
+        echo "Error: _manifest_dir parameter missing?"
         return 1
     fi
 
@@ -38,20 +26,25 @@ function download_ai_mlsdk_manifest() {
         return 1
     fi
 
-    if [[ ! -d "${_dada_dir}" ]]; then
-        mkdir -p "$_dada_dir"
-        pushd "$_dada_dir" || exit 1
+    if [[ ! -d "${_manifest_dir}" ]]; then
+        mkdir -p "$_manifest_dir"
+        pushd "$_manifest_dir" || exit 1
 
         curl https://storage.googleapis.com/git-repo-downloads/repo > repo
         chmod u+x repo
-        ./repo init  --no-repo-verify --depth=1  --manifest-url  ${mlsdk_manifest_url} -g model-converter,emulation-layer,vgf-library
-        ./repo sync
+        ./repo init \
+               --depth=1 \
+               --no-repo-verify \
+               --manifest-url ${mlsdk_manifest_url} \
+               --manifest-branch ${mlsdk_manifest_tag} \
+               -g model-converter,emulation-layer,vgf-library
+        ./repo sync -j$(nproc)
 
         popd
     fi
 }
 
-function setup_model_converter() {
+function setup_mlsdk() {
     local work_dir="$1"
     local manifest_dir="$2"
     local enable_model_converter="$3"
@@ -147,6 +140,3 @@ function setup_path_emulation_layer() {
     prepend_env_in_setup_path VK_INSTANCE_LAYERS VK_LAYER_ML_Graph_Emulation
     prepend_env_in_setup_path VK_LAYER_PATH "${model_emulation_layer_path}/deploy/share/vulkan/explicit_layer.d"
 }
-
-#setup_model_converter() $1
-# `"$manifest_dir"'

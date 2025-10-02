@@ -103,15 +103,13 @@ MultimodalInput loadPreprocessedAudio(const std::string& audio_path) {
 
   ET_LOG(Info, "audio_data len = %zu", n_floats);
 
-  // Create Audio multimodal input
-  auto audio = std::make_unique<::executorch::extension::llm::Audio>();
-  audio->batch_size = batch_size;
-  audio->n_bins = n_bins;
-  audio->n_frames = n_frames;
-  audio->data.resize(n_floats * sizeof(float));
-  f.read(reinterpret_cast<char*>(audio->data.data()), n_floats * sizeof(float));
+  std::vector<float> audio_data(n_floats);
+  f.read(reinterpret_cast<char*>(audio_data.data()), n_floats * sizeof(float));
   f.close();
-  return ::executorch::extension::llm::make_audio_input(std::move(*audio));
+
+  auto audio = ::executorch::extension::llm::Audio(
+      std::move(audio_data), batch_size, n_bins, n_frames);
+  return ::executorch::extension::llm::make_audio_input(std::move(audio));
 }
 
 /**
@@ -206,32 +204,21 @@ MultimodalInput processRawAudioFile(
       static_cast<int>(sizes[2]));
 
   // Create Audio multimodal input from processed features
-  auto processed_audio =
-      std::make_unique<::executorch::extension::llm::Audio>();
-  processed_audio->batch_size =
-      static_cast<int32_t>(sizes[0]); // Note: batching for s > 30 doesn't work
-                                      // yet, so this will just be = 1.
-  processed_audio->n_bins = static_cast<int32_t>(sizes[1]);
-  processed_audio->n_frames =
-      static_cast<int32_t>(sizes[2]); // And this will just be = 3000.
-
-  size_t total_elements = processed_audio->batch_size *
-      processed_audio->n_bins * processed_audio->n_frames;
-  processed_audio->data.resize(total_elements * sizeof(float));
-  std::memcpy(
-      processed_audio->data.data(),
-      processed_data,
-      total_elements * sizeof(float));
-
+  int32_t batch_size = static_cast<int32_t>(sizes[0]);
+  int32_t n_bins = static_cast<int32_t>(sizes[1]);
+  int32_t n_frames = static_cast<int32_t>(sizes[2]);
+  size_t total_elements = batch_size * n_bins * n_frames;
+  std::vector<float> audio_vec(processed_data, processed_data + total_elements);
+  auto processed_audio = ::executorch::extension::llm::Audio(
+      std::move(audio_vec), batch_size, n_bins, n_frames);
   ET_LOG(
       Info,
       "Created processed Audio: batch_size=%d, n_bins=%d, n_frames=%d",
-      processed_audio->batch_size,
-      processed_audio->n_bins,
-      processed_audio->n_frames);
-
+      batch_size,
+      n_bins,
+      n_frames);
   return ::executorch::extension::llm::make_audio_input(
-      std::move(*processed_audio));
+      std::move(processed_audio));
 }
 
 /**

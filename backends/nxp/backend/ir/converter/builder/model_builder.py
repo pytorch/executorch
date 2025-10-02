@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2023-2024 NXP
+# Copyright 2023-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -412,6 +412,26 @@ class ModelBuilder:
 
         self.get_sub_graph().outputs.tmp_outputs = new_outputs
 
+    def _keep_one_empty_buffer(self):
+        """Create a single empty `Buffer` object and assign it to all tensors in the model that don't have static data."""
+        empty_buffer = self.get_first_empty_buffer()
+
+        for t in self.get_tensors().vector:
+            if tensor_has_data(t):
+                # The buffer of `t` is not empty.
+                continue
+
+            if t.tmp_buffer == empty_buffer:
+                # Already optimized.
+                continue
+
+            if t.is_variable:
+                # The data of the tensor will change at runtime, so it shouldn't share the buffer with other tensors.
+                continue
+
+            # It's safe to replace the buffer.
+            t.tmp_buffer = empty_buffer
+
     def finish(self) -> tflite_model.Model:
         """Finalize and optimize the converted TFLite model. Then return it.
 
@@ -429,6 +449,8 @@ class ModelBuilder:
             self.conversion_config.optimization_whitelist,
             self.conversion_config.optimization_blacklist,
         )
+
+        self._keep_one_empty_buffer()
 
         # Remove outputs, which are not produced by any node. Otherwise, there would be errors after inference.
         operator_outputs = []
@@ -773,29 +795,8 @@ class ModelBuilder:
 
     def append_new_tensor(self, t_tensor: tflite_model.Tensor, overwrite: bool = False):
         """Append the TFLite tensor 't_tensor' to the 'SubGraph.tensors' and register it."""
-
-        if t_tensor.name in self._tensor_name_map.keys():
-            """Tensor has already been added. Sometimes however, ONNX models
-            will have tensors in their 'inputs' or 'outputs', which don't
-            belong there and are in fact static. I this case we need to
-            overwrite the existing tensors."""
-
-            if overwrite:
-                self._remove_tensor_with_name(t_tensor.name)
-
-                # If the tenor previously appeared in ONNX 'inputs' or 'outputs',
-                # the old version MUST be removed from there.
-                self._remove_input_with_name(t_tensor.name)
-                self._remove_output_with_name(t_tensor.name)
-
-                self.get_tensors().append(t_tensor)
-                self._tensor_name_map[t_tensor.name] = t_tensor
-            else:
-                logger.w(f"Tensor '{t_tensor.name}' is already in the tensors!")
-
-        else:
-            self._tensor_name_map[t_tensor.name] = t_tensor
-            self.get_tensors().append(t_tensor)
+        self._tensor_name_map[t_tensor.name] = t_tensor
+        self.get_tensors().append(t_tensor)
 
     def append_new_buffer(self, buffer: tflite_model.Buffer):
         """Append the 'buffer' to the 'model.buffers'."""
@@ -1493,7 +1494,7 @@ class ModelBuilder:
             # Prepend a partial identity, to keep leading dimensions unchanged.
             revert_perm = list(range(rank_diff)) + list(revert_perm)
 
-            # Now add a permutation to convert the extended ONNX shape to a TFLite shape
+            # Now add a permutation to convert the extended ExecuTorch shape to a TFLite shape
             to_tflite_perm = (
                 translator.create_channels_first_to_channels_last_permutation(
                     output_rank
@@ -1557,20 +1558,20 @@ class ModelBuilder:
 
             original_shape = translator.dims_to_channels_first(
                 shape
-            )  # Same shape as in the ONNX model
+            )  # Same shape as in the ExecuTorch model
 
             # Prepend 1s to the shape
-            extended_onnx_shape = [1] * rank_diff + original_shape
+            extended_executorch_shape = [1] * rank_diff + original_shape
 
             # Convert the full shape to TFLite format
-            tflite_shape = translator.dims_to_channels_last(extended_onnx_shape)
+            tflite_shape = translator.dims_to_channels_last(extended_executorch_shape)
             tensor.shape = tflite_model.Shape(tflite_shape)
 
             # Statically transpose the data
             data = translator.convert_data_to_channels_first(
                 data
-            )  # To the same shape as in the ONNX model
-            data = data.reshape(extended_onnx_shape)  # Extend with leading 1s
+            )  # To the same shape as in the ExecuTorch model
+            data = data.reshape(extended_executorch_shape)  # Extend with leading 1s
             tensor.tmp_buffer.data = translator.convert_data_to_channels_last(
                 data
             )  # Convert to TFLite format
@@ -1578,16 +1579,16 @@ class ModelBuilder:
             assert tflite_shape == list(tensor.tmp_buffer.data.shape)
 
         else:
-            # The tensor is the same as in the ONNX model.
+            # The tensor is the same as in the ExecuTorch model.
 
-            extended_onnx_shape = [1] * rank_diff + shape
+            extended_executorch_shape = [1] * rank_diff + shape
 
             # Convert the full shape to TFLite format
-            tflite_shape = translator.dims_to_channels_last(extended_onnx_shape)
+            tflite_shape = translator.dims_to_channels_last(extended_executorch_shape)
             tensor.shape = tflite_model.Shape(tflite_shape)
 
             # Statically transpose the data
-            data = data.reshape(extended_onnx_shape)  # Extend with leading 1s
+            data = data.reshape(extended_executorch_shape)  # Extend with leading 1s
             tensor.tmp_buffer.data = translator.convert_data_to_channels_last(
                 data
             )  # Convert to TFLite format

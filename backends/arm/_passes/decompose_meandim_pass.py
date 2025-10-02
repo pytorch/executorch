@@ -5,12 +5,17 @@
 
 from copy import copy
 from math import prod
+from typing import Set, Type
 
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
 
 
 def get_meandim_decomposition(op) -> tuple:
@@ -61,6 +66,12 @@ class DecomposeMeanDimPass(ArmPass):
         x = mul.Tensor(x, 1/c) # Divide by number of channels to get mean
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        DecomposeSumPass,
+        SizeAdjustInputPass,
+    }
 
     def __init__(self, graph_module, tosa_spec):
         super().__init__()

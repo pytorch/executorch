@@ -63,9 +63,12 @@ void accumulate_out_tile_with_int_accum_from_int4_weights(
     const FPPerOutChannelParams weight_scales,
     const int group_size) {
   [[unroll]] for (int m = 0; m < TILE_M; ++m) {
-    float input_scale_m = input_scales.data[0][m];
-    int input_zp_m = input_zps.data[0][m];
-    int input_sum_m = input_sums.data[0][m];
+    const int m4 = div_4(m);
+    const int m4i = mod_4(m);
+
+    float input_scale_m = input_scales.data[m4][m4i];
+    int input_zp_m = input_zps.data[m4][m4i];
+    int input_sum_m = input_sums.data[m4][m4i];
 
     [[unroll]] for (int n4 = 0; n4 < TILE_N4; ++n4) {
       ivec4 accum_adjusted = accum.data[m][n4] -
@@ -74,7 +77,7 @@ void accumulate_out_tile_with_int_accum_from_int4_weights(
 
       out_tile.data[m][n4] =
           fma(VEC4_T(accum_adjusted),
-              input_scale_m * weight_scales.data[n4],
+              VEC4_T(input_scale_m * weight_scales.data[n4]),
               out_tile.data[m][n4]);
     }
   }

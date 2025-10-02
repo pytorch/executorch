@@ -17,6 +17,7 @@ from executorch.backends.nxp.aten_passes.split_group_convolution import (
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
+from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests.executorch_pipeline import (
     _quantize_model,
     get_random_calibration_inputs,
@@ -39,8 +40,11 @@ def _quantize_and_lower_module(
     module: GraphModule, input_shape: tuple[int, ...], target="imxrt700"
 ) -> EdgeProgramManager:
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
+    quantizer = NeutronQuantizer()
 
-    exir_program_aten__module_quant = _quantize_model(module, calibration_inputs)
+    exir_program_aten__module_quant = _quantize_model(
+        module, quantizer, calibration_inputs
+    )
 
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
     edge_program_manager = export_to_edge(
@@ -49,7 +53,7 @@ def _quantize_and_lower_module(
         edge_compile_config=edge_compile_config,
     )
 
-    compile_spec = generate_neutron_compile_spec(target, "SDK_25_06")
+    compile_spec = generate_neutron_compile_spec(target, "SDK_25_09")
     partitioner = NeutronPartitioner(compile_spec)
     return edge_program_manager.to_backend(partitioner)
 

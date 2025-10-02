@@ -66,6 +66,8 @@ class MTKLlamaRunner : public executorch::extension::llm::IRunner {
       std::function<void(const std::string&)> token_callback);
   std::unique_ptr<Tokenizer> load_tokenizer();
 
+  void reset() {}
+
  private:
   // model
   const LlamaModelOptions modeloptions_;

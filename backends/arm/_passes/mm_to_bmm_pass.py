@@ -6,11 +6,19 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
     insert_q_dq_pair,
+)
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
+)
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    FoldAndAnnotateQParamsPass,
 )
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -27,6 +35,11 @@ class ConvertMmToBmmPass(ExportPass):
     2) Convert MM node to BMM.
     3) Squeeze output tensor to rank 2.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ConvertSqueezesToViewPass,
+        FoldAndAnnotateQParamsPass,
+    }
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified_graph = False

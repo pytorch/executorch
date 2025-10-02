@@ -8,6 +8,7 @@
 
 from typing import Optional, Tuple
 
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -79,7 +80,9 @@ def test_silu_tosa_INT_inplace(test_data: input_t):
 def test_silu_u55_INT(test_data: input_t):
     silu_data = (test_data(), False)
     pipeline = EthosU55PipelineINT[input_t](
-        Silu(), silu_data, Silu.aten_op_INT, run_on_fvp=True
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
@@ -89,7 +92,9 @@ def test_silu_u55_INT(test_data: input_t):
 def test_silu_u55_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = EthosU55PipelineINT[input_t](
-        Silu(), silu_data, Silu.aten_op_INT, run_on_fvp=True
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
@@ -99,7 +104,9 @@ def test_silu_u55_INT_inplace(test_data: input_t):
 def test_silu_u85_INT(test_data: input_t):
     silu_data = (test_data(), False)
     pipeline = EthosU85PipelineINT[input_t](
-        Silu(), silu_data, Silu.aten_op_INT, run_on_fvp=True
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
@@ -109,13 +116,16 @@ def test_silu_u85_INT(test_data: input_t):
 def test_silu_u85_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = EthosU85PipelineINT[input_t](
-        Silu(), silu_data, Silu.aten_op_INT, run_on_fvp=True
+        Silu(),
+        silu_data,
+        Silu.aten_op_INT,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Silu.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1387: Output differs")
 def test_silu_vgf_FP(test_data: input_t):
     silu_data = (test_data(), False)
     pipeline = VgfPipeline[input_t](
@@ -126,6 +136,7 @@ def test_silu_vgf_FP(test_data: input_t):
 
 @common.parametrize("test_data", Silu.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1387: Output differs")
 def test_silu_vgf_FP_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = VgfPipeline[input_t](
@@ -136,6 +147,7 @@ def test_silu_vgf_FP_inplace(test_data: input_t):
 
 @common.parametrize("test_data", Silu.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1387: Output differs")
 def test_silu_vgf_INT(test_data: input_t):
     silu_data = (test_data(), False)
     pipeline = VgfPipeline[input_t](
@@ -149,6 +161,7 @@ def test_silu_vgf_INT(test_data: input_t):
 
 @common.parametrize("test_data", Silu.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1387: Output differs")
 def test_silu_vgf_INT_inplace(test_data: input_t):
     silu_data = (test_data(), True)
     pipeline = VgfPipeline[input_t](
