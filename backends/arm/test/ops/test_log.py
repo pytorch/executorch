@@ -60,7 +60,6 @@ def test_log_u55_INT(test_data: input_t1):
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     ).run()
 
 
@@ -72,7 +71,6 @@ def test_log_u85_INT(test_data: input_t1):
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     ).run()
 
 

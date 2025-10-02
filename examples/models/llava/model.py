@@ -66,6 +66,7 @@ class Llava(torch.nn.Module):
         llava_model: LlavaForConditionalGeneration,
         image_processor: CLIPImageProcessor,
         use_sdpa_with_kv_cache_op: bool = True,
+        max_context_len: int = 768,
         max_seq_len: int = 768,
     ):
         super().__init__()
@@ -87,6 +88,7 @@ class Llava(torch.nn.Module):
             enable_dynamic_shape=True,  # allow parallel prefill
             use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
+            max_context_len=max_context_len,
             max_seq_len=max_seq_len,
         )
         self.text_model = construct_transformer(self.text_model_args)
@@ -300,8 +302,11 @@ class Llava(torch.nn.Module):
 
 
 class LlavaModel(EagerModelBase):
-    def __init__(self, use_sdpa_with_kv_cache_op=True, max_seq_len=768):
+    def __init__(
+        self, use_sdpa_with_kv_cache_op=True, max_seq_len=768, max_context_len=768
+    ):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
+        self.max_context_len = max_context_len
         self.max_seq_len = max_seq_len
         self.model = LlavaForConditionalGeneration.from_pretrained(
             "llava-hf/llava-1.5-7b-hf",
@@ -348,6 +353,7 @@ class LlavaModel(EagerModelBase):
             self.model,
             self.image_processor,
             self.use_sdpa_with_kv_cache_op,
+            self.max_context_len,
             self.max_seq_len,
         )
         model.to(dtype=torch.float32)
@@ -405,5 +411,5 @@ class LlavaModel(EagerModelBase):
 
     def _get_prompt_dynamic_shapes(self):
         dim = torch.export.Dim("token_dim", min=2, max=self.max_seq_len)
-        text_model_dynamic_shapes = ({0: 1}, {1: dim})
+        text_model_dynamic_shapes = ({1: dim}, {0: 1})
         return text_model_dynamic_shapes

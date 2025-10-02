@@ -90,14 +90,14 @@ Module::Module(
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   if (!data_map_path.empty()) {
-    data_files_.insert(data_map_path);
+    data_files_.push_back(data_map_path);
   }
   runtime::runtime_init();
 }
 
 Module::Module(
     const std::string& file_path,
-    std::unordered_set<std::string>& data_files,
+    std::vector<std::string> data_files,
     const LoadMode load_mode,
     std::unique_ptr<runtime::EventTracer> event_tracer)
     : file_path_(file_path),

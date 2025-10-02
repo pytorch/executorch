@@ -15,6 +15,14 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 @final
 class EthosUPartitioner(TOSAPartitioner):
+    """
+    Partitions subgraphs supported by the Arm Ethos-U backend.
+
+    Attributes:
+        compile_spec: List of CompileSpec objects for Ethos-U backend.
+        additional_checks: Optional sequence of additional operator support checks.
+    """
+
     def __init__(
         self,
         compile_spec: EthosUCompileSpec,

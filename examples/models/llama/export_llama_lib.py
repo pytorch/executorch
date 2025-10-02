@@ -417,7 +417,23 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
+    parser.add_argument(
+        "--use-torchao-kernels",
+        action="store_true",
+        help="Delegate tied-embedding and quantized linear ops to torchao kernels",
+    )
+    parser.add_argument(
+        "--use-torchao-kernels-tied-embedding",
+        action="store_true",
+        help="Delegate tied-embedding ops to torchao kernels",
+    )
+    parser.add_argument(
+        "--use-torchao-kernels-linear",
+        action="store_true",
+        help="Delegate linear ops to torchao kernels",
+    )
     parser.add_argument("-V", "--vulkan", action="store_true")
+    parser.add_argument("--vulkan-force-fp16", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
@@ -740,6 +756,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
+            use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
+            use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
         )
     )
 
@@ -782,7 +800,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w", "4w"]
+    choices = ["int8", "8da4w", "8da4w-gptq", "4w"]
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:
@@ -885,6 +903,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     use_kv_cache: bool = False,
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
+    vulkan_force_fp16: bool = False,
     coreml_ios: int = 15,
     coreml_quantize: Optional[str] = None,
     coreml_compute_units: str = "cpu_only",
@@ -905,6 +924,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
             get_vulkan_partitioner(
                 dtype_override,
                 enable_dynamic_shape,
+                vulkan_force_fp16,
             )
         )
         modelname = f"vulkan_{modelname}"
@@ -1125,6 +1145,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
                 if llm_config.quantization.pt2e_quantize
                 else None
             ),
+            vulkan_force_fp16=llm_config.backend.vulkan.force_fp16,
             coreml_ios=llm_config.backend.coreml.ios,
             coreml_quantize=(
                 llm_config.backend.coreml.quantize.value
@@ -1299,6 +1320,8 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
+    use_torchao_kernels_linear: bool = False,
+    use_torchao_kernels_tied_embedding: bool = False,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1468,6 +1491,17 @@ def _get_source_transforms(  # noqa
             partial(
                 replace_kv_cache_with_ring_kv_cache,
                 layer_sizes=local_global_attention,
+            )
+        )
+
+    if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
+        from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64
+
+        transforms.append(
+            partial(
+                _convert_model_for_aarch64,
+                convert_linear=use_torchao_kernels_linear,
+                convert_tied_embedding=use_torchao_kernels_tied_embedding,
             )
         )
 

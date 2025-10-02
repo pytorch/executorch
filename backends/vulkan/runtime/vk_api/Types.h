@@ -43,7 +43,8 @@
   _(double, VK_FORMAT_R64G64B64A64_SFLOAT, Double) \
   _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)        \
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, QUInt8)      \
-  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)  \
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int8x4)
 
 namespace vkcompute {
 namespace vkapi {

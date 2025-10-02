@@ -117,6 +117,86 @@ void KVManager<T>::init_attention_mask(
 }
 
 template <typename T>
+void KVManager<T>::init_attention_mask(
+    uint16_t* attention_mask,
+    const std::vector<int32_t>& attention_map,
+    int32_t ar_len,
+    int32_t n_past,
+    int32_t sliding_window,
+    const std::vector<int32_t>& position_offset) {
+  ET_CHECK_MSG(
+      attention_map.size() <= ar_len,
+      "The size of attention_map (%zu) doesn't match with ar_len (%d)",
+      attention_map.size(),
+      ar_len);
+  uint16_t neg_val = 0;
+  uint16_t pos_val = 65535;
+  // Clear the attention mask
+  std::fill_n(attention_mask, ar_len * metadata_.context_len, neg_val);
+
+  // SMART_MASK requires special handling of attention mask
+  switch (kv_updater_) {
+    case KVManagerMode::SMART_MASK: {
+      uint16_t* past_ptr = attention_mask;
+      uint16_t* new_ptr = attention_mask + (metadata_.context_len - ar_len);
+      // All inputs will necessarily attend to n_past and itself
+      for (int i = 0; i < ar_len; i++) {
+        // Iterate across ar_len
+        if (attention_map[i] < 0) {
+          // If negative, attend to only past tokens
+          std::fill_n(past_ptr, n_past, pos_val);
+        } else {
+          // If positive, copy attention map from (relative to 0th input) parent
+          // Parent token index
+          const int32_t pidx = attention_map[i];
+          uint16_t* parent_ptr = attention_mask + pidx * metadata_.context_len;
+          std::memcpy(
+              past_ptr, parent_ptr, metadata_.context_len * sizeof(uint16_t));
+        }
+        // Attend to itself
+        new_ptr[i] = pos_val;
+        // mask by limitation of sliding_window
+        int32_t available_context_len = position_offset.empty()
+            ? sliding_window - (i + 1) - n_past
+            : sliding_window - (position_offset[i] + 1) - n_past;
+        if (n_past > available_context_len) {
+          std::fill_n(past_ptr, n_past - available_context_len, neg_val);
+        }
+
+        past_ptr += metadata_.context_len;
+        new_ptr += metadata_.context_len;
+      }
+      break;
+    }
+    case KVManagerMode::SHIFT_POINTER: {
+      // Only fill in ar_len. Rest will be padding
+      const size_t attn_row_start = metadata_.context_len - n_past - ar_len;
+      for (int i = 0; i < ar_len; i++) {
+        uint16_t* cur_ptr =
+            attention_mask + i * metadata_.context_len + attn_row_start;
+        // Attend to itself
+        cur_ptr[n_past + i] = pos_val;
+        if (attention_map[i] < 0) {
+          // If negative, attend to only past tokens
+          std::fill_n(cur_ptr, n_past, pos_val);
+        } else {
+          // If positive, copy attention map from (relative to 0th input) parent
+          // Parent token index
+          const int32_t pidx = attention_map[i];
+          uint16_t* parent_ptr =
+              attention_mask + pidx * metadata_.context_len + attn_row_start;
+          std::memcpy(
+              cur_ptr, parent_ptr, (n_past + pidx + 1) * sizeof(uint16_t));
+        }
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+template <typename T>
 void KVManager<T>::update_attention_mask(
     uint16_t* attention_mask,
     int32_t ar_len,
@@ -131,6 +211,43 @@ void KVManager<T>::update_attention_mask(
 
   for (int i = 0; i < ar_len; i++) {
     std::fill_n(cur_ptr, n_update, pos_val);
+    cur_ptr += metadata_.context_len;
+  }
+}
+
+template <typename T>
+void KVManager<T>::update_attention_mask(
+    uint16_t* attention_mask,
+    int32_t ar_len,
+    int32_t n_past,
+    int32_t n_update,
+    int32_t sliding_window,
+    const std::vector<int32_t>& position_offset) {
+  uint16_t pos_val = 65535;
+  uint16_t neg_val = 0;
+  uint16_t* cur_ptr = attention_mask;
+  if (kv_updater_ == KVManagerMode::SMART_MASK)
+    cur_ptr += n_past;
+  if (kv_updater_ == KVManagerMode::SHIFT_POINTER)
+    cur_ptr += metadata_.context_len - n_past - ar_len - n_update;
+
+  for (int i = 0; i < ar_len; i++) {
+    std::fill_n(cur_ptr, n_update, pos_val);
+    int32_t available_cache_len = position_offset.empty()
+        ? sliding_window - (i + 1)
+        : sliding_window - (position_offset[i] + 1);
+    if (kv_updater_ == KVManagerMode::SMART_MASK) {
+      if (n_past + n_update > available_cache_len) {
+        std::fill_n(
+            cur_ptr - n_past, n_past + n_update - available_cache_len, neg_val);
+      }
+    } else if (kv_updater_ == KVManagerMode::SHIFT_POINTER) {
+      if (std::abs(n_past + ar_len) > available_cache_len) {
+        int32_t n_invalid = n_past - available_cache_len;
+        std::fill_n(
+            cur_ptr, std::abs(n_past + ar_len) - available_cache_len, neg_val);
+      }
+    }
     cur_ptr += metadata_.context_len;
   }
 }
@@ -248,7 +365,8 @@ void KVManager<T>::rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst) {
     }
     // copy from first dimension
     for (int i = 0; i < metadata_.head_dim; i++) {
-      std::memmove(k_cache_in_write_ptr, k_cache_in_read_ptr, dst_cache_num);
+      std::memmove(
+          k_cache_in_write_ptr, k_cache_in_read_ptr, dst_cache_num * sizeof(T));
       k_cache_in_read_ptr += src_cache_num;
       k_cache_in_write_ptr += dst_cache_num;
     }
@@ -261,7 +379,8 @@ void KVManager<T>::rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst) {
     }
     // copy from last dimension
     for (int i = 0; i < metadata_.head_dim; i++) {
-      std::memmove(k_cache_in_write_ptr, k_cache_in_read_ptr, src_cache_num);
+      std::memmove(
+          k_cache_in_write_ptr, k_cache_in_read_ptr, src_cache_num * sizeof(T));
       k_cache_in_read_ptr -= src_cache_num;
       k_cache_in_write_ptr -= dst_cache_num;
     }

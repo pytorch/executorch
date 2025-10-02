@@ -7,6 +7,7 @@
 # pyre-strict
 
 import math
+from typing import Set, Type
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -18,6 +19,8 @@ class DecomposeScaledDotProductAttention(ExportPass):
     """
     Decompose from scaled_dot_product_attention to multiple nodes.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, allow_non_fake_inputs: bool = True) -> None:
         super().__init__()

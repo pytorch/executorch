@@ -173,9 +173,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           model_path->toStdString().c_str(),
           llm::load_tokenizer(tokenizer_path->toStdString()));
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      std::unordered_set<std::string> data_files_set;
-      if (data_files != nullptr) {
-        // Convert Java List<String> to C++ unordered_set<string>
+      std::vector<std::string> data_files_vector;
+      if (data_files_vector != nullptr) {
+        // Convert Java List<String> to C++ std::vector<string>
         auto list_class = facebook::jni::findClassStatic("java/util/List");
         auto size_method = list_class->getMethod<jint()>("size");
         auto get_method =
@@ -186,13 +186,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         for (jint i = 0; i < size; ++i) {
           auto str_obj = get_method(data_files, i);
           auto jstr = facebook::jni::static_ref_cast<jstring>(str_obj);
-          data_files_set.insert(jstr->toStdString());
+          data_files_vector.push_back(jstr->toStdString());
         }
       }
       runner_ = executorch::extension::llm::create_text_llm_runner(
           model_path->toStdString(),
           llm::load_tokenizer(tokenizer_path->toStdString()),
-          data_files_set);
+          data_files_vector);
 #if defined(EXECUTORCH_BUILD_QNN)
     } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
       std::unique_ptr<executorch::extension::Module> module = std::make_unique<
@@ -221,10 +221,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   jint generate(
-      facebook::jni::alias_ref<jintArray> image,
-      jint width,
-      jint height,
-      jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
@@ -232,18 +228,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
       prefill_inputs_.clear();
-      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      auto image_size = image->size();
-      std::vector<llm::Image> images;
-      if (image_size != 0) {
-        std::vector<jint> image_data_jint(image_size);
-        std::vector<uint8_t> image_data(image_size);
-        image->getRegion(0, image_size, image_data_jint.data());
-        for (int i = 0; i < image_size; i++) {
-          image_data[i] = image_data_jint[i];
-        }
-        llm::Image image_runner{image_data, width, height, channels};
-        inputs.emplace_back(llm::MultimodalInput{std::move(image_runner)});
+      if (!prompt->toStdString().empty()) {
+        inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       }
       executorch::extension::llm::GenerationConfig config{
           .echo = static_cast<bool>(echo),
@@ -270,32 +256,23 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
+  // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-  facebook::jni::local_ref<jlongArray> prefill_prompt(
-      facebook::jni::alias_ref<jstring> prompt,
-      jlong start_pos,
-      jint bos,
-      jint eos) {
+  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
     prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    return tuple_result;
+    return 0;
   }
 
-  // Returns a tuple of (error, start_pos)
-  // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other element is undefined.
-
-  facebook::jni::local_ref<jlongArray> prefill_images(
+  // Returns status_code
+  jint append_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
-      jint channels,
-      jlong start_pos) {
+      jint channels) {
     std::vector<llm::Image> images;
+    if (image == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
     auto image_size = image->size();
     if (image_size != 0) {
       std::vector<jint> image_data_jint(image_size);
@@ -304,48 +281,12 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       for (int i = 0; i < image_size; i++) {
         image_data[i] = image_data_jint[i];
       }
-      llm::Image image_runner{image_data, width, height, channels};
+      llm::Image image_runner{std::move(image_data), width, height, channels};
       prefill_inputs_.emplace_back(
           llm::MultimodalInput{std::move(image_runner)});
     }
 
-    facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(2);
-
-    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
-    return tuple_result;
-  }
-
-  jint generate_from_pos(
-      facebook::jni::alias_ref<jstring> prompt,
-      jint seq_len,
-      jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
-      jboolean echo) {
-    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
-      inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-      return static_cast<jint>(multi_modal_runner_->generate(
-          inputs,
-          llm::GenerationConfig{
-              .echo = static_cast<bool>(echo), .seq_len = seq_len},
-          [callback](const std::string& result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
-    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
-      executorch::extension::llm::GenerationConfig config{
-          .echo = static_cast<bool>(echo),
-          .seq_len = seq_len,
-          .temperature = temperature_,
-      };
-      return static_cast<jint>(runner_->generate_from_pos(
-          prompt->toStdString(),
-          start_pos,
-          config,
-          [callback](std::string result) { callback->onResult(result); },
-          [callback](const llm::Stats& stats) { callback->onStats(stats); }));
-    }
-    return static_cast<jint>(executorch::runtime::Error::InvalidArgument);
+    return 0;
   }
 
   void stop() {
@@ -353,6 +294,15 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       multi_modal_runner_->stop();
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->stop();
+    }
+  }
+
+  void reset_context() {
+    if (runner_ != nullptr) {
+      runner_->reset();
+    }
+    if (multi_modal_runner_ != nullptr) {
+      multi_modal_runner_->reset();
     }
   }
 
@@ -372,11 +322,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "prefillImagesNative", ExecuTorchLlmJni::prefill_images),
+            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
         makeNativeMethod(
-            "prefillPromptNative", ExecuTorchLlmJni::prefill_prompt),
-        makeNativeMethod(
-            "generateFromPos", ExecuTorchLlmJni::generate_from_pos),
+            "appendTextInput", ExecuTorchLlmJni::append_text_input),
+        makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
 };
