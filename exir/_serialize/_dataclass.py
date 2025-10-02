@@ -57,7 +57,7 @@ def _get_class_from_union(json_dict: Dict[str, Any], key: str, cls: Any) -> Any:
 
 
 # pyre-ignore
-def _json_to_dataclass(json_dict: Dict[str, Any], cls: Any = None) -> Any:
+def _json_to_dataclass(json_dict: Dict[str, Any], cls: Any = None) -> Any:  # noqa: C901
     """Initializes a dataclass given a dictionary loaded from a json,
     `json_dict`, and the expected class, `cls`, by iterating through the fields
     of the class and retrieving the data for each. If there is a field that is
@@ -139,7 +139,10 @@ def _json_to_dataclass(json_dict: Dict[str, Any], cls: Any = None) -> Any:
         # If T is an enum then lookup the value in the enum otherwise try to
         # cast value to whatever type is required
         if isinstance(T, enum.EnumMeta):
-            data[key] = T[value]
+            if isinstance(value, str):
+                data[key] = T[value]
+            else:
+                data[key] = T(value)
         else:
             data[key] = T(value)
     return cls(**data)

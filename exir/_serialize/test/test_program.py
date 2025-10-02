@@ -893,6 +893,23 @@ class TestProgram(unittest.TestCase):
         self.assertEqual(program2.execution_plan, program.execution_plan)
         # Number of constant tensors should be the same.
         self.assertEqual(len(program2.constant_buffer), len(program.constant_buffer))
+        # Named data should be restored in a named data store and removed from the Program.
+        self.assertEqual(program2.named_data, [])
+        self.assertTrue(hasattr(program2, "named_data_store"))
+        named_store = program2.named_data_store
+        self.assertEqual(named_store.pte_data, pte_named_data)
+        # Buffers in the restored store should match the original serialized blobs.
+        restored = {
+            key: named_store.buffers[idx].buffer
+            for key, idx in named_store.pte_data.items()
+        }
+        original = {
+            key: named_data_buffers[buf_idx].buffer
+            for key, buf_idx in pte_named_data.items()
+        }
+        self.assertEqual(restored, original)
+        self.assertTrue(hasattr(program2, "named_data_blobs"))
+        self.assertEqual(program2.named_data_blobs, restored)
 
     def test_named_data_segments(self) -> None:
         # Set segment alignment to 12 to test the padding.
@@ -996,6 +1013,21 @@ class TestProgram(unittest.TestCase):
             ],
             buffers[2].buffer,
         )
+
+        program2 = deserialize_pte_binary(pte_data)
+        self.assertEqual(program2.named_data, [])
+        self.assertTrue(hasattr(program2, "named_data_store"))
+        store = program2.named_data_store
+        self.assertEqual(store.pte_data, pte_named_data)
+        restored_named_data = {
+            key: store.buffers[idx].buffer for key, idx in store.pte_data.items()
+        }
+        self.assertEqual(
+            restored_named_data,
+            {key: buffers[idx].buffer for key, idx in pte_named_data.items()},
+        )
+        self.assertTrue(hasattr(program2, "named_data_blobs"))
+        self.assertEqual(program2.named_data_blobs, restored_named_data)
 
 
 # Common data for extended header tests. The two example values should produce
