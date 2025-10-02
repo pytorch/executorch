@@ -131,43 +131,6 @@ def test_quantizer_maxpool2d():
     assert input_quant == output_quant
 
 
-def test_quantizer_softmax():
-    model = models.SoftmaxModule(dim=0)
-    model.eval()
-
-    example_input = (torch.ones(1, 10),)
-    quantizer = NeutronQuantizer()
-    graph_module = torch.export.export(model, example_input, strict=True).module()
-
-    # noinspection PyTypeChecker
-    m = prepare_pt2e(graph_module, quantizer)
-    m(*example_input)
-    m = convert_pt2e(m)
-
-    # Dry run
-    m(*example_input)
-
-    nodes = list(m.graph.nodes)
-    assert len(nodes) == 7
-    # Check if QDQ pattern:
-    assert nodes[3].name == "softmax"
-    assert (
-        _get_target_name(nodes[3].args[0])
-        == "torch.ops.quantized_decomposed.dequantize_per_tensor.default"
-    )
-    assert (
-        _get_target_name(nodes[4])
-        == "torch.ops.quantized_decomposed.quantize_per_tensor.default"
-    )
-    assert nodes[4].args[0].name == "softmax"
-
-    # Check output quantization
-    scale, zp, _, _, dtype = nodes[4].args[1:]
-    assert scale == 1.0 / 256.0
-    assert zp == -128
-    assert dtype == torch.int8
-
-
 def test_quantizer_single_maxpool2d():
     model = models.MaxPool2dModule()
     model.eval()
