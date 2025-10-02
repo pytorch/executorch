@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-models-macos-cpu:
+  # test-models-macos-cpu:
     # name: test-models-macos-cpu
     # uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     # strategy:
