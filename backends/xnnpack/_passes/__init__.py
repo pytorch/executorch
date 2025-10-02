@@ -19,6 +19,7 @@ from executorch.backends.xnnpack._passes.convert_to_sdpa import ConvertToSDPAPas
 from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
     ConvertToUpsampleBilinear2d,
 )
+from executorch.backends.xnnpack._passes.external_constants_pass import PropagateCustomMetaPass
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
@@ -59,6 +60,9 @@ class XNNPACKPassManager:
                 DimOrderOpsRevertPass,
                 ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
+                # Add pass here.
+                # Find qdq nodes, if the inputs are tagged, tagged the nodes.
+                PropagateCustomMetaPass,
                 ConvertToSDPAPass,
                 ConstPropPass,
                 FuseBatchNormPass,
@@ -92,4 +96,5 @@ class XNNPACKPassManager:
                     f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
                 )
             ep = _transform(ep, transform_pass)
+        breakpoint()
         return ep

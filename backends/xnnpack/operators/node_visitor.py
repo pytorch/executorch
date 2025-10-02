@@ -296,6 +296,7 @@ class NodeVisitor:
                     offset=UINT64_MAX, size=num_bytes, named_key=scale_name
                 )
             )
+            breakpoint()
             self._named_data_store.add_named_data(
                 scale_name, bytes(scale_array), CONSTANT_TENSOR_ALIGNMENT
             )
@@ -630,6 +631,7 @@ class NodeVisitor:
             logging.info(
                 f"Adding constant data with name {tensor.name}, key {named_key} and external_tag {external_tag} to named_data_store"
             )
+        breakpoint()
         self._named_data_store.add_named_data(
             named_key,
             bytes(array),

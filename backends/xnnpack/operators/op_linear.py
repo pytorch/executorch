@@ -51,6 +51,7 @@ class LinearVisitor(NodeVisitor):
 
         # filter
         weight_node = get_input_node(node, 1)
+        breakpoint()
         weight_quant_params = QuantParams.from_weights(
             weight_node, self._exported_program
         )
