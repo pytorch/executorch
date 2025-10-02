@@ -122,3 +122,57 @@ class TestJointGraph(unittest.TestCase):
             et.executorch_program.execution_plan[3].values[0].val.int_val,
             3,
         )
+
+    def test_conv(self) -> None:
+        # from fbcode run 'bento kernel build executorch' 
+
+        import executorch
+        from torch import nn
+
+        # shows an example of a tuple output not being used in inference only
+        class ModuleTuplePartialReturn(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.m = torch.nn.AdaptiveMaxPool1d(5, return_indices=True)
+
+            def forward(self, x):
+                return self.m(x)[0]
+
+
+        d = ModuleTuplePartialReturn()
+        ep = torch.export.export(d, (torch.randn(1, 64, 8),))
+        print("export graph: ", ep.graph_module.graph)
+        ep = to_edge(
+            ep, compile_config=executorch.exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        print()
+        print("edge graph: ", ep.exported_program().graph_module.graph)
+        ep.to_executorch()
+        print()
+        print("executorch graph: ", ep.exported_program().graph_module.graph)
+
+
+        # shows an example of a tuple output not being used in conv.backward 
+        class ModuleConvTraining(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = nn.Conv2d(3, 6, 5)
+                self.linear = nn.Linear(4704, 10)
+                self.loss = nn.CrossEntropyLoss()
+
+            def forward(self, x, y):
+                return self.loss(self.linear(self.conv1(x).flatten(1)), y)
+        print()
+
+        m = ModuleConvTraining()
+        ep = torch.export._trace._export(m, (torch.randn(4, 3, 32, 32), torch.ones(4, dtype=torch.int64)), pre_dispatch=True)
+        ep = _export_forward_backward(ep)
+        print("export graph: ", ep.graph_module.graph)
+        ep = to_edge(
+            ep, compile_config=executorch.exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        print()
+        print("edge graph: ", ep.exported_program().graph_module.graph)
+        ep.to_executorch()
+        print()
+        print("executorch graph: ", ep.exported_program().graph_module.graph)
