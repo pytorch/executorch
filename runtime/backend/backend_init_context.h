@@ -27,6 +27,7 @@ class BackendInitContext final {
  public:
   explicit BackendInitContext(
       MemoryAllocator* runtime_allocator,
+      size_t method_id,
       EventTracer* event_tracer = nullptr,
       const char* method_name = nullptr,
       const NamedDataMap* named_data_map = nullptr)
@@ -37,6 +38,7 @@ class BackendInitContext final {
         event_tracer_(nullptr),
 #endif
         method_name_(method_name),
+        method_id_(method_id),
         named_data_map_(named_data_map) {
   }
 
@@ -67,6 +69,14 @@ class BackendInitContext final {
   const char* get_method_name() const {
     return method_name_;
   }
+  
+  /** Get the method identifier of the loaded method. This corresponds to the
+   * id() method on the Method object, and can be used to disambiguate between
+   * different methods with the same name.
+   */
+  size_t method_id() const {
+    return method_id_;
+  }
 
   /** Get the named data map from ExecuTorch runtime.
    * This provides a way for backends to retrieve data blobs by key.
@@ -79,6 +89,7 @@ class BackendInitContext final {
   MemoryAllocator* runtime_allocator_ = nullptr;
   EventTracer* event_tracer_ = nullptr;
   const char* method_name_ = nullptr;
+  size_t method_id_ = 0;
   const NamedDataMap* named_data_map_ = nullptr;
 };
 
