@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <executorch/extension/audio/runner/asr_runner.h>
+#include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
 #include <executorch/extension/llm/runner/llm_runner_helper.h>
@@ -33,6 +35,7 @@
 
 #if defined(EXECUTORCH_BUILD_QNN)
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/runner.h>
+#include <executorch/examples/qualcomm/oss_scripts/whisper/runner/runner.h>
 #endif
 
 #if defined(EXECUTORCH_BUILD_MEDIATEK)
@@ -317,8 +320,92 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 };
 
+class ExecuTorchASRJni : public facebook::jni::HybridClass<ExecuTorchASRJni> {
+ private:
+  friend HybridBase;
+  std::unique_ptr<::executorch::extension::audio::ASRRunner> runner_;
+
+ public:
+  constexpr static auto kJavaDescriptor =
+      "Lorg/pytorch/executorch/extension/audio/ASRModule;";
+
+  static facebook::jni::local_ref<jhybriddata> initHybrid(
+      facebook::jni::alias_ref<jclass>,
+      facebook::jni::alias_ref<jstring> model_path,
+      facebook::jni::alias_ref<jstring> tokenizer_path) {
+    return makeCxxInstance(model_path, tokenizer_path);
+  }
+
+  ExecuTorchASRJni(
+      facebook::jni::alias_ref<jstring> model_path,
+      facebook::jni::alias_ref<jstring> tokenizer_path) {
+#if defined(ET_USE_THREADPOOL)
+    // Reserve 1 thread for the main thread.
+    int32_t num_performant_cores =
+        ::executorch::extension::cpuinfo::get_num_performant_cores() - 1;
+    if (num_performant_cores > 0) {
+      ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
+      ::executorch::extension::threadpool::get_threadpool()
+          ->_unsafe_reset_threadpool(num_performant_cores);
+    }
+#endif
+#if defined(EXECUTORCH_BUILD_QNN)
+    // create runner
+    runner_ = std::make_unique<example::WhisperRunner>(
+        model_path->toStdString(), tokenizer_path->toStdString());
+#endif
+  }
+
+  jint transcribe(
+      jint seq_len,
+      facebook::jni::alias_ref<
+          facebook::jni::JArrayClass<jbyteArray>::javaobject> inputs,
+      facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
+      jint n_bins = 80, // whisper defaults
+      jint n_frames = 3000) {
+    // Convert Java byte[][] to C++ vector<vector<char>>
+    std::vector<std::vector<uint8_t>> cppData;
+    auto input_size = inputs->size();
+    cppData.reserve(input_size);
+    // TODO: add support for larger batch sizes
+    for (jsize i = 0; i < input_size; i++) {
+      auto byte_array = inputs->getElement(i);
+      if (byte_array) {
+        auto array_length = byte_array->size();
+        auto bytes = byte_array->getRegion(0, array_length);
+        std::vector<uint8_t> uint8Vector;
+        uint8Vector.reserve(array_length);
+        for (jsize j = 0; j < array_length; j++) {
+          uint8Vector.push_back(static_cast<uint8_t>(bytes[j]));
+        }
+        cppData.push_back(std::move(uint8Vector));
+      }
+    }
+    executorch::extension::llm::Audio audio{cppData[0], 1, n_bins, n_frames};
+    runner_->transcribe(seq_len, audio, [callback](std::string result) {
+      callback->onResult(result);
+    });
+    return 0;
+  }
+
+  jint load() {
+    return static_cast<jint>(runner_->load());
+  }
+
+  static void registerNatives() {
+    registerHybrid({
+        makeNativeMethod("initHybrid", ExecuTorchASRJni::initHybrid),
+        makeNativeMethod("transcribe", ExecuTorchASRJni::transcribe),
+        makeNativeMethod("load", ExecuTorchASRJni::load),
+    });
+  }
+};
+
 } // namespace executorch_jni
 
 void register_natives_for_llm() {
   executorch_jni::ExecuTorchLlmJni::registerNatives();
+}
+void register_natives_for_asr() {
+  executorch_jni::ExecuTorchASRJni::registerNatives();
 }
