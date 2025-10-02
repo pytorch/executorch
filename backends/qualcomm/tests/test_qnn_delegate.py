@@ -282,6 +282,13 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv3d_sequential(self):
+        modules = [Conv3dSequential(), Conv3dSequential(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([2, 1, 10, 32, 32]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv_transpose1d(self):
         modules = [
             ConvTranspose1dSingle(),  # noqa: F405
@@ -302,6 +309,18 @@ class TestQNNFloatingPointOperator(TestQNN):
             ConvTranspose2dSingle(dilation=(2, 1)),  # noqa: F405
         ]
         sample_input = (torch.randn([1, 1, 33, 33]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_transpose3d(self):
+        modules = [
+            ConvTranspose3dSingle(),  # noqa: F405
+            ConvTranspose3dSingle(bias=False),  # noqa: F405
+            ConvTranspose3dSingle(dilation=2),  # noqa: F405
+            ConvTranspose3dSingle(dilation=(3, 2, 3)),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
@@ -371,6 +390,24 @@ class TestQNNFloatingPointOperator(TestQNN):
                     AddConstantLong(),  # noqa: F405
                 ],
                 QCOM_SAMPLE_INPUTS: [(torch.randint(0, 10, size=(2, 3)),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AddAlpha(alpha=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([[1.2, 1.3, 1.4]]),
+                        torch.tensor([[0.8, 1.6, 0.2]]),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    AddAlphaConstant(alpha=2, constant_first=True),  # noqa: F405
+                    AddAlphaConstant(alpha=2, constant_first=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.tensor([[1.2, 1.3, 1.4]]),)],
             },
         ]
 
@@ -494,6 +531,24 @@ class TestQNNFloatingPointOperator(TestQNN):
             {
                 QCOM_MODULE: [SubConstantFloat()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [
+                    SubAlpha(alpha=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([[1.2, 1.3, 1.4]]),
+                        torch.tensor([[0.8, 1.6, 0.2]]),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    SubAlphaConstant(alpha=2, constant_first=True),  # noqa: F405
+                    SubAlphaConstant(alpha=2, constant_first=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.tensor([[1.2, 1.3, 1.4]]),)],
             },
         ]
 
@@ -1789,6 +1844,14 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv3d_sequential(self):
+        modules = [Conv3dSequential(), Conv3dSequential(bias=False)]  # noqa: F405
+        sample_input = (torch.randn([2, 1, 10, 32, 32]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
+
     def test_qnn_backend_conv_transpose1d(self):
         modules = [
             ConvTranspose1dSingle(),  # noqa: F405
@@ -1809,6 +1872,19 @@ class TestQNNQuantizedOperator(TestQNN):
             ConvTranspose2dSingle(dilation=(2, 1)),  # noqa: F405
         ]
         sample_input = (torch.randn([1, 1, 3, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv_transpose3d(self):
+        modules = [
+            ConvTranspose3dSingle(),  # noqa: F405
+            ConvTranspose3dSingle(bias=False),  # noqa: F405
+            ConvTranspose3dSingle(dilation=2),  # noqa: F405
+            ConvTranspose3dSingle(dilation=(3, 2, 3)),  # noqa: F405
+        ]
+        sample_input = (torch.randn([1, 1, 3, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
@@ -1862,6 +1938,24 @@ class TestQNNQuantizedOperator(TestQNN):
             {
                 QCOM_MODULE: [AddConstantFloat(), AddConstantLong()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [
+                    AddAlpha(alpha=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([[1.2, 1.3, 1.4]]),
+                        torch.tensor([[0.8, 1.6, 0.2]]),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    AddAlphaConstant(alpha=2, constant_first=True),  # noqa: F405
+                    AddAlphaConstant(alpha=2, constant_first=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.tensor([[1.2, 1.3, 1.4]]),)],
             },
         ]
 
@@ -1991,6 +2085,24 @@ class TestQNNQuantizedOperator(TestQNN):
             {
                 QCOM_MODULE: [SubConstantFloat(), SubConstantLong()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
+            },
+            {
+                QCOM_MODULE: [
+                    SubAlpha(alpha=2),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (
+                        torch.tensor([[1.2, 1.3, 1.4]]),
+                        torch.tensor([[0.8, 1.6, 0.2]]),
+                    )
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    SubAlphaConstant(alpha=2, constant_first=True),  # noqa: F405
+                    SubAlphaConstant(alpha=2, constant_first=False),  # noqa: F405
+                ],
+                QCOM_SAMPLE_INPUTS: [(torch.tensor([[1.2, 1.3, 1.4]]),)],
             },
         ]
 
