@@ -832,7 +832,7 @@ jobs:
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         # OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        OPTIMUM_ET_COMMIT=bd06b54e627fbfd354a2cffa4c80fb21883209a9
+        OPTIMUM_ET_COMMIT=8335b491fa77a6c43709b4dfc192184add6ef224
 
         echo "Cloning optimum-executorch..."
 
