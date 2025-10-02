@@ -263,7 +263,7 @@ class ConvolutionConverter(NodeConverter):
                 )
 
             b = self.builder.create_zeros_tensor(
-                [output_channels], "zero_bias", bias_type, True
+                [output_channels], "zero_bias", bias_type, False
             )
 
             # Compute scale and zero point for bias tensor
@@ -321,6 +321,10 @@ class ConvolutionConverter(NodeConverter):
                 t_op.tmp_inputs[1] = self.builder.create_transposed_tensor(
                     weight_tensor, perm
                 )
+
+                if t_op.tmp_inputs[1].quantization is not None:
+                    # Model is quantized
+                    t_op.tmp_inputs[1].quantization.quantized_dimension = 3
             else:
                 raise NotImplementedError("Dynamic Depthwise Conv weights.")
 

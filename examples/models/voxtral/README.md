@@ -18,11 +18,6 @@ cd optimum-executorch
 python install_dev.py
 ```
 
-We are currently working on a Transformers pin bump for Optimum. In the meantime, manually override the Transformers dep to the earliest compatible version.
-```
-pip install git+https://github.com/huggingface/transformers@6121e9e46c4fc4e5c91d9f927aef5490691850cf#egg=transformers
-```
-
 ## Using the export CLI
 We export Voxtral using the Optimum CLI, which will export `model.pte` to the `voxtral` output directory:
 ```
@@ -32,7 +27,9 @@ optimum-cli export executorch \
   --recipe "xnnpack" \
   --use_custom_sdpa \
   --use_custom_kv_cache \
+  --max_seq_len 2048 \
   --qlinear 8da4w \
+  --qlinear_encoder 8da4w \
   --qembedding 4w \
   --output_dir="voxtral"
 ```
@@ -49,12 +46,13 @@ The Voxtral runner will do the following things:
 - Feed the formatted inputs to the multimodal modal runner.
 
 
-# [Option A] Exporting the audio preprocessor
+## Exporting the audio preprocessor
 The exported model takes in a mel spectrogram input tensor as its audio inputs.
 We provide a simple way to transform raw audio data into a mel spectrogram by exporting a version of Voxtral's audio preprocessor used directly by Transformers.
 
 ```
-python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --output_file voxtral_preprocessor.pte
+# Export a preprocessor that can handle audio up to 5 mins (300s).
+python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --stack_output --max_audio_len 300 --output_file voxtral_preprocessor.pte
 ```
 
 ## Building the multimodal runner

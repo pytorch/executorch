@@ -61,29 +61,31 @@ utils::uvec3 quantized_linear_global_wg_size(
   const ValueRef out = args.at(0).refs.at(0);
 
   std::vector<int64_t> out_sizes = graph->sizes_of(out);
-  // height
-  const uint32_t M = utils::val_at(-2, out_sizes);
   // width
   const uint32_t N = utils::val_at(-1, out_sizes);
+  // height
+  const uint32_t M = utils::val_at(-2, out_sizes);
 
-  const uint32_t M4 = utils::div_up(M, 4u);
-  const uint32_t N4 = utils::div_up(N, 4u);
+  uint32_t N_per_tile = 4;
+  uint32_t M_per_tile = 4;
 
-  // For 4-bit weights, each output tile contains 8 columns and 4 rows
+  // For 4-bit weights, each output tile contains 8 columns
   if (shader.kernel_name.find("q4") != std::string::npos) {
-    const uint32_t N8 = utils::div_up(N, 8u);
-
-    const bool using_coop_algorithm =
-        shader.kernel_name.find("_coop") != std::string::npos;
-    // TODO: explain
-    if (using_coop_algorithm) {
-      return {64, N8, M};
-    }
-    return {N8, M4, 1};
+    N_per_tile = 8;
+  }
+  if (shader.kernel_name.find("coop") != std::string::npos) {
+    M_per_tile = 1;
   }
 
+  if (shader.kernel_name.find("q8ta_q8csw_tiled") != std::string::npos) {
+    N_per_tile = 8;
+  }
+
+  const uint32_t num_N_tiles = utils::div_up(N, N_per_tile);
+  const uint32_t num_M_tiles = utils::div_up(M, M_per_tile);
+
   // Otherwise, each output tile contains 4 columns and 4 rows
-  return {N4, M4, 1};
+  return {num_N_tiles, num_M_tiles, 1};
 }
 
 utils::uvec3 quantized_linear_local_wg_size(
@@ -96,7 +98,7 @@ utils::uvec3 quantized_linear_local_wg_size(
       shader.kernel_name.find("_coop") != std::string::npos;
 
   if (use_coop_algorithm) {
-    return {64, 1, 1};
+    return {1, 1, 64};
   } else {
     return pick_hw_square_wg_size(
         graph, shader, global_workgroup_size, args, resize_args);
@@ -804,20 +806,12 @@ void quantized_linear_impl(
       graph, weight_sums_data, utils::kBuffer, utils::kWidthPacked);
 
   // Allocate temporary tensor to store quantized and packed input
-
-  int64_t num_blocks_M, num_blocks_K;
-  std::tie(num_blocks_M, num_blocks_K) =
-      get_quantized_input_num_blocks(graph, fp_input);
-
-  const int64_t int_input_height = num_blocks_M;
-  const int64_t int_input_width = num_blocks_K * 4;
-
   TmpTensor packed_int_input(
       &graph,
-      {int_input_height, int_input_width},
-      vkapi::kInt,
+      graph.sizes_of(fp_input),
+      vkapi::kInt8x4,
       utils::kBuffer,
-      utils::kWidthPacked);
+      utils::kPackedInt8_4H4W);
 
   // Non dynamically quantized input case
   if (!input_quant_config.is_dynamic) {

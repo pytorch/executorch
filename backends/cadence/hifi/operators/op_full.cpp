@@ -20,7 +20,6 @@ using torch::executor::Error;
 using torch::executor::native::utils::extract_scalar;
 using torch::executor::native::utils::get_scalar_dtype;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -97,4 +96,3 @@ Tensor& full_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

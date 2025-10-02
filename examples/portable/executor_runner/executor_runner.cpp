@@ -175,21 +175,33 @@ int main(int argc, char** argv) {
   std::vector<std::pair<char*, size_t>> input_buffers;
 
   std::stringstream list_of_input_files(FLAGS_inputs);
-  std::string token;
+  std::string path;
 
-  while (std::getline(list_of_input_files, token, ',')) {
-    std::ifstream input_file_handle(token, std::ios::binary | std::ios::ate);
+  // First reserve memory for number of vector elements to avoid vector
+  // reallocations when emplacing back.
+  std::vector<std::string> file_paths;
+  while (std::getline(list_of_input_files, path, ',')) {
+    file_paths.push_back(std::move(path));
+  }
+  inputs_storage.reserve(file_paths.size());
+
+  for (const auto& file_path : file_paths) {
+    std::ifstream input_file_handle(
+        file_path, std::ios::binary | std::ios::ate);
+
     if (!input_file_handle) {
-      ET_LOG(Error, "Failed to open input file: %s\n", token.c_str());
+      ET_LOG(Error, "Failed to open input file: %s\n", file_path.c_str());
       return 1;
     }
 
     std::streamsize file_size = input_file_handle.tellg();
     input_file_handle.seekg(0, std::ios::beg);
 
+    // Reserve memory for actual file contents.
     inputs_storage.emplace_back(file_size, '\0');
+
     if (!input_file_handle.read(&inputs_storage.back()[0], file_size)) {
-      ET_LOG(Error, "Failed to read input file: %s\n", token.c_str());
+      ET_LOG(Error, "Failed to read input file: %s\n", file_path.c_str());
       return 1;
     }
 
@@ -347,8 +359,7 @@ int main(int argc, char** argv) {
         snprintf(out_filename, 255, "%s-%d.bin", FLAGS_output_file.c_str(), i);
         ET_LOG(Info, "Writing output to file: %s", out_filename);
         FILE* out_file = fopen(out_filename, "wb");
-        auto written_size =
-            fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
+        fwrite(tensor.const_data_ptr<char>(), 1, tensor.nbytes(), out_file);
         fclose(out_file);
       }
     }
