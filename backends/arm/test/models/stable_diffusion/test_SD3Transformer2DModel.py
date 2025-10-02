@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import unittest
+from typing import Tuple
 
 import torch
 from diffusers.models.transformers import SD3Transformer2DModel
@@ -13,10 +13,16 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
     SD3Transformer2DModel_init_dict,
 )
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
+
+input_t4 = Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 
 
-class TestSD3Transformer2DModel(unittest.TestCase):
+class TestSD3Transformer2DModel:
     """
     Test class of AutoenSD3Transformer2DModelcoderKL.
     SD3Transformer2DModel is the transformer model used by Stable Diffusion 3.5 Medium
@@ -93,48 +99,88 @@ class TestSD3Transformer2DModel(unittest.TestCase):
 
         return sd35_transformer2D_model, sd35_transformer2D_model_inputs
 
-    def test_SD3Transformer2DModel_tosa_FP(self):
-        sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
-            self.prepare_model_and_inputs()
-        )
-        with torch.no_grad():
-            (
-                ArmTester(
-                    sd35_transformer2D_model,
-                    example_inputs=sd35_transformer2D_model_inputs,
-                    compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+FP"),
-                )
-                .export()
-                .to_edge_transform_and_lower()
-                .check_count(self.ops_after_partitioner_FP)
-                .to_executorch()
-                .run_method_and_compare_outputs(
-                    inputs=sd35_transformer2D_model_inputs,
-                    rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
-                    atol=4.0,
-                )
-            )
 
-    def test_SD3Transformer2DModel_tosa_INT(self):
-        sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
-            self.prepare_model_and_inputs()
+def test_SD3Transformer2DModel_tosa_FP():
+    sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
+        TestSD3Transformer2DModel().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = TosaPipelineFP[input_t4](
+            sd35_transformer2D_model,
+            sd35_transformer2D_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            use_to_edge_transform_and_lower=True,
+            rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
+            atol=4.0,
         )
-        with torch.no_grad():
-            (
-                ArmTester(
-                    sd35_transformer2D_model,
-                    example_inputs=sd35_transformer2D_model_inputs,
-                    compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+INT"),
-                )
-                .quantize()
-                .export()
-                .to_edge_transform_and_lower()
-                .check_count(self.ops_after_partitioner_INT)
-                .to_executorch()
-                .run_method_and_compare_outputs(
-                    inputs=sd35_transformer2D_model_inputs,
-                    qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
-                    rtol=1.0,
-                    atol=4.0,
-                )
-            )
+        pipeline.change_args(
+            "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_FP
+        )
+        pipeline.run()
+
+
+def test_SD3Transformer2DModel_tosa_INT():
+    sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
+        TestSD3Transformer2DModel().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = TosaPipelineINT[input_t4](
+            sd35_transformer2D_model,
+            sd35_transformer2D_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            use_to_edge_transform_and_lower=True,
+            qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
+            rtol=1.0,
+            atol=4.0,
+        )
+        pipeline.change_args(
+            "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_INT
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_SD3Transformer2DModel_vgf_FP():
+    sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
+        TestSD3Transformer2DModel().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t4](
+            sd35_transformer2D_model,
+            sd35_transformer2D_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            tosa_version="TOSA-1.0+FP",
+            use_to_edge_transform_and_lower=True,
+            rtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
+            atol=4.0,
+        )
+        pipeline.change_args(
+            "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_FP
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_SD3Transformer2DModel_vgf_INT():
+    sd35_transformer2D_model, sd35_transformer2D_model_inputs = (
+        TestSD3Transformer2DModel().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t4](
+            sd35_transformer2D_model,
+            sd35_transformer2D_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            tosa_version="TOSA-1.0+INT",
+            use_to_edge_transform_and_lower=True,
+            qtol=1.0,  # TODO: MLETORCH-875: Reduce tolerance of SD3Transformer2DModel with FP and INT
+            rtol=1.0,
+            atol=4.0,
+        )
+        pipeline.change_args(
+            "check_count.exir", TestSD3Transformer2DModel.ops_after_partitioner_INT
+        )
+        pipeline.run()
