@@ -136,7 +136,9 @@ int main(int argc, char** argv) {
 
       const TensorPtr audio_input = create_audio_input();
       std::vector<EValue> inputs;
-      inputs.emplace_back(audio_input);
+      std::vector<TensorPtr> owned_inputs;
+      owned_inputs.emplace_back(audio_input);
+      inputs.emplace_back(*audio_input);
 
       const auto run_start = Clock::now();
       Result<std::vector<EValue>> output_result =
@@ -171,7 +173,9 @@ int main(int argc, char** argv) {
 
       const TensorPtr token_ids = create_token_ids_input();
       std::vector<EValue> inputs;
-      inputs.emplace_back(token_ids);
+      std::vector<TensorPtr> owned_inputs;
+      owned_inputs.emplace_back(token_ids);
+      inputs.emplace_back(*token_ids);
 
       const auto run_start = Clock::now();
       auto token_output_result = module.execute("token_embedding", inputs);
@@ -203,6 +207,7 @@ int main(int argc, char** argv) {
       text_timing.load_ms = load_ms;
 
       std::vector<EValue> inputs;
+      std::vector<TensorPtr> owned_inputs;
       if (token_executed) {
         if (token_output.isTensor()) {
           inputs.emplace_back(token_output);
@@ -210,10 +215,14 @@ int main(int argc, char** argv) {
       }
 
       if (inputs.empty()) {
-        inputs.emplace_back(create_fallback_text_embedding());
+        auto fallback_embedding = create_fallback_text_embedding();
+        owned_inputs.emplace_back(fallback_embedding);
+        inputs.emplace_back(*fallback_embedding);
       }
 
-      inputs.emplace_back(create_positions_input());
+      auto positions = create_positions_input();
+      owned_inputs.emplace_back(positions);
+      inputs.emplace_back(*positions);
 
       const auto run_start = Clock::now();
       Result<std::vector<EValue>> output_result =

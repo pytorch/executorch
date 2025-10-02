@@ -131,15 +131,20 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
     filesystem::path so_path =
-        temp_dir / ("aoti_cuda_" + to_string(getpid()) + ".so");
+        temp_dir / (so_blob_key + to_string(getpid()) + ".so");
 
     // Create a temporary file
     ofstream outfile(so_path.c_str(), ios::binary);
 
     // Write the ELF buffer to the temporary file
+    ET_LOG(
+        Info,
+        "Writing %zu bytes to %s",
+        aoti_cuda_buffer->size(),
+        so_path.c_str());
     outfile.write(
-        (char*)aoti_cuda_buffer->data(),
-        sizeof(void*) * aoti_cuda_buffer->size());
+        static_cast<const char*>(aoti_cuda_buffer->data()),
+        aoti_cuda_buffer->size());
 
     // Finish writing the file to disk
     outfile.close();
