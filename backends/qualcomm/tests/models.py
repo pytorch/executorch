@@ -4,8 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
+from typing import List, Optional, Tuple, Union
 
+import torch
 
 # module with related operator only
 
@@ -1332,20 +1333,20 @@ class MaxPool2d(torch.nn.Module):
         return self.max_pool2d(x)
 
 
-class MeanWKeppDim(torch.nn.Module):
-    def __init__(self):
+class Mean(torch.nn.Module):
+    def __init__(
+        self,
+        dim: Optional[Union[int, Tuple[int, ...], List[int]]] = None,
+        keepdim: bool = False,
+        dtype: Optional[torch.dtype] = None,
+    ):
         super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.dtype = dtype
 
     def forward(self, x):
-        return torch.mean(x, (-1, -2), keepdim=True)
-
-
-class MeanWOKeppDim(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return torch.mean(x, (-1, -2))
+        return torch.mean(x, dim=self.dim, keepdim=self.keepdim, dtype=self.dtype)
 
 
 class MaskedFill(torch.nn.Module):
