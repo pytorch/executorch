@@ -338,9 +338,6 @@ def test_mul_tensor_16a8w_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 mul operations. See: https://github.com/pytorch/executorch/issues/13947"
-)
 def test_mul_tensor_16a8w_u55_INT16(test_data: input_t1):
     """Test mul operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -365,9 +362,6 @@ def test_mul_tensor_16a8w_u55_INT16(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 mul operations. See: https://github.com/pytorch/executorch/issues/13947"
-)
 def test_mul_tensor_16a8w_u85_INT16(test_data: input_t1):
     """Test mul operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
