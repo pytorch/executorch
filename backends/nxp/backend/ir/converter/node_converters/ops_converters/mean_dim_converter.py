@@ -12,7 +12,6 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import (
     convert_axes_from_attribute,
@@ -20,6 +19,7 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     mean_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -28,34 +28,20 @@ class MeanDimConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        match target:
-            case Target.RT700:
-                # TODO: Consider different tensor formats (dim-order)
-                dim = node.args[1]
-                keepdim = node.args[2] if len(node.args) >= 3 else False
-                rank = len(node.args[0].meta["val"].shape)
-                dim = [MeanDimConverter._to_neg_dim(d, rank) for d in dim]
+        dim = node.args[1]
+        keepdim = node.args[2] if len(node.args) >= 3 else False
+        rank = len(node.args[0].meta["val"].shape)
+        dim = [d - rank if d > 0 else d for d in dim]
 
-                # Only last 2 dimensions (H, W) and keepdim=True with rank=4 are supported on Neutron.
-                if rank != 4 or dim not in [[-1, -2], [-2, -1]] or not keepdim:
-                    return False
+        # Only last 2 dimensions (H, W) and keepdim=True with rank=4 are supported on Neutron.
+        if rank != 4 or dim not in [[-1, -2], [-2, -1]] or not keepdim:
+            return False
 
-                return True
-
-            case _:
-                return False
-
-    @staticmethod
-    def _to_pos_dim(d, rank):
-        return d + rank if d < 0 else d
-
-    @staticmethod
-    def _to_neg_dim(d, rank):
-        return d - rank if d > 0 else d
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -74,6 +60,10 @@ class MeanDimConverter(NodeConverter):
             return False
 
         return True
+
+    @staticmethod
+    def _to_pos_dim(d: int, rank: int):
+        return d + rank if d < 0 else d
 
     @staticmethod
     def _normalize_and_to_channel_last_dim(dim: list[int], rank: int) -> list[int]:

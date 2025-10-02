@@ -122,7 +122,6 @@ def test_matmul_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -136,7 +135,6 @@ def test_matmul_single_input_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -150,7 +148,6 @@ def test_matmul_combo_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -164,7 +161,6 @@ def test_matmul_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -178,7 +174,6 @@ def test_matmul_single_input_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -192,7 +187,6 @@ def test_matmul_combo_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_mm,
         exir_op_mm,
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()

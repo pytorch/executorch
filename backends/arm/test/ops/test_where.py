@@ -226,7 +226,6 @@ def test_where_self_u85_INT(test_module):
         test_module().get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.run()

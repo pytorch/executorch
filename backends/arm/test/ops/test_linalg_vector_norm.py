@@ -103,7 +103,6 @@ def test_vector_norm_u55_INT_fvp(test_module):
         input_tensor,
         aten_op_q_decomposed_q,
         exir_op_q_decomposed,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.pop_stage("check_not.exir")
@@ -121,7 +120,6 @@ def test_vector_norm_u85_INT_fvp(test_module):
         input_tensor,
         aten_op_q_decomposed_q,
         exir_op_q_decomposed,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.pop_stage("check_not.exir")

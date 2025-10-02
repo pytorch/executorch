@@ -307,7 +307,6 @@ def test_convolution_1d_u55_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
     )
@@ -323,7 +322,6 @@ def test_convolution_1d_u85_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         qtol=1,
     )

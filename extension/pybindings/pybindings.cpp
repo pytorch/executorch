@@ -158,6 +158,24 @@ void setup_output_storage(
   }
 }
 
+inline std::unique_ptr<DataLoader> loader_from_buffer(
+    const void* ptr,
+    size_t ptr_len) {
+  return std::make_unique<BufferDataLoader>(ptr, ptr_len);
+}
+
+inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
+  Result<MmapDataLoader> res = MmapDataLoader::from(
+      path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
+  THROW_IF_ERROR(
+      res.error(),
+      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
+      path.c_str(),
+      static_cast<uint32_t>(res.error()));
+
+  return std::make_unique<MmapDataLoader>(std::move(res.get()));
+}
+
 inline std::unique_ptr<Module> load_module_from_buffer(
     const void* ptr,
     size_t ptr_len,
@@ -166,11 +184,11 @@ inline std::unique_ptr<Module> load_module_from_buffer(
     std::unique_ptr<runtime::EventTracer> event_tracer,
     Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_buffer");
-  auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
+  auto loader = loader_from_buffer(ptr, ptr_len);
 
   if (data_map_ptr.has_value() && data_map_len.has_value()) {
-    auto data_map_loader = std::make_unique<BufferDataLoader>(
-        data_map_ptr.value(), data_map_len.value());
+    auto data_map_loader =
+        loader_from_buffer(data_map_ptr.value(), data_map_len.value());
     return std::make_unique<Module>(
         std::move(loader),
         nullptr, // memory_allocator
@@ -194,27 +212,9 @@ inline std::unique_ptr<Module> load_module_from_file(
     Program::Verification program_verification) {
   EXECUTORCH_SCOPE_PROF("load_module_from_file");
 
-  Result<MmapDataLoader> program_loader_res = MmapDataLoader::from(
-      program_path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
-  THROW_IF_ERROR(
-      program_loader_res.error(),
-      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
-      program_path.c_str(),
-      static_cast<uint32_t>(program_loader_res.error()));
-  auto program_loader =
-      std::make_unique<MmapDataLoader>(std::move(program_loader_res.get()));
-
+  auto program_loader = loader_from_file(program_path);
   if (data_map_path.has_value()) {
-    Result<MmapDataLoader> data_map_loader_res = MmapDataLoader::from(
-        data_map_path->c_str(),
-        MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
-    THROW_IF_ERROR(
-        data_map_loader_res.error(),
-        "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
-        data_map_path->c_str(),
-        static_cast<uint32_t>(data_map_loader_res.error()));
-    auto data_map_loader =
-        std::make_unique<MmapDataLoader>(std::move(data_map_loader_res.get()));
+    auto data_map_loader = loader_from_file(data_map_path.value());
     return std::make_unique<Module>(
         std::move(program_loader),
         nullptr, // memory_allocator
@@ -228,6 +228,22 @@ inline std::unique_ptr<Module> load_module_from_file(
       nullptr, // temp_allocator
       std::move(event_tracer), // event_tracer
       nullptr); // data_map_loader
+}
+
+inline std::unique_ptr<Module> load_module_from_buffer_with_data_file(
+    const void* ptr,
+    size_t ptr_len,
+    const std::string& data_map_path,
+    std::unique_ptr<runtime::EventTracer> event_tracer,
+    Program::Verification program_verification) {
+  auto program_loader = loader_from_buffer(ptr, ptr_len);
+  auto data_loader = loader_from_file(data_map_path);
+  return std::make_unique<Module>(
+      std::move(program_loader),
+      nullptr, // memory_allocator
+      nullptr, // temp_allocator
+      std::move(event_tracer), // event_tracer
+      std::move(data_loader));
 }
 
 inline py::list get_outputs_as_py_list(
@@ -556,6 +572,22 @@ struct PyModule final {
             program_verification)) {}
 
   explicit PyModule(
+      const void* ptr,
+      size_t ptr_len,
+      const std::string& data_path,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0,
+      Program::Verification program_verification =
+          Program::Verification::InternalConsistency)
+      : debug_buffer_size_(debug_buffer_size),
+        module_(load_module_from_buffer_with_data_file(
+            ptr,
+            ptr_len,
+            data_path,
+            setup_event_tracer(enable_etdump, debug_buffer_size),
+            program_verification)) {}
+
+  explicit PyModule(
       const std::string& program_path,
       std::optional<const std::string>& data_path,
       bool enable_etdump,
@@ -605,6 +637,7 @@ struct PyModule final {
         program_verification);
   }
 
+  // Load with data as a buffer.
   static std::unique_ptr<PyModule> load_from_bundled_program(
       PyBundledModule& m,
       std::optional<const py::bytes> data_map_buffer,
@@ -623,6 +656,21 @@ struct PyModule final {
         m.get_program_len(),
         data_map_ptr,
         data_map_len,
+        enable_etdump,
+        debug_buffer_size,
+        Program::Verification::InternalConsistency);
+  }
+
+  // Load with data as a file.
+  static std::unique_ptr<PyModule> load_from_bundled_program(
+      PyBundledModule& m,
+      const std::string& data_path,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0) {
+    return std::make_unique<PyModule>(
+        m.get_program_ptr(),
+        m.get_program_len(),
+        data_path,
         enable_etdump,
         debug_buffer_size,
         Program::Verification::InternalConsistency);
@@ -899,24 +947,6 @@ struct PyModule final {
     }
   }
 };
-
-inline std::unique_ptr<DataLoader> loader_from_buffer(
-    const void* ptr,
-    size_t ptr_len) {
-  return std::make_unique<BufferDataLoader>(ptr, ptr_len);
-}
-
-inline std::unique_ptr<DataLoader> loader_from_file(const std::string& path) {
-  Result<MmapDataLoader> res = MmapDataLoader::from(
-      path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
-  THROW_IF_ERROR(
-      res.error(),
-      "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
-      path.c_str(),
-      static_cast<uint32_t>(res.error()));
-
-  return std::make_unique<MmapDataLoader>(std::move(res.get()));
-}
 
 inline std::shared_ptr<ProgramState> load_program(
     std::unique_ptr<DataLoader> loader,
@@ -1474,9 +1504,22 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       call_guard);
   m.def(
       "_load_for_executorch_from_bundled_program",
-      &PyModule::load_from_bundled_program,
+      py::overload_cast<
+          PyBundledModule&,
+          std::optional<const py::bytes>,
+          bool,
+          size_t>(&PyModule::load_from_bundled_program),
       py::arg("ptr"),
       py::arg("data_map_buffer") = std::nullopt,
+      py::arg("enable_etdump") = false,
+      py::arg("debug_buffer_size") = 0,
+      call_guard);
+  m.def(
+      "_load_for_executorch_from_bundled_program",
+      py::overload_cast<PyBundledModule&, const std::string&, bool, size_t>(
+          &PyModule::load_from_bundled_program),
+      py::arg("ptr"),
+      py::arg("data_path"),
       py::arg("enable_etdump") = false,
       py::arg("debug_buffer_size") = 0,
       call_guard);

@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 import pytest
 from executorch.backends.arm.ethosu import EthosUCompileSpec
+
 from executorch.backends.arm.test.runner_utils import (
     arm_executor_runner_exists,
     corstone300_installed,

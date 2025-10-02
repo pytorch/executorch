@@ -106,3 +106,17 @@ runtime.python_library(
         "//caffe2:torch",
     ]
 )
+runtime.python_library(
+    name = "_factory",
+    srcs = [
+        "util/_factory.py"
+    ],
+    deps = [
+        ":ethosu",
+        ":vgf",
+        ":arm_compile_spec",
+        "//executorch/backends/arm/quantizer:lib",
+        "//executorch/exir/backend:operator_support",
+        "//executorch/exir/backend:compile_spec_schema",
+    ]
+)
