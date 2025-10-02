@@ -12,13 +12,9 @@ from enum import Enum
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
-<<<<<<< HEAD
 from executorch.backends.cuda.replace_slice_copy_with_slice import (
     ReplaceSliceCopyWithSlicePass,
 )
-=======
-from executorch.backends.cuda.replace_slice_copy_with_slice import ReplaceSliceCopyWithSlicePass
->>>>>>> e5be1a2b85 (Make it work)
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import (
