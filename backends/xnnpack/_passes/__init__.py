@@ -59,6 +59,8 @@ class XNNPACKPassManager:
                 DimOrderOpsRevertPass,
                 ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
+                # Add pass here.
+                # Find qdq nodes, if the inputs are tagged, tagged the nodes.
                 ConvertToSDPAPass,
                 ConstPropPass,
                 FuseBatchNormPass,
@@ -92,4 +94,5 @@ class XNNPACKPassManager:
                     f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
                 )
             ep = _transform(ep, transform_pass)
+        breakpoint()
         return ep
