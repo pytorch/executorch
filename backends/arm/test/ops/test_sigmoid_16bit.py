@@ -16,7 +16,7 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     OpNotSupportedPipeline,
     TosaPipelineINT,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.xnnpack.test.tester import Quantize
 from torchao.quantization.pt2e import HistogramObserver
 from torchao.quantization.pt2e.quantizer import QuantizationSpec
@@ -121,18 +121,11 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
     pipeline.run()
 
 
-xfails = {
-    "ones": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "rand": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "rand_4d": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-    "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787",
-}
-
-
 @common.parametrize(
     "test_data",
     test_data_suite,
 )
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(),
@@ -149,6 +142,7 @@ def test_sigmoid_u55_INT(test_data):
     "test_data",
     test_data_suite,
 )
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
@@ -171,7 +165,6 @@ def test_sigmoid_u85_INT(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()
@@ -184,7 +177,7 @@ def test_sigmoid_u85_INT(test_data):
         "ramp": "AssertionError: Output 0 does not match reference output. MLETORCH-787"
     },
 )
-@pytest.mark.flaky(reruns=5)  # MLETORCH-787: Investigate int16-int8 rescaling precision
+@pytest.mark.xfail  # MLETORCH-787: Investigate int16-int8 rescaling precision
 @common.XfailIfNoCorstone320
 def test_sigmoid_u85_INT_add_sigmoid(test_data):
     pipeline = EthosU85PipelineINT(
@@ -192,7 +185,6 @@ def test_sigmoid_u85_INT_add_sigmoid(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()

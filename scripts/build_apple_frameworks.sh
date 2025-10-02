@@ -248,9 +248,8 @@ mkdir -p "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/$FRAMEWORK_EXECUTORCH_MODULE_NAME"
 sed -i '' '1i\
 #define C10_USING_CUSTOM_GENERATED_MACROS
 ' \
-"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Macros.h" \
-"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10/macros/Export.h" \
-"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h"
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Export.h" \
+"$FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch/headeronly/macros/Macros.h"
 
 cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/c10 "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"
 cp -r $FRAMEWORK_EXECUTORCH_HEADERS_PATH/executorch/runtime/core/portable_type/c10/torch "$FRAMEWORK_EXECUTORCH_HEADERS_PATH/"

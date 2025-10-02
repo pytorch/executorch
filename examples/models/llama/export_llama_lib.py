@@ -17,25 +17,22 @@ import re
 import shlex
 from enum import Enum
 from functools import partial
+
+from importlib import resources as _resources
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
-import pkg_resources
 import torch
 
 from executorch.devtools.backend_debug import print_delegation_info
-
 from executorch.devtools.etrecord import generate_etrecord as generate_etrecord_func
 from executorch.examples.models.llama.hf_download import (
     download_and_convert_hf_checkpoint,
 )
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
-
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-
 from executorch.extension.llm.export.config.llm_config import LlmConfig
-
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
@@ -43,7 +40,6 @@ from executorch.extension.llm.export.partitioner_lib import (
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
-
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
     get_pt2e_quantization_params,
@@ -52,7 +48,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_vulkan_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-
 from omegaconf import DictConfig
 
 from ..model_factory import EagerModelFactory
@@ -60,20 +55,16 @@ from .source_transformation.apply_spin_quant_r1_r2 import (
     fuse_layer_norms,
     get_model_with_r1_r2,
 )
-
 from .source_transformation.attention import replace_attention_to_attention_sha
 from .source_transformation.custom_kv_cache import (
     replace_kv_cache_with_custom_kv_cache,
     replace_kv_cache_with_quantized_kv_cache,
     replace_kv_cache_with_ring_kv_cache,
 )
-
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
-from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
-
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -102,21 +93,29 @@ EXECUTORCH_DEFINED_MODELS = [
     "llama3_1",
     "llama3_2",
     "static_llama",
-    "qwen2_5",
+    "qwen2_5_0_5b",
+    "qwen2_5_1_5b",
     "qwen3_0_6b",
     "qwen3_1_7b",
     "qwen3_4b",
     "phi_4_mini",
     "smollm2",
+    "lfm2_350m",  # hybrid
+    "lfm2_700m",  # hybrid
+    "lfm2_1_2b",  # hybrid
 ]
 TORCHTUNE_DEFINED_MODELS = ["llama3_2_vision"]
 HUGGING_FACE_REPO_IDS = {
-    "qwen2_5": "Qwen/Qwen2.5-1.5B",
+    "qwen2_5_0_5b": "Qwen/Qwen2.5-0.5B",
+    "qwen2_5_1_5b": "Qwen/Qwen2.5-1.5B",
     "phi_4_mini": "microsoft/Phi-4-mini-instruct",
     "smollm2": "HuggingFaceTB/SmolLM-135M",
     "qwen3_0_6b": "Qwen/Qwen3-0.6B",
     "qwen3_1_7b": "Qwen/Qwen3-1.7B",
     "qwen3_4b": "Qwen/Qwen3-4B",
+    "lfm2_350m": "LiquidAI/LFM2-350M",
+    "lfm2_700m": "LiquidAI/LFM2-700M",
+    "lfm2_1_2b": "LiquidAI/LFM2-1.2B",
 }
 
 
@@ -131,7 +130,7 @@ def set_pkg_name(name: str) -> None:
 
 
 def get_resource_path(resource_name) -> str:
-    return pkg_resources.resource_filename(pkg_name, resource_name)
+    return str(_resources.files(pkg_name).joinpath(resource_name))
 
 
 def set_verbosity(val):
@@ -418,7 +417,23 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Delegate more operators beyond DQLinear to the xnnpack backend. Requires -X or --xnnpack to be set.",
     )
+    parser.add_argument(
+        "--use-torchao-kernels",
+        action="store_true",
+        help="Delegate tied-embedding and quantized linear ops to torchao kernels",
+    )
+    parser.add_argument(
+        "--use-torchao-kernels-tied-embedding",
+        action="store_true",
+        help="Delegate tied-embedding ops to torchao kernels",
+    )
+    parser.add_argument(
+        "--use-torchao-kernels-linear",
+        action="store_true",
+        help="Delegate linear ops to torchao kernels",
+    )
     parser.add_argument("-V", "--vulkan", action="store_true")
+    parser.add_argument("--vulkan-force-fp16", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
@@ -577,7 +592,7 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         print("not FBCODE")
         return path[4:]
     else:
-        return_val = pkg_resources.resource_filename(pkg_name, path[4:])
+        return_val = str(_resources.files(pkg_name).joinpath(path[4:]))
         if verbose_export():
             print(f"canonical name is: {return_val}")
         return return_val
@@ -604,22 +619,16 @@ def export_llama(
     model_name = llm_config.base.model_class.value
     if not llm_config.base.checkpoint and model_name in HUGGING_FACE_REPO_IDS:
         repo_id = HUGGING_FACE_REPO_IDS[model_name]
-        if model_name == "qwen2_5":
-            from executorch.examples.models.qwen2_5 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+        if model_name.startswith("qwen2_5"):
+            from executorch.examples.models.qwen2_5 import convert_weights
         elif model_name.startswith("qwen3"):
-            from executorch.examples.models.qwen3 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.qwen3 import convert_weights
         elif model_name == "phi_4_mini":
-            from executorch.examples.models.phi_4_mini import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.phi_4_mini import convert_weights
         elif model_name == "smollm2":
-            from executorch.examples.models.smollm2 import (  # pyre-ignore[21]
-                convert_weights,
-            )
+            from executorch.examples.models.smollm2 import convert_weights
+        elif model_name.startswith("lfm2"):
+            from executorch.examples.models.lfm2 import convert_weights
         else:
             raise ValueError(
                 f"Converting weights to meta format for {model_name} is not yet supported"
@@ -747,6 +756,8 @@ def _prepare_for_llama_export(llm_config: LlmConfig) -> LLMEdgeManager:
             preq_group_size=llm_config.base.preq_group_size,
             preq_embedding_quantize=llm_config.base.preq_embedding_quantize,
             local_global_attention=llm_config.model.local_global_attention,
+            use_torchao_kernels_linear=llm_config.backend.torchao.use_torchao_kernels_linear,
+            use_torchao_kernels_tied_embedding=llm_config.backend.torchao.use_torchao_kernels_tied_embedding,
         )
     )
 
@@ -789,7 +800,7 @@ def get_quantizer_and_quant_params(llm_config):
 
 
 def _qmode_type(value):
-    choices = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w", "4w"]
+    choices = ["int8", "8da4w", "8da4w-gptq", "4w"]
     patterns = [r"torchao:8da(\d+)w", r"torchao:fpa(\d+)w"]
 
     if value in choices:
@@ -863,15 +874,15 @@ def _to_edge_and_lower_llama_xnnpack(
 
     # TODO: Enable generating ETRecord with XNNPack and to_edge_transform_and_lower().
     if generate_etrecord:
-        raise NotImplementedError(
-            "export_llama does not support XNNPack and generating ETRecord at the moment."
-        )
+        builder_exported.generate_etrecord = True
 
     builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
         partitioners
     )
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
+
+    # we need builder.export_program
 
     return builder.to_executorch(passes=additional_passes)
 
@@ -892,6 +903,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
     use_kv_cache: bool = False,
     embedding_quantize: Optional[str] = None,
     pt2e_quantize: Optional[str] = None,
+    vulkan_force_fp16: bool = False,
     coreml_ios: int = 15,
     coreml_quantize: Optional[str] = None,
     coreml_compute_units: str = "cpu_only",
@@ -912,6 +924,7 @@ def _to_edge_and_lower_llama(  # noqa: C901
             get_vulkan_partitioner(
                 dtype_override,
                 enable_dynamic_shape,
+                vulkan_force_fp16,
             )
         )
         modelname = f"vulkan_{modelname}"
@@ -946,7 +959,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
             AnnotateStack,
             ConvertBmmToMatmul,
             FoldQDQ,
-            RecomposeRmsNorm,
             TagQuantIO,
         )
 
@@ -988,7 +1000,6 @@ def _to_edge_and_lower_llama(  # noqa: C901
         dep_table = get_passes_dependency_for_capture_program()
         passes_job[AnnotateStack][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[ConvertBmmToMatmul][QCOM_PASS_ACTIVATE_KEY] = True
-        passes_job[RecomposeRmsNorm][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ACTIVATE_KEY] = True
         passes_job[TagQuantIO][QCOM_PASS_ARGS_KWARGS_DEFAULTS_KEY][
             "get_quant_io_dtype_fn"
@@ -1086,6 +1097,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
 
             from executorch.exir.passes.external_constants_pass import (
                 delegate_external_constants_pass_unlifted,
+                external_constants_pass,
             )
 
             assert (
@@ -1094,6 +1106,11 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             delegate_external_constants_pass_unlifted(
                 module=builder_exported.pre_autograd_graph_module,
                 gen_tag_fn=gen_tag_fn,
+            )
+
+            # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
+            additional_passes.append(
+                partial(external_constants_pass, gen_tag_fn=gen_tag_fn)
             )
 
         builder = _to_edge_and_lower_llama_xnnpack(
@@ -1128,6 +1145,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
                 if llm_config.quantization.pt2e_quantize
                 else None
             ),
+            vulkan_force_fp16=llm_config.backend.vulkan.force_fp16,
             coreml_ios=llm_config.backend.coreml.ios,
             coreml_quantize=(
                 llm_config.backend.coreml.quantize.value
@@ -1302,6 +1320,8 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
+    use_torchao_kernels_linear: bool = False,
+    use_torchao_kernels_tied_embedding: bool = False,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1440,14 +1460,12 @@ def _get_source_transforms(  # noqa
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
                 transforms.append(replace_attention_to_attention_sha)
                 transforms.append(replace_causal_mask)
-                transforms.append(replace_rms_norm_with_native_rms_norm)
                 # pyre-fixme[16]: Module `backends` has no attribute `qualcomm`.
                 transforms.append(convert_linear_to_conv2d)
             else:
                 transforms.append(replace_kv_cache_with_simple_kv_cache)
                 transforms.append(replace_sdpa_with_flex_sdpa)
                 transforms.append(replace_causal_mask)
-                transforms.append(replace_rms_norm_with_native_rms_norm)
                 if optimized_rotation_path:
                     transforms.append(fuse_layer_norms)
                     transforms.append(get_model_with_r1_r2(optimized_rotation_path))
@@ -1473,6 +1491,17 @@ def _get_source_transforms(  # noqa
             partial(
                 replace_kv_cache_with_ring_kv_cache,
                 layer_sizes=local_global_attention,
+            )
+        )
+
+    if any([use_torchao_kernels_linear, use_torchao_kernels_tied_embedding]):
+        from torchao.prototype.tensor_conversion.api import _convert_model_for_aarch64
+
+        transforms.append(
+            partial(
+                _convert_model_for_aarch64,
+                convert_linear=use_torchao_kernels_linear,
+                convert_tied_embedding=use_torchao_kernels_tied_embedding,
             )
         )
 

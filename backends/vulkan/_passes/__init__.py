@@ -6,14 +6,12 @@
 
 # pyre-strict
 
+from executorch.backends.vulkan._passes.fold_qdq import FoldQDQPass
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
 from executorch.backends.vulkan._passes.fuse_quantized_ops import (
     FuseQuantizedOpsTransform,
 )
 from executorch.backends.vulkan._passes.insert_prepack_nodes import insert_prepack_nodes
-from executorch.backends.vulkan._passes.int4_weight_only_quantizer import (
-    VkInt4WeightOnlyQuantizer,
-)
 from executorch.backends.vulkan._passes.remove_asserts import (
     remove_asserts,
     RemoveAssertsTransform,
@@ -24,20 +22,22 @@ from executorch.backends.vulkan._passes.remove_local_scalar_dense_ops import (
 from executorch.backends.vulkan._passes.remove_redundant_ops import (
     RemoveRedundantOpsTransform,
 )
+from executorch.backends.vulkan._passes.replace_qdq import ReplaceQDQPass
 from executorch.backends.vulkan._passes.squeeze_unsqueeze_inputs import (
     SqueezeUnsqueezeInputs,
 )
 from executorch.backends.vulkan._passes.tag_memory_meta_pass import TagMemoryMetaPass
 
 __all__ = [
+    "FoldQDQPass",
     "FusePatternsPass",
     "FuseQuantizedOpsTransform",
     "insert_prepack_nodes",
-    "VkInt4WeightOnlyQuantizer",
     "remove_asserts",
     "RemoveAssertsTransform",
     "RemoveLocalScalarDenseOpsTransform",
     "RemoveRedundantOpsTransform",
+    "ReplaceQDQPass",
     "SqueezeUnsqueezeInputs",
     "TagMemoryMetaPass",
 ]

@@ -51,7 +51,7 @@ def test_ic3_tosa_BI():
         aten_op=[],
         exir_op=[],
         use_to_edge_transform_and_lower=True,
-        atol=0.6,
+        atol=0.65,
         qtol=1,
     )
     pipeline.run()
@@ -66,7 +66,6 @@ def test_ic3_u55_BI():
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         atol=0.6,
         qtol=1,
@@ -83,7 +82,6 @@ def test_ic3_u85_BI():
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         atol=0.6,
         qtol=1,

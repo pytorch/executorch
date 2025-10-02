@@ -64,7 +64,7 @@ class NeutronCompileSpecBuilder:
         Args:
             config: Neutron accelerator configuration, e.g. "imxrt700"
             neutron_converter_flavor: Flavor of the neutron-converter module to use. Neutron-converter module named "
-             "'neutron_converter_SDK_25_03' has flavor 'SDK_25_03'.
+             "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
         """
@@ -186,7 +186,7 @@ class NeutronBackend(BackendDetails):
 
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
-                edge_program
+                edge_program,
             )
 
             neutron_model = NeutronConverterManager().convert(

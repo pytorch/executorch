@@ -153,7 +153,6 @@ def test_ge_scalar_u55_INT(test_module):
 @common.parametrize(
     "test_module",
     test_data_tensor,
-    xfails={"ge_tensor_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85"},
 )
 @common.XfailIfNoCorstone320
 def test_ge_tensor_u85_INT(test_module):
@@ -162,7 +161,6 @@ def test_ge_tensor_u85_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -170,7 +168,6 @@ def test_ge_tensor_u85_INT(test_module):
 @common.parametrize(
     "test_module",
     test_data_scalar,
-    xfails={"ge_scalar_rank4_randn": "MLETORCH-847: Boolean eq result unstable on U85"},
 )
 @common.XfailIfNoCorstone320
 def test_ge_scalar_u85_INT(test_module):
@@ -179,7 +176,6 @@ def test_ge_scalar_u85_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

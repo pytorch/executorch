@@ -31,6 +31,13 @@ __DECL_MASK__(__fp16, 0, -100)
 __DECL_MASK__(float, 0, -100)
 #undef __DECL_MASK__
 
+MaskBuilder::MaskBuilder(const LLMType maskType, const size_t cacheLength)
+    : mMaskBuffer(nullptr),
+      mMaskSizeBytes(0),
+      kMaskType(maskType),
+      kMaskTypeSize(getLLMTypeSize(maskType)),
+      kCacheLength(cacheLength) {}
+
 MaskBuilder::MaskBuilder(
     void* maskBuffer,
     const size_t maskSizeBytes,
@@ -43,6 +50,24 @@ MaskBuilder::MaskBuilder(
       kCacheLength(cacheLength) {}
 
 MaskBuilder::~MaskBuilder() {}
+
+MaskBuilder& MaskBuilder::setMaskBuffer(
+    void* maskBuffer,
+    const size_t maskSizeBytes) {
+  mMaskBuffer = maskBuffer;
+  mMaskSizeBytes = maskSizeBytes;
+  return *this;
+}
+
+MaskBuilder& MaskBuilder::enableSlidingWindow(const size_t windowSize) {
+  mSlidingWindowSize = windowSize;
+  return *this;
+}
+
+MaskBuilder& MaskBuilder::disableSlidingWindow() {
+  mSlidingWindowSize = 0;
+  return *this;
+}
 
 void MaskBuilder::updateMaskSize(const size_t sizeBytes) {
   mMaskSizeBytes = sizeBytes;
@@ -59,10 +84,11 @@ void MaskBuilder::buildMask(
   constexpr auto maskTrue = MaskVal<MaskType>::kTrue;
   constexpr auto maskFalse = MaskVal<MaskType>::kFalse;
   const size_t maskLength = kCacheLength + tokenBatchSize;
+  const size_t curWindowSize =
+      mSlidingWindowSize ? mSlidingWindowSize : maskLength;
 
   // The mask is a combination (concat) of input cache mask and attention mask
-  const size_t startTrueIdx =
-      kCacheLength - std::min(kCacheLength, numSeenToken);
+  const size_t numVisibleCacheTokens = std::min(kCacheLength, numSeenToken);
 
   const size_t rowSize = mMaskSizeBytes / tokenBatchSize / kMaskTypeSize;
 
@@ -82,22 +108,19 @@ void MaskBuilder::buildMask(
   // There are tokenBatchSize number of rows
   for (size_t inTokIdx = 0; inTokIdx < tokenBatchSize; inTokIdx++) {
     const auto& rowIdx = inTokIdx; // For clarity
+    const size_t attnTrueCount = inTokIdx + 1;
     auto curMaskBuffer =
         reinterpret_cast<MaskType*>(mMaskBuffer) + rowIdx * rowSize;
-    size_t i = 0; // Buffer write index
 
-    // Set the (rectangle) input cache mask
-    while (i < startTrueIdx)
+    const size_t rowTrueCount =
+        std::min(curWindowSize, numVisibleCacheTokens + attnTrueCount);
+    const size_t lastTrueIdx = kCacheLength + attnTrueCount - 1;
+    const size_t firstTrueIdx = lastTrueIdx - rowTrueCount + 1;
+    size_t i = 0;
+    while (i < firstTrueIdx)
       curMaskBuffer[i++] = maskFalse;
-    while (i < kCacheLength)
+    while (i <= lastTrueIdx)
       curMaskBuffer[i++] = maskTrue;
-
-    // Set the (triangle) attention mask
-    const size_t attnTrueCount = inTokIdx + 1;
-    for (size_t counter = 0; counter < attnTrueCount; counter++) {
-      curMaskBuffer[i++] = maskTrue;
-    }
-    // Fill the remaining with False
     while (i < maskLength)
       curMaskBuffer[i++] = maskFalse;
   }
@@ -246,7 +269,6 @@ bool MaskBuilder::adjustMaskForPadding(const size_t tokenBatchSize) {
       const size_t maskPadCount = std::min(mLeftPadLength, inTokIdx + 1);
       std::fill(curMaskBuffer, curMaskBuffer + maskPadCount, maskFalse);
     }
-    mLeftPadLength = 0; // Reset pad length
   } else if (mRightPadLength > 0) {
     // Mask the padded rows
     const auto startIdx = tokenBatchSize - mRightPadLength;
@@ -254,9 +276,24 @@ bool MaskBuilder::adjustMaskForPadding(const size_t tokenBatchSize) {
       auto curMaskBuffer = maskBuffer + inTokIdx * rowSize;
       std::fill(curMaskBuffer, curMaskBuffer + maskLength, maskFalse);
     }
-    mRightPadLength = 0; // Reset pad length
   }
   return true; // Mask is modified for padding
+}
+
+void MaskBuilder::resetPadLength() {
+  if (mLeftPadLength > 0) {
+    mLeftPadLength = 0;
+  } else if (mRightPadLength > 0) {
+    mRightPadLength = 0;
+  }
+}
+
+bool MaskBuilder::getMaskUpdateStatus() {
+  return mIsMaskUpdatable;
+}
+
+void MaskBuilder::setIsMaskUpdatable(const bool status) {
+  mIsMaskUpdatable = status;
 }
 
 } // namespace llm_helper

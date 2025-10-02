@@ -7,6 +7,7 @@ from executorch.backends.nxp.backend.ir.converter.conversion.common import (
     node_uses_shape_broadcasting,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
     Target,
 )
@@ -20,7 +21,10 @@ from torch.nn import Parameter
 class AddTensorConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
-        node: Node, target: Target, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        target: Target,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         match target:
             case Target.RT700:
@@ -35,7 +39,9 @@ class AddTensorConverter(NodeConverter):
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if len(node.args) != 2:
             return False

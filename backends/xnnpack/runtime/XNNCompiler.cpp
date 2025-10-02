@@ -174,13 +174,12 @@ payload (deprecated) or via offsets to the constant_data_ptr. If no constant
 data associated with the tensor value, then returns nullptr.
 */
 const uint8_t* getConstantDataPtr(
-    const fb_xnnpack::XNNTensorValue* tensor_value,
+    uint32_t buffer_idx,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
     const NamedDataMap* named_data_map,
     std::vector<FreeableBuffer>& freeable_buffers,
     XNNWeightsCache* weights_cache) {
-  auto buffer_idx = tensor_value->constant_buffer_idx();
   if (buffer_idx) {
     if (!constant_data_ptr) {
       // TODO(T172265611): Remove constant_buffer in flatbuffer path after BC
@@ -228,6 +227,22 @@ const uint8_t* getConstantDataPtr(
   }
 
   return nullptr;
+}
+
+const uint8_t* getConstantDataPtr(
+    const fb_xnnpack::XNNTensorValue* tensor_value,
+    GraphPtr flatbuffer_graph,
+    const uint8_t* constant_data_ptr,
+    const NamedDataMap* named_data_map,
+    std::vector<FreeableBuffer>& freeable_buffers,
+    XNNWeightsCache* weights_cache) {
+  return getConstantDataPtr(
+      tensor_value->constant_buffer_idx(),
+      flatbuffer_graph,
+      constant_data_ptr,
+      named_data_map,
+      freeable_buffers,
+      weights_cache);
 }
 
 /**
@@ -434,22 +449,15 @@ Error defineTensor(
         const float* scale = qparams->scale()->data();
 
         if (qparams->scale_buffer_idx() != 0) {
-          // if scales are stored in named data, then retrieve it
-          ConstantDataOffsetPtr scale_buffer_offset =
-              flatbuffer_graph->constant_data()->Get(
-                  qparams->scale_buffer_idx());
-          const std::string& data_name =
-              scale_buffer_offset->named_key()->str();
-          Result<FreeableBuffer> scale_buffer =
-              named_data_map->get_data(data_name.c_str());
+          scale = reinterpret_cast<const float*>(getConstantDataPtr(
+              qparams->scale_buffer_idx(),
+              flatbuffer_graph,
+              constant_data_ptr,
+              named_data_map,
+              freeable_buffers,
+              weights_cache));
           ET_CHECK_OR_RETURN_ERROR(
-              scale_buffer.ok(),
-              Internal,
-              "Failed to get constant data for key %s from named_data_map. Error code: %u",
-              data_name.c_str(),
-              static_cast<uint32_t>(scale_buffer.error()));
-          scale = reinterpret_cast<const float*>(scale_buffer.get().data());
-          freeable_buffers.push_back(std::move(scale_buffer.get()));
+              scale != nullptr, Internal, "Failed to load scale data.");
         }
         status = xnn_define_channelwise_quantized_tensor_value_v2(
             /*subgraph=*/subgraph_ptr,
@@ -483,22 +491,15 @@ Error defineTensor(
         // Block scales are preferably serialized as bf16 but can also be
         // serialized as fp32 for backwards compatability.
         if (qparams->scale_buffer_idx() != 0) {
-          ConstantDataOffsetPtr scale_buffer_offset =
-              flatbuffer_graph->constant_data()->Get(
-                  qparams->scale_buffer_idx());
-          const std::string& data_name =
-              scale_buffer_offset->named_key()->str();
-          Result<FreeableBuffer> scale_buffer =
-              named_data_map->get_data(data_name.c_str());
+          scale_data = reinterpret_cast<const uint16_t*>(getConstantDataPtr(
+              qparams->scale_buffer_idx(),
+              flatbuffer_graph,
+              constant_data_ptr,
+              named_data_map,
+              freeable_buffers,
+              weights_cache));
           ET_CHECK_OR_RETURN_ERROR(
-              scale_buffer.ok(),
-              Internal,
-              "Failed to get constant data for key %s from named_data_map. Error code: %u",
-              data_name.c_str(),
-              static_cast<uint32_t>(scale_buffer.error()));
-          scale_data =
-              reinterpret_cast<const uint16_t*>(scale_buffer.get().data());
-          freeable_buffers.push_back(std::move(scale_buffer.get()));
+              scale_data != nullptr, Internal, "Failed to load scale data.");
           scale_numel = qparams->num_scales();
         } else {
           // Read fp32 scales, convert to bf16.
@@ -609,9 +610,6 @@ bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
   auto cvt_output_id = graph_node->output_id();
 
   auto check_dtype = [graph](uint32_t id, DataType dtype) -> bool {
-    assert(
-        dtype == DataType::xnn_datatype_qdint8 ||
-        dtype == DataType::xnn_datatype_qbint4);
     for (auto value : *graph->xvalues()) {
       if (value->xvalue_union_type() !=
           fb_xnnpack::XValueUnion::XNNQuantizedTensorValue) {
@@ -631,6 +629,12 @@ bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
     return false;
   }
 
+  // XNNPACK dtypes which have qp8 support.
+  const std::vector<DataType> supported_filter_dtypes = {
+      DataType::xnn_datatype_qbint4,
+      DataType::xnn_datatype_qcint4,
+      DataType::xnn_datatype_qcint8};
+
   // Find if the convert output is going to the right linear node.
   // Assuming if we can find one valid linear node, then we can use QP8
   // for all the linear nodes consuming this convert output.
@@ -638,9 +642,10 @@ bool isQP8(const fb_xnnpack::XNNGraph* graph, const NodePtr node) {
     if (node->xnode_union_type() == fb_xnnpack::XNodeUnion::XNNFullyConnected) {
       auto linear_node = node->xnode_union_as_XNNFullyConnected();
       if (linear_node->input1_id() == cvt_output_id) {
-        if (check_dtype(
-                linear_node->filter_id(), DataType::xnn_datatype_qbint4)) {
-          return true;
+        for (auto supported_filter_dtype : supported_filter_dtypes) {
+          if (check_dtype(linear_node->filter_id(), supported_filter_dtype)) {
+            return true;
+          }
         }
       }
     }
@@ -1891,9 +1896,8 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   xnn_weights_cache_t weights_cache_ptr = nullptr;
 #endif
 
-#ifdef ENABLE_XNNPACK_SHARED_WORKSPACE
-  ET_CHECK_OR_RETURN_ERROR(
-      workspace != nullptr, Internal, "Failed to initialize XNNPACK workspace");
+  // NOLINTBEGIN(facebook-hte-NullableDereference) - weights cache is allowed to
+  // be null
   status = xnn_create_runtime_v4(
       subgraph.get(),
       weights_cache_ptr,
@@ -1901,14 +1905,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
       ::executorch::extension::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);
-#else
-  status = xnn_create_runtime_v3(
-      subgraph.get(),
-      weights_cache_ptr,
-      ::executorch::extension::threadpool::get_pthreadpool(),
-      runtime_flags,
-      &runtime_ptr);
-#endif
+  // NOLINTEND(facebook-hte-NullableDereference)
 
   ET_CHECK_OR_RETURN_ERROR(
       xnn_status_success == status,

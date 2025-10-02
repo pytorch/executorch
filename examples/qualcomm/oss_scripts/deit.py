@@ -8,6 +8,7 @@ import getpass
 import json
 import logging
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -55,7 +56,7 @@ def main(args):
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_imagenet_dataset(
+        inputs, targets = get_imagenet_dataset(
             dataset_path=f"{args.dataset}",
             data_size=data_num,
             image_shape=(height, width),
@@ -96,7 +97,7 @@ def main(args):
         host_id=args.host,
         soc_model=args.model,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -147,6 +148,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
+
     try:
         main(args)
     except Exception as e:

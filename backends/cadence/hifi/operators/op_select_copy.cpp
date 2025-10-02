@@ -16,7 +16,6 @@ using torch::executor::Error;
 using torch::executor::KernelRuntimeContext;
 using torch::executor::select_copy_util;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -37,4 +36,3 @@ Tensor& select_copy_int_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

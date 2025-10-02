@@ -7,6 +7,7 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -102,12 +103,7 @@ def test_select_int_tosa_INT(test_data: Tuple):
     pipeline.run()
 
 
-x_fails = {
-    "select4d_0_dim_2_index": "AssertionError: Output 0 does not match reference output."
-}
-
-
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_select_int_u55_INT_copy(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -115,13 +111,12 @@ def test_select_int_u55_INT_copy(test_data: Tuple):
         test_data(),
         aten_op_copy,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 def test_select_int_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
@@ -129,7 +124,6 @@ def test_select_int_u55_INT(test_data: Tuple):
         test_data(),
         aten_op_int,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -148,7 +142,7 @@ def test_select_int_u55_INT_not_delegated(test_data: Tuple):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_select_int_u85_INT_copy(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -156,13 +150,12 @@ def test_select_int_u85_INT_copy(test_data: Tuple):
         test_data(),
         aten_op_copy,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite, x_fails)
+@common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
 def test_select_int_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
@@ -170,7 +163,6 @@ def test_select_int_u85_INT(test_data: Tuple):
         test_data(),
         aten_op_int,
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
     )
     pipeline.run()
@@ -178,6 +170,7 @@ def test_select_int_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_select_int_vgf_FP_copy(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectCopy(), test_data(), aten_op_copy, [], tosa_version="TOSA-1.0+FP"
@@ -187,6 +180,7 @@ def test_select_int_vgf_FP_copy(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_select_int_vgf_FP(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectInt(), test_data(), aten_op_int, [], tosa_version="TOSA-1.0+FP"
@@ -196,6 +190,7 @@ def test_select_int_vgf_FP(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_select_int_vgf_INT_copy(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectCopy(),
@@ -209,6 +204,7 @@ def test_select_int_vgf_INT_copy(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_select_int_vgf_INT(test_data: Tuple):
     pipeline = VgfPipeline[input_t1](
         SelectInt(),

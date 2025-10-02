@@ -434,6 +434,7 @@ class StaticAttentionIOManager {
     std::vector<size_t> k_cache_output_indices;
     std::vector<size_t> v_cache_input_indices;
     std::vector<size_t> v_cache_output_indices;
+    size_t max_context_len{};
     RopeT* rope_freqs_cos;
     RopeT* rope_freqs_sin;
     StaticAttentionUpdateStyle style = StaticAttentionUpdateStyle::SMART_MASK;
@@ -576,6 +577,10 @@ class StaticAttentionIOManager {
     }
   }
 
+  size_t input_pos() const {
+    return input_pos_;
+  }
+
   /**
    * Prefill helper. Run multiple inferences as needed depending on the length
    * of the prompt and method's input length. Returns the position in the output
@@ -585,7 +590,10 @@ class StaticAttentionIOManager {
   size_t prefill(
       executorch::runtime::Span<TokenT> tokens,
       executorch::runtime::Span<TokenT> input_buffer,
-      executorch::runtime::Method& method) {
+      executorch::runtime::Method& method,
+      std::function<void(executorch::runtime::Span<const float>)>
+          logits_callback = nullptr) {
+    ET_LOG(Info, "Prefilling at position %zu", input_pos_);
     size_t input_len = input_buffer.size();
     auto& masks = get_mask(input_buffer.size());
     for (auto& pair : masks) {
@@ -597,6 +605,10 @@ class StaticAttentionIOManager {
     size_t batch_len = 0;
     for (size_t i = 0; i < tokens.size(); i += input_len) {
       batch_len = std::min(input_len, tokens.size() - i);
+      if (input_pos_ + batch_len > config_.max_context_len) {
+        ET_LOG(Error, "Maximum context size reached, stopping prefill.");
+        return input_len - 1;
+      }
       std::copy(&tokens[i], &tokens[i + batch_len], input_buffer.begin());
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
@@ -605,6 +617,13 @@ class StaticAttentionIOManager {
           config_.k_cache_output_indices,
           config_.v_cache_output_indices,
           batch_len);
+      if (logits_callback) {
+        auto logits_tensor = method.get_output(0).toTensor();
+        auto* logits = logits_tensor.const_data_ptr<float>();
+        logits_callback(executorch::runtime::Span(
+            logits,
+            logits + batch_len * logits_tensor.size(logits_tensor.dim() - 1)));
+      }
     }
     return batch_len - 1;
   }
@@ -621,6 +640,7 @@ class StaticAttentionIOManager {
       executorch::runtime::Method& method,
       std::function<TokenT(executorch::runtime::Method&)>& sample,
       std::function<bool(TokenT)>& token_callback) {
+    ET_LOG(Info, "Decoding at position %zu", input_pos_);
     set_input(method, 0, input_buffer.data());
     auto& masks = get_mask(input_buffer.size());
     for (auto& pair : masks) {
@@ -631,6 +651,10 @@ class StaticAttentionIOManager {
 
     while (true) {
       input_buffer[0] = prev_tok;
+      if (input_pos_ + 1 > config_.max_context_len) {
+        ET_LOG(Error, "Maximum context size reached, stopping decode.");
+        break;
+      }
       prepare(method);
       ET_CHECK(method.execute() == executorch::runtime::Error::Ok);
       update(
@@ -661,6 +685,10 @@ class StaticAttentionIOManager {
       size_t window_size,
       size_t n_verifications,
       std::unordered_map<TokenT, SuffixCache<TokenT>> suffix_caches) {
+    ET_LOG(
+        Info,
+        "Decoding with lookahead and verification at position %zu",
+        input_pos_);
     set_input(method, 0, input_buffer.data());
     size_t input_len = input_buffer.size();
 
@@ -711,6 +739,11 @@ class StaticAttentionIOManager {
       }
 
       // Setup input pointers and RoPE frequencies.
+      if (input_pos_ + ngram_size > config_.max_context_len) {
+        ET_LOG(
+            Error, "Maximum context size reached, stopping lookahead decode.");
+        break;
+      }
       prepare(
           method,
           executorch::runtime::Span(pos_offsets.data(), pos_offsets.size()));

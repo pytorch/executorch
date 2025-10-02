@@ -141,7 +141,6 @@ delegate_external_constants_pass_unlifted(
 exported_program = export(tagged_module, inputs, dynamic_shapes=dynamic_shapes)
 executorch_program = to_edge_transform_and_lower(
     exported_program,
-    transform_passes = [partial_function],
     partitioner = [XnnpackPartitioner()]
 ).to_executorch()
 ```
@@ -184,6 +183,7 @@ For more complex use cases, dynamic shape specification allows for mathematical 
 Before integrating the runtime code, it is common to test the exported model from Python. This can be used to evaluate model accuracy and sanity check behavior before moving to the target device. Note that not all hardware backends are available from Python, as they may require specialized hardware to function. See the specific backend documentation for more information on hardware requirements and the availablilty of simulators. The XNNPACK delegate used in this example is always available on host machines.
 
 ```python
+import torch
 from executorch.runtime import Runtime
 
 runtime = Runtime.get()
@@ -194,7 +194,17 @@ method = program.load_method("forward")
 outputs = method.execute([input_tensor])
 ```
 
-Pybindings currently does not support loading program and data. To run a model with PTE and PTD components, please use the [Extension Module](extension-module.md). There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
+To run a model with program and data separated, please use the [ExecuTorch Module pybindings](https://github.com/pytorch/executorch/blob/main/extension/pybindings/README.md).
+```python
+import torch
+from executorch.extension.pybindings import portable_lib
+
+input_tensor = torch.randn(1, 3, 32, 32)
+module = portable_lib._load_for_executorch("model.pte", "model.ptd")
+outputs = module.forward([input_tensor])
+```
+
+There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
 
 For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
 

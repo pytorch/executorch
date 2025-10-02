@@ -986,25 +986,54 @@ def _get_slice_patterns_and_replacements() -> (
     ]
 
 
-def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
-    List[Tuple[Callable, Callable, List[Callable]]]
-):
+def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
+    node_value_dict,
+) -> List[Tuple[Callable, Callable, List[Callable]]]:
+
+    def get_embedding_replacement_filter(has_nonzero_zero_point):
+        def _filter(match, original_graph, pattern_graph):
+            assert node_value_dict is not None, "node_value_dict cannot be None"
+
+            def get_val(name):
+                node = [n for n in match.nodes_map if n.name == name][0]
+                val = match.nodes_map[node]
+                if isinstance(val, torch.fx.Node) and val.target in node_value_dict:
+                    return node_value_dict[val.target]
+                return val
+
+            zero_point = get_val("zero_point")
+            all_zero = (zero_point == 0).all().item()
+            if has_nonzero_zero_point:
+                return not all_zero
+            else:
+                return all_zero
+
+        return _filter
+
     def embedding_byte_pattern(indices, int_data, group_size, scale, zero_point):
         dq = torch.ops.torchao.dequantize_affine.default(
             int_data, [1, group_size], scale, zero_point, torch.int8, -128, 127
         )
         return torch.ops.aten.embedding.default(dq, indices)
 
-    def embedding_byte_replacement(indices, int_data, group_size, scale, zero_point):
-        zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
-        return torch.ops.quantized_decomposed.embedding_byte.default(
-            int_data,
-            scale,
-            zero_point_dtype_cast,
-            -128,
-            127,
-            indices,
-        )
+    def get_embedding_byte_replacement(has_nonzero_zero_point):
+        def embedding_byte_replacement(
+            indices, int_data, group_size, scale, zero_point
+        ):
+            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = (
+                zero_point_dtype_cast if has_nonzero_zero_point else None
+            )
+            return torch.ops.quantized_decomposed.embedding_byte.default(
+                int_data,
+                scale,
+                zero_point_dtype_cast,
+                -128,
+                127,
+                indices,
+            )
+
+        return embedding_byte_replacement
 
     def embedding_byte_dtype_pattern(
         indices, int_data, group_size, scale, zero_point, output_dtype
@@ -1021,19 +1050,25 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
         )
         return torch.ops.aten.embedding.default(dq, indices)
 
-    def embedding_byte_dtype_replacement(
-        indices, int_data, group_size, scale, zero_point, output_dtype
-    ):
-        zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
-        return torch.ops.quantized_decomposed.embedding_byte.dtype(
-            int_data,
-            scale,
-            zero_point_dtype_cast,
-            -128,
-            127,
-            indices,
-            dtype=output_dtype,
-        )
+    def get_embedding_byte_dtype_replacement(has_nonzero_zero_point):
+        def embedding_byte_dtype_replacement(
+            indices, int_data, group_size, scale, zero_point, output_dtype
+        ):
+            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = (
+                zero_point_dtype_cast if has_nonzero_zero_point else None
+            )
+            return torch.ops.quantized_decomposed.embedding_byte.dtype(
+                int_data,
+                scale,
+                zero_point_dtype_cast,
+                -128,
+                127,
+                indices,
+                dtype=output_dtype,
+            )
+
+        return embedding_byte_dtype_replacement
 
     def embedding_2bit_pattern(indices, int_data, group_size, scale, zero_point):
         dq = torch.ops.torchao.dequantize_affine.default(
@@ -1041,14 +1076,22 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
         )
         return torch.ops.aten.embedding.default(dq, indices)
 
-    def embedding_2bit_replacement(indices, int_data, group_size, scale, zero_point):
-        packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
-            int_data, 2
-        )
-        zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
-        return torch.ops.quantized_decomposed.embedding_2bit.default(
-            packed_int_data, scale, zero_point_dtype_cast, -2, 1, indices
-        )
+    def get_embedding_2bit_replacement(has_nonzero_zero_point):
+        def embedding_2bit_replacement(
+            indices, int_data, group_size, scale, zero_point
+        ):
+            packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
+                int_data, 2
+            )
+            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = (
+                zero_point_dtype_cast if has_nonzero_zero_point else None
+            )
+            return torch.ops.quantized_decomposed.embedding_2bit.default(
+                packed_int_data, scale, zero_point_dtype_cast, -2, 1, indices
+            )
+
+        return embedding_2bit_replacement
 
     def embedding_2bit_dtype_pattern(
         indices, int_data, group_size, scale, zero_point, output_dtype
@@ -1065,22 +1108,28 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
         )
         return torch.ops.aten.embedding.default(dq, indices)
 
-    def embedding_2bit_dtype_replacement(
-        indices, int_data, group_size, scale, zero_point, output_dtype
-    ):
-        packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
-            int_data, 2
-        )
-        zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
-        return torch.ops.quantized_decomposed.embedding_2bit.dtype(
-            packed_int_data,
-            scale,
-            zero_point_dtype_cast,
-            -2,
-            1,
-            indices,
-            dtype=output_dtype,
-        )
+    def get_embedding_2bit_dtype_replacement(has_nonzero_zero_point):
+        def embedding_2bit_dtype_replacement(
+            indices, int_data, group_size, scale, zero_point, output_dtype
+        ):
+            packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
+                int_data, 2
+            )
+            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = (
+                zero_point_dtype_cast if has_nonzero_zero_point else None
+            )
+            return torch.ops.quantized_decomposed.embedding_2bit.dtype(
+                packed_int_data,
+                scale,
+                zero_point_dtype_cast,
+                -2,
+                1,
+                indices,
+                dtype=output_dtype,
+            )
+
+        return embedding_2bit_dtype_replacement
 
     def embedding_4bit_pattern(indices, int_data, group_size, scale, zero_point):
         dq = torch.ops.torchao.dequantize_affine.default(
@@ -1088,14 +1137,22 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
         )
         return torch.ops.aten.embedding.default(dq, indices)
 
-    def embedding_4bit_replacement(indices, int_data, group_size, scale, zero_point):
-        packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
-            int_data, 4
-        )
-        zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
-        return torch.ops.quantized_decomposed.embedding_4bit.default(
-            packed_int_data, scale, zero_point_dtype_cast, -8, 7, indices
-        )
+    def get_embedding_4bit_replacement(has_nonzero_zero_point):
+        def embedding_4bit_replacement(
+            indices, int_data, group_size, scale, zero_point
+        ):
+            packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
+                int_data, 4
+            )
+            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = (
+                zero_point_dtype_cast if has_nonzero_zero_point else None
+            )
+            return torch.ops.quantized_decomposed.embedding_4bit.default(
+                packed_int_data, scale, zero_point_dtype_cast, -8, 7, indices
+            )
+
+        return embedding_4bit_replacement
 
     def embedding_4bit_dtype_pattern(
         indices, int_data, group_size, scale, zero_point, output_dtype
@@ -1112,53 +1169,97 @@ def _get_embedding_ops_patterns_and_replacements_torchao() -> (  # noqa C901
         )
         return torch.ops.aten.embedding.default(dq, indices)
 
-    def embedding_4bit_dtype_replacement(
-        indices, int_data, group_size, scale, zero_point, output_dtype
-    ):
-        packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
-            int_data, 4
-        )
-        zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
-        return torch.ops.quantized_decomposed.embedding_4bit.dtype(
-            packed_int_data,
-            scale,
-            zero_point_dtype_cast,
-            -8,
-            7,
-            indices,
-            dtype=output_dtype,
-        )
+    def get_embedding_4bit_dtype_replacement(has_nonzero_zero_point):
+        def embedding_4bit_dtype_replacement(
+            indices, int_data, group_size, scale, zero_point, output_dtype
+        ):
+            packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
+                int_data, 4
+            )
+            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = (
+                zero_point_dtype_cast if has_nonzero_zero_point else None
+            )
+            return torch.ops.quantized_decomposed.embedding_4bit.dtype(
+                packed_int_data,
+                scale,
+                zero_point_dtype_cast,
+                -8,
+                7,
+                indices,
+                dtype=output_dtype,
+            )
+
+        return embedding_4bit_dtype_replacement
 
     return [
         (
             _trace_and_lower_to_edge_ops(embedding_byte_pattern),
-            _trace_and_lower_to_edge_ops(embedding_byte_replacement),
-            [],
+            _trace_and_lower_to_edge_ops(get_embedding_byte_replacement(False)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=False)],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(embedding_byte_pattern),
+            _trace_and_lower_to_edge_ops(get_embedding_byte_replacement(True)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=True)],
         ),
         (
             _trace_and_lower_to_edge_ops(embedding_byte_dtype_pattern),
-            _trace_and_lower_to_edge_ops(embedding_byte_dtype_replacement),
-            [],
+            _trace_and_lower_to_edge_ops(get_embedding_byte_dtype_replacement(False)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=False)],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(embedding_byte_dtype_pattern),
+            _trace_and_lower_to_edge_ops(get_embedding_byte_dtype_replacement(True)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=True)],
         ),
         (
             _trace_and_lower_to_edge_ops(embedding_2bit_pattern),
-            _trace_and_lower_to_edge_ops(embedding_2bit_replacement),
-            [],
+            _trace_and_lower_to_edge_ops(get_embedding_2bit_replacement(False)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=False)],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(embedding_2bit_pattern),
+            _trace_and_lower_to_edge_ops(get_embedding_2bit_replacement(True)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=True)],
         ),
         (
             _trace_and_lower_to_edge_ops(embedding_2bit_dtype_pattern),
-            _trace_and_lower_to_edge_ops(embedding_2bit_dtype_replacement),
-            [],
+            _trace_and_lower_to_edge_ops(get_embedding_2bit_dtype_replacement(False)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=False)],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(embedding_2bit_dtype_pattern),
+            _trace_and_lower_to_edge_ops(get_embedding_2bit_dtype_replacement(True)),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=True)],
         ),
         (
             _trace_and_lower_to_edge_ops(embedding_4bit_pattern),
-            _trace_and_lower_to_edge_ops(embedding_4bit_replacement),
-            [],
+            _trace_and_lower_to_edge_ops(
+                get_embedding_4bit_replacement(has_nonzero_zero_point=False)
+            ),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=False)],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(embedding_4bit_pattern),
+            _trace_and_lower_to_edge_ops(
+                get_embedding_4bit_replacement(has_nonzero_zero_point=True)
+            ),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=True)],
         ),
         (
             _trace_and_lower_to_edge_ops(embedding_4bit_dtype_pattern),
-            _trace_and_lower_to_edge_ops(embedding_4bit_dtype_replacement),
-            [],
+            _trace_and_lower_to_edge_ops(
+                get_embedding_4bit_dtype_replacement(has_nonzero_zero_point=False)
+            ),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=False)],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(embedding_4bit_dtype_pattern),
+            _trace_and_lower_to_edge_ops(
+                get_embedding_4bit_dtype_replacement(has_nonzero_zero_point=True)
+            ),
+            [get_embedding_replacement_filter(has_nonzero_zero_point=True)],
         ),
     ]
 
@@ -1445,9 +1546,9 @@ n        return [(pattern, replacement, [])]
 """
 
 
-def get_quant_patterns_and_replacements() -> (
-    List[Tuple[Callable, Callable, List[Callable]]]
-):
+def get_quant_patterns_and_replacements(
+    node_value_dict,
+) -> List[Tuple[Callable, Callable, List[Callable]]]:
 
     return copy.copy(
         [
@@ -1457,6 +1558,6 @@ def get_quant_patterns_and_replacements() -> (
             *_get_slice_patterns_and_replacements(),
             # *_get_fixed_qparams_ops_patterns_and_replacements(),
             *_get_embedding_ops_patterns_and_replacements(),
-            *_get_embedding_ops_patterns_and_replacements_torchao(),
+            *_get_embedding_ops_patterns_and_replacements_torchao(node_value_dict),
         ]
     )

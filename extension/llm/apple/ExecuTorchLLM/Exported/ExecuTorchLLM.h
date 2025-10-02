@@ -6,4 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#import "ExecuTorchTextLLMRunner.h"
+#import "ExecuTorchLLMConfig.h"
+#import "ExecuTorchLLMError.h"
+#import "ExecuTorchLLMMultimodalRunner.h"
+#import "ExecuTorchLLMTextRunner.h"

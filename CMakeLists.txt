@@ -79,11 +79,6 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 announce_configured_options(PYTHON_EXECUTABLE)
 
-if(NOT BUCK2)
-  resolve_buck2()
-endif()
-announce_configured_options(BUCK2)
-
 announce_configured_options(CMAKE_CXX_COMPILER_ID)
 announce_configured_options(CMAKE_TOOLCHAIN_FILE)
 announce_configured_options(BUILD_TESTING)
@@ -148,9 +143,13 @@ endif()
 
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol.
-set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
-)
+if(WIN32)
+  set(CMAKE_CXX_FLAGS_RELEASE "/Gy /Gw ${CMAKE_CXX_FLAGS_RELEASE}")
+else()
+  set(CMAKE_CXX_FLAGS_RELEASE
+      "-ffunction-sections -fdata-sections ${CMAKE_CXX_FLAGS_RELEASE}"
+  )
+endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -318,17 +317,6 @@ if(EXECUTORCH_SRCS_FILE)
   )
 endif()
 executorch_load_build_variables()
-if(NOT EXECUTORCH_SRCS_FILE)
-  # A file wasn't provided. Run a script to extract the source lists from the
-  # buck2 build system and write them to a file we can include.
-  #
-  # NOTE: This will only happen once during cmake setup, so it will not re-run
-  # if the buck2 targets change.
-  message(STATUS "executorch: Generating source lists")
-  set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
-  extract_sources(${EXECUTORCH_SRCS_FILE})
-  executorch_validate_build_variables()
-endif()
 
 # Detect if an iOS toolchain is set.
 if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
@@ -587,6 +575,11 @@ if(EXECUTORCH_BUILD_QNN)
   list(APPEND _executorch_backends qnn_executorch_backend)
 endif()
 
+if(EXECUTORCH_BUILD_ENN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/samsung)
+  list(APPEND _executorch_backends enn_backend)
+endif()
+
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
   list(APPEND _executorch_backends xnnpack_backend)
@@ -598,7 +591,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
-  list(APPEND _executorch_extensions apple_extension)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -658,16 +650,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
   list(APPEND _executorch_extensions tokenizers)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
-  list(APPEND _executorch_extensions extension_llm_runner)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
-  list(APPEND _executorch_extensions extension_llm_apple)
-endif()
-
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
   install(
@@ -717,9 +699,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
       ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
   )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/experimental
-  )
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/ao/torchao/csrc/cpu)
   unset(EXECUTORCH_INCLUDE_DIRS)
 
   executorch_target_link_options_shared_lib(torchao_ops_executorch)
@@ -749,9 +729,6 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
 
-  # Add codegen tools subdirectory for selective_build pybind module
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -759,6 +736,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
 
   # Create bundled_module target only for pybindings when bundled_program exists
   # This target has hard dependencies on devtools generated headers
@@ -833,6 +813,14 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs openvino_backend)
   endif()
 
+  if(EXECUTORCH_BUILD_QNN)
+    list(APPEND _dep_libs qnn_executorch_backend)
+  endif()
+
+  if(EXECUTORCH_BUILD_ENN)
+    list(APPEND _dep_libs enn_backend)
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     # need to explicitly specify XNNPACK and xnnpack-microkernels-prod here
     # otherwise uses XNNPACK and microkernel-prod symbols from libtorch_cpu
@@ -872,6 +860,21 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
+  # Set RPATH to find PyTorch libraries relative to the installation location
+  # This goes from executorch/extension/pybindings up to site-packages, then to
+  # torch/lib
+  if(APPLE)
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                              INSTALL_RPATH "@loader_path/../../../torch/lib"
+    )
+  else()
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+    )
+  endif()
+
   install(
     TARGETS portable_lib
     EXPORT ExecuTorchTargets
@@ -883,9 +886,22 @@ if(EXECUTORCH_BUILD_WASM)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm)
 endif()
 
+if(EXECUTORCH_BUILD_TOKENIZERS_WASM)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/wasm/tokenizers)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
+  list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
@@ -929,6 +945,19 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
    OR NOT EXECUTORCH_SELECT_OPS_LIST STREQUAL ""
    OR NOT EXECUTORCH_SELECT_OPS_MODEL STREQUAL ""
 )
+  # Use optimized kernels when available.
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    set(_selected_kernel_functions_yaml
+        ${CMAKE_CURRENT_BINARY_DIR}/configurations/merged.yaml
+    )
+    set(_selected_kernel_libs "optimized_kernels" "optimized_portable_kernels")
+  else()
+    set(_selected_kernel_functions_yaml
+        ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    )
+    set(_selected_kernel_libs "portable_kernels")
+  endif()
+
   gen_selected_ops(
     LIB_NAME
     "executorch_selected_kernels"
@@ -948,7 +977,7 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     LIB_NAME
     "executorch_selected_kernels"
     FUNCTIONS_YAML
-    ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+    ${_selected_kernel_functions_yaml}
     CUSTOM_OPS_YAML
     ""
     DTYPE_SELECTIVE_BUILD
@@ -959,13 +988,19 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
     LIB_NAME
     "executorch_selected_kernels"
     KERNEL_LIBS
-    "portable_kernels"
+    ${_selected_kernel_libs}
     DEPS
     executorch_core
     DTYPE_SELECTIVE_BUILD
     "${EXECUTORCH_ENABLE_DTYPE_SELECTIVE_BUILD}"
   )
   list(APPEND _executorch_kernels executorch_selected_kernels)
+
+  install(
+    TARGETS executorch_selected_kernels
+    EXPORT ExecuTorchTargets
+    DESTINATION lib
+  )
 else()
   # No selective build - link the full library.
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
@@ -975,6 +1010,10 @@ else()
   endif()
 endif()
 target_link_libraries(executorch_kernels INTERFACE ${_executorch_kernels})
+
+install(TARGETS executorch_backends executorch_extensions executorch_kernels
+        EXPORT ExecuTorchTargets
+)
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.

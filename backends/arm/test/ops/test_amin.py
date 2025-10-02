@@ -104,10 +104,7 @@ def test_amin_u55_INT_not_delegated():
     pipeline.run()
 
 
-fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not supported"}
-
-
-@common.parametrize("test_data", Amin.test_data, fvp_xfails, strict=False)
+@common.parametrize("test_data", Amin.test_data)
 @common.XfailIfNoCorstone320
 def test_amin_u85_INT(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
@@ -115,7 +112,6 @@ def test_amin_u85_INT(test_data: Amin.input_t):
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -155,6 +151,7 @@ def test_min_dim_tosa_FP_not_delegated():
 
 @common.parametrize("test_data", Amin.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amin_vgf_FP(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
@@ -165,6 +162,7 @@ def test_amin_vgf_FP(test_data: Amin.input_t):
 
 @common.parametrize("test_data", Amin.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amin_vgf_INT(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
@@ -178,6 +176,7 @@ def test_amin_vgf_INT(test_data: Amin.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_min_dim_vgf_FP_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
@@ -191,6 +190,7 @@ def test_min_dim_vgf_FP_to_amin(test_data: Min.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_min_dim_vgf_INT_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](

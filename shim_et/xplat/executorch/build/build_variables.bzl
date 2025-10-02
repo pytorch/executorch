@@ -290,11 +290,6 @@ QUANTIZED_KERNELS_SRCS = [
     "kernels/quantized/cpu/op_quantize.cpp",
 ]
 
-PROGRAM_SCHEMA_SRCS = [
-    "schema/program.fbs",
-    "schema/scalar_type.fbs",
-]
-
 OPTIMIZED_CPUBLAS_SRCS = [
     "kernels/optimized/blas/BlasKernel.cpp",
     "kernels/optimized/blas/CPUBlas.cpp",
@@ -353,6 +348,8 @@ EXTENSION_RUNNER_UTIL_SRCS = [
 
 EXTENSION_LLM_RUNNER_SRCS = [
     "extension/llm/runner/llm_runner_helper.cpp",
+    "extension/llm/runner/multimodal_prefiller.cpp",
+    "extension/llm/runner/multimodal_runner.cpp",
     "extension/llm/runner/text_decoder_runner.cpp",
     "extension/llm/runner/text_llm_runner.cpp",
     "extension/llm/runner/text_prefiller.cpp",
@@ -373,27 +370,14 @@ THREADPOOL_SRCS = [
 EXTENSION_THREADPOOL_SRCS = ["extension/threadpool/" + x for x in THREADPOOL_SRCS]
 
 EXTENSION_TRAINING_SRCS = [
-    "extension/data_loader/file_data_loader.cpp",
-    "extension/data_loader/mmap_data_loader.cpp",
-    "extension/flat_tensor/flat_tensor_data_map.cpp",
-    "extension/flat_tensor/serialize/flat_tensor_header.cpp",
-    "extension/module/module.cpp",
     "extension/training/module/training_module.cpp",
     "extension/training/optimizer/sgd.cpp",
 ]
 
 TRAIN_XOR_SRCS = [
-    "extension/data_loader/file_data_loader.cpp",
-    "extension/data_loader/mmap_data_loader.cpp",
-    "extension/flat_tensor/flat_tensor_data_map.cpp",
-    "extension/flat_tensor/serialize/flat_tensor_header.cpp",
+    # REVIEW: removing this breaks the build; where is it supposed to come from?
     "extension/flat_tensor/serialize/serialize.cpp",
-    "extension/module/module.cpp",
-    "extension/tensor/tensor_ptr.cpp",
-    "extension/tensor/tensor_ptr_maker.cpp",
     "extension/training/examples/XOR/train.cpp",
-    "extension/training/module/training_module.cpp",
-    "extension/training/optimizer/sgd.cpp",
 ]
 
 EXECUTOR_RUNNER_SRCS = [
@@ -481,6 +465,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNHeader.cpp",
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
+    "runtime/XNNWorkspaceManager.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 

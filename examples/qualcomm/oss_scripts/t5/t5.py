@@ -11,7 +11,6 @@ import subprocess
 from multiprocessing.connection import Client
 
 import torch
-
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.serialization.qc_schema import QcomChipset
 from executorch.backends.qualcomm.utils.utils import (
@@ -207,19 +206,13 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_size = 100
     max_hidden_seq_length = 384
     max_cache_length = 512
 
     tokenizer = AutoTokenizer.from_pretrained("google-t5/t5-small")
     model = AutoModelForSeq2SeqLM.from_pretrained("google-t5/t5-small").eval()
-    inputs, targets, input_list = get_seq2seq_dataset_from_squad_csv(
+    inputs, targets = get_seq2seq_dataset_from_squad_csv(
         args.dataset,
         tokenizer,
         data_size,
@@ -307,7 +300,6 @@ def main(args):
         )
         adb.push(
             inputs=inputs,
-            input_list=input_list,
             files=[spiece_model],
         )
         adb.execute(custom_runner_cmd=runner_cmd)
@@ -351,6 +343,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

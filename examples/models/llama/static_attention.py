@@ -242,7 +242,8 @@ class StaticAttentionIOManager:
         config: ModelArgs,
         input_len: int,
         cache_lens: Union[int, List[int]],
-        dtype=torch.float32,
+        batch_size: int = 1,
+        dtype: torch.dtype = torch.float32,
         style: str = "shift_pointer",
         mask_val: float = float("-inf"),
     ):
@@ -266,7 +267,10 @@ class StaticAttentionIOManager:
         if split_mha:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
-                    1, cache_lens[layer_id], none_throws(config.head_dim), dtype=dtype
+                    batch_size,
+                    cache_lens[layer_id],
+                    none_throws(config.head_dim),
+                    dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
@@ -274,7 +278,10 @@ class StaticAttentionIOManager:
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, head_id): torch.zeros(
-                    1, cache_lens[layer_id], none_throws(config.head_dim), dtype=dtype
+                    batch_size,
+                    cache_lens[layer_id],
+                    none_throws(config.head_dim),
+                    dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
                 for head_id in range(none_throws(config.n_kv_heads))
@@ -283,7 +290,7 @@ class StaticAttentionIOManager:
         else:
             self.k_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
-                    1,
+                    batch_size,
                     none_throws(config.n_kv_heads),
                     cache_lens[layer_id],
                     none_throws(config.head_dim),
@@ -293,7 +300,7 @@ class StaticAttentionIOManager:
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
-                    1,
+                    batch_size,
                     none_throws(config.n_kv_heads),
                     cache_lens[layer_id],
                     none_throws(config.head_dim),
@@ -323,7 +330,7 @@ class StaticAttentionIOManager:
     def prefill(
         self,
         model: Callable[..., Any],
-        tokens: List[int],
+        tokens: Union[List[int], torch.Tensor],
     ) -> torch.Tensor:
         if self.cache_full:
             raise RuntimeError("KV cache is full.")
@@ -336,10 +343,13 @@ class StaticAttentionIOManager:
                 )
             )
 
+        if isinstance(tokens, list):
+            tokens = torch.tensor([tokens], dtype=torch.int32)
+
         logits = None
         all_logits = None
-        for i in range(0, len(tokens), self.input_len):
-            logits = self._run_once(model, tokens[i : i + self.input_len])[0]
+        for i in range(0, tokens.size(1), self.input_len):
+            logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
             if self.config.generate_full_logits:
                 if all_logits is None:
                     all_logits = logits
@@ -347,7 +357,7 @@ class StaticAttentionIOManager:
                     all_logits = torch.cat([all_logits, logits], dim=1)
 
         if self.config.generate_full_logits:
-            return all_logits[:, : len(tokens), :]
+            return all_logits[:, : tokens.size(1), :]
 
         return logits
 
@@ -510,15 +520,16 @@ class StaticAttentionIOManager:
     def _run_once(
         self,
         model: Callable[..., Any],
-        tokens: List[int],
+        tokens: Union[List[int], torch.Tensor],
         non_padded_len: Optional[int] = None,
         freqs_cos_override: Optional[torch.Tensor] = None,
         freqs_sin_override: Optional[torch.Tensor] = None,
     ):
-        n_tokens = len(tokens)
+        if isinstance(tokens, list):
+            tokens = torch.tensor([tokens], dtype=torch.int32)
+        n_tokens = tokens.size(1)
         if n_tokens < self.input_len:
-            tokens += [0] * (self.input_len - n_tokens)
-        tokens = torch.tensor([tokens], dtype=torch.int32)  # pyre-ignore[9]
+            tokens = F.pad(tokens, (0, self.input_len - n_tokens))
         if freqs_cos_override is None:
             freqs_cos_override = self.freqs_cos[self.pos : self.pos + self.input_len]
         if freqs_sin_override is None:
@@ -549,7 +560,7 @@ class StaticAttentionIOManager:
                 style=self.style,
                 update_pos=update_pos,
                 update_len=update_len,
-            )
+            ).detach()
         for cache_id, update in v_cache_updates.items():
             self.v_caches[cache_id] = StaticKVCache.apply_update(
                 self.v_caches[cache_id],
@@ -558,7 +569,7 @@ class StaticAttentionIOManager:
                 style=self.style,
                 update_pos=update_pos,
                 update_len=update_len,
-            )
+            ).detach()
         self.pos += update_len
 
     def _get_lookahead_decoding_mask(
@@ -658,7 +669,12 @@ class StaticAttention(Attention):
     """
 
     def __init__(
-        self, config: ModelArgs, layer_id: int, rope: Rope, split_mha: bool = True
+        self,
+        config: ModelArgs,
+        layer_id: int,
+        rope: Rope,
+        split_mha: bool = True,
+        **kwargs: Any,
     ):
         super().__init__()
         self.n_heads = config.n_heads
@@ -676,6 +692,7 @@ class StaticAttention(Attention):
         self.qk_norm_before_rope = config.qk_norm_before_rope
         self.split_mha = split_mha
         self.use_conv2d = False
+        self.enable_qnn_masked_softmax = kwargs.get("enable_qnn_masked_softmax", False)
 
         if self.split_mha:
             self.wqs = nn.ModuleList(
@@ -857,7 +874,14 @@ class StaticAttention(Attention):
             kv_idx = i // self.n_heads_per_kv_group
             attn = new_qs[i] @ all_ks[kv_idx].transpose(-2, -1)
             attn = attn * self.inv_scale
-            attn = attn + mask
+            if self.enable_qnn_masked_softmax:
+                attn_min = torch.amin(attn, dim=-1, keepdim=True)
+                minus_value = -20
+                attn = torch.where(
+                    mask == 0, attn, attn_min + minus_value
+                )  # prye-ignore
+            else:
+                attn = attn + mask
             attn = F.softmax(attn, dim=-1)
             heads.append(attn @ all_vs[kv_idx])
 
@@ -1031,5 +1055,5 @@ class StaticAttention(Attention):
 
 @register_attention("static_mha")
 class StaticAttentionMHA(StaticAttention):
-    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope):
-        super().__init__(config, layer_id, rope, split_mha=False)
+    def __init__(self, config: ModelArgs, layer_id: int, rope: Rope, **kwargs: Any):
+        super().__init__(config, layer_id, rope, split_mha=False, **kwargs)

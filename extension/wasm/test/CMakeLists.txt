@@ -12,6 +12,13 @@
 set(MODELS_DIR ${CMAKE_CURRENT_BINARY_DIR}/models/)
 
 add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/models/test.pte
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../..
+  COMMAND python3 -m extension.wasm.test.test_model
+          ${CMAKE_CURRENT_BINARY_DIR}/models/test.pte
+)
+
+add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/models/add_mul.pte
          ${CMAKE_CURRENT_BINARY_DIR}/models/add.pte
   COMMAND ${CMAKE_COMMAND} -E make_directory "${MODELS_DIR}"
@@ -23,8 +30,9 @@ add_custom_command(
 )
 
 add_custom_target(
-  executorch_wasm_test_models DEPENDS ${MODELS_DIR}/add_mul.pte
-                                      ${MODELS_DIR}/add.pte
+  executorch_wasm_test_models
+  DEPENDS ${MODELS_DIR}/add_mul.pte ${MODELS_DIR}/add.pte
+          ${MODELS_DIR}/test.pte
 )
 
 add_custom_command(

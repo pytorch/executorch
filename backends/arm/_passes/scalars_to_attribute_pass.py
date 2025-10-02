@@ -6,10 +6,11 @@
 
 # pyre-unsafe
 
-from typing import cast, Union
+from typing import cast, Set, Type, Union
 
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import GraphModule, Node
@@ -21,6 +22,8 @@ class ScalarsToAttributePass(ExportPass):
     For ops in 'targeted_ops', convert inputs that are scalar values
     to attribute Nodes that output the same value.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {MatchArgRanksPass}
 
     targeted_ops = [
         torch.ops.aten.add.Tensor,

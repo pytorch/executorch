@@ -20,7 +20,6 @@ using executorch::runtime::ArrayRef;
 using torch::executor::Error;
 using torch::executor::optional;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -181,4 +180,3 @@ Tensor& mean_dim_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

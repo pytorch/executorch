@@ -57,6 +57,13 @@ class EdgeProgramExecutor:
             return output.detach().numpy()
         elif isinstance(output, tuple) and len(output) == 1:
             return output[0].detach().numpy()
+        elif isinstance(output, tuple):
+            output_names = self.edge_program.graph_signature.user_outputs
+
+            return {
+                name: tensor.detach().numpy()
+                for (name, tensor) in zip(output_names, output)
+            }
 
         raise RuntimeError(
             "Edge program inference with multiple outputs not implemented"
@@ -188,6 +195,11 @@ def compare_output_arrays(
         )
 
     assert tfl_output.shape == edge_output.shape, "Output shapes don't match!"
+
+    if (max_diff := np.abs(np.max(tfl_output - edge_output))) > 0.0:
+        logger.w(
+            f"Maximum absolute difference of the tensor '{output_name}': '{max_diff}'"
+        )
 
     assert np.allclose(
         tfl_output, edge_output, rtol=rtol, atol=atol, equal_nan=True

@@ -172,7 +172,6 @@ def register_affine_quantization_op():
 
 @update_features(
     [
-        exir_ops.edge.torchao.choose_qparams_affine.default,
         exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
         exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
     ]
@@ -180,6 +179,20 @@ def register_affine_quantization_op():
 def register_torchao_quantization_op():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_BUFFER,
+        supports_resize=True,
+    )
+
+
+@update_features(
+    exir_ops.edge.torchao.choose_qparams_affine.default,
+)
+def register_torchao_choose_qparams_affine():
+    return OpFeatures(
+        inputs_storage=utils.CONTIGUOUS_ANY,
+        outputs_storage=[
+            utils.WIDTH_PACKED_TEXTURE,  # scales
+            utils.WIDTH_PACKED_TEXTURE,  # zero_points
+        ],
         supports_resize=True,
     )
 
@@ -288,6 +301,32 @@ def register_to_copy_dim_order_op():
     )
 
 
+@update_features(exir_ops.edge.dim_order_ops._clone_dim_order.default)
+def register_clone_dim_order_op():
+    # Similar to to_dim_order_copy, _clone_dim_order can be removed as long as the
+    # operator is not changing the dtype, i.e. the operator call is modifying the dim
+    # order only. Therefore, check that the input and output dtypes are the same, if so
+    # the operator is safe to remove.
+    def check_clone_dim_order_node(node: torch.fx.Node) -> bool:
+        in_arg = node.args[0]
+        if not isinstance(in_arg, torch.fx.Node):
+            return False
+
+        in_tensor = in_arg.meta.get("val", None)
+        out_tensor = node.meta.get("val", None)
+
+        if in_tensor.dtype != out_tensor.dtype:
+            return False
+
+        return True
+
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+        are_node_inputs_supported_fn=check_clone_dim_order_node,
+    )
+
+
 @update_features(
     [
         exir_ops.edge.aten.bmm.default,
@@ -320,34 +359,30 @@ def register_int8_mm_op():
 
 @update_features(
     [
-        exir_ops.edge.et_vk.linear_weight_int4.default,
+        exir_ops.edge.et_vk.linear_q8ta_q8csw.default,
+        exir_ops.edge.et_vk.linear_q4gsw.default,
     ]
 )
-def register_int4_mm_op():
+def register_quantized_linear_ops():
     return OpFeatures(
         inputs_storage=utils.CONTIGUOUS_ANY,
-        supports_resize=True,
         supports_prepacking=True,
     )
 
 
-@update_features(
-    [
-        exir_ops.edge.et_vk.linear_qta8a_qga4w.default,
-    ]
-)
-def register_dqlinear_op():
+@update_features(exir_ops.edge.et_vk.linear_dq8ca_q4gsw.default)
+def register_linear_dqa_qw_ops():
     return OpFeatures(
         inputs_storage=[
             utils.CONTIGUOUS_ANY,  # input
-            utils.CONTIGUOUS_BUFFER,  # mat1 scales
-            utils.CONTIGUOUS_BUFFER,  # mat1 zeros
+            utils.WIDTH_PACKED_TEXTURE,  # input_scale
+            utils.WIDTH_PACKED_TEXTURE,  # input_zero_point
             utils.NO_STORAGE,  # weight (prepacked)
-            utils.NO_STORAGE,  # group size (non tensor)
-            utils.CONTIGUOUS_BUFFER,  # mat2 scales
-            utils.CONTIGUOUS_BUFFER,  # mat2 zeros
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # group_size (scalar)
+            utils.NO_STORAGE,  # bias (prepacked)
         ],
-        supports_resize=True,
         supports_prepacking=True,
     )
 
@@ -397,14 +432,17 @@ def register_reduce_op():
                 # If we can't get memory layout information, we'll assume the dims aren't packed
                 pass
 
-        keepdim = node.args[2]
-        if isinstance(keepdim, bool) and not keepdim:
+        def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
+            for arg in node.args:
+                if isinstance(arg, bool):
+                    return arg
+
+            # Assume false by default
             return False
 
-        if len(node.args) > 2:
-            keepdim = node.args[2]
-            if isinstance(keepdim, bool) and not keepdim:
-                return False
+        keepdim = try_find_keepdim_arg(node)
+        if isinstance(keepdim, bool) and not keepdim:
+            return False
 
         return True
 
@@ -418,6 +456,7 @@ def register_reduce_op():
 @update_features(
     [
         exir_ops.edge.aten.avg_pool2d.default,
+        exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.max_pool2d_with_indices.default,
     ]
 )
@@ -454,6 +493,83 @@ def register_convolution_op():
     )
 
 
+@update_features(
+    [
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
+    ]
+)
+def register_quantized_conv_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,  # input
+            utils.NO_STORAGE,  # input_scale (non tensor)
+            utils.NO_STORAGE,  # input_zero_point (non tensor)
+            utils.NO_STORAGE,  # weight (prepacked)
+            utils.NO_STORAGE,  # weight_sums (prepacked)
+            utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
+            utils.NO_STORAGE,  # bias (prepacked)
+            utils.NO_STORAGE,  # kernel_size (non tensor)
+            utils.NO_STORAGE,  # stride (non tensor)
+            utils.NO_STORAGE,  # padding (non tensor)
+            utils.NO_STORAGE,  # dilation (non tensor)
+            utils.NO_STORAGE,  # groups (non tensor)
+            utils.NO_STORAGE,  # original OC count (non tensor)
+        ],
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default,
+    ]
+)
+def register_quantized_binary_op():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_4W4C_BUFFER,
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
+    ]
+)
+def register_quantize_for_conv2d_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,
+        ],
+        supports_resize=False,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.dequantize_q8to_from_conv2d.default,
+    ]
+)
+def register_dequantize_for_conv2d_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,
+        ],
+        outputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+        ],
+        supports_resize=False,
+    )
+
+
 @update_features("llama::sdpa_with_kv_cache")
 def register_sdpa_with_kv_cache_op():
     return OpFeatures(
@@ -471,7 +587,7 @@ def register_sdpa_with_kv_cache_op():
 )
 def register_sdpa_ops():
     return OpFeatures(
-        inputs_storage=utils.WIDTH_PACKED_TEXTURE,
+        inputs_storage=utils.CONTIGUOUS_ANY,
         supports_resize=True,
     )
 
@@ -486,10 +602,7 @@ def register_rotary_emb_op():
 
 @update_features(
     [
-        exir_ops.edge.aten.clone.default,
         exir_ops.edge.aten.permute.default,
-        exir_ops.edge.aten.permute_copy.default,
-        exir_ops.edge.aten.view_copy.default,
     ]
 )
 def register_view_ops():
@@ -497,6 +610,27 @@ def register_view_ops():
         inputs_storage=utils.ANY_TEXTURE,
         supports_resize=True,
     )
+
+
+@update_features(
+    [
+        exir_ops.edge.aten.view_copy.default,
+        exir_ops.edge.aten.squeeze_copy.dims,
+        exir_ops.edge.aten.unsqueeze_copy.default,
+        exir_ops.edge.aten.clone.default,
+        exir_ops.edge.aten.permute_copy.default,
+    ]
+)
+def register_view_ops_with_buffer_meta():
+    return OpFeatures(
+        inputs_storage=utils.ANY_STORAGE,
+        supports_resize=True,
+    )
+
+
+@update_features(exir_ops.edge.aten.expand_copy.default)
+def register_expand():
+    return OpFeatures(inputs_storage=utils.ANY_BUFFER, supports_resize=False)
 
 
 # Fully featured transfer operators (i.e. operators that copy data from the input
@@ -559,9 +693,6 @@ def register_ported_op():
 # Ops ported from PyTorch Vulkan backend. These ops are in a separate registry because they support all packed dimensions
 @update_features(
     [
-        # Shape Manipulation
-        exir_ops.edge.aten.squeeze_copy.dims,
-        exir_ops.edge.aten.unsqueeze_copy.default,
         # Tensor combination
         exir_ops.edge.aten.repeat.default,
         exir_ops.edge.aten.split_with_sizes_copy.default,

@@ -16,13 +16,18 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     BmmPattern,
     CatPattern,
     Conv1dPattern,
+    Conv1dReluPattern0,
+    Conv1dReluPattern1,
     Conv2dPattern,
+    Conv2dReluPattern0,
+    Conv2dReluPattern1,
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
+    SoftmaxPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     find_sequential_partitions_aten,
@@ -49,6 +54,15 @@ act_qspec_asym8s = QuantizationSpec(
     dtype=torch.int8,
     quant_min=-128,
     quant_max=127,
+    qscheme=torch.per_tensor_affine,
+    is_dynamic=False,
+    observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
+)
+
+act_qspec_asym16s = QuantizationSpec(
+    dtype=torch.int16,
+    quant_min=-32768,
+    quant_max=32767,
     qscheme=torch.per_tensor_affine,
     is_dynamic=False,
     observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12),
@@ -88,6 +102,13 @@ qconfig_A8W8sym = QuantizationConfig(
     None,
 )
 
+qconfig_A16 = QuantizationConfig(
+    act_qspec_asym16s,
+    act_qspec_asym16s,
+    wgt_qspec_asym8s,
+    None,
+)
+
 
 class CadenceAtenQuantizer(Quantizer):
     def __init__(
@@ -112,7 +133,7 @@ class CadenceAtenQuantizer(Quantizer):
             if not no_outside_users(fused_partition):
                 continue
 
-            anchors = self.pattern.get_anchors(model, fused_partition)
+            anchors, _ = self.pattern.get_anchors(model, fused_partition)
             if not anchors or anchors.empty:
                 continue
             if is_annotated(
@@ -259,4 +280,35 @@ class CadenceWakeWordQuantizer(CadenceQuantizer):
             quantizers = get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
         quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
+class CadenceFusedConvReluQuantizer(CadenceQuantizer):
+    """
+    Quantizer using fused conv+relu patterns, and including add and cat
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = []
+        # Order matters here, perform the "fused" patterns first
+        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern0(), qconfig_A8W8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv1dReluPattern1(), qconfig_A8W8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern0(), qconfig_A8W8sym))
+        quantizers.append(CadenceAtenQuantizer(Conv2dReluPattern1(), qconfig_A8W8sym))
+        quantizers = quantizers + get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
+        quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
+class CadenceWithSoftmaxQuantizer(CadenceQuantizer):
+    """
+    Quantizer including A16 softmax
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = get_cadence_default_quantizers()
+        quantizers.append(CadenceAtenQuantizer(SoftmaxPattern(), qconfig_A16))
         super().__init__(quantizers)

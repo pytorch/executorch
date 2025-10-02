@@ -3,8 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
+from executorch.backends.arm._passes.match_arg_dtype_pass import MatchArgDtypePass
+from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -76,6 +82,13 @@ class DecomposeGeluPass(ExportPass):
         %op6 = mul(%x, %op5)
         %op7 = mul(%op6, %FULL_0_5)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        InsertTableOpsPass,
+        MatchArgDtypePass,
+        MatchArgRanksPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_gelu + edge_gelu:

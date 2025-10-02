@@ -4,9 +4,39 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Collection, Union
+import math
+from typing import Callable, Collection, Union
 
 import torch
+
+
+class Conv1dModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+        in_channels: int = 4,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        out_channels: int = 8,
+        padding: Union[str, int, Collection[int]] = 0,
+        stride: Union[int, tuple[int, int]] = 2,
+        group: int = 1,
+    ):
+        super().__init__()
+
+        self.conv = torch.nn.Conv1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            groups=group,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
 
 
 class Conv2dModule(torch.nn.Module):
@@ -24,6 +54,35 @@ class Conv2dModule(torch.nn.Module):
         super().__init__()
 
         self.conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+            groups=group,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class Conv3dModule(torch.nn.Module):
+    def __init__(
+        self,
+        bias: bool = True,
+        dilation: Union[int, tuple[int, int]] = 1,
+        in_channels: int = 4,
+        kernel_size: Union[int, tuple[int, int]] = 3,
+        out_channels: int = 8,
+        padding: Union[str, int, Collection[int]] = 0,
+        stride: Union[int, tuple[int, int]] = 2,
+        group: int = 1,
+    ):
+        super().__init__()
+
+        self.conv = torch.nn.Conv3d(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
@@ -109,6 +168,32 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class AddmmModule(torch.nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        self.bias = torch.nn.Parameter(torch.empty(in_channels))
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+        bound = 1 / math.sqrt(fan_in)
+        torch.nn.init.uniform_(self.bias, -bound, bound)
+        self.eval()
+
+    def forward(self, x):
+        return torch.addmm(self.bias, x, self.weight)
+
+
+class MmModule(torch.nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+        torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        self.eval()
+
+    def forward(self, x):
+        return torch.mm(x, self.weight)
 
 
 class LinearSoftmaxModule(torch.nn.Module):
@@ -287,6 +372,20 @@ class ReLUModule(torch.nn.Module):
 
     def forward(self, x):
         return self.relu(x)
+
+
+class Conv2dWithActivation(torch.nn.Module):
+    def __init__(self, activation: torch.nn.Module | Callable, in_channels: int = 3):
+        super().__init__()
+
+        self.conv = torch.nn.Conv2d(
+            in_channels=in_channels, out_channels=64, kernel_size=(3, 3)
+        )
+        self.activation = activation
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.activation(x)
 
 
 class Conv2dReLUModule(torch.nn.Module):

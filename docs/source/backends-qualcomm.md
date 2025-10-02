@@ -77,7 +77,7 @@ This example is verified with SM8550 and SM8450.
    - Click the "Get Software" button to download a version of QNN SDK.
    - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
    - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
-   - [QNN 2.28.0](https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.28.0.241029.zip)
+   - [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -315,9 +315,11 @@ adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV73Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV75Stub.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV79Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
 ```
 
 ***Step 2***.  We also need to indicate dynamic linkers on Android and Hexagon
@@ -385,7 +387,7 @@ example_inputs = (torch.randn(1, 3, 224, 224),)  # Example input tensor
 Choose between quantization approaches, post training quantization (PTQ) or quantization aware training (QAT):
 ```python
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-from torch.ao.quantization.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e, convert_pt2e
 
 quantizer = QnnQuantizer()
 m = torch.export.export(model, example_inputs, strict=True).module()
@@ -431,11 +433,12 @@ For practical examples, see [`test_qnn_delegate.py`](https://github.com/pytorch/
 #### Step 3: Configure Compile Specs
 During this step, you will need to specify the target SoC, data type, and other QNN compiler spec.
 ```python
-from executorch.backends.qualcomm.compiler import (
+from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     generate_htp_compiler_spec,
+    QcomChipset,
+    to_edge_transform_and_lower_to_qnn,
 )
-from executorch.backends.qualcomm.utils.utils import QcomChipset
 
 # HTP Compiler Configuration
 backend_options = generate_htp_compiler_spec(
@@ -450,11 +453,6 @@ compile_spec = generate_qnn_executorch_compiler_spec(
 ```
 #### Step 4: Lower and Export the Model
 ```python
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    to_edge_transform_and_lower_to_qnn,
-)
-from executorch.exir import ExecutorchBackendConfig
-
 # Lower to QNN backend
 delegated_program = to_edge_transform_and_lower_to_qnn(
     quantized_model if quantized else model,
@@ -463,9 +461,7 @@ delegated_program = to_edge_transform_and_lower_to_qnn(
 )
 
 # Export to ExecuTorch format
-executorch_program = delegated_program.to_executorch(
-    config=ExecutorchBackendConfig(extract_delegate_segments=False)
-)
+executorch_program = delegated_program.to_executorch()
 
 # Save the compiled model
 model_name = "custom_model_qnn.pte"

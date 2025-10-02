@@ -36,51 +36,20 @@ TextDecoderRunner::TextDecoderRunner(Module* module, IOManager* io_manager)
   // If only 1 input, we are not using kv cache
   bool use_kv_cache = method_meta.num_inputs() > 1;
 
+  std::vector<int64_t> cache_positions;
+
   if (use_kv_cache) {
-    // Size of the second argument. This could be either input_pos or
-    // cache_positions
-
-    // Check if we are using cache positions instead of input pos.
-    auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
-    // For input_pos, numel is 1, for cache_positions, numel is max_seq_len
-    auto sizes = second_input_info.sizes();
-    // Assuming 1D tensor
-    ET_CHECK_OR_RETURN_ERROR(
-        sizes.size() == 1,
-        InvalidProgram,
-        "The second input tensor is not 1D tensor. Got dimension (%zu)",
-        sizes.size());
-    auto numel = sizes[0];
-    std::vector<::executorch::aten::SizesType> sizes_vec = {numel};
-
-    TensorPtr start_pos_tensor;
-    if (numel > 1) {
-      // If we are here, model is exported with cache_positions, create a tensor
-      // with the same length as input_ids. Assuming the last dimension is the
-      // one with the variable token length, for example [1, S] or [1, 1, S]
-      sizes_vec[sizes_vec.size() - 1] = tokens->numel();
-      start_pos_tensor = empty(sizes_vec, ::executorch::aten::ScalarType::Long);
-      torch::executor::native::arange_out_impl(
-          start_pos, start_pos + tokens->numel(), 1.0, *start_pos_tensor);
-    } else {
-      // Assuming model is exported with input_pos, create a tensor with size 1
-      start_pos_tensor = from_blob(
-          &start_pos, sizes_vec, ::executorch::aten::ScalarType::Long);
-    }
+    auto start_pos_tensor = ET_UNWRAP(populate_start_pos_or_cache_position(
+        module_, start_pos, cache_positions, tokens->numel(), "forward"));
 
     std::vector<runtime::EValue> inputs;
-    auto method_err = module_->method("forward");
-    ET_CHECK_OK_OR_RETURN_ERROR(method_err.error());
-    auto& method = *(method_err.get());
-
-    auto inputs_res =
-        io_manager_->prepare_decode(tokens, start_pos_tensor, method);
+    auto inputs_res = io_manager_->prepare_decode(tokens, start_pos_tensor);
     ET_CHECK_OK_OR_RETURN_ERROR(inputs_res.error());
     inputs = inputs_res.get();
     auto outputs_res = module_->forward(inputs);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
 
-    auto update_err = io_manager_->update_decode(method, outputs_res.get());
+    auto update_err = io_manager_->update_decode(outputs_res.get());
     ET_CHECK_OK_OR_RETURN_ERROR(update_err);
 
     ET_CHECK_MSG(

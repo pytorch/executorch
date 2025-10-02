@@ -21,12 +21,17 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
 from executorch.backends.arm._passes.insert_table_ops import TableOps
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 from executorch.backends.arm.operator_support.ethos_u55_support import (
+    EthosU55CastCheck,
     EthosU55DtypeSupport,
     EthosU55NotSupported,
     EthosU55TransposeCheck,
     EthosU55ViewCheck,
 )
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.operator_support.tosa_profile_supported_op_lists import (
+    TOSA_PRO_FP_SupportList,
+    TOSA_PRO_INT_SupportList,
+)
+from executorch.backends.arm.tosa import TosaSpecification
 from executorch.exir import ExportedProgram
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -106,17 +111,21 @@ def tosa_support_factory(
     Additional checks can be supplied to avoid partitioning additional nodes.
     """
     # Postive checks: Add nodes to partitioning
-    positive_checks: list[OperatorSupportBase] = [
-        BaseTOSASupportList(),
-        *[
-            check(tosa_spec, reporter)
-            for check in get_registered_tosa_support_checks(tosa_spec)
-        ],
+    positive_checks: list[OperatorSupportBase] = []
+
+    if tosa_spec.support_integer():
+        positive_checks.append(TOSAProINTSupportList())
+    if tosa_spec.support_float():
+        positive_checks.append(TOSAProFPSupportList())
+    # TODO: Refactor to use TOSAProSupportLists + negtive checks
+    positive_checks += [
+        check(tosa_spec, reporter)
+        for check in get_registered_tosa_support_checks(tosa_spec)
     ]
 
     # Negative checks: Remove nodes from partitioning
     negative_checks: list[OperatorSupportBase] = [
-        CheckInt64Inputs(exported_program, reporter),
+        CheckInt64InputsAndOutputs(exported_program, reporter),
         CheckFloat64Inputs(exported_program, reporter),
         RankCheck(reporter, max_rank=5),
         *[
@@ -133,6 +142,7 @@ def tosa_support_factory(
         negative_checks.append(EthosU55DtypeSupport(reporter))
         negative_checks.append(EthosU55TransposeCheck(reporter))
         negative_checks.append(EthosU55ViewCheck(reporter))
+        negative_checks.append(EthosU55CastCheck(reporter))
 
     return chain(
         reporter.wrap_check(
@@ -143,129 +153,30 @@ def tosa_support_factory(
     )
 
 
-class BaseTOSASupportList(OperatorSupportBase):
+class TOSAProINTSupportList(OperatorSupportBase):
+    """
+    TOSA_PRO_INT_SupportList:
+        Ops supported in INT profile via native TOSA ops, decomposition/transformation, pre-compute, or TableOps
+    """
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
-        supported = node.op == "call_function" and node.target in [
-            exir_ops.edge.aten.abs.default,
-            exir_ops.edge.aten.add.Tensor,
-            exir_ops.edge.aten.any.default,
-            exir_ops.edge.aten.any.dim,
-            exir_ops.edge.aten.any.dims,
-            exir_ops.edge.aten.logical_and.default,
-            exir_ops.edge.aten.logical_or.default,
-            exir_ops.edge.aten.logical_xor.default,
-            exir_ops.edge.aten.logical_not.default,
-            exir_ops.edge.aten.arange.start_step,
-            exir_ops.edge.aten.bitwise_and.Tensor,
-            exir_ops.edge.aten.bitwise_or.Tensor,
-            exir_ops.edge.aten.bitwise_xor.Tensor,
-            exir_ops.edge.aten.bitwise_and.Scalar,
-            exir_ops.edge.aten.bitwise_or.Scalar,
-            exir_ops.edge.aten.bitwise_xor.Scalar,
-            exir_ops.edge.aten.expand_copy.default,
-            exir_ops.edge.aten.cat.default,
-            exir_ops.edge.aten.ceil.default,
-            exir_ops.edge.aten.clamp.default,
-            exir_ops.edge.aten.cumsum.default,
-            exir_ops.edge.aten.bmm.default,
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.hardsigmoid.default,
-            exir_ops.edge.aten.hardtanh.default,
-            exir_ops.edge.aten.hardswish.default,
-            exir_ops.edge.aten.div.Tensor,
-            exir_ops.edge.aten.eq.Tensor,
-            exir_ops.edge.aten.eq.Scalar,
-            exir_ops.edge.aten.erf.default,
-            exir_ops.edge.aten.exp.default,
-            exir_ops.edge.aten.expm1.default,
-            exir_ops.edge.aten.log.default,
-            exir_ops.edge.aten.linear.default,
-            exir_ops.edge.aten.split_with_sizes_copy.default,
-            exir_ops.edge.aten.floor.default,
-            exir_ops.edge.aten.full.default,
-            exir_ops.edge.aten.full_like.default,
-            exir_ops.edge.aten.ge.Tensor,
-            exir_ops.edge.aten.ge.Scalar,
-            exir_ops.edge.aten.gt.Tensor,
-            exir_ops.edge.aten.gt.Scalar,
-            exir_ops.edge.aten.le.Tensor,
-            exir_ops.edge.aten.le.Scalar,
-            exir_ops.edge.aten.lt.Tensor,
-            exir_ops.edge.aten.lt.Scalar,
-            exir_ops.edge.aten.mul.Tensor,
-            exir_ops.edge.aten.ne.Tensor,
-            exir_ops.edge.aten.ne.Scalar,
-            exir_ops.edge.aten.neg.default,
-            exir_ops.edge.aten.add.Scalar,
-            exir_ops.edge.aten.sub.Scalar,
-            exir_ops.edge.aten.mul.Scalar,
-            exir_ops.edge.aten.div.Scalar,
-            exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-            exir_ops.edge.aten.native_layer_norm.default,
-            exir_ops.edge.aten.native_group_norm.default,
-            exir_ops.edge.aten.sigmoid.default,
-            exir_ops.edge.aten.mean.dim,
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.minimum.default,
-            exir_ops.edge.aten.maximum.default,
-            exir_ops.edge.aten.repeat.default,
-            exir_ops.edge.aten.reciprocal.default,
-            exir_ops.edge.aten.relu.default,
-            exir_ops.edge.aten.leaky_relu.default,
-            exir_ops.edge.aten.sqrt.default,
-            exir_ops.edge.aten.rsqrt.default,
-            exir_ops.edge.aten.round.default,
-            exir_ops.edge.aten._softmax.default,
-            exir_ops.edge.aten.select_copy.int,
-            exir_ops.edge.aten._log_softmax.default,
-            exir_ops.edge.aten.sub.Tensor,
-            exir_ops.edge.aten.tanh.default,
-            exir_ops.edge.aten.upsample_bilinear2d.vec,
-            exir_ops.edge.aten.upsample_nearest2d.vec,
-            exir_ops.edge.aten.var.correction,
-            exir_ops.edge.aten.var.dim,
-            exir_ops.edge.aten.view_copy.default,
-            exir_ops.edge.aten.clone.default,
-            exir_ops.edge.aten.unsqueeze_copy.default,
-            exir_ops.edge.aten.squeeze_copy.dims,
-            exir_ops.edge.aten.pow.Tensor_Scalar,
-            exir_ops.edge.aten.pow.Tensor_Tensor,
-            exir_ops.edge.aten.where.self,
-            operator.getitem,
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-            exir_ops.edge.aten.constant_pad_nd.default,
-            exir_ops.edge.aten.amax.default,
-            exir_ops.edge.aten.amin.default,
-            exir_ops.edge.aten.eye.default,
-            exir_ops.edge.aten.linspace.default,
-            exir_ops.edge.aten.bitwise_left_shift.Tensor,
-            exir_ops.edge.aten.__lshift__.Scalar,
-            torch.ops.aten.scalar_tensor.default,
-            exir_ops.edge.aten.gelu.default,
-            exir_ops.edge.aten.alias_copy.default,
-            exir_ops.edge.aten.sinh.default,
-            exir_ops.edge.aten.atan.default,
-            exir_ops.edge.aten.acosh.default,
-            exir_ops.edge.aten._adaptive_avg_pool2d.default,
-            exir_ops.edge.aten.sign.default,
-            exir_ops.edge.aten.asin.default,
-            exir_ops.edge.aten.atanh.default,
-            exir_ops.edge.aten.addmm.default,
-            exir_ops.edge.aten.masked_fill.Scalar,
-            exir_ops.edge.aten.asinh.default,
-            exir_ops.edge.aten.cosh.default,
-            exir_ops.edge.aten.glu.default,
-            exir_ops.edge.aten.logit.default,
-            exir_ops.edge.aten.acos.default,
-        ]
 
-        return supported
+        return node.op == "call_function" and node.target in TOSA_PRO_INT_SupportList
+
+
+class TOSAProFPSupportList(OperatorSupportBase):
+    """
+    TOSA_PRO_FP_SupportList:
+        Ops supported in FP profile via native TOSA ops, decomposition/transformation, pre-compute
+    """
+
+    def is_node_supported(
+        self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
+    ) -> bool:
+
+        return node.op == "call_function" and node.target in TOSA_PRO_FP_SupportList
 
 
 class NeedsDecompositionCheck(OperatorSupportBase):
@@ -454,7 +365,18 @@ class CheckProperQuantization(OperatorSupportBase):
         return True
 
 
-class CheckInt64Inputs(OperatorSupportBase):
+class CheckInt64InputsAndOutputs(OperatorSupportBase):
+    """TOSA does not support int64 tensors so in general, ops with int64 inputs or outputs should not be partitioned.
+    There are however some exceptions:
+        - Nodes with int64 output can be partitioned if they are constant, within int32,
+            and all users cast to something else. In this case, the int64 tensor can safely be cast to int32 AOT.
+        - Nodes with int64 output can be partitioned if all users are getitem with non-int64 output.
+            In this case, there are multiple outputs and the int64 ones are not used.
+        - Nodes with int64 inputs can be partitioned if the inputs are constant placeholders, or constant
+            ops fulfilling the criteria above.
+    Note that we don't check placeholders here, they are partitioned based on whether their users are partitioned
+    or not.
+    """
 
     def __init__(
         self, exported_program: ExportedProgram, reporter: WhyNoPartitionReporter
@@ -465,27 +387,85 @@ class CheckInt64Inputs(OperatorSupportBase):
             if spec.kind == InputKind.USER_INPUT
         ]
         self.reporter = reporter
+        self.int32_min = torch.iinfo(torch.int32).min
+        self.int32_max = torch.iinfo(torch.int32).max
         super().__init__()
+
+    def inside_int32_bounds(self, node: torch.fx.Node) -> bool:
+        """Node is assumed to be call_function with int64 output."""
+        if isinstance(node.target, str):
+            return False
+        data = node.target(*node.args, **node.kwargs)
+        min_val, max_val = int(torch.min(data)), int(torch.max(data))
+        return min_val >= self.int32_min and max_val <= self.int32_max
 
     def is_node_supported(
         self, submodules: typing.Mapping[str, torch.nn.Module], node: fx.Node
     ) -> bool:
 
-        for input_node in node.all_input_nodes:
-            # We can cast constant placeholders and constant ops AOT, such int64 are ok.
-            # Otherwise, don't partition if one or more inputs are int64.
+        vals = node.meta["val"]
+        tensor_list = vals if isinstance(vals, (list, tuple)) else [vals]
+
+        any_int64 = any(tensor.dtype == torch.int64 for tensor in tensor_list)
+        # Don't partition nodes with int64 output...
+        if any_int64:
+            # ... Except for constant ops that are directly cast to something non-int64.
+            # This could be an explicit cast, or something like a less than that outputs a different dtype than the input.
+            users_output_non_int64 = all(
+                get_first_fake_tensor(output_node).dtype != torch.int64
+                for output_node in node.users
+            )
             if (
-                input_node.name in self.input_names
-                or not input_node.op == "placeholder"
+                node.target in ComputeConstantOpsAOT.targeted_ops
+                and users_output_non_int64
             ):
-                tensor = get_first_fake_tensor(input_node)
-                if tensor.dtype == torch.int64:
-                    if input_node.target not in ComputeConstantOpsAOT.targeted_ops:
-                        self.reporter.report_reject(
-                            node,
-                            f"Had int64 input {input_node.name} that couldn't be handled.",
-                        )
-                        return False
+                if not self.inside_int32_bounds(node):
+                    self.reporter.report_reject(
+                        node, "Constant node outside int32 range."
+                    )
+                    return False
+                # Will never have input nodes, safe to return True
+                return True
+
+            # ... Or ops with multiple outputs where only non-int64 are used.
+            users_are_getitem = all(
+                user.target == operator.getitem for user in node.users
+            )
+            if users_are_getitem and users_output_non_int64:
+                # Passed output check, go to input check.
+                pass
+            else:
+                self.reporter.report_reject(
+                    node, "Non-constant node with int64 output."
+                )
+                return False
+
+        # Ops with int64 inputs are only partitioned if input nodes are constant and will be partitioned.
+        # If it is not partitioned, the partition will get an int64 input and fail.
+        for input_node in node.all_input_nodes:
+            tensor_in = get_first_fake_tensor(input_node)
+            if tensor_in.dtype != torch.int64:
+                continue
+            # Constant placeholder
+            if (
+                input_node.op != "call_function"
+                and input_node.name not in self.input_names
+            ):
+                continue
+            # Constant operator
+            if input_node.op == "call_function":
+                if input_node.target in ComputeConstantOpsAOT.targeted_ops:
+                    # This is not perfect since the input_node can still be rejected by other checks but
+                    # this should cover the majority of cases.
+                    if self.is_node_supported(
+                        None, input_node  # type: ignore[arg-type] #(we don't use 'submodules')
+                    ):
+                        continue
+            self.reporter.report_reject(
+                node, f"Non-constant int64 input {input_node.name}"
+            )
+            return False
+
         return True
 
 

@@ -110,3 +110,26 @@ runtime.python_library(
         "types.py",
     ],
 )
+
+runtime.python_library(
+    name = "target_recipes",
+    srcs = [
+        "target_recipes.py",
+    ],
+    deps = [
+        ":export_utils",
+        "fbsource//third-party/pypi/coremltools:coremltools",
+        "//executorch/export:recipe",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/backends/apple/coreml:coreml_recipes",
+        "//executorch/backends/qualcomm/recipes:qnn_recipes",
+    ]
+)
+
+runtime.python_library(
+    name = "export_utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+    ]
+)

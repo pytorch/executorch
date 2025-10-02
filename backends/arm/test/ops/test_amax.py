@@ -95,10 +95,7 @@ def test_amax_u55_INT_not_delegated():
     pipeline.run()
 
 
-fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not supported"}
-
-
-@common.parametrize("test_data", Amax.test_data, fvp_xfails, strict=False)
+@common.parametrize("test_data", Amax.test_data)
 @common.XfailIfNoCorstone320
 def test_amax_u85_INT(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
@@ -106,7 +103,6 @@ def test_amax_u85_INT(test_data: Amax.input_t):
         Amax(dim, keep_dims),
         data,
         Amax.aten_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -143,6 +139,7 @@ def test_max_dim_tosa_FP_not_delegated():
 
 @common.parametrize("test_data", Amax.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amax_vgf_FP(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
     module = Amax(dim, keep_dims)
@@ -157,6 +154,7 @@ def test_amax_vgf_FP(test_data: Amax.input_t):
 
 @common.parametrize("test_data", Amax.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amax_vgf_INT(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
     module = Amax(dim, keep_dims)
@@ -171,6 +169,7 @@ def test_amax_vgf_INT(test_data: Amax.input_t):
 
 @common.parametrize("test_data", Max.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Max.input_t](
@@ -184,6 +183,7 @@ def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
 
 @common.parametrize("test_data", Max.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_max_dim_vgf_INT_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Max.input_t](

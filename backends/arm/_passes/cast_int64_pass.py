@@ -6,6 +6,7 @@
 # pyre-unsafe
 
 import logging
+from typing import Set, Type
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -18,6 +19,8 @@ class CastInt64BuffersToInt32Pass(ExportPass):
     """
     Cast int64 buffers to int32 if the int64 data is in int32 range.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: torch.export.ExportedProgram):
         super(CastInt64BuffersToInt32Pass, self).__init__()

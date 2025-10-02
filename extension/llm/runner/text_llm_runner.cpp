@@ -43,7 +43,8 @@ TextLLMRunner::TextLLMRunner(
       io_manager_(std::move(io_manager)),
       text_token_generator_(std::move(text_token_generator)),
       stats_(std::move(stats)),
-      temperature_(temperature) {
+      temperature_(temperature),
+      pos_(0) {
   // Note: This constructor assumes that text_prefiller and text_token_generator
   // already have references to the Module and TextDecoderRunner they need
 }
@@ -57,14 +58,7 @@ Error TextLLMRunner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(text_prefiller_->load());
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-  auto method_res = module_->method("forward");
-
-  Program& program = *module_->program();
-
-  ET_CHECK_OK_OR_RETURN_ERROR(method_res.error());
-  auto& forward = *(method_res.get());
-  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load(program, forward, forward));
+  ET_CHECK_OK_OR_RETURN_ERROR(io_manager_->load());
   ET_CHECK_OK_OR_RETURN_ERROR(text_token_generator_->load());
   return Error::Ok;
 }
@@ -77,9 +71,8 @@ Error TextLLMRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
-Error TextLLMRunner::generate_from_pos(
+Error TextLLMRunner::generate(
     const std::string& prompt,
-    int64_t start_pos,
     const GenerationConfig& config,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -130,8 +123,8 @@ Error TextLLMRunner::generate_from_pos(
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
 
-  // Reduce max_context_len by start_pos
-  int64_t max_context_len = metadata_.at(kMaxContextLen) - start_pos;
+  // Reduce max_context_len by pos_
+  int64_t max_context_len = metadata_.at(kMaxContextLen) - pos_;
   ET_CHECK_OR_RETURN_ERROR(
       num_prompt_tokens >= 1,
       InvalidArgument,
@@ -145,16 +138,16 @@ Error TextLLMRunner::generate_from_pos(
       max_context_len);
 
   // Determine max_new_tokens using the GenerationConfig's resolve method,
-  // then subtract start_pos for max_new_tokens.
+  // then subtract pos_ for max_new_tokens.
   int max_new_tokens =
       config.resolve_max_new_tokens(max_context_len, num_prompt_tokens);
 
   ET_LOG(
       Info,
-      "Max new tokens resolved: %d, given start_pos %" PRId64
+      "Max new tokens resolved: %d, given pos_ %" PRId64
       ", num_prompt_tokens %zu, max_context_len %" PRId64,
       max_new_tokens,
-      start_pos,
+      pos_,
       prompt_tokens.size(),
       max_context_len);
   ET_CHECK_OR_RETURN_ERROR(
@@ -170,8 +163,7 @@ Error TextLLMRunner::generate_from_pos(
   if (config.echo) {
     wrapped_callback(prompt);
   }
-  int64_t pos = start_pos;
-  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos_);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   uint64_t cur_token = prefill_res.get();
   stats_->first_token_ms = time_in_ms();
@@ -224,13 +216,6 @@ Error TextLLMRunner::generate_from_pos(
 
   return Error::Ok;
 }
-Error TextLLMRunner::generate(
-    const std::string& prompt,
-    const GenerationConfig& config,
-    std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
-  return generate_from_pos(prompt, 0, config, token_callback, stats_callback);
-}
 
 Error TextLLMRunner::warmup(const std::string& prompt, int32_t max_new_tokens) {
   // Create a GenerationConfig for warmup
@@ -251,6 +236,11 @@ void TextLLMRunner::stop() {
   } else {
     ET_LOG(Error, "Token generator is not loaded, cannot stop");
   }
+}
+
+void TextLLMRunner::reset() {
+  stats_->reset();
+  pos_ = 0;
 }
 
 } // namespace executorch::extension::llm

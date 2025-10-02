@@ -193,13 +193,6 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         dir_name: str,
     ) -> None:
-        # Save the input data list to be executed
-        input_list = ""
-        for idx, _ in enumerate(inputs):
-            input_name = f"input_0_{idx}.raw"
-            input_list += input_name + " "
-        input_list = input_list.strip() + "\n"
-
         ref_output = module(*inputs)
 
         # Save the expected output data to be verified
@@ -216,7 +209,7 @@ class TestQNN(unittest.TestCase):
         with open(pte_fname, "wb") as file:
             file.write(buffer)
 
-        return input_list, ref_outputs, pte_fname
+        return ref_outputs, pte_fname
 
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -247,7 +240,6 @@ class TestQNN(unittest.TestCase):
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
-                input_list,
                 ref_outputs,
                 pte_fname,
             ) = self._save_model_and_expected_output(
@@ -319,9 +311,7 @@ class TestQNN(unittest.TestCase):
                 )
 
             if self.enable_x86_64:
-                generate_inputs(
-                    tmp_dir, "input_list.txt", [processed_inputs], input_list
-                )
+                generate_inputs(tmp_dir, "input_list.txt", [processed_inputs])
                 make_output_dir(output_dir)
 
                 target = "x86_64-linux-clang"
@@ -434,7 +424,6 @@ class TestQNN(unittest.TestCase):
                 )
                 adb.push(
                     inputs=[processed_inputs],
-                    input_list=input_list,
                     files=op_package_paths,
                 )
                 adb.extra_cmds += extra_cmds
@@ -587,7 +576,7 @@ class TestQNN(unittest.TestCase):
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
         submodule_qconfig_list: Optional[List[Tuple[Callable, ModuleQConfig]]] = None,
     ) -> torch.fx.GraphModule:
-        m = torch.export.export_for_training(module, inputs, strict=True).module()
+        m = torch.export.export(module, inputs, strict=True).module()
 
         quantizer = make_quantizer(
             quant_dtype=quant_dtype,
@@ -671,7 +660,7 @@ class TestQNN(unittest.TestCase):
                         users = list(node.users.keys())
                         inserted_node = graph_module.graph.create_node(
                             "call_function",
-                            exir_ops.edge.aten.clone.default,
+                            exir_ops.edge.dim_order_ops._clone_dim_order.default,
                             (node,),
                         )
                         inserted_node.meta["val"] = node.meta["val"]

@@ -75,9 +75,7 @@ Module::Module(
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(nullptr),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
   runtime::runtime_init();
 }
 
@@ -87,13 +85,27 @@ Module::Module(
     const LoadMode load_mode,
     std::unique_ptr<runtime::EventTracer> event_tracer)
     : file_path_(file_path),
-      data_map_path_(data_map_path),
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(nullptr),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
+  if (!data_map_path.empty()) {
+    data_files_.push_back(data_map_path);
+  }
+  runtime::runtime_init();
+}
+
+Module::Module(
+    const std::string& file_path,
+    std::vector<std::string> data_files,
+    const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer)
+    : file_path_(file_path),
+      data_files_(std::move(data_files)),
+      load_mode_(load_mode),
+      memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      event_tracer_(std::move(event_tracer)) {
   runtime::runtime_init();
 }
 
@@ -110,9 +122,10 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(std::move(data_map_loader)),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
+  if (data_map_loader) {
+    data_map_loaders_.push_back(std::move(data_map_loader));
+  }
   runtime::runtime_init();
 }
 
@@ -129,9 +142,10 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(std::move(data_map_loader)),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
+  if (data_map_loader) {
+    data_map_loaders_.push_back(std::move(data_map_loader));
+  }
   runtime::runtime_init();
 }
 
@@ -140,14 +154,27 @@ runtime::Error Module::load(const Program::Verification verification) {
     if (!data_loader_) {
       data_loader_ = ET_UNWRAP(make_data_loader(file_path_, load_mode_));
     }
-    if (!data_map_path_.empty()) {
-      data_map_loader_ =
-          ET_UNWRAP(make_data_loader(data_map_path_, load_mode_));
+    if (data_files_.size() > 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          data_files_.size() == 1,
+          NotImplemented,
+          "Multiple named data map paths are not supported yet.");
+      for (const auto& data_file : data_files_) {
+        data_map_loaders_.push_back(
+            ET_UNWRAP(make_data_loader(data_file, load_mode_)));
+      }
     }
-    if (data_map_loader_) {
-      data_map_ =
-          ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loader_.get()));
+
+    if (data_map_loaders_.size() > 0) {
+      ET_CHECK_OR_RETURN_ERROR(
+          data_map_loaders_.size() == 1 && merged_data_map_ == nullptr,
+          NotImplemented,
+          "Multiple named data map loaders are not supported yet.");
+      // TODO(lfq): support multiple named data map loaders.
+      merged_data_map_ =
+          ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loaders_[0].get()));
     }
+
     auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
     program_ = std::shared_ptr<Program>(
@@ -209,7 +236,7 @@ runtime::Error Module::load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
-        data_map_.get()));
+        merged_data_map_.get()));
     methods_.emplace(method_name, std::move(method_holder));
   }
   return runtime::Error::Ok;
@@ -276,6 +303,49 @@ runtime::Error Module::set_output(
   const auto& output_tensor = output_value.toTensor();
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
+}
+
+runtime::Error Module::set_outputs(
+    const std::string& method_name,
+    const std::vector<runtime::EValue>& output_values) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  const auto outputs_size = method->outputs_size();
+  ET_CHECK_OR_RETURN_ERROR(
+      output_values.size() == outputs_size,
+      InvalidArgument,
+      "output size: %zu is not equal to method output size: %zu",
+      output_values.size(),
+      outputs_size);
+  for (auto index = 0; index < outputs_size; ++index) {
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        set_output(method_name, output_values[index], index));
+  }
+  return runtime::Error::Ok;
+}
+
+runtime::Result<std::vector<runtime::EValue>> Module::get_outputs(
+    const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  const auto outputs_size = method->outputs_size();
+  std::vector<runtime::EValue> outputs(outputs_size);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      method->get_outputs(outputs.data(), outputs_size));
+  return outputs;
+}
+
+runtime::Result<runtime::EValue> Module::get_output(
+    const std::string& method_name,
+    size_t output_index) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
+  ET_CHECK_OR_RETURN_ERROR(
+      output_index < method->outputs_size(),
+      InvalidArgument,
+      "output index: %zu is out of range",
+      output_index);
+  return method->get_output(output_index);
 }
 
 } // namespace ET_MODULE_NAMESPACE

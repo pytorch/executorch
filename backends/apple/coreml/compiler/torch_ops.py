@@ -15,6 +15,7 @@ from coremltools.converters.mil.frontend import _utils
 from coremltools.converters.mil.frontend.torch.ops import (
     _get_inputs,
     _get_kwinputs,
+    noop,
     NUM_TO_NUMPY_DTYPE,
     NUM_TO_TORCH_DTYPE,
     split,
@@ -47,24 +48,70 @@ def split_copy(context, node):
     split(context, node)
 
 
+def is_fbcode():
+    return not hasattr(_torch.version, "git_version")
+
+
+if not is_fbcode():
+    from coremltools.converters.mil.frontend.torch.dim_order_ops import (
+        _empty_dim_order,
+        _to_dim_order_copy,
+    )
+
+    # This is a temporary hack to register the alias "dim_order_ops._to_dim_order_copy",
+    # which was missed by coremltools
+    @register_torch_op(torch_alias=["dim_order_ops._to_dim_order_copy"], override=False)
+    def _to_dim_order_copy_TMP_EXECUTORCH_ALIAS_HACK(context, node):
+        _to_dim_order_copy(context, node)
+
+    # This is a temporary hack to register the alias "dim_order_ops._empty_dim_order",
+    # which was missed by coremltools
+    @register_torch_op(torch_alias=["dim_order_ops._empty_dim_order"], override=False)
+    def _empty_dim_order_TMP_EXECUTORCH_ALIAS_HACK(context, node):
+        _empty_dim_order(context, node)
+
+else:
+    # TODO: remove this case when fbcode updates to coremltools 9.0
+    @register_torch_op(
+        torch_alias=[
+            "dim_order_ops::_to_dim_order_copy",
+            "dim_order_ops._to_dim_order_copy",
+        ],
+        override=False,
+    )
+    def _to_dim_order_copy(context, node):
+        dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
+        node.kwinputs.pop("dim_order")
+
+        # In CoreML, dim_order.val will be an ndarray, so we convert it to a list
+        dim_order = [int(d) for d in dim_order.val]
+        memory_format = get_memory_format(dim_order)
+        assert (
+            memory_format == _torch.contiguous_format
+        ), "Only contiguous memory format is supported in CoreML"
+        to(context, node)
+
+
 @register_torch_op(
     torch_alias=[
-        "dim_order_ops::_to_dim_order_copy",
-        "dim_order_ops._to_dim_order_copy",
+        "dim_order_ops::_clone_dim_order",
+        "dim_order_ops._clone_dim_order",
     ],
     override=False,
 )
-def _to_dim_order_copy(context, node):
+def _clone_dim_order(context, node):
     dim_order = _get_kwinputs(context, node, "dim_order", default=[None])[0]
     node.kwinputs.pop("dim_order")
 
-    # In CoreML, dim_order.val will be an ndarray, so we convert it to a list
+    # In CoreML, dim_order.val will be a ndarray, so we convert it to a list to check memory format.
     dim_order = [int(d) for d in dim_order.val]
     memory_format = get_memory_format(dim_order)
     assert (
         memory_format == _torch.contiguous_format
     ), "Only contiguous memory format is supported in CoreML"
-    to(context, node)
+
+    # Since CoreML only supports contiguous format, no dim_order preservation is needed. Treat this as a no-op clone.
+    noop(context, node)
 
 
 # https://github.com/apple/coremltools/pull/2558
@@ -128,7 +175,6 @@ def dequantize_affine(context, node):
         int_data.astype(quantized_np_dtype),
         zero_point,
         scale,
-        axis=-1,
         name=node.name,
     )
     context.add(output, node.name)
@@ -151,11 +197,22 @@ def dequantize_codebook(context, node):
 
     # Assert codebook is as expected.  codebook.dim() = codes.dim() + 2
     assert len(codebook.shape) == 4, "Only rank 4 inputs are supported for codebook"
-    assert codebook.shape[0] == 1, "Only grouped_channel granularity is supported"
-    n_luts = codebook.shape[1]
-    assert (
-        codes.shape[1] % n_luts == 0
-    ), "codes.shape[1] must be divisible by codebook.shape[1]"
+    assert (codebook.shape[0] == 1) or (
+        codebook.shape[1] == 1
+    ), "Only grouped_channel granularity is supported"
+    if codebook.shape[0] == 1:
+        # LUT is per column group
+        n_luts = codebook.shape[1]
+        assert (
+            codes.shape[1] % n_luts == 0
+        ), "codes.shape[1] must be divisible by codebook.shape[1]"
+    else:
+        # LUT is per row group
+        n_luts = codebook.shape[0]
+        assert (
+            codes.shape[0] % n_luts == 0
+        ), "codes.shape[0] must be divisible by codebook.shape[0]"
+
     assert codebook.shape[2] == 2**nbits
     assert codebook.shape[3] == 1, "Only scalar look up values are supported"
 

@@ -15,7 +15,6 @@
   _(uint8_t, Byte)                           \
   _(int8_t, Char)
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -84,7 +83,7 @@ void quantized_linear_per_tensor_out(
     const ::executorch::aten::optional<::executorch::aten::Tensor>& offset,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nhwc_out(
+void quantized_conv2d_nhwc_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -102,7 +101,7 @@ void quantized_conv_nhwc_out(
     const ::executorch::aten::Tensor& out_shift,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nchw_out(
+void quantized_conv2d_nchw_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -120,7 +119,7 @@ void quantized_conv_nchw_out(
     const ::executorch::aten::Tensor& out_shift,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nchw_per_tensor_out(
+void quantized_conv2d_nchw_per_tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -138,7 +137,7 @@ void quantized_conv_nchw_per_tensor_out(
     int64_t out_shift,
     ::executorch::aten::Tensor& out);
 
-void quantized_conv_nhwc_per_tensor_out(
+void quantized_conv2d_nhwc_per_tensor_out(
     ::executorch::runtime::KernelRuntimeContext& ctx,
     const ::executorch::aten::Tensor& input,
     const ::executorch::aten::Tensor& weight,
@@ -168,7 +167,30 @@ void quantized_conv_nhwc_per_tensor_out(
     ::executorch::aten::IntArrayRef dims,
     ::executorch::aten::Tensor& out);
 
+void quantized_add_asym8sxasym8s_asym8s_per_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& X,
+    double X_scale,
+    int64_t X_zero_point,
+    const ::executorch::aten::Tensor& Y,
+    double Y_scale,
+    int64_t Y_zero_point,
+    double out_scale,
+    int64_t out_zero_point,
+    ::executorch::aten::Tensor& out);
+
+void quantized_add_asym8uxasym8u_asym8u_per_tensor_out(
+    ::executorch::runtime::KernelRuntimeContext& ctx,
+    const ::executorch::aten::Tensor& X,
+    double X_scale,
+    int64_t X_zero_point,
+    const ::executorch::aten::Tensor& Y,
+    double Y_scale,
+    int64_t Y_zero_point,
+    double out_scale,
+    int64_t out_zero_point,
+    ::executorch::aten::Tensor& out);
+
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

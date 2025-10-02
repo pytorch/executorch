@@ -16,7 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
  * and its debug name.
  */
 NS_SWIFT_NAME(TensorMetadata)
-__attribute__((deprecated("This API is experimental.")))
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchTensorMetadata : NSObject
 
 /** The size of each dimension. */
@@ -47,7 +47,7 @@ __attribute__((deprecated("This API is experimental.")))
  * per-tensor metadata, buffer sizes, backends, and instruction count.
  */
 NS_SWIFT_NAME(MethodMetadata)
-__attribute__((deprecated("This API is experimental.")))
+__attribute__((objc_subclassing_restricted))
 @interface ExecuTorchMethodMetadata : NSObject
 
 /** The method’s name. */
@@ -120,8 +120,33 @@ typedef NS_ENUM(uint8_t, ExecuTorchVerification) {
  * This class is a facade for loading programs and executing methods within them.
  */
 NS_SWIFT_NAME(Module)
-__attribute__((deprecated("This API is experimental.")))
 @interface ExecuTorchModule : NSObject
+
+/**
+ * Initializes a module with a file path, data path and a specified load mode.
+ *
+ * @param filePath A string representing the path to the ExecuTorch program file.
+ * @param dataFilePath A string representing the path to a .ptd file with
+ * external tensors and external data.
+ * @param loadMode A value from ExecuTorchModuleLoadMode that determines the
+ * file loading behavior.
+ * @return An initialized ExecuTorchModule instance.
+ */
+- (instancetype)initWithFilePath:(NSString *)filePath
+                    dataFilePath:(NSString *)dataFilePath
+                        loadMode:(ExecuTorchModuleLoadMode)loadMode
+    NS_DESIGNATED_INITIALIZER;
+
+/**
+ * Initializes a module with a file path, data path and a specified load mode.
+ *
+ * @param filePath A string representing the path to the ExecuTorch program file.
+ * @param dataFilePath A string representing the path to a .ptd file with
+ * external tensors and external data.
+ * @return An initialized ExecuTorchModule instance.
+ */
+- (instancetype)initWithFilePath:(NSString *)filePath
+                    dataFilePath:(NSString *)dataFilePath;
 
 /**
  * Initializes a module with a file path and a specified load mode.
@@ -131,8 +156,7 @@ __attribute__((deprecated("This API is experimental.")))
  * @return An initialized ExecuTorchModule instance.
  */
 - (instancetype)initWithFilePath:(NSString *)filePath
-                        loadMode:(ExecuTorchModuleLoadMode)loadMode
-    NS_DESIGNATED_INITIALIZER;
+                        loadMode:(ExecuTorchModuleLoadMode)loadMode;
 
 /**
  * Initializes a module with a file path using the default load mode (File mode).

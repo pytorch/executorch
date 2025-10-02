@@ -65,10 +65,10 @@ def accuracy_per_class(preds, goldens, labels):
 
 def get_dataset(data_val):
     # prepare input data
-    inputs, input_list = [], ""
+    inputs = []
     # max_position_embeddings defaults to 512
     position_ids = torch.arange(512).expand((1, -1)).to(torch.int32)
-    for index, data in enumerate(data_val):
+    for data in data_val:
         data = [d.to(torch.int32) for d in data]
         # input_ids, attention_mask, token_type_ids, position_ids
         inputs.append(
@@ -78,12 +78,8 @@ def get_dataset(data_val):
                 position_ids[:, : data[0].shape[1]],
             )
         )
-        input_text = " ".join(
-            [f"input_{index}_{i}.raw" for i in range(len(inputs[-1]))]
-        )
-        input_list += f"{input_text}\n"
 
-    return inputs, input_list
+    return inputs
 
 
 def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
@@ -228,17 +224,11 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     batch_size, pte_filename = 1, "ptq_mb_qnn"
     model, data_val, labels = get_fine_tuned_mobilebert(
         args.artifact, args.pretrained_weight, batch_size
     )
-    inputs, input_list = get_dataset(data_val)
+    inputs = get_dataset(data_val)
 
     try:
         quant_dtype = getattr(QuantDtype, f"use_{args.ptq}")
@@ -303,7 +293,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -381,6 +371,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

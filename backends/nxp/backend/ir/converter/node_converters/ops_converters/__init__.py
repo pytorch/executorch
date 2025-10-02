@@ -13,6 +13,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import (
     AvgPool2dConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.cat_converter import (
+    CatConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
     CloneConverter,
 )
@@ -38,7 +41,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     PermuteCopyConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import (
-    QDQDequantizeConverter,
+    QDQPerChannelDequantizeConverter,
+    QDQPerTensorDequantizeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_quantize_converter import (
     QDQQuantizeConverter,
@@ -52,18 +56,23 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
+    TanhConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
     ViewCopyConverter,
 )
 
 __all__ = [
     "AddMMConverter",
+    "CatConverter",
     "ConvolutionConverter",
     "MMConverter",
     "PermuteCopyConverter",
     "SoftmaxConverter",
     "ViewCopyConverter",
-    "QDQDequantizeConverter",
+    "QDQPerTensorDequantizeConverter",
+    "QDQPerChannelDequantizeConverter",
     "QDQQuantizeConverter",
     "ConstantPadNDConverter",
     "ReLUConverter",
@@ -76,4 +85,5 @@ __all__ = [
     "AdaptiveAvgPool2dConverter",
     "HardTanhConverter",
     "SigmoidConverter",
+    "TanhConverter",
 ]

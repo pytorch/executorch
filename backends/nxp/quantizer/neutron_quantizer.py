@@ -4,9 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional, Tuple, Union
-
 import torch
+
 from executorch.backends.nxp.aten_passes.neutron_aten_pass_manager import (
     NeutronAtenPassManager,
 )
@@ -16,6 +15,7 @@ from executorch.backends.nxp.quantizer.patterns import (
     AddmmPattern,
     AddTensorPattern,
     AvgPoolPattern,
+    CatPattern,
     Conv1dPattern,
     Conv2dPattern,
     DropoutPattern,
@@ -25,6 +25,8 @@ from executorch.backends.nxp.quantizer.patterns import (
     LinearPattern,
     MaxPoolPattern,
     MeanDimPattern,
+    MmPattern,
+    NodeArgsIdx,
     PadPattern,
     PermutePattern,
     QuantizationPattern,
@@ -34,6 +36,8 @@ from executorch.backends.nxp.quantizer.patterns import (
     SharedSpecPattern,
     SigmoidPattern,
     SoftMaxPattern,
+    TanhInPlacePattern,
+    TanhPattern,
     ViewPattern,
 )
 from executorch.backends.nxp.quantizer.utils import (
@@ -102,13 +106,13 @@ class NeutronAtenQuantizer(Quantizer):
                 )
 
             def annotate_inputs(
-                inputs: Union[
-                    List[Tuple[fx.Node, int]],
-                    List[Tuple[fx.Node, int, DerivedQuantizationSpec],],
-                ],
-                spec: Optional[QuantizationSpec],
+                inputs: (
+                    list[tuple[fx.Node, NodeArgsIdx]]
+                    | list[tuple[fx.Node, NodeArgsIdx, DerivedQuantizationSpec]]
+                ),
+                spec: QuantizationSpec | None,
             ) -> None:
-                for node, idx, *custom_spec in inputs:
+                for node, args_idx, *custom_spec in inputs:
                     # pyre-ignore[16]: no attribute
                     annotation = node.meta.get(
                         Q_ANNOTATION_KEY,
@@ -116,10 +120,10 @@ class NeutronAtenQuantizer(Quantizer):
                     )
                     arg = (
                         # pyre-ignore[16]: no attribute
-                        node.args[idx]
-                        if isinstance(idx, int)
+                        node.args[args_idx.idx]
+                        if args_idx.inner_idx is None
                         # pyre-ignore[16]: no attribute
-                        else node.args[idx[0]][idx[1]]
+                        else node.args[args_idx.idx][args_idx.inner_idx]
                     )
                     annotation.input_qspec_map[arg] = (
                         custom_spec[0] if custom_spec else spec
@@ -127,32 +131,18 @@ class NeutronAtenQuantizer(Quantizer):
                     # pyre-ignore[16]: no attribute
                     node.meta[Q_ANNOTATION_KEY] = annotation
 
-            def annotate_weights_or_biases(
-                weights_or_biases: List[Tuple[fx.Node, int]],
-                spec: Optional[QuantizationSpec],
-            ) -> None:
-                for node, idx, *custom_spec in weights_or_biases:
-                    annotation = node.meta.get(
-                        Q_ANNOTATION_KEY,
-                        QuantizationAnnotation(_annotated=True),
-                    )
-                    annotation.input_qspec_map[node.args[idx]] = (
-                        custom_spec[0] if custom_spec else spec
-                    )
-                    node.meta[Q_ANNOTATION_KEY] = annotation
-
             # pyre-ignore[6]: incompatible parameter type
             annotate_inputs(anchors.inputs, input_act_qspec)
-            annotate_weights_or_biases(anchors.weights, weight_qspec)
+            annotate_inputs(anchors.weights, weight_qspec)
             # pyre-ignore[6]: incompatible parameter type
-            annotate_weights_or_biases(anchors.biases, bias_qspec)
+            annotate_inputs(anchors.biases, bias_qspec)
         return model
 
     def validate(self, model: fx.GraphModule) -> None:
         pass
 
     @classmethod
-    def get_supported_operators(cls) -> List[OperatorConfig]:
+    def get_supported_operators(cls) -> list[OperatorConfig]:
         return []
 
 
@@ -191,12 +181,7 @@ bias_qspec = None
 
 class NeutronQuantizer(ComposableQuantizer):
     def __init__(self):
-        static_qconfig = QuantizationConfig(
-            act_qspec,
-            act_qspec,
-            wgt_qspec,
-            None,
-        )
+        static_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_qspec, None)
         static_fc_qconfig = QuantizationConfig(act_qspec, act_qspec, wgt_fc_qspec, None)
         super().__init__(
             [
@@ -205,6 +190,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(AddTensorPattern(), static_qconfig),
                 NeutronAtenQuantizer(AddmmPattern(), static_fc_qconfig),
                 NeutronAtenQuantizer(AvgPoolPattern(), static_qconfig),
+                NeutronAtenQuantizer(CatPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv1dPattern(), static_qconfig),
                 NeutronAtenQuantizer(Conv2dPattern(), static_qconfig),
                 NeutronAtenQuantizer(DropoutPattern(), static_qconfig),
@@ -214,6 +200,7 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(LinearPattern(), static_fc_qconfig),
                 NeutronAtenQuantizer(MaxPoolPattern(), static_qconfig),
                 NeutronAtenQuantizer(MeanDimPattern(), static_qconfig),
+                NeutronAtenQuantizer(MmPattern(), static_qconfig),
                 NeutronAtenQuantizer(PadPattern(), static_qconfig),
                 NeutronAtenQuantizer(PermutePattern(), static_qconfig),
                 NeutronAtenQuantizer(ReluPattern(), static_qconfig),
@@ -221,6 +208,8 @@ class NeutronQuantizer(ComposableQuantizer):
                 NeutronAtenQuantizer(ReshapePattern(), static_qconfig),
                 NeutronAtenQuantizer(SigmoidPattern(), static_qconfig),
                 NeutronAtenQuantizer(SoftMaxPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhPattern(), static_qconfig),
+                NeutronAtenQuantizer(TanhInPlacePattern(), static_qconfig),
                 NeutronAtenQuantizer(ViewPattern(), static_qconfig),
             ]
         )
@@ -236,8 +225,13 @@ class NeutronQuantizer(ComposableQuantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        pass_runner = NeutronAtenPassManager()
-        return pass_runner(model).graph_module
+        model.graph.eliminate_dead_code()  # Remove dead code to simplify the graph for the passes.
+
+        model = NeutronAtenPassManager()(model).graph_module
+
+        model.graph.eliminate_dead_code()  # Remove dead code again, in case it was created by the passes.
+
+        return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         self._annotate_inputs(model)
