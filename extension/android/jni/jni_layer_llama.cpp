@@ -174,7 +174,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           llm::load_tokenizer(tokenizer_path->toStdString()));
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
       std::vector<std::string> data_files_vector;
-      if (data_files_vector != nullptr) {
+      if (data_files != nullptr) {
         // Convert Java List<String> to C++ std::vector<string>
         auto list_class = facebook::jni::findClassStatic("java/util/List");
         auto size_method = list_class->getMethod<jint()>("size");
