@@ -117,7 +117,7 @@ class TransformerBlock(nn.Module):
         return TransformerBlock(args, attention)
 
     def forward(self, x, freqs_cos, freqs_sin, attn_options: ForwardOptions):  # x: 1xN
-        h, attn_options_update = self.attention.forward(
+        h, attn_options_update = self.attention(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
 
