@@ -205,7 +205,7 @@ define_overridable_option(
 # Keeping this OFF by default due to regressions in decode and model load with
 # kleidi kernels
 define_overridable_option(
-  EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" BOOL ON
+  EXECUTORCH_XNNPACK_ENABLE_KLEIDI "Enable Arm Kleidi kernels" BOOL OFF
 )
 # Turning this on cache weights between partitions and methods. If weights are
 # shared across methods/partitions then this can reduce load time and memory
