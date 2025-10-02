@@ -827,32 +827,23 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
-        # Build executor_runner with ETdump enabled
-        PYTHON_EXECUTABLE=python cmake -DPYTHON_EXECUTABLE=python \
-          -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DEXECUTORCH_ENABLE_LOGGING=1 \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-          -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-          -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-          -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-          -DEXECUTORCH_BUILD_XNNPACK=ON \
-          -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-          -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-          -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-          -DEXECUTORCH_BUILD_DEVTOOLS=ON \
-          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-          -Bcmake-out .
-        cmake --build cmake-out -j16 --target install --config Release
+        # Install executorch
+        ${CONDA_RUN} python install_executorch.py
+
         echo "::endgroup::"
 
         echo "::group::Set up Hugging Face"
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
         OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+
+        echo "Cloning optimum-executorch..."
+
         git clone https://github.com/huggingface/optimum-executorch
         pushd optimum-executorch
+
+        echo "Checking out commit: $OPTIMUM_ET_COMMIT"
+
         # There is no release yet, for CI stability, always test from the same commit on main
         git checkout $OPTIMUM_ET_COMMIT
         python install_dev.py --skip_override_torch

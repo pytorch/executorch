@@ -464,11 +464,22 @@ class InstallerBuildExt(build_ext):
             return
 
         try:
+            import sys, traceback
+
+            logging.info(f"Attempting to import Qualcomm backend...")
+            logging.debug(f"sys.path = {sys.path}")
+
             # Following code is for building the Qualcomm backend.
+            logging.info("Trying to import Qualcomm backend SDK helpers")
+            logging.debug(f"sys.path = {sys.path}")
+            logging.debug(f"Current working directory = {os.getcwd()}")
+
             from backends.qualcomm.scripts.download_qnn_sdk import (
                 _download_qnn_sdk,
                 is_linux_x86,
             )
+
+            logging.info("Qualcomm backend imports succeeded")
 
             if is_linux_x86():
                 os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
@@ -493,6 +504,11 @@ class InstallerBuildExt(build_ext):
                     # Run build.sh with SDK path exported
                     env = dict(**os.environ)
                     env["QNN_SDK_ROOT"] = str(sdk_path)
+                    logging.info(
+                        f"Running build.sh: {build_sh} with QNN_SDK_ROOT={sdk_path}"
+                    )
+                    logging.info(f"Environment keys: {list(env.keys())}")
+
                     subprocess.check_call([str(build_sh), "--skip_aarch64"], env=env)
 
                     # Copy the main .so into the wheel package
@@ -530,9 +546,13 @@ class InstallerBuildExt(build_ext):
                         self.copy_file(str(so_src), str(so_dst))
                         logging.info(f"Copied Qualcomm backend: {so_src} -> {so_dst}")
 
-        except ImportError:
-            logging.error("Fail to build Qualcomm backend")
-            logging.exception("Import error")
+        except ImportError as e:
+            logging.error("Fail to build Qualcomm backend: ImportError")
+            logging.error("Message: %s", e)
+            logging.error("sys.path at failure: %s", sys.path)
+            logging.error("cwd at failure: %s", os.getcwd())
+            traceback.print_exc()
+            raise
 
         if self.editable_mode:
             self._ran_build = True
