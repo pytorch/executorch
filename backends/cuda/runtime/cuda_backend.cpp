@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <dlfcn.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-
-#include <dlfcn.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <unistd.h>
 #include <cstdio>
 
@@ -105,15 +105,29 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
       FreeableBuffer* processed, // This will be a empty buffer
       ArrayRef<CompileSpec> compile_specs // This will be my empty list
   ) const override {
+    std::string method_name;
+    for (const CompileSpec& spec : compile_specs) {
+      if (std::strcmp(spec.key, "method_name") == 0) {
+        method_name.assign(
+            static_cast<const char*>(spec.value.buffer),
+            spec.value.nbytes); // no nullptr guarantee, so pass size
+        break;
+      }
+    }
+
+    std::string so_blob_key =
+        method_name.empty() ? "so_blob" : method_name + "_so_blob";
+
     const NamedDataMap* named_data_map = context.get_named_data_map();
-
-    string so_blob_key = "so_blob";
-
-    Result<FreeableBuffer> aoti_cuda_buffer =
-        named_data_map->get_data(so_blob_key.c_str());
-
-    ET_CHECK_OK_OR_RETURN_ERROR(aoti_cuda_buffer);
-
+    auto aoti_cuda_buffer = named_data_map->get_data(so_blob_key.c_str());
+    if (!aoti_cuda_buffer.ok()) {
+      ET_LOG(
+          Error,
+          "Failed to get data for key %s: 0x%x",
+          so_blob_key.c_str(),
+          aoti_cuda_buffer.error());
+      return aoti_cuda_buffer.error();
+    }
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
     filesystem::path so_path =
@@ -226,7 +240,7 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
         return Error::Internal;
       }
     }
-
+    ET_LOG(Info, "Inputs copied to GPU");
     // Process output tensors: create GPU counterparts for ExecutorTorch CPU
     // tensors
     for (int i = 0; i < n_outputs; i++) {
@@ -255,7 +269,7 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
 
       gpu_outputs[i] = gpu_output_handle;
     }
-
+    ET_LOG(Info, "Outputs created on GPU");
     // Run AOTI container with GPU tensors
     AOTIRuntimeError error = AOTInductorModelContainerRun(
         handle->container_handle,
@@ -277,11 +291,15 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
     // Copy GPU output results back to CPU output tensors
     for (int i = 0; i < n_outputs; i++) {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-      Error copy_err = aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0);
-      if (copy_err != Error::Ok) {
-        ET_LOG(Error, "Failed to copy GPU output %d back to CPU", i);
-        return Error::Internal;
-      }
+      // For DYNAMIC_BOUND tensors we try to resize
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
+          "Error resizing tensor at output index %d",
+          i);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
+          "Failed to copy GPU output %d back to CPU",
+          i);
     }
 
     // Clean up GPU tensors that we created (ExecutorTorch tensors are always
