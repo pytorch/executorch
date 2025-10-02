@@ -259,7 +259,6 @@ def test_upsample_bilinear2d_vec_U85_INT_Upsample(test_data: input_t1):
         Upsample(size, scale_factor),
         (test_data,),
         aten_op,
-        run_on_fvp=True,
         qtol=1,
         use_to_edge_transform_and_lower=True,
     )
@@ -279,7 +278,6 @@ def test_upsample_bilinear2d_vec_U85_INT_Interpolate(
         Interpolate(size, scale_factor),
         (test_data,),
         aten_op,
-        run_on_fvp=True,
         qtol=1,
         use_to_edge_transform_and_lower=True,
     )
@@ -299,7 +297,6 @@ def test_upsample_bilinear2d_vec_U85_INT_UpsamplingBilinear2d(
         UpsamplingBilinear2d(size, scale_factor),
         (test_data,),
         aten_op,
-        run_on_fvp=True,
         qtol=1,
         use_to_edge_transform_and_lower=True,
     )
