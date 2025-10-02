@@ -200,7 +200,6 @@ def test_mul_tensor_u55_INT(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -213,7 +212,6 @@ def test_mul_tensor_u85_INT(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -226,7 +224,6 @@ def test_mul_tensor_u55_INT_int32(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -240,7 +237,6 @@ def test_mul_tensor_u85_INT_int32(test_data: torch.Tensor):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -342,9 +338,6 @@ def test_mul_tensor_16a8w_tosa_INT(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 mul operations. See: https://github.com/pytorch/executorch/issues/13947"
-)
 def test_mul_tensor_16a8w_u55_INT16(test_data: input_t1):
     """Test mul operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -356,7 +349,6 @@ def test_mul_tensor_16a8w_u55_INT16(test_data: input_t1):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(
@@ -370,9 +362,6 @@ def test_mul_tensor_16a8w_u55_INT16(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 mul operations. See: https://github.com/pytorch/executorch/issues/13947"
-)
 def test_mul_tensor_16a8w_u85_INT16(test_data: input_t1):
     """Test mul operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -384,7 +373,6 @@ def test_mul_tensor_16a8w_u85_INT16(test_data: input_t1):
         exir_ops=[],
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(

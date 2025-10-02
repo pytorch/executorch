@@ -109,7 +109,10 @@ def test_unary_combos_tosa_INT(model_cls):
 def test_unary_combos_u55_INT(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU55PipelineINT[Tensor1](
-        m, inputs, aten_ops=[], exir_ops=exir, run_on_fvp=True
+        m,
+        inputs,
+        aten_ops=[],
+        exir_ops=exir,
     )
     p.run()
 
@@ -119,7 +122,10 @@ def test_unary_combos_u55_INT(model_cls):
 def test_unary_combos_u85_INT(model_cls):
     m, inputs, exir = _build(model_cls)
     p = EthosU85PipelineINT[Tensor1](
-        m, inputs, aten_ops=[], exir_ops=exir, run_on_fvp=True
+        m,
+        inputs,
+        aten_ops=[],
+        exir_ops=exir,
     )
     p.run()
 
