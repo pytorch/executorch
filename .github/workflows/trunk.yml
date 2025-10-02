@@ -830,9 +830,8 @@ jobs:
 
         # Install executorch
         echo "::group::Set up ExecuTorch"
-        bash .ci/scripts/setup-conda.sh
-        eval "$(conda shell.bash hook)"
-        ${CONDA_RUN} python install_executorch.py
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
 
         echo "::endgroup::"
 
