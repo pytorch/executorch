@@ -36,6 +36,9 @@ struct SpecialTokens {
 }
 
 class TextRunnerTest: XCTestCase {
+  let userPrompt = "The capital of France is called"
+  let sequenceLength = 128
+
   func test() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "llama3_2-1B", ofType: "pte"),
@@ -47,12 +50,27 @@ class TextRunnerTest: XCTestCase {
     var text = ""
 
     do {
-      try runner.generate("hello", sequenceLength: 2) { token in
+      try runner.generate(userPrompt, Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
         text += token
       }
     } catch {
       XCTFail("Failed to generate text with error \(error)")
     }
-    XCTAssertEqual("hello,", text.lowercased())
+    XCTAssertTrue(text.lowercased().contains("paris"))
+
+    text = ""
+    runner.reset()
+    do {
+      try runner.generate(userPrompt, Config {
+        $0.sequenceLength = sequenceLength
+      }) { token in
+        text += token
+      }
+    } catch {
+      XCTFail("Failed to generate text with error \(error)")
+    }
+    XCTAssertTrue(text.lowercased().contains("paris"))
   }
 }

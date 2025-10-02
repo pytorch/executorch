@@ -122,7 +122,7 @@ ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::unordered_set<std::string> data_files = {},
+    std::vector<std::string> data_files = {},
     float temperature = -1.0f);
 
 /**

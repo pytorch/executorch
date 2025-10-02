@@ -360,6 +360,7 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.max_pool2d.default,
     torch.ops.aten.full.default,
     torch.ops.aten.full,
+    torch.ops.aten.fill_.Scalar,
     torch.ops.aten.flatten.using_ints,
     torch.ops.aten.dropout.default,
     torch.ops.aten.dropout_.default,
@@ -391,7 +392,11 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.conv2d.padding,
             ],
             [torch.ops.aten.batch_norm.default, F.batch_norm],
-            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+            [
+                torch.ops.aten.relu.default,
+                torch.ops.aten.relu_.default,
+                torch.ops.aten.hardtanh.default,
+            ],
         ],
         filter_fn=any_or_hardtanh_min_zero,
     ):
@@ -407,6 +412,7 @@ def get_quant_properties(  # noqa: C901
             ]
         elif node.target in (
             torch.ops.aten.relu.default,
+            torch.ops.aten.relu_.default,
             torch.ops.aten.hardtanh.default,
         ):
             quant_properties.quant_output = _QuantProperty(0, output_act_qspec)
@@ -443,7 +449,11 @@ def get_quant_properties(  # noqa: C901
                 torch.ops.aten.linear.default,
                 torch.ops.aten.conv2d.padding,
             ],
-            [torch.ops.aten.relu.default, torch.ops.aten.hardtanh.default],
+            [
+                torch.ops.aten.relu.default,
+                torch.ops.aten.relu_.default,
+                torch.ops.aten.hardtanh.default,
+            ],
         ],
         any_or_hardtanh_min_zero,
     ):
@@ -625,6 +635,7 @@ def annotate_graph(  # type: ignore[return]
             torch.ops.aten.full_like.default,
             torch.ops.aten.full.default,
             torch.ops.aten.full,
+            torch.ops.aten.fill_.Scalar,
             torch.ops.aten.scalar_tensor.default,
         ]:
             node.kwargs = {}

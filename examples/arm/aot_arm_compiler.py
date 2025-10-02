@@ -9,7 +9,6 @@
 
 import argparse
 import copy
-import json
 import logging
 import os
 
@@ -18,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
 from executorch.backends.arm.quantizer import (
     EthosUQuantizer,
@@ -30,13 +30,17 @@ from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
 from executorch.backends.arm.util.arm_model_evaluator import (
-    GenericModelEvaluator,
-    MobileNetV2Evaluator,
+    evaluate_model,
+    evaluator_calibration_data,
 )
 
 from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
 
 # To use Cortex-M backend
+from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
+    QuantizedLinearFusionPass,
+)
+
 from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
     QuantizedOpFusionPass,
 )
@@ -54,6 +58,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
 from torch.utils.data import DataLoader
@@ -147,7 +152,8 @@ def quantize(
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
 ) -> torch.nn.Module:
-    """This is the official recommended flow for quantization in pytorch 2.0 export"""
+    """This is the official recommended flow for quantization in pytorch 2.0
+    export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
     quantizer = None
@@ -179,46 +185,6 @@ def quantize(
     m = convert_pt2e(m)
     logging.debug(f"Quantized model: {m}")
     return m
-
-
-# Simple example models
-class AddModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return x + x
-
-    example_input = (torch.ones(5, dtype=torch.int32),)
-    can_delegate = True
-
-
-class AddModule2(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return x + y
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
-
-
-class AddModule3(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, y):
-        return (x + y, x + x)
-
-    example_input = (
-        torch.ones(5, dtype=torch.int32),
-        torch.ones(5, dtype=torch.int32),
-    )
-    can_delegate = True
 
 
 class QuantAddTest(torch.nn.Module):
@@ -269,48 +235,29 @@ class QuantOpTest(torch.nn.Module):
     can_delegate = True  # when quantized
 
 
-class SoftmaxModule(torch.nn.Module):
+class QuantLinearTest(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.softmax = torch.nn.Softmax(dim=0)
+        # Define a simple linear layer
+        self.linear = torch.nn.Linear(61, 37)
 
     def forward(self, x):
-        z = self.softmax(x)
-        return z
+        return self.linear(x)
 
-    example_input = (torch.ones(2, 2),)
-    can_delegate = True
-
-
-class MultipleOutputsModule(torch.nn.Module):
-    def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return (x * y, x.sum(dim=-1, keepdim=True))
-
-    example_input = (torch.randn(10, 4, 5), torch.randn(10, 4, 5))
+    example_input = (torch.randn([8, 61], dtype=torch.float32),)
     can_delegate = True
 
 
 models = {
-    "add": AddModule,
-    "add2": AddModule2,
-    "add3": AddModule3,
     "qadd": QuantAddTest,
     "qadd2": QuantAddTest2,
     "qops": QuantOpTest,
-    "softmax": SoftmaxModule,
-    "MultipleOutputsModule": MultipleOutputsModule,
+    # TODO: Remove this from here, once we have dedicated MCU test pipeline ready. This is an interim solution.
+    # See https://github.com/pytorch/executorch/discussions/13944
+    "qlinear": QuantLinearTest,
 }
 
 calibration_data = {
-    "add": (torch.randn(1, 5),),
-    "add2": (
-        torch.randn(1, 5),
-        torch.randn(1, 5),
-    ),
-    "add3": (
-        torch.randn(32, 5),
-        torch.randn(32, 5),
-    ),
     "qadd": (torch.randn(32, 2, 1),),
     "qadd2": (
         torch.randn(32, 2, 1),
@@ -322,12 +269,6 @@ calibration_data = {
         torch.randn(32, 2, 1) * -0.000001,
         torch.randn(32, 2, 1) * 1000,
     ),
-    "softmax": (torch.randn(32, 2, 2),),
-}
-
-evaluators = {
-    "generic": GenericModelEvaluator,
-    "mv2": MobileNetV2Evaluator,
 }
 
 targets = [
@@ -354,21 +295,7 @@ def get_calibration_data(
 ):
     # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
     if evaluator_name is not None:
-        evaluator = evaluators[evaluator_name]
-
-        if hasattr(evaluator, "get_calibrator"):
-            assert evaluator_config is not None
-
-            config_path = Path(evaluator_config)
-            with config_path.open() as f:
-                config = json.load(f)
-
-            if evaluator_name == "mv2":
-                return evaluator.get_calibrator(
-                    training_dataset_path=config["training_dataset_path"]
-                )
-            else:
-                raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+        return evaluator_calibration_data(evaluator_name, evaluator_config)
 
     # If the model is in the calibration_data dictionary, get the data from there
     # This is used for the simple model examples provided
@@ -386,6 +313,7 @@ def get_compile_spec(
     memory_mode: Optional[str] = None,
     quantize: bool = False,
     config: Optional[str] = None,
+    debug_mode: Optional[str] = None,
 ) -> TosaCompileSpec | EthosUCompileSpec | VgfCompileSpec:
     compile_spec = None
     if target.startswith("TOSA"):
@@ -395,11 +323,14 @@ def get_compile_spec(
             tosa_spec = TosaSpecification.create_from_string("TOSA-1.0+INT")
         compile_spec = TosaCompileSpec(tosa_spec)
     elif "ethos-u" in target:
+        extra_flags = ["--verbose-operators", "--verbose-cycle-estimate"]
+        if debug_mode is not None:
+            extra_flags.append("--enable-debug-db")
         compile_spec = EthosUCompileSpec(
             target,
             system_config=system_config,
             memory_mode=memory_mode,
-            extra_flags=["--verbose-operators", "--verbose-cycle-estimate"],
+            extra_flags=extra_flags,
             config_ini=config,
         )
     elif "vgf" in target:
@@ -414,53 +345,11 @@ def get_compile_spec(
     if intermediates is not None:
         compile_spec.dump_intermediate_artifacts_to(intermediates)
 
+    if debug_mode is not None:
+        mode = ArmCompileSpec.DebugMode[debug_mode.upper()]
+        compile_spec.dump_debug_info(mode)
+
     return compile_spec
-
-
-def evaluate_model(
-    model_name: str,
-    intermediates: str,
-    model_fp32: torch.nn.Module,
-    model_int8: torch.nn.Module,
-    example_inputs: Tuple[torch.Tensor],
-    evaluator_name: str,
-    evaluator_config: str | None,
-) -> None:
-    evaluator = evaluators[evaluator_name]
-
-    # Get the path of the TOSA flatbuffer that is dumped
-    intermediates_path = Path(intermediates)
-    tosa_paths = list(intermediates_path.glob("*.tosa"))
-
-    if evaluator.REQUIRES_CONFIG:
-        assert evaluator_config is not None
-
-        config_path = Path(evaluator_config)
-        with config_path.open() as f:
-            config = json.load(f)
-
-        if evaluator_name == "mv2":
-            init_evaluator = evaluator(
-                model_name,
-                model_fp32,
-                model_int8,
-                example_inputs,
-                str(tosa_paths[0]),
-                config["batch_size"],
-                config["validation_dataset_path"],
-            )
-        else:
-            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
-    else:
-        init_evaluator = evaluator(
-            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
-        )
-
-    quant_metrics = init_evaluator.evaluate()
-    output_json_path = intermediates_path / "quant_metrics.json"
-
-    with output_json_path.open("w") as json_file:
-        json.dump(quant_metrics, json_file)
 
 
 def dump_delegation_info(edge, intermediate_files_folder: Optional[str] = None):
@@ -587,7 +476,7 @@ def get_args():
         "--config",
         required=False,
         default="Arm/vela.ini",
-        help="Specify custom vela configuration file (vela.ini)",
+        help="Specify custom vela configuration file (vela.ini) for Ethos-U targets.",
     )
     parser.add_argument(
         "--non_strict_export",
@@ -599,7 +488,13 @@ def get_args():
     parser.add_argument(
         "--enable_qdq_fusion_pass",
         action="store_true",
-        help="Enable the QuantizedOpFusionPass fusion step",
+        help="Enable the Quantized qdq fusion Op passes",
+    )
+    parser.add_argument(
+        "--enable_debug_mode",
+        required=False,
+        choices=["json", "tosa"],
+        help="Flag to enable ATen-to-TOSA debug mode and dumping of Vela's debug database.",
     )
     args = parser.parse_args()
 
@@ -735,6 +630,7 @@ def to_edge_TOSA_delegate(
         args.memory_mode,
         args.quantize,
         args.config,
+        args.enable_debug_mode,
     )
 
     model_int8 = None
@@ -776,6 +672,7 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
             args.memory_mode,
             args.quantize,
             args.config,
+            args.enable_debug_mode,
         )
         model, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
@@ -792,22 +689,24 @@ def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_
     return model_int8, edge
 
 
-def transform_for_cortex_m_backend(edge, args):
+def transform_for_cortex_m_backend(edge_program_manager, args):
     # Let's make sure we are using optimized Cortex M backend
     # NB: If we can't find and replace ops those are expected to be replaced,
     # bad things will happen at runtime, like "missing operator" errors!
 
     # Instantiate the mandatory ReplaceQuantNodesPass
-    passes = [ReplaceQuantNodesPass()]
-
-    # Conditionally add the QuantizedOpFusionPass
+    passes = [ReplaceQuantNodesPass]
     if args.enable_qdq_fusion_pass:
-        passes.append(QuantizedOpFusionPass())
-
-    # Apply the passes
-    edge = edge.transform(passes)
-
-    return edge
+        passes += [QuantizedLinearFusionPass, QuantizedOpFusionPass]
+    current_edge = edge_program_manager
+    for pass_cls in passes:
+        transform_pass = (
+            pass_cls(current_edge.exported_program())
+            if pass_cls.__name__ == "QuantizedLinearFusionPass"
+            else pass_cls()
+        )
+        current_edge = current_edge.transform([transform_pass])
+    return current_edge
 
 
 if __name__ == "__main__":  # noqa: C901
@@ -824,11 +723,20 @@ if __name__ == "__main__":  # noqa: C901
     exported_program = torch.export.export(
         model, example_inputs, strict=args.strict_export
     )
+
     model = exported_program.module()
     model_fp32 = model
 
+    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     if args.intermediates:
         os.makedirs(args.intermediates, exist_ok=True)
+
+        # We only support Python3.10 and above, so use a later pickle protocol
+        torch.export.save(
+            exported_program,
+            f"{args.intermediates}/{model_name}_exported_program.pt2",
+            pickle_protocol=5,
+        )
 
     # Quantize if required
     model_int8 = None
@@ -862,7 +770,6 @@ if __name__ == "__main__":  # noqa: C901
         else:
             raise e
 
-    model_name = os.path.basename(os.path.splitext(args.model_name)[0])
     output_name = f"{model_name}" + (
         f"_arm_delegate_{args.target}"
         if args.delegate is True
