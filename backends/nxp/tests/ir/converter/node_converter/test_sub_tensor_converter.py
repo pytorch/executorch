@@ -135,7 +135,7 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     input_data = {0: input_data_1, 1: input_data_2}
 
     nodes = list(exported_program.graph.nodes)
-    assert nodes[11].target == exir_ops.edge.aten.sub.Tensor
+    assert nodes[15].target == exir_ops.edge.aten.sub.Tensor
 
     convert_run_compare(
         exported_program,

@@ -231,16 +231,16 @@ class SubTensorPattern(QuantizationPattern):
     Basic quantization for all inputs and output.
     """
 
-    def partition_types(self) -> list[type[torch.nn.Module]]:
+    def partition_types(self) -> list[torch.nn.Module]:
         return [torch.ops.aten.sub.Tensor]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
         node = fused_partition[0].nodes[-1]
-        inputs = [(node, 0)]
+        inputs = [(node, NodeArgsIdx(0))]
         if len(fused_partition[0].input_nodes) == 2:
-            inputs = [(node, 0), (node, 1)]
+            inputs = [(node, NodeArgsIdx(0)), (node, NodeArgsIdx(1))]
 
         return PartitionAnchors(
             inputs=inputs,
