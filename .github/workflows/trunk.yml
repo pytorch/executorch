@@ -828,6 +828,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        # Used by .ci/scripts/test_huggingface_optimum_model.py
+        pip install datasets
+
         echo "::group::Set up Hugging Face"
         pip install -U "huggingface_hub[cli]"
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
