@@ -193,8 +193,8 @@ class LlamaStories260K(LLMModelConfig):
 
     num_sharding = 1
     # quant config
-    ptq = QuantDtype.use_16a4w
-    group_size = None
+    ptq = QuantDtype.use_16a4w_block_qat
+    group_size = 32
     masked_softmax = False
     seq_mse_candidates = 0
     r1 = False
