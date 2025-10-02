@@ -830,8 +830,7 @@ jobs:
 
         # Install executorch
         echo "::group::Set up ExecuTorch"
-        source .ci/scripts/utils.sh
-        install_executorch "--use-pt-pinned-commit"
+        ./install_requirements.sh --use-pt-pinned-commit
 
         echo "::endgroup::"
 
