@@ -47,3 +47,17 @@ runtime.python_library(
         ":test_qnn_delegate"
     ]
 )
+
+runtime.python_test(
+    name = "test_passes",
+    srcs = [
+        "test_passes.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/backends/qualcomm/_passes:passes",
+        "//executorch/backends/qualcomm/builders:builders",
+    ],
+)
