@@ -33,14 +33,22 @@ public class LlmModule {
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      int modelType, String modulePath, String tokenizerPath, float temperature, List<String> dataFiles);
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles);
 
   /**
    * Constructs a LLM Module for a model with given type, model path, tokenizer, temperature, and
    * dataFiles.
    */
   public LlmModule(
-      int modelType, String modulePath, String tokenizerPath, float temperature, List<String> dataFiles) {
+      int modelType,
+      String modulePath,
+      String tokenizerPath,
+      float temperature,
+      List<String> dataFiles) {
     ExecuTorchRuntime runtime = ExecuTorchRuntime.getRuntime();
 
     File modelFile = new File(modulePath);
@@ -51,7 +59,7 @@ public class LlmModule {
     if (!tokenizerFile.canRead() || !tokenizerFile.isFile()) {
       throw new RuntimeException("Cannot load tokenizer path " + tokenizerPath);
     }
-    
+
     mHybridData = initHybrid(modelType, modulePath, tokenizerPath, temperature, dataFiles);
   }
 
@@ -61,7 +69,7 @@ public class LlmModule {
    */
   public LlmModule(
       int modelType, String modulePath, String tokenizerPath, float temperature, String dataPath) {
-        this(modelType, modulePath, tokenizerPath, temperature, List.of(dataPath));
+    this(modelType, modulePath, tokenizerPath, temperature, List.of(dataPath));
   }
 
   /** Constructs a LLM Module for a model with given model path, tokenizer, temperature. */
