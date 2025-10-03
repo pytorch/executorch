@@ -97,8 +97,7 @@ class CatConverter(NodeConverter):
             channels_index = -1
 
         input_channels = [
-            _get_shape(input_)[channels_index]
-            for input_ in node.all_input_nodes
+            _get_shape(input_)[channels_index] for input_ in node.all_input_nodes
         ]
         output_channels = _get_shape(node)[channels_index]
 
