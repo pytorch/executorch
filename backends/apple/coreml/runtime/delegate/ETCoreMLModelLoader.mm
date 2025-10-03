@@ -44,6 +44,22 @@ namespace {
 
 @implementation ETCoreMLModelLoader
 
++ (nullable ETCoreMLModel *)loadModelWithCompiledAsset:(ETCoreMLAsset *)compiledAsset
+                                          configuration:(MLModelConfiguration *)configuration
+                                               metadata:(const executorchcoreml::ModelMetadata&)metadata
+                                                error:(NSError * __autoreleasing *)error {
+    NSError *localError = nil;
+    ETCoreMLModel *model = (compiledAsset != nil) ? get_model_from_asset(compiledAsset, configuration, metadata, &localError) : nil;
+    if (model) {
+        return model;
+    }
+    if (error) {
+        *error = localError;
+    }
+    return nil;
+}
+                                        
+
 + (nullable ETCoreMLModel *)loadModelWithContentsOfURL:(NSURL *)compiledModelURL
                                          configuration:(MLModelConfiguration *)configuration
                                               metadata:(const executorchcoreml::ModelMetadata&)metadata
@@ -55,10 +71,28 @@ namespace {
     if ([assetManager hasAssetWithIdentifier:identifier error:&localError]) {
         asset = [assetManager assetWithIdentifier:identifier error:&localError];
     } else {
+        ETCoreMLLogInfo("Storing asset with identifier=%@ in assetManager", identifier);
         asset = [assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:&localError];
     }
-    
-    ETCoreMLModel *model = (asset != nil) ? get_model_from_asset(asset, configuration, metadata, &localError) : nil;
+
+    if (asset == nil) {
+        ETCoreMLLogInfo("Failed to retrieve or store asset with identifier=%@ in assetManager", identifier);
+        ETCoreMLLogInfo("compiledModelURL=%@", compiledModelURL);
+        ETCoreMLLogInfo("error=%@", localError);
+        ETCoreMLLogInfo("Attempting to fall back by loading model from compiledModelURL without transferring to assetManager");
+        auto backingAsset = Asset::make(compiledModelURL, identifier, assetManager.fileManager, &localError);
+        if (!backingAsset) {
+            ETCoreMLLogInfo("Failed to create a backing asset with error=%@", localError);
+            return nil;
+        }
+        asset = [[ETCoreMLAsset alloc] initWithBackingAsset:backingAsset.value()];
+    }
+
+    ETCoreMLModel *model;
+    if (asset != nil) {
+        model = [self loadModelWithCompiledAsset:asset configuration:configuration metadata:metadata error:&localError];
+    }
+
     if (model) {
         return model;
     }

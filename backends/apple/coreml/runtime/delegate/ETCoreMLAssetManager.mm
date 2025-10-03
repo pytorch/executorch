@@ -437,7 +437,13 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         }
         
         // If a file already exists at `dstURL`, move it to the trash for removal.
-        move_to_directory(dstURL, self.trashDirectoryURL, self.fileManager, nil);
+        if (dstURL && [self.fileManager fileExistsAtPath:dstURL.path]) {
+            if (!move_to_directory(dstURL, self.trashDirectoryURL, self.fileManager, error)) {
+                // If we failed to move the file to the trash, we can't proceed
+                return false;
+            }
+        }
+        
         // Move the asset to assets directory.
         if (![self.fileManager moveItemAtURL:srcURL toURL:dstURL error:error]) {
             return false;
