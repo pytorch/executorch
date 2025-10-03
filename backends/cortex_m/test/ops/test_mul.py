@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import pytest
 import torch
 from executorch.backends.arm.test.common import parametrize
 from executorch.backends.cortex_m.test.tester import (
@@ -60,6 +59,16 @@ class CortexMTensorMul(Model):
     }
 
 
+class CortexMTensorMulBroadCast(Model):
+    ops_before_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+    }
+
+    ops_after_transforms = {
+        "executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1,
+    }
+
+
 test_cases = {
     "self_scalar": McuTestCase(
         CortexMSelfMul(),
@@ -91,22 +100,22 @@ test_cases = {
     ),
     "tensor_scalar": McuTestCase(
         CortexMScalarMul(),
-        (torch.ones(2, 2), 1.0),
+        (torch.ones(1), 1.0),
     ),
     "scalar_tensor": McuTestCase(
         CortexMScalarMul(),
-        (1000.0, torch.ones(2, 2)),
+        (1000.0, torch.ones(1)),
     ),
     "broadcast_1": McuTestCase(
-        CortexMTensorMul(),
+        CortexMTensorMulBroadCast(),
         (torch.ones(1), torch.ones(2, 2, 2, 2)),
     ),
     "broadcast_2": McuTestCase(
-        CortexMTensorMul(),
+        CortexMTensorMulBroadCast(),
         (torch.ones((2, 1, 1, 1)), torch.ones(1)),
     ),
     "broadcast_3": McuTestCase(
-        CortexMTensorMul(),
+        CortexMTensorMulBroadCast(),
         (
             ramp_tensor(-2, 2, (2, 1, 2, 1)),
             ramp_tensor(-5, 5, (1, 2, 1, 2)),
@@ -115,17 +124,23 @@ test_cases = {
 }
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-@parametrize("test_case", test_cases)
+xfail_cases = {
+    "self_scalar": "lift_constant_tensor_pass assumes fake tensors for scalars",
+    "scalar_scalar": "lift_constant_tensor_pass assumes fake tensors for scalars",
+}
+
+
+@parametrize("test_case", test_cases, xfails=xfail_cases)
 def test_dialect_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
     tester.test_dialect(
-        test_case.model.ops_before_transforms, test_case.model.ops_after_transforms
+        test_case.model.ops_before_transforms,
+        test_case.model.ops_after_transforms,
+        qtol=1,
     )
 
 
-@pytest.mark.skip(reason="Not implemented yet")
-@parametrize("test_case", test_cases)
+@parametrize("test_case", test_cases, xfails=xfail_cases)
 def test_implementation_mul(test_case):
     tester = CortexMTester(test_case.model, test_case.example_inputs)
-    tester.test_implementation()
+    tester.test_implementation(qtol=1)
