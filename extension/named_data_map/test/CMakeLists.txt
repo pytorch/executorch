@@ -58,6 +58,6 @@ et_cxx_test(
 )
 
 add_dependencies(
-  extension_named_data_map_tensor_test extension_named_data_map extension_named_data_map_test_resources
+  extension_named_data_map_test extension_named_data_map extension_named_data_map_test_resources
 )
 set_property(TEST extension_named_data_map_test PROPERTY ENVIRONMENT ${test_env})

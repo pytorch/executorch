@@ -87,6 +87,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP "Build the Named Data Map extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" BOOL OFF
 )
 define_overridable_option(
