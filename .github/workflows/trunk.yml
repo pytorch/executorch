@@ -787,7 +787,8 @@ jobs:
         done
 
   test-huggingface-transformers-xnnpack:
-    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway	    if: ${{ !github.event.pull_request.head.repo.fork }}
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     name: test-huggingface-transformers-xnnpack
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
