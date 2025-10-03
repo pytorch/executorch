@@ -71,7 +71,6 @@ namespace {
     if ([assetManager hasAssetWithIdentifier:identifier error:&localError]) {
         asset = [assetManager assetWithIdentifier:identifier error:&localError];
     } else {
-        ETCoreMLLogInfo("Storing asset with identifier=%@ in assetManager", identifier);
         asset = [assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:&localError];
     }
     
