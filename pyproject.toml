@@ -1,9 +1,10 @@
 [build-system]
 requires = [
   "cmake>=3.29,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "packaging>=24.2", # Lower bound required by setuptools
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
-  "setuptools>=63",  # For building the pip package contents.
+  "setuptools>=77.0.3",  # For building the pip package contents.
   "wheel",  # For building the pip package archive.
   "zstd",  # Imported by resolve_buck.py.
   "certifi",  # Imported by resolve_buck.py.
@@ -21,7 +22,8 @@ readme = "README-wheel.md"
 authors = [
   {name="PyTorch Team", email="packages@pytorch.org"},
 ]
-license = {file = "LICENSE"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 keywords = ["pytorch", "machine learning"]
 # PyPI package information.
 classifiers = [
@@ -33,7 +35,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD License",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
