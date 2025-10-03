@@ -12,6 +12,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/runtime/platform/runtime.h>
 
 /**
@@ -155,10 +156,6 @@ runtime::Error Module::load(const Program::Verification verification) {
       data_loader_ = ET_UNWRAP(make_data_loader(file_path_, load_mode_));
     }
     if (data_files_.size() > 0) {
-      ET_CHECK_OR_RETURN_ERROR(
-          data_files_.size() == 1,
-          NotImplemented,
-          "Multiple named data map paths are not supported yet.");
       for (const auto& data_file : data_files_) {
         data_map_loaders_.push_back(
             ET_UNWRAP(make_data_loader(data_file, load_mode_)));
@@ -166,13 +163,18 @@ runtime::Error Module::load(const Program::Verification verification) {
     }
 
     if (data_map_loaders_.size() > 0) {
-      ET_CHECK_OR_RETURN_ERROR(
-          data_map_loaders_.size() == 1 && merged_data_map_ == nullptr,
-          NotImplemented,
-          "Multiple named data map loaders are not supported yet.");
-      // TODO(lfq): support multiple named data map loaders.
-      merged_data_map_ =
-          ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loaders_[0].get()));
+      for (auto i = 0; i < data_map_loaders_.size(); ++i) {
+        named_data_maps_.push_back(ET_UNWRAP_UNIQUE(
+            FlatTensorDataMap::load(data_map_loaders_[i].get())));
+      }
+
+      // Extract raw pointers from unique_ptrs to pass to MergedDataMap::load()
+      std::vector<const NamedDataMap*> raw_data_maps;
+      raw_data_maps.reserve(named_data_maps_.size());
+      for (const auto& data_map : named_data_maps_) {
+        raw_data_maps.push_back(data_map.get());
+      }
+      merged_data_map_ = ET_UNWRAP_UNIQUE(MergedDataMap::load(raw_data_maps));
     }
 
     auto program =
