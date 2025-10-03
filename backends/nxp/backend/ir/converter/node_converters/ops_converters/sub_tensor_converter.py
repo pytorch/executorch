@@ -1,22 +1,24 @@
-# Copyright 2024-2025 NXP
+# Copyright 2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.backends.nxp.backend.custom_delegation_options import (
-    CustomDelegationOptions,
+from executorch.backends.nxp.backend.ir.converter.conversion.common import (
+    node_uses_shape_broadcasting,
 )
-from executorch.backends.nxp.backend.edge_helper import input_rank
-from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
+from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    NodeConverter,
+)
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
-    softmax_options,
+    sub_options,
 )
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
-class SoftmaxConverter(NodeConverter):
+class SubTensorConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
@@ -24,7 +26,11 @@ class SoftmaxConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        return False
+        if node_uses_shape_broadcasting(node):
+            # Shape broadcasting may require the addition of `Transpose` ops during conversion.
+            return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -32,31 +38,22 @@ class SoftmaxConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        # The IR only supports the `dim` as the last dimension. But that depends on the format of the input tensor,
-        #  which is only known after the `Partitioner` has divided the model. So if the input shape can be channels
-        #  first (i.e. is more than 2D), we cannot determine IR support (we assume it's not supported).
-        x_rank = input_rank(node, 0)
-        if x_rank > 2:
+        if len(node.args) != 2:
             return False
 
-        dim = SoftmaxConverter._normalize_dim(node.args[1], x_rank)
-        if dim != x_rank - 1:
+        # The `alpha` attribute can be represented by adding an extra `Mul` operator.
+        #  However, this is not implemented as `alpha` is rarely used.
+        if hasattr(node.kwargs, "alpha"):
             return False
 
         return True
 
-    @staticmethod
-    def _normalize_dim(dim, rank):
-        # convert negative index to positive
-        if dim < 0:
-            dim += rank
-        return dim
-
+    # sub.Tensor Node format: (Tensor self, Tensor other, *, Scalar alpha=1)
     def convert(self, node: Node):
+        """Convert 'sub_tensor' operator to NeutronIR 'Sub'."""
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)
 
-        t_op.builtin_options = softmax_options.Softmax(beta=1.0)
-
+        t_op.builtin_options = sub_options.Sub()
         self.builder.append_operators([t_op])
