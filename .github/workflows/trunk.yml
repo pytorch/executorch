@@ -828,6 +828,7 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        pip uninstall torch torchaudio torchvision -y
 
         # Install executorch
         echo "::group::Set up ExecuTorch"
@@ -848,7 +849,7 @@ jobs:
 
         echo "::group::Run tests"
         export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
-        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE} --model_dir ${OUTPUT_DIR}
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE} --model_dir ${OUTPUT_DIR}
         echo "::endgroup::"
 
         echo "::group::Generate artifacts for performance profiling"
