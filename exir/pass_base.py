@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2025 Arm Limited and/or its affiliates.
+# Copyright 2025-2026 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -191,6 +191,11 @@ class _ExportPassBase(PassBase):
                 if not hasattr(a, "constant") or a.constant is None:
                     raise ExportPassBaseError(f"Cannot add {a} to graph.")
                 a = a.constant
+            elif isinstance(a, torch.SymInt):
+                if a.node.constant is not None:
+                    return a.node.constant
+                else:
+                    return a
             node = super().create_arg(a)
             if (
                 isinstance(a, torch.Tensor)
