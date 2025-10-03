@@ -65,7 +65,6 @@ def test_unsqueeze_u55_INT(test_tensor: torch.Tensor):
         (*test_tensor, 0),
         aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -78,7 +77,6 @@ def test_unsqueeze_u85_INT(test_tensor: torch.Tensor):
         (*test_tensor, 0),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

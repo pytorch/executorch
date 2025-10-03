@@ -206,8 +206,8 @@ class TOSABackend(BackendDetails):
         hardware.
         """
 
-        new_compile_spec = TosaCompileSpec.__new__(TosaCompileSpec)
-        new_compile_spec._set_compile_specs(
-            compile_spec.tosa_spec, [], compile_spec.get_intermediate_path()
+        return (
+            TosaCompileSpec(compile_spec.tosa_spec)
+            .dump_intermediate_artifacts_to(compile_spec.get_intermediate_path())
+            .dump_debug_info(compile_spec.tosa_debug_mode)
         )
-        return new_compile_spec

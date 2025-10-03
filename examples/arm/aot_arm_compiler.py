@@ -18,23 +18,18 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 from examples.devtools.scripts.export_bundled_program import save_bundled_program
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-    VgfQuantizer,
-)
+from executorch.backends.arm.ethosu import EthosUCompileSpec
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
-from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
+from executorch.backends.arm.util._factory import create_partitioner, create_quantizer
 
 from executorch.backends.arm.util.arm_model_evaluator import (
     evaluate_model,
     evaluator_calibration_data,
 )
 
-from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
+from executorch.backends.arm.vgf import VgfCompileSpec
 
 # To use Cortex-M backend
 from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
@@ -61,6 +56,8 @@ from executorch.exir import (
 
 from executorch.extension.export_util.utils import save_pte_program
 from tabulate import tabulate
+from torch.export import ExportedProgram
+from torch.fx import GraphModule
 from torch.utils.data import DataLoader
 
 # Quantize model if required using the standard export quantizaion flow.
@@ -145,26 +142,19 @@ def get_model_and_inputs_from_name(
 
 
 def quantize(
-    model: torch.nn.Module,
+    model: GraphModule,
     model_name: str,
     compile_specs: EthosUCompileSpec | VgfCompileSpec | TosaCompileSpec,
     example_inputs: Tuple[torch.Tensor],
     evaluator_name: str | None,
     evaluator_config: Dict[str, Any] | None,
-) -> torch.nn.Module:
+) -> GraphModule:
     """This is the official recommended flow for quantization in pytorch 2.0
     export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = None
-    if isinstance(compile_specs, EthosUCompileSpec):
-        quantizer = EthosUQuantizer(compile_specs)
-    elif isinstance(compile_specs, TosaCompileSpec):
-        quantizer = TOSAQuantizer(compile_specs)
-    elif isinstance(compile_specs, VgfCompileSpec):
-        quantizer = VgfQuantizer(compile_specs)
-    else:
-        raise RuntimeError("Unsupported compilespecs for quantization!")
+
+    quantizer = create_quantizer(compile_specs)
 
     operator_config = get_symmetric_quantization_config()
     quantizer.set_global(operator_config)
@@ -601,7 +591,12 @@ def save_bpte_program(exec_prog, original_model: torch.nn.Module, output_name: s
     save_bundled_program(exec_prog, method_test_suites, output_name)
 
 
-def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
+def quantize_model(
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+    compile_spec,
+) -> Tuple[GraphModule, ExportedProgram]:
     model_int8 = quantize(
         model,
         args.model_name,
@@ -619,7 +614,10 @@ def quantize_model(args, model: torch.nn.Module, example_inputs, compile_spec):
 
 
 def to_edge_TOSA_delegate(
-    exported_program, args, model: torch.nn.Module, example_inputs
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
 ):
     # As we can target multiple output encodings, one must
     # be specified.
@@ -638,16 +636,8 @@ def to_edge_TOSA_delegate(
         model_int8, exported_program = quantize_model(
             args, model, example_inputs, compile_spec
         )
-        model = model_int8
 
-    if isinstance(compile_spec, EthosUCompileSpec):
-        partitioner = EthosUPartitioner(compile_spec)
-    elif isinstance(compile_spec, TosaCompileSpec):
-        partitioner = TOSAPartitioner(compile_spec)
-    elif isinstance(compile_spec, VgfCompileSpec):
-        partitioner = VgfPartitioner(compile_spec)
-    else:
-        raise RuntimeError(f"Unhandled compile spec: {compile_spec}")
+    partitioner = create_partitioner(compile_spec)
 
     edge = to_edge_transform_and_lower(
         exported_program,
@@ -660,7 +650,12 @@ def to_edge_TOSA_delegate(
     return model_int8, edge
 
 
-def to_edge_no_delegate(exported_program, args, model: torch.nn.Module, example_inputs):
+def to_edge_no_delegate(
+    exported_program: ExportedProgram,
+    args,
+    model: GraphModule,
+    example_inputs: Tuple[torch.Tensor],
+):
     model_int8 = None
     if args.quantize:
         # As we can target multiple output encodings, one must

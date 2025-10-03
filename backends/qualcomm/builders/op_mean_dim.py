@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict, List
+from typing import cast, Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
@@ -40,7 +40,22 @@ class MeanDim(NodeVisitor):
         )
 
         # mean dims and keep dims
-        mean_dims = cast(List[int], node.args[1])
+        rank = len(input_node.meta["val"].shape)
+
+        if rank == 0:
+            raise RuntimeError(
+                "Mean doesn't support 0d input, please report a bug in https://github.com/pytorch/executorch/issues"
+            )
+
+        dim_arg = node.args[1]
+
+        if dim_arg is None or len(dim_arg) == 0:
+            mean_dims = list(range(rank))  # reduce over all dims
+        elif isinstance(dim_arg, int):
+            mean_dims = [dim_arg]
+        else:
+            mean_dims = list(dim_arg)
+        print("mean_dims: ", mean_dims, "rank: ", rank)
         mean_dims = [
             mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
         ]

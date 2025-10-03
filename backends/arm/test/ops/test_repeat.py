@@ -88,6 +88,7 @@ def test_repeat_tosa_INT(test_data: Tuple):
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_repeat_u55_INT(test_data: Tuple):
     module, test_data = test_data()
     pipeline = EthosU55PipelineINT[input_t1](
@@ -95,12 +96,12 @@ def test_repeat_u55_INT(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_repeat_u85_INT(test_data: Tuple):
     module, test_data = test_data()
     pipeline = EthosU85PipelineINT[input_t1](
@@ -108,7 +109,6 @@ def test_repeat_u85_INT(test_data: Tuple):
         test_data,
         module.aten_op,
         exir_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 

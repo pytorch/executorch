@@ -95,7 +95,6 @@ def test_squeeze_dim_u55_INT(test_data: Tuple):
         test_data(),
         aten_ops="torch.ops.aten.squeeze.default",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -108,7 +107,6 @@ def test_squeeze_dim_u85_INT(test_data: Tuple):
         test_data(),
         aten_ops="torch.ops.aten.squeeze.default",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -174,7 +172,6 @@ def test_squeeze_dim_u55_INT_2(test_data: Tuple):
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dim",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -187,7 +184,6 @@ def test_squeeze_dim_u85_INT_2(test_data: Tuple):
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dim",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -253,7 +249,6 @@ def test_squeeze_dims_u55_INT(test_data: Tuple):
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dims",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -266,7 +261,6 @@ def test_squeeze_dims_u85_INT(test_data: Tuple):
         test_data(),
         aten_ops="torch.ops.aten.squeeze.dims",
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

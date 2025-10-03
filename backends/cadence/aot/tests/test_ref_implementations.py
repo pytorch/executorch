@@ -1536,6 +1536,143 @@ class TestRefImplementations(unittest.TestCase):
 
     @expand(
         [
+            # Basic 2D transposed convolution with stride=1 (current test case - corrected name)
+            (
+                "basic_2d_stride1",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 1.0], [1.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                False,  # channel_last
+                torch.tensor(
+                    [[[[1.0, 3.0, 2.0], [4.0, 10.0, 6.0], [3.0, 7.0, 4.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2D transposed convolution with channel_last=True (NHWC format)
+            (
+                "channel_last_nhwc",
+                torch.tensor(
+                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
+                ),  # input: 1x2x2x1 (NHWC)
+                torch.tensor(
+                    [[[[1.0], [1.0]], [[1.0], [1.0]]]], dtype=torch.float32
+                ),  # weight: 1x2x2x1 (NHWC)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                True,  # channel_last=True
+                torch.tensor(
+                    [
+                        [
+                            [[1.0], [3.0], [2.0]],
+                            [[4.0], [10.0], [6.0]],
+                            [[3.0], [7.0], [4.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2D transposed convolution with non-zero bias
+            (
+                "with_bias",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 0.0], [0.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([5.0], dtype=torch.float32),  # bias=5.0
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                False,  # channel_last
+                torch.tensor(
+                    [[[[6.0, 7.0, 5.0], [8.0, 10.0, 7.0], [5.0, 8.0, 9.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 1D transposed convolution (3D tensor, NLC format)
+            (
+                "conv1d_nlc",
+                torch.tensor(
+                    [[[1.0], [2.0], [3.0]]], dtype=torch.float32
+                ),  # input: 1x3x1 (NLC)
+                torch.tensor(
+                    [[[1.0], [0.5]]], dtype=torch.float32
+                ),  # weight: 1x2x1 (NLC)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (2, 0),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                True,  # channel_last=True
+                torch.tensor(
+                    [[[1.0], [0.5], [2.0], [1.0], [3.0], [1.5]]], dtype=torch.float32
+                ),
+            ),
+        ]
+    )
+    def test_transposed_convolution(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        output_padding: tuple[int, int],
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.transposed_convolution(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            output_padding,
+            groups,
+            channel_last,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"Output shape should match expected shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
             # Basic non-quantized average pooling
             (
                 "basic_non_quantized",

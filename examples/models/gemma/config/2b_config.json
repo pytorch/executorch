@@ -1,0 +1,19 @@
+{
+  "dim": 2048,
+  "ffn_dim_multiplier": 1,
+  "hidden_dim": 16384,
+  "n_heads": 8,
+  "head_dim": 256,
+  "n_kv_heads": 1,
+  "n_layers": 18,
+  "act_fn": "gelu",
+  "norm_type": "gemma3",
+  "norm_eps": 1e-06,
+  "rope_theta": 10000.0,
+  "use_scaled_rope": false,
+  "apply_embedding": true,
+  "embedding_scale_factor": 45.254833995939045,
+  "vocab_size": 256000,
+  "use_hf_rope": true,
+  "attention_qkv_bias": false
+}

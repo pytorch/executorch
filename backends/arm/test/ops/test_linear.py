@@ -182,7 +182,6 @@ def test_linear_u55_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()
@@ -205,7 +204,6 @@ def test_linear_u85_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
     ).run()

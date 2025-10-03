@@ -86,7 +86,6 @@ def test_scalar_tensor_u55_INT(test_data):
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
-        run_on_fvp=True,
     ).run()
 
 
@@ -98,7 +97,6 @@ def test_scalar_tensor_u85_INT(test_data):
         ScalarTensor(scalar, dtype),
         tuple(data),
         ScalarTensor.aten_op,
-        run_on_fvp=True,
     ).run()
 
 

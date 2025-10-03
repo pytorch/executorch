@@ -77,7 +77,6 @@ def test_lstm_u55_INT():
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0
@@ -93,7 +92,6 @@ def test_lstm_u85_INT():
         aten_ops=[],
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", get_test_inputs(), atol=3e-1, qtol=1.0

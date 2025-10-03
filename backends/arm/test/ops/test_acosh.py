@@ -87,7 +87,6 @@ def test_acosh_u55_INT_xfail(test_data: Tuple):
         Acosh(),
         (test_data(),),
         aten_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -110,7 +109,6 @@ def test_acosh_u85_INT_xfail(test_data: Tuple):
         Acosh(),
         (test_data(),),
         aten_ops=[],
-        run_on_fvp=False,
     )
     pipeline.run()
 

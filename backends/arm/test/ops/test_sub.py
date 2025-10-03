@@ -147,7 +147,6 @@ def test_sub_tensor_u55_INT(test_data):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -161,7 +160,6 @@ def test_sub_tensor_u55_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -175,7 +173,6 @@ def test_sub_tensor_u85_INT_2(test_data):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -189,7 +186,6 @@ def test_sub_tensor_u85_INT(test_data: Tuple[torch.Tensor, torch.Tensor]):
         test_data(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
