@@ -1088,20 +1088,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config.backend.xnnpack.enabled = True
 
     if llm_config.backend.xnnpack.enabled:
-        if llm_config.export.foundation_weights_file is not None:
-            if llm_config.export.lora_weights_file is not None:
-                gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
-                    llm_config.export.foundation_weights_file
-                    if "lora" not in x.name
-                    else None
-                )
-            else:
-                gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
-                    llm_config.export.foundation_weights_file
-                    if "lora" not in x.name
-                    else llm_config.export.lora_weights_file
-                )
-
+        if (
+            llm_config.export.foundation_weights_file is not None
+            or llm_config.export.lora_weights_file is not None
+        ):
+            gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
+                llm_config.export.foundation_weights_file
+                if "lora" not in x.name
+                else llm_config.export.lora_weights_file
+            )
             from executorch.exir.passes.external_constants_pass import (
                 delegate_external_constants_pass_unlifted,
                 external_constants_pass,

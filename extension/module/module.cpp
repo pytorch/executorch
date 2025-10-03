@@ -12,6 +12,7 @@
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
+#include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/runtime/platform/runtime.h>
 
 /**
@@ -75,9 +76,7 @@ Module::Module(
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(nullptr),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
   runtime::runtime_init();
 }
 
@@ -87,13 +86,27 @@ Module::Module(
     const LoadMode load_mode,
     std::unique_ptr<runtime::EventTracer> event_tracer)
     : file_path_(file_path),
-      data_map_path_(data_map_path),
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(nullptr),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
+  if (!data_map_path.empty()) {
+    data_files_.push_back(data_map_path);
+  }
+  runtime::runtime_init();
+}
+
+Module::Module(
+    const std::string& file_path,
+    std::vector<std::string> data_files,
+    const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer)
+    : file_path_(file_path),
+      data_files_(std::move(data_files)),
+      load_mode_(load_mode),
+      memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      event_tracer_(std::move(event_tracer)) {
   runtime::runtime_init();
 }
 
@@ -110,9 +123,10 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(std::move(data_map_loader)),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
+  if (data_map_loader) {
+    data_map_loaders_.push_back(std::move(data_map_loader));
+  }
   runtime::runtime_init();
 }
 
@@ -129,9 +143,10 @@ Module::Module(
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
-      event_tracer_(std::move(event_tracer)),
-      data_map_loader_(std::move(data_map_loader)),
-      data_map_(nullptr) {
+      event_tracer_(std::move(event_tracer)) {
+  if (data_map_loader) {
+    data_map_loaders_.push_back(std::move(data_map_loader));
+  }
   runtime::runtime_init();
 }
 
@@ -140,14 +155,28 @@ runtime::Error Module::load(const Program::Verification verification) {
     if (!data_loader_) {
       data_loader_ = ET_UNWRAP(make_data_loader(file_path_, load_mode_));
     }
-    if (!data_map_path_.empty()) {
-      data_map_loader_ =
-          ET_UNWRAP(make_data_loader(data_map_path_, load_mode_));
+    if (data_files_.size() > 0) {
+      for (const auto& data_file : data_files_) {
+        data_map_loaders_.push_back(
+            ET_UNWRAP(make_data_loader(data_file, load_mode_)));
+      }
     }
-    if (data_map_loader_) {
-      data_map_ =
-          ET_UNWRAP_UNIQUE(FlatTensorDataMap::load(data_map_loader_.get()));
+
+    if (data_map_loaders_.size() > 0) {
+      for (auto i = 0; i < data_map_loaders_.size(); ++i) {
+        named_data_maps_.push_back(ET_UNWRAP_UNIQUE(
+            FlatTensorDataMap::load(data_map_loaders_[i].get())));
+      }
+
+      // Extract raw pointers from unique_ptrs to pass to MergedDataMap::load()
+      std::vector<const NamedDataMap*> raw_data_maps;
+      raw_data_maps.reserve(named_data_maps_.size());
+      for (const auto& data_map : named_data_maps_) {
+        raw_data_maps.push_back(data_map.get());
+      }
+      merged_data_map_ = ET_UNWRAP_UNIQUE(MergedDataMap::load(raw_data_maps));
     }
+
     auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
     program_ = std::shared_ptr<Program>(
@@ -209,7 +238,7 @@ runtime::Error Module::load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
-        data_map_.get()));
+        merged_data_map_.get()));
     methods_.emplace(method_name, std::move(method_holder));
   }
   return runtime::Error::Ok;

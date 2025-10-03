@@ -26,11 +26,15 @@ class ModuleTest : public ::testing::Test {
     model_path_ = std::getenv("ET_MODULE_ADD_PATH");
     add_mul_path_ = std::getenv("ET_MODULE_ADD_MUL_PROGRAM_PATH");
     add_mul_data_path_ = std::getenv("ET_MODULE_ADD_MUL_DATA_PATH");
+    linear_path_ = std::getenv("ET_MODULE_LINEAR_PROGRAM_PATH");
+    linear_data_path_ = std::getenv("ET_MODULE_LINEAR_DATA_PATH");
   }
 
   static inline std::string model_path_;
   static inline std::string add_mul_path_;
   static inline std::string add_mul_data_path_;
+  static inline std::string linear_path_;
+  static inline std::string linear_data_path_;
 };
 
 TEST_F(ModuleTest, TestLoad) {
@@ -529,4 +533,24 @@ TEST_F(ModuleTest, TestPTD) {
 
   auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
   ASSERT_EQ(module.forward(tensor).error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestPTD_Multiple) {
+  std::vector<std::string> data_files = {add_mul_data_path_, linear_data_path_};
+  
+  // Create module with add mul.
+  Module module_add_mul(add_mul_path_, data_files);
+  ASSERT_EQ(module_add_mul.load_method("forward"), Error::Ok);
+  auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
+  ASSERT_EQ(module_add_mul.forward(tensor).error(), Error::Ok);
+
+  // Confirm that the data_file is not std::move'd away.
+  ASSERT_EQ(std::strcmp(data_files[0].c_str(), add_mul_data_path_.c_str()), 0);
+  ASSERT_EQ(std::strcmp(data_files[1].c_str(), linear_data_path_.c_str()), 0);
+
+  // Create module with linear.
+  Module module_linear(linear_path_, data_files);
+  ASSERT_EQ(module_linear.load_method("forward"), Error::Ok);
+  auto tensor2 = make_tensor_ptr({3}, {2.f, 3.f, 4.f});
+  ASSERT_EQ(module_linear.forward(tensor2).error(), Error::Ok);
 }
