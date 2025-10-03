@@ -74,23 +74,12 @@ namespace {
         ETCoreMLLogInfo("Storing asset with identifier=%@ in assetManager", identifier);
         asset = [assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:&localError];
     }
-
-    if (asset == nil) {
-        ETCoreMLLogInfo("Failed to retrieve or store asset with identifier=%@ in assetManager", identifier);
-        ETCoreMLLogInfo("compiledModelURL=%@", compiledModelURL);
-        ETCoreMLLogInfo("error=%@", localError);
-        ETCoreMLLogInfo("Attempting to fall back by loading model from compiledModelURL without transferring to assetManager");
-        auto backingAsset = Asset::make(compiledModelURL, identifier, assetManager.fileManager, &localError);
-        if (!backingAsset) {
-            ETCoreMLLogInfo("Failed to create a backing asset with error=%@", localError);
-            return nil;
-        }
-        asset = [[ETCoreMLAsset alloc] initWithBackingAsset:backingAsset.value()];
-    }
-
+    
     ETCoreMLModel *model;
     if (asset != nil) {
         model = [self loadModelWithCompiledAsset:asset configuration:configuration metadata:metadata error:&localError];
+    } else {
+        model = nil;
     }
 
     if (model) {
