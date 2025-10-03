@@ -20,6 +20,8 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
+
+from executorch.backends.nxp.backend.node_format_inference import NodeFormatInference
 from torch.export import ExportedProgram
 from torch.fx import Node
 from torch.fx.graph import Graph
