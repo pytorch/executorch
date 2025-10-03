@@ -250,20 +250,13 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
-                   dataFilePaths:(NSArray<NSString *> *)dataFilePaths
+                    dataFilePath:(NSString *)dataFilePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode {
   self = [super init];
   if (self) {
-    // Convert NSArray<NSString *> to std::vector<std::string>
-    std::vector<std::string> dataFilePathsVector;
-    if (dataFilePaths != nil) {
-      for (NSString *dataFile in dataFilePaths) {
-        dataFilePathsVector.emplace_back(dataFile.UTF8String);
-      }
-    }
     _module = std::make_unique<Module>(
       filePath.UTF8String,
-      dataFilePathsVector,
+      dataFilePath.UTF8String,
       static_cast<Module::LoadMode>(loadMode)
     );
     _inputs = [NSMutableDictionary new];
@@ -273,21 +266,21 @@ static inline ExecuTorchValue *toExecuTorchValue(EValue value) NS_RETURNS_RETAIN
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
-                   dataFilePaths:(NSArray<NSString *> *)dataFilePaths {
+                    dataFilePath:(NSString *)dataFilePath {
   return [self initWithFilePath:filePath
-                  dataFilePaths:dataFilePaths
+                   dataFilePath:dataFilePath
                        loadMode:ExecuTorchModuleLoadModeFile];
 }
 
 - (instancetype)initWithFilePath:(NSString *)filePath
                         loadMode:(ExecuTorchModuleLoadMode)loadMode {
   return [self initWithFilePath:filePath
-                  dataFilePaths:@[]
+                   dataFilePath:@""
                        loadMode:loadMode];
 }
 - (instancetype)initWithFilePath:(NSString *)filePath {
   return [self initWithFilePath:filePath
-                  dataFilePaths:@[]
+                   dataFilePath:@""
                        loadMode:ExecuTorchModuleLoadModeFile];
 }
 
