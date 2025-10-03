@@ -206,6 +206,8 @@ def is_tensor_arg_node(node: Any) -> bool:
     if isinstance(node, torch.fx.Node):
         return is_tensor_node(node)
     elif isinstance(node, (list, tuple)):
+        if len(node) == 0:
+            return False
         return all(is_tensor_node(n) for n in node)
 
     return False

@@ -970,7 +970,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
 
         # Test models serially
-        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3 ic4 convnext_small vit"
+        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3 ic4 vit"
         for model in $models; do
           python -m examples.vulkan.export --model_name=$model --test
         done

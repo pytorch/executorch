@@ -501,6 +501,23 @@ def register_2d_pool_op():
     ]
 )
 def register_convolution_op():
+    def check_conv_node(node: torch.fx.Node) -> bool:
+        x = node.args[0]
+        x_shape = x.meta["val"].size()
+        # 4-D input implies 2D convolution
+        if len(x_shape) == 4:
+            batches = x.meta["val"].size()[0]
+            if batches != 1:
+                return False
+        # 3-D input implies 1D convolution
+        if len(x_shape) == 3:
+            transpose = node.args[6]
+            # Transposed 1D convolution is not supported yet
+            if transpose:
+                return False
+
+        return True
+
     return OpFeatures(
         inputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,  # input
@@ -517,6 +534,7 @@ def register_convolution_op():
         ],
         supports_resize=True,
         supports_prepacking=True,
+        are_node_inputs_supported_fn=check_conv_node,
     )
 
 
