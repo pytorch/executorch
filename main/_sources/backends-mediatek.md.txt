@@ -23,7 +23,7 @@ The MediaTek backend enables acceleration of PyTorch models on edge devices with
   ```
 - NeuroPilot SDK Python wheels (download from [NeuroPilot Express SDK](https://neuropilot.mediatek.com/resources/public/npexpress/en/docs/npexpress)):
   ```bash
-  pip3 install mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+  pip3 install mtk_neuron-8.2.23-py3-none-linux_x86_64.whl
   pip3 install mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   ```
 
