@@ -795,26 +795,32 @@ jobs:
       contents: read
     secrets: inherit
     strategy:
-      fail-fast: false
       matrix:
-        config:
-          - gemma3-1b|xnnpack|--quantize
-          - llama3.2-1b|xnnpack|--quantize
-          - qwen3-0.6b|xnnpack|--quantize
-          - qwen3-1.7b|xnnpack|--quantize
-          - phi4-mini|xnnpack|--quantize
-          - smollm2-135m|xnnpack|--quantize
-          - smollm3-3b|xnnpack|--quantize
+        config: [
+          # XNNPack.
+          llama3.2-1b|xnnpack|--quantize,
+          qwen3-0.6b|xnnpack|--quantize,
+          qwen3-1.7b|xnnpack|--quantize,
+          gemma3-1b|xnnpack|--quantize,
+          phi4-mini|xnnpack|--quantize,
+          smollm2-135m|xnnpack|--quantize,
+          smollm3-3b|xnnpack|--quantize
+        ]
+      fail-fast: false
     with:
       secrets-env: EXECUTORCH_HF_TOKEN
-      runner: linux.24xlarge
+      runner: linux.2xlarge.memory
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: profiling-artifacts-${{ strategy.job-index }}
       script: |
-        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
-        echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
+        set -eux
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"	        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"	        echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
+        echo "Recipe: $RECIPE"
+        echo "Quantize: $QUANTIZE"
 
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
