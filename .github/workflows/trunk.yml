@@ -39,9 +39,8 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-
         IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
-        echo "::group::Test MODEL: ${{ MODEL }} RECIPE: ${{ RECIPE }} QUANTIZE: ${{ QUANTIZE }}"
+        echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
 
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -59,7 +58,6 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
-
         export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
-        python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE} --model_dir ${OUTPUT_DIR}
+        python .ci/scripts/test_huggingface_optimum_model.py --model "$MODEL" --recipe "$RECIPE" $QUANTIZE --model_dir "$OUTPUT_DIR"
         echo "::endgroup::"
