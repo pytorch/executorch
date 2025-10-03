@@ -919,16 +919,11 @@ jobs:
         ${CONDA_RUN} python install_executorch.py
         echo "::endgroup::"
 
-        echo "::group::Set up Hugging Face"
-        pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        git clone https://github.com/huggingface/optimum-executorch
-        pushd optimum-executorch
-        # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout $OPTIMUM_ET_COMMIT
-        ${CONDA_RUN} python install_dev.py --skip_override_torch
-        popd
+        echo "::group::Set up Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 
