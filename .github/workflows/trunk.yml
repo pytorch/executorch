@@ -67,3 +67,15 @@ jobs:
         export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
         python .ci/scripts/test_huggingface_optimum_model.py --model "$MODEL" --recipe "$RECIPE" $QUANTIZE --model_dir "$OUTPUT_DIR"
         echo "::endgroup::"
+
+        echo "::group::Generate artifacts for performance profiling"
+        ./cmake-out/executor_runner \
+          --model_path ${OUTPUT_DIR}/model.pte \
+          --etdump_path ${OUTPUT_DIR}/etdump.etdp
+
+        export TSV_PATH=artifacts-to-be-uploaded/${MODEL}_op_prof.tsv
+        mkdir -p $(dirname "$TSV_PATH")
+        python3 -m devtools.inspector.inspector_cli \
+          --etdump_path ${OUTPUT_DIR}/etdump.etdp \
+          --tsv_path ${TSV_PATH}
+        echo "::endgroup::"
