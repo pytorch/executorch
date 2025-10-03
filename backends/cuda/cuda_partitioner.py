@@ -15,7 +15,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from torch.export.exported_program import ExportedProgram
 
 
@@ -54,6 +54,7 @@ class CudaPartitioner(Partitioner):
         partition_tags[tag] = self.delegation_spec
 
         tag_constant_data(exported_program)
+        tag_mutated_buffer(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
