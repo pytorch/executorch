@@ -170,23 +170,34 @@ bool set_total_assets_size(size_t total_size,
     return true;
 }
 
-bool exclude_item_from_backup(NSURL *url, NSError * __autoreleasing *error) {
-    return [url setResourceValue:@(YES) forKey:NSURLIsExcludedFromBackupKey error:error];
-}
 
-NSURL * _Nullable create_directory_if_needed(NSURL *url,
-                                             NSString *name,
+NSURL * _Nullable create_directory_if_needed(NSURL *dirURL,
                                              NSFileManager *fm,
-                                             NSError * __autoreleasing *error) {
-    NSURL *directory_url = [url URLByAppendingPathComponent:name];
-    if (![fm fileExistsAtPath:directory_url.path] &&
-        ![fm createDirectoryAtURL:directory_url withIntermediateDirectories:NO attributes:@{} error:error]) {
-        return nil;
+                                             NSError **error) {
+    NSCParameterAssert(dirURL);
+    NSCParameterAssert(dirURL.isFileURL);
+    NSCParameterAssert(fm);
+
+    // Try to create the directory and its parents.
+    if (![fm createDirectoryAtURL:dirURL
+       withIntermediateDirectories:YES
+                        attributes:nil
+                             error:error]) {
+        // If creation failed because something already exists, check if it's a directory.
+        NSNumber *isDir = nil;
+        NSError *attrErr = nil;
+        if (![dirURL getResourceValue:&isDir forKey:NSURLIsDirectoryKey error:&attrErr] || !isDir.boolValue) {
+            if (error && !*error) *error = attrErr;
+            return nil; // path exists but is not a directory
+        }
+        // It already existed and is a directory → treat as success
+        if (error) *error = nil;
     }
-    
-    ::exclude_item_from_backup(directory_url, nil);
-    
-    return directory_url;
+
+    // Best effort: exclude from backup (ignore failure)
+    (void)[dirURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+
+    return dirURL;
 }
 
 bool is_directory_empty(NSURL *url, NSFileManager *fm, NSError * __autoreleasing *error) {
@@ -255,28 +266,6 @@ get_assets_to_remove(ModelAssetsStore& store,
     return assets;
 }
 
-NSURL * _Nullable move_to_directory(NSURL *url,
-                                    NSURL *directoryURL,
-                                    NSFileManager *fileManager,
-                                    NSError * __autoreleasing *error) {
-    if (!url) {
-        ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorInternalError, "Move operation failed: source URL is nil.");
-        return nil;
-    }
-
-    if (!directoryURL) {
-        ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorInternalError, "Move operation failed: destination URL is nil.");
-        return nil;
-    }
-
-    NSURL *dstURL = [directoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    if (![fileManager moveItemAtURL:url toURL:dstURL error:error]) {
-        return nil;
-    }
-
-    return dstURL;
-}
-
 } //namespace
 
 @interface ETCoreMLAssetManager () <NSFileManagerDelegate> {
@@ -318,17 +307,20 @@ NSURL * _Nullable move_to_directory(NSURL *url,
     }
     
     NSFileManager *fileManager = [[NSFileManager alloc] init];
-    NSURL *managedAssetsDirectoryURL = ::create_directory_if_needed(assetsDirectoryURL, @"models", fileManager, error);
+    NSURL *managedAssetsDirectoryURL = [assetsDirectoryURL URLByAppendingPathComponent:@"models"];
+    managedAssetsDirectoryURL = ::create_directory_if_needed(managedAssetsDirectoryURL, fileManager, error);
     if (!managedAssetsDirectoryURL) {
         return nil;
     }
 
-    NSURL *managedTrashDirectoryURL = ::create_directory_if_needed(trashDirectoryURL, @"models", fileManager, error);
+    NSURL *managedTrashDirectoryURL = [trashDirectoryURL URLByAppendingPathComponent:@"models"];
+    managedTrashDirectoryURL = ::create_directory_if_needed(managedTrashDirectoryURL, fileManager, error);
     if (!managedTrashDirectoryURL) {
         return nil;
     }
 
-    NSURL *managedStagingDirectoryURL = ::create_directory_if_needed(assetsDirectoryURL, @"staging", fileManager, error);
+    NSURL *managedStagingDirectoryURL = [assetsDirectoryURL URLByAppendingPathComponent:@"staging"];
+    managedStagingDirectoryURL = ::create_directory_if_needed(managedStagingDirectoryURL, fileManager, error);
     if (!managedStagingDirectoryURL) {
         return nil;
     }
@@ -347,7 +339,6 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         _trashDirectoryURL = managedTrashDirectoryURL;
         _estimatedSizeInBytes = sizeInBytes.value();
         _maxAssetsSizeInBytes = maxAssetsSizeInBytes;
-        
         _fileManager = fileManager;
         _trashQueue = dispatch_queue_create("com.executorchcoreml.assetmanager.trash", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
         _syncQueue = dispatch_queue_create("com.executorchcoreml.assetmanager.sync", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
@@ -362,7 +353,13 @@ NSURL * _Nullable move_to_directory(NSURL *url,
                           assetsDirectoryURL:(NSURL *)assetsDirectoryURL
                            trashDirectoryURL:(NSURL *)trashDirectoryURL
                         maxAssetsSizeInBytes:(NSInteger)maxAssetsSizeInBytes
-                                       error:(NSError * __autoreleasing *)error {
+                                    error:(NSError * __autoreleasing *)error {
+    
+    NSURL *databaseDirectoryURL = [databaseURL URLByDeletingLastPathComponent];
+    NSFileManager *fm  = [[NSFileManager alloc] init];
+    if (!::create_directory_if_needed(databaseDirectoryURL, fm, error)) {
+        return nil;
+    }
     auto database = make_database(databaseURL, kBusyTimeIntervalInMS, error);
     if (!database) {
         return nil;
@@ -381,9 +378,25 @@ NSURL * _Nullable move_to_directory(NSURL *url,
     if (![self.fileManager fileExistsAtPath:dstURL.path]) {
         return;
     }
-
-    move_to_directory(dstURL, self.trashDirectoryURL, self.fileManager, nil);
+    [self moveItemAtURLToTrash:dstURL error:nil];
     [self cleanupTrashDirectory];
+}
+
+- (NSURL * _Nullable) moveItemAtURLToTrash:(NSURL *)url
+                                     error:(NSError * __autoreleasing *)error {
+    ::create_directory_if_needed(self.trashDirectoryURL, self.fileManager, error);
+    NSURL *dstURL = [self.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+
+    if (!url) {
+        ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorInternalError, "Move operation failed: source URL is nil.");
+        return nil;
+    }
+
+    if (![self.fileManager moveItemAtURL:url toURL:dstURL error:error]) {
+        return nil;
+    }
+
+    return dstURL;
 }
 
 - (void)cleanupAssetIfNeeded:(ETCoreMLAsset *)asset {
@@ -407,6 +420,7 @@ NSURL * _Nullable move_to_directory(NSURL *url,
                                        error:(NSError * __autoreleasing *)error {
     dispatch_assert_queue(self.syncQueue);
     NSString *extension = srcURL.lastPathComponent.pathExtension;
+    ::create_directory_if_needed(self.assetsDirectoryURL, self.fileManager, error);
     NSURL *dstURL = [self.assetsDirectoryURL URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", identifier, extension]];
     auto asset = Asset::make(srcURL, identifier, self.fileManager, error);
     if (!asset) {
@@ -437,13 +451,14 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         }
         
         // If a file already exists at `dstURL`, move it to the trash for removal.
-        if (dstURL && [self.fileManager fileExistsAtPath:dstURL.path]) {
-            if (!move_to_directory(dstURL, self.trashDirectoryURL, self.fileManager, error)) {
-                // If we failed to move the file to the trash, we can't proceed
+        if ([self.fileManager fileExistsAtPath:dstURL.path]) {
+            if (![self moveItemAtURLToTrash:dstURL error:error]) {
+                // Log error and return false
+                ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorInternalError, "moveItemAtURLToTrash failed");
                 return false;
             }
         }
-        
+
         // Move the asset to assets directory.
         if (![self.fileManager moveItemAtURL:srcURL toURL:dstURL error:error]) {
             return false;
@@ -591,7 +606,7 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         
         NSURL *assetURL = ::get_asset_url(assetValue);
         if ([self.fileManager fileExistsAtPath:assetURL.path] &&
-            !move_to_directory(assetURL, self.trashDirectoryURL, self.fileManager, error)) {
+            ![self moveItemAtURLToTrash:assetURL error:error]) {
             return false;
         }
         
@@ -748,14 +763,14 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         }
         
         // Move the the whole assets directory to the temp directory.
-        if (!move_to_directory(self.assetsDirectoryURL, self.trashDirectoryURL, self.fileManager, error)) {
+        if (![self moveItemAtURLToTrash:self.assetsDirectoryURL error:error]) {
             return false;
         }
         
         self->_estimatedSizeInBytes = 0;
         NSError *localError = nil;
         // Create the assets directory, if we fail here it's okay.
-        if (![self.fileManager createDirectoryAtURL:self.assetsDirectoryURL withIntermediateDirectories:NO attributes:@{} error:&localError]) {
+        if (![self.fileManager createDirectoryAtURL:self.assetsDirectoryURL withIntermediateDirectories:YES attributes:@{} error:&localError]) {
             ETCoreMLLogError(localError, "Failed to create assets directory.");
         }
         
