@@ -2136,3 +2136,173 @@ class TestRefImplementations(unittest.TestCase):
             torch.equal(output, expected_output),
             f"im2row output mismatch in {name}: got {output}, expected {expected_output}",
         )
+
+    @expand(
+        [
+            (
+                "basic_2x2",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                (0, 0),
+                None,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 0, 0, 0],
+                            [1, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [1, 0, 3, 0],
+                            [1, 2, 3, 4],
+                            [0, 2, 0, 4],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 4],
+                            [0, 0, 0, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "basic_2x2_with_zero_point",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                (0, 0),
+                torch.tensor(100, dtype=torch.int32),
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 100, 100, 100],
+                            [1, 2, 100, 100],
+                            [100, 2, 100, 100],
+                            [1, 100, 3, 100],
+                            [1, 2, 3, 4],
+                            [100, 2, 100, 4],
+                            [100, 100, 3, 100],
+                            [100, 100, 3, 4],
+                            [100, 100, 100, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "basic_2x2_with_stride_2",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),  # kernel size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (2, 2),  # stride
+                (0, 0),  # output padding
+                None,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 0, 0, 0],
+                            [1, 0, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [1, 0, 0, 0],
+                            [1, 0, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 0, 4],
+                            [0, 0, 0, 4],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 0, 4],
+                            [0, 0, 0, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "batch2_with_batch2_zero_point",
+                torch.tensor(
+                    [
+                        [[[1, 2], [3, 4]]],
+                        [[[5, 6], [7, 8]]],
+                    ],
+                    dtype=torch.int32,
+                ),  # input: (2,1,2,2)
+                (2, 2),  # kernel_size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (1, 1),  # stride
+                (0, 0),  # output_padding
+                torch.tensor([100, 200], dtype=torch.int32),  # in_zero_point per batch
+                False,  # channel_last
+                torch.tensor(
+                    [
+                        [
+                            [1, 100, 100, 100],
+                            [1, 2, 100, 100],
+                            [100, 2, 100, 100],
+                            [1, 100, 3, 100],
+                            [1, 2, 3, 4],
+                            [100, 2, 100, 4],
+                            [100, 100, 3, 100],
+                            [100, 100, 3, 4],
+                            [100, 100, 100, 4],
+                        ],
+                        [
+                            [5, 200, 200, 200],
+                            [5, 6, 200, 200],
+                            [200, 6, 200, 200],
+                            [5, 200, 7, 200],
+                            [5, 6, 7, 8],
+                            [200, 6, 200, 8],
+                            [200, 200, 7, 200],
+                            [200, 200, 7, 8],
+                            [200, 200, 200, 8],
+                        ],
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+        ]
+    )
+    def test_transposed_im2row(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        kernel_size: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int],
+        stride: tuple[int, int],
+        output_padding: tuple[int, int],
+        in_zero_point: torch.Tensor | int | None,
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.transposed_im2row(
+            input_tensor,
+            kernel_size,
+            dilation,
+            padding,
+            stride,
+            output_padding,
+            in_zero_point,
+            channel_last,
+        )
+
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"transposed_im2row output shape mismatch in {name}: got {output.shape}, expected {expected_output.shape}",
+        )
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"transposed_im2row output mismatch in {name}: got {output}, expected {expected_output}",
+        )
