@@ -68,6 +68,24 @@ jobs:
         python .ci/scripts/test_huggingface_optimum_model.py --model "$MODEL" --recipe "$RECIPE" $QUANTIZE --model_dir "$OUTPUT_DIR"
         echo "::endgroup::"
 
+        # Build executor_runner with ETdump enabled
+        PYTHON_EXECUTABLE=python cmake -DPYTHON_EXECUTABLE=python \
+          -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DEXECUTORCH_ENABLE_LOGGING=1 \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+          -DEXECUTORCH_BUILD_XNNPACK=ON \
+          -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+          -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+          -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
+          -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+          -Bcmake-out .
+        cmake --build cmake-out -j16 --target install --config Release
+
         echo "::group::Generate artifacts for performance profiling"
         ./cmake-out/executor_runner \
           --model_path ${OUTPUT_DIR}/model.pte \
