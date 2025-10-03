@@ -63,6 +63,9 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
+    # Device to use for the model: "cpu" or "cuda" (needed for QAT)
+    # Only used for creating Rope parameters
+    device: str = "cpu"
     # Generate logits for all inputs. When it's True, it would take big memory usage
     # at runtime. Enable it only necessary (e.g., use perplexity tools that requires
     # logits for all input tokens.)

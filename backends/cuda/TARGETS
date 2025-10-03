@@ -6,6 +6,7 @@ runtime.python_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
+        "replace_slice_copy_with_slice.py",
     ],
     visibility = [
         "//executorch/...",

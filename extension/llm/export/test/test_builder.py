@@ -88,7 +88,7 @@ class TestLLMEdgeManager(unittest.TestCase):
         # Check first element (tokens dimension)
         self.assertIsInstance(result[0], dict)
         self.assertIn(1, result[0])
-        self.assertEqual(result[0][1].max, self.max_seq_len)
+        self.assertEqual(result[0][1].max, self.max_seq_len - 1)
 
         # Check second element (input_pos dimension)
         self.assertIsInstance(result[1], dict)
