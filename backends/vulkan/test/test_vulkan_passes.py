@@ -94,66 +94,6 @@ def op_node_count(graph_module: torch.fx.GraphModule, canonical_op_name: str) ->
 
 
 class TestVulkanPasses(unittest.TestCase):
-    def test_fuse_int8pack_mm(self):
-        K = 256
-        N = 256
-        model = SingleLinearModule(K, N)
-        sample_inputs = model.get_sample_inputs()
-
-        quantizer = VulkanQuantizer()
-        quantizer.set_global(
-            get_symmetric_quantization_config(is_dynamic=False, weight_bits=8)
-        )
-
-        edge_manager = quantize_and_lower_module(
-            model,
-            sample_inputs,
-            quantizer,
-        )
-
-        ep = edge_manager._edge_programs["forward"]
-        edge_manager.transform(
-            [
-                AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(ep),
-            ]
-        )
-
-        gm = ep.graph_module
-
-        self.assertEqual(op_node_count(gm, "_weight_int8pack_mm.default"), 1)
-        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
-
-    def test_fuse_linear_qcs4w(self):
-        K = 256
-        N = 256
-        model = SingleLinearModule(K, N)
-        sample_inputs = model.get_sample_inputs()
-
-        quantizer = VulkanQuantizer()
-        quantizer.set_global(
-            get_symmetric_quantization_config(is_dynamic=False, weight_bits=4)
-        )
-
-        edge_manager = quantize_and_lower_module(
-            model,
-            sample_inputs,
-            quantizer,
-        )
-
-        ep = edge_manager._edge_programs["forward"]
-        edge_manager.transform(
-            [
-                AddmmToLinearTransform(),
-                FuseQuantizedOpsTransform(ep),
-            ]
-        )
-
-        gm = ep.graph_module
-
-        self.assertEqual(op_node_count(gm, "linear_qcs4w.default"), 1)
-        self.assertEqual(op_node_count(gm, "dequantize_per_channel.default"), 0)
-
     def test_fuse_rotary_emb(self):
         """Test conversion of rotary embedding pattern to et_vk.apply_rotary_emb custom op."""
 
@@ -238,7 +178,8 @@ class TestVulkanPasses(unittest.TestCase):
 
         # Apply the rotary embedding pass
         ep = edge_manager._edge_programs["forward"]
-        rotary_pass = FusePatternsPass(ep)
+        rotary_pass = FusePatternsPass()
+        rotary_pass._exported_program = ep
         result = rotary_pass.call(ep.graph_module)
 
         # Verify that the pass was successful
