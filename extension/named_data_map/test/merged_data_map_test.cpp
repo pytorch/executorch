@@ -11,6 +11,7 @@
 #include <executorch/extension/named_data_map/merged_data_map.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>
@@ -21,9 +22,9 @@ using executorch::extension::FlatTensorDataMap;
 using executorch::extension::MergedDataMap;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
-using executorch::runtime::FreeableBuffer;
 using executorch::runtime::NamedDataMap;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 using executorch::runtime::TensorLayout;
 
 class MergedDataMapTest : public ::testing::Test {
@@ -132,18 +133,21 @@ TEST_F(MergedDataMapTest, LoadNullDataMap) {
 TEST_F(MergedDataMapTest, LoadMultipleDataMaps) {
   std::vector<const NamedDataMap*> ndms = {
       data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap> merged_map = MergedDataMap::load(ndms);
+  Result<MergedDataMap> merged_map =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
   EXPECT_EQ(merged_map.error(), Error::Ok);
 
   std::vector<const NamedDataMap*> ndms2 = {
       data_maps_["addmul"].get(), data_maps_["simple_train"].get()};
-  Result<MergedDataMap> merged_map2 = MergedDataMap::load(ndms2);
+  Result<MergedDataMap> merged_map2 = MergedDataMap::load(
+      Span<const NamedDataMap*>(ndms2.data(), ndms2.size()));
   EXPECT_EQ(merged_map2.error(), Error::Ok);
 }
 
 TEST_F(MergedDataMapTest, LoadSingleDataMap) {
   std::vector<const NamedDataMap*> ndms = {data_maps_["addmul"].get(), nullptr};
-  Result<MergedDataMap> merged_map = MergedDataMap::load(ndms);
+  Result<MergedDataMap> merged_map =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
   EXPECT_EQ(merged_map.error(), Error::Ok);
 
   // Num keys.
@@ -158,21 +162,24 @@ TEST_F(MergedDataMapTest, LoadSingleDataMap) {
 TEST_F(MergedDataMapTest, LoadDuplicateDataMapsFail) {
   std::vector<const NamedDataMap*> ndms = {
       data_maps_["addmul"].get(), data_maps_["addmul"].get()};
-  Result<MergedDataMap> merged_map = MergedDataMap::load(ndms);
+  Result<MergedDataMap> merged_map =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
 
   std::vector<const NamedDataMap*> ndms2 = {
       data_maps_["addmul"].get(),
       data_maps_["linear"].get(),
       data_maps_["simple_train"].get()};
-  Result<MergedDataMap> merged_map2 = MergedDataMap::load(ndms);
+  Result<MergedDataMap> merged_map2 =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
   EXPECT_EQ(merged_map2.error(), Error::InvalidArgument);
 }
 
 TEST_F(MergedDataMapTest, CheckDataMapContents) {
   std::vector<const NamedDataMap*> ndms = {
       data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap> merged_map = MergedDataMap::load(ndms);
+  Result<MergedDataMap> merged_map =
+      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
   EXPECT_EQ(merged_map.error(), Error::Ok);
 
   // Num keys.

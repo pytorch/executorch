@@ -26,9 +26,9 @@ class MergedDataMap final
    * @param[in] data_maps vector of NamedDataMap pointers to merge.
    * Note: the data maps must outlive the MergedDataMap instance.
    */
-  static executorch::runtime::Result<MergedDataMap> load(
-      std::vector<const executorch::ET_RUNTIME_NAMESPACE::NamedDataMap*>
-          named_data_maps);
+  static executorch::runtime::Result<MergedDataMap>
+  load(executorch::runtime::Span<
+       const executorch::ET_RUNTIME_NAMESPACE::NamedDataMap*> named_data_maps);
 
   /**
    * Retrieve the tensor_layout for the specified key.

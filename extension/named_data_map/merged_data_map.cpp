@@ -7,7 +7,6 @@
  */
 
 #include <executorch/extension/named_data_map/merged_data_map.h>
-
 #include <executorch/runtime/core/data_loader.h>
 
 #include <vector>
@@ -18,21 +17,21 @@ using executorch::ET_RUNTIME_NAMESPACE::TensorLayout;
 using executorch::runtime::Error;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::Result;
+using executorch::runtime::Span;
 
-namespace executorch {
-namespace extension {
+namespace executorch::extension {
 
 /*static*/ Result<MergedDataMap> MergedDataMap::load(
-    std::vector<const NamedDataMap*> named_data_maps) {
+    Span<const NamedDataMap*> named_data_maps) {
   std::vector<const NamedDataMap*> valid_data_maps;
-  for (size_t i = 0; i < named_data_maps.size(); i++) {
+  for (auto i : c10::irange(named_data_maps.size())) {
     if (named_data_maps[i] != nullptr &&
         named_data_maps[i]->get_num_keys().get() > 0) {
       valid_data_maps.push_back(named_data_maps[i]);
     }
   }
   ET_CHECK_OR_RETURN_ERROR(
-      valid_data_maps.size() > 0,
+      !valid_data_maps.empty(),
       InvalidArgument,
       "No non-empty named data maps provided to merge");
 
@@ -43,14 +42,14 @@ namespace extension {
     uint32_t num_keys = cur_map->get_num_keys().get();
     for (uint32_t j = 0; j < num_keys; ++j) {
       const auto cur_key = cur_map->get_key(j).get();
+      const auto [it, inserted] = key_to_map_index.emplace(cur_key, i);
       ET_CHECK_OR_RETURN_ERROR(
-          key_to_map_index.find(cur_key) == key_to_map_index.end(),
+          inserted,
           InvalidArgument,
           "Duplicate key %s in named data maps at index %u and %u",
           cur_key,
-          key_to_map_index.at(cur_key),
+          it->second,
           i);
-      key_to_map_index[cur_key] = i;
     }
   }
   return MergedDataMap(std::move(valid_data_maps), std::move(key_to_map_index));
@@ -58,37 +57,38 @@ namespace extension {
 
 ET_NODISCARD Result<const TensorLayout> MergedDataMap::get_tensor_layout(
     string_view key) const {
+  const auto it = key_to_map_index_.find(key.data());
   ET_CHECK_OR_RETURN_ERROR(
-      key_to_map_index_.find(key.data()) != key_to_map_index_.end(),
+      it != key_to_map_index_.end(),
       NotFound,
       "Key %s not found in named data maps",
       key.data());
 
-  return named_data_maps_.at(key_to_map_index_.at(key.data()))
-      ->get_tensor_layout(key);
+  return named_data_maps_.at(it->second)->get_tensor_layout(key);
 }
 
 ET_NODISCARD
 Result<FreeableBuffer> MergedDataMap::get_data(string_view key) const {
+  const auto it = key_to_map_index_.find(key.data());
   ET_CHECK_OR_RETURN_ERROR(
-      key_to_map_index_.find(key.data()) != key_to_map_index_.end(),
+      it != key_to_map_index_.end(),
       NotFound,
       "Key %s not found in named data maps",
       key.data());
-  return named_data_maps_.at(key_to_map_index_.at(key.data()))->get_data(key);
+  return named_data_maps_.at(it->second)->get_data(key);
 }
 
 ET_NODISCARD Error MergedDataMap::load_data_into(
     string_view key,
     void* buffer,
     size_t size) const {
+  const auto it = key_to_map_index_.find(key.data());
   ET_CHECK_OR_RETURN_ERROR(
-      key_to_map_index_.find(key.data()) != key_to_map_index_.end(),
+      it != key_to_map_index_.end(),
       NotFound,
       "Key %s not found in named data maps",
       key.data());
-  return named_data_maps_.at(key_to_map_index_.at(key.data()))
-      ->load_data_into(key, buffer, size);
+  return named_data_maps_.at(it->second)->load_data_into(key, buffer, size);
 }
 
 ET_NODISCARD Result<uint32_t> MergedDataMap::get_num_keys() const {
@@ -98,12 +98,12 @@ ET_NODISCARD Result<uint32_t> MergedDataMap::get_num_keys() const {
 ET_NODISCARD Result<const char*> MergedDataMap::get_key(uint32_t index) const {
   uint32_t total_num_keys = get_num_keys().get();
   ET_CHECK_OR_RETURN_ERROR(
-      index >= 0 && index < total_num_keys,
+      index < total_num_keys,
       InvalidArgument,
       "Index %u out of range of size %u",
       index,
       total_num_keys);
-  for (size_t i = 0; i < named_data_maps_.size(); i++) {
+  for (auto i : c10::irange(named_data_maps_.size())) {
     auto num_keys = named_data_maps_[i]->get_num_keys().get();
     if (index < num_keys) {
       return named_data_maps_[i]->get_key(index);
@@ -113,5 +113,4 @@ ET_NODISCARD Result<const char*> MergedDataMap::get_key(uint32_t index) const {
   // Shouldn't reach here.
   return Error::Internal;
 }
-} // namespace extension
-} // namespace executorch
+} // namespace executorch::extension
