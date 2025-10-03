@@ -10,6 +10,7 @@
 #include <executorch/runtime/core/data_loader.h>
 
 #include <vector>
+#include <unordered_map>
 
 using executorch::aten::string_view;
 using executorch::ET_RUNTIME_NAMESPACE::NamedDataMap;
