@@ -28,9 +28,7 @@ from executorch.backends.xnnpack.utils.utils import (
 )
 
 
-@register_node_visitor
 class ConvertMemoryFormat(NodeVisitor):
-    target = "aten._to_copy.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -53,6 +51,13 @@ class ConvertMemoryFormat(NodeVisitor):
         input_node = get_input_node(node, 0)
         input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         output_quant_params = QuantParams.from_outputs(node)
+
+        # Ensure input and output have the same dtype
+        input_dtype = input_node.meta["val"].dtype
+        output_dtype = node.meta["val"].dtype
+        assert (
+            input_dtype == output_dtype
+        ), f"Input dtype {input_dtype} must match output dtype {output_dtype} for {node.target}. Expected dtype to not change."
 
         permute_order = PERM_NCHW_TO_NHWC if to_channels_last else PERM_NHWC_TO_NCHW
 
@@ -89,3 +94,15 @@ class ConvertMemoryFormat(NodeVisitor):
             debug_handle=debug_handle,
         )
         xnn_graph.xnodes.append(ser_node)
+
+
+@register_node_visitor
+class ConvertMemoryFormatToCopy(ConvertMemoryFormat):
+
+    target = "aten._to_copy.default"
+
+
+@register_node_visitor
+class ConvertMemoryFormatClone(ConvertMemoryFormat):
+
+    target = "aten.clone.default"
