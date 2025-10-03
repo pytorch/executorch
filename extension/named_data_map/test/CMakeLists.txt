@@ -26,8 +26,9 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.ptd"
   COMMAND
-    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules "ModuleAddMul,ModuleLinear,ModuleSimpleTrain"
-    --external-constants --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+    "ModuleAddMul,ModuleLinear,ModuleSimpleTrain" --external-constants --outdir
+    "${CMAKE_CURRENT_BINARY_DIR}"
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
 )
 
@@ -53,11 +54,19 @@ set(test_env
 set(_test_srcs merged_data_map_test.cpp)
 
 et_cxx_test(
-  extension_named_data_map_test SOURCES ${_test_srcs} EXTRA_LIBS
-  extension_named_data_map extension_flat_tensor extension_data_loader
+  extension_named_data_map_test
+  SOURCES
+  ${_test_srcs}
+  EXTRA_LIBS
+  extension_named_data_map
+  extension_flat_tensor
+  extension_data_loader
 )
 
 add_dependencies(
-  extension_named_data_map_test extension_named_data_map extension_named_data_map_test_resources
+  extension_named_data_map_test extension_named_data_map
+  extension_named_data_map_test_resources
 )
-set_property(TEST extension_named_data_map_test PROPERTY ENVIRONMENT ${test_env})
+set_property(
+  TEST extension_named_data_map_test PROPERTY ENVIRONMENT ${test_env}
+)

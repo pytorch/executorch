@@ -16,6 +16,9 @@
 
 #include <gtest/gtest.h>
 
+#include <unordered_map>
+#include <vector>
+
 using namespace ::testing;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;

@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/named_data_map.h>
 
+#include <unordered_map>
 #include <vector>
 
 namespace executorch {

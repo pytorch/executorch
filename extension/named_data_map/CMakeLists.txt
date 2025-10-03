@@ -21,17 +21,15 @@ list(TRANSFORM _extension_named_data_map__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_named_data_map ${_extension_named_data_map__srcs})
 
 # Link dependencies
-target_link_libraries(
-  extension_named_data_map
-  PUBLIC
-    executorch_core
-)
+target_link_libraries(extension_named_data_map PUBLIC executorch_core)
 
 target_include_directories(
   extension_named_data_map PUBLIC ${_common_include_directories}
 )
 
-target_compile_options(extension_named_data_map PUBLIC ${_common_compile_options})
+target_compile_options(
+  extension_named_data_map PUBLIC ${_common_compile_options}
+)
 
 # Install libraries
 install(
