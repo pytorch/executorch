@@ -306,31 +306,6 @@ def get_args_and_kwargs_conv(
 
     (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
 
-    out_multiplier_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_multiplier[0].item()),
-        {"dtype": torch.int32},
-    )
-    out_shift_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_shift[0].item()),
-        {"dtype": torch.int32},
-    )
-
-    # Create a single element tensor for the weight zero point
-    weight_zero_point_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], weight_zero_point),
-        {"dtype": torch.int32},
-    )
-
-    # Create a single element tensor for the bias scale
-    bias_scale_tensor = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], bias_scale),
-        {"dtype": torch.float32},
-    )
-
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs + weights_inputs + [bias])
     kwargs = {
@@ -339,12 +314,12 @@ def get_args_and_kwargs_conv(
         "dilation": dilation,
         "groups": groups,
         "input_zero_point": dequants_inputs[0].args[2],
-        "weight_zero_point": weight_zero_point_tensor,
-        "bias_scale": bias_scale_tensor,
+        "weight_zero_point": weight_zero_point,
+        "bias_scale": bias_scale,
         "out_scale": quant_node.args[1],
         "out_zero_point": quant_node.args[2],
-        "out_multiplier": out_multiplier_,
-        "out_shift": out_shift_,
+        "out_multiplier": out_multiplier[0].item(),
+        "out_shift": out_shift[0].item(),
     }
     return args, kwargs
 
@@ -365,27 +340,11 @@ def get_args_and_kwargs_relu(
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs)
 
-    X_zero_point = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], dequants_inputs[0].args[2]),
-        {"dtype": torch.int32},
-    )
-    out_multiplier_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_multiplier[0].item()),
-        {"dtype": torch.int32},
-    )
-    out_shift_ = graph_module.graph.call_function(
-        torch.ops.aten.full.default,
-        ([1], out_shift[0].item()),
-        {"dtype": torch.int32},
-    )
-
     kwargs = {
-        "X_zero_point": X_zero_point,
+        "X_zero_point": dequants_inputs[0].args[2],
         "out_zero_point": quant_node.args[2],
-        "out_multiplier": out_multiplier_,
-        "out_shift": out_shift_,
+        "out_multiplier": out_multiplier[0].item(),
+        "out_shift": out_shift[0].item(),
     }
     return args, kwargs
 
