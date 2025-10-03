@@ -817,8 +817,8 @@ jobs:
       upload-artifact: profiling-artifacts-${{ strategy.job-index }}
       script: |
         set -eux
-        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"	        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
-        echo "Model: $MODEL"	        echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"
         echo "Recipe: $RECIPE"
         echo "Quantize: $QUANTIZE"
 
