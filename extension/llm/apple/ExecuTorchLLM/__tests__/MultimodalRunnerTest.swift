@@ -60,7 +60,7 @@ class MultimodalRunnerTest: XCTestCase {
   let userPrompt = "What's on the picture?"
   let sequenceLength = 768
 
-  func test() {
+  func testLLaVA() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "llava", ofType: "pte"),
           let tokenizerPath = bundle.path(forResource: "tokenizer", ofType: "bin"),
