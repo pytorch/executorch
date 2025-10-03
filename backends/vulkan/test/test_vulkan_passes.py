@@ -3,14 +3,7 @@ from typing import Optional, Tuple
 
 import torch
 
-from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
-from executorch.backends.vulkan._passes import FuseQuantizedOpsTransform
 from executorch.backends.vulkan._passes.fuse_patterns import FusePatternsPass
-
-from executorch.backends.vulkan.quantizer.vulkan_quantizer import (
-    get_symmetric_quantization_config,
-    VulkanQuantizer,
-)
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
