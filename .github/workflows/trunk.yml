@@ -31,7 +31,13 @@ jobs:
       matrix:
         config:
           - gemma3-1b|xnnpack|--quantize
-    with:
+          - llama3.2-1b|xnnpack|--quantize
+          - qwen3-0.6b|xnnpack|--quantize
+          - qwen3-1.7b|xnnpack|--quantize
+          - gemma3-1b|xnnpack|--quantize
+          - phi4-mini|xnnpack|--quantize
+          - smollm2-135m|xnnpack|--quantize
+          - smollm3-3b|xnnpack|--quantize
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
