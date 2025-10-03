@@ -37,6 +37,7 @@ jobs:
           - phi4-mini|xnnpack|--quantize
           - smollm2-135m|xnnpack|--quantize
           - smollm3-3b|xnnpack|--quantize
+    with:
       secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
