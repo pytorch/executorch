@@ -77,8 +77,9 @@ def install_requirements(use_pytorch_nightly):
             "-r",
             "requirements-dev.txt",
             *TORCH_PACKAGE,
-            "--extra-index-url",
+            "--index-url",
             torch_url,
+            "--pre",
         ],
         check=True,
     )
@@ -140,8 +141,9 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "pip",
             "install",
             *DOMAIN_LIBRARIES,
-            "--extra-index-url",
+            "--index-url",
             torch_url,
+            "--pre",
         ],
         check=True,
     )
@@ -155,8 +157,9 @@ def install_optional_example_requirements(use_pytorch_nightly):
             "install",
             "-r",
             "requirements-examples.txt",
-            "--extra-index-url",
+            "--index-url",
             torch_url,
+            "--pre",
             "--upgrade-strategy",
             "only-if-needed",
         ],
@@ -166,6 +169,8 @@ def install_optional_example_requirements(use_pytorch_nightly):
 
 def main(args):
     parser = argparse.ArgumentParser()
+    print("NIGHTLY_VERSION: ", NIGHTLY_VERSION)
+    print("TORCH_VERSION: ", TORCH_VERSION)
     parser.add_argument(
         "--use-pt-pinned-commit",
         action="store_true",
