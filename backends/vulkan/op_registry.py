@@ -418,6 +418,11 @@ def register_softmax_op():
 )
 def register_reduce_op():
     def check_reduce_node(node: torch.fx.Node) -> bool:
+        # Only one argument implies that the reduction is over the entire tensor, which
+        # is not supported yet.
+        if len(node.args) == 1:
+            return False
+
         dim_list = node.args[1]
         # Only 1D and 2D reductions are supported at the moment.
         if isinstance(dim_list, list) and len(dim_list) > 2:
