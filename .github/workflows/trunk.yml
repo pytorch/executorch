@@ -832,7 +832,7 @@ jobs:
 
         # Install executorch
         echo "::group::Set up ExecuTorch"
-        ./install_requirements.sh --use-pt-pinned-commit
+        ./install_requirements.sh
         echo "::endgroup::"
 
         # Used by .ci/scripts/test_huggingface_optimum_model.py
