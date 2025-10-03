@@ -845,7 +845,7 @@ jobs:
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
-        ${CONDA_RUN} python -c "import torch, torchvision; print(torch.__version__, torchvision.__version__)"
+        python -c "import torch, torchvision; print(torch.__version__, torchvision.__version__)"
 
         echo "::group::Run tests"
         export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
