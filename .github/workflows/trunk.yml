@@ -823,25 +823,18 @@ jobs:
         echo "Recipe: $RECIPE"
         echo "Quantize: $QUANTIZE"
 
-        echo "::group::Set up ExecuTorch"
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        pip uninstall torch torchaudio torchvision -y
-
-        # Install executorch
-        echo "::group::Set up ExecuTorch"
-        ./install_requirements.sh
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
         echo "::endgroup::"
 
-        # Used by .ci/scripts/test_huggingface_optimum_model.py
-        pip install datasets
-
-        echo "::group::Set up Hugging Face"
+        echo "::group::Setup Huggingface"
         pip install -U "huggingface_hub[cli]" accelerate
         huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_VERSION=8335b491fa77a6c43709b4dfc192184add6ef224
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
         pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         echo "::endgroup::"
 
