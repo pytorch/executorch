@@ -177,7 +177,13 @@ NSURL * _Nullable create_directory_if_needed(NSURL *dirURL,
     NSCParameterAssert(dirURL);
     NSCParameterAssert(dirURL.isFileURL);
     NSCParameterAssert(fm);
-
+    
+    // Fast path: is it already a directory?
+    BOOL isDir = NO;
+    if ([fm fileExistsAtPath:dirURL.path isDirectory:&isDir] && isDir) {
+        return dirURL;
+    }
+        
     // Try to create the directory and its parents.
     if (![fm createDirectoryAtURL:dirURL
        withIntermediateDirectories:YES
