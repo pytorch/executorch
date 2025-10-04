@@ -1372,6 +1372,7 @@ def to_edge_transform_and_lower(  # noqa: C901
         for name, partitioner_list in partitioner.items():
             if i < len(partitioner_list):
                 method_to_partitioner[name] = partitioner_list[i]
+        breakpoint()
         edge_manager = edge_manager.to_backend(method_to_partitioner)
 
     for name, program in edge_manager._edge_programs.items():
