@@ -150,7 +150,7 @@ TEST(OpQuantizedEmbeddingTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(),
+      std::optional<ScalarType>(),
       weight);
 
   embedding_out(

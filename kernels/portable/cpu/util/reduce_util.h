@@ -755,24 +755,24 @@ inline Error resize_reduction_out(
 #ifndef USE_ATEN_LIB
 bool check_reduction_args(
     const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list,
+    const std::optional<ArrayRef<int64_t>>& dim_list,
     bool keepdim,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out);
 
 bool check_reduction_args_single_dim(
     const Tensor& in,
-    optional<int64_t> dim,
+    std::optional<int64_t> dim,
     bool keepdim,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out,
     bool allow_empty_dim = false);
 
 bool check_mean_dim_args(
     const Tensor& in,
-    optional<ArrayRef<int64_t>> dim_list,
+    std::optional<ArrayRef<int64_t>> dim_list,
     bool keepdim,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out);
 
 bool check_amin_amax_args(
@@ -783,7 +783,7 @@ bool check_amin_amax_args(
 
 bool check_argmin_argmax_args(
     const Tensor& in,
-    optional<int64_t> dim,
+    std::optional<int64_t> dim,
     bool keepdim,
     Tensor& out);
 
@@ -796,7 +796,7 @@ bool check_min_max_args(
 
 bool check_prod_out_args(
     const Tensor& in,
-    optional<ScalarType> dtype,
+    std::optional<ScalarType> dtype,
     Tensor& out);
 
 #endif

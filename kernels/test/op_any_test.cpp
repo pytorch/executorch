@@ -31,7 +31,7 @@ class OpAnyOutTest : public OperatorTest {
 
   Tensor& op_any_dims_out(
       const Tensor& input,
-      optional<ArrayRef<int64_t>> dim,
+      std::optional<ArrayRef<int64_t>> dim,
       bool keepdim,
       Tensor& out) {
     return torch::executor::aten::any_outf(context_, input, dim, keepdim, out);
@@ -129,7 +129,7 @@ TEST_F(OpAnyOutTest, SmokeTestDims) {
 
   Tensor self = tfBool.make({2, 3, 1}, {true, false, true, true, false, false});
   int64_t dims[3] = {0, 2};
-  optional<ArrayRef<int64_t>> opt_dim_list{ArrayRef<int64_t>{dims, 2}};
+  std::optional<ArrayRef<int64_t>> opt_dim_list{ArrayRef<int64_t>{dims, 2}};
   bool keepdim = true;
   Tensor out = tfBool.zeros({1, 3, 1});
   Tensor out_expected = tfBool.make({1, 3, 1}, {true, false, true});
