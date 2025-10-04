@@ -172,7 +172,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor([[0]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -197,7 +197,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor([[-2, -8]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -220,7 +220,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor([[0, 0]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -244,7 +244,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor(
                         [[[0, -2, -4], [-2, -7, -12]]], dtype=dtype
@@ -270,7 +270,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (1.0 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     1,  # out_zero_point
                     torch.tensor([[1, 1]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -295,7 +295,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (1.0 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     1,  # out_zero_point
                     torch.tensor([[1, 1]], dtype=dtype),  # expected_output
                     False,
@@ -317,7 +317,7 @@ class TestRefImplementations(unittest.TestCase):
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (0.125 * 2^31)
                     torch.tensor(
-                        [1], dtype=torch.int64
+                        [1], dtype=torch.int32
                     ),  # out_shift (shift=1, doubles the scale)
                     1,  # out_zero_point
                     torch.tensor([[1, 2]], dtype=dtype),  # expected_output
@@ -339,7 +339,7 @@ class TestRefImplementations(unittest.TestCase):
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (0.125 * 2^31)
                     torch.tensor(
-                        [1], dtype=torch.int64
+                        [1], dtype=torch.int32
                     ),  # out_shift (shift=1, doubles the scale)
                     1,  # out_zero_point
                     torch.tensor([[1, 2]], dtype=dtype),  # expected_output
