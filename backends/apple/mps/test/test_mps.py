@@ -1522,7 +1522,7 @@ class TestMPSUnitOpTesting(TestMPS):
         class PadModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.constant_pad = torch.nn.ConstantPad2d((1, 2), 0)
+                self.constant_pad = torch.nn.ConstantPad2d((1, 2, 0, 0), 0)
 
             def forward(self, x):
                 return self.constant_pad(x)
