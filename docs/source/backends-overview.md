@@ -6,16 +6,32 @@ The choice of hardware backend is informed by the hardware that the model is int
 
 As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.
 
-### Available Backends
+## Available Backends
 
 Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation for more information.
 
-- [XNNPACK (Mobile CPU)](backends-xnnpack.md)
-- [Core ML (iOS)](backends-coreml.md)
-- [Metal Performance Shaders (iOS GPU)](backends-mps.md)
-- [Vulkan (Android GPU)](backends-vulkan.md)
-- [Qualcomm NPU](backends-qualcomm.md)
-- [MediaTek NPU](backends-mediatek.md)
-- [ARM Ethos-U NPU](backends-arm-ethos-u.md)
-- [ARM VGF](backends-arm-vgf.md)
-- [Cadence DSP](backends-cadence.md)
+- [XNNPACK (Mobile CPU)](standalone-xnnpack)
+- [Core ML (iOS)](standalone-coreml)
+- [Metal Performance Shaders (iOS GPU)](standalone-mps)
+- [Vulkan (Android GPU)](standalone-vulkan)
+- [Qualcomm NPU](standalone-qualcomm)
+- [MediaTek NPU](standalone-mediatek)
+- [ARM Ethos-U NPU](standalone-arm-ethos-u)
+- [ARM VGF](standalone-arm-vgf)
+- [Cadence DSP](standalone-cadence)
+
+```{toctree}
+:maxdepth: 1
+:hidden:
+:caption: Backend Overview
+
+standalone-xnnpack
+standalone-coreml
+standalone-mps
+standalone-vulkan
+standalone-qualcomm
+standalone-mediatek
+standalone-arm-ethos-u
+standalone-arm-vgf
+standalone-cadence
+```

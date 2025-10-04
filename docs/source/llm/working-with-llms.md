@@ -2,6 +2,7 @@
 
 ```{toctree}
 :maxdepth: 1
+:caption: Working with LLMs
 
 getting-started
 export-llm
