@@ -620,12 +620,12 @@ class Seq2SeqLMExportableModulePipeline(torch.nn.Module):
         predicted_texts = []
         target_texts = []
         for i, (pred, tar) in tqdm(enumerate(zip(predicts, targets))):
-
             predicted_texts.append(pred)
             target_texts.append(tokenizer.decode(tar, skip_special_tokens=True))
-            print(f"Show {i}/{len(predicts)} result:")
-            print(f"\tPrediction: {pred}")
-            print(f"\tTarget:    {target_texts[i]}")
+            #print(f"Show {i}/{len(predicts)} result:")
+            #print(f"\tPrediction: {pred}")
+            #print(f"\tTarget:    {target_texts[i]}")
+
         results = metrics(predicted_texts, target_texts)
         print("F1 Score:", results["f1"])
 

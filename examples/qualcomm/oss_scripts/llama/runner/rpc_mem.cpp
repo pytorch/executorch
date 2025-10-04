@@ -9,8 +9,10 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/oss_scripts/llama/runner/rpc_mem.h>
 #include <executorch/runtime/core/memory_allocator.h>
+
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::TensorInfo;
+
 
 namespace example {
 RpcMem::RpcMem(
@@ -20,11 +22,20 @@ RpcMem::RpcMem(
     : calculated_offsets_(0) {
   size_t total_bytes = total_cache_size + total_prompt_processor_io_size +
       total_token_generator_io_size;
+# ifndef XNNPACK
   shared_buffer_base_ptr_ = QnnExecuTorchAllocCustomMem(
       total_bytes, MemoryAllocator::kDefaultAlignment);
+# else
+  shared_buffer_base_ptr_ =
+      new char[total_bytes + MemoryAllocator::kDefaultAlignment];
+# endif
 }
 RpcMem::~RpcMem() {
+# ifndef XNNPACK
   QnnExecuTorchFreeCustomMem(shared_buffer_base_ptr_);
+# else
+  delete shared_buffer_base_ptr_;
+# endif
 }
 
 std::byte* RpcMem::allocate(size_t data_size) {
@@ -57,7 +68,9 @@ void RpcMem::add_memory_info(
       shape,
       rank,
       scalar_type};
+# ifndef XNNPACK
   QnnExecuTorchAddCustomMemTensorInfo(info);
+# endif
 };
 
 } // namespace example
