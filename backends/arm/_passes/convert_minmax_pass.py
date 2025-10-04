@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.convert_squeezes_to_view import (
     ConvertSqueezesToViewPass,
 )
@@ -13,7 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ConvertMinMaxPass(ExportPass):
+class ConvertMinMaxPass(ArmPass):
     """
     Converts min/max to amin/amax and unrolls multi-dimensional reduction and keep-dims arg to be
     TOSA compliant.
