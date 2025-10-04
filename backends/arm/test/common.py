@@ -227,6 +227,7 @@ def parametrize(
     test_data: dict[str, Any],
     xfails: dict[str, xfail_type] | None = None,
     strict: bool = True,
+    flakies: dict[str, int] | None = None,
 ):
     """
     Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
@@ -237,12 +238,17 @@ def parametrize(
     """
     if xfails is None:
         xfails = {}
+    if flakies is None:
+        flakies = {}
 
     def decorator_func(func):
         """Test data is transformed from a dict of (id, data) pairs to a list of pytest params to work with the native pytests parametrize function"""
         pytest_testsuite = []
         for id, test_parameters in test_data.items():
-            if id in xfails:
+            if id in flakies:
+                # Mark this parameter as flaky with given reruns
+                marker = (pytest.mark.flaky(reruns=flakies[id]),)
+            elif id in xfails:
                 xfail_info = xfails[id]
                 reason = ""
                 raises = None
