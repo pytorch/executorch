@@ -265,7 +265,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -307,7 +307,7 @@ class Conv2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 class LayerNormPattern(QuantizationPattern):
@@ -437,7 +437,7 @@ class ReluBasePattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_relu.default
+        return torch.ops.cadence.quantized_relu.per_tensor
 
 
 # Regular relu op
@@ -496,7 +496,7 @@ class ConvReluBasePattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 # Conv1d + regular relu op fusion
