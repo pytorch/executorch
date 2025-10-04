@@ -28,6 +28,7 @@ def prim_ops_registry_selective(name, selected_prim_ops_header_target, aten_suff
             header_name: [header_name],
             "selected_prim_ops.h": ["selected_prim_ops.h"]
         },
+        platforms = kwargs.get("platforms", "CXX"),
         default_outs = ["."],
     )
     runtime.cxx_library(
