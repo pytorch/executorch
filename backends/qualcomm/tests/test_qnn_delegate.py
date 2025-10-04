@@ -173,14 +173,60 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_argmax(self):
-        module = Argmax()  # noqa: F405
-        sample_input = (torch.randn(16, 3, 4, 4),)
-        self.lower_module_and_test_output(module, sample_input)
+        test_cases = [
+            {
+                "module": Argmax(),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmax(dim=0, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmax(dim=1, keepdim=False),  # noqa: F405
+                "sample_input": (torch.randn(8, 5),),
+            },
+            {
+                "module": Argmax(dim=None, keepdim=False),  # noqa: F405
+                "sample_input": (torch.tensor([5.0]),),
+            },
+            {
+                "module": Argmax(dim=2, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(2, 3, 4),),
+            },
+        ]
+
+        for i, case in enumerate(test_cases):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(case["module"], case["sample_input"])
 
     def test_qnn_backend_argmin(self):
-        module = Argmin()  # noqa: F405
-        sample_input = (torch.rand(3, 4),)
-        self.lower_module_and_test_output(module, sample_input)
+        test_cases = [
+            {
+                "module": Argmin(),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmin(dim=0, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmin(dim=1, keepdim=False),  # noqa: F405
+                "sample_input": (torch.randn(8, 5),),
+            },
+            {
+                "module": Argmin(dim=None, keepdim=False),  # noqa: F405
+                "sample_input": (torch.tensor([5.0]),),
+            },
+            {
+                "module": Argmin(dim=2, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(2, 3, 4),),
+            },
+        ]
+
+        for i, case in enumerate(test_cases):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(case["module"], case["sample_input"])
 
     @unittest.expectedFailure
     def test_qnn_backend_asin(self):
@@ -1757,16 +1803,62 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_argmax(self):
-        module = Argmax()  # noqa: F405
-        sample_input = (torch.randn(16, 3, 4, 4),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_cases = [
+            {
+                "module": Argmax(),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmax(dim=0, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmax(dim=1, keepdim=False),  # noqa: F405
+                "sample_input": (torch.randn(8, 5),),
+            },
+            {
+                "module": Argmax(dim=None, keepdim=False),  # noqa: F405
+                "sample_input": (torch.tensor([5.0]),),
+            },
+            {
+                "module": Argmax(dim=2, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(2, 3, 4),),
+            },
+        ]
+
+        for i, case in enumerate(test_cases):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(case["module"], case["sample_input"])
+                self.lower_module_and_test_output(module, case["sample_input"])
 
     def test_qnn_backend_argmin(self):
-        module = Argmin()  # noqa: F405
-        sample_input = (torch.randn(16, 3, 4, 4),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_cases = [
+            {
+                "module": Argmin(),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmin(dim=0, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(16, 3, 4, 4),),
+            },
+            {
+                "module": Argmin(dim=1, keepdim=False),  # noqa: F405
+                "sample_input": (torch.randn(8, 5),),
+            },
+            {
+                "module": Argmin(dim=None, keepdim=False),  # noqa: F405
+                "sample_input": (torch.tensor([5.0]),),
+            },
+            {
+                "module": Argmin(dim=2, keepdim=True),  # noqa: F405
+                "sample_input": (torch.randn(2, 3, 4),),
+            },
+        ]
+
+        for i, case in enumerate(test_cases):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(case["module"], case["sample_input"])
+                self.lower_module_and_test_output(module, case["sample_input"])
 
     def test_qnn_backend_asin(self):
         module = Asin()  # noqa: F405
