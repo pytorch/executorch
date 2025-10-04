@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -19,9 +20,10 @@ from executorch.backends.cortex_m.passes.passes_utils import (
 )
 
 from executorch.backends.transforms.utils import create_mutable_buffer, get_param_tensor
+
+from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
 from torch.fx import Node
 from torch.fx.passes.infra.pass_manager import PassResult
 
@@ -29,7 +31,7 @@ logger = logging.getLogger("quantized_linear_fusion_pass")
 logger.setLevel(logging.INFO)
 
 
-class QuantizedLinearFusionPass(ExportPass):
+class QuantizedLinearFusionPass(XNNPACKPass):
     """
     Cortex-M backend pass that fuses quantized linear-like patterns.
     Fuses: dequantize -> [linear/addmm/fc_ops] -> quantize
@@ -44,8 +46,7 @@ class QuantizedLinearFusionPass(ExportPass):
     requires_exported_program = True
 
     def __init__(self, exported_program: ExportedProgram):
-        super().__init__()
-        self._exported_program = exported_program
+        super().__init__(exported_program)
         self.nodes_to_erase = []
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
