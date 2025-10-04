@@ -14,7 +14,7 @@ install_neuropilot() {
   echo "Start installing neuropilot."
   mkdir -p "${MEDIATEK_INSTALLATION_DIR}"
 
-  curl -Lo /tmp/neuropilot-express.tar.gz "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/06302508-4c94-4bf2-9789-b0ee44e83e27.gz"
+  curl -Lo /tmp/neuropilot-express.tar.gz "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/b1c485de-fca8-4b20-836a-8b33152a3609.gz"
   echo "Finishing downloading neuropilot sdk."
   tar zxvf /tmp/neuropilot-express.tar.gz --strip-components=1 --directory "${MEDIATEK_INSTALLATION_DIR}"
   echo "Finishing unzip neuropilot sdk."
@@ -28,7 +28,7 @@ install_neuropilot() {
 
 setup_neuropilot() {
   pip3 install -r ${EXECUTORCH_ROOT}/backends/mediatek/requirements.txt
-  pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+  pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_neuron-8.2.23-py3-none-linux_x86_64.whl
   pip3 install ${MEDIATEK_INSTALLATION_DIR}/mtk_converter-8.13.0_public_packages/mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 }
 
