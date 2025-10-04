@@ -13,7 +13,7 @@ download_ai_lite_core() {
   API_BASE="https://soc-developer.semiconductor.samsung.com/api/v1/resource/ai-litecore/download"
   API_KEY=$SAMSUNG_AI_LITECORE_KEY
 
-  VERSION="0.5"
+  VERSION="0.7"
   OS_NAME="Ubuntu 22.04"
   OUT_FILE="/tmp/exynos-ai-litecore-v${VERSION}.tar.gz"
   TARGET_PATH="/tmp/exynos_ai_lite_core"
@@ -62,7 +62,7 @@ install_enn_backend() {
   export PYTHONPATH=${PYTHONPATH:-}:${EXECUTORCH_ROOT}/..
 }
 
-AI_LITE_CORE_VERSION=0.5.0
+AI_LITE_CORE_VERSION=0.7.0
 
 download_ai_lite_core ${AI_LITE_CORE_VERSION}
 install_enn_backend
