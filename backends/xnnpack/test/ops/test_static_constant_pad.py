@@ -105,7 +105,7 @@ class TestStaticConstantPad(unittest.TestCase):
     class StaticConstantPad2d(torch.nn.Module):
         def __init__(self):
             super().__init__()
-            self.pad = torch.nn.ConstantPad2d([1, 2, 3, 4], 2.3)
+            self.pad = torch.nn.ConstantPad2d((1, 2, 3, 4), 2.3)
 
         def forward(self, x):
             y = self.pad(x)
