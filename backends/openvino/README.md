@@ -18,6 +18,11 @@ For more information on the supported hardware, please refer to [OpenVINO System
 executorch
 ├── backends
 │   └── openvino
+│       ├── quantizer
+│           ├── observers
+│               └── nncf_observers.py
+│           ├── __init__.py
+│           └── quantizer.py
 │       ├── runtime
 │           ├── OpenvinoBackend.cpp
 │           └── OpenvinoBackend.h
@@ -42,23 +47,6 @@ executorch
 
 Before you begin, ensure you have openvino installed and configured on your system.
 
-### Build OpenVINO from Source
-
-```bash
-git clone https://github.com/openvinotoolkit/openvino.git
-cd openvino && git checkout b16b776ac119dafda51f69a80f1e6b7376d02c3b
-git submodule update --init --recursive
-sudo ./install_build_dependencies.sh
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
-make -j$(nproc)
-
-cd ..
-cmake --install build --prefix <your_preferred_install_location>
-cd <your_preferred_install_location>
-source setupvars.sh
-```
-
 ### Use OpenVINO from Release Packages
 
 1. Download the OpenVINO release package from [here](https://docs.openvino.ai/2025/get-started/install-openvino.html). Make sure to select your configuration and click on **OpenVINO Archives** under the distribution section to download the appropriate archive for your platform.
@@ -71,32 +59,62 @@ source setupvars.sh
    source setupvars.sh
    ```
 
+### (Optional) Build OpenVINO from Source
+
+```bash
+git clone https://github.com/openvinotoolkit/openvino.git
+cd openvino
+git submodule update --init --recursive
+sudo ./install_build_dependencies.sh
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_PYTHON=ON
+make -j$(nproc)
+
+cd ..
+cmake --install build --prefix <your_preferred_install_location>
+cd <your_preferred_install_location>
+source setupvars.sh
+```
+
 For more information about OpenVINO build, refer to the [OpenVINO Build Instructions](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_linux.md).
 
 ### Setup
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
-2. **Setup OpenVINO Backend Environment**
-- Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory
+1. **Create a Virtual Environment**
+- Create a virtual environment and activate it by executing the commands below.
    ```bash
-   pip install -r requirements.txt
+   python -m venv env
+   source env/bin/activate
    ```
-  Note: To achieve optimal performance with NNCF quantization, you should install the latest development version of NNCF (version 2.16.0.dev0+191b53d9 or higher).
-3. Navigate to `scripts/` directory.
-
-4. **Build OpenVINO Backend C++ Libraries and Executor Runner**: Once the prerequisites are in place, run the `openvino_build.sh` script to start the build process. By default, OpenVINO backend will be built under `cmake-out/backends/openvino/` as `libopenvino_backend.a`
-
+2. **Clone ExecuTorch Repository from Github**
+- Clone Executorch repository by executing the command below.
    ```bash
-   ./openvino_build.sh
+   git clone --recurse-submodules https://github.com/pytorch/executorch.git
    ```
-   **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
-
+3. **Build ExecuTorch with OpenVINO Backend**
+- Ensure that you are inside `executorch/backends/openvino/scripts` directory. The following command builds and installs ExecuTorch with the OpenVINO backend, also compiles the C++ runtime libraries and binaries into `<executorch_root>/cmake-out` for quick inference testing.
    ```bash
+   openvino_build.sh
+   ```
+- Optionally, `openvino_build.sh` script can be used to build python package or C++ libraries/binaries seperately.
+
+   **Build OpenVINO Backend Python Package with Pybindings**: To build and install the OpenVINO backend Python package with Python bindings, run the `openvino_build.sh` script with the `--enable_python` argument as shown in the below command. This will compile and install the ExecuTorch Python package with the OpenVINO backend into your Python environment. This option will also enable python bindings required to execute OpenVINO backend tests and `aot_optimize_and_infer.py` script inside `executorch/examples/openvino` folder.
+     ```bash
    ./openvino_build.sh --enable_python
    ```
+   **Build C++ Runtime Libraries for OpenVINO Backend**: Run the `openvino_build.sh` script with the `--cpp_runtime` flag to build the C++ runtime libraries as shown in the below command. The compiled libraries files and binaries can be found in the `<executorch_root>/cmake-out` directory. The binary located at `<executorch_root>/cmake-out/backends/openvino/openvino_executor_runner` can be used to run inference with vision models.
+     ```bash
+   ./openvino_build.sh --cpp_runtime
+   ```
+   **Build C++ Llama Runner**: First, ensure the C++ runtime libraries are built by following the earlier instructions. Then, run the `openvino_build.sh` script with the `--llama_runner flag` to compile the LlaMA runner as shown the below command, which enables executing inference with models exported using export_llama. The resulting binary is located at: `<executorch_root>/cmake-out/examples/models/llama/llama_main`
+     ```bash
+   ./openvino_build.sh --llama_runner
+   ```
+
+For more information about ExecuTorch environment setup, refer to the [Environment Setup](https://pytorch.org/executorch/main/getting-started-setup#environment-setup) guide.
 
 ### Run
 
