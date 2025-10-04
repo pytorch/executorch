@@ -1590,7 +1590,7 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
         updated_args = list(args)
         for op_arg_index in args_to_be_replaced:
             arg = args[op_arg_index]
-            if not arg.is_tensor():
+            if not isinstance(arg, ProxyValue) or not arg.is_tensor():
                 return super().call_operator(op, args, kwargs, meta)
 
             if not isinstance(arg.node.target, EdgeOpOverload):
