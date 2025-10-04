@@ -21,6 +21,7 @@ using executorch::runtime::etensor::Tensor;
 extern "C" {
 
 // Type definitions
+using AOTITensorHandle = Tensor*;
 using AOTIRuntimeError = Error;
 
 // Forward declarations for AOT Inductor model container

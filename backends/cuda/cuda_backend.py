@@ -33,10 +33,8 @@ supported_fallback_kernels: Dict[str, Any] = {}
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
 
-
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
-
 
 # context manager for non-fallback guarantee
 # it will raise exception when generating fallback kernels during aoti compile
