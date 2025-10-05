@@ -487,7 +487,7 @@ NSString *raw_model_identifier(NSString *identifier) {
                                                                  error:error];
         if (compiledModelURL) {
             // Move the compiled model to the asset manager to transfer ownership.
-            ETCoreMLLogInfo("Successfully compiled model with identifier=%@.  Transferring ownership to assetManager.", identifier);
+            ETCoreMLLogInfo("Successfully got compiled model with identifier=%@.  Transferring ownership to assetManager.", identifier);
             compiledModelAsset = [self.assetManager storeAssetAtURL:compiledModelURL withIdentifier:identifier error:error];
         }
     }];

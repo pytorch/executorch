@@ -178,9 +178,11 @@ NSURL * _Nullable create_directory_if_needed(NSURL *dirURL,
     NSCParameterAssert(dirURL.isFileURL);
     NSCParameterAssert(fm);
     
+    NSString *dirPath = dirURL.path;
+
     // Fast path: is it already a directory?
     BOOL isDir = NO;
-    if ([fm fileExistsAtPath:dirURL.path isDirectory:&isDir] && isDir) {
+    if (dirPath && [fm fileExistsAtPath:dirPath isDirectory:&isDir] && isDir) {
         return dirURL;
     }
         
@@ -189,15 +191,13 @@ NSURL * _Nullable create_directory_if_needed(NSURL *dirURL,
        withIntermediateDirectories:YES
                         attributes:nil
                              error:error]) {
-        // If creation failed because something already exists, check if it's a directory.
-        NSNumber *isDir = nil;
-        NSError *attrErr = nil;
-        if (![dirURL getResourceValue:&isDir forKey:NSURLIsDirectoryKey error:&attrErr] || !isDir.boolValue) {
-            if (error && !*error) *error = attrErr;
-            return nil; // path exists but is not a directory
+        // Lost a race and creation failed because something already exists, check if it's a directory.
+        isDir = NO;
+        if (dirPath && [fm fileExistsAtPath:dirPath isDirectory:&isDir] && isDir) {
+             if (error) { *error = nil; }
+        } else {
+            return nil;
         }
-        // It already existed and is a directory → treat as success
-        if (error) *error = nil;
     }
 
     // Best effort: exclude from backup (ignore failure)
@@ -366,6 +366,26 @@ get_assets_to_remove(ModelAssetsStore& store,
     if (!::create_directory_if_needed(databaseDirectoryURL, fm, error)) {
         return nil;
     }
+
+    // Ensure correct file protection
+    NSMutableArray<NSString *> *maybeDBPaths = [NSMutableArray array];
+    if (databaseDirectoryURL.path) { [maybeDBPaths addObject:databaseDirectoryURL.path]; }
+
+    // Ensure correct file protection on existing database files, if any
+    // New database files should inherit the protection from the parent directory
+    if (databaseURL.path) {
+        [maybeDBPaths addObject:databaseURL.path];
+        [maybeDBPaths addObject:[databaseURL.path stringByAppendingString:@"-wal"]];
+        [maybeDBPaths addObject:[databaseURL.path stringByAppendingString:@"-shm"]];
+        [maybeDBPaths addObject:[databaseURL.path stringByAppendingString:@"-journal"]];
+    }
+    NSDictionary *attrs = @{ NSFileProtectionKey : NSFileProtectionCompleteUntilFirstUserAuthentication };
+    for (NSString *p in maybeDBPaths) {
+        if ([fm fileExistsAtPath:p]) {
+            (void)[fm setAttributes:attrs ofItemAtPath:p error:nil]; // best-effort
+        }
+    }
+
     auto database = make_database(databaseURL, kBusyTimeIntervalInMS, error);
     if (!database) {
         return nil;
