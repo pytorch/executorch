@@ -25,6 +25,9 @@ from executorch.backends.arm.constants import (
     NNCHW_ORDER,
     NNHWC_INVERSE_ORDER,
     NNHWC_ORDER,
+    NNNCHW_ORDER,
+    NNNHWC_INVERSE_ORDER,
+    NNNHWC_ORDER,
 )
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -47,6 +50,8 @@ class ToTosaMemoryFormatPass(ExportPass):
     when a transition between 3D and 4D/5D tensors happen.
     The annotated tosa_dim_order is used to permute the node's shape such that it gives a TOSA-compliant shape.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram) -> None:
         self.exported_program = exported_program
@@ -84,7 +89,11 @@ class ToTosaMemoryFormatPass(ExportPass):
     @staticmethod
     def memory_format_differs(shape):
         """Returns true if the shape will have a different memory layout in (N)NCHW and (N)NHWC format"""
-        if len(shape) >= 5:
+        if len(shape) >= 6:
+            C = shape[3]
+            H = shape[4]
+            W = shape[5]
+        elif len(shape) == 5:
             C = shape[2]
             H = shape[3]
             W = shape[4]
@@ -103,25 +112,26 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     @staticmethod
     def is_channel_reshape(input_shape, output_shape):
-        """Returns true if the reshape changes the channel dimension"""
-        if not (
-            (len(input_shape) == len(output_shape) and (len(output_shape) in (4, 5)))
-            or (len(input_shape) == 4 and len(output_shape) == 5)
-            or (len(input_shape) == 5 and len(output_shape) == 4)
-        ):
+        """Returns true if reshape changes the channel dimension or batch product dimension(s)"""
+
+        valid_ranks = {4, 5, 6}
+
+        if not (len(input_shape) in valid_ranks and len(output_shape) in valid_ranks):
             return False
 
         C_old = input_shape[-3]
         C_new = output_shape[-3]
 
-        N_new = (
-            output_shape[0]
-            if len(output_shape) == 4
-            else output_shape[0] * output_shape[1]
-        )
-        N_old = (
-            input_shape[0] if len(input_shape) == 4 else input_shape[0] * input_shape[1]
-        )
+        def get_batch_prod_dim(shape):
+            product = 1
+
+            for dim in shape[:-3]:
+                product = product * dim
+
+            return product
+
+        N_old = get_batch_prod_dim(input_shape)
+        N_new = get_batch_prod_dim(output_shape)
 
         return (N_old != N_new) or (C_old != C_new)
 
@@ -132,17 +142,27 @@ class ToTosaMemoryFormatPass(ExportPass):
             node.replace_input_with(input_node, pre_permute_node)
             return
 
+        if len(get_first_fake_tensor(input_node).size()) == 6:
+            mem_format = NNNHWC_INVERSE_ORDER
+        elif len(get_first_fake_tensor(input_node).size()) == 5:
+            mem_format = NNHWC_INVERSE_ORDER
+        else:
+            mem_format = NHWC_INVERSE_ORDER
+        # Guard: mem_format must be a true permutation for the current rank
+        _rank_ = len(
+            get_first_fake_tensor(input_node).size()
+        )  # or (node) in output path
+        assert sorted(mem_format) == list(
+            range(_rank_)
+        ), f"bad perm {mem_format} for rank {_rank_} in insert_input_transpose"
+
         with graph_module.graph.inserting_before(node):
             permute_node = create_node(
                 graph_module.graph,
                 exir_ops.backend.tosa.TRANSPOSE.default,
                 args=(
                     input_node,
-                    list(
-                        NNHWC_INVERSE_ORDER
-                        if len(get_first_fake_tensor(input_node).size()) == 5
-                        else NHWC_INVERSE_ORDER
-                    ),
+                    list(mem_format),
                 ),
                 from_node=node,
             )
@@ -154,26 +174,38 @@ class ToTosaMemoryFormatPass(ExportPass):
 
     @staticmethod
     def insert_output_transpose(node, graph_module):
+
+        if len(get_first_fake_tensor(node).size()) == 6:
+            mem_format = NNNHWC_ORDER
+        elif len(get_first_fake_tensor(node).size()) == 5:
+            mem_format = NNHWC_ORDER
+        else:
+            mem_format = NHWC_ORDER
+        # Guard: mem_format must be a true permutation for the current rank
+        _rank_ = len(get_first_fake_tensor(node).size())  # or (node) in output path
+        assert sorted(mem_format) == list(
+            range(_rank_)
+        ), f"bad perm {mem_format} for rank {_rank_} in insert_input_transpose"
+
         with graph_module.graph.inserting_after(node):
             permute_node = create_node(
                 graph_module.graph,
                 exir_ops.backend.tosa.TRANSPOSE.default,
                 args=(
                     node,
-                    list(
-                        NNHWC_ORDER
-                        if len(get_first_fake_tensor(node).size()) == 5
-                        else NHWC_ORDER
-                    ),
+                    list(mem_format),
                 ),
                 from_node=node,
             )
 
-            permute_node.meta["tosa_dim_order"] = (
-                NNHWC_ORDER
-                if len(get_first_fake_tensor(node).size()) == 5
-                else NHWC_ORDER
-            )
+            rank = len(get_first_fake_tensor(node).size())
+            if rank == 6:
+                permute_node.meta["tosa_dim_order"] = NNNHWC_ORDER
+            elif rank == 5:
+                permute_node.meta["tosa_dim_order"] = NNHWC_ORDER
+            else:
+                permute_node.meta["tosa_dim_order"] = NHWC_ORDER
+
             node.meta["tosa_dim_order"] = tuple(
                 range(len(get_first_fake_tensor(node).size()))
             )
@@ -252,7 +284,7 @@ class ToTosaMemoryFormatPass(ExportPass):
         ]
         for input_node in inputs:
             input_dim_order = get_first_fake_tensor(input_node).dim_order()
-            if input_dim_order in (NCHW_ORDER, NNCHW_ORDER):
+            if input_dim_order in (NCHW_ORDER, NNCHW_ORDER, NNNCHW_ORDER):
                 self.insert_output_transpose(input_node, graph_module)
 
         # Transpose outputs if they are in (N)NCHW format
@@ -267,6 +299,7 @@ class ToTosaMemoryFormatPass(ExportPass):
             if output_dim_order in (
                 NCHW_ORDER,
                 NNCHW_ORDER,
+                NNNCHW_ORDER,
             ):
                 self.insert_input_transpose(
                     output_node, output_node_input, graph_module
@@ -304,6 +337,8 @@ class ToTosaMemoryFormatPass(ExportPass):
                     dim_order = HWCM_ORDER
             elif node_data.dim() == 5:
                 dim_order = NNHWC_ORDER
+            elif node_data.dim() == 6:
+                dim_order = NNNHWC_ORDER
             else:
                 dim_order = tuple(range(node_data.dim()))  # type: ignore[assignment]
 
