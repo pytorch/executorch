@@ -142,7 +142,9 @@ class CudaBackend(BackendDetails):
         }
 
         with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
-            [SDPBackend.MATH]
+            [
+                SDPBackend.MATH  # pyre-ignore[16]: Module `torch.nn.attention` has no attribute `SDPBackend`.
+            ]
         ), torch.no_grad():
             # torch._logging.set_logs(post_grad_graphs=True)
             so_path = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]

@@ -89,10 +89,10 @@ class ReplaceLogicalNotBooleanWhereWithWherePass(ExportPass):
 
             # Get the third arg node and its input
             logical_not_node = node.args[0]
-            logical_not_input_tensor = logical_not_node.args[0].to_tensor()
+            logical_not_input_node = logical_not_node.args[0]
 
             # If the logical_not input is not a boolean tensor, bail.
-            if logical_not_input_tensor.meta["spec"].dtype != torch.bool:
+            if logical_not_input_node.meta["val"].dtype != torch.bool:
                 continue
 
             # Replace the where op with another one, flipping the inputs and using the boolean
@@ -1590,7 +1590,7 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
         updated_args = list(args)
         for op_arg_index in args_to_be_replaced:
             arg = args[op_arg_index]
-            if not arg.is_tensor():
+            if not isinstance(arg, ProxyValue) or not arg.is_tensor():
                 return super().call_operator(op, args, kwargs, meta)
 
             if not isinstance(arg.node.target, EdgeOpOverload):
