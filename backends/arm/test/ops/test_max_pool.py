@@ -142,7 +142,6 @@ def test_max_pool2d_u55_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     ).run()
 
 
@@ -155,7 +154,6 @@ def test_max_pool2d_u85_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     ).run()
 
 

@@ -7,10 +7,14 @@
 import contextlib
 import os
 import typing
+from enum import Enum
 
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
+from executorch.backends.cuda.replace_slice_copy_with_slice import (
+    ReplaceSliceCopyWithSlicePass,
+)
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
 from executorch.exir.backend.backend_details import (
@@ -21,13 +25,17 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
-
+from torch.nn.attention import SDPBackend
 
 # exist fallback operators in et namespace;
 supported_fallback_kernels: Dict[str, Any] = {}
 
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
+
+
+class COMPILE_SPEC_KEYS(Enum):
+    METHOD_NAME = "method_name"
 
 
 # context manager for non-fallback guarantee
@@ -108,6 +116,9 @@ class CudaBackend(BackendDetails):
         # Move the edge_program from CPU to CUDA for aoti compile
         cuda_edge_program = move_to_device_pass(edge_program, "cuda")
 
+        # replace slice_copy with slice
+        ReplaceSliceCopyWithSlicePass()(cuda_edge_program.graph_module)
+
         edge_program_module = cuda_edge_program.module()
 
         # Grab all input placeholders from the graph
@@ -132,7 +143,12 @@ class CudaBackend(BackendDetails):
             "max_autotune_conv_backends": "TRITON",
         }
 
-        with collect_unsupported_fallback_kernels():
+        with collect_unsupported_fallback_kernels(), torch.nn.attention.sdpa_kernel(
+            [
+                SDPBackend.MATH  # pyre-ignore[16]: Module `torch.nn.attention` has no attribute `SDPBackend`.
+            ]
+        ), torch.no_grad():
+            # torch._logging.set_logs(post_grad_graphs=True)
             so_path = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
@@ -146,7 +162,10 @@ class CudaBackend(BackendDetails):
             so_data = f.read()
 
         named_data_store = NamedDataStore()
-        named_data_store.add_named_data("so_blob", so_data, 1, "aoti_cuda_blob")
+        method_name = CudaBackend.method_name_from_compile_specs(compile_specs)
+        named_data_store.add_named_data(
+            method_name + "_so_blob", so_data, 1, "aoti_cuda_blob"
+        )
 
         # Clean up the generated so file; it has been packaged into the NamdeDataStore
         # pyre-ignorep[6]: Incompatible parameter type
@@ -156,4 +175,31 @@ class CudaBackend(BackendDetails):
             processed_bytes=b"",
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
+        )
+
+    @staticmethod
+    def generate_method_name_compile_spec(
+        method_name: str,
+    ) -> CompileSpec:
+        """
+        Returns the compile spec representing the model compute precision, for additional details
+        please refer to the documentation for ``coremltools.precision``.
+        """
+        return CompileSpec(
+            COMPILE_SPEC_KEYS.METHOD_NAME.value,
+            method_name.encode("utf-8"),
+        )
+
+    @staticmethod
+    def method_name_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> str:
+        """
+        Returns the method name from the compile specs.
+        """
+        for spec in compile_specs:
+            if spec.key == COMPILE_SPEC_KEYS.METHOD_NAME.value:
+                return spec.value.decode("utf-8")
+        raise RuntimeError(
+            f"Could not find method name in compile specs: {compile_specs}"
         )

@@ -7,13 +7,11 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
 from executorch.backends.nxp.backend.edge_helper import input_rank
-from executorch.backends.nxp.backend.ir.converter.node_converter import (
-    NodeConverter,
-    Target,
-)
+from executorch.backends.nxp.backend.ir.converter.node_converter import NodeConverter
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     softmax_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -22,18 +20,11 @@ class SoftmaxConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        match target:
-            case Target.RT700:
-                # The eIQ Neutron NPU runtime software has a known issue with the SoftMax operation.
-                #  As long as the issue is present, return False for the i.MX RT700 target also.
-                return False
-
-            case _:
-                return False
+        return False
 
     @staticmethod
     def _is_supported_in_IR(
