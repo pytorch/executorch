@@ -23,7 +23,10 @@ DEFINE_string(
     "llama2.pte",
     "Model serialized in flatbuffer format.");
 
-DEFINE_string(data_paths, "", "Data files for the model. If multiple files are provided, they should be comma separated.");
+DEFINE_string(
+    data_paths,
+    "",
+    "Data files for the model. If multiple files are provided, they should be comma separated.");
 
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
@@ -62,7 +65,7 @@ std::vector<std::string> parseStringList(const std::string& input) {
   if (input.empty()) {
     return result;
   }
-  
+
   std::stringstream ss(input);
   std::string item;
   while (std::getline(ss, item, ',')) {
