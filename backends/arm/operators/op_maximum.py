@@ -7,6 +7,8 @@
 
 from typing import Any, List
 
+import serializer.tosa_serializer as ts
+
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -40,8 +42,6 @@ class MaxVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
-        import serializer.tosa_serializer as ts  # type: ignore
         from tosa.NanPropagationMode import NanPropagationMode  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
