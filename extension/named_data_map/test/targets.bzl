@@ -8,7 +8,6 @@ def define_common_targets(is_fbcode=False):
             # intentionally don't work in xplat (since they're host-only tools).
             "ET_MODULE_ADD_MUL_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleAddMul.ptd])",
             "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
-            "ET_MODULE_SIMPLE_TRAIN_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleSimpleTrain.ptd])",
         }
 
         runtime.cxx_test(
