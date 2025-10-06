@@ -20,11 +20,11 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
-         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.ptd"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAddMul,ModuleLinear,ModuleSimpleTrain" --external-constants --outdir
@@ -34,12 +34,12 @@ add_custom_command(
 
 add_custom_target(
   extension_named_data_map_test_resources
-  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
+  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
-          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.ptd"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
 )
 
 set(test_env
@@ -48,7 +48,7 @@ set(test_env
     "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
     "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
     "ET_MODULE_SIMPLE_TRAIN_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.ptd"
-    "ET_MODULE_SIMPLE_TRAIN_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
+    "ET_MODULE_SIMPLE_TRAIN_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
 )
 
 set(_test_srcs merged_data_map_test.cpp)
