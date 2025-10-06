@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
         (uint32_t)ptd_loader_result.error());
     ptd_loader =
         std::make_unique<FileDataLoader>(std::move(ptd_loader_result.get()));
-    ET_LOG(Info, "PTD file %s is loaded.", ptd_path);
+    ET_LOG(Info, "PTD file %s is loaded.", data_path);
 
     Result<FlatTensorDataMap> ptd_data_map_result =
         FlatTensorDataMap::load(ptd_loader.get());
