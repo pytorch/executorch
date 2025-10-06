@@ -42,7 +42,7 @@ class TextRunnerTest: XCTestCase {
   func testLLaMA() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "llama3_2-1B", ofType: "pte"),
-          let tokenizerPath = bundle.path(forResource: "tokenizer", ofType: "model") else {
+          let tokenizerPath = bundle.path(forResource: "llama_tokenizer", ofType: "model") else {
       XCTFail("Couldn't find model or tokenizer files")
       return
     }
@@ -77,7 +77,7 @@ class TextRunnerTest: XCTestCase {
   func testPhi4() {
     let bundle = Bundle(for: type(of: self))
     guard let modelPath = bundle.path(forResource: "phi4-mini", ofType: "pte"),
-          let tokenizerPath = bundle.path(forResource: "tokenizer", ofType: "json") else {
+          let tokenizerPath = bundle.path(forResource: "phi_tokenizer", ofType: "json") else {
       XCTFail("Couldn't find model or tokenizer files")
       return
     }
