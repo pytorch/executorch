@@ -537,7 +537,7 @@ TEST_F(ModuleTest, TestPTD) {
 
 TEST_F(ModuleTest, TestPTD_Multiple) {
   std::vector<std::string> data_files = {add_mul_data_path_, linear_data_path_};
-  
+
   // Create module with add mul.
   Module module_add_mul(add_mul_path_, data_files);
   ASSERT_EQ(module_add_mul.load_method("forward"), Error::Ok);

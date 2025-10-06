@@ -174,7 +174,9 @@ runtime::Error Module::load(const Program::Verification verification) {
       for (const auto& data_map : named_data_maps_) {
         raw_data_maps.push_back(data_map.get());
       }
-      merged_data_map_ = ET_UNWRAP_UNIQUE(MergedDataMap::load(raw_data_maps));
+      merged_data_map_ = ET_UNWRAP_UNIQUE(
+          MergedDataMap::load(runtime::Span<const NamedDataMap*>(
+              raw_data_maps.data(), raw_data_maps.size())));
     }
 
     auto program =

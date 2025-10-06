@@ -10,10 +10,10 @@
 
 #include <executorch/runtime/core/named_data_map.h>
 
+#include <unordered_map>
 #include <vector>
 
-namespace executorch {
-namespace extension {
+namespace executorch::extension {
 /**
  * A NamedDataMap implementation that wraps other NamedDataMaps.
  */
@@ -26,9 +26,9 @@ class MergedDataMap final
    * @param[in] data_maps vector of NamedDataMap pointers to merge.
    * Note: the data maps must outlive the MergedDataMap instance.
    */
-  static executorch::runtime::Result<MergedDataMap> load(
-      std::vector<const executorch::ET_RUNTIME_NAMESPACE::NamedDataMap*>
-          named_data_maps);
+  static executorch::runtime::Result<MergedDataMap>
+  load(executorch::runtime::Span<
+       const executorch::ET_RUNTIME_NAMESPACE::NamedDataMap*> named_data_maps);
 
   /**
    * Retrieve the tensor_layout for the specified key.
@@ -103,5 +103,4 @@ class MergedDataMap final
   std::unordered_map<std::string, uint32_t> key_to_map_index_;
 };
 
-} // namespace extension
-} // namespace executorch
+} // namespace executorch::extension
