@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -10,12 +11,14 @@ import unittest
 from unittest.mock import Mock, patch, PropertyMock
 
 import torch
+from executorch.exir.pass_base import ExportPass, RequireExportedProgram
 from executorch.exir.program import EdgeProgramManager, ExecutorchProgramManager
 from executorch.export import AOQuantizationConfig, QuantizationRecipe, StageType
 from executorch.export.stages import (
     EdgeTransformAndLowerStage,
     ExecutorchStage,
     PipelineArtifact,
+    PostToBackendStage,
     QuantizeStage,
     SourceTransformStage,
     ToBackendStage,
@@ -33,6 +36,18 @@ class SimpleTestModel(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear(x)
+
+
+class DummyExportPassWithProgram(RequireExportedProgram, ExportPass):
+    def __init__(self, exported_program: ExportedProgram) -> None:
+        super().__init__()
+        self.received_exported_program = exported_program
+
+
+class DummyExportPassWithoutProgram(ExportPass):
+    def __init__(self) -> None:
+        super().__init__()
+        self.initialized = True
 
 
 class TestPipelineArtifact(unittest.TestCase):
@@ -587,3 +602,51 @@ class TestToBackendStage(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             stage.run(artifact)
         self.assertIn("Edge program manager is not set", str(cm.exception))
+
+
+class TestPostToBackendStage(unittest.TestCase):
+    @patch("executorch.export.stages.get_delegation_info")
+    def test_run_with_mixed_pass_types(self, mock_get_delegation_info: Mock) -> None:
+        mock_get_delegation_info.return_value = {"delegation": "info"}
+
+        exported_program = Mock(spec=ExportedProgram)
+        edge_program_manager = Mock(spec=EdgeProgramManager)
+        transformed_manager = Mock(spec=EdgeProgramManager)
+        transformed_exported_program = Mock(spec=ExportedProgram)
+        transformed_graph_module = Mock()
+        transformed_exported_program.graph_module = transformed_graph_module
+
+        edge_program_manager.exported_program.return_value = exported_program
+        edge_program_manager.transform.return_value = transformed_manager
+        transformed_manager.exported_program.return_value = transformed_exported_program
+
+        passthrough_pass = Mock()
+        non_program_pass_instance = DummyExportPassWithoutProgram()
+
+        stage = PostToBackendStage(
+            pass_list_or_manager=[
+                passthrough_pass,
+                DummyExportPassWithProgram,
+                DummyExportPassWithoutProgram,
+                non_program_pass_instance,
+            ]
+        )
+
+        artifact = PipelineArtifact(data=edge_program_manager, context={})
+        stage.run(artifact)
+
+        edge_program_manager.transform.assert_called_once()
+        pass_instances, compile_config = edge_program_manager.transform.call_args[0]
+
+        self.assertEqual(len(pass_instances), 4)
+        self.assertIs(pass_instances[0], passthrough_pass)
+        self.assertIsInstance(pass_instances[1], DummyExportPassWithProgram)
+        self.assertIsInstance(pass_instances[2], DummyExportPassWithoutProgram)
+        self.assertIs(pass_instances[1].received_exported_program, exported_program)
+        self.assertIs(pass_instances[3], non_program_pass_instance)
+        self.assertIsNone(compile_config)
+
+        result_artifact = stage.get_artifacts()
+        self.assertIs(result_artifact.data, transformed_manager)
+        self.assertEqual(stage.delegation_info, {"delegation": "info"})
+        mock_get_delegation_info.assert_called_once_with(transformed_graph_module)

@@ -9,12 +9,14 @@ import copy
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, cast, Dict, List, Optional
 
 import torch
 from executorch.devtools.backend_debug import get_delegation_info
-from executorch.exir import EdgeCompileConfig, ExportedProgram
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, ExportedProgram
 from executorch.exir.backend.backend_api import validation_disabled
+from executorch.exir.pass_base import ExportPass, RequireExportedProgram
+from executorch.exir.pass_manager import PassManager
 from executorch.exir.program import to_edge, to_edge_transform_and_lower
 from executorch.export.recipe import LoweringRecipe, QuantizationRecipe
 from executorch.export.types import StageType
@@ -118,7 +120,7 @@ class TorchExportStage(Stage):
         self.strict = strict
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.TORCH_EXPORT
 
     @property
@@ -197,7 +199,7 @@ class EdgeTransformAndLowerStage(Stage):
         )
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.TO_EDGE_TRANSFORM_AND_LOWER
 
     @property
@@ -266,7 +268,7 @@ class ExecutorchStage(Stage):
         self._backend_config = backend_config
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.TO_EXECUTORCH
 
     @property
@@ -304,7 +306,7 @@ class SourceTransformStage(Stage):
         self._transformed_models: Dict[str, nn.Module] = {}
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.SOURCE_TRANSFORM
 
     @property
@@ -358,7 +360,7 @@ class QuantizeStage(Stage):
         self._quantization_recipe = quantization_recipe
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.QUANTIZE
 
     @property
@@ -459,7 +461,7 @@ class ToEdgeStage(Stage):
         )
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.TO_EDGE
 
     @property
@@ -520,7 +522,7 @@ class ToBackendStage(Stage):
         )
 
     @property
-    def stage_type(self) -> str:
+    def stage_type(self) -> StageType:
         return StageType.TO_BACKEND
 
     @property
@@ -576,6 +578,105 @@ class ToBackendStage(Stage):
 
         self._artifact = artifact.copy_with_new_data(edge_program_manager)
         self._artifact.add_context("delegation_info", delegation_info)
+
+    @property
+    def delegation_info(self) -> Any:
+        """
+        Returns the delegation info.
+        """
+        return self._artifact.get_context("delegation_info")
+
+
+class PostToBackendStage(Stage):
+    """
+    Stage: Run passes after all partitioners have done their partitioning.
+    """
+
+    def __init__(
+        self,
+        pass_list_or_manager: (
+            list[PassType | type[ExportPass]] | PassManager | None
+        ) = None,
+        edge_compile_config: EdgeCompileConfig | None = None,
+    ) -> None:
+        super().__init__()
+        if pass_list_or_manager is None:
+            pass_list_or_manager = []
+
+        self._pass_list_or_manager = pass_list_or_manager
+        self._edge_compile_config = edge_compile_config
+
+    @classmethod
+    def from_recipe(
+        cls, lowering_recipe: Optional["LoweringRecipe"]
+    ) -> "PostToBackendStage":
+        if lowering_recipe is None:
+            return cls()
+
+        return cls(
+            pass_list=lowering_recipe.post_to_backend_passes,
+            edge_compile_config=lowering_recipe.edge_compile_config,
+        )
+
+    @property
+    def stage_type(self) -> StageType:
+        return StageType.POST_TO_BACKEND
+
+    @property
+    def valid_predecessor_stages(self) -> List["StageType"]:
+        return [StageType.TO_BACKEND, StageType.TO_EDGE_TRANSFORM_AND_LOWER]
+
+    @property
+    def can_start_pipeline(self) -> bool:
+        return False
+
+    def run(self, artifact: PipelineArtifact) -> None:
+        """
+        Run list of passes using edge_program_manager.transform().
+
+        Args:
+            artifact: PipelineArtifact which's data field is expected to contain an edge_program_manager.
+        """
+
+        if self._pass_list_or_manager:
+            edge_program_manager = cast(EdgeProgramManager, artifact.data)
+
+            if isinstance(self._pass_list_or_manager, PassManager):
+                edge_program_manager = edge_program_manager.transform(
+                    self._pass_list_or_manager, self._edge_compile_config
+                )
+            else:
+                exported_program = edge_program_manager.exported_program()
+                pass_instances: list[PassType] = []
+                for _pass in self._pass_list_or_manager:
+                    if isinstance(_pass, type):
+                        if not issubclass(_pass, ExportPass):
+                            raise RuntimeError(
+                                f"Pass {_pass} was not subclass of ExportPass."
+                            )
+                        if issubclass(_pass, RequireExportedProgram):
+                            pass_instance = _pass(
+                                exported_program=exported_program  #  type: ignore
+                            )
+                        else:
+                            pass_instance = _pass()
+                        pass_instances.append(pass_instance)
+                    else:
+                        pass_instances.append(_pass)
+
+                edge_program_manager = edge_program_manager.transform(
+                    pass_instances, self._edge_compile_config
+                )
+            # Get delegation info
+            delegation_info = get_delegation_info(
+                edge_program_manager.exported_program().graph_module
+            )
+
+            self._artifact = artifact.copy_with_new_data(edge_program_manager)
+            self._artifact.add_context("delegation_info", delegation_info)
+        else:
+            # If pass_list_or_manager is None or empty list, do nothing.
+            self._artifact = artifact
 
     @property
     def delegation_info(self) -> Any:

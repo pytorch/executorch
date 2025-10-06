@@ -182,6 +182,7 @@ class ExportSession:
             StageType.QUANTIZE,  # Optional stage, returns original model if quant recipe is invalid
             StageType.TORCH_EXPORT,
             StageType.TO_EDGE_TRANSFORM_AND_LOWER,
+            StageType.POST_TO_BACKEND,
             StageType.TO_EXECUTORCH,
         ]
 

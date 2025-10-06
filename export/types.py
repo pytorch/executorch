@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,4 +19,5 @@ class StageType(str, Enum):
     TO_EDGE_TRANSFORM_AND_LOWER = "to_edge_transform_and_lower"
     TO_EDGE = "to_edge"
     TO_BACKEND = "to_backend"
+    POST_TO_BACKEND = "post_to_backend"
     TO_EXECUTORCH = "to_executorch"
