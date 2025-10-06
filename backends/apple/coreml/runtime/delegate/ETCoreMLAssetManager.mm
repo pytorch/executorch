@@ -206,27 +206,37 @@ NSURL * _Nullable create_directory_if_needed(NSURL *dirURL,
     return dirURL;
 }
 
-bool is_directory_empty(NSURL *url, NSFileManager *fm, NSError * __autoreleasing *error) {
-    BOOL is_directory = NO;
-    if (![fm fileExistsAtPath:url.path isDirectory:&is_directory] && !is_directory) {
+bool is_empty_directory_or_not_exist(NSURL *dirURL, NSFileManager *fm, NSError * __autoreleasing *error) {
+    NSString *dirPath = dirURL.path;
+    BOOL isDir = NO;
+    BOOL doesFileExist = dirPath && [fm fileExistsAtPath:dirPath isDirectory:&isDir];
+    if (!doesFileExist) {
         return true;
     }
-    
-    __block NSError *local_error = nil;
-    BOOL (^errorHandler)(NSURL *url, NSError *error) = ^BOOL(NSURL *url, NSError *enumeration_error) {
-        local_error = enumeration_error;
-        return NO;
-    };
-    
-    NSDirectoryEnumerator *enumerator = [fm enumeratorAtURL:url
-                                 includingPropertiesForKeys:@[]
-                                                    options:NSDirectoryEnumerationProducesRelativePathURLs
-                                               errorHandler:errorHandler];
-    if (local_error && error) {
-        *error = local_error;
+    if (!isDir) {
+        return false;
     }
     
-    return [enumerator nextObject] == nil;
+    __block NSError *localError = nil;
+    NSDirectoryEnumerator *enumerator = [fm enumeratorAtURL:dirURL
+                                 includingPropertiesForKeys:@[]
+                                                    options:NSDirectoryEnumerationProducesRelativePathURLs
+                                               errorHandler:^BOOL(NSURL *u, NSError *e){ localError = e; return NO; }];
+    
+    // If enumerator failed to create, do not say the directory is empty
+    if (!enumerator) {
+        return false;
+    }
+    
+    id nextObject = [enumerator nextObject];
+
+    // Do not treat enumeration errors as empty directory
+    if (localError) {
+        if (error) { *error = localError; }
+        return false;
+    }
+    
+    return nextObject == nil;
 }
 
 NSURL * _Nullable get_asset_url(const Asset& asset) {
@@ -313,26 +323,33 @@ get_assets_to_remove(ModelAssetsStore& store,
     }
     
     NSFileManager *fileManager = [[NSFileManager alloc] init];
+
+    NSDictionary *attrs = @{ NSFileProtectionKey : NSFileProtectionCompleteUntilFirstUserAuthentication };
+
     NSURL *managedAssetsDirectoryURL = [assetsDirectoryURL URLByAppendingPathComponent:@"models"];
     managedAssetsDirectoryURL = ::create_directory_if_needed(managedAssetsDirectoryURL, fileManager, error);
     if (!managedAssetsDirectoryURL) {
         return nil;
     }
+    (void)[fileManager setAttributes:attrs ofItemAtPath:managedAssetsDirectoryURL.path error:nil]; // best-effort
+
 
     NSURL *managedTrashDirectoryURL = [trashDirectoryURL URLByAppendingPathComponent:@"models"];
     managedTrashDirectoryURL = ::create_directory_if_needed(managedTrashDirectoryURL, fileManager, error);
     if (!managedTrashDirectoryURL) {
         return nil;
     }
+    (void)[fileManager setAttributes:attrs ofItemAtPath:managedTrashDirectoryURL.path error:nil]; // best-effort
 
     NSURL *managedStagingDirectoryURL = [assetsDirectoryURL URLByAppendingPathComponent:@"staging"];
     managedStagingDirectoryURL = ::create_directory_if_needed(managedStagingDirectoryURL, fileManager, error);
     if (!managedStagingDirectoryURL) {
         return nil;
     }
+    (void)[fileManager setAttributes:attrs ofItemAtPath:managedStagingDirectoryURL.path error:nil]; // best-effort
 
     // If directory is empty then purge the stores
-    if (::is_directory_empty(managedAssetsDirectoryURL, fileManager, nil)) {
+    if (::is_empty_directory_or_not_exist(managedAssetsDirectoryURL, fileManager, nil)) {
         assetsMetaStore.impl()->purge(ec);
         assetsStore.impl()->purge(ec);
     }
@@ -369,15 +386,17 @@ get_assets_to_remove(ModelAssetsStore& store,
 
     // Ensure correct file protection
     NSMutableArray<NSString *> *maybeDBPaths = [NSMutableArray array];
-    if (databaseDirectoryURL.path) { [maybeDBPaths addObject:databaseDirectoryURL.path]; }
+    NSString *databaseDirectoryPath = databaseDirectoryURL.path;
+    if (databaseDirectoryPath) { [maybeDBPaths addObject:databaseDirectoryPath]; }
 
     // Ensure correct file protection on existing database files, if any
     // New database files should inherit the protection from the parent directory
-    if (databaseURL.path) {
-        [maybeDBPaths addObject:databaseURL.path];
-        [maybeDBPaths addObject:[databaseURL.path stringByAppendingString:@"-wal"]];
-        [maybeDBPaths addObject:[databaseURL.path stringByAppendingString:@"-shm"]];
-        [maybeDBPaths addObject:[databaseURL.path stringByAppendingString:@"-journal"]];
+    NSString *databasePath = databaseURL.path;
+    if (databasePath) {
+        [maybeDBPaths addObject:databasePath];
+        [maybeDBPaths addObject:[databasePath stringByAppendingString:@"-wal"]];
+        [maybeDBPaths addObject:[databasePath stringByAppendingString:@"-shm"]];
+        [maybeDBPaths addObject:[databasePath stringByAppendingString:@"-journal"]];
     }
     NSDictionary *attrs = @{ NSFileProtectionKey : NSFileProtectionCompleteUntilFirstUserAuthentication };
     for (NSString *p in maybeDBPaths) {
@@ -433,7 +452,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     NSString *identifier = asset.identifier;
     dispatch_async(self.syncQueue, ^{
         NSError *cleanupError = nil;
-        if (![self _removeAssetWithIdentifier:asset.identifier error:&cleanupError]) {
+        if (![self _removeAssetWithIdentifier:asset.identifier alreadyInsideTransaction:NO error:&cleanupError]) {
             ETCoreMLLogError(cleanupError,
                              "Failed to remove asset with identifier = %@",
                              identifier);
@@ -460,7 +479,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     bool status = _assetsStore.impl()->transaction([self, &assetValue, assetSizeInBytes, srcURL, dstURL, &ec, error]() {
         const std::string& assetIdentifier = assetValue.identifier;
         // If an asset exists with the same identifier then remove it.
-        if (![self _removeAssetWithIdentifier:@(assetIdentifier.c_str()) error:error]) {
+        if (![self _removeAssetWithIdentifier:@(assetIdentifier.c_str()) alreadyInsideTransaction:YES error:error]) {
             return false;
         }
         
@@ -502,6 +521,7 @@ get_assets_to_remove(ModelAssetsStore& store,
         [self.assetsInUseMap setObject:result forKey:identifier];
     } else {
         [self cleanupAssetIfNeeded:result];
+        return nil;
     }
     
     return result;
@@ -597,6 +617,7 @@ get_assets_to_remove(ModelAssetsStore& store,
 }
 
 - (BOOL)_removeAssetWithIdentifier:(NSString *)identifier
+          alreadyInsideTransaction:(BOOL)alreadyInsideTransaction
                              error:(NSError * __autoreleasing *)error {
     dispatch_assert_queue(self.syncQueue);
     // Asset is alive we can't delete it.
@@ -620,8 +641,9 @@ get_assets_to_remove(ModelAssetsStore& store,
     
     const auto& assetValue = asset.value();
     size_t assetSizeInBytes = std::min(_estimatedSizeInBytes, static_cast<NSInteger>(assetValue.total_size_in_bytes()));
-    // Update the stores inside a transaction, if anything fails it will automatically rollback to the previous state.
-    bool status = _assetsStore.impl()->transaction([self, &assetValue, assetSizeInBytes, &ec, error]() {
+
+
+    auto transaction = [self, &assetValue, assetSizeInBytes, &ec, error]() {
         if (!self->_assetsStore.impl()->remove(assetValue.identifier, ec)) {
             return false;
         }
@@ -637,7 +659,15 @@ get_assets_to_remove(ModelAssetsStore& store,
         }
         
         return true;
-    }, Database::TransactionBehavior::Immediate, ec);
+    };
+
+    // Update the stores inside a transaction, if anything fails it will automatically rollback to the previous state.
+    bool status = false;
+    if (alreadyInsideTransaction) {
+        status = transaction();
+    } else {
+        status = _assetsStore.impl()->transaction(transaction, Database::TransactionBehavior::Immediate, ec);
+    }
     
     // Update the estimated size if the transaction succeeded.
     _estimatedSizeInBytes -= status ? assetSizeInBytes : 0;
@@ -649,7 +679,7 @@ get_assets_to_remove(ModelAssetsStore& store,
                             error:(NSError * __autoreleasing *)error {
     __block BOOL result = NO;
     dispatch_sync(self.syncQueue, ^{
-        result = [self _removeAssetWithIdentifier:identifier error:error];
+        result = [self _removeAssetWithIdentifier:identifier alreadyInsideTransaction:NO error:error];
     });
     
     return result;
@@ -727,7 +757,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     for (const auto& asset : assets) {
         NSError *cleanupError = nil;
         NSString *identifier = @(asset.identifier.c_str());
-        if (![self _removeAssetWithIdentifier:identifier error:&cleanupError] && cleanupError) {
+        if (![self _removeAssetWithIdentifier:identifier alreadyInsideTransaction:NO error:&cleanupError] && cleanupError) {
             ETCoreMLLogError(cleanupError,
                              "Failed to remove asset with identifier = %@.",
                              identifier);
