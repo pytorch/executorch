@@ -74,6 +74,7 @@ extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
 // AOTI Delegate Handle structure
 struct AOTIDelegateHandle {
   void* so_handle;
+  std::string so_path;
   AOTInductorModelContainerHandle container_handle;
 };
 
