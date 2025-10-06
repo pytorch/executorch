@@ -130,6 +130,9 @@ define_overridable_option(
   EXECUTORCH_BUILD_SIZE_TEST "Build the size test" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" BOOL OFF
 )
 define_overridable_option(

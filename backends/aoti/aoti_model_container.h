@@ -76,6 +76,7 @@ extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
 struct AOTIDelegateHandle {
   void* so_handle;
   AOTInductorModelContainerHandle container_handle;
+  void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header dependency
 };
 
 } // namespace aoti
