@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Please this file formatted by running:
+# Please format this file by running:
 # ~~~
 # cmake-format -i CMakeLists.txt
 # ~~~
@@ -35,7 +35,7 @@ target_compile_options(
 install(
   TARGETS extension_named_data_map
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

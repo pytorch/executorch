@@ -13,8 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace executorch {
-namespace extension {
+namespace executorch::extension {
 /**
  * A NamedDataMap implementation that wraps other NamedDataMaps.
  */
@@ -104,5 +103,4 @@ class MergedDataMap final
   std::unordered_map<std::string, uint32_t> key_to_map_index_;
 };
 
-} // namespace extension
-} // namespace executorch
+} // namespace executorch::extension

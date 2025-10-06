@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -35,17 +36,16 @@ class MergedDataMapTest : public ::testing::Test {
   void load_flat_tensor_data_map(const char* path, const char* module_name) {
     Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
-    loaders_.insert(
-        {module_name,
-         std::make_unique<FileDataLoader>(std::move(loader.get()))});
+    loaders_.emplace(
+        module_name, std::make_unique<FileDataLoader>(std::move(loader.get())));
 
     Result<FlatTensorDataMap> data_map =
         FlatTensorDataMap::load(loaders_[module_name].get());
     EXPECT_EQ(data_map.error(), Error::Ok);
 
-    data_maps_.insert(
-        {module_name,
-         std::make_unique<FlatTensorDataMap>(std::move(data_map.get()))});
+    data_maps_.emplace(
+        module_name,
+        std::make_unique<FlatTensorDataMap>(std::move(data_map.get())));
   }
 
   void SetUp() override {
@@ -77,11 +77,11 @@ void check_tensor_layout(TensorLayout& layout1, TensorLayout& layout2) {
   EXPECT_EQ(layout1.scalar_type(), layout2.scalar_type());
   EXPECT_EQ(layout1.nbytes(), layout2.nbytes());
   EXPECT_EQ(layout1.sizes().size(), layout2.sizes().size());
-  for (size_t i = 0; i < layout1.sizes().size(); i++) {
+  for (auto i : c10::irange(layout1.sizes().size())) {
     EXPECT_EQ(layout1.sizes()[i], layout2.sizes()[i]);
   }
   EXPECT_EQ(layout1.dim_order().size(), layout2.dim_order().size());
-  for (size_t i = 0; i < layout1.dim_order().size(); i++) {
+  for (auto i : c10::irange(layout1.dim_order().size())) {
     EXPECT_EQ(layout1.dim_order()[i], layout2.dim_order()[i]);
   }
 }
@@ -92,7 +92,7 @@ void compare_ndm_api_calls(
     const NamedDataMap* ndm,
     const NamedDataMap* merged) {
   uint32_t num_keys = ndm->get_num_keys().get();
-  for (uint32_t i = 0; i < num_keys; i++) {
+  for (auto i : c10::irange(num_keys)) {
     auto key = ndm->get_key(i).get();
 
     // Compare get_tensor_layout.
@@ -104,7 +104,7 @@ void compare_ndm_api_calls(
     auto ndm_data = ndm->get_data(key);
     auto merged_data = merged->get_data(key);
     EXPECT_EQ(ndm_data.get().size(), merged_data.get().size());
-    for (size_t j = 0; j < ndm_meta.nbytes(); j++) {
+    for (auto j : c10::irange(ndm_meta.nbytes())) {
       EXPECT_EQ(
           ((uint8_t*)ndm_data.get().data())[j],
           ((uint8_t*)merged_data.get().data())[j]);
@@ -114,37 +114,24 @@ void compare_ndm_api_calls(
 
     // Compare load_into.
     auto nbytes = ndm_meta.nbytes();
-    void* ndm_buffer = malloc(nbytes);
-    auto ndm_load_into = ndm->load_data_into(key, ndm_buffer, nbytes);
+    auto ndm_buffer = std::make_unique<uint8_t[]>(nbytes);
+    auto ndm_load_into = ndm->load_data_into(key, ndm_buffer.get(), nbytes);
     EXPECT_EQ(ndm_load_into, Error::Ok);
-    void* merged_buffer = malloc(nbytes);
-    auto merged_load_into = merged->load_data_into(key, merged_buffer, nbytes);
+    auto merged_buffer = std::make_unique<uint8_t[]>(nbytes);
+    auto merged_load_into =
+        merged->load_data_into(key, merged_buffer.get(), nbytes);
     EXPECT_EQ(merged_load_into, Error::Ok);
-    for (size_t j = 0; j < ndm_meta.nbytes(); j++) {
-      EXPECT_EQ(((uint8_t*)merged_buffer)[j], ((uint8_t*)merged_buffer)[j]);
+    for (auto j : c10::irange(ndm_meta.nbytes())) {
+      EXPECT_EQ(
+          ((uint8_t*)merged_buffer.get())[j],
+          ((uint8_t*)merged_buffer.get())[j]);
     }
-    free(ndm_buffer);
-    free(merged_buffer);
   }
 }
 
 TEST_F(MergedDataMapTest, LoadNullDataMap) {
   Result<MergedDataMap> merged_map = MergedDataMap::load({nullptr, nullptr});
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
-}
-
-TEST_F(MergedDataMapTest, LoadMultipleDataMaps) {
-  std::vector<const NamedDataMap*> ndms = {
-      data_maps_["addmul"].get(), data_maps_["linear"].get()};
-  Result<MergedDataMap> merged_map =
-      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
-  EXPECT_EQ(merged_map.error(), Error::Ok);
-
-  std::vector<const NamedDataMap*> ndms2 = {
-      data_maps_["addmul"].get(), data_maps_["simple_train"].get()};
-  Result<MergedDataMap> merged_map2 = MergedDataMap::load(
-      Span<const NamedDataMap*>(ndms2.data(), ndms2.size()));
-  EXPECT_EQ(merged_map2.error(), Error::Ok);
 }
 
 TEST_F(MergedDataMapTest, LoadSingleDataMap) {
@@ -194,4 +181,23 @@ TEST_F(MergedDataMapTest, CheckDataMapContents) {
   // API calls produce equivalent results.
   compare_ndm_api_calls(data_maps_["addmul"].get(), &merged_map.get());
   compare_ndm_api_calls(data_maps_["linear"].get(), &merged_map.get());
+
+  // Check with addmul and simple_train as well.
+  std::vector<const NamedDataMap*> ndms2 = {
+      data_maps_["addmul"].get(), data_maps_["simple_train"].get()};
+  Result<MergedDataMap> merged_map2 = MergedDataMap::load(
+      Span<const NamedDataMap*>(ndms2.data(), ndms2.size()));
+  EXPECT_EQ(merged_map2.error(), Error::Ok);
+
+  // Num keys.
+  size_t addmul_num_keys2 = data_maps_["addmul"]->get_num_keys().get();
+  size_t simple_train_num_keys =
+      data_maps_["simple_train"]->get_num_keys().get();
+  EXPECT_EQ(
+      merged_map2->get_num_keys().get(),
+      addmul_num_keys2 + simple_train_num_keys);
+
+  // API calls produce equivalent results.
+  compare_ndm_api_calls(data_maps_["addmul"].get(), &merged_map2.get());
+  compare_ndm_api_calls(data_maps_["simple_train"].get(), &merged_map2.get());
 }

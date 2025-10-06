@@ -109,11 +109,15 @@ void add_permute_node(
   {
     IntListPtr permute_dims_ptr = graph.get_int_list(permute_dims);
     const int32_t permute_ndim =
-        utils::safe_downcast<int>(permute_dims_ptr->size());
+        utils::safe_downcast<int32_t>(permute_dims_ptr->size());
 
     for (int32_t nchw_i = permute_ndim - 1, whcn_i = 0; nchw_i >= 0;
          nchw_i--, whcn_i++) {
-      const int32_t permute_dim_nchw = permute_dims_ptr->at(nchw_i);
+      int32_t permute_dim_nchw =
+          utils::safe_downcast<int32_t>(permute_dims_ptr->at(nchw_i));
+      if (permute_dim_nchw < 0) {
+        permute_dim_nchw += permute_ndim;
+      }
       const int32_t permute_dim_whcn = permute_ndim - 1 - permute_dim_nchw;
 
       whcn_permute_dims[whcn_i] = permute_dim_whcn;

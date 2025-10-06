@@ -38,16 +38,16 @@ namespace executorch::extension {
 
   // Check for duplicate keys.
   std::unordered_map<std::string, uint32_t> key_to_map_index;
-  for (uint32_t i = 0; i < valid_data_maps.size(); i++) {
+  for (auto i : c10::irange(valid_data_maps.size())) {
     const auto cur_map = valid_data_maps[i];
     uint32_t num_keys = cur_map->get_num_keys().get();
-    for (uint32_t j = 0; j < num_keys; ++j) {
+    for (auto j : c10::irange(num_keys)) {
       const auto cur_key = cur_map->get_key(j).get();
       const auto [it, inserted] = key_to_map_index.emplace(cur_key, i);
       ET_CHECK_OR_RETURN_ERROR(
           inserted,
           InvalidArgument,
-          "Duplicate key %s in named data maps at index %u and %u",
+          "Duplicate key %s in named data maps at index %u and %lu",
           cur_key,
           it->second,
           i);

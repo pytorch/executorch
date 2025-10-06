@@ -43,12 +43,12 @@ add_custom_target(
 )
 
 set(test_env
-    "ET_MODULE_ADD_MUL_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
     "ET_MODULE_ADD_MUL_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
-    "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
+    "ET_MODULE_ADD_MUL_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
     "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
-    "ET_MODULE_SIMPLE_TRAIN_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
+    "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
     "ET_MODULE_SIMPLE_TRAIN_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.ptd"
+    "ET_MODULE_SIMPLE_TRAIN_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSimpleTrainProgram.pte"
 )
 
 set(_test_srcs merged_data_map_test.cpp)
