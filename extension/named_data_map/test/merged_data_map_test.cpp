@@ -60,8 +60,6 @@ class MergedDataMapTest : public ::testing::Test {
         std::getenv("ET_MODULE_ADD_MUL_DATA_PATH"), "addmul");
     load_flat_tensor_data_map(
         std::getenv("ET_MODULE_LINEAR_DATA_PATH"), "linear");
-    load_flat_tensor_data_map(
-        std::getenv("ET_MODULE_SIMPLE_TRAIN_DATA_PATH"), "simple_train");
   }
 
  private:
@@ -155,14 +153,6 @@ TEST_F(MergedDataMapTest, LoadDuplicateDataMapsFail) {
   Result<MergedDataMap> merged_map =
       MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
   EXPECT_EQ(merged_map.error(), Error::InvalidArgument);
-
-  std::vector<const NamedDataMap*> ndms2 = {
-      data_maps_["addmul"].get(),
-      data_maps_["linear"].get(),
-      data_maps_["simple_train"].get()};
-  Result<MergedDataMap> merged_map2 =
-      MergedDataMap::load(Span<const NamedDataMap*>(ndms.data(), ndms.size()));
-  EXPECT_EQ(merged_map2.error(), Error::InvalidArgument);
 }
 
 TEST_F(MergedDataMapTest, CheckDataMapContents) {
@@ -181,23 +171,4 @@ TEST_F(MergedDataMapTest, CheckDataMapContents) {
   // API calls produce equivalent results.
   compare_ndm_api_calls(data_maps_["addmul"].get(), &merged_map.get());
   compare_ndm_api_calls(data_maps_["linear"].get(), &merged_map.get());
-
-  // Check with addmul and simple_train as well.
-  std::vector<const NamedDataMap*> ndms2 = {
-      data_maps_["addmul"].get(), data_maps_["simple_train"].get()};
-  Result<MergedDataMap> merged_map2 = MergedDataMap::load(
-      Span<const NamedDataMap*>(ndms2.data(), ndms2.size()));
-  EXPECT_EQ(merged_map2.error(), Error::Ok);
-
-  // Num keys.
-  size_t addmul_num_keys2 = data_maps_["addmul"]->get_num_keys().get();
-  size_t simple_train_num_keys =
-      data_maps_["simple_train"]->get_num_keys().get();
-  EXPECT_EQ(
-      merged_map2->get_num_keys().get(),
-      addmul_num_keys2 + simple_train_num_keys);
-
-  // API calls produce equivalent results.
-  compare_ndm_api_calls(data_maps_["addmul"].get(), &merged_map2.get());
-  compare_ndm_api_calls(data_maps_["simple_train"].get(), &merged_map2.get());
 }

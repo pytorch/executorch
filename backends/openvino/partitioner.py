@@ -27,6 +27,10 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 
 class OpenvinoOperatorsSupport(OperatorSupportBase):
+    extended_support_dict = {
+        "torch.ops.dim_order_ops._clone_dim_order.default": None,
+        "torch.ops.dim_order_ops._to_dim_order_copy.default": None,
+    }
 
     def __init__(
         self,
@@ -62,7 +66,9 @@ class OpenvinoOperatorsSupport(OperatorSupportBase):
             op_type = node.target.__name__
         else:
             op_type = str(node.target)
-        supported_ops = OperatorSupport(options)._support_dict
+        supported_ops = (
+            OperatorSupport(options)._support_dict | self.extended_support_dict
+        )
         if op_type == "getitem":
             return True
 
