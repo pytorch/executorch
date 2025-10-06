@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -200,7 +201,9 @@ class ExportSession:
                     aten_transform_passes = list(
                         self._export_recipe.aten_transform_passes
                     )
-                stage = TorchExportStage(aten_transform_passes)
+                stage = TorchExportStage(
+                    aten_transform_passes, strict=self._export_recipe.strict
+                )
             elif stage_type == StageType.TO_EDGE_TRANSFORM_AND_LOWER:
                 stage = EdgeTransformAndLowerStage.from_recipe(self._lowering_recipe)
             elif stage_type == StageType.TO_EDGE:
