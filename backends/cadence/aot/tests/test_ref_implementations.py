@@ -1843,3 +1843,466 @@ class TestRefImplementations(unittest.TestCase):
                 torch.equal(output, expected_output),
                 f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
             )
+
+    @expand(
+        [
+            # Basic 2x2 kernel, stride 1, no padding, NCHW
+            (
+                "nchw_basic_2x2",
+                torch.tensor(
+                    [[[[1, 2, 3], [4, 5, 6], [7, 8, 9]]]], dtype=torch.float32
+                ),  # (N=1, C=1, H=3, W=3)
+                (2, 2),  # kernel_size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (1, 1),  # stride
+                None,  # in_zero_point
+                False,  # channel_last
+                False,
+                torch.tensor(
+                    [
+                        [[1, 2, 4, 5], [2, 3, 5, 6], [4, 5, 7, 8], [5, 6, 8, 9]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2x2 kernel, stride 2, no padding, NCHW
+            (
+                "nchw_stride2",
+                torch.tensor(
+                    [[[[1, 2, 3], [4, 5, 6], [7, 8, 9]]]], dtype=torch.float32
+                ),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (2, 2),
+                None,
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [[1, 2, 4, 5]],
+                    ],
+                    dtype=torch.float32,  # Only every other patch in each dim
+                ),
+            ),
+            # 2x2 kernel, stride 1, padding 1, NCHW
+            (
+                "nchw_padding1",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32),  # (1,1,2,2)
+                (2, 2),
+                (1, 1),
+                (1, 1),
+                (1, 1),
+                None,
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [0, 0, 0, 1],
+                            [0, 0, 1, 2],
+                            [0, 0, 2, 0],
+                            [0, 1, 0, 3],
+                            [1, 2, 3, 4],
+                            [2, 0, 4, 0],
+                            [0, 3, 0, 0],
+                            [3, 4, 0, 0],
+                            [4, 0, 0, 0],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2x2 kernel, stride 1, no padding, NHWC
+            (
+                "nhwc_basic_2x2",
+                torch.tensor(
+                    [[[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]],
+                    dtype=torch.float32,
+                ),  # (N=1, H=3, W=3, C=1)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                True,
+                False,
+                torch.tensor(
+                    [
+                        [[1, 2, 4, 5], [2, 3, 5, 6], [4, 5, 7, 8], [5, 6, 8, 9]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2x2 kernel, stride 1, no padding, NCHW, in_zero_point=1
+            (
+                "nchw_in_zero_point_no_padding",
+                torch.tensor([[[[2, 3, 4], [5, 6, 7], [8, 9, 10]]]], dtype=torch.int8),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                torch.tensor(1, dtype=torch.int32),
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [[2, 3, 5, 6], [3, 4, 6, 7], [5, 6, 8, 9], [6, 7, 9, 10]],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+            (
+                "nchw_in_zero_point_with_padding=1_and_stride=2",
+                torch.tensor([[[[2, 3, 4], [5, 6, 7], [8, 9, 10]]]], dtype=torch.int8),
+                (2, 2),
+                (1, 1),
+                (1, 1),
+                (2, 2),
+                torch.tensor(-1, dtype=torch.int32),
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [-1, -1, -1, 2],
+                            [-1, -1, 3, 4],
+                            [-1, 5, -1, 8],
+                            [6, 7, 9, 10],
+                        ],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+            # 2x2 kernel, stride 1, no padding, NHWC, in_zero_point=2
+            (
+                "nhwc_in_zero_point",
+                torch.tensor(
+                    [[[[3], [4], [5]], [[6], [7], [8]], [[9], [10], [11]]]],
+                    dtype=torch.int8,
+                ),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                torch.tensor(2, dtype=torch.int32),
+                True,
+                False,
+                torch.tensor(
+                    [
+                        [[3, 4, 6, 7], [4, 5, 7, 8], [6, 7, 9, 10], [7, 8, 10, 11]],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+            # Multi-channel input, 2x2 kernel, stride 1, no padding, NCHW
+            (
+                "nchw_multi_channel",
+                torch.tensor(
+                    [
+                        [
+                            [[1, 2, 3], [4, 5, 6], [7, 8, 9]],  # channel 0
+                            [[10, 11, 12], [13, 14, 15], [16, 17, 18]],  # channel 1
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # (1,2,3,3)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 2, 4, 5, 10, 11, 13, 14],
+                            [2, 3, 5, 6, 11, 12, 14, 15],
+                            [4, 5, 7, 8, 13, 14, 16, 17],
+                            [5, 6, 8, 9, 14, 15, 17, 18],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # Multi-channel input and multi-channel zero-point
+            (
+                "nchw_multi_channel_and_zero_point_no_padding",
+                torch.tensor([[[1, 2, 3]], [[4, 5, 6]]], dtype=torch.int32),
+                (1, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                torch.tensor([-1, -2], dtype=torch.int32),
+                False,
+                False,
+                torch.tensor([[[1, 2], [2, 3]], [[4, 5], [5, 6]]], dtype=torch.int32),
+            ),
+            (
+                "nchw_multi_channel_and_zero_point_with_padding=1_and_stride=(2, 1)",
+                torch.tensor([[[1, 2, 3]], [[4, 5, 6]]], dtype=torch.int32),
+                (1, 2),
+                (1, 1),
+                (2, 1),
+                (2, 2),
+                torch.tensor([-1, -2], dtype=torch.int32),
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [-1, -1],
+                            [-1, -1],
+                            [-1, 1],
+                            [2, 3],
+                            [-1, -1],
+                            [-1, -1],
+                        ],
+                        [
+                            [-2, -2],
+                            [-2, -2],
+                            [-2, 4],
+                            [5, 6],
+                            [-2, -2],
+                            [-2, -2],
+                        ],
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "per_tensor",
+                torch.tensor(
+                    [[[[3], [4], [5]], [[6], [7], [8]], [[9], [10], [11]]]],
+                    dtype=torch.int8,
+                ),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                2,
+                True,
+                True,
+                torch.tensor(
+                    [
+                        [[3, 4, 6, 7], [4, 5, 7, 8], [6, 7, 9, 10], [7, 8, 10, 11]],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+        ]
+    )
+    def test_im2row(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        kernel_size: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int],
+        stride: tuple[int, int],
+        in_zero_point: torch.Tensor | None,
+        channel_last: bool,
+        per_tensor: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        if per_tensor:
+            output = torch.ops.cadence.im2row.per_tensor(
+                input_tensor,
+                kernel_size,
+                dilation,
+                padding,
+                stride,
+                in_zero_point,
+                channel_last,
+            )
+        else:
+            output = torch.ops.cadence.im2row(
+                input_tensor,
+                kernel_size,
+                dilation,
+                padding,
+                stride,
+                in_zero_point,
+                channel_last,
+            )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"im2row output shape mismatch in {name}",
+        )
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"im2row output mismatch in {name}: got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            (
+                "basic_2x2",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                (0, 0),
+                None,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 0, 0, 0],
+                            [1, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [1, 0, 3, 0],
+                            [1, 2, 3, 4],
+                            [0, 2, 0, 4],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 4],
+                            [0, 0, 0, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "basic_2x2_with_zero_point",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                (0, 0),
+                torch.tensor(100, dtype=torch.int32),
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 100, 100, 100],
+                            [1, 2, 100, 100],
+                            [100, 2, 100, 100],
+                            [1, 100, 3, 100],
+                            [1, 2, 3, 4],
+                            [100, 2, 100, 4],
+                            [100, 100, 3, 100],
+                            [100, 100, 3, 4],
+                            [100, 100, 100, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "basic_2x2_with_stride_2",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),  # kernel size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (2, 2),  # stride
+                (0, 0),  # output padding
+                None,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 0, 0, 0],
+                            [1, 0, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [1, 0, 0, 0],
+                            [1, 0, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 0, 4],
+                            [0, 0, 0, 4],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 0, 4],
+                            [0, 0, 0, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "batch2_with_batch2_zero_point",
+                torch.tensor(
+                    [
+                        [[[1, 2], [3, 4]]],
+                        [[[5, 6], [7, 8]]],
+                    ],
+                    dtype=torch.int32,
+                ),  # input: (2,1,2,2)
+                (2, 2),  # kernel_size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (1, 1),  # stride
+                (0, 0),  # output_padding
+                torch.tensor([100, 200], dtype=torch.int32),  # in_zero_point per batch
+                False,  # channel_last
+                torch.tensor(
+                    [
+                        [
+                            [1, 100, 100, 100],
+                            [1, 2, 100, 100],
+                            [100, 2, 100, 100],
+                            [1, 100, 3, 100],
+                            [1, 2, 3, 4],
+                            [100, 2, 100, 4],
+                            [100, 100, 3, 100],
+                            [100, 100, 3, 4],
+                            [100, 100, 100, 4],
+                        ],
+                        [
+                            [5, 200, 200, 200],
+                            [5, 6, 200, 200],
+                            [200, 6, 200, 200],
+                            [5, 200, 7, 200],
+                            [5, 6, 7, 8],
+                            [200, 6, 200, 8],
+                            [200, 200, 7, 200],
+                            [200, 200, 7, 8],
+                            [200, 200, 200, 8],
+                        ],
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+        ]
+    )
+    def test_transposed_im2row(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        kernel_size: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int],
+        stride: tuple[int, int],
+        output_padding: tuple[int, int],
+        in_zero_point: torch.Tensor | int | None,
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.transposed_im2row(
+            input_tensor,
+            kernel_size,
+            dilation,
+            padding,
+            stride,
+            output_padding,
+            in_zero_point,
+            channel_last,
+        )
+
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"transposed_im2row output shape mismatch in {name}: got {output.shape}, expected {expected_output.shape}",
+        )
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"transposed_im2row output mismatch in {name}: got {output}, expected {expected_output}",
+        )

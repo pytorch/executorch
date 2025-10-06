@@ -36,7 +36,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from executorch.exir.backend.utils import tag_constant_data
+from executorch.exir.backend.utils import tag_constant_data, tag_mutated_buffer
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.export.exported_program import ExportedProgram
@@ -254,9 +254,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             self.log_skip(node, "permute node of non compatible linear node")
             return False
 
-        is_in_local_scalar_dense_chain, dst_node_is_compatible = (
-            self.is_in_local_scalar_dense_chain(node)
-        )
+        (
+            is_in_local_scalar_dense_chain,
+            dst_node_is_compatible,
+        ) = self.is_in_local_scalar_dense_chain(node)
         if is_in_local_scalar_dense_chain and dst_node_is_compatible:
             return True
         elif is_in_local_scalar_dense_chain:
@@ -419,6 +420,7 @@ class VulkanPartitioner(Partitioner):
             logger.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
+        tag_mutated_buffer(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

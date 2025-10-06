@@ -17,9 +17,8 @@ class FoldQDQPass(ExportPass):
     valid quant op patterns have already been fused before this pass.
     """
 
-    def __init__(self, edge_program: torch.export.ExportedProgram):
-        super(FoldQDQPass, self).__init__()
-        self.edge_program = edge_program
+    def __init__(self):
+        super().__init__()
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
