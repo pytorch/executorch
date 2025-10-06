@@ -19,7 +19,7 @@ from executorch.backends.arm._passes.fuse_quantized_activation_pass import (
     FuseQuantizedActivationPass,
 )
 from executorch.backends.arm._passes.insert_table_ops import TableOps
-from executorch.backends.arm.constants import DQ_OPS, Q_OPS
+from executorch.backends.arm.constants import DQ_OPS, MAX_RANK, Q_OPS
 from executorch.backends.arm.operator_support.ethos_u55_support import (
     EthosU55CastCheck,
     EthosU55DtypeSupport,
@@ -127,7 +127,7 @@ def tosa_support_factory(
     negative_checks: list[OperatorSupportBase] = [
         CheckInt64InputsAndOutputs(exported_program, reporter),
         CheckFloat64Inputs(exported_program, reporter),
-        RankCheck(reporter, max_rank=5),
+        RankCheck(reporter, max_rank=MAX_RANK),
         *[
             reporter.wrap_check(check, f"Rejected by {check.__class__.__name__}")
             for check in (additional_checks if additional_checks else [])
