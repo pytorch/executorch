@@ -19,7 +19,7 @@ endif()
 include(${EXECUTORCH_ROOT}/tools/cmake/Test.cmake)
 
 add_custom_command(
-  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddMulProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
