@@ -56,7 +56,7 @@ ExecuTorch provides support for:
 - [MediaTek](backends-mediatek)
 - [Cadence](backends-cadence)
 - [OpenVINO](build-run-openvino)
-- [NXP](backend-nxp)
+- [NXP](backends-nxp)
 #### Developer Tools
 - [Overview](devtools-overview)
 - [Bundled IO](bundled-io)
