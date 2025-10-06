@@ -15,7 +15,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [
-                "//executorch/runtime/core:named_data_map",
+                "//executorch/runtime/core:named_data_map" + aten_suffix,
                 "//executorch/runtime/core:core",
             ],
         )
