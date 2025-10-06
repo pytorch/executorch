@@ -38,6 +38,7 @@ _common_ops: Dict[
     exir_ops.edge.aten.bitwise_and.Scalar: exir_ops.edge.aten.bitwise_and.Tensor,
     exir_ops.edge.aten.bitwise_or.Scalar: exir_ops.edge.aten.bitwise_or.Tensor,
     exir_ops.edge.aten.bitwise_xor.Scalar: exir_ops.edge.aten.bitwise_xor.Tensor,
+    exir_ops.edge.aten.fmod.Scalar: exir_ops.edge.aten.fmod.Tensor,
     torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
     torch.ops.aten.sub.Scalar: torch.ops.aten.sub.Tensor,
     torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
@@ -53,6 +54,7 @@ _common_ops: Dict[
     torch.ops.aten.bitwise_and.Scalar: torch.ops.aten.bitwise_and.Tensor,
     torch.ops.aten.bitwise_or.Scalar: torch.ops.aten.bitwise_or.Tensor,
     torch.ops.aten.bitwise_xor.Scalar: torch.ops.aten.bitwise_xor.Tensor,
+    torch.ops.aten.fmod.Scalar: torch.ops.aten.fmod.Tensor,
 }
 
 
