@@ -12,13 +12,13 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
 )
 
 """
 Summary of non-working cases.
-MI:
+FP:
     Op(scalar, tensor):
         One issue is that lift_constant_tensor_pass looks for a fake_tensor in the meta of the first
         node which does not work the first node is a scalar.
@@ -170,253 +170,258 @@ xfails = {
 }
 
 
-# ADD MI ------------------------------------------------------
+# ADD FP ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_add_tensor_tosa_MI_scalar(test_data):
+def test_add_tensor_tosa_FP_scalar(test_data):
     """Tests regular add with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](Add(), test_data, aten_op=Add.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Add(), test_data, aten_op=Add.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_add_tensor_tosa_MI_inplace(test_data):
+def test_add_tensor_tosa_FP_inplace(test_data):
     """Tests inplace add with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](AddInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](AddInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_const_tests, xfails=xfails)
-def test_add_tensor_tosa_MI_const(test_data):
+def test_add_tensor_tosa_FP_const(test_data):
     """Tests regular add with one scalar input, with one of inputs constant."""
-    pipeline = TosaPipelineMI[input_t1](AddConst(), test_data, aten_op=AddConst.aten_op)
+    pipeline = TosaPipelineFP[input_t1](AddConst(), test_data, aten_op=AddConst.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_add_scalar_tosa_MI(test_data):
+def test_add_scalar_tosa_FP(test_data):
     """Tests a scalar add with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         AddScalar(), test_data, aten_op=AddScalar.aten_op
     )
     pipeline.run()
 
 
-# ADD BI ------------------------------------------------------
+# ADD INT ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_add_tensor_tosa_BI_scalar(test_data):
+def test_add_tensor_tosa_INT_scalar(test_data):
     """Tests regular add with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](Add(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Add(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_add_tensor_tosa_BI_inplace(test_data):
+def test_add_tensor_tosa_INT_inplace(test_data):
     """Tests inplace add with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](AddInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](AddInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_const_tests)
-def test_add_tensor_tosa_BI_const(test_data):
+def test_add_tensor_tosa_INT_const(test_data):
     """Tests regular add with one scalar input, with one of inputs constant."""
-    pipeline = TosaPipelineBI[input_t1](AddConst(), test_data, aten_op=AddConst.aten_op)
+    pipeline = TosaPipelineINT[input_t1](
+        AddConst(), test_data, aten_op=AddConst.aten_op
+    )
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_add_scalar_tosa_BI(test_data):
+def test_add_scalar_tosa_INT(test_data):
     """Tests a scalar add with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](AddScalar(), test_data, aten_op=Add.aten_op)
+    pipeline = TosaPipelineINT[input_t1](AddScalar(), test_data, aten_op=Add.aten_op)
     pipeline.run()
 
 
 # ADD ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_add_scalar_tosa_BI")
-def test_add_scalar_u55_BI():
+@pytest.mark.skip(reason="This is tested in test_add_scalar_tosa_INT")
+def test_add_scalar_u55_INT():
     pass
 
 
-@pytest.mark.skip(reason="This is tested in test_add_scalar_tosa_BI")
-def test_add_scalar_u85_BI():
+@pytest.mark.skip(reason="This is tested in test_add_scalar_tosa_INT")
+def test_add_scalar_u85_INT():
     pass
 
 
-# SUB MI ------------------------------------------------------
+# SUB FP ------------------------------------------------------
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_sub_tensor_tosa_MI_scalar(test_data):
+def test_sub_tensor_tosa_FP_scalar(test_data):
     """Tests regular sub with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](Sub(), test_data, aten_op=Sub.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Sub(), test_data, aten_op=Sub.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_sub_tensor_tosa_MI_inplace(test_data):
+def test_sub_tensor_tosa_FP_inplace(test_data):
     """Tests inplace sub with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](SubInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](SubInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_sub_scalar_tosa_MI(test_data):
+def test_sub_scalar_tosa_FP(test_data):
     """Tests a scalar sub with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         SubScalar(), test_data, aten_op=SubScalar.aten_op
     )
     pipeline.run()
 
 
-# SUB BI ------------------------------------------------------
+# SUB INT ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_sub_tensor_tosa_BI_scalar(test_data):
+def test_sub_tensor_tosa_INT_scalar(test_data):
     """Tests regular sub with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](Sub(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Sub(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_sub_tensor_tosa_BI_inplace(test_data):
+def test_sub_tensor_tosa_INT_inplace(test_data):
     """Tests inplace sub with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](SubInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](SubInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_sub_scalar_tosa_BI(test_data):
+def test_sub_scalar_tosa_INT(test_data):
     """Tests a scalar sub with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](SubScalar(), test_data, aten_op=Sub.aten_op)
+    pipeline = TosaPipelineINT[input_t1](SubScalar(), test_data, aten_op=Sub.aten_op)
     pipeline.run()
 
 
 # SUB ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_sub_scalar_tosa_BI")
-def test_sub_scalar_u55_BI():
+@pytest.mark.skip(reason="This is tested in test_sub_scalar_tosa_INT")
+def test_sub_scalar_u55_INT():
     pass
 
 
-@pytest.mark.skip(reason="This is tested in test_sub_scalar_tosa_BI")
-def test_sub_scalar_u85_BI():
+@pytest.mark.skip(reason="This is tested in test_sub_scalar_tosa_INT")
+def test_sub_scalar_u85_INT():
     pass
 
 
-# MUL MI ------------------------------------------------------
+# MUL FP ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_mul_tensor_tosa_MI_scalar(test_data):
+def test_mul_tensor_tosa_FP_scalar(test_data):
     """Tests regular mul with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](Mul(), test_data, aten_op=Mul.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Mul(), test_data, aten_op=Mul.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_mul_tensor_tosa_MI_inplace(test_data):
+def test_mul_tensor_tosa_FP_inplace(test_data):
     """Tests inplace mul with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](MulInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](MulInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_mul_scalar_tosa_MI(test_data):
+def test_mul_scalar_tosa_FP(test_data):
     """Tests a scalar mul with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         MulScalar(), test_data, aten_op=MulScalar.aten_op
     )
     pipeline.run()
 
 
-# MUL BI ------------------------------------------------------
+# MUL INT ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_mul_tensor_tosa_BI_scalar(test_data):
+def test_mul_tensor_tosa_INT_scalar(test_data):
     """Tests regular mul with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](Mul(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Mul(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_mul_tensor_tosa_BI_inplace(test_data):
+def test_mul_tensor_tosa_INT_inplace(test_data):
     """Tests inplace mul with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](MulInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](MulInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_mul_scalar_tosa_BI(test_data):
+def test_mul_scalar_tosa_INT(test_data):
     """Tests a scalar mul with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](MulScalar(), test_data, aten_op=Mul.aten_op)
+    pipeline = TosaPipelineINT[input_t1](MulScalar(), test_data, aten_op=Mul.aten_op)
     pipeline.run()
 
 
 # MUL ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_mul_scalar_tosa_BI")
-def test_mul_scalar_u55_BI():
+@pytest.mark.skip(reason="This is tested in test_mul_scalar_tosa_INT")
+def test_mul_scalar_u55_INT():
     pass
 
 
-@pytest.mark.skip(reason="This is tested in test_mul_scalar_tosa_BI")
-def test_mul_scalar_u85_BI():
+@pytest.mark.skip(reason="This is tested in test_mul_scalar_tosa_INT")
+def test_mul_scalar_u85_INT():
     pass
 
 
-# DIV MI ------------------------------------------------------
+# DIV FP ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_div_tensor_tosa_MI_scalar(test_data):
+def test_div_tensor_tosa_FP_scalar(test_data):
     """Tests regular div with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](Div(), test_data, aten_op=Div.aten_op)
+    pipeline = TosaPipelineFP[input_t1](Div(), test_data, aten_op=Div.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_div_tensor_tosa_MI_inplace(test_data):
+def test_div_tensor_tosa_FP_inplace(test_data):
     """Tests inplace div with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](DivInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineFP[input_t1](DivInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_div_scalar_tosa_MI(test_data):
+def test_div_scalar_tosa_FP(test_data):
     """Tests a scalar div with one scalar input."""
-    pipeline = TosaPipelineMI[input_t1](
+    pipeline = TosaPipelineFP[input_t1](
         DivScalar(), test_data, aten_op=DivScalar.aten_op
     )
     pipeline.run()
 
 
-# DIV BI ------------------------------------------------------
+# DIV INT ------------------------------------------------------
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_div_tensor_tosa_BI_scalar(test_data):
+def test_div_tensor_tosa_INT_scalar(test_data):
     """Tests regular div with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](Div(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](Div(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests)
-def test_div_tensor_tosa_BI_inplace(test_data):
+def test_div_tensor_tosa_INT_inplace(test_data):
     """Tests inplace div with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](DivInplace(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](DivInplace(), test_data, aten_op=[])
     pipeline.run()
 
 
 @common.parametrize("test_data", tensor_scalar_tests, xfails=xfails)
-def test_div_scalar_tosa_BI(test_data):
+def test_div_scalar_tosa_INT(test_data):
     """Tests a scalar div with one scalar input."""
-    pipeline = TosaPipelineBI[input_t1](DivScalar(), test_data, aten_op=[])
+    pipeline = TosaPipelineINT[input_t1](DivScalar(), test_data, aten_op=[])
     pipeline.run()
 
 
 # DIV ETHOS-U ------------------------------------------------------
-@pytest.mark.skip(reason="This is tested in test_div_scalar_tosa_BI")
-def test_div_scalar_u55_BI():
+@pytest.mark.skip(reason="This is tested in test_div_scalar_tosa_INT")
+def test_div_scalar_u55_INT():
     pass
 
 
-@pytest.mark.skip(reason="This is tested in test_div_scalar_tosa_BI")
-def test_div_scalar_u85_BI():
+@pytest.mark.skip(reason="This is tested in test_div_scalar_tosa_INT")
+def test_div_scalar_u85_INT():
     pass
 
 
 # SHIFT ETHOS-U ------------------------------------------------------
-def test_bitwise_right_shift_tensor_tosa_MI_inplace():
-    pipeline = TosaPipelineMI[input_t1](
+@pytest.mark.skip(
+    reason="integer operations (shift and sub) are not supported on FP profile"
+)
+def test_bitwise_right_shift_tensor_tosa_FP_inplace():
+    pipeline = TosaPipelineFP[input_t1](
         ShiftInplaceSub(),
         (torch.IntTensor(5),),
         aten_op="torch.ops.aten.__rshift__.Scalar",
@@ -424,8 +429,8 @@ def test_bitwise_right_shift_tensor_tosa_MI_inplace():
     pipeline.run()
 
 
-def test_bitwise_right_shift_tensor_tosa_BI_inplace():
-    pipeline = TosaPipelineBI[input_t1](
+def test_bitwise_right_shift_tensor_tosa_INT_inplace():
+    pipeline = TosaPipelineINT[input_t1](
         ShiftInplaceSub(),
         (torch.IntTensor(5),),
         aten_op="torch.ops.aten.bitwise_right_shift.Tensor",

@@ -20,14 +20,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_MPS ON)
   if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
-    set_overridable_option(EXECUTORCH_BUILD_TORCHAO ON)
+    set_overridable_option(EXECUTORCH_BUILD_KERNELS_TORCHAO ON)
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   # Linux-specific code here
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL "WIN32")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
+                                               "WIN32"
+)
   # Windows or other OS-specific code here
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
   # Android-specific code here
 else()
-  message(FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for LLM: ${CMAKE_SYSTEM_NAME}")
+  message(
+    FATAL_ERROR "Unsupported CMAKE_SYSTEM_NAME for LLM: ${CMAKE_SYSTEM_NAME}"
+  )
 endif()

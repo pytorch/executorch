@@ -19,13 +19,20 @@
 namespace vkcompute {
 
 void check_binary_op_args(
-    const api::vTensor& self,
-    const api::vTensor& other,
-    const api::vTensor& out) {
-  VK_CHECK_COND(check_same_packed_dim(self, other, out));
+    ComputeGraph& graph,
+    const ValueRef self,
+    const ValueRef other,
+    const ValueRef out) {
+  VK_CHECK_COND(graph.packed_dim_of(self) == graph.packed_dim_of(other));
+  VK_CHECK_COND(graph.packed_dim_of(self) == graph.packed_dim_of(out));
+
+  const std::vector<int64_t> self_sizes = graph.sizes_of(self);
+  const std::vector<int64_t> other_sizes = graph.sizes_of(other);
+  const std::vector<int64_t> out_sizes = graph.sizes_of(out);
+
   std::vector<int64_t> broadcasted_sizes =
-      calculate_broadcasted_output_size(self, other);
-  VK_CHECK_COND(out.sizes() == broadcasted_sizes);
+      calculate_broadcasted_output_size(self_sizes, other_sizes);
+  VK_CHECK_COND(out_sizes == broadcasted_sizes);
 }
 
 void resize_binary_op_node(
@@ -33,16 +40,18 @@ void resize_binary_op_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
   (void)resize_args;
-  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  const ValueRef out = args.at(0).refs.at(0);
 
   // TODO(T183442143): Verify tensors are broadcastable.
-  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
-  vTensorPtr other = graph->get_tensor(args[1].refs[1]);
+  const ValueRef self = args.at(1).refs.at(0);
+  const ValueRef other = args.at(1).refs.at(1);
 
-  std::vector<int64_t> new_out_sizes =
-      calculate_broadcasted_output_size(*self, *other);
+  const std::vector<int64_t> self_sizes = graph->sizes_of(self);
+  const std::vector<int64_t> other_sizes = graph->sizes_of(other);
+  const std::vector<int64_t> new_out_sizes =
+      calculate_broadcasted_output_size(self_sizes, other_sizes);
 
-  out->virtual_resize(new_out_sizes);
+  graph->virtual_resize(out, new_out_sizes);
 }
 
 void add_binary_op_texture_node(
@@ -55,11 +64,7 @@ void add_binary_op_texture_node(
   ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
   ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
-  vTensorPtr t_in1 = graph.get_tensor(arg1);
-  vTensorPtr t_in2 = graph.get_tensor(arg2);
-  vTensorPtr t_out = graph.get_tensor(out);
-
-  check_binary_op_args(*t_in1, *t_in2, *t_out);
+  check_binary_op_args(graph, arg1, arg2, out);
 
   float alpha_val = 1.0f;
   // String is checked since floor_div passes in an unused string argument in
@@ -71,12 +76,12 @@ void add_binary_op_texture_node(
   const struct BinaryOpsParams {
     const utils::ivec2 broadcast_params;
     const float alpha_val;
-  } binary_ops_params{create_broadcast_params(*t_in1, *t_in2), alpha_val};
+  } binary_ops_params{create_broadcast_params(graph, arg1, arg2), alpha_val};
 
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
   kernel_name += op_name;
-  add_storage_type_suffix(kernel_name, *t_out);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(in1));
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -94,7 +99,9 @@ void add_binary_op_texture_node(
         graph.sizes_pc_of(arg2),
         PushConstantDataInfo(&binary_ops_params, sizeof(binary_ops_params))}},
       // Specialization Constants
-      {t_out->hashed_layout(), t_in1->hashed_layout(), t_in2->hashed_layout()},
+      {graph.hashed_layout_of(out),
+       graph.hashed_layout_of(arg1),
+       graph.hashed_layout_of(arg2)},
       // Resize Args
       {},
       // Resizing Logic
@@ -132,15 +139,11 @@ void add_binary_op_buffer_node(
       // Inputs and Outputs
       {{out, vkapi::kWrite}, {{in1, in2}, vkapi::kRead}},
       // Shader params buffers
-      {},
+      {graph.buffer_meta_ubo(out),
+       graph.buffer_meta_ubo(in1),
+       graph.buffer_meta_ubo(in2)},
       // Push Constants
       {{
-          graph.sizes_pc_of(in1),
-          graph.sizes_pc_of(in2),
-          graph.strides_pc_of(out),
-          graph.strides_pc_of(in1),
-          graph.strides_pc_of(in2),
-          graph.numel_pc_of(out),
           PushConstantDataInfo(&alpha_val, sizeof(float)),
       }},
       // Specialization Constants

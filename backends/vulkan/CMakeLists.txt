@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -100,15 +101,20 @@ set_target_properties(vulkan_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   vulkan_schema
   INTERFACE
-    ${SCHEMA_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${SCHEMA_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/third-party/flatbuffers/include>
 )
+
+# vulkan runtime utils files
+
+file(GLOB_RECURSE vulkan_runtime_utils_cpp ${RUNTIME_PATH}/utils/*.cpp)
 
 # vulkan_backend
 
 file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
 list(APPEND vulkan_backend_cpp ${vulkan_standard_shaders_cpp})
+list(APPEND vulkan_backend_cpp ${vulkan_runtime_utils_cpp})
 
 add_library(vulkan_backend ${vulkan_backend_cpp})
 target_include_directories(
@@ -120,20 +126,6 @@ target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 executorch_target_link_options_shared_lib(vulkan_backend)
 
 set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
-
-# Executor Runner
-
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
-  set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
-  list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
-
-  add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
-  target_link_libraries(
-    vulkan_executor_runner ${_executor_runner_libs} vulkan_schema
-    vulkan_backend
-  )
-  target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
-endif()
 
 # Test targets
 

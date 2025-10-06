@@ -11,10 +11,11 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 test_t = tuple[torch.Tensor, torch.Tensor]
@@ -44,32 +45,49 @@ class Minimum(torch.nn.Module):
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
-def test_minimum_tosa_MI(test_data: Tuple):
-    TosaPipelineMI[test_t](Minimum(), test_data(), aten_op).run()
+def test_minimum_tosa_FP(test_data: Tuple):
+    TosaPipelineFP[test_t](Minimum(), test_data(), aten_op).run()
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
-def test_minimum_tosa_BI(test_data: Tuple):
-    TosaPipelineBI[test_t](Minimum(), test_data(), aten_op).run()
+def test_minimum_tosa_INT(test_data: Tuple):
+    TosaPipelineINT[test_t](Minimum(), test_data(), aten_op).run()
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
 @common.XfailIfNoCorstone300
-def test_minimum_u55_BI(test_data: Tuple):
-    EthosU55PipelineBI[test_t](
+def test_minimum_u55_INT(test_data: Tuple):
+    EthosU55PipelineINT[test_t](
         Minimum(),
         test_data(),
         aten_op,
-        run_on_fvp=True,
     ).run()
 
 
 @common.parametrize("test_data", Minimum.test_parameters)
 @common.XfailIfNoCorstone320
-def test_minimum_u85_BI(test_data: Tuple):
-    EthosU85PipelineBI[test_t](
+def test_minimum_u85_INT(test_data: Tuple):
+    EthosU85PipelineINT[test_t](
         Minimum(),
         test_data(),
         aten_op,
-        run_on_fvp=True,
     ).run()
+
+
+@common.parametrize("test_data", Minimum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_minimum_vgf_FP(test_data: test_t):
+    pipeline = VgfPipeline[test_t](Minimum(), test_data(), aten_op)
+    pipeline.run()
+
+
+@common.parametrize("test_data", Minimum.test_parameters)
+@common.SkipIfNoModelConverter
+def test_minimum_vgf_INT(test_data: test_t):
+    pipeline = VgfPipeline[test_t](
+        Minimum(),
+        test_data(),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

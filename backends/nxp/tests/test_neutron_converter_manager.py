@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -29,9 +29,7 @@ def test_conv2d_neutron_conversion__default_flavor():
     )
 
     neutron_converter_manager = NeutronConverterManager()
-    neutron_model = neutron_converter_manager.convert(
-        tflite_model, "imxrt700", "SDK_25_03"
-    )
+    neutron_model = neutron_converter_manager.convert(tflite_model, "imxrt700")
 
     assert len(
         neutron_model
@@ -50,9 +48,8 @@ def test__conv2d_neutron_conversion__invalid_flavor():
         edge_program_manager.exported_program()
     )
 
-    neutron_converter_manager = NeutronConverterManager()
     with pytest.raises(RuntimeError) as excinfo:
-        _ = neutron_converter_manager.convert(tflite_model, "imxrt700", "bad_flavor")
+        _ = NeutronConverterManager("bad_flavor").convert(tflite_model, "imxrt700")
 
     assert "Neutron Converter module with flavor 'bad_flavor' not found." in str(
         excinfo

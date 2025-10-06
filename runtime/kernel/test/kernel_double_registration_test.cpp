@@ -21,6 +21,7 @@ using executorch::runtime::EValue;
 using executorch::runtime::Kernel;
 using executorch::runtime::KernelRuntimeContext;
 using executorch::runtime::register_kernels;
+using executorch::runtime::Span;
 
 class KernelDoubleRegistrationTest : public ::testing::Test {
  public:
@@ -33,7 +34,7 @@ TEST_F(KernelDoubleRegistrationTest, Basic) {
   Kernel kernels[] = {Kernel(
       "aten::add.out",
       "v1/7;0,1,2,3|7;0,1,2,3|7;0,1,2,3",
-      [](KernelRuntimeContext&, EValue**) {})};
+      [](KernelRuntimeContext&, Span<EValue*>) {})};
   Error err = Error::RegistrationAlreadyRegistered;
 
   ET_EXPECT_DEATH(

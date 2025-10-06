@@ -29,6 +29,26 @@ class MemoryPlanningAlgoFailure(Exception):
     pass
 
 
+class TypeMismatchError(Exception):
+    pass
+
+
+class NumericalMismatchError(Exception):
+    def __init__(self, msg: str, rms_value: Optional[float] = None) -> None:
+        self.rms_value = rms_value
+        super().__init__(msg)
+
+
+class NumericalMismatchExpectedError(Exception):
+    def __init__(self, rms_expected_value: float) -> None:
+        self.rms_expected_value = rms_expected_value
+        super().__init__()
+
+
+class ISSRuntimeFailure(Exception):
+    pass
+
+
 # Get the output size of a 1D convolution given the input size and parameters
 def get_conv1d_output_size(
     in_size: torch.Size,

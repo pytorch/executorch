@@ -7,7 +7,7 @@
 
 # pyre-unsafe
 
-from typing import cast
+from typing import cast, Set, Type
 
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -36,6 +36,8 @@ class MatchArgRanksPass(ExportPass):
         input2 = shape(1, 3, 1)
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
     def __init__(self, exported_program):
         super().__init__()
         self.exported_program = exported_program
@@ -54,6 +56,9 @@ class MatchArgRanksPass(ExportPass):
         exir_ops.edge.aten.le.Tensor,
         exir_ops.edge.aten.pow.Tensor_Tensor,
         exir_ops.edge.aten.where.self,
+        exir_ops.edge.aten.bitwise_and.Tensor,
+        exir_ops.edge.aten.bitwise_xor.Tensor,
+        exir_ops.edge.aten.bitwise_or.Tensor,
     ]
 
     def _match_op_rank(self, graph_module, node, arg, max_rank):

@@ -10,6 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+
 namespace vkcompute {
 
 class ComputeGraph;
@@ -33,6 +35,9 @@ class PushConstantDataInfo {
   };
 
   Payload payload_;
+  // The value in a compute graph that this push constant data is associated
+  // with, if any.
+  ValueRef value_ = kDummyValueRef;
 
  public:
   explicit PushConstantDataInfo(
@@ -60,6 +65,18 @@ class PushConstantDataInfo {
       void* dst,
       const uint32_t dst_offset,
       const uint32_t max_dst_size) const;
+
+  inline bool is_tensor_metadata() const noexcept {
+    return tensorUniformData != nullptr;
+  }
+
+  inline void set_value(ValueRef value) noexcept {
+    value_ = value;
+  }
+
+  inline ValueRef value() const noexcept {
+    return value_;
+  }
 };
 
 } // namespace vkcompute

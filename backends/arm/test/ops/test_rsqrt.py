@@ -12,10 +12,11 @@ import torch
 
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -36,8 +37,8 @@ class Rsqrt(torch.nn.Module):
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
-def test_rsqrt_tosa_MI(test_tensor: torch.Tensor):
-    pipeline = TosaPipelineMI[input_t1](
+def test_rsqrt_tosa_FP(test_tensor: torch.Tensor):
+    pipeline = TosaPipelineFP[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
@@ -47,8 +48,8 @@ def test_rsqrt_tosa_MI(test_tensor: torch.Tensor):
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
-def test_rsqrt_tosa_BI(test_tensor: torch.Tensor):
-    pipeline = TosaPipelineBI[input_t1](
+def test_rsqrt_tosa_INT(test_tensor: torch.Tensor):
+    pipeline = TosaPipelineINT[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
@@ -59,25 +60,47 @@ def test_rsqrt_tosa_BI(test_tensor: torch.Tensor):
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.XfailIfNoCorstone300
-def test_rsqrt_u55_BI(test_tensor: torch.Tensor):
-    pipeline = EthosU55PipelineBI[input_t1](
+def test_rsqrt_u55_INT(test_tensor: torch.Tensor):
+    pipeline = EthosU55PipelineINT[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_tensor", Rsqrt.test_parameters)
 @common.XfailIfNoCorstone320
-def test_rsqrt_u85_BI(test_tensor: torch.Tensor):
-    pipeline = EthosU85PipelineBI[input_t1](
+def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
+    pipeline = EthosU85PipelineINT[input_t1](
         Rsqrt(),
         test_tensor(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_FP(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.SkipIfNoModelConverter
+def test_rsqrt_vgf_INT(test_tensor: torch.Tensor):
+    pipeline = VgfPipeline[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        tosa_version="TOSA-1.0+INT",
     )
     pipeline.run()

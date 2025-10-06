@@ -37,7 +37,6 @@ set(link_libraries gflags)
 list(APPEND link_libraries portable_ops_lib portable_kernels)
 executorch_target_link_options_shared_lib(portable_ops_lib)
 
-
 if(USE_XNNPACK_BACKEND)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK microkernels-prod)
   list(APPEND link_libraries ${xnnpack_backend_libs})
@@ -49,9 +48,10 @@ if(USE_OPENVINO_BACKEND)
 
   target_include_directories(
     openvino_backend
-    INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../include
-              ${CMAKE_CURRENT_BINARY_DIR}/../../include/executorch/runtime/core/portable_type/c10
-              ${CMAKE_CURRENT_BINARY_DIR}/../../lib
+    INTERFACE
+      ${CMAKE_CURRENT_BINARY_DIR}/../../include
+      ${CMAKE_CURRENT_BINARY_DIR}/../../include/executorch/runtime/core/portable_type/c10
+      ${CMAKE_CURRENT_BINARY_DIR}/../../lib
   )
   list(APPEND link_libraries openvino_backend)
   executorch_target_link_options_shared_lib(openvino_backend)
@@ -72,14 +72,13 @@ set(PROJECT_SOURCES
 )
 
 add_executable(Yolo12DetectionDemo ${PROJECT_SOURCES})
-target_link_libraries(Yolo12DetectionDemo PUBLIC
-    ${link_libraries}
-    ${OpenCV_LIBS}
-    executorch_core
-    extension_module
-    extension_tensor
+target_link_libraries(
+  Yolo12DetectionDemo PUBLIC ${link_libraries} ${OpenCV_LIBS} executorch_core
+                             extension_module extension_tensor
 )
 
 find_package(Threads REQUIRED)
 target_link_libraries(Yolo12DetectionDemo PRIVATE Threads::Threads)
-target_include_directories(Yolo12DetectionDemo PUBLIC ${_common_include_directories})
+target_include_directories(
+  Yolo12DetectionDemo PUBLIC ${_common_include_directories}
+)

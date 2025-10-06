@@ -262,6 +262,42 @@ class ModuleNoKVCache(torch.nn.Module):
         return (torch.randint(100, [1, 3], dtype=torch.long),)
 
 
+class ModuleSharedState(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer("state", torch.ones(1))
+
+    def forward(self, x):
+        return self.state.add_(1) + x
+
+    def get_state(self):
+        return self.state
+
+    def set_state(self, x):
+        self.state.copy_(x)
+
+    # Including this is tech debt since we will immediately override it with the per method one.
+    # ExportedModule is really old infra though from before multiple methods were supported. So
+    # its really obnoxious to change.
+    def get_random_inputs(self):
+        return (torch.ones(1),)
+
+    def get_random_inputs_per_method(self):
+        return {
+            "forward": (torch.ones(1),),
+            "get_state": (),
+            "set_state": (torch.ones(1),),
+        }
+
+    @staticmethod
+    def get_method_names_to_export() -> List[str]:
+        return ["forward", "get_state", "set_state"]
+
+    @staticmethod
+    def share_mutable_buffers():
+        return True
+
+
 #
 # Main logic.
 #
@@ -280,21 +316,28 @@ def export_module_to_program(
         export_kwargs = module_class.get_export_kwargs()
     export_joint = False
     export_state_names = False
+    share_mutable_buffers = False
     if hasattr(module_class, "export_joint"):
-        export_joint = module_class.export_joint()  # pyre-ignore
+        # pyre-ignore[16]: pyre just cant figure it out
+        export_joint = module_class.export_joint()
     if hasattr(module_class, "export_state_names"):
+        # pyre-ignore[16]: pyre just cant figure it out
         export_state_names = module_class.export_state_names()
     if hasattr(module_class, "get_method_names_to_export"):
-        # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
+        # pyre-ignore[16]: pyre just cant figure it out
         methods = module_class.get_method_names_to_export()
     else:
         methods = ["forward"]
+    if hasattr(module_class, "share_mutable_buffers"):
+        # pyre-ignore[16]: pyre just cant figure it out
+        share_mutable_buffers = module_class.share_mutable_buffers()
     module = ExportedModule.export(
         module_class,
         methods,
         export_joint_graph=export_joint,
         external_constants=external_constants,
         export_state_names=export_state_names,
+        share_mutable_buffers=share_mutable_buffers,
         **export_kwargs,
     )
     return module.executorch_program

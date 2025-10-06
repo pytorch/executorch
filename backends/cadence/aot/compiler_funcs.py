@@ -11,11 +11,7 @@ from typing import Optional
 
 import torch
 from torch._inductor.decomposition import remove_decompositions
-from torchao.quantization.pt2e.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-    prepare_qat_pt2e,
-)
+from torchao.quantization.pt2e.quantize_pt2e import prepare_pt2e, prepare_qat_pt2e
 from torchao.quantization.pt2e.quantizer import Quantizer
 
 
@@ -35,9 +31,9 @@ def trace(
     decomp_table = torch.export.default_decompositions()
     # pyre-fixme[6]: For 1st argument expected `Dict[typing.Callable[..., typing.Any
     remove_decompositions(decomp_table, ops_to_keep)
-    program = torch.export.export_for_training(
-        model, inputs, strict=strict
-    ).run_decompositions(decomp_table)
+    program = torch.export.export(model, inputs, strict=strict).run_decompositions(
+        decomp_table
+    )
 
     return program
 
@@ -56,8 +52,3 @@ def prepare(
         prepared_model = prepare_pt2e(traced_model, quantizer)
 
     return prepared_model
-
-
-def convert(prepared_model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-    converted_model = convert_pt2e(prepared_model)
-    return converted_model

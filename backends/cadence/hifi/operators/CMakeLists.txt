@@ -72,14 +72,15 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/select_copy_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/slice_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/delinearize_index.cpp"
-    )
+)
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..
-${EXECUTORCH_ROOT}/runtime/core/portable_type/c10)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/runtime/core/portable_type/c10
+)
 
 target_include_directories(
   aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
@@ -88,9 +89,16 @@ target_include_directories(
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "op_quantized_linear_out.cpp" "op_quantized_layer_norm.cpp" "op_quantized_matmul_out.cpp"
-             "op_quantize_per_tensor.cpp" "op_quantized_relu_out.cpp" "op_dequantize_per_tensor.cpp"
-             "op_quantized_conv_out.cpp" "op_quantized_fully_connected_out"
+  custom_ops
+  "op_quantized_linear_out.cpp"
+  "op_quantized_layer_norm.cpp"
+  "op_quantized_matmul_out.cpp"
+  "op_quantize_per_tensor.cpp"
+  "op_quantized_relu_out.cpp"
+  "op_dequantize_per_tensor.cpp"
+  "op_quantized_conv2d_nchw_out.cpp"
+  "op_quantized_conv2d_nhwc_out.cpp"
+  "op_quantized_fully_connected_out"
 )
 target_include_directories(
   custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}

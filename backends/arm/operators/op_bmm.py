@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-unsafe
+"""Provide a visitor for lowering batched matmul (BMM) to TOSA."""
+
 from typing import Any, List
 
 import torch
@@ -22,90 +24,21 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale, build_rescale_v0_80
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
 @register_node_visitor
-class BMMVisitor_0_80(NodeVisitor):
-    target = "aten.bmm.default"
-
-    tosa_specs = [
-        TosaSpecification.create_from_string("TOSA-0.80+BI"),
-        TosaSpecification.create_from_string("TOSA-0.80+MI"),
-    ]
-
-    def __init__(self, *args):
-        super().__init__(*args)
-
-    def define_node(
-        self,
-        node: torch.fx.Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 2)
-        validate_same_dtype(self.target, [*inputs, output], ts)
-        validate_valid_dtype(
-            self.target,
-            [*inputs, output],
-            [ts.DType.INT8, ts.DType.FP32],
-            output.tosa_spec,
-        )
-
-        # aten.bmm maps directly to MATMUL
-
-        # For INT8, we need to get the zero points and add an intermediate tensor
-        # for a later rescale.
-        if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(node)
-            input0_zp = input_qparams[0].get_zp_per_tensor()
-            input1_zp = input_qparams[1].get_zp_per_tensor()
-            bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
-            bmm_output_name = bmm_result.name
-        else:
-            bmm_output_name = output.name
-            input0_zp, input1_zp = 0, 0
-
-        # Add the MATMUL to the TOSA graph.
-        attr = ts.TosaSerializerAttribute()
-        attr.MatMulAttribute(A_zp=input0_zp, B_zp=input1_zp)
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().MATMUL,
-            [inputs[0].name, inputs[1].name],
-            [bmm_output_name],
-            attr,
-        )
-
-        # As INT8 accumulates into INT32, we need to rescale it back to INT8
-        if output.dtype == ts.DType.INT8:
-            output_qparams = get_output_qparams(node)[0]
-            final_output_scale = (
-                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
-            ) / output_qparams.get_scale_per_tensor()
-
-            build_rescale_v0_80(
-                tosa_fb=tosa_graph,
-                scale=[final_output_scale],
-                # pyre-ignore[61]: Uninitialized local [61]: Local variable `bmm_result` is undefined, or not always defined.
-                input_node=bmm_result,  # type: ignore[possibly-undefined]
-                output_name=output.name,
-                output_type=ts.DType.INT8,
-                input_zp=[0],
-                output_zp=[output_qparams.get_zp_per_tensor()],
-                is_double_round=False,
-            )
-
-
-@register_node_visitor
 class BMMVisitor(NodeVisitor):
+    """Provide a visitor that lowers ``aten.bmm`` to TOSA ``MATMUL``.
+
+    INT8 accumulates into INT32; add a rescale to INT8 using SINGLE_ROUND
+    rounding and output zero-point.
+
+    """
+
     target = "aten.bmm.default"
 
     tosa_specs = [
@@ -123,7 +56,7 @@ class BMMVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
     ) -> None:
-
+        """Define the TOSA ``MATMUL`` operator and optional rescale."""
         import serializer.tosa_serializer as ts  # type: ignore
 
         validate_num_inputs(self.target, inputs, 2)
@@ -131,7 +64,7 @@ class BMMVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.FP32],
+            [ts.DType.INT8, ts.DType.INT16, ts.DType.FP32],
             output.tosa_spec,
         )
 
@@ -146,6 +79,12 @@ class BMMVisitor(NodeVisitor):
             input1_zp = input_qparams[1].get_zp_per_tensor()
             bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             bmm_output_name = bmm_result.name
+        elif inputs[0].dtype == ts.DType.INT16:
+            input_qparams = get_input_qparams(node)
+            input0_zp = input_qparams[0].get_zp_per_tensor()
+            input1_zp = input_qparams[1].get_zp_per_tensor()
+            bmm_result = tosa_graph.addIntermediate(output.shape, ts.DType.INT48)
+            bmm_output_name = bmm_result.name
         else:
             bmm_output_name = output.name
             input0_zp, input1_zp = 0, 0
@@ -154,7 +93,9 @@ class BMMVisitor(NodeVisitor):
         tosa_graph.addConst([1], inputs[1].dtype, [input1_zp], name=f"{node.name}_B_ZP")
 
         # Add the MATMUL to the TOSA graph.
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().MATMUL,
             [
                 inputs[0].name,
@@ -179,6 +120,23 @@ class BMMVisitor(NodeVisitor):
                 input_node=bmm_result,  # type: ignore[possibly-undefined]
                 output_name=output.name,
                 output_type=ts.DType.INT8,
+                input_zp=[0],
+                output_zp=[output_qparams.get_zp_per_tensor()],
+                rounding_mode=RoundingMode.SINGLE_ROUND,
+            )
+        elif output.dtype == ts.DType.INT16:
+            output_qparams = get_output_qparams(node)[0]
+            final_output_scale = (
+                input_qparams[0].get_scale_per_tensor() * input_qparams[1].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore[61]
+            ) / output_qparams.get_scale_per_tensor()
+
+            build_rescale(
+                tosa_fb=tosa_graph,
+                scale=[final_output_scale],
+                # pyre-ignore[61]: Uninitialized local [61]: Local variable `bmm_result` is undefined, or not always defined.
+                input_node=bmm_result,  # type: ignore[possibly-undefined]
+                output_name=output.name,
+                output_type=ts.DType.INT16,
                 input_zp=[0],
                 output_zp=[output_qparams.get_zp_per_tensor()],
                 rounding_mode=RoundingMode.SINGLE_ROUND,

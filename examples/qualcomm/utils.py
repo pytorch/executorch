@@ -104,41 +104,49 @@ class SimpleADB:
         self.expected_output_shape = expected_output_shape
         self.extra_cmds = ""
 
-    def _adb(self, cmd):
+    def _adb(self, cmd, output_callback: Optional[Callable[[str], None]] = None):
         if not self.host_id:
             cmds = ["adb", "-s", self.device_id]
         else:
             cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
 
-        subprocess.run(
-            cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
-        )
+        if output_callback:
+            result = subprocess.run(
+                cmds, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            output_callback(result)
+        else:
+            subprocess.run(
+                cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+            )
 
-    def push(self, inputs=None, input_list=None, files=None):
-        self._adb(["shell", f"rm -rf {self.workspace}"])
-        self._adb(["shell", f"mkdir -p {self.workspace}"])
+    def push(self, inputs=None, input_list=None, files=None, init_env=True):
+        artifacts = []
+        if init_env:
+            self._adb(["shell", f"rm -rf {self.workspace}"])
+            self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # necessary artifacts
-        artifacts = [
-            *self.pte_path,
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
-            (
-                f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
-                f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
-            ),
-            (
-                f"{self.qnn_sdk}/lib/aarch64-android/"
-                f"libQnnHtpV{self.htp_arch}Stub.so"
-            ),
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.build_path}/{self.runner}",
-            f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
-        ]
+            # necessary artifacts
+            artifacts = [
+                *self.pte_path,
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
+                (
+                    f"{self.qnn_sdk}/lib/hexagon-v{self.htp_arch}/"
+                    f"unsigned/libQnnHtpV{self.htp_arch}Skel.so"
+                ),
+                (
+                    f"{self.qnn_sdk}/lib/aarch64-android/"
+                    f"libQnnHtpV{self.htp_arch}Stub.so"
+                ),
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
+                f"{self.build_path}/{self.runner}",
+                f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+                f"{self.qnn_sdk}/lib/aarch64-android/libQnnModelDlc.so",
+            ]
         input_list_file, input_files = generate_inputs(
-            self.working_dir, self.input_list_filename, inputs, input_list
+            self.working_dir, self.input_list_filename, inputs
         )
 
         if input_list_file is not None:
@@ -171,7 +179,12 @@ class SimpleADB:
             for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self, custom_runner_cmd=None, method_index=0):
+    def execute(
+        self,
+        custom_runner_cmd=None,
+        method_index=0,
+        output_callback: Optional[Callable[[str], None]] = None,
+    ):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
@@ -203,8 +216,9 @@ class SimpleADB:
             )
         else:
             qnn_executor_runner_cmds = custom_runner_cmd
-
-        self._adb(["shell", f"{qnn_executor_runner_cmds}"])
+        self._adb(
+            ["shell", f"{qnn_executor_runner_cmds}"], output_callback=output_callback
+        )
 
     def pull(self, output_path, callback=None):
         self._adb(["pull", "-a", self.output_folder, output_path])
@@ -370,6 +384,7 @@ def build_executorch_binary(
     metadata=None,
     dump_intermediate_outputs=False,
     passes_job=None,
+    passes_dependency=None,
     qat_training_data=None,
     online_prepare=False,
     optrace=False,
@@ -392,6 +407,7 @@ def build_executorch_binary(
         metadata (dict, optional): An optional dictionary that maps each method name to a constant value in eager mode.
         dump_intermediate_outputs (bool, optional): Enables dumping model intermediate outputs.
         passes_job (OrderedDict, optional): Custom passes job in capture_program, users can enable/disable specific passes or modify their attributes.
+        passes_dependency (Dict, optional): A dictionary mapping each pass to its corresponding list of dependencies.
         qat_training_data (List[torch.Tensor], optional): A dataset for quantization aware training(QAT). Typically is a pair of tensors, such as [features, ground truth].
         online_prepare (bool, optional): Compose QNN graph on device if set to True.
         optrace (bool, optional): Enable optrace mode for performance analysis if set to True.
@@ -435,6 +451,7 @@ def build_executorch_binary(
             compile_spec,
             constant_methods=metadata,
             passes_job=passes_job,
+            dep_table=passes_dependency,
             skip_node_id_set=skip_node_id_set,
             skip_node_op_set=skip_node_op_set,
         )
@@ -572,7 +589,7 @@ def get_imagenet_dataset(
         )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader()
     for index, data in enumerate(data_loader):
         if index >= data_size:
@@ -580,9 +597,8 @@ def get_imagenet_dataset(
         feature, target = data
         inputs.append((feature,))
         targets.append(target)
-        input_list += f"input_{index}_0.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffle=True):
@@ -622,10 +638,9 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
         )
 
     # prepare input data
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader()
-    for _, data in enumerate(data_loader):
-        index = len(inputs)
+    for data in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = data[0]
@@ -637,9 +652,8 @@ def get_masked_language_model_dataset(dataset_path, tokenizer, data_size, shuffl
             continue
         inputs.append((input_ids, attention_mask))
         targets.append(target)
-        input_list += f"input_{index}_0.raw input_{index}_1.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
@@ -718,9 +732,9 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
             dataset, batch_size=1, shuffle=shuffle, collate_fn=collator
         )
 
-    inputs, targets, input_list = [], [], ""
+    inputs, targets = [], []
     data_loader = get_data_loader(max_hidden_seq_length)
-    for idx, batch in enumerate(data_loader):
+    for batch in data_loader:
         if len(inputs) >= data_size:
             break
         input_ids = batch["input_ids"]
@@ -739,9 +753,8 @@ def get_seq2seq_dataset_from_squad_csv(  # noqa: C901
             )
         )
         targets.append(labels)
-        input_list += f"input_{idx}_0.raw input_{idx}_1.raw input_{idx}_2.raw\n"
 
-    return inputs, targets, input_list
+    return inputs, targets
 
 
 def setup_common_args_and_variables():
@@ -858,11 +871,30 @@ def setup_common_args_and_variables():
         default=False,
     )
 
+    parser.add_argument(
+        "--seed",
+        help="Set the seed for generating random numbers in both torch and random.",
+        type=int,
+    )
+
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
     if "QNN_SDK_ROOT" not in os.environ:
         raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+
+    def validate(args):
+        if not args.compile_only and args.device is None:
+            raise RuntimeError(
+                "device serial is required if not compile only. "
+                "Please specify a device serial by -s/--device argument."
+            )
+        if args.seed:
+            torch.manual_seed(args.seed)
+            np.random.seed(args.seed)
+            random.seed(args.seed)
+
+    parser.set_defaults(validate=validate)
 
     return parser
 
@@ -882,25 +914,28 @@ def parse_skip_delegation_node(args):
     return skip_node_id_set, skip_node_op_set
 
 
-def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None):
+def generate_inputs(dest_path: str, file_name: str, inputs=None):
     input_list_file = None
     input_files = []
 
-    # Prepare input list
-    if input_list is not None:
-        input_list_file = f"{dest_path}/{file_name}"
-        with open(input_list_file, "w") as f:
-            f.write(input_list)
-            f.flush()
-
     # Prepare input data
     if inputs is not None:
-        for idx, data in enumerate(inputs):
-            for i, d in enumerate(data):
-                file_name = f"{dest_path}/input_{idx}_{i}.raw"
-                if not isinstance(d, torch.Tensor):
-                    d = torch.tensor(d)
-                d.detach().numpy().tofile(file_name)
-                input_files.append(file_name)
+        input_list_file = f"{dest_path}/{file_name}"
+        with open(input_list_file, "w") as f:
+            for idx, data in enumerate(inputs):
+                for i, d in enumerate(data):
+                    # transform torch.Tensor to raw file
+                    file_name = f"input_{idx}_{i}.raw"
+                    file_path = f"{dest_path}/{file_name}"
+                    if not isinstance(d, torch.Tensor):
+                        d = torch.tensor(d)
+                    d.detach().numpy().tofile(file_path)
+                    input_files.append(file_path)
+
+                    # prepare input_list
+                    if i > 0:
+                        f.write(" ")
+                    f.write(file_name)
+                f.write("\n")
 
     return input_list_file, input_files

@@ -8,7 +8,7 @@ from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineMI
+from executorch.backends.arm.test.tester.test_pipeline import TosaPipelineFP
 from executorch.exir.backend.operator_support import (
     DontPartition,
     DontPartitionModule,
@@ -50,7 +50,7 @@ def test_single_reject(caplog, test_data: input_t1):
     caplog.set_level(logging.INFO)
 
     module = CustomPartitioning()
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     check = DontPartition(exir_ops.edge.aten.sigmoid.default)
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
@@ -68,7 +68,7 @@ def test_single_reject(caplog, test_data: input_t1):
 @common.parametrize("test_data", CustomPartitioning.inputs)
 def test_multiple_reject(test_data: input_t1):
     module = CustomPartitioning()
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     check = DontPartition(
         exir_ops.edge.aten.sigmoid.default, exir_ops.edge.aten.mul.Tensor
     )
@@ -90,7 +90,7 @@ def test_torch_op_reject(caplog, test_data: input_t1):
 
     module = CustomPartitioning()
     check = DontPartition(torch.ops.aten.sigmoid.default)
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
         "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
@@ -108,7 +108,7 @@ def test_torch_op_reject(caplog, test_data: input_t1):
 def test_string_op_reject(test_data: input_t1):
     module = CustomPartitioning()
     check = DontPartition("aten.sigmoid.default")
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
         "check_count.exir", {"torch.ops.higher_order.executorch_call_delegate": 2}
@@ -127,7 +127,7 @@ def test_name_reject(caplog, test_data: input_t1):
 
     module = CustomPartitioning()
     check = DontPartitionName("mul", "sigmoid", exact=False)
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
         "check_count.exir",
@@ -142,7 +142,7 @@ def test_name_reject(caplog, test_data: input_t1):
 def test_module_reject(test_data: input_t1):
     module = NestedModule()
     check = DontPartitionModule(module_name="CustomPartitioning")
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
         "check_count.exir",
@@ -158,7 +158,7 @@ def test_inexact_module_reject(caplog, test_data: input_t1):
 
     module = NestedModule()
     check = DontPartitionModule(module_name="Custom", exact=False)
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
         "check_count.exir",
@@ -173,7 +173,7 @@ def test_inexact_module_reject(caplog, test_data: input_t1):
 def test_module_instance_reject(test_data: input_t1):
     module = NestedModule()
     check = DontPartitionModule(instance_name="nested")
-    pipeline = TosaPipelineMI[input_t1](module, test_data, [], exir_op=[])
+    pipeline = TosaPipelineFP[input_t1](module, test_data, [], exir_op=[])
     pipeline.change_args("to_edge_transform_and_lower", additional_checks=[check])
     pipeline.change_args(
         "check_count.exir",

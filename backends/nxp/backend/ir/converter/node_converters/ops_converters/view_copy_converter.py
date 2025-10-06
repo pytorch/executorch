@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,8 +13,9 @@ from executorch.backends.nxp.backend.edge_helper import (
 from executorch.backends.nxp.backend.ir.converter import quantization_utils
 from executorch.backends.nxp.backend.ir.converter.conversion.common import OpsList
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
+    is_not_qdq_node,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reshape_transposition import (
     ensure_reshape_transposition,
@@ -23,15 +24,17 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     reshape_options,
 )
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 
 class ViewCopyConverter(NodeConverter):
-    supported_targets = [Target.RT700]
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         x = input_tensor(node, 0)
         y = output_tensor(node)
@@ -40,6 +43,27 @@ class ViewCopyConverter(NodeConverter):
         flat_output_size = ViewCopyConverter._safe_compute_flat_size(list(y.size()))
 
         if tensor_rank(y) >= 8 or flat_input_size != flat_output_size:
+            return False
+
+        return True
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+    ):
+        view_copy_partitions = [
+            partition for partition in partition_list if node in partition.nodes
+        ]
+        assert len(view_copy_partitions) == 1
+        non_q_dq_partition_nodes = list(
+            filter(is_not_qdq_node, view_copy_partitions[0].nodes)
+        )
+
+        if len(non_q_dq_partition_nodes) == 1:
+            # The `view_copy` cannot be the only node in a partition.
             return False
 
         return True

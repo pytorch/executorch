@@ -1,10 +1,10 @@
 [build-system]
 requires = [
   "cmake>=3.29,<4.0.0",  # For building binary targets in the wheel. 4.0.0 breaks third-party CMake build so temporarily pin the version.
+  "packaging>=24.2", # Lower bound required by setuptools
   "pip>=23",  # For building the pip package.
   "pyyaml",  # Imported by the kernel codegen tools.
-  "setuptools>=63",  # For building the pip package contents.
-  "tomli",  # Imported by extract_sources.py when using python < 3.11.
+  "setuptools>=77.0.3",  # For building the pip package contents.
   "wheel",  # For building the pip package archive.
   "zstd",  # Imported by resolve_buck.py.
   "certifi",  # Imported by resolve_buck.py.
@@ -22,7 +22,8 @@ readme = "README-wheel.md"
 authors = [
   {name="PyTorch Team", email="packages@pytorch.org"},
 ]
-license = {file = "LICENSE"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 keywords = ["pytorch", "machine learning"]
 # PyPI package information.
 classifiers = [
@@ -34,7 +35,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD License",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -56,6 +56,7 @@ dependencies=[
   "expecttest",
   "flatbuffers",
   "hypothesis",
+  "kgb",
   "mpmath==1.3.0",
   "numpy>=2.0.0; python_version >= '3.10'",
   "packaging",
@@ -63,7 +64,8 @@ dependencies=[
   "parameterized",
   "pytest",
   "pytest-xdist",
-  "pytest-rerunfailures",
+  "pytest-rerunfailures==15.1",
+  "pytest-json-report",
   "pyyaml",
   "ruamel.yaml",
   "sympy",
@@ -71,7 +73,9 @@ dependencies=[
   # See also third-party/TARGETS for buck's typing-extensions version.
   "typing-extensions>=4.10.0",
   # Keep this version in sync with: ./backends/apple/coreml/scripts/install_requirements.sh
-  "coremltools==8.3; platform_system == 'Darwin' or platform_system == 'Linux'",
+  "coremltools==9.0b1; platform_system == 'Darwin' or platform_system == 'Linux'",
+  # scikit-learn is used to support palettization in the coreml backend
+  "scikit-learn==1.7.1",
   "hydra-core>=1.3.0",
   "omegaconf>=2.3.0",
 ]

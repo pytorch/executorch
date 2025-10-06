@@ -17,14 +17,15 @@ from executorch.backends.cadence.aot.graph_builder import (
 )
 from executorch.backends.cadence.aot.pass_utils import count_node, op_counts_match
 from executorch.backends.cadence.aot.replace_ops import (
-    ForceChannelLastForConvPass,
     MakeSliceAndCatDimOutermostPass,
     ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass,
     ReplaceAddMMWithLinearPass,
     ReplaceAtenApproxGeluWithApproxGeluPass,
-    ReplaceAtenConvolutionWithJarvisConvolutionPass,
+    ReplaceAtenConvolutionWithCadenceConvolutionPass,
+    ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass,
     ReplaceConstantPadNdWithSlicePass,
     ReplaceConvolutionOptionalArgsWithConcreteArgsPass,
+    ReplaceConvWithChannelLastConvPass,
     ReplaceConvWithIm2RowAndLinear,
     ReplaceEmptyTensorsWithFullPass,
     ReplaceFunctionallyEquivalentOpTargets,
@@ -51,9 +52,10 @@ from executorch.backends.cadence.aot.replace_ops import (
 
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.infra.pass_base import PassResult
+from torch.utils import _pytree as pytree
 
 
 class TestReplaceOpsPasses(unittest.TestCase):
@@ -344,6 +346,194 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.aten.unsafe_split.Tensor), 0, x
         )
 
+    def assertTensorMetadataIsSame(
+        self, a: Sequence[torch.Tensor], b: Sequence[torch.Tensor]
+    ) -> None:
+        for i, (_a, _b) in enumerate(zip(a, b)):
+            # TODO: actually compare the tensors.
+            self.assertTrue(
+                _a.shape == _b.shape, f"Tensor {i}: {_a.shape} != {_b.shape}"
+            )
+            self.assertTrue(
+                _a.dtype == _b.dtype, f"Tensor {i}: {_a.dtype} != {_b.dtype}"
+            )
+
+    @expand(
+        [
+            [(1, 8, 18), 8, 16, 3],
+            [(1, 8, 18), 8, 16, 5, 2],
+            # depthwise + bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True],
+            # no bias
+            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            # bias + transposed
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+            # Stride of 2 needed.
+            [(1, 8, 3), 8, 8, 48, 2, 23],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_conv_with_cadence_conv(
+        self,
+        shape: Tuple[int, ...],
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        depthwise: bool = False,
+        bias_enabled: bool = True,
+        output_padding: Optional[int] = None,
+    ) -> None:
+        groups = in_channels if depthwise else 1
+        builder = GraphBuilder()
+        x_tensor = torch.randn(*shape, dtype=torch.float32)
+        x = builder.placeholder("x", x_tensor)
+        weights_tensor = torch.randn(
+            [out_channels, in_channels // groups, kernel], dtype=torch.float32
+        )
+        weights = builder.placeholder("weights", weights_tensor)
+        bias: Optional[ProxyValue] = None
+        bias_tensor: Optional[torch.Tensor] = None
+        if bias_enabled:
+            bias_tensor = torch.randn([out_channels], dtype=torch.float32)
+            bias = builder.placeholder("bias", bias_tensor)
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                bias,
+                [stride],
+                [padding],
+                [dilation],
+                False,
+                [output_padding] if output_padding else [0],
+                groups,
+            ),
+        )
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+
+        replacement_pass_result = (
+            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
+        )
+        self.assertIsNotNone(replacement_pass_result)
+        graph_after_passes = replacement_pass_result.graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            1,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
+            0,
+        )
+
+        inputs = (x.to_tensor(), weights.to_tensor())
+        if bias is not None:
+            inputs += (bias.to_tensor(),)
+        self.assertTensorMetadataIsSame(
+            pytree.tree_flatten(original_gm.forward(*inputs))[0],
+            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
+        )
+
+    @expand(
+        [
+            [(1, 8, 18), 8, 16, 3],
+            [(1, 8, 18), 8, 16, 5, 2],
+            # depthwise + bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, True, True],
+            # no bias
+            [(1, 8, 18), 8, 16, 3, 2, 4, 3, False, False],
+            # depthwise + no bias
+            [(1, 8, 18), 8, 16, 3, 1, 0, 1, True, False],
+            # bias
+            [(1, 8, 18), 8, 16, 5, 2, 0, 1, False, True],
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_transposed_conv_with_cadence_transposed_conv(
+        self,
+        shape: Tuple[int, ...],
+        in_channels: int,
+        out_channels: int,
+        kernel: int,
+        stride: int = 1,
+        padding: int = 0,
+        dilation: int = 1,
+        depthwise: bool = False,
+        bias_enabled: bool = True,
+        output_padding: Optional[int] = None,
+    ) -> None:
+        groups = in_channels if depthwise else 1
+        builder = GraphBuilder()
+        x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
+        weights_shape = [in_channels, out_channels // groups, kernel]
+        weights = builder.placeholder(
+            "weights",
+            torch.randn(weights_shape, dtype=torch.float32),
+        )
+        bias = (
+            builder.placeholder(
+                "bias", torch.randn([out_channels], dtype=torch.float32)
+            )
+            if bias_enabled
+            else None
+        )
+        convolution = builder.call_operator(
+            op=exir_ops.edge.aten.convolution.default,
+            args=(
+                x,
+                weights,
+                bias,
+                [stride],
+                [padding],
+                [dilation],
+                True,
+                [output_padding] if output_padding else [0],
+                groups,
+            ),
+        )
+        builder.output([convolution])
+        original_gm = builder.get_graph_module()
+
+        replacement_pass_result = (
+            ReplaceAtenConvolutionWithCadenceConvolutionPass().call(original_gm)
+        )
+        self.assertIsNotNone(replacement_pass_result)
+        graph_after_passes = replacement_pass_result.graph_module
+
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(
+                graph_after_passes, exir_ops.edge.cadence.transposed_convolution.default
+            ),
+            1,
+        )
+
+        inputs = (x.to_tensor(), weights.to_tensor())
+        if bias is not None:
+            inputs += (bias.to_tensor(),)
+        self.assertTensorMetadataIsSame(
+            pytree.tree_flatten(original_gm.forward(*inputs))[0],
+            pytree.tree_flatten(graph_after_passes.forward(*inputs))[0],
+        )
+
     @expand(
         [
             [(1, 8, 33), 8, 16, 3],
@@ -411,7 +601,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
         builder.output([convolution])
         original_gm = builder.get_graph_module()
 
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         p2 = ReplaceTransposedConvWithLinearPass()
         graph_after_passes = cast(
             PassResult, p2(cast(PassResult, p1(original_gm)).graph_module)
@@ -454,8 +644,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         bias_enabled: bool = True,
         channel_last: bool = False,
     ) -> None:
-        transposed = True
-        output_padding = [0]
         groups = in_channels if depthwise else 1
         builder = GraphBuilder()
         x = builder.placeholder("x", torch.randn(*shape, dtype=torch.float32))
@@ -476,7 +664,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 args=(x, [0, 2, 1]),
             )
         convolution = builder.call_operator(
-            op=exir_ops.edge.aten.convolution.default,
+            op=exir_ops.edge.cadence.convolution.default,
             args=(
                 x,
                 weights,
@@ -484,9 +672,8 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 [stride],
                 [padding],
                 [dilation],
-                transposed,
-                output_padding,
                 groups,
+                False,
             ),
         )
         if channel_last:
@@ -503,7 +690,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             1,
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.aten.convolution.default),
+            count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default),
             1,
         )
 
@@ -969,7 +1156,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, weights, bias, [1], [0], [1], 1, False),
         )
         # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         temp_graph = cast(PassResult, p1(original_gm)).graph_module
         # temp_graph = p1(original_gm).graph_module
         self.assertIsNotNone(temp_graph)
@@ -1003,7 +1190,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             args=(x, weights, bias, [1, 1], [0, 0], [1, 1], 1, False),
         )
         # First, replace the aten convolution with a cadence.convolution op
-        p1 = ReplaceAtenConvolutionWithJarvisConvolutionPass()
+        p1 = ReplaceAtenConvolutionWithCadenceConvolutionPass()
         temp_graph = cast(PassResult, p1(original_gm)).graph_module
         self.assertIsNotNone(temp_graph)
 
@@ -1454,7 +1641,7 @@ class TestReplaceIm2rowWithViewPass(unittest.TestCase):
         )
 
 
-class TestForceChannelLastForConvPass(unittest.TestCase):
+class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
     def create_conv1d_graphmodule(
         self, channels_last: Optional[bool] = None
     ) -> torch.fx.GraphModule:
@@ -1489,7 +1676,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.transpose_copy.int), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1514,7 +1701,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1566,7 +1753,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1591,7 +1778,7 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         self.assertEqual(count_node(gm, exir_ops.edge.cadence.convolution.default), 1)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
@@ -1655,28 +1842,50 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             out_shift,
         )
         if channels_last is not None:
-            args = args + (channels_last,)
-        return single_op_builder(
-            placeholders=(x, w, b, w_zero_point, b_scale, out_multiplier, out_shift),
-            op=exir_ops.edge.cadence.quantized_conv.default,
-            args=args,
-        )
+            return single_op_builder(
+                placeholders=(
+                    x,
+                    w,
+                    b,
+                    w_zero_point,
+                    b_scale,
+                    out_multiplier,
+                    out_shift,
+                ),
+                op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+                args=args,
+            )
+        else:
+            return single_op_builder(
+                placeholders=(
+                    x,
+                    w,
+                    b,
+                    w_zero_point,
+                    b_scale,
+                    out_multiplier,
+                    out_shift,
+                ),
+                op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
+                args=args,
+            )
 
     def test_quantized_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
         gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.default), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
@@ -1685,12 +1894,6 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,
         )
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.quantized_conv.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 15, f"{node=}")
-            self.assertTrue(node.args[14])
 
     def test_no_transpose_if_already_quantized_conv_channel_last(self) -> None:
         # Create a graph with a single im2row node.
@@ -1698,26 +1901,21 @@ class TestForceChannelLastForConvPass(unittest.TestCase):
         # Check if graph module is valid by running exportpass on it.
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.default), 1
         )
 
         # Apply replacement pass.
-        p = ForceChannelLastForConvPass()
+        p = ReplaceConvWithChannelLastConvPass()
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
-                gm_after_replacement, exir_ops.edge.cadence.quantized_conv.default
+                gm_after_replacement,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
             ),
             1,
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
-        for node in gm_after_replacement.graph.nodes:
-            if node.target != exir_ops.edge.cadence.quantized_conv.default:
-                continue
-            # Check that the channel_last argument is set to True.
-            self.assertEqual(len(node.args), 15, f"{node=}")
-            self.assertTrue(node.args[14])
 
 
 class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
@@ -2035,4 +2233,39 @@ class TestReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(unittest.TestCase):
         self.assertEqual(
             len(avg_pool2d_nodes),
             0,
+        )
+
+
+class TestReplaceLinalgSvdPass(unittest.TestCase):
+    @expand(
+        [
+            ("2x2", (2, 2)),
+            ("3x3", (3, 3)),
+            ("4x5", (4, 5)),
+            ("10x10", (10, 10)),
+        ]
+    )
+    @torch.no_grad()
+    def test_replace_aten_linalg_svd_with_cadence_linalg_svd(
+        self, _: str, shape: Tuple[int, int]
+    ) -> None:
+        x = torch.randn(shape, dtype=torch.float32)
+        original_gm = single_op_builder(
+            placeholders=(x,),
+            op=exir_ops.edge.aten._linalg_svd.default,
+            args=(x, False, True),
+            kwargs={"driver": None},
+        )
+
+        p = ReplaceAtenLinalgSvdWithCadenceLinalgSvdPass()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        # Assert that the aten linalg_svd op was replaced with cadence linalg_svd op
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.aten._linalg_svd.default),
+            0,
+        )
+        self.assertEqual(
+            count_node(graph_after_passes, exir_ops.edge.cadence.linalg_svd.default),
+            1,
         )

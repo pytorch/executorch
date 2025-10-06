@@ -34,6 +34,8 @@ $if IS_COMPARISON_OP:
 
 layout(std430) buffer;
 
+#include "indexing.glslh"
+
 $if IS_COMPARISON_OP:
   ${layout_declare_tensor(B, "w", "t_out", "uint8", STORAGE)}
 $else:
@@ -43,13 +45,11 @@ ${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_other", DTYPE, STORAGE)}
 
 $if STORAGE == "buffer":
+  ${layout_declare_ubo(B, "BufferMetadata", "outp")}
+  ${layout_declare_ubo(B, "BufferMetadata", "inp")}
+  ${layout_declare_ubo(B, "BufferMetadata", "other")}
+
   layout(push_constant) uniform restrict Block {
-    ivec4 in_sizes;
-    ivec4 other_sizes;
-    ivec4 out_strides;
-    ivec4 in_strides;
-    ivec4 other_strides;
-    int out_numel;
     float alpha;
   };
 $else:
@@ -83,25 +83,30 @@ $else:
 #ifdef USING_BUFFER
 
 void main() {
-  const int out_bufi = ivec3(gl_GlobalInvocationID).x;
-  if (out_bufi >= out_numel) {
+  const uint out_bufi = gl_GlobalInvocationID.x;
+  if (out_bufi >= numel(outp)) {
     return;
   }
 
   // Simple case; no broadcasting
-  if (in_sizes == other_sizes) {
+  if (are_equal(inp, other)) {
     t_out[out_bufi] = T(op(t_in[out_bufi], t_other[out_bufi], T(alpha)));
     return;
   }
 
-  const ivec4 out_tidx = bufi_to_tidx(out_bufi, out_strides, out_dim_order);
-  const ivec4 in_tidx = min(out_tidx, in_sizes - 1);
-  const ivec4 other_tidx = min(out_tidx, other_sizes - 1);
+  TensorIndex outp_tidx;
+  linear_idx_to_tensor_idx(outp, out_bufi, outp_tidx);
 
-  const int in_bufi = tidx_to_bufi(in_tidx, in_strides);
-  const int other_bufi = tidx_to_bufi(other_tidx, other_strides);
+  TensorIndex inp_tidx = outp_tidx;
+  clamp_tensor_idx(inp, inp_tidx);
 
-  t_out[out_bufi] = T(op(t_in[in_bufi], t_other[other_bufi], T(alpha)));
+  TensorIndex other_tidx = outp_tidx;
+  clamp_tensor_idx(other, other_tidx);
+
+  uint inp_bufi = tensor_idx_to_linear_idx(inp, inp_tidx);
+  uint other_bufi = tensor_idx_to_linear_idx(other, other_tidx);
+
+  t_out[out_bufi] = T(op(t_in[inp_bufi], t_other[other_bufi], T(alpha)));
 }
 
 #else // USING_TEXTURE

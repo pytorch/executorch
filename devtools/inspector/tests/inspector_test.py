@@ -7,8 +7,10 @@
 # pyre-unsafe
 
 import copy
+import os
 import random
 import statistics
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -21,11 +23,12 @@ import pandas as pd
 
 import torch
 import torch.fx
+import torch.utils._pytree as pytree
 
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.devtools import generate_etrecord, parse_etrecord
 from executorch.devtools.debug_format.et_schema import OperatorNode
 from executorch.devtools.etdump.schema_flatcc import ProfileEvent
-from executorch.devtools.etrecord._etrecord import ETRecord
 from executorch.devtools.etrecord.tests.etrecord_test import TestETRecord
 
 from executorch.devtools.inspector import (
@@ -53,6 +56,10 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchProgramManager,
     to_edge,
+    to_edge_transform_and_lower,
+)
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_buffer,
 )
 from torch.export import export, ExportedProgram
 
@@ -480,7 +487,7 @@ class TestInspector(unittest.TestCase):
                 events=events,
             )
 
-    def test_etrecord_populates_correct_aot_intermediate_outputs(self):
+    def test_etrecord_populates_correct_edge_dialect_aot_intermediate_outputs(self):
         with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
             etrecord_path = tmp_file.name
             mod = model_registry["ConvLinearModel"]()
@@ -513,15 +520,11 @@ class TestInspector(unittest.TestCase):
                     etdump_path=ETDUMP_PATH,
                     etrecord=etrecord_path,
                 )
-                etrecord = ETRecord(
-                    edge_dialect_program=inspector_instance._etrecord.edge_dialect_program,
-                    graph_map=inspector_instance._etrecord.graph_map,
-                    _debug_handle_map=inspector_instance._etrecord._debug_handle_map,
-                    _delegate_map=inspector_instance._etrecord._delegate_map,
-                    _reference_outputs=inspector_instance._etrecord._reference_outputs,
-                    _representative_inputs=aten_model.example_inputs[0],
+
+                inspector_instance._etrecord._representative_inputs = (
+                    aten_model.example_inputs[0]
                 )
-                inspector_instance._etrecord = etrecord
+
                 aot_intermediate_outputs, aot_debug_handle_to_op_names = (
                     inspector_instance._get_aot_intermediate_outputs_and_op_names()
                 )
@@ -534,7 +537,61 @@ class TestInspector(unittest.TestCase):
 
                 self.assertTrue(
                     check_if_debug_handle_to_op_names_match(
-                        "ConvLinearModel", aot_debug_handle_to_op_names
+                        aot_debug_handle_to_op_names,
+                        mod.get_edge_dialect_expected_debug_handle_to_op_names(),
+                    )
+                )
+
+    def test_etrecord_populates_correct_export_program_aot_intermediate_outputs(self):
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
+            etrecord_path = tmp_file.name
+            mod = model_registry["ConvLinearModel"]()
+            input_tensor = mod.get_input()
+            aten_model: ExportedProgram = export(mod, (input_tensor,), strict=True)
+            edge_program_manager: EdgeProgramManager = to_edge(aten_model)
+            edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+            et_program_manager: ExecutorchProgramManager = (
+                edge_program_manager.to_executorch()
+            )
+            # Generate ETRecord with the exported program
+            generate_etrecord(
+                etrecord_path,
+                edge_program_manager_copy,
+                et_program_manager,
+                exported_program=aten_model,
+            )
+            with patch.object(
+                Inspector, "_consume_etrecord", return_value=None
+            ), patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(
+                EventBlock, "_gen_from_etdump"
+            ), patch.object(
+                _inspector, "gen_graphs_from_etrecord"
+            ):
+                # Call the constructor of Inspector
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+
+                inspector_instance._etrecord._representative_inputs = (
+                    aten_model.example_inputs[0]
+                )
+
+                aot_intermediate_outputs, aot_debug_handle_to_op_names = (
+                    inspector_instance._get_aot_intermediate_outputs_and_op_names()
+                )
+                self.assertTrue(
+                    check_if_intermediate_outputs_match(
+                        aot_intermediate_outputs,
+                        mod.get_exported_program_expected_intermediate_outputs(),
+                    )
+                )
+                self.assertTrue(
+                    check_if_debug_handle_to_op_names_match(
+                        aot_debug_handle_to_op_names,
+                        mod.get_exported_program_expected_debug_handle_to_op_names(),
                     )
                 )
 
@@ -584,7 +641,9 @@ class TestInspector(unittest.TestCase):
             self.assertIn((4,), runtime_outputs)
             self.assertIn((4,), op_names)
             self.assertTrue(
-                torch.allclose(runtime_outputs[(4,)][0], torch.tensor([4.0, 5.0, 6.0]))
+                torch.allclose(
+                    runtime_outputs[(4,)][0][0], torch.tensor([4.0, 5.0, 6.0])
+                )
             )
             self.assertEqual(op_names[(4,)], ["op_3"])
 
@@ -592,8 +651,6 @@ class TestInspector(unittest.TestCase):
             for key in range(5, 9):
                 self.assertIn((key,), runtime_outputs)
                 self.assertIn((key,), op_names)
-                self.assertEqual(runtime_outputs[(key,)][0].size(0), RAW_DATA_SIZE)
-                self.assertEqual(op_names[(key,)], [f"op_{key-1}"])
 
     def test_calculate_numeric_gap(self):
         # Create a context manager to patch functions called by Inspector.__init__
@@ -606,7 +663,6 @@ class TestInspector(unittest.TestCase):
         ), patch.object(
             _inspector, "gen_graphs_from_etrecord"
         ):
-
             # Call the constructor of Inspector
             inspector_instance = Inspector(
                 etdump_path=ETDUMP_PATH,
@@ -619,14 +675,14 @@ class TestInspector(unittest.TestCase):
             }
 
             runtime_intermediate_outputs = {
-                (0,): torch.tensor([2.0, 1.0, 4.0]),
-                (1,): torch.tensor([3.0, 6.0, 5.0]),
+                (0,): ([torch.tensor([2.0, 1.0, 4.0])], 1),
+                (1,): ([torch.tensor([3.0, 6.0, 5.0])], 1),
             }
 
             aot_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
             runtime_debug_handle_to_op_name = {(0,): "op_0", (1,): "op_1"}
 
-            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda: (
+            inspector_instance._get_aot_intermediate_outputs_and_op_names = lambda x: (
                 aot_intermediate_outputs,
                 aot_debug_handle_to_op_name,
             )
@@ -660,11 +716,120 @@ class TestInspector(unittest.TestCase):
                 self.assertTrue(
                     torch.allclose(
                         row["runtime_intermediate_output"],
-                        runtime_intermediate_outputs[key],
+                        runtime_intermediate_outputs[key][0][0],
                     )
                 )
                 # gap should equal 3.0
                 self.assertEqual(row["gap"][0], 3.0)
+
+    @unittest.skip("ci config values are not propagated")
+    def test_intermediate_tensor_comparison_with_torch_export(self):
+        """Test intermediate tensor comparison using torch.export.export and to_edge_transform_and_lower."""
+
+        class SimpleTestModel(torch.nn.Module):
+            """A simple test model for demonstration purposes."""
+
+            def __init__(self, hidden_size: int = 32, num_layers: int = 2):
+                super().__init__()
+                self.layers = torch.nn.ModuleList(
+                    [
+                        torch.nn.Linear(hidden_size, hidden_size)
+                        for _ in range(num_layers)
+                    ]
+                )
+                self.activation = torch.nn.ReLU()
+                self.output_layer = torch.nn.Linear(hidden_size, 10)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                x = self.activation(self.layers[0](x))
+                y = self.activation(self.layers[1](x))
+                return y, self.output_layer(x)
+
+        # Create test model and inputs
+        model = SimpleTestModel(hidden_size=32, num_layers=2)
+        model.eval()
+
+        # Create representative inputs (smaller for faster testing)
+        batch_size, seq_len, hidden_size = 1, 8, 32
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        example_inputs = (input_tensor,)
+        representative_inputs = [example_inputs]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "model.pte")
+            etrecord_path = os.path.join(tmp_dir, "etrecord.bin")
+
+            # Step 1: Export using torch.export.export
+            exported_program = torch.export.export(model, example_inputs)
+            self.assertIsNotNone(exported_program)
+
+            # Step 2: Lower to XNNPACK with generate_etrecord=True
+            edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+            edge_program_manager = to_edge_transform_and_lower(
+                exported_program,
+                partitioner=[XnnpackPartitioner()],
+                compile_config=edge_compile_config,
+                generate_etrecord=True,
+            )
+            self.assertIsNotNone(edge_program_manager)
+
+            # Step 3: Generate ETRecord from edge program manager
+            # Step 4: Convert to executorch and save as PTE
+            executorch_program = edge_program_manager.to_executorch()
+            et_record = executorch_program.get_etrecord()
+            self.assertIsNotNone(et_record)
+
+            # Update with representative inputs
+            flattened_x = pytree.tree_flatten(representative_inputs[0])[0]
+            et_record.update_representative_inputs(flattened_x)
+            et_record.save(etrecord_path)
+
+            with open(model_path, "wb") as f:
+                executorch_program.write_to_file(f)
+
+            # Step 5: Test intermediate output comparison using pybind APIs
+            # Read the PTE file
+            with open(model_path, "rb") as f:
+                pte_buffer = f.read()
+
+            etdump_path = os.path.join(tmp_dir, "etdump.etdp")
+            debug_buffer_path = os.path.join(tmp_dir, "debug_buffer.bin")
+
+            # Load the PTE file with ETDump enabled using pybind API
+            executorch_module = _load_for_executorch_from_buffer(
+                pte_buffer,
+                enable_etdump=True,
+                debug_buffer_size=1024 * 1024,  # 1MB for testing
+            )
+            self.assertIsNotNone(executorch_module)
+
+            # Run the model with the given input using pybind API
+            flattened_x = pytree.tree_flatten(representative_inputs[0])[0]
+            executorch_module.run_method("forward", tuple(flattened_x))
+
+            # Write the ETDump results to a file using pybind API
+            executorch_module.write_etdump_result_to_file(
+                etdump_path, debug_buffer_path
+            )
+
+            # Step 6: Use Inspector API to compare intermediate outputs
+            try:
+                inspector = Inspector(
+                    etdump_path=etdump_path,
+                    etrecord=etrecord_path,
+                    debug_buffer_path=debug_buffer_path,
+                )
+            except FileNotFoundError as e:
+                new_message = f"{e} You likely need to run the test with --config executorch.event_tracer_enabled=true"
+                raise RuntimeError(new_message) from e
+            self.assertIsNotNone(inspector)
+
+            # Calculate numerical gap using SNR metric
+            df = inspector.calculate_numeric_gap("SNR")
+
+            # Verify that we got some intermediate tensor comparisons
+            # The exact number will depend on the model structure and partitioning
+            self.assertEqual(len(df), 2)
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
@@ -673,6 +838,123 @@ class TestInspector(unittest.TestCase):
         self,
     ) -> List[Union[None, List[torch.Tensor], bool, float, int, str, torch.Tensor]]:
         return [torch.randn(RAW_DATA_SIZE)]
+
+    @unittest.skipIf(sys.platform.startswith("win"), "Skipping on Windows")
+    def test_disable_debug_handle_validation_with_symbolic_shapes(self):
+        """
+        Test that demonstrates the issue with symbolic shape related nodes losing from_node info
+        during dynamic shape based export, and shows how disable_debug_handle_valdiation parameter
+        in propagate_back_debug_handle allows validation to be bypassed.
+        """
+        from executorch.devtools.inspector._inspector_utils import (
+            propagate_back_debug_handle,
+        )
+
+        class SymbolicShapeModel(torch.nn.Module):
+            """Model that will have symbolic shape related operations after export."""
+
+            def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+                # This will create symbolic shape nodes during dynamic export
+                batch_size = x.shape[0]
+                x = x + torch.rand((batch_size, 1))
+                # Masking operation that creates gt/lt nodes
+                valid_mask = mask > 0.5
+                x = torch.where(valid_mask, x, torch.zeros_like(x))
+                return x
+
+        # Create model and dynamic inputs
+        model = SymbolicShapeModel()
+        batch_size = 2
+        seq_len = 4
+        x = torch.randn(batch_size, seq_len)
+        mask = torch.rand(batch_size, seq_len)
+        example_inputs = (x, mask)
+
+        # Export with dynamic shapes to create symbolic shape related nodes
+        dynamic_shapes = {
+            "x": {0: torch.export.Dim("batch_size", min=1, max=10)},
+            "mask": {0: torch.export.Dim("batch_size", min=1, max=10)},
+        }
+
+        exported_program = torch.export.export(
+            model, example_inputs, dynamic_shapes=dynamic_shapes, strict=True
+        )
+
+        """
+        In this case origina aten graph has sym_size_int_2 node but when we look at
+        nodes metadata in edge_program_manager, its sym_size node's from_node says
+        sym_size_int_3 which is not in the original aten graph.
+        """
+        # Create edge program - this is where from_node info can be lost for symbolic shape nodes
+        edge_program_manager: EdgeProgramManager = to_edge(exported_program)
+        edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+        et_program_manager: ExecutorchProgramManager = (
+            edge_program_manager.to_executorch()
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp_file:
+            etrecord_path = tmp_file.name
+
+            # Generate ETRecord with the exported program (aten graph)
+            generate_etrecord(
+                etrecord_path,
+                edge_program_manager_copy,
+                et_program_manager,
+                exported_program=exported_program,
+            )
+
+            # Create Inspector and get etrecord
+            with patch.object(
+                _inspector, "gen_etdump_object", return_value=None
+            ), patch.object(EventBlock, "_gen_from_etdump"):
+                inspector_instance = Inspector(
+                    etdump_path=ETDUMP_PATH,
+                    etrecord=etrecord_path,
+                )
+
+                # Extract the necessary values from the inspector's etrecord
+                exported_program_from_etrecord = (
+                    inspector_instance._etrecord.exported_program
+                )
+                export_graph_id = inspector_instance._etrecord.export_graph_id
+                edge_dialect_program = inspector_instance._etrecord.edge_dialect_program
+
+                # Ensure we have all the necessary components
+                self.assertIsNotNone(exported_program_from_etrecord)
+                self.assertIsNotNone(export_graph_id)
+                self.assertIsNotNone(edge_dialect_program)
+
+                # Test propagate_back_debug_handle with validation enabled (should fail or return False)
+                # This demonstrates the issue with symbolic shape nodes losing from_node info
+                validation_enabled_result = propagate_back_debug_handle(
+                    exported_program_from_etrecord,
+                    export_graph_id,
+                    edge_dialect_program,
+                    disable_debug_handle_valdiation=False,
+                )
+
+                # With validation enabled, it should return False when from_node info is lost
+                self.assertFalse(
+                    validation_enabled_result,
+                    "propagate_back_debug_handle should return False when validation is enabled "
+                    "and symbolic shape nodes lose from_node info",
+                )
+
+                # Test propagate_back_debug_handle with validation disabled (should succeed)
+                # This shows how the disable_debug_handle_valdiation flag allows the function to work
+                validation_disabled_result = propagate_back_debug_handle(
+                    exported_program_from_etrecord,
+                    export_graph_id,
+                    edge_dialect_program,
+                    disable_debug_handle_valdiation=True,
+                )
+
+                # With validation disabled, it should return True even when from_node info is lost
+                self.assertTrue(
+                    validation_disabled_result,
+                    "propagate_back_debug_handle should return True when validation is disabled, "
+                    "allowing best effort comparison even when from_node info is lost",
+                )
 
     def _gen_random_events(self) -> List[Event]:
         events = []

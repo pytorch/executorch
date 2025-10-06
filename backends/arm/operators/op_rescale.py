@@ -7,7 +7,6 @@
 
 from typing import Any, cast, List
 
-import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
 import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -16,73 +15,16 @@ from executorch.backends.arm.operators.node_visitor import (
 from executorch.backends.arm.operators.operator_validation_utils import (
     validate_num_inputs,
 )
-from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale
 
-from executorch.backends.arm.tosa_specification import TosaSpecification
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.arm.tosa.mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa.quant_utils import build_rescale
 from torch.fx import Node
 
 
 @register_node_visitor
-class RescaleVisitor_0_80(NodeVisitor):
-    target = "_rescale.default"
-
-    tosa_specs = NodeVisitor.tosa_specs_0_80
-
-    def define_node(
-        self,
-        node: Node,
-        tosa_graph: Any,
-        inputs: List[TosaArg],
-        output: TosaArg,
-    ) -> None:
-        import tosa_tools.v0_80.serializer.tosa_serializer as ts  # type: ignore
-
-        validate_num_inputs(self.target, inputs, 5)
-
-        input_dtype = node.all_input_nodes[0].meta["val"].dtype
-        output_dtype = cast(torch.dtype, node.args[1])
-        scale = cast(float, node.args[2])
-        input_zp = cast(int, node.args[3])
-        output_zp = cast(int, node.args[4])
-
-        if input_dtype != torch.int8 and input_zp != 0:
-            raise ValueError(
-                f"If input dtype is not int8, input_zp must be 0. Got input_dtype{input_dtype=}, {input_zp=}"
-            )
-        if output_dtype != torch.int8 and output_zp != 0:
-            raise ValueError(
-                f"If output dtype is not int8, output_zp must be 0. Got {output_dtype=}, {output_zp=}"
-            )
-
-        # scale32 gives higher accuracy but for a higher HW cost.
-        # For now, always go for scale32.
-        scale_32 = True
-        scale_width = 32 if scale_32 else 16
-        multiplier, shift = tosa_quant_utils.compute_multiplier_and_shift(
-            [scale], scale_width
-        )
-        attr_rescale = ts.TosaSerializerAttribute()
-        attr_rescale.RescaleAttribute(
-            input_zp=input_zp,
-            output_zp=output_zp,
-            multiplier=multiplier,
-            shift=shift,
-            scale32=scale_32,
-            double_round=False,
-            per_channel=False,
-            input_unsigned=False,
-            output_unsigned=False,
-        )
-
-        tosa_graph.addOperator(
-            ts.TosaOp.Op().RESCALE, [inputs[0].name], [output.name], attr_rescale
-        )
-
-
-@register_node_visitor
-class RescaleVisitor_INT(NodeVisitor):
-    target = "_rescale.default"
+class RescaleVisitor(NodeVisitor):
+    target = "tosa.RESCALE.default"
 
     tosa_specs = [TosaSpecification.create_from_string("TOSA-1.0+INT")]
 
@@ -104,13 +46,20 @@ class RescaleVisitor_INT(NodeVisitor):
         input_zp = cast(int, node.args[3])
         output_zp = cast(int, node.args[4])
 
-        if input_dtype != map_dtype(torch.int8, self.tosa_spec) and input_zp != 0:
+        if (
+            input_dtype
+            not in [
+                map_dtype(torch.int8, self.tosa_spec),
+                map_dtype(torch.int16, self.tosa_spec),
+            ]
+            and input_zp != 0
+        ):
             raise ValueError(
-                f"If input dtype is not int8, input_zp must be 0. Got input_dtype{input_dtype=}, {input_zp=}"
+                f"If input dtype is not int8 or int16, input_zp must be 0. Got input_dtype{input_dtype=}, {input_zp=}"
             )
-        if output_dtype != torch.int8 and output_zp != 0:
+        if output_dtype not in [torch.int8, torch.int16] and output_zp != 0:
             raise ValueError(
-                f"If output dtype is not int8, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
+                f"If output dtype is not int8 or int16, output_zp must be 0. Got {ts.DTypeNames[output_dtype]}, {output_zp=}"
             )
 
         build_rescale(

@@ -75,6 +75,8 @@ class InputsTest : public ::testing::Test {
 TEST_F(InputsTest, Smoke) {
   Result<BufferCleanup> input_buffers = prepare_input_tensors(*method_);
   ASSERT_EQ(input_buffers.error(), Error::Ok);
+  auto input_err = method_->set_input(executorch::runtime::EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
 
   // We can't look at the input tensors, but we can check that the outputs make
   // sense after executing the method.

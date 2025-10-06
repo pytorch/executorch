@@ -50,6 +50,21 @@ struct GraphConfig final {
   // by taking more advantage of parallelism between the CPU and GPU.
   size_t prepack_initial_threshold_nbytes = 0;
 
+  // During execute, once this node count is reached, submit the current
+  // command buffer for execution. This allows the work to be distributed over
+  // multiple command buffer submissions, which can improve execution
+  // performance.
+  size_t execute_threshold_node_count = 0;
+  // Execute node count used for the first command buffer submission during
+  // execute. This can be set to be lower than execute_threshold_nbytes to
+  // submit a command buffer for execution earlier which can improve performance
+  // by taking more advantage of parallelism between the CPU and GPU.
+  size_t execute_initial_threshold_node_count = 0;
+
+  // If this number is greater than 0 then, during execute create at most this
+  // many command buffers.
+  size_t execute_max_cmds = 0;
+
   vkapi::Adapter* external_adapter;
 
   // Generate a default graph config with pre-configured settings

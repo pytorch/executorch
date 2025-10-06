@@ -8,6 +8,7 @@ from executorch.exir.dialects.edge.spec.utils import SAMPLE_INPUT
 CUSTOM_EDGE_OPS = [
     "linspace.default",
     "eye.default",
+    "expm1.default",
     "vector_norm.default",
     "hardsigmoid.default",
     "hardswish.default",
@@ -18,15 +19,18 @@ CUSTOM_EDGE_OPS = [
     "bitwise_right_shift.Tensor",
     "bitwise_left_shift.Tensor",
     "native_group_norm.default",
+    "silu.default",
+    "sdpa.default",
     "unbind.int",
     "unflatten.int",
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
+    "alias_copy.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
 # Add all targets and TOSA profiles we support here.
-TARGETS = ["tosa_MI", "tosa_BI", "u55_BI", "u85_BI", "vgf_INT", "vgf_FP"]
+TARGETS = ["tosa_FP", "tosa_INT", "u55_INT", "u85_INT", "vgf_INT", "vgf_FP"]
 
 
 def get_op_name_map():
@@ -68,8 +72,8 @@ def parse_test_name(
     where OP must match a key in op_name_map and TARGET one string in TARGETS. The
     "not_delegated" suffix indicates that the test tests that the op is not delegated.
 
-    Examples of valid names: "test_mm_u55_BI_not_delegated" and
-    "test_add_scalar_tosa_MI_two_inputs".
+    Examples of valid names: "test_mm_u55_INT_not_delegated" and
+    "test_add_scalar_tosa_FP_two_inputs".
 
     Returns a tuple (OP, TARGET, IS_DELEGATED) if valid.
     """
@@ -90,6 +94,9 @@ def parse_test_name(
     # Special case for convolution
     op = op.removesuffix("_1d")
     op = op.removesuffix("_2d")
+
+    # Remove suffix for 16 bit activation and 8 bit weight test cases
+    op = op.removesuffix("_16a8w")
 
     assert target != "None", f"{test_name} does not contain one of {TARGETS}"
     assert (

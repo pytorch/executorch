@@ -7,17 +7,13 @@
 # pyre-unsafe
 
 import os
+import sys
 import unittest
 
 from enum import Enum
-from typing import Callable
 
+import pytest
 import torch
-from executorch.backends.test.suite import get_test_flows
-from executorch.backends.test.suite.context import get_active_test_context, TestContext
-from executorch.backends.test.suite.flow import TestFlow
-from executorch.backends.test.suite.reporting import log_test_summary
-from executorch.backends.test.suite.runner import run_test
 
 
 def load_tests(loader, suite, pattern):
@@ -65,95 +61,46 @@ def dtype_test(func):
     return func
 
 
-# Class annotation for operator tests. This triggers the test framework to register
-# the tests.
-def operator_test(cls):
-    _create_tests(cls)
-    return cls
-
-
-# Generate test cases for each backend flow.
-def _create_tests(cls):
-    for key in dir(cls):
-        if key.startswith("test_"):
-            _expand_test(cls, key)
-
-
-# Expand a test into variants for each registered flow.
-def _expand_test(cls, test_name: str):
-    test_func = getattr(cls, test_name)
-    for flow in get_test_flows().values():
-        _create_test_for_backend(cls, test_func, flow)
-    delattr(cls, test_name)
-
-
-def _make_wrapped_test(
-    test_func: Callable,
-    test_name: str,
-    flow: TestFlow,
-    params: dict | None = None,
-):
-    def wrapped_test(self):
-        with TestContext(test_name, flow.name, params):
-            test_kwargs = params or {}
-            test_kwargs["flow"] = flow
-
-            test_func(self, **test_kwargs)
-
-    wrapped_test._name = test_name
-    wrapped_test._flow = flow
-
-    return wrapped_test
-
-
-def _create_test_for_backend(
-    cls,
-    test_func: Callable,
-    flow: TestFlow,
-):
-    test_type = getattr(test_func, "test_type", TestType.STANDARD)
-
-    if test_type == TestType.STANDARD:
-        wrapped_test = _make_wrapped_test(test_func, test_func.__name__, flow)
-        test_name = f"{test_func.__name__}_{flow.name}"
-        setattr(cls, test_name, wrapped_test)
-    elif test_type == TestType.DTYPE:
-        for dtype in DTYPES:
-            wrapped_test = _make_wrapped_test(
-                test_func,
-                test_func.__name__,
-                flow,
-                {"dtype": dtype},
-            )
-            dtype_name = str(dtype)[6:]  # strip "torch."
-            test_name = f"{test_func.__name__}_{dtype_name}_{flow.name}"
-            setattr(cls, test_name, wrapped_test)
-    else:
-        raise NotImplementedError(f"Unknown test type {test_type}.")
-
-
 class OperatorTest(unittest.TestCase):
-    def _test_op(self, model, inputs, flow: TestFlow):
-        context = get_active_test_context()
+    pass
 
-        # This should be set in the wrapped test. See _make_wrapped_test above.
-        assert context is not None, "Missing test context."
 
-        run_summary = run_test(
-            model,
-            inputs,
-            flow,
-            context.test_name,
-            context.params,
-        )
+class TestCaseShim:
+    def __init__(self, test_runner):
+        self._test_runner = test_runner
 
-        log_test_summary(run_summary)
+    def _test_op(self, model, args, flow, generate_random_test_inputs=True):
+        self._test_runner.lower_and_run_model(model, args)
 
-        if not run_summary.result.is_success():
-            if run_summary.result.is_backend_failure():
-                raise RuntimeError("Test failure.") from run_summary.error
-            else:
-                # Non-backend failure indicates a bad test. Mark as skipped.
-                raise unittest.SkipTest(
-                    f"Test failed for reasons other than backend failure. Error: {run_summary.error}"
-                )
+
+def wrap_test(original_func, test_type):
+    if test_type == TestType.STANDARD:
+
+        def wrapped_func(test_runner):
+            shim = TestCaseShim(test_runner)
+            original_func(shim, test_runner._flow)
+
+        return wrapped_func
+    elif test_type == TestType.DTYPE:
+
+        @pytest.mark.parametrize("dtype", [torch.float32], ids=lambda s: str(s)[6:])
+        def wrapped_func(test_runner, dtype):
+            shim = TestCaseShim(test_runner)
+            original_func(shim, test_runner._flow, dtype)
+
+        return wrapped_func
+    else:
+        raise ValueError()
+
+
+def operator_test(cls):
+    parent_module = sys.modules[cls.__module__]
+
+    for func_name in dir(cls):
+        if func_name.startswith("test"):
+            original_func = getattr(cls, func_name)
+            test_type = getattr(original_func, "test_type", TestType.STANDARD)
+            wrapped_func = wrap_test(original_func, test_type)
+            setattr(parent_module, func_name, wrapped_func)
+
+    return None

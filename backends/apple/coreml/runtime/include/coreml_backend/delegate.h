@@ -48,7 +48,7 @@ public:
     /// @retval On success, `Error::Ok` otherwise any other `Error` case.
     executorch::runtime::Error execute(executorch::runtime::BackendExecutionContext& context,
                                        executorch::runtime::DelegateHandle* handle,
-                                       executorch::runtime::EValue** args) const override;
+                                       executorch::runtime::Span<executorch::runtime::EValue*> args) const override;
 
     /// Returns `true` if the delegate is available otherwise `false`.
     bool is_available() const override;

@@ -18,6 +18,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir/backend:partitioner",
+        ":group_partitioner_lib",
     ],
 )
 

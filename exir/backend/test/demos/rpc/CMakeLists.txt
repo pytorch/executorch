@@ -36,7 +36,7 @@ target_include_directories(
 )
 install(
   TARGETS executor_backend
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

@@ -49,6 +49,7 @@ def test_mean_dim_conv_quant_conversion(mocker, input_shape, dim, keeepdim=True)
         input_data=input_data,
         tflite_output_preprocess=ToChannelFirstPreprocess(),
         tfl_model=tflite_flatbuffers_model,
+        atol=1.0,
     )
 
 

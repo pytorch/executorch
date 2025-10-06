@@ -21,9 +21,8 @@ from executorch.examples.apple.coreml.llama.utils import (
 
 from executorch.exir import to_edge_transform_and_lower
 from executorch.exir.backend.utils import format_delegated_graph
-from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.extension.export_util.utils import save_pte_program
 
@@ -203,10 +202,6 @@ def main() -> None:
     edge_manager = to_edge_transform_and_lower(
         ep,
         partitioner=[partitioner],
-        compile_config=EdgeCompileConfig(
-            # TODO: fix lowering when dim_order is enabled
-            _skip_dim_order=True,
-        ),
     )
 
     print("Delegated program")
@@ -215,9 +210,7 @@ def main() -> None:
     executorch_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
             extract_delegate_segments=True,
-            passes=[
-                QuantFusionPass(),
-            ],
+            do_quant_fusion_and_const_prop=True,
             memory_planning_pass=MemoryPlanningPass(alloc_graph_input=False),
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         )

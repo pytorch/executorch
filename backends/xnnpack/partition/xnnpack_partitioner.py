@@ -4,8 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import inspect
 import itertools
-
 import logging
 from typing import List, Optional, Type, Union
 
@@ -64,6 +64,37 @@ class XnnpackPartitioner(ConfigerationBasedPartitioner):
         # subsequent matches that overlap with the first match are not partitioned
         self.per_op_mode = per_op_mode
         super().__init__(delegation_spec, initialized_configs)
+
+    def _check_if_called_from_to_backend(self) -> bool:
+        """
+        Check if the partition method is being called from the deprecated to_backend workflow.
+        Returns True if called from deprecated direct to_backend, False if called from to_edge_transform_and_lower.
+        """
+        stack = inspect.stack()
+
+        for frame_info in stack:
+            if frame_info.function == "to_edge_transform_and_lower":
+                return False
+
+        for frame_info in stack:
+            if frame_info.function == "to_backend":
+                filename = frame_info.filename
+                if "program/_program.py" in filename:
+                    return True
+        return False
+
+    def partition(self, exported_program):
+        """
+        Override partition to add deprecation warning when called from to_backend.
+        """
+        # Check if we're being called from the deprecated to_backend workflow
+        if self._check_if_called_from_to_backend():
+            logger.warning(
+                "\nDEPRECATION WARNING: You are using the deprecated 'to_edge() + to_backend()' workflow. "
+                "Please consider migrating to 'to_edge_transform_and_lower()' for better error handling and optimization. "
+            )
+
+        return super().partition(exported_program)
 
     def generate_partitions(self, ep: ExportedProgram) -> List[Partition]:
         """

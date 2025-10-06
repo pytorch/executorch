@@ -84,5 +84,6 @@ install(
   TARGETS cpublas optimized_kernels optimized_ops_lib eigen_blas
   EXPORT ExecuTorchTargets
   DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/optimized/
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/optimized/
 )

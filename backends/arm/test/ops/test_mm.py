@@ -10,10 +10,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU55PipelineBI,
-    EthosU85PipelineBI,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    EthosU55PipelineINT,
+    EthosU85PipelineINT,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 test_t = tuple[torch.Tensor, torch.Tensor]
@@ -35,34 +36,54 @@ class MM(torch.nn.Module):
 
 
 @common.parametrize("test_data", MM.test_data_generators)
-def test_mm_tosa_MI(test_data: Tuple):
-    TosaPipelineMI[test_t](MM(), test_data(), MM.aten_op).run()
+def test_mm_tosa_FP(test_data: Tuple):
+    TosaPipelineFP[test_t](MM(), test_data(), MM.aten_op).run()
 
 
 @common.parametrize("test_data", MM.test_data_generators)
-def test_mm_tosa_BI(test_data: Tuple):
-    TosaPipelineBI[test_t](MM(), test_data(), MM.aten_op, MM.exir_op, qtol=1).run()
+def test_mm_tosa_INT(test_data: Tuple):
+    TosaPipelineINT[test_t](MM(), test_data(), MM.aten_op, MM.exir_op, qtol=1).run()
 
 
 @common.parametrize("test_data", MM.test_data_generators)
 @common.XfailIfNoCorstone300
 @pytest.mark.flaky  # Investigate flakiness (MLETORCH-870)
-def test_mm_u55_BI(test_data: Tuple):
-    EthosU55PipelineBI[test_t](
+def test_mm_u55_INT(test_data: Tuple):
+    EthosU55PipelineINT[test_t](
         MM(),
         test_data(),
         MM.aten_op,
-        run_on_fvp=True,
     ).run()
 
 
 @common.parametrize("test_data", MM.test_data_generators)
 @common.XfailIfNoCorstone320
-def test_mm_u85_BI(test_data: Tuple):
-    EthosU85PipelineBI[test_t](
+def test_mm_u85_INT(test_data: Tuple):
+    EthosU85PipelineINT[test_t](
         MM(),
         test_data(),
         MM.aten_op,
         MM.exir_op,
-        run_on_fvp=True,
     ).run()
+
+
+@common.parametrize("test_data", MM.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_mm_vgf_FP(test_data: Tuple):
+    pipeline = VgfPipeline[test_t](
+        MM(), test_data(), MM.aten_op, MM.exir_op, tosa_version="TOSA-1.0+FP"
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", MM.test_data_generators)
+@common.SkipIfNoModelConverter
+def test_mm_vgf_INT(test_data: Tuple):
+    pipeline = VgfPipeline[test_t](
+        MM(),
+        test_data(),
+        MM.aten_op,
+        MM.exir_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()

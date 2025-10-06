@@ -15,24 +15,25 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
-
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
 from executorch.extension.export_util import save_pte_program
-
 from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
+from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -84,7 +85,7 @@ def get_model_and_inputs_from_name(model_name: str):
         logging.warning(
             "Using a model from examples/models not all of these are currently supported"
         )
-        model, example_inputs, _ = EagerModelFactory.create_model(
+        model, example_inputs, _, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
     else:
@@ -97,6 +98,7 @@ def get_model_and_inputs_from_name(model_name: str):
 
 models = {
     "cifar10": CifarNet,
+    "mobilenetv2": MobilenetV2,
 }
 
 
@@ -161,9 +163,9 @@ if __name__ == "__main__":  # noqa C901
         "-c",
         "--neutron_converter_flavor",
         required=False,
-        default="SDK_25_03",
+        default="SDK_25_09",
         help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_24_12' has flavor 'SDK_24_12'.",
+        "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.",
     )
     parser.add_argument(
         "-q",
@@ -192,6 +194,15 @@ if __name__ == "__main__":  # noqa C901
         help="Test the selected model and print the accuracy between 0 and 1.",
     )
     parser.add_argument(
+        "-r",
+        "--remove-quant-io-ops",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Remove I/O De/Quantize nodes. Model will start to accept quantized "
+        "inputs and produce quantized outputs.",
+    )
+    parser.add_argument(
         "--operators_not_to_delegate",
         required=False,
         default=[],
@@ -212,13 +223,11 @@ if __name__ == "__main__":  # noqa C901
     model = model.eval()
 
     # 2. Export the model to ATEN
-    exported_program = torch.export.export_for_training(
-        model, example_inputs, strict=True
-    )
+    exported_program = torch.export.export(model, example_inputs, strict=True)
 
     module = exported_program.module()
 
-    # 4. Quantize if required
+    # 3. Quantize if required
     if args.quantize:
         if calibration_inputs is None:
             logging.warning(
@@ -244,31 +253,30 @@ if __name__ == "__main__":  # noqa C901
         quantized_str = "quantized " if args.quantize else ""
         print(f"\nAccuracy of the {quantized_str}`{args.model_name}`: {accuracy}\n")
 
-    # 5. Export to edge program
-    partitioner_list = []
-    if args.delegate is True:
-        partitioner_list = [
-            NeutronPartitioner(
-                generate_neutron_compile_spec(
-                    args.target,
-                    args.neutron_converter_flavor,
-                    operators_not_to_delegate=args.operators_not_to_delegate,
-                )
-            )
-        ]
+    # 4. Transform and lower
 
-    edge_program = to_edge_transform_and_lower(
-        export(module, example_inputs, strict=True),
-        partitioner=partitioner_list,
-        compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-        ),
+    compile_spec = generate_neutron_compile_spec(
+        args.target,
+        operators_not_to_delegate=args.operators_not_to_delegate,
+        neutron_converter_flavor=args.neutron_converter_flavor,
     )
-    logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
+    partitioners = [NeutronPartitioner(compile_spec)] if args.delegate else []
 
-    # 6. Export to ExecuTorch program
+    edge_program_manager = to_edge_transform_and_lower(
+        export(module, example_inputs, strict=True),
+        partitioner=partitioners,
+        compile_config=EdgeCompileConfig(),
+    )
+
+    edge_program_manager = NeutronEdgePassManager(
+        remove_io_quant_ops=args.remove_quant_io_ops
+    )(edge_program_manager)
+
+    logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
+
+    # 5. Export to ExecuTorch program
     try:
-        exec_prog = edge_program.to_executorch(
+        exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
@@ -288,7 +296,7 @@ if __name__ == "__main__":  # noqa C901
 
     logging.debug(f"Executorch program:\n{executorch_program_to_str(exec_prog)}")
 
-    # 7. Serialize to *.pte
+    # 6. Serialize to *.pte
     model_name = f"{args.model_name}" + (
         "_nxp_delegate" if args.delegate is True else ""
     )

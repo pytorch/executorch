@@ -412,10 +412,10 @@ Tensor& convolution_out(
   // @lint-ignore CLANGTIDY facebook-hte-CArray
   static constexpr const char name[] = "convolution.out";
 
-  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
     const auto load_bias = bias.has_value()
         ? utils::internal::get_load_to_compute_fn<CTYPE, name>(
-              bias.value(), utils::SupportedTensorDtypes::REALHBF16)
+              ctx, bias.value(), utils::SupportedTensorDtypes::REALHBF16)
         : nullptr;
     convolution_wrapper<CTYPE>(
         in,

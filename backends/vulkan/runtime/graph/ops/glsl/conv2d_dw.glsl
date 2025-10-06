@@ -30,6 +30,8 @@ ${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+${layout_declare_spec_const(C, "int", "ngroups", "1")}
+
 /*
  * Computes a depthwise convolution. Each shader invocation calculates the
  * output at a single output location.
@@ -52,7 +54,7 @@ void main() {
   // Compute the start and end of the input indices to load. Padding is assumed
   // to be constant 0 padding, so reads from the padding region are skipped.
   const ivec2 start = ipos;
-  const ivec2 end = ipos + overlay_region.xy;
+  const ivec2 end = min(ipos + overlay_region.xy, in_sizes.xy);
 
   VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   int kx = 0;

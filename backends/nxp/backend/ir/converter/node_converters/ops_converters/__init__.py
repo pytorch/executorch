@@ -13,6 +13,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.avg_pool_2d_converter import (
     AvgPool2dConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.cat_converter import (
+    CatConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.clone_converter import (
     CloneConverter,
 )
@@ -38,7 +41,8 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
     PermuteCopyConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_dequantize_converter import (
-    QDQDequantizeConverter,
+    QDQPerChannelDequantizeConverter,
+    QDQPerTensorDequantizeConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.qdq_quantize_converter import (
     QDQQuantizeConverter,
@@ -46,8 +50,17 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.relu_converter import (
     ReLUConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sigmoid_converter import (
+    SigmoidConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.softmax_converter import (
     SoftmaxConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.sub_tensor_converter import (
+    SubTensorConverter,
+)
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.tanh_converter import (
+    TanhConverter,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.view_copy_converter import (
     ViewCopyConverter,
@@ -55,12 +68,14 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 
 __all__ = [
     "AddMMConverter",
+    "CatConverter",
     "ConvolutionConverter",
     "MMConverter",
     "PermuteCopyConverter",
     "SoftmaxConverter",
     "ViewCopyConverter",
-    "QDQDequantizeConverter",
+    "QDQPerTensorDequantizeConverter",
+    "QDQPerChannelDequantizeConverter",
     "QDQQuantizeConverter",
     "ConstantPadNDConverter",
     "ReLUConverter",
@@ -68,8 +83,11 @@ __all__ = [
     "MaxPool2dConverter",
     "AvgPool2dConverter",
     "AddTensorConverter",
+    "SubTensorConverter",
     "CloneConverter",
     "AbsConverter",
     "AdaptiveAvgPool2dConverter",
     "HardTanhConverter",
+    "SigmoidConverter",
+    "TanhConverter",
 ]

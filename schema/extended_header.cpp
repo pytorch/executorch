@@ -41,6 +41,15 @@ static constexpr size_t kHeaderSegmentBaseOffsetOffset =
 static constexpr size_t kMinimumHeaderLength =
     kHeaderSegmentBaseOffsetOffset + sizeof(uint64_t);
 
+/// The expected location of the segment_data_size field relative to the
+/// beginning of the header.
+static constexpr size_t kHeaderSegmentDataSizeOffset =
+    kHeaderSegmentBaseOffsetOffset + sizeof(uint64_t);
+
+/// The expected length of the header, including the segment_data_size field.
+static constexpr size_t kHeaderLengthWithSegmentDataSize =
+    kHeaderSegmentDataSizeOffset + sizeof(uint64_t);
+
 /// Interprets the 4 bytes at `data` as a little-endian uint32_t.
 uint32_t GetUInt32LE(const uint8_t* data) {
   return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
@@ -83,16 +92,19 @@ uint64_t GetUInt64LE(const uint8_t* data) {
     return Error::InvalidProgram;
   }
 
+  uint64_t segment_data_size = 0;
+  if (header_length >= kHeaderLengthWithSegmentDataSize) {
+    segment_data_size = GetUInt64LE(header + kHeaderSegmentDataSizeOffset);
+  }
+
   // The header is present and apparently valid.
   return ExtendedHeader{
       /*program_size=*/GetUInt64LE(header + kHeaderProgramSizeOffset),
       /*segment_base_offset=*/
       GetUInt64LE(header + kHeaderSegmentBaseOffsetOffset),
+      /*segment_data_size=*/segment_data_size,
   };
 }
-
-// Define storage for the static.
-constexpr char ExtendedHeader::kMagic[kMagicSize];
 
 } // namespace runtime
 } // namespace executorch

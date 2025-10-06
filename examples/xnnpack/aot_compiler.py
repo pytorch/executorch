@@ -9,12 +9,10 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
-import copy
 import logging
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
@@ -60,7 +58,16 @@ if __name__ == "__main__":
         "-r",
         "--etrecord",
         required=False,
+        default="",
         help="Generate and save an ETRecord to the given file location",
+    )
+    parser.add_argument(
+        "-t",
+        "--test_after_export",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Test the pte with pybindings",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
 
@@ -87,14 +94,14 @@ if __name__ == "__main__":
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    ep = torch.export.export_for_training(model, example_inputs, strict=True)
+    ep = torch.export.export(model, example_inputs, strict=False)
     model = ep.module()
 
     if args.quantize:
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
         model = quantize(model, example_inputs, quant_type)
-        ep = torch.export.export_for_training(model, example_inputs, strict=True)
+        ep = torch.export.export(model, example_inputs, strict=False)
 
     edge = to_edge_transform_and_lower(
         ep,
@@ -103,20 +110,39 @@ if __name__ == "__main__":
             _check_ir_validity=False if args.quantize else True,
             _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
+        generate_etrecord=args.etrecord,
     )
     logging.info(f"Exported and lowered graph:\n{edge.exported_program().graph}")
-
-    # this is needed for the ETRecord as lowering modifies the graph in-place
-    edge_copy = copy.deepcopy(edge)
 
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
-    if args.etrecord is not None:
-        generate_etrecord(args.etrecord, edge_copy, exec_prog)
+    if args.etrecord:
+        exec_prog.get_etrecord().save(args.etrecord)
         logging.info(f"Saved ETRecord to {args.etrecord}")
 
     quant_tag = "q8" if args.quantize else "fp32"
     model_name = f"{args.model_name}_xnnpack_{quant_tag}"
     save_pte_program(exec_prog, model_name, args.output_dir)
+
+    if args.test_after_export:
+        logging.info("Testing the pte with pybind")
+        from executorch.extension.pybindings.portable_lib import (
+            _load_for_executorch_from_buffer,
+        )
+
+        # Import custom ops. This requires portable_lib to be loaded first.
+        from executorch.extension.llm.custom_ops import (  # noqa: F401, F403
+            custom_ops,
+        )  # usort: skip
+
+        # Import quantized ops. This requires portable_lib to be loaded first.
+        from executorch.kernels import quantized  # usort: skip # noqa: F401, F403
+        from torch.utils._pytree import tree_flatten
+
+        m = _load_for_executorch_from_buffer(exec_prog.buffer)
+        logging.info("Successfully loaded the model")
+        flattened = tree_flatten(example_inputs)[0]
+        res = m.run_method("forward", flattened)
+        logging.info("Successfully ran the model")

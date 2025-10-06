@@ -1,0 +1,12 @@
+{
+  "name": "wasm-test",
+  "private": true,
+  "scripts": {
+    "build": "bash xplat_build.sh",
+    "test": "jest --verbose",
+    "clean": "rm -rf __tests__ node_modules test_models/*.pte"
+  },
+  "devDependencies": {
+    "jest": "^30.1.3"
+  }
+}

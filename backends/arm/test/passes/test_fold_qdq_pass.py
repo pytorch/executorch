@@ -24,7 +24,7 @@ class SimpleQuantizeModel(torch.nn.Module):
 
 
 @common.parametrize("test_data", SimpleQuantizeModel.test_data)
-def test_fold_qdq_pass_tosa_BI(test_data: input_t):
+def test_fold_qdq_pass_tosa_INT(test_data: input_t):
     """
     Tests the FoldAndAnnotateQParamsPass which folds dq/q nodes into
     the node and stores the quantization parameters in meta.

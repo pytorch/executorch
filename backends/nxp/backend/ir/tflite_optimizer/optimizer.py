@@ -1,6 +1,6 @@
 #
 # Copyright 2023 Martin Pavella
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # License: MIT
 # See the LICENSE_MIT for more details.
@@ -11,23 +11,8 @@ from typing import Callable
 
 from executorch.backends.nxp.backend.ir import logger
 from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.combine_hard_sigmoid_and_mul_to_hard_swish import (
-    CombineHardSigmoidAndMulIntoHardSwish,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.eliminate_dead_branches import (
-    EliminateDeadBranches,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_activation_functions import (
     FuseActivationFunctions,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_fully_connected_and_add_operators import (
-    FuseFullyConnectedAndAddOperators,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.fuse_quanitze_into_preceding_ops import (
-    FuseQuantizeIntoPrecedingOps,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.keep_one_empty_buffer import (
-    KeepOneEmptyBuffer,
 )
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu_before_concat import (
     MoveActivationBeforeConcatenation,
@@ -35,51 +20,21 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.move_relu
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.permute_fully_connected_weights_after_reshape import (
     PermuteFullyConnectedWeightsAfterReshape,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_cast_operators import (
-    FuseCastOperators,
-    RemoveCastOperatorsWithNoEffect,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_quantize_operators import (
-    FuseParallelQuantizeOperators,
-    PruneQuantizeOperators,
-)
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_reshape_operators import (
-    FuseReshapeOperators,
-    RemoveReshapeOperatorsWithNoEffect,
-)
 from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_transpose_operators import (
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
 )
-from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.remove_unused_tensors_and_buffers import (
-    RemoveUnusedTensorsAndBuffers,
-)
 
 
 class Optimization(Enum):
-    KEEP_ONE_EMPTY_BUFFER = 0
     FUSE_ACTIVATION_FUNCTIONS = 1
-    FUSE_FULLY_CONNECTED_AND_ADD = 2
-
-    FUSE_RESHAPE_OPERATORS = 3
-    REMOVE_RESHAPE_OPERATORS_WITH_NO_EFFECT = 4
 
     FUSE_TRANSPOSE_OPERATORS = 5
     REMOVE_IDENTITY_TRANSPOSE_OPERATORS = 6
 
-    PRUNE_QUANTIZE_OPERATORS = 7
-    FUSE_PARALLEL_QUANTIZE_OPERATORS = 8
-    FUSE_QUANTIZE_INTO_PRECEDING_OPS = 9
-
-    REMOVE_UNUSED_TENSORS = 10
-    ELIMINATE_DEAD_BRANCHES = 11
     PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE = 12
 
-    FUSE_CAST_OPERATORS = 13
-    REMOVE_CAST_OPERATORS_WITH_NO_EFFECT = 14
-
     MOVE_ACTIVATION_BEFORE_CONCAT = 15
-    COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH = 16
 
 
 class Optimizer:
@@ -109,19 +64,7 @@ class Optimizer:
         self._builder = builder
 
         self.optimization_map = {
-            Optimization.KEEP_ONE_EMPTY_BUFFER: KeepOneEmptyBuffer(
-                builder, conversion_config
-            ),
             Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_FULLY_CONNECTED_AND_ADD: FuseFullyConnectedAndAddOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_RESHAPE_OPERATORS: FuseReshapeOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_RESHAPE_OPERATORS_WITH_NO_EFFECT: RemoveReshapeOperatorsWithNoEffect(
                 builder, conversion_config
             ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
@@ -130,34 +73,10 @@ class Optimizer:
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
                 builder, conversion_config
             ),
-            Optimization.PRUNE_QUANTIZE_OPERATORS: PruneQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_PARALLEL_QUANTIZE_OPERATORS: FuseParallelQuantizeOperators(
-                builder, conversion_config
-            ),
-            Optimization.FUSE_QUANTIZE_INTO_PRECEDING_OPS: FuseQuantizeIntoPrecedingOps(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_UNUSED_TENSORS: RemoveUnusedTensorsAndBuffers(
-                builder, conversion_config
-            ),
-            Optimization.ELIMINATE_DEAD_BRANCHES: EliminateDeadBranches(
-                builder, conversion_config
-            ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(
                 builder, conversion_config
             ),
-            Optimization.FUSE_CAST_OPERATORS: FuseCastOperators(
-                builder, conversion_config
-            ),
-            Optimization.REMOVE_CAST_OPERATORS_WITH_NO_EFFECT: RemoveCastOperatorsWithNoEffect(
-                builder, conversion_config
-            ),
             Optimization.MOVE_ACTIVATION_BEFORE_CONCAT: MoveActivationBeforeConcatenation(
-                builder, conversion_config
-            ),
-            Optimization.COMBINE_HARD_SIGMOID_AND_MUL_INTO_HARD_SWISH: CombineHardSigmoidAndMulIntoHardSwish(
                 builder, conversion_config
             ),
         }

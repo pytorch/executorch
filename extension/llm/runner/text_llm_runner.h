@@ -24,6 +24,9 @@
 #include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/module/module.h>
 #include <pytorch/tokenizers/tokenizer.h>
+// Helper functions are now in llm_runner_helper.h
+// These are provided for backward compatibility
+#include <executorch/extension/llm/runner/llm_runner_helper.h>
 
 namespace executorch::extension::llm {
 
@@ -43,6 +46,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
    * part of the model
    * @param text_prefiller Component for handling the prefill phase of text
    * generation
+   * @param io_manager Component for handling I/O operations
    * @param text_token_generator Component for generating tokens during the
    * decode phase
    * @param stats Statistics tracking object for performance monitoring
@@ -55,6 +59,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::unique_ptr<::executorch::extension::Module> module,
       std::unique_ptr<TextDecoderRunner> text_decoder_runner,
       std::unique_ptr<TextPrefiller> text_prefiller,
+      std::unique_ptr<IOManager> io_manager,
       std::unique_ptr<TextTokenGenerator> text_token_generator,
       std::unique_ptr<Stats> stats,
       float temperature = -1.0f);
@@ -97,30 +102,6 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
       std::function<void(const Stats&)> stats_callback = {}) override;
 
   /**
-   * @brief Generates text based on the provided prompt and start position
-   *
-   * This method performs text generation using the loaded model. It processes
-   * the input prompt, runs the model in prefill and decode phases using the
-   * start position until max tokens to generate is reached or eos token is
-   * generated, then returns generated text and perf stats through callbacks.
-   *
-   * @param prompt The input text to generate from
-   * @param start_pos The starting position in KV cache of the input
-   * @param config Configuration parameters for text generation (e.g.,
-   * max_new_tokens, temperature)
-   * @param token_callback Function called for each generated token with the
-   * decoded text
-   * @param stats_callback Function called with performance statistics
-   * @return ::executorch::runtime::Error Success or error status
-   */
-  ::executorch::runtime::Error generate_from_pos(
-      const std::string& prompt,
-      int64_t start_pos,
-      const GenerationConfig& config,
-      std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {}) override;
-
-  /**
    * @brief Warms up the model with a sample prompt
    *
    * This method runs a complete generation cycle without returning results,
@@ -133,6 +114,15 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   ::executorch::runtime::Error warmup(
       const std::string& prompt,
       int32_t max_new_tokens);
+
+  /**
+   * @brief Remove prefilled tokens and reset start position, and stats.
+   *
+   * This method removes the prefilled tokens from the KV cache and resets the
+   * start position to 0. It also clears the stats for previous runs.
+   */
+  void reset() override;
+
   /**
    * @brief Stops the ongoing text generation process
    *
@@ -155,6 +145,7 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
                             // sure it outlives text_prefiller_ &
                             // text_token_generator_.
   std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<IOManager> io_manager_;
   std::unique_ptr<TextTokenGenerator> text_token_generator_;
 
   // Stats
@@ -163,47 +154,9 @@ class ET_EXPERIMENTAL TextLLMRunner : public IRunner {
   // temperature.
   // Deprecated, we should rely on the temperature in GenerationConfig instead.
   float temperature_ = -1.0f;
+
+  // The position in KV cache of the input, starting from 0.
+  int64_t pos_ = 0;
 };
-
-/**
- * @brief Loads a tokenizer from the specified path
- *
- * This function creates and initializes a tokenizer from a file, with options
- * to customize special tokens and regex patterns.
- *
- * @param tokenizer_path Path to the tokenizer file
- * @param special_tokens Optional list of special tokens to add to the tokenizer
- * @param pattern Optional regex pattern for tokenization
- * @param bos_token_index Index of the beginning-of-sequence token
- * @param eos_token_index Index of the end-of-sequence token
- * @return std::unique_ptr<tokenizers::Tokenizer> Initialized tokenizer instance
- */
-ET_EXPERIMENTAL std::unique_ptr<tokenizers::Tokenizer> load_tokenizer(
-    const std::string& tokenizer_path,
-    std::unique_ptr<std::vector<std::string>> special_tokens = nullptr,
-    std::optional<std::string> pattern = std::nullopt,
-    size_t bos_token_index = 0,
-    size_t eos_token_index = 1);
-
-/**
- * @brief Creates a TextLLMRunner instance with the specified model and
- * tokenizer
- *
- * This factory function creates and initializes a TextLLMRunner with all
- * necessary components for text generation using the specified model and
- * tokenizer.
- *
- * @param model_path Path to the model file
- * @param tokenizer Initialized tokenizer instance
- * @param data_path Optional path to additional data required by the model
- * @param temperature Optional temperature parameter for controlling randomness
- * (deprecated)
- * @return std::unique_ptr<TextLLMRunner> Initialized TextLLMRunner instance
- */
-ET_EXPERIMENTAL std::unique_ptr<TextLLMRunner> create_text_llm_runner(
-    const std::string& model_path,
-    std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path = std::nullopt,
-    float temperature = -1.0f);
 
 } // namespace executorch::extension::llm

@@ -360,7 +360,12 @@ The operator now should be functional for Qualcomm backends. For operator to wor
 ## Operator Support Status
 Please help update following table if you are contributing new operators:
 
-| Operators | HTP - 82/116 Enabled |
++ &check; = Supported
++ &cross; = Not Supported
++ &#128683; = Deprecated, supported with other QNN Ops
+
+
+| Operators | HTP - 92/116 Enabled |
 |-----------|---------|
 | Argmax | &check; |
 | Argmin | &check; |
@@ -370,7 +375,7 @@ Please help update following table if you are contributing new operators:
 | ChannelShuffle | &cross; |
 | Concat | &check; |
 | Conv2d | &check; |
-| Conv3d | &cross; |
+| Conv3d | &check; |
 | Convert | &check; |
 | CreateSparse | &cross; |
 | CumulativeSum | &check; |
@@ -381,16 +386,16 @@ Please help update following table if you are contributing new operators:
 | ElementWiseAbs | &check; |
 | ElementWiseAdd | &check; |
 | ElementWiseAnd | &check; |
-| ElementWiseAsin | &cross; |
+| ElementWiseAsin | &check; |
 | ElementWiseAtan | &check; |
-| ElementWiseBinary | &cross; |
+| ElementWiseBinary | &check; |
 | ElementWiseCeil | &check; |
 | ElementWiseCos | &check; |
 | ElementWiseDivide | &check; |
 | ElementWiseEqual | &check; |
 | ElementWiseExp | &check; |
 | ElementWiseFloor | &check; |
-| ElementWiseFloorDiv | &cross; |
+| ElementWiseFloorDiv | &check; |
 | ElementWiseGreater | &check; |
 | ElementWiseGreaterEqual | &check; |
 | ElementWiseLess | &check; |
@@ -408,13 +413,13 @@ Please help update following table if you are contributing new operators:
 | ElementWiseRound | &check; |
 | ElementWiseRsqrt | &check; |
 | ElementWiseSelect | &check; |
-| ElementWiseSign | &cross; |
+| ElementWiseSign | &check; |
 | ElementWiseSin | &check; |
 | ElementWiseSquaredDifference | &cross; |
 | ElementWiseSquareRoot | &check; |
 | ElementWiseSubtract | &check; |
 | ElementWiseUnary | &cross; |
-| ElementWiseXor | &cross; |
+| ElementWiseXor | &check; |
 | Elu | &check; |
 | ExpandDims | &check; |
 | ExtractGlimpse | &cross; |
@@ -452,11 +457,11 @@ Please help update following table if you are contributing new operators:
 | ReduceMin | &check; |
 | ReduceSum | &check; |
 | Relu | &check; |
-| Relu1 | &cross; |
-| Relu6 | &cross; |
+| Relu1 | &#128683; |
+| Relu6 | &#128683; |
 | ReluMinMax | &check; |
 | Reshape | &check; |
-| Resize | &cross; |
+| Resize | &check; |
 | ResizeBilinear | &check; |
 | ResizeNearestNeighbor | &check; |
 | RoiAlign | &cross; |
@@ -476,7 +481,7 @@ Please help update following table if you are contributing new operators:
 | TopK | &check; |
 | TransPose | &check; |
 | TransPoseConv2d | &check; |
-| TransPoseConv3d | &cross; |
+| TransPoseConv3d | &check; |
 | Unpack | &check; |
 
 ## Issues

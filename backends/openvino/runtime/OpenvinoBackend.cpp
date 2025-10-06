@@ -93,7 +93,7 @@ exr::Result<exr::DelegateHandle*> OpenvinoBackend::init(
 exr::Error OpenvinoBackend::execute(
     exr::BackendExecutionContext& context,
     exr::DelegateHandle* input_handle,
-    exr::EValue** args) const {
+    exr::Span<exr::EValue*> args) const {
   ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
 
   auto infer_request = execution_handle->infer_request;

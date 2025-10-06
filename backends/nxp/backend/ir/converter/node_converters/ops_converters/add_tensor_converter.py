@@ -1,5 +1,4 @@
-# Copyright (c) 2025 NXP
-# All rights reserved.
+# Copyright 2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,31 +7,41 @@ from executorch.backends.nxp.backend.ir.converter.conversion.common import (
     node_uses_shape_broadcasting,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     add_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
 class AddTensorConverter(NodeConverter):
-    supported_targets = [Target.RT700]
+    @staticmethod
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        if node_uses_shape_broadcasting(node):
+            # Shape broadcasting may require the addition of `Transpose` ops during conversion.
+            return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if len(node.args) != 2:
             return False
 
         if hasattr(node.kwargs, "alpha"):
-            return False
-
-        # Don't convert if broadcasting input tensors
-        if node_uses_shape_broadcasting(node):
             return False
 
         return True

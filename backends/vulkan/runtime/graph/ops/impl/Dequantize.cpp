@@ -17,27 +17,17 @@
 
 namespace vkcompute {
 
-void resize_dequantize_output(
+void resize_dequantize_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
+
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef in = args.at(1).refs.at(0);
-  graph->virtual_resize(out, graph->sizes_of(in));
-}
 
-utils::uvec3 dequantize_per_channel_global_wg_size(
-    ComputeGraph* graph,
-    const vkapi::ShaderInfo& shader,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef out = args.at(0).refs.at(0);
-
-  utils::uvec3 global_wg_size = graph->create_global_wg_size(out);
-
-  return global_wg_size;
+  const std::vector<int64_t> in_sizes = graph->sizes_of(in);
+  graph->virtual_resize(out, in_sizes);
 }
 
 utils::uvec3 dequantize_per_channel_local_wg_size(
@@ -56,16 +46,49 @@ utils::uvec3 dequantize_per_channel_local_wg_size(
 
   // WORKAROUND: The CommandBuffer::dispatch function divides
   // global_workgroup_size by local_workgroup_size to get the number of
-  // workgroups to dispatch. For per-channel dequantization along the batch
-  // axis, we need to ensure that we dispatch the correct number of workgroups
-  // in the Z dimension to cover all batch-channel combinations.
+  // workgroups to dispatch. We need to ensure that we dispatch the correct
+  // number of workgroups in the Z dimension to cover all batch-channel
+  // combinations.
   //
   // If local_wg_size[2] > 1, then div_up(global_workgroup_size[2],
   // local_wg_size[2]) might reduce the number of workgroups dispatched. To
   // ensure we dispatch global_workgroup_size[2] workgroups in the Z dimension,
   // we set local_wg_size[2] = 1.
   const auto input_sizes = graph->sizes_of(input);
-  if (global_workgroup_size[2] > 1 && input_sizes[3] > 0) {
+  if (input_sizes.size() == 4 && !graph->is_buffer_storage(input) &&
+      global_workgroup_size[2] > 1) {
+    local_wg_size[2] = 1;
+  }
+
+  return local_wg_size;
+}
+
+utils::uvec3 dequantize_block_wise_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+  const ValueRef input = args.at(1).refs.at(0);
+
+  utils::uvec3 local_wg_size =
+      graph->create_local_wg_size(global_workgroup_size);
+
+  // WORKAROUND: The CommandBuffer::dispatch function divides
+  // global_workgroup_size by local_workgroup_size to get the number of
+  // workgroups to dispatch. We need to ensure that we dispatch the correct
+  // number of workgroups in the Z dimension to cover all batch-channel
+  // combinations.
+  //
+  // If local_wg_size[2] > 1, then div_up(global_workgroup_size[2],
+  // local_wg_size[2]) might reduce the number of workgroups dispatched. To
+  // ensure we dispatch global_workgroup_size[2] workgroups in the Z dimension,
+  // we set local_wg_size[2] = 1.
+  const auto input_sizes = graph->sizes_of(input);
+  if (input_sizes.size() == 4 && !graph->is_buffer_storage(input) &&
+      global_workgroup_size[2] > 1) {
     local_wg_size[2] = 1;
   }
 
@@ -84,9 +107,35 @@ void add_dequantize_per_tensor_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zero_point));
 
-  int quant_min_val = static_cast<int>(graph.get_int(quant_min));
-  int quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  // Handle optional quant_min and quant_max parameters independently
+  auto bounds = get_dtype_bounds(graph.dtype_of(input));
+
+  int quant_min_val, quant_max_val;
+
+  // Handle quant_min
+  if (graph.val_is_none(quant_min)) {
+    quant_min_val = bounds.first;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_min),
+        "quant_min must be an integer, got type: ",
+        graph.get_val_type(quant_min));
+    quant_min_val = static_cast<int>(graph.get_int(quant_min));
+  }
+
+  // Handle quant_max
+  if (graph.val_is_none(quant_max)) {
+    quant_max_val = bounds.second;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_max),
+        "quant_max must be an integer, got type: ",
+        graph.get_val_type(quant_max));
+    quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  }
 
   vkapi::ParamsBindList param_ubos;
   std::vector<PushConstantDataInfo> push_constants;
@@ -131,7 +180,7 @@ void add_dequantize_per_tensor_node(
       // Resize Args
       {},
       // Resizing Logic
-      resize_dequantize_output));
+      resize_dequantize_node));
 }
 
 void add_dequantize_per_token_node(
@@ -146,9 +195,35 @@ void add_dequantize_per_token_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zero_point));
 
-  int quant_min_val = static_cast<int>(graph.get_int(quant_min));
-  int quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  // Handle optional quant_min and quant_max parameters independently
+  auto bounds = get_dtype_bounds(graph.dtype_of(input));
+
+  int quant_min_val, quant_max_val;
+
+  // Handle quant_min
+  if (graph.val_is_none(quant_min)) {
+    quant_min_val = bounds.first;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_min),
+        "quant_min must be an integer, got type: ",
+        graph.get_val_type(quant_min));
+    quant_min_val = static_cast<int>(graph.get_int(quant_min));
+  }
+
+  // Handle quant_max
+  if (graph.val_is_none(quant_max)) {
+    quant_max_val = bounds.second;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_max),
+        "quant_max must be an integer, got type: ",
+        graph.get_val_type(quant_max));
+    quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  }
 
   int num_tokens = static_cast<int>(graph.sizes_of(scale)[0]);
 
@@ -161,24 +236,17 @@ void add_dequantize_per_token_node(
         graph.sizes_ubo(input),
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
-        graph.strides_ubo(output),
-    };
-    push_constants = {
-        PushConstantDataInfo(&num_tokens, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
+        graph.strides_ubo(output)};
   } else {
     param_ubos = {
-        graph.logical_limits_ubo(input),
-        graph.logical_limits_ubo(output),
-    };
-    push_constants = {
-        PushConstantDataInfo(&num_tokens, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
+        graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
   }
+
+  push_constants = {
+      PushConstantDataInfo(&num_tokens, sizeof(int)),
+      PushConstantDataInfo(&quant_min_val, sizeof(int)),
+      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  };
 
   vkapi::SpecVarList spec_vars = {
       graph.hashed_layout_of(output),
@@ -203,7 +271,7 @@ void add_dequantize_per_token_node(
       // Resize Args
       {},
       // Resizing Logic
-      resize_dequantize_output));
+      resize_dequantize_node));
 }
 
 void add_dequantize_per_channel_node(
@@ -219,10 +287,37 @@ void add_dequantize_per_channel_node(
   add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(input));
   add_dtype_suffix(kernel_name, graph.dtype_of(output));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zero_point));
 
   int axis_val = static_cast<int>(graph.get_int(axis));
-  int quant_min_val = static_cast<int>(graph.get_int(quant_min));
-  int quant_max_val = static_cast<int>(graph.get_int(quant_max));
+
+  // Handle optional quant_min and quant_max parameters independently
+  auto bounds = get_dtype_bounds(graph.dtype_of(input));
+
+  int quant_min_val, quant_max_val;
+
+  // Handle quant_min
+  if (graph.val_is_none(quant_min)) {
+    quant_min_val = bounds.first;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_min),
+        "quant_min must be an integer, got type: ",
+        graph.get_val_type(quant_min));
+    quant_min_val = static_cast<int>(graph.get_int(quant_min));
+  }
+
+  // Handle quant_max
+  if (graph.val_is_none(quant_max)) {
+    quant_max_val = bounds.second;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_max),
+        "quant_max must be an integer, got type: ",
+        graph.get_val_type(quant_max));
+    quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  }
 
   // Normalize axis and convert from NCHW to WHCN using utility functions
   const auto input_sizes = graph.sizes_of(input);
@@ -252,26 +347,18 @@ void add_dequantize_per_channel_node(
         graph.sizes_ubo(input),
         graph.strides_ubo(input),
         graph.sizes_ubo(output),
-        graph.strides_ubo(output),
-    };
-    push_constants = {
-        PushConstantDataInfo(&axis_whcn, sizeof(int)),
-        PushConstantDataInfo(&num_channels, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
+        graph.strides_ubo(output)};
   } else {
     param_ubos = {
-        graph.logical_limits_ubo(input),
-        graph.logical_limits_ubo(output),
-    };
-    push_constants = {
-        PushConstantDataInfo(&axis_whcn, sizeof(int)),
-        PushConstantDataInfo(&num_channels, sizeof(int)),
-        PushConstantDataInfo(&quant_min_val, sizeof(int)),
-        PushConstantDataInfo(&quant_max_val, sizeof(int)),
-    };
+        graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
   }
+
+  push_constants = {
+      PushConstantDataInfo(&axis_whcn, sizeof(int)),
+      PushConstantDataInfo(&num_channels, sizeof(int)),
+      PushConstantDataInfo(&quant_min_val, sizeof(int)),
+      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  };
 
   vkapi::SpecVarList spec_vars = {
       graph.hashed_layout_of(output),
@@ -281,7 +368,7 @@ void add_dequantize_per_channel_node(
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      dequantize_per_channel_global_wg_size,
+      default_pick_global_wg_size,
       dequantize_per_channel_local_wg_size,
       // Inputs and Outputs
       {{output, vkapi::kWrite},
@@ -296,7 +383,120 @@ void add_dequantize_per_channel_node(
       // Resize Args
       {},
       // Resizing Logic
-      resize_dequantize_output));
+      resize_dequantize_node));
+}
+
+void add_dequantize_block_wise_node(
+    ComputeGraph& graph,
+    const ValueRef& input,
+    const ValueRef& block_size,
+    const ValueRef& scale,
+    const ValueRef& zero_point,
+    const ValueRef& quant_min,
+    const ValueRef& quant_max,
+    const ValueRef& output) {
+  std::string kernel_name("dequantize_block_wise");
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(output));
+  add_dtype_suffix(kernel_name, graph.dtype_of(scale));
+  add_dtype_suffix(kernel_name, graph.dtype_of(zero_point));
+
+  // Handle optional quant_min and quant_max parameters independently
+  auto bounds = get_dtype_bounds(graph.dtype_of(input));
+
+  int quant_min_val, quant_max_val;
+
+  // Handle quant_min
+  if (graph.val_is_none(quant_min)) {
+    quant_min_val = bounds.first;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_min),
+        "quant_min must be an integer, got type: ",
+        graph.get_val_type(quant_min));
+    quant_min_val = static_cast<int>(graph.get_int(quant_min));
+  }
+
+  // Handle quant_max
+  if (graph.val_is_none(quant_max)) {
+    quant_max_val = bounds.second;
+  } else {
+    VK_CHECK_COND(
+        graph.val_is_int(quant_max),
+        "quant_max must be an integer, got type: ",
+        graph.get_val_type(quant_max));
+    quant_max_val = static_cast<int>(graph.get_int(quant_max));
+  }
+
+  const auto input_sizes = graph.sizes_of(input);
+  const auto block_size_list = graph.get_int_list(block_size);
+
+  // Convert dimensions to WHCN order for shader
+  utils::ivec4 block_size_vec = utils::make_whcn_ivec4(*block_size_list);
+  utils::ivec4 tensor_size_whcn = utils::make_whcn_ivec4(input_sizes);
+
+  // Calculate numBlocks: tensorSize / blockSize (both in WHCN order)
+  utils::ivec4 num_blocks_vec = {
+      tensor_size_whcn[0] / block_size_vec[0],
+      tensor_size_whcn[1] / block_size_vec[1],
+      tensor_size_whcn[2] / block_size_vec[2],
+      tensor_size_whcn[3] / block_size_vec[3]};
+
+  // Calculate blockStride: pre-computed linear strides for the block grid
+  utils::ivec4 block_stride_vec = {
+      1,
+      num_blocks_vec[0],
+      num_blocks_vec[0] * num_blocks_vec[1],
+      num_blocks_vec[0] * num_blocks_vec[1] * num_blocks_vec[2]};
+
+  vkapi::ParamsBindList param_ubos;
+  std::vector<PushConstantDataInfo> push_constants;
+
+  if (graph.is_buffer_storage(input)) {
+    param_ubos = {
+        graph.numel_ubo(input),
+        graph.sizes_ubo(input),
+        graph.strides_ubo(input),
+        graph.sizes_ubo(output),
+        graph.strides_ubo(output)};
+  } else {
+    param_ubos = {
+        graph.logical_limits_ubo(input), graph.logical_limits_ubo(output)};
+  }
+
+  push_constants = {
+      PushConstantDataInfo(&block_size_vec, sizeof(block_size_vec)),
+      PushConstantDataInfo(&num_blocks_vec, sizeof(num_blocks_vec)),
+      PushConstantDataInfo(&block_stride_vec, sizeof(block_stride_vec)),
+      PushConstantDataInfo(&quant_min_val, sizeof(int)),
+      PushConstantDataInfo(&quant_max_val, sizeof(int)),
+  };
+
+  vkapi::SpecVarList spec_vars = {
+      graph.hashed_layout_of(output),
+      graph.hashed_layout_of(input),
+  };
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      default_pick_global_wg_size,
+      dequantize_block_wise_local_wg_size,
+      // Inputs and Outputs
+      {{output, vkapi::kWrite},
+       {input, vkapi::kRead},
+       {{scale, zero_point}, vkapi::kRead}},
+      // Shader param buffers
+      param_ubos,
+      // Push Constants
+      push_constants,
+      // Specialization Constants
+      spec_vars,
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_dequantize_node));
 }
 
 void dequantize_per_tensor_impl(
@@ -308,31 +508,51 @@ void dequantize_per_tensor_impl(
   const ValueRef zero_point = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
-  const ValueRef dtype = args[arg_idx++]; // Added dtype parameter
-  const ValueRef output_dtype = args[arg_idx++]; // Added output_dtype parameter
+  const ValueRef dtype = args[arg_idx++];
+  const ValueRef output_dtype = args[arg_idx++];
   const ValueRef output = args[arg_idx++];
 
   // Suppress unused variable warnings - dtype and output_dtype are inferred
-  // from output
   (void)dtype;
   (void)output_dtype;
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(scale));
+  VK_CHECK_COND(graph.val_is_tensor(zero_point));
   VK_CHECK_COND(graph.val_is_tensor(output));
 
   // Verify input is an integer type
   VK_CHECK_COND(
       graph.dtype_of(input) == vkapi::kByte ||
       graph.dtype_of(input) == vkapi::kChar ||
-      graph.dtype_of(input) == vkapi::kShort ||
       graph.dtype_of(input) == vkapi::kInt);
 
-  // Verify output is a floating point type
+  // Get scale and zero point dtypes
+  vkapi::ScalarType scale_dtype = graph.dtype_of(scale);
+  vkapi::ScalarType zero_point_dtype = graph.dtype_of(zero_point);
+
+  // Verify supported types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_dtype == vkapi::kFloat);
+
+  // Verify supported types for zero point (int32, int8, fp32)
   VK_CHECK_COND(
-      graph.dtype_of(output) == vkapi::kHalf ||
-      graph.dtype_of(output) == vkapi::kFloat ||
-      graph.dtype_of(output) == vkapi::kDouble);
+      zero_point_dtype == vkapi::kInt || zero_point_dtype == vkapi::kChar ||
+      zero_point_dtype == vkapi::kFloat);
+
+  // Check that scale and zero_point have buffer storage and width packing
+  VK_CHECK_COND(graph.is_buffer_storage(scale));
+  VK_CHECK_COND(graph.packed_dim_of(scale) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.is_buffer_storage(zero_point));
+  VK_CHECK_COND(graph.packed_dim_of(zero_point) == WHCN::kWidthDim);
+
+  // Check that tensors with texture storage have standard axis map
+  if (!graph.is_buffer_storage(input)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(input));
+  }
+  if (!graph.is_buffer_storage(output)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(output));
+  }
 
   add_dequantize_per_tensor_node(
       graph, input, scale, zero_point, quant_min, quant_max, output);
@@ -347,12 +567,11 @@ void dequantize_per_token_impl(
   const ValueRef zero_point = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
-  const ValueRef dtype = args[arg_idx++]; // Added dtype parameter
-  const ValueRef output_dtype = args[arg_idx++]; // Added output_dtype parameter
+  const ValueRef dtype = args[arg_idx++];
+  const ValueRef output_dtype = args[arg_idx++];
   const ValueRef output = args[arg_idx++];
 
   // Suppress unused variable warnings - dtype and output_dtype are inferred
-  // from output
   (void)dtype;
   (void)output_dtype;
 
@@ -366,14 +585,19 @@ void dequantize_per_token_impl(
   VK_CHECK_COND(
       graph.dtype_of(input) == vkapi::kByte ||
       graph.dtype_of(input) == vkapi::kChar ||
-      graph.dtype_of(input) == vkapi::kShort ||
       graph.dtype_of(input) == vkapi::kInt);
 
-  // Verify output is a floating point type
+  // Get scale and zero point dtypes
+  vkapi::ScalarType scale_dtype = graph.dtype_of(scale);
+  vkapi::ScalarType zero_point_dtype = graph.dtype_of(zero_point);
+
+  // Verify supported types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_dtype == vkapi::kFloat);
+
+  // Verify supported types for zero point (int32, int8, fp32)
   VK_CHECK_COND(
-      graph.dtype_of(output) == vkapi::kHalf ||
-      graph.dtype_of(output) == vkapi::kFloat ||
-      graph.dtype_of(output) == vkapi::kDouble);
+      zero_point_dtype == vkapi::kInt || zero_point_dtype == vkapi::kChar ||
+      zero_point_dtype == vkapi::kFloat);
 
   // Check that scale and zero_point have buffer storage and width packing
   VK_CHECK_COND(graph.is_buffer_storage(scale));
@@ -430,12 +654,11 @@ void dequantize_per_channel_impl(
   const ValueRef axis = args[arg_idx++];
   const ValueRef quant_min = args[arg_idx++];
   const ValueRef quant_max = args[arg_idx++];
-  const ValueRef dtype = args[arg_idx++]; // Added dtype parameter
-  const ValueRef output_dtype = args[arg_idx++]; // Added output_dtype parameter
+  const ValueRef dtype = args[arg_idx++];
+  const ValueRef output_dtype = args[arg_idx++];
   const ValueRef output = args[arg_idx++];
 
   // Suppress unused variable warnings - dtype and output_dtype are inferred
-  // from output
   (void)dtype;
   (void)output_dtype;
 
@@ -449,14 +672,19 @@ void dequantize_per_channel_impl(
   VK_CHECK_COND(
       graph.dtype_of(input) == vkapi::kByte ||
       graph.dtype_of(input) == vkapi::kChar ||
-      graph.dtype_of(input) == vkapi::kShort ||
       graph.dtype_of(input) == vkapi::kInt);
 
-  // Verify output is a floating point type
+  // Get scale and zero point dtypes
+  vkapi::ScalarType scale_dtype = graph.dtype_of(scale);
+  vkapi::ScalarType zero_point_dtype = graph.dtype_of(zero_point);
+
+  // Verify supported types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_dtype == vkapi::kFloat);
+
+  // Verify supported types for zero point (int32, int8, fp32)
   VK_CHECK_COND(
-      graph.dtype_of(output) == vkapi::kHalf ||
-      graph.dtype_of(output) == vkapi::kFloat ||
-      graph.dtype_of(output) == vkapi::kDouble);
+      zero_point_dtype == vkapi::kInt || zero_point_dtype == vkapi::kChar ||
+      zero_point_dtype == vkapi::kFloat);
 
   // Check that scale and zero_point have buffer storage and width packing
   VK_CHECK_COND(graph.is_buffer_storage(scale));
@@ -513,8 +741,7 @@ void dequantize_affine_impl(
     const std::vector<ValueRef>& args) {
   int arg_idx = 0;
   const ValueRef input = args[arg_idx++];
-  const ValueRef block_size =
-      args[arg_idx++]; // SymInt[] - ignored for per-tensor
+  const ValueRef block_size = args[arg_idx++];
   const ValueRef scale = args[arg_idx++];
   const ValueRef zero_point = args[arg_idx++];
   const ValueRef input_dtype = args[arg_idx++];
@@ -529,33 +756,73 @@ void dequantize_affine_impl(
 
   // Check tensor types
   VK_CHECK_COND(graph.val_is_tensor(input));
+  VK_CHECK_COND(graph.val_is_tensor(scale));
+  VK_CHECK_COND(graph.val_is_tensor(zero_point));
   VK_CHECK_COND(graph.val_is_tensor(output));
 
   // Verify input is an integer type
   VK_CHECK_COND(
       graph.dtype_of(input) == vkapi::kByte ||
       graph.dtype_of(input) == vkapi::kChar ||
-      graph.dtype_of(input) == vkapi::kShort ||
       graph.dtype_of(input) == vkapi::kInt);
 
-  // Verify output is a floating point type
-  VK_CHECK_COND(
-      graph.dtype_of(output) == vkapi::kHalf ||
-      graph.dtype_of(output) == vkapi::kFloat ||
-      graph.dtype_of(output) == vkapi::kDouble);
+  // Get scale and zero point dtypes
+  vkapi::ScalarType scale_dtype = graph.dtype_of(scale);
+  vkapi::ScalarType zero_point_dtype = graph.dtype_of(zero_point);
 
-  // Check if this is per-tensor quantization (only supported granularity)
-  // block_size should equal input tensor dimensions for per-tensor quantization
+  // Verify supported types for scale (fp32 only for now)
+  VK_CHECK_COND(scale_dtype == vkapi::kFloat);
+
+  // Verify supported types for zero point (int32, int8, fp32)
+  VK_CHECK_COND(
+      zero_point_dtype == vkapi::kInt || zero_point_dtype == vkapi::kChar ||
+      zero_point_dtype == vkapi::kFloat);
+
+  // Check that scale and zero_point have buffer storage and width packing
+  VK_CHECK_COND(graph.is_buffer_storage(scale));
+  VK_CHECK_COND(graph.packed_dim_of(scale) == WHCN::kWidthDim);
+  VK_CHECK_COND(graph.is_buffer_storage(zero_point));
+  VK_CHECK_COND(graph.packed_dim_of(zero_point) == WHCN::kWidthDim);
+
+  // Check that tensors with texture storage have standard axis map
+  if (!graph.is_buffer_storage(input)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(input));
+  }
+  if (!graph.is_buffer_storage(output)) {
+    VK_CHECK_COND(graph.has_standard_axis_map(output));
+  }
+
+  // Verify block_size is valid (each dimension must divide evenly into input
+  // size)
   const auto input_sizes = graph.sizes_of(input);
   const auto block_size_list = graph.get_int_list(block_size);
   VK_CHECK_COND(block_size_list->size() == input_sizes.size());
+
   for (size_t i = 0; i < input_sizes.size(); i++) {
-    VK_CHECK_COND((*block_size_list)[i] == input_sizes[i]);
+    if ((*block_size_list)[i] > 1) {
+      VK_CHECK_COND(
+          input_sizes[i] % (*block_size_list)[i] == 0,
+          "Input size at dimension ",
+          i,
+          " (",
+          input_sizes[i],
+          ") must be divisible by block_size at dimension ",
+          i,
+          " (",
+          (*block_size_list)[i],
+          ")");
+    }
   }
 
-  // Default to per-tensor dequantization for TorchAO affine ops
-  add_dequantize_per_tensor_node(
-      graph, input, scale, zero_point, quant_min, quant_max, output);
+  add_dequantize_block_wise_node(
+      graph,
+      input,
+      block_size,
+      scale,
+      zero_point,
+      quant_min,
+      quant_max,
+      output);
 }
 
 REGISTER_OPERATORS {

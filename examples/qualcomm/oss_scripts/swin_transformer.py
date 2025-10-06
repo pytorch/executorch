@@ -7,6 +7,7 @@
 import json
 import logging
 import os
+
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -81,20 +82,14 @@ def main(args):
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    if not args.compile_only and args.device is None:
-        raise RuntimeError(
-            "device serial is required if not compile only. "
-            "Please specify a device serial by -s/--device argument."
-        )
-
     data_num = 100
     if args.ci:
-        inputs = [torch.rand(1, 3, 224, 224)]
+        inputs = [(torch.rand(1, 3, 224, 224),)]
         logging.warning(
             "This option is for CI to verify the export flow. It uses random input and will result in poor accuracy."
         )
     else:
-        inputs, targets, input_list = get_imagenet_dataset(
+        inputs, targets = get_imagenet_dataset(
             dataset_path=f"{args.dataset}",
             data_size=data_num,
             image_shape=(256, 256),
@@ -135,7 +130,7 @@ def main(args):
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
     )
-    adb.push(inputs=inputs, input_list=input_list)
+    adb.push(inputs=inputs)
     adb.execute()
 
     # collect output data
@@ -181,12 +176,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. " "Default ./swin",
-        default="./swin",
+        help="path for storing generated artifacts by this example. "
+        "Default ./swin_transformer",
+        default="./swin_transformer",
         type=str,
     )
 
     args = parser.parse_args()
+    args.validate(args)
     try:
         main(args)
     except Exception as e:

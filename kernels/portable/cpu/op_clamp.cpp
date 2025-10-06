@@ -34,22 +34,26 @@ bool is_out_of_bounds(CTYPE_CAST val_cast) {
 }
 
 ET_NODISCARD bool check_bounds(
+    KernelRuntimeContext& ctx,
     const Scalar& val_scalar,
     const torch::executor::native::ScalarType& val_type,
     const torch::executor::native::ScalarType& out_type,
     const char* val_name) {
   auto is_valid = true;
 
+  // @lint-ignore CLANGTIDY facebook-hte-CArray
+  static constexpr const char op_name[] = "clamp.out";
+
   if (isIntegralType(out_type, /*includeBool=*/false)) {
-    const long val_long = utils::scalar_to<long>(val_scalar);
-    ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
-      if (is_out_of_bounds<CTYPE_OUT, long>(val_long)) {
+    const int64_t val_long = utils::scalar_to<int64_t>(val_scalar);
+    ET_SWITCH_INT_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&]() {
+      if (is_out_of_bounds<CTYPE_OUT, int64_t>(val_long)) {
         ET_LOG(Error, "%s value out of bounds", val_name);
         is_valid = false;
       }
     });
   } else if (isFloatingType(out_type)) {
-    ET_SWITCH_FLOATHBF16_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
+    ET_SWITCH_FLOATHBF16_TYPES(out_type, ctx, op_name, CTYPE_OUT, [&]() {
       const double val_double = utils::scalar_to<double>(val_scalar);
       if (std::isfinite(val_double) &&
           is_out_of_bounds<CTYPE_OUT, double>(val_double)) {
@@ -104,14 +108,14 @@ Tensor& clamp_out(
   if (has_min) {
     ET_KERNEL_CHECK(
         ctx,
-        check_bounds(min_opt.value(), min_type, out_type, "minimum"),
+        check_bounds(ctx, min_opt.value(), min_type, out_type, "minimum"),
         InvalidArgument,
         out);
   }
   if (has_max) {
     ET_KERNEL_CHECK(
         ctx,
-        check_bounds(max_opt.value(), max_type, out_type, "maximum"),
+        check_bounds(ctx, max_opt.value(), max_type, out_type, "maximum"),
         InvalidArgument,
         out);
   }

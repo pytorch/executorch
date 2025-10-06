@@ -86,7 +86,7 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         )
         self.node_to_group = collections.defaultdict(int)
         self.all_nodes_in_groups = set()
-        if node_groups:
+        if self.node_groups:
             for i, group in enumerate(self.node_groups):
                 for node in group:
                     # Node is in multiple groups - not allowed
@@ -101,23 +101,29 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         p2_nodes = set(partitions_by_id[p2].nodes.keys())
         combined_nodes = p1_nodes.union(p2_nodes)
 
-        for node in combined_nodes:
-            # Get all downstream nodes that are not in the combined partition
-            external_downstreams = {
-                n
-                for n in self.dependency_viewer.downstreams_of(node)
-                if n not in combined_nodes
-            }
+        user_nodes = []
+        # topologically, p2_nodes comes before p1_nodes, so we only
+        # need to check the downstream nodes of p2.
+        # Additionally, we don't need to check all the downstream nodes
+        # of p2, we only need to check the nodes directly outside of p2.
+        # example:
+        # partition[a -->  b --> c] --> d --> e --> f
+        # we don't need to check [d, e, f] we only need to check [d] because
+        # the downstream users of [d] will include [e, f]
+        for node in p2_nodes:
+            for user in node.users:
+                if user not in combined_nodes:
+                    user_nodes.append(user)
 
+        for external_node in user_nodes:
             # Check if any external downstream nodes have downstream nodes in the combined partition
-            for external_node in external_downstreams:
-                downstream_nodes = self.dependency_viewer.downstreams_of(external_node)
-                if any(n in combined_nodes for n in downstream_nodes):
-                    return False
+            downstream_nodes = self.dependency_viewer.downstreams_of(external_node)
+            if any(n in combined_nodes for n in downstream_nodes):
+                return False
 
         return True
 
-    def _process_node_groups(
+    def _process_all_nodes(
         self,
         new_partition_id,
         partitions_by_id,
@@ -127,73 +133,59 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         partition_users,
         partition_map,
     ):
-        """Process nodes in predefined groups."""
-        group_to_partition_id = {}
-
-        if not self.node_groups:
-            return group_to_partition_id
-
-        for i, group in enumerate(self.node_groups):
-            # Create a partition for each group
-            partition_id = next(new_partition_id)
-            partition = Partition(id=partition_id, nodes=set())
-            partitions_by_id[partition_id] = partition
-            partitions_order[partition_id] = partition_id
-            group_to_partition_id[i] = partition_id
-
-            # Add all supported nodes from the group to the partition
-            for node in group:
-                if self._is_node_supported(node):
-                    partition.add_node(node)
-                    assignment[node] = partition_id
-                    nodes_order[node] = partition_id
-
-            # Set partition users
-            partition_users[partition_id] = {
-                user
-                for node in partition.nodes
-                for user in node.users
-                if user not in partition.nodes
-            }
-
-            # Update partition map
-            for node in partition.nodes:
-                for user in node.users:
-                    target_id = assignment.get(user)
-                    if target_id is not None and target_id != partition_id:
-                        partition_map[partition_id].add(target_id)
-                        partition_map[partition_id].update(partition_map[target_id])
-
-        return group_to_partition_id
-
-    def _process_remaining_nodes(
-        self,
-        new_partition_id,
-        partitions_by_id,
-        assignment,
-        nodes_order,
-        partitions_order,
-        partition_users,
-        partition_map,
-    ):
-        """Process nodes not in any predefined group."""
+        """Process nodes into a partition."""
         for node in reversed(self.graph_module.graph.nodes):
             if node in assignment or not self._is_node_supported(node):
                 continue
 
-            partition_id = next(new_partition_id)
-            nodes_order[node] = partition_id
-            partitions_order[partition_id] = partition_id
-            partitions_by_id[partition_id] = Partition(id=partition_id, nodes=[node])
-            assignment[node] = partition_id
-            partition_users[partition_id] = set(node.users)
+            if node in self.all_nodes_in_groups:
+                group_idx = self.node_to_group[node]
+                group = self.node_groups[group_idx]
 
-            # Update partition map
-            for user in node.users:
-                target_id = assignment.get(user)
-                if target_id is not None:
-                    partition_map[partition_id].add(target_id)
-                    partition_map[partition_id].update(partition_map[target_id])
+                # Create a partition for group
+                partition_id = next(new_partition_id)
+                partition = Partition(id=partition_id, nodes=set())
+                partitions_by_id[partition_id] = partition
+                partitions_order[partition_id] = partition_id
+
+                # Add all supported nodes from the group to the partition
+                for node in group:
+                    if self._is_node_supported(node):
+                        partition.add_node(node)
+                        assignment[node] = partition_id
+                        nodes_order[node] = partition_id
+
+                # Set partition users
+                partition_users[partition_id] = {
+                    user
+                    for node in partition.nodes
+                    for user in node.users
+                    if user not in partition.nodes
+                }
+
+                # Update partition map
+                for node in partition.nodes:
+                    for user in node.users:
+                        target_id = assignment.get(user, None)
+                        if target_id is not None and target_id != partition_id:
+                            partition_map[partition_id].add(target_id)
+                            partition_map[partition_id].update(partition_map[target_id])
+            else:
+                partition_id = next(new_partition_id)
+                nodes_order[node] = partition_id
+                partitions_order[partition_id] = partition_id
+                partitions_by_id[partition_id] = Partition(
+                    id=partition_id, nodes=[node]
+                )
+                assignment[node] = partition_id
+                partition_users[partition_id] = set(node.users)
+
+                # Update partition map
+                for user in node.users:
+                    target_id = assignment.get(user)
+                    if target_id is not None:
+                        partition_map[partition_id].add(target_id)
+                        partition_map[partition_id].update(partition_map[target_id])
 
     def _merge_partitions(
         self,
@@ -209,7 +201,6 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
 
         # Set to track removed partitions from initial static list so we can skip them
         already_merged = set()
-
         # Try to merge each pair of partitions
         for i, p1 in enumerate(partition_ids):
             # Skip if this partition has been already merged
@@ -350,19 +341,8 @@ class GroupBasedPartitioner(CapabilityBasedPartitioner):
         partition_users = {}  # Maps partition IDs to partition users
         new_partition_id = itertools.count()
 
-        # Process nodes in predefined groups
-        self._process_node_groups(
-            new_partition_id,
-            partitions_by_id,
-            assignment,
-            nodes_order,
-            partitions_order,
-            partition_users,
-            partition_map,
-        )
-
-        # Process remaining nodes
-        self._process_remaining_nodes(
+        # Process all nodes into partitions
+        self._process_all_nodes(
             new_partition_id,
             partitions_by_id,
             assignment,

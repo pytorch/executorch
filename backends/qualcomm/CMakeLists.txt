@@ -39,17 +39,6 @@ if(${ANDROID})
   find_library(android_log log)
 endif()
 
-set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
-set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
-add_custom_command(
-  OUTPUT qcir_schema_output
-  COMMAND flatc --cpp --cpp-std c++11 --scoped-enums -o
-          ${qcir_schema_include_dir} ${qcir_schema_include_dir}/qcir.fbs
-  DEPENDS flatc
-  COMMENT "Generating qualcomm ir schema headers"
-  VERBATIM
-)
-
 add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 add_compile_definitions(C10_USING_CUSTOM_GENERATED_MACROS)
 
@@ -69,11 +58,8 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 include_directories(
-  BEFORE
-  ${_common_include_directories}
-  ${QNN_SDK_ROOT}/include/QNN
+  BEFORE ${_common_include_directories} ${QNN_SDK_ROOT}/include/QNN
   ${QNN_SDK_ROOT}/share/QNN/converter/jni
-  ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
   ${EXECUTORCH_SOURCE_DIR}/runtime/core/portable_type/c10
 )
 
@@ -112,10 +98,9 @@ include_directories(
 # declare targets
 #
 add_library(executorch_backend INTERFACE)
-add_library(qcir INTERFACE qcir_schema_output)
-add_library(qcir_utils STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_backend_cache STATIC)
+add_library(qnn_backend_options STATIC)
 add_library(qnn_context STATIC)
 add_library(qnn_custom_protocol STATIC)
 add_library(qnn_dlc_manager STATIC)
@@ -142,7 +127,6 @@ add_library(utils STATIC)
 #
 # declare dependency
 #
-target_link_libraries(qcir_utils PRIVATE qcir)
 target_link_libraries(wrappers PRIVATE qnn_executorch_logging)
 target_link_libraries(
   qnn_implementation PRIVATE qnn_function_interface qnn_executorch_logging
@@ -159,6 +143,7 @@ target_link_libraries(
   qnn_backend PRIVATE qnn_implementation qnn_logger qnn_op_package_manager
 )
 target_link_libraries(qnn_custom_protocol PRIVATE qnn_logger)
+target_link_libraries(qnn_backend_options PRIVATE qnn_schema)
 target_link_libraries(
   qnn_device PRIVATE qnn_executorch_logging qnn_implementation qnn_logger
 )
@@ -196,8 +181,9 @@ target_link_libraries(
                       qnn_dlc_manager
 )
 target_link_libraries(
-  qnn_executorch_backend PRIVATE qnn_executorch_header qnn_schema qnn_manager
-                                 executorch_core extension_tensor
+  qnn_executorch_backend
+  PRIVATE qnn_executorch_header qnn_schema qnn_manager executorch_core
+          extension_tensor qnn_backend_options
 )
 set_target_properties(
   qnn_executorch_backend PROPERTIES LINK_FLAGS "-Wl,-rpath='$ORIGIN'"
@@ -224,10 +210,6 @@ add_subdirectory(
 add_subdirectory(
   ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
   ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
-)
-add_subdirectory(
-  ${QNN_EXECUTORCH_ROOT_DIR}/aot/ir
-  ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/ir
 )
 install(
   TARGETS qnn_executorch_backend
@@ -261,6 +243,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
             qnn_executorch_header
             executorch
             extension_tensor
+            qnn_backend_options
   )
   target_link_libraries(
     PyQnnWrapperAdaptor PRIVATE pybind11::module pybind11::lto wrappers

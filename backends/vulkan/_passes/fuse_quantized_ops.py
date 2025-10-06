@@ -211,18 +211,22 @@ def fuse_into_linear_qcnw_node(
 
 
 class FuseQuantizedOpsTransform(ExportPass):
-    def __init__(self, exported_program: ExportedProgram) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.program = exported_program
+        self._exported_program: Optional[ExportedProgram] = None
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        assert self._exported_program is not None
+
         for node in graph_module.graph.nodes:
-            qcnw_details = matches_linear_qcnw_pattern(self.program, node)
+            # Check for linear_qcnw pattern (weight-only quantization)
+            qcnw_details = matches_linear_qcnw_pattern(self._exported_program, node)
             if qcnw_details is not None:
                 qcnw_method, qcnw_nbits = qcnw_details
                 fuse_into_linear_qcnw_node(
-                    self.program, graph_module, node, qcnw_method, qcnw_nbits
+                    self._exported_program, graph_module, node, qcnw_method, qcnw_nbits
                 )
+                continue
 
         graph_module.recompile()
         dead_code_elimination_pass(graph_module)

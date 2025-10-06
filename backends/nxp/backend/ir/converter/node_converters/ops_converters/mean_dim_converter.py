@@ -10,8 +10,8 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
     create_channels_last_to_channels_first_permutation,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
+    CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_utils import (
     convert_axes_from_attribute,
@@ -19,34 +19,36 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.shared.reduce_
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import (
     mean_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
 
 class MeanDimConverter(NodeConverter):
-    supported_targets = [Target.RT700]
-
     @staticmethod
-    def _to_neg_dim(d, rank):
-        return d - rank if d > 0 else d
-
-    @staticmethod
-    def _to_pos_dim(d, rank):
-        return d + rank if d < 0 else d
-
-    @staticmethod
-    def _is_supported_in_IR(
-        node: Node, parameters_mapping: dict[str, Parameter]
+    def _is_supported_on_target(
+        node: Node,
+        neutron_target_spec: NeutronTargetSpec,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         dim = node.args[1]
         keepdim = node.args[2] if len(node.args) >= 3 else False
         rank = len(node.args[0].meta["val"].shape)
-        dim = [MeanDimConverter._to_neg_dim(d, rank) for d in dim]
+        dim = [d - rank if d > 0 else d for d in dim]
 
         # Only last 2 dimensions (H, W) and keepdim=True with rank=4 are supported on Neutron.
         if rank != 4 or dim not in [[-1, -2], [-2, -1]] or not keepdim:
             return False
 
+        return True
+
+    @staticmethod
+    def _is_supported_in_IR(
+        node: Node,
+        parameters_mapping: dict[str, Parameter],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
         if hasattr(node.kwargs, "dtype") and node.kwargs["dtype"] not in [
             torch.float32,
             torch.uint32,
@@ -58,6 +60,10 @@ class MeanDimConverter(NodeConverter):
             return False
 
         return True
+
+    @staticmethod
+    def _to_pos_dim(d: int, rank: int):
+        return d + rank if d < 0 else d
 
     @staticmethod
     def _normalize_and_to_channel_last_dim(dim: list[int], rank: int) -> list[int]:

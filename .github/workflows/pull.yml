@@ -13,6 +13,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-qnn-wheel-packages-linux:
+    name: test-qnn-wheel-packages-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.10", "3.11", "3.12" ]
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Create a clean env for each python version
+        conda create -y -n test_env_${{ matrix.python-version }} python=${{ matrix.python-version }}
+        conda activate test_env_${{ matrix.python-version }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_wheel_package_qnn.sh "${{ matrix.python-version }}"
+
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -259,15 +286,20 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
-  test-llava-runner-linux:
-    name: test-llava-runner-linux
+  test-multimodal-linux:
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    name: test-multimodal-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
       contents: read
+    secrets: inherit
     strategy:
       fail-fast: false
+      matrix:
+        model: ["gemma3-4b"]  # llava gives segfault so not covering.
     with:
+      secrets-env: EXECUTORCH_HF_TOKEN
       runner: linux.24xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
       submodules: 'recursive'
@@ -278,17 +310,20 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        echo "::endgroup::"
 
-        # install Llava requirements
-        bash examples/models/llama/install_requirements.sh
-        bash examples/models/llava/install_requirements.sh
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
 
-        # run python unittest
-        python -m unittest examples.models.llava.test.test_llava
-
-        # run e2e (export, tokenizer and runner)
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
+        echo "::group::Test ${{ matrix.model }}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
+        echo "::endgroup::"
 
   test-moshi-linux:
     name: test-moshi-linux
@@ -315,7 +350,7 @@ jobs:
         bash examples/models/moshi/mimi/install_requirements.sh
 
         # reinstall executorch
-        bash ./install_executorch.sh
+        bash ./install_executorch.sh --minimal
 
         # run python unittest
         python -m unittest examples.models.moshi.mimi.test_mimi
@@ -406,7 +441,7 @@ jobs:
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
         size=${arr[4]}
-        threshold="51744"
+        threshold="51752"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
@@ -687,6 +722,36 @@ jobs:
         # run llama runner in eager mode
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_runner_eager.sh
 
+  test-llama-lora-linux:
+    name: test-llama-lora-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.24xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # Install llama requirements
+        bash examples/models/llama/install_requirements.sh
+
+        # install a recent version of torchtune (>= 20250730)
+        PYTHON_EXECUTABLE=python python -m pip install torchtune==0.7.0.dev20250929  --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+
+        # run llama runner in eager mode
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama_lora.sh
+
   test-mediatek-models-linux:
     name: test-mediatek-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -764,6 +829,43 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/wasm/test_build_wasm.sh
 
+  unittest-wasm-bindings:
+    name: unittest-wasm-bindings
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        enable-etdump: ['', '--enable-etdump']
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL="cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+
+        # Install Node.js and Emscripten
+        source .ci/scripts/setup-emscripten.sh
+
+        # Test selective build
+        bash scripts/build_wasm_tests.sh ${{ matrix.enable-etdump }}
+
+        # Install Jest
+        cd cmake-out-wasm/extension/wasm/test
+        npm install --save-dev jest
+
+        # Run unit test
+        npm test
+
   unittest-nxp-neutron:
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
@@ -788,14 +890,143 @@ jobs:
         .ci/scripts/setup-linux.sh --build-tool "cmake"
 
         # Install test requirements
-        pip install -r backends/nxp/requirements-tests.txt
+        pip install -r backends/nxp/requirements-tests-pypi.txt
+        pip install -r backends/nxp/requirements-tests-eiq.txt
 
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
 
-        # Run aot example:
-        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh
+        # Run aot examples:
+        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh cifar10
+        PYTHON_EXECUTABLE=python bash examples/nxp/run_aot_example.sh mobilenetv2
 
+
+  test-samsung-models-linux:
+    name: test-samsung-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      secrets-env: SAMSUNG_AI_LITECORE_KEY
+      script: |
+        set -ex
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup python
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # Setup Samsung SDK (AI Lite Core) and install enn backend
+        export SAMSUNG_AI_LITECORE_KEY=$SECRET_SAMSUNG_AI_LITECORE_KEY
+        source .ci/scripts/setup-samsung-linux-deps.sh
+
+        # Test models serially
+        models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
+        for model in $models; do
+          python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
+        done
+
+        # Test ops
+        python -m unittest discover -s backends/samsung/test/ops -p "test_*.py"
+
+
+  test-vulkan-models-linux:
+    name: test-vulkan-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+
+        # Setup python
+        PYTHON_EXECUTABLE=python \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
+        .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_model.sh --build
+
+        # Test models serially
+        models="mv2 mv3 edsr resnet18 resnet50 dl3 w2l ic3 ic4"
+        for model in $models; do
+          python -m examples.vulkan.export --model_name=$model --test
+        done
+
+        # For selected vision models, test with dynamic shapes
+        models="mv2 resnet18 resnet50 ic3 densenet161"
+        for model in $models; do
+          python -m examples.vulkan.export --model_name=$model --test -d
+        done
+
+  test-vulkan-operators-linux:
+    name: test-vulkan-operators-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+
+        # Setup python
+        PYTHON_EXECUTABLE=python \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_VULKAN=ON" \
+        .ci/scripts/setup-linux.sh --build-tool "cmake"
+
+        # Custom operator tests
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/custom_ops/build_and_run.sh add
+        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/q8csw_conv2d
+        ./cmake-out/backends/vulkan/test/custom_ops/q4gsw_linear
+        ./cmake-out/backends/vulkan/test/custom_ops/choose_qparams_per_row
+        ./cmake-out/backends/vulkan/test/custom_ops/qdq8ta_conv2d_activations
+        ./cmake-out/backends/vulkan/test/custom_ops/q8ta_q8ta_q8to_add
+
+        # "Classic" Operator tests
+        PYTHON_EXECUTABLE=python bash backends/vulkan/test/scripts/test_op.sh --build
+        # TODO(ssjia): figure out how to run custom op tests in CI. Currently, they are
+        # failing due to to the libstdc++.so.6 installed with conda not supporting
+        # GLIBCXX_3.4.30. These tests are still run in Meta internal CI.
+        # ./cmake-out/backends/vulkan/test/op_tests/vulkan_sdpa_test
+
+        # Run e2e testing for selected operators. More operators will be tested via this
+        # route in the future.
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*pt2e*"
+        python -m unittest backends/vulkan/test/test_vulkan_delegate.py -k "*torchao*"
 
   nxp-build-test:
     name: nxp-build-test

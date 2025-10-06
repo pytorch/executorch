@@ -33,17 +33,6 @@ def pytest_configure(config):
     if config.option.arm_run_tosa_version:
         pytest._test_options["tosa_version"] = config.option.arm_run_tosa_version
 
-    # Not all deployments of ET have the TOSA reference model available.
-    # Make sure we don't try to use it if it's not available.
-    try:
-        if pytest._test_options["tosa_version"] == "0.80":
-            import tosa_tools.v0_80.tosa_reference_model as tosa_reference_model
-        else:
-            import tosa_tools.tosa_ref_model as tosa_reference_model
-    except ImportError:
-        pytest._test_options["tosa_ref_model"] = False  # type: ignore[attr-defined]
-        tosa_reference_model = None  # noqa
-
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 
@@ -129,7 +118,7 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
       a RuntimeError instead of returning False.
     """
 
-    if option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
+    if hasattr(pytest, "_test_options") and option in pytest._test_options and pytest._test_options[option]:  # type: ignore[attr-defined]
         return True
     else:
         if fail_if_not_enabled:

@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -35,14 +35,16 @@ class Model(str, Enum):
     ResNet50 = "resnet50"
     Llava = "llava"
     EfficientSam = "efficient_sam"
-    Qwen25 = "qwen2_5"
+    Qwen25 = "qwen2_5_1_5b"
     Phi4Mini = "phi_4_mini"
+    SmolLM2 = "smollm2"
 
     def __str__(self) -> str:
         return self.value
 
 
 class Backend(str, Enum):
+    Xnnpack = "xnnpack"
     XnnpackQuantizationDelegation = "xnnpack-quantization-delegation"
     CoreMlExportOnly = "coreml"
     CoreMlExportAndTest = "coreml-test"  # AOT export + test with runner
@@ -82,6 +84,7 @@ MODEL_NAME_TO_MODEL = {
     str(Model.EfficientSam): ("efficient_sam", "EfficientSAM"),
     str(Model.Qwen25): ("qwen2_5", "Qwen2_5Model"),
     str(Model.Phi4Mini): ("phi_4_mini", "Phi4MiniModel"),
+    str(Model.SmolLM2): ("smollm2", "SmolLM2Model"),
 }
 
 __all__ = [

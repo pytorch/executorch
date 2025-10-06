@@ -37,12 +37,16 @@ class ModelType(str, Enum):
     llama3_2 = "llama3_2"
     llama3_2_vision = "llama3_2_vision"
     static_llama = "static_llama"
-    qwen2_5 = "qwen2_5"
+    qwen2_5_0_5b = "qwen2_5_0_5b"
+    qwen2_5_1_5b = "qwen2_5_1_5b"
     qwen3_0_6b = "qwen3_0_6b"
     qwen3_1_7b = "qwen3_1_7b"
     qwen3_4b = "qwen3_4b"
     phi_4_mini = "phi_4_mini"
     smollm2 = "smollm2"
+    lfm2_350m = "lfm2_350m"
+    lfm2_700m = "lfm2_700m"
+    lfm2_1_2b = "lfm2_1_2b"
 
 
 class PreqMode(str, Enum):
@@ -60,7 +64,7 @@ class PreqMode(str, Enum):
 @dataclass
 class BaseConfig:
     """
-    Configurations specific to the model, e.g. whether it’s Qwen3 or Phi-4-mini,
+    Configurations specific to the model, e.g. whether it's Qwen3 or Phi-4-mini,
     and are the minimal set of parameters needed to load the pretrained
     eager model and its weights.
 
@@ -73,10 +77,16 @@ class BaseConfig:
             if it is a Llama model or the weights will be downloaded from HuggingFace
             if it is a non-Llama model.
         checkpoint_dir: Path to directory containing sharded checkpoint files.
+        adapter_checkpoint: Path to the adapter.pt file from torchtune. Used if
+            the model has trained LoRA adapters. Must provide
+            adapter_config.json.
+        adapter_config: Path to the adapter_config.json file from torchtune.
+            Used if the model has trained LoRA adapters. Must provide adapter.pt.
         tokenizer_path: Path to the tokenizer file.
         metadata: Json string containing metadata information.
             e.g. '"{\"get_bos_id\":128000, \"get_eos_ids\":[128009, 128001]}"'
-        use_lora: Rank of the LoRA, if set to 0 then this means no LoRA. For use with QAT.
+        use_lora: Only for use with QAT. Rank of the LoRA adapter, disabled
+            if set to 0.
         fairseq2: For legacy internal use cases, this is safe to ignore.
         preq_mode: Legacy option to specify how prequantized weights are loaded.
             Going forward, ExecuTorch supports loading weights prequantized through
@@ -90,6 +100,8 @@ class BaseConfig:
     params: Optional[str] = None
     checkpoint: Optional[str] = None
     checkpoint_dir: Optional[str] = None
+    adapter_checkpoint: Optional[str] = None
+    adapter_config: Optional[str] = None
     tokenizer_path: Optional[str] = None
     metadata: Optional[str] = None
     use_lora: int = 0
@@ -203,6 +215,9 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
+        foundation_weights_file: configure the foundation weights of a model
+            to be placed in a separate file, external to the PTE. Pass the
+            intended file name here.
     """
 
     max_seq_length: int = 128
@@ -211,6 +226,7 @@ class ExportConfig:
     output_name: Optional[str] = None
     so_library: Optional[str] = None
     export_only: bool = False
+    foundation_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -303,7 +319,12 @@ class QuantizationConfig:
     """
 
     # Constants.
-    QMODE_OPTIONS: ClassVar[List[str]] = ["int8", "8da4w", "8da4w-gptq", "vulkan_4w"]
+    QMODE_OPTIONS: ClassVar[List[str]] = [
+        "int8",
+        "8da4w",
+        "8da4w-gptq",
+        "4w",
+    ]
     AO_QUANT_PATTERNS: ClassVar[List[str]] = [
         r"torchao:8da(\d+)w",
         r"torchao:fpa(\d+)w",
@@ -405,6 +426,7 @@ class VulkanConfig:
     """
 
     enabled: bool = False
+    force_fp16: bool = False
 
 
 @dataclass
@@ -431,6 +453,16 @@ class MPSConfig:
 
 
 @dataclass
+class TorchAOKernelsConfig:
+    """
+    Configures the torchao-kernels backend.
+    """
+
+    use_torchao_kernels_linear: bool = False
+    use_torchao_kernels_tied_embedding: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -442,6 +474,7 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
 ################################################################################
@@ -479,6 +512,10 @@ class LlmConfig:
             llm_config.base.checkpoint = args.checkpoint
         if hasattr(args, "checkpoint_dir"):
             llm_config.base.checkpoint_dir = args.checkpoint_dir
+        if hasattr(args, "adapter_checkpoint"):
+            llm_config.base.adapter_checkpoint = args.adapter_checkpoint
+        if hasattr(args, "adapter_config"):
+            llm_config.base.adapter_config = args.adapter_config
         if hasattr(args, "tokenizer_path"):
             llm_config.base.tokenizer_path = args.tokenizer_path
         if hasattr(args, "metadata"):
@@ -533,6 +570,8 @@ class LlmConfig:
             llm_config.export.so_library = args.so_library
         if hasattr(args, "export_only"):
             llm_config.export.export_only = args.export_only
+        if hasattr(args, "foundation_weights_file"):
+            llm_config.export.foundation_weights_file = args.foundation_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):
@@ -583,6 +622,8 @@ class LlmConfig:
         # Vulkan
         if hasattr(args, "vulkan"):
             llm_config.backend.vulkan.enabled = args.vulkan
+        if hasattr(args, "vulkan_force_fp16"):
+            llm_config.backend.vulkan.force_fp16 = args.vulkan_force_fp16
 
         # QNN
         if hasattr(args, "qnn"):
@@ -601,6 +642,28 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # TorchAoKernels
+        if any(
+            hasattr(args, a)
+            for a in [
+                "use_torchao_kernels",
+                "use_torchao_kernels_linear",
+                "use_torchao_kernels_tied_embedding",
+            ]
+        ):
+            if hasattr(args, "use_torchao_kernels") and args.use_torchao_kernels:
+                # Enable all conversions if torchao_kernels is specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = True
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = True
+            else:
+                # Otherwise, only enable the conversions that are specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = getattr(
+                    args, "use_torchao_kernels_linear", False
+                )
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = getattr(
+                    args, "use_torchao_kernels_tied_embedding", False
+                )
 
         # DebugConfig
         if hasattr(args, "profile_memory"):

@@ -24,6 +24,11 @@ if(NOT ET_HAVE_SYS_MMAN_H AND NOT WIN32)
        "extension/data_loader/mmap_data_loader.cpp"
   )
 endif()
+if(WIN32)
+  list(APPEND _extension_data_loader__srcs
+       "extension/data_loader/mman_windows.cpp"
+  )
+endif()
 list(TRANSFORM _extension_data_loader__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_data_loader ${_extension_data_loader__srcs})
 target_link_libraries(extension_data_loader executorch_core)

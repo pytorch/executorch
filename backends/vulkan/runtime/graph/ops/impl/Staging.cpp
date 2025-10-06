@@ -27,15 +27,18 @@ void add_staging_to_tensor_node(
   VK_CHECK_COND(graph.val_is_staging(in_staging));
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
+      graph,
+      out_tensor,
+      graph.dtype_of(in_staging),
+      graph.int8_buffers_enabled());
+
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(out_tensor)) {
+    param_buffers.append(graph.buffer_meta_ubo(out_tensor));
+  }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_buffer_storage(out_tensor)) {
-    pcs = {
-        graph.sizes_pc_of(out_tensor),
-        graph.strides_pc_of(out_tensor),
-        graph.numel_pc_of(out_tensor)};
-  } else {
+  if (graph.is_texture_storage(out_tensor)) {
     pcs = {graph.sizes_pc_of(out_tensor)};
   }
 
@@ -47,7 +50,7 @@ void add_staging_to_tensor_node(
       // Input and Outputs
       {{out_tensor, vkapi::kWrite}, {in_staging, vkapi::kRead}},
       // Parameter Buffers
-      {},
+      param_buffers,
       // Push Constants
       pcs,
       // Specialization Constants
@@ -64,16 +67,6 @@ bool is_bitw8_shader(const vkapi::ShaderInfo& shader) {
   const auto size = kBitw8PrefixStr.size();
   const std::string& shader_prefix_str = shader.kernel_name.substr(0, size);
   return shader_prefix_str == kBitw8PrefixStr;
-}
-
-vkapi::ShaderInfo get_tensor_to_staging_shader(
-    ComputeGraph* graph,
-    const std::vector<ArgGroup>& args,
-    const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
-  const ValueRef in_tensor = args.at(1).refs.at(0);
-  return get_tensor_to_nchw_shader(
-      *graph->get_tensor(in_tensor), graph->int8_buffers_enabled());
 }
 
 utils::uvec3 tensor_to_staging_global_wg_size(
@@ -111,15 +104,18 @@ void add_tensor_to_staging_node(
   VK_CHECK_COND(graph.val_is_staging(out_staging));
 
   vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
-      *graph.get_tensor(in_tensor), graph.int8_buffers_enabled());
+      graph,
+      in_tensor,
+      graph.dtype_of(out_staging),
+      graph.int8_buffers_enabled());
+
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(in_tensor)) {
+    param_buffers.append(graph.buffer_meta_ubo(in_tensor));
+  }
 
   std::vector<PushConstantDataInfo> pcs;
-  if (graph.is_buffer_storage(in_tensor)) {
-    pcs = {
-        graph.sizes_pc_of(in_tensor),
-        graph.strides_pc_of(in_tensor),
-        graph.numel_pc_of(in_tensor)};
-  } else {
+  if (graph.is_texture_storage(in_tensor)) {
     pcs = {graph.sizes_pc_of(in_tensor)};
   }
 
@@ -135,7 +131,7 @@ void add_tensor_to_staging_node(
       // Input and Outputs
       {{out_staging, vkapi::kWrite}, {in_tensor, vkapi::kRead}},
       // Parameter Buffers
-      {},
+      param_buffers,
       // Push Constants
       pcs,
       // Specialization Constants
@@ -152,7 +148,12 @@ void add_prepack_standard_node(
     const ValueRef tensor,
     const bool transpose_hw = false) {
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
-      *graph.get_tensor(tensor), graph.int8_buffers_enabled());
+      graph, tensor, graph.dtype_of(tensor_data), graph.int8_buffers_enabled());
+
+  vkapi::ParamsBindList param_buffers = {};
+  if (graph.is_buffer_storage(tensor)) {
+    param_buffers.append(graph.buffer_meta_ubo(tensor));
+  }
 
   std::vector<PushConstantDataInfo> pcs;
   if (graph.is_buffer_storage(tensor)) {
@@ -175,7 +176,7 @@ void add_prepack_standard_node(
       tensor_data,
       tensor,
       // Parameter Buffers
-      {},
+      param_buffers,
       // Specialization Constants
       {graph.hashed_layout_of(tensor), transpose_hw_spec},
       pcs));
@@ -318,75 +319,6 @@ ValueRef prepack_int4_linear_weight_transposed_interleaved(
       {},
       // Push Constants
       {graph.sizes_pc_of(qmat2)}));
-
-  return qmat2;
-}
-
-ValueRef prepack_int4_linear_weight_transposed_block_4x8(
-    ComputeGraph& graph,
-    const ValueRef qmat2_data) {
-  std::vector<int64_t> qmat2_orig_sizes = graph.sizes_of(qmat2_data);
-  const int64_t ndim = graph.dim_of(qmat2_data);
-
-  const int64_t K_div2 = qmat2_orig_sizes.at(ndim - 1); // Input is [N, K/2]
-  const int64_t N = qmat2_orig_sizes.at(ndim - 2);
-  // Logical K dimension. Each value in the tensor is a uint8 that contains 2
-  // packed 4-bit values.
-  const int64_t K = K_div2 * 2;
-
-  // This packing format partitions the weight tensor into 4 wide x 8 high
-  // blocks. To figure out the size of the output tensor, determine the number
-  // of blocks along the width and height dims.
-  const int64_t num_blocks_K = utils::div_up(K, int64_t(4));
-  const int64_t num_blocks_N = utils::div_up(N, int64_t(8));
-  // Each transposed block is 8 wide x 4 high. In terms of 8-bit values, the
-  // block is 4 wide x 4 high. To maximize memory loading efficiency, the packed
-  // weight tensor will use a base data type of uint32_t; in terms of uint32_t,
-  // each block is 1 wide x 4 high. However, each block is also flattened as it
-  // is stored, so that the whole block can be loaded at once. As a result, the
-  // stored block will be 4 wide x 1 high.
-  const int64_t output_width = num_blocks_K * 4;
-  const int64_t output_height = num_blocks_N;
-
-  // Store the original sizes of the tensor to pass to the shader
-  utils::ivec2 orig_sizes{
-      utils::safe_downcast<int32_t>(K), utils::safe_downcast<int32_t>(N)};
-
-  std::vector<int64_t> qmat2_sizes{output_height, output_width};
-
-  utils::StorageType storage_type = utils::kTexture2D;
-  uint32_t max_extent = graph.context()->adapter_ptr()->max_texture2d_dim();
-  if (output_width > max_extent * 4 || output_height > max_extent) {
-    storage_type = utils::kBuffer;
-  }
-
-  ValueRef qmat2 = graph.add_tensor(
-      qmat2_sizes, vkcompute::vkapi::kUInt, storage_type, utils::kWidthPacked);
-
-  // Global workgroup size: each thread writes out two adjacent blocks
-  utils::uvec3 global_wg_size{
-      utils::div_up(utils::safe_downcast<uint32_t>(num_blocks_K), uint32_t(2)),
-      utils::safe_downcast<uint32_t>(num_blocks_N),
-      1u};
-
-  std::string kernel_name = "pack_int4_linear_weight_transposed_block_4x8";
-  add_storage_type_suffix(kernel_name, storage_type);
-
-  graph.prepack_nodes().emplace_back(new PrepackNode(
-      graph,
-      VK_KERNEL_FROM_STR(kernel_name),
-      global_wg_size,
-      graph.create_local_wg_size(global_wg_size),
-      // Inputs and Outputs
-      qmat2_data,
-      qmat2,
-      // UBOs
-      {},
-      // Specialization Constants
-      {},
-      // Push Constants
-      {graph.sizes_pc_of(qmat2),
-       PushConstantDataInfo(&orig_sizes, sizeof(utils::ivec2))}));
 
   return qmat2;
 }

@@ -10,10 +10,11 @@ import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
-    EthosU85PipelineBI,
+    EthosU85PipelineINT,
     OpNotSupportedPipeline,
-    TosaPipelineBI,
-    TosaPipelineMI,
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
 )
 
 
@@ -69,20 +70,20 @@ class MaxWithIndex(torch.nn.Module):
 
 
 @common.parametrize("test_data", Amax.test_data)
-def test_amax_tosa_MI(test_data: Amax.input_t):
+def test_amax_tosa_FP(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
-    pipeline = TosaPipelineMI[Amax.input_t](Amax(dim, keep_dims), data, Amax.aten_op)
+    pipeline = TosaPipelineFP[Amax.input_t](Amax(dim, keep_dims), data, Amax.aten_op)
     pipeline.run()
 
 
 @common.parametrize("test_data", Amax.test_data)
-def test_amax_tosa_BI(test_data: Amax.input_t):
+def test_amax_tosa_INT(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
-    pipeline = TosaPipelineBI[Amax.input_t](Amax(dim, keep_dims), data, Amax.aten_op)
+    pipeline = TosaPipelineINT[Amax.input_t](Amax(dim, keep_dims), data, Amax.aten_op)
     pipeline.run()
 
 
-def test_amax_u55_BI_not_delegated():
+def test_amax_u55_INT_not_delegated():
     data, dim, keep_dims = Amax.test_data["rank_4_all_dim"]()
     pipeline = OpNotSupportedPipeline[Amax.input_t](
         Amax(dim, keep_dims),
@@ -94,39 +95,35 @@ def test_amax_u55_BI_not_delegated():
     pipeline.run()
 
 
-fvp_xfails = {"rank_4_mult_batches": "MLETORCH-517 : Multiple batches not supported"}
-
-
-@common.parametrize("test_data", Amax.test_data, fvp_xfails, strict=False)
+@common.parametrize("test_data", Amax.test_data)
 @common.XfailIfNoCorstone320
-def test_amax_u85_BI(test_data: Amax.input_t):
+def test_amax_u85_INT(test_data: Amax.input_t):
     data, dim, keep_dims = test_data()
-    pipeline = EthosU85PipelineBI[Amax.input_t](
+    pipeline = EthosU85PipelineINT[Amax.input_t](
         Amax(dim, keep_dims),
         data,
         Amax.aten_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", Max.test_data)
-def test_max_dim_tosa_MI_to_amax(test_data: Max.input_t):
+def test_max_dim_tosa_FP_to_amax(test_data: Max.input_t):
     data, dim = test_data()
-    pipeline = TosaPipelineMI[Max.input_t](Max(dim), data, "torch.ops.aten.max")
+    pipeline = TosaPipelineFP[Max.input_t](Max(dim), data, "torch.ops.aten.max")
     pipeline.run()
 
 
 @common.parametrize("test_data", Max.test_data)
-def test_max_dim_tosa_BI_to_amax(test_data: Max.input_t):
+def test_max_dim_tosa_INT_to_amax(test_data: Max.input_t):
     data, dim = test_data()
     module = Max(dim)
-    pipeline = TosaPipelineBI[Max.input_t](module, data, "torch.ops.aten.amax")
+    pipeline = TosaPipelineINT[Max.input_t](module, data, "torch.ops.aten.amax")
     pipeline.run()
 
 
 @pytest.mark.xfail(reason="MLETORCH-718 : Quantization of indices in arm_quantizer")
-def test_max_dim_tosa_BI_not_delegated():
+def test_max_dim_tosa_INT_not_delegated():
     data, dim = Max.test_data()["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Max.input_t](
         MaxWithIndex(dim), data, {}, quantize=True
@@ -134,7 +131,65 @@ def test_max_dim_tosa_BI_not_delegated():
     pipeline.run()
 
 
-def test_max_dim_tosa_MI_not_delegated():
+def test_max_dim_tosa_FP_not_delegated():
     data, dim = Max.test_data["rank_4_dim_3"]()
     pipeline = OpNotSupportedPipeline[Max.input_t](MaxWithIndex(dim), data, {})
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
+def test_amax_vgf_FP(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Amax.input_t](
+        module,
+        data,
+        Amax.aten_op,
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Amax.test_data)
+@common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
+def test_amax_vgf_INT(test_data: Amax.input_t):
+    data, dim, keep_dims = test_data()
+    module = Amax(dim, keep_dims)
+    pipeline = VgfPipeline[Amax.input_t](
+        module,
+        data,
+        Amax.aten_op,
+        tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Max.test_data)
+@common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
+def test_max_dim_vgf_FP_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = VgfPipeline[Max.input_t](
+        Max(dim),
+        data,
+        "torch.ops.aten.max",
+        tosa_version="TOSA-1.0+FP",
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", Max.test_data)
+@common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
+def test_max_dim_vgf_INT_to_amax(test_data: Max.input_t):
+    data, dim = test_data()
+    pipeline = VgfPipeline[Max.input_t](
+        Max(dim),
+        data,
+        "torch.ops.aten.amax",
+        tosa_version="TOSA-1.0+INT",
+    )
     pipeline.run()

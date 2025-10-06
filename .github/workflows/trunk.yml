@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-models-macos:
-    name: test-models-macos
+  test-models-macos-cpu:
+    name: test-models-macos-cpu
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
@@ -55,6 +55,103 @@ jobs:
         # Build and test executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
 
+#  test-models-arm-zephyr:
+#    name: test-models-arm-zephyr
+#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+#    strategy:
+#      matrix:
+#        model: [add, softmax, mv2]
+#      fail-fast: false
+#    with:
+#      runner: linux.2xlarge
+#      docker-image: ci-image:executorch-ubuntu-22.04-zephyr-sdk
+#      submodules: 'recursive'
+#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+#      timeout: 120
+#      script: |
+#        MODEL_NAME=${{ matrix.model }}
+#        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+#        conda activate "${CONDA_ENV}"
+#        if [[ ${{ matrix.model}} == "add" ]]; then
+#          SIM_LIMIT_SEC=60
+#        elif [[ ${{ matrix.model}} == "softmax" ]]; then
+#          SIM_LIMIT_SEC=60
+#        elif [[ ${{ matrix.model}} == "mv2" ]]; then
+#          SIM_LIMIT_SEC=5000
+#        else
+#          echo "Failed unsupported model selection ${{ matrix.model }}"
+#          exit 1
+#        fi
+#
+#        source .ci/scripts/utils.sh
+#        source .ci/scripts/zephyr-utils.sh
+#        mkdir -p zephyr_scratch/
+#        cd zephyr_scratch
+#        export ZEPHYR_PROJ_ROOT=$(realpath $(pwd))
+#        export ARM_FVP_TUTORIALS_ROOT=$ZEPHYR_PROJ_ROOT/zephyr/samples/modules/executorch/arm-fvp-tutorials
+#
+#        # TODO @Bujji: Should see if this can be moved into the docker image itself
+#        download_arm_zephyr_sdk
+#        ./zephyr-sdk-0.17.2/setup.sh -c -t arm-zephyr-eabi
+#        cd $ZEPHYR_PROJ_ROOT
+#        setup_zephyr_et_module
+#
+#        # Run setup scripts for Arm FVP and Arm AOT Compilation
+#        cd $ZEPHYR_PROJ_ROOT/modules/lib/executorch
+#        install_executorch
+#        .ci/scripts/setup-arm-baremetal-tools.sh --target-toolchain zephyr
+#        source examples/arm/ethos-u-scratch/setup_path.sh
+#        source $ZEPHYR_PROJ_ROOT/zephyr/zephyr-env.sh
+#
+#        # Get the model as PTE
+#        python -m examples.arm.aot_arm_compiler \
+#            --model_name="${MODEL_NAME}" \
+#            --output="${MODEL_NAME}.pte"
+#
+#        # Generate the C-style header
+#        cd $ARM_FVP_TUTORIALS_ROOT
+#        python build_model.py \
+#            --executorch-root $ZEPHYR_PROJ_ROOT/modules/lib/executorch \
+#            --pte-file $ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte \
+#            --output-path $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/src/
+#
+#        cd $ARM_FVP_TUTORIALS_ROOT/models/${MODEL_NAME}/
+#
+#        # Build the zephyr elf
+#        west build -p always -b mps3/corstone300/fvp -- \
+#            -DET_PTE_FILE_PATH_FOR_SELECTIVE_BUILD=$ZEPHYR_PROJ_ROOT/modules/lib/executorch/${MODEL_NAME}.pte
+#
+#        # Run the simulation
+#        FVP_Corstone_SSE-300_Ethos-U55 -a build/zephyr/zephyr.elf \
+#            -C mps3_board.visualisation.disable-visualisation=1 \
+#            -C mps3_board.telnetterminal0.start_telnet=0 \
+#            -C mps3_board.uart0.out_file='sim.out'  \
+#            -C cpu0.CFGITCMSZ=15 \
+#            -C cpu0.CFGDTCMSZ=15 \
+#            --simlimit ${SIM_LIMIT_SEC}
+#
+#        # Disable exit on error
+#        set +e
+#        # Report failure if any of the ouptut verification checks fail
+#        grep -qF "ERROR" sim.out
+#        exit_status=$? #store 0 if found (failure), 1 if not (success)
+#        if [[ "$exit_status" -eq "0" ]]; then
+#            cat sim.out
+#            set -e
+#            exit 1
+#        fi
+#
+#        # Report fail if simulation does not complete successfully
+#        grep -qF "SUCCESS: Program complete, exiting." sim.out
+#        exit_status=$? #store 0 if found (success), 1 if not (failure)
+#        if [[ "$exit_status" -eq "1" ]]; then
+#            cat sim.out
+#            set -e
+#            exit 1
+#        fi
+#        # Re-enable exit on error
+#        set -e
+
   test-models-linux-aarch64:
     name: test-models-linux-aarch64
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
@@ -79,7 +176,7 @@ jobs:
           - model: phi_4_mini
             backend: portable
             runner: linux.arm64.m7g.4xlarge
-          - model: qwen2_5
+          - model: qwen2_5_1_5b
             backend: portable
             runner: linux.arm64.2xlarge
           - model: llama3_2_vision_encoder
@@ -191,6 +288,7 @@ jobs:
           - test_arm_baremetal: test_models_tosa
           - test_arm_baremetal: test_models_ethos-u55
           - test_arm_baremetal: test_models_ethos-u85
+          - test_arm_baremetal: test_smaller_stories_llama
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -242,12 +340,12 @@ jobs:
         setup_script_args=""
         if [[ ${{ matrix.os}} == "bare_metal" ]]; then
           toolchain_prefix=arm-none-eabi-
-          threshold="109000"
+          threshold="110592" # 108 KiB
           toolchain_cmake=examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
         elif [[ ${{ matrix.os}} == "zephyr-preset" ]]; then
           setup_script_args="--target-toolchain zephyr"
           toolchain_prefix=arm-zephyr-eabi-
-          threshold="135000"
+          threshold="135168" # 132 KiB
           toolchain_cmake=examples/zephyr/x86_64-linux-arm-zephyr-eabi-gcc.cmake
         else
           echo "Fail unsupport OS selection ${{ matrix.os }}"
@@ -337,7 +435,7 @@ jobs:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
-      runner: macos-latest-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -387,7 +485,7 @@ jobs:
         eval "$(conda shell.bash hook)"
 
         # Install requirements
-        ${CONDA_RUN} EXECUTORCH_BUILD_TORCHAO=1 python install_executorch.py
+        ${CONDA_RUN} EXECUTORCH_BUILD_KERNELS_TORCHAO=1 python install_executorch.py
         ${CONDA_RUN} sh examples/models/llama/install_requirements.sh
 
         # Run test
@@ -487,34 +585,88 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh -model stories110M -build_tool cmake -dtype "${DTYPE}" -mode "${MODE}"
 
-  # # TODO(jackzhxng): Runner consistently runs out of memory before test finishes. Try to find a more powerful runner.
-  # test-llava-runner-macos:
-  #   name: test-llava-runner-macos
-  #   uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-  #   strategy:
-  #     fail-fast: false
-  #   with:
-  #     runner: macos-14-xlarge
-  #     python-version: '3.11'
-  #     submodules: 'recursive'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     timeout: 900
-  #     script: |
-  #       BUILD_TOOL=cmake
+  test-torchao-huggingface-checkpoints:
+    name: test-torchao-huggingface-checkpoints
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      matrix:
+        model: [qwen3_4b, phi_4_mini]
+        runner: [linux.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12]
+        backend: [xnnpack]
+        include:
+          - model: qwen3_4b
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
+          - model: phi_4_mini
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: ci-image:${{ matrix.docker-image }}
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-  #       bash .ci/scripts/setup-conda.sh
-  #       # Setup MacOS dependencies as there is no Docker support on MacOS atm
-  #       GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
 
-  #       # install Llava requirements
-  #       ${CONDA_RUN} bash examples/models/llama/install_requirements.sh
-  #       ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
+        if [[ "${{ matrix.backend }}" == "torchao" ]]; then
+          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install third-party/ao
+        fi
 
-  #       # run python unittest
-  #       ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
+        pip install -U "huggingface_hub[cli]"
 
-  #       # run e2e (export, tokenizer and runner)
-  #       PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.model != 'phi_4_mini' && '--test_with_runner' || '' }}  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
+
+  test-multimodal-macos:
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    name: test-multimodal-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ["gemma3-4b"] # llava gives segfault so not covering.
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: macos-15-xlarge
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        echo "::group::Set up ExecuTorch"
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+        echo "::endgroup::"
+
+        echo "::group::Set up Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        echo "::group::Test ${{ matrix.model }}"
+        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${{ matrix.model }} --quantize --recipe xnnpack
+        echo "::endgroup::"
 
   test-qnn-model:
     name: test-qnn-model
@@ -525,7 +677,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l]
+        model: [dl3, mv3, mv2, ic4, ic3, vit, mb, w2l, conv_former]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -551,7 +703,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [albert, bert, distilbert] # eurobert requires transfomer >= 4.48.0, skip for now
+        model: [cvt, dit, efficientnet, focalnet, mobilevit_v1, mobilevit_v2, pvt, swin, albert, bert, distilbert, roberta] # eurobert requires transfomer >= 4.48.0, skip for now
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -568,8 +720,49 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_model.sh ${{ matrix.model }} "cmake" "qnn"
 
-  test-apple-model:
-    name: test-apple-model
+  test-models-macos-coreml:
+    name: test-models-macos-coreml
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        model: [dl3, edsr, efficient_sam, emformer_join, emformer_transcribe, ic3, ic4, mobilebert, mv2, mv3, resnet50, vit, w2l]
+      fail-fast: false
+    with:
+      runner: macos-m1-stable
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=cmake
+        BACKEND="coreml-pybind"
+
+
+        # Set model specific overrides
+        if [[ "${MODEL_NAME}" == "mobilebert" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12907
+          # mobilebert has nan output on FP16, and high MSE on fp32, so we disable runtime test now
+          BACKEND="coreml"
+        fi
+
+        if [[ "${MODEL_NAME}" == "efficient_sam" ]]; then
+          # See https://github.com/pytorch/executorch/issues/12906
+          # efficient_sam fails to run on CoreML
+          BACKEND="coreml"
+        fi
+
+        bash .ci/scripts/setup-conda.sh
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+        echo "Finishing installing coreml."
+
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}"
+
+  test-models-macos-mps:
+    name: test-models-macos-mps
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       fail-fast: false
@@ -581,30 +774,22 @@ jobs:
       timeout: 90
       script: |
         BUILD_TOOL=cmake
-
         bash .ci/scripts/setup-conda.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh --build-tool "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
-        echo "Finishing installing coreml."
 
-        # Build and test coreml model
-        MODELS=(mv3 ic4 resnet50 edsr mobilebert w2l)
-        for MODEL_NAME in "${MODELS[@]}"; do
-          echo "::group::Exporting coreml model: $MODEL_NAME"
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "coreml"
-          echo "::endgroup::"
-
+        # Build and test mps model
+        for MODEL_NAME in mv3 ic4 resnet50 edsr mobilebert w2l; do
           echo "::group::Exporting mps model: $MODEL_NAME"
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_model.sh "${MODEL_NAME}" "${BUILD_TOOL}" "mps"
           echo "::endgroup::"
         done
 
-  test-huggingface-transformers:
+  test-huggingface-transformers-xnnpack:
     # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
     if: ${{ !github.event.pull_request.head.repo.fork }}
-    name: test-huggingface-transformers
+    name: test-huggingface-transformers-xnnpack
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -612,12 +797,15 @@ jobs:
     secrets: inherit
     strategy:
       matrix:
-        hf_model_id: [
-          google/gemma-3-1b-it,
-          Qwen/Qwen3-0.6B,
-          HuggingFaceTB/SmolLM2-135M,
-          meta-llama/Llama-3.2-1B,
-          allenai/OLMo-1B-hf,
+        config: [
+          # XNNPack.
+          llama3.2-1b|xnnpack|--quantize,
+          qwen3-0.6b|xnnpack|--quantize,
+          qwen3-1.7b|xnnpack|--quantize,
+          gemma3-1b|xnnpack|--quantize,
+          phi4-mini|xnnpack|--quantize,
+          smollm2-135m|xnnpack|--quantize,
+          smollm3-3b|xnnpack|--quantize
         ]
       fail-fast: false
     with:
@@ -629,11 +817,32 @@ jobs:
       timeout: 90
       upload-artifact: profiling-artifacts-${{ strategy.job-index }}
       script: |
-        echo "::group::Set up ExecuTorch"
+        set -eux
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"
+        echo "Recipe: $RECIPE"
+        echo "Quantize: $QUANTIZE"
+
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
+        export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model "$MODEL" --recipe "$RECIPE" $QUANTIZE --model_dir "$OUTPUT_DIR"
+        echo "::endgroup::"
+
         # Build executor_runner with ETdump enabled
         PYTHON_EXECUTABLE=python cmake -DPYTHON_EXECUTABLE=python \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -651,78 +860,82 @@ jobs:
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -Bcmake-out .
         cmake --build cmake-out -j16 --target install --config Release
-        echo "::endgroup::"
 
-        echo "::group::Set up Hugging Face"
-        pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        git clone https://github.com/huggingface/optimum-executorch
-        pushd optimum-executorch
-        # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout $OPTIMUM_ET_COMMIT
-        python install_dev.py --skip_override_torch
-        popd
-        pip list
-        echo "::endgroup::"
-
-        echo "::group::Export to ExecuTorch"
-        # Pass matrix variable as environment variable
-        export MODEL_ID="${{ matrix.hf_model_id }}"
-        export OUTPUT_DIR="$(pwd)/${MODEL_ID}_custom_sdpa_kv_cache_8da4w"
-        pushd optimum-executorch
-
-        ARGS=(
-          "--model" "${MODEL_ID}"
-          "--task" "text-generation"
-          "--recipe" "xnnpack"
-          "--use_custom_sdpa"
-          "--use_custom_kv_cache"
-          "--qlinear"
-          "--qembedding"
-          "--output_dir" "${OUTPUT_DIR}"
-        )
-
-        optimum-cli export executorch "${ARGS[@]}"
-
-        ls -FlAGhp ${OUTPUT_DIR}
-        popd
-        echo "::endgroup::"
-
-        echo "::group::Inference using python API"
-        pushd optimum-executorch
-        python -c "
-        import os
-        from optimum.executorch import ExecuTorchModelForCausalLM
-        from transformers import AutoTokenizer
-
-        model_id = os.getenv('MODEL_ID')
-        pte_dir = os.getenv('OUTPUT_DIR')
-        print(f'Loading model {model_id} from {pte_dir}.')
-        model = ExecuTorchModelForCausalLM.from_pretrained(pte_dir)
-        generated_text = model.text_generation(
-          tokenizer=AutoTokenizer.from_pretrained(model_id),
-          prompt='Simply put, the theory of relativity states that',
-          max_seq_len=64
-        )
-        print(generated_text)
-        "
-        popd
-        echo "::endgroup::"
-
-        echo "::group::Inference using executor_runner with ETDump"
+        echo "::group::Generate artifacts for performance profiling"
         ./cmake-out/executor_runner \
           --model_path ${OUTPUT_DIR}/model.pte \
           --etdump_path ${OUTPUT_DIR}/etdump.etdp
 
-        export TSV_PATH=artifacts-to-be-uploaded/${MODEL_ID}_op_prof.tsv
+        export TSV_PATH=artifacts-to-be-uploaded/${MODEL}_op_prof.tsv
         mkdir -p $(dirname "$TSV_PATH")
         python3 -m devtools.inspector.inspector_cli \
           --etdump_path ${OUTPUT_DIR}/etdump.etdp \
           --tsv_path ${TSV_PATH}
-
         echo "::endgroup::"
 
+  test-huggingface-transformers-macos:
+    # NB: Don't run this on fork PRs because they won't have access to the secret and would fail anyway
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    name: test-huggingface-transformers-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit
+    # Models below selected based on https://huggingface.co/models?pipeline_tag=text-generation&num_parameters=min:0,max:3B&sort=trending.
+    strategy:
+      matrix:
+        config: [
+          # # XNNPack. (Skipping for now due to intermittent segmentation faults, see https://github.com/huggingface/optimum-executorch/issues/122.)
+          # llama3.2-1b|xnnpack|--quantize,
+          # qwen3-0.6b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
+          # gemma3-1b|xnnpack|--quantize,
+          # phi4-mini|xnnpack|--quantize,
+          # smollm2-135m|xnnpack|--quantize,
+          # smollm3-3b|xnnpack|--quantize,
+          # qwen3-1.7b|xnnpack|--quantize,
+          # CoreML.
+          llama3.2-1b|coreml_fp32_gpu|--quantize,
+          qwen3-0.6b|coreml_fp32_gpu|--quantize,
+          smollm2-135m|coreml_fp32_gpu|--quantize,
+          olmo-1b|coreml_fp32_gpu|--quantize,
+          bert|coreml_fp32_gpu|--quantize,
+          distilbert|coreml_fp32_gpu|--quantize
+        ]
+      fail-fast: false
+    with:
+      secrets-env: EXECUTORCH_HF_TOKEN
+      runner: macos-15-xlarge
+      python-version: '3.11'
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+        IFS='|' read -r MODEL RECIPE QUANTIZE <<< "${{ matrix.config }}"
+        echo "Model: $MODEL"
+        echo "Recipe: $RECIPE"
+        echo "Quantize: $QUANTIZE"
+
+        echo "::group::Set up ExecuTorch"
+        bash .ci/scripts/setup-conda.sh
+        eval "$(conda shell.bash hook)"
+
+        # Install requirements
+        ${CONDA_RUN} python install_executorch.py
+        echo "::endgroup::"
+
+        echo "::group::Set up Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        ${CONDA_RUN} pip list
+        echo "::endgroup::"
+
+        # Run test
+        ${CONDA_RUN} python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE}
 
   test-llama-runner-qnn-linux:
     name: test-llama-runner-qnn-linux
@@ -763,6 +976,60 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh -model stories110M -build_tool "${BUILD_TOOL}" -mode "${MODE}" -dtype "${DTYPE}" -pt2e_quantize "${PT2E_QUANTIZE}"
 
+  # this is for filtering out the qnn changes such that qnn jobs only triggered when the specific files are changed
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      qnn: ${{ steps.filter.outputs.qnn }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            qnn:
+              - 'backends/qualcomm/**'
+              - 'examples/qualcomm/**'
+              - 'examples/models/llama/**'
+
+  test-static-llama-qnn-eval-linux:
+    needs: changes # has dependency on changes jobs defined above
+    if: needs.changes.outputs.qnn == 'true'
+    name: test-static-llama-qnn-eval-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: "baseline"
+            flags: ""
+            threshold: 62.0
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-qnn-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 180
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        BUILD_TOOL="cmake"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+        PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "${BUILD_TOOL}"
+        # Setup install_requirements for llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
+
+        echo ">>> Running config: ${{ matrix.config.name }}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_qnn_static_llama_eval.sh \
+          --flags "${{ matrix.config.flags }}" \
+          --threshold "${{ matrix.config.threshold }}"
+
   unittest-release:
     uses: ./.github/workflows/_unittest.yml
     permissions:
@@ -772,3 +1039,66 @@ jobs:
       build-mode: Release
       build-tool: cmake
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
+
+  test-mcu-models:
+    name: test-mcu-models
+    uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      runner: linux.2xlarge
+      docker-image: ci-image:executorch-ubuntu-22.04-arm-sdk
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        BUILD_TOOL=${{ matrix.build-tool }}
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # Try to mirror these as closely as possible
+        source .ci/scripts/utils.sh
+        install_executorch "--use-pt-pinned-commit"
+
+        .ci/scripts/setup-arm-baremetal-tools.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
+
+        # Run selective Build
+        chmod +x examples/selective_build/test_selective_build.sh
+        examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
+
+        # Run MCU models
+        chmod +x examples/arm/run_mcu_models_fvp.sh
+        examples/arm/run_mcu_models_fvp.sh --target=cortex-m55
+
+  test-models-windows:
+    uses: pytorch/test-infra/.github/workflows/windows_job.yml@main
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [mv3, resnet50, vit, mobilebert, emformer_transcribe]
+        backend: [portable, xnnpack-q8]
+    with:
+      submodules: 'recursive'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        conda init powershell
+
+        powershell -Command "& {
+          Set-PSDebug -Trace 1
+          \$ErrorActionPreference = 'Stop'
+          \$PSNativeCommandUseErrorActionPreference = \$true
+
+          .ci/scripts/setup-windows.ps1
+
+          .ci/scripts/test_model.ps1 -modelName ${{ matrix.model }} -backend ${{ matrix.backend }}
+        }"

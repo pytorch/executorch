@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/backends/qualcomm/qnn_version.bzl", "get_qnn_library_version")
 
 oncall("executorch")
 
@@ -21,6 +22,7 @@ runtime.python_test(
         "test_recipe_provider.py",
         "test_recipe_registry.py",
         "test_export_recipe.py",
+        "test_export_session.py",
         "test_export_stages.py",
     ],
     deps = [
@@ -28,5 +30,31 @@ runtime.python_test(
         "//executorch/exir:lib",
         "//executorch/devtools/backend_debug:delegation_info",
         "//executorch/runtime:runtime",
+    ]
+)
+
+runtime.python_test(
+    name = "test_target_recipes",
+    srcs = [
+        "test_target_recipes.py",
+    ],
+    env = {
+        "LD_LIBRARY_PATH": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:qnn_offline_compile_libs)".format(get_qnn_library_version()),
+        "QNN_SDK_ROOT": "$(location fbsource//third-party/qualcomm/qnn/qnn-{0}:__dir__)".format(get_qnn_library_version()),
+        "HTTP_PROXY": "http://fwdproxy:8080",
+        "HTTPS_PROXY": "http://fwdproxy:8080",
+    },
+    labels = ["long_running"],
+    deps = [
+        "//executorch/export:lib",
+        "//executorch/export:target_recipes",
+        "//executorch/export:export_utils",
+        "//executorch/runtime:runtime",
+        "//executorch/backends/xnnpack/recipes:xnnpack_recipes",
+        "//executorch/backends/apple/coreml:coreml_recipes",
+        "//executorch/backends/qualcomm/recipes:qnn_recipes",
+        "//executorch/examples/models:models",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "fbsource//third-party/pypi/coremltools:coremltools"
     ]
 )

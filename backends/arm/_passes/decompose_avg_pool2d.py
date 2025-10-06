@@ -4,7 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm.operators.operator_validation_utils import (
     adjust_pooling_pad_if_needed,
 )
@@ -30,11 +33,11 @@ def get_decomposition(op) -> tuple:
             torch.ops.aten.avg_pool2d.default,
             torch.ops.aten.mul.Tensor,
         )
-    raise RuntimeError(f"Can't get div decomposition for op {op}")
+    raise RuntimeError(f"Can't get avg_pool2d decomposition for op {op}")
 
 
 class DecomposeAvgPool2d(ExportPass):
-    """ """
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_div_ops + aten_div_ops):
@@ -45,7 +48,10 @@ class DecomposeAvgPool2d(ExportPass):
         x = args[0]
         kernel_h, kernel_w = args[1]
         kernel_size = kernel_h * kernel_w
-        stride_h, stride_w = args[2]
+        if len(args) > 2 and args[2] is not None:
+            stride_h, stride_w = args[2]
+        else:
+            stride_h, stride_w = kernel_h, kernel_w
         pad_h, pad_w = new_pad_h, new_pad_w = args[3] if len(args) > 3 else (0, 0)
         ceil_mode = args[4] if len(args) > 4 else False
         count_include_pad = args[5] if len(args) > 5 else True
@@ -108,7 +114,14 @@ class DecomposeAvgPool2d(ExportPass):
             x = super().call_operator(cat_op, (cat_nodes, 2), kwargs, meta)
             new_pad_h = 0
 
-        avgpool_args = (x, args[1], args[2], [new_pad_h, new_pad_w], ceil_mode, False)
+        avgpool_args = (
+            x,
+            args[1],
+            [stride_h, stride_w],
+            [new_pad_h, new_pad_w],
+            ceil_mode,
+            False,
+        )
         x = super().call_operator(avgpool_op, avgpool_args, kwargs, meta)
 
         # Multiply by factor (kernel_size / divisor_override) if divisor_override

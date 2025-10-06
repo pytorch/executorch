@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,11 +18,11 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
@@ -36,9 +36,9 @@ from torch.export.exported_program import ExportedProgram
 
 
 class NeutronCompileSpecBuilder:
+    config: NeutronTargetSpec
 
     def __init__(self):
-        self.config: Target = None
         self.compile_spec: List[CompileSpec] = []
         self.compiler_flags = []
         self.output_format = None
@@ -64,18 +64,13 @@ class NeutronCompileSpecBuilder:
         Args:
             config: Neutron accelerator configuration, e.g. "imxrt700"
             neutron_converter_flavor: Flavor of the neutron-converter module to use. Neutron-converter module named "
-             "'neutron_converter_SDK_25_03' has flavor 'SDK_25_03'.
+             "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
         """
-        try:
-            self.config = Target(config)
-        except ValueError:
-            raise ValueError(
-                f"Config `{config}` is not a valid target. Must be one of `{Target.values()}`."
-            )
 
         self.neutron_converter_flavor = neutron_converter_flavor
+        self.config = NeutronTargetSpec(config, neutron_converter_flavor)
 
         assert (
             self.output_format is None
@@ -101,7 +96,7 @@ class NeutronCompileSpecBuilder:
             self.compile_spec += [
                 CompileSpec("output_format", "tflite".encode()),
                 CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
-                CompileSpec("target", self.config.value.encode()),
+                CompileSpec("target", self.config.get_name().encode()),
                 CompileSpec(
                     "neutron_converter_flavor", self.neutron_converter_flavor.encode()
                 ),
@@ -186,11 +181,12 @@ class NeutronBackend(BackendDetails):
 
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
-                edge_program
+                edge_program,
+                neutron_target_spec=NeutronTargetSpec(target, neutron_converter_flavor),
             )
 
-            neutron_model = NeutronConverterManager().convert(
-                tflite_model, target, neutron_converter_flavor
+            neutron_model = NeutronConverterManager(neutron_converter_flavor).convert(
+                tflite_model, target
             )
 
             # Dump the tflite file if logging level is enabled
@@ -245,19 +241,23 @@ class PayloadComposer:
 
         return f"{array.size}s{self._padding_format_string_for_array(array)}"
 
-    def _create_payload_header(self, io_formats) -> np.ndarray:
+    def _create_payload_header(self, io_formats, neutron_artifacts) -> np.ndarray:
         """
         Create bytes header for returned payload. It contains information about
         input and output tensor formats. Tensors are ordered based on graph signature
         of ExportedProgram. Header schema:
 
-        +----------------------------------+-----------------------------------+
-        | Input TensorFormats length (1B)  | Output TensorFormats length (1B)  |
-        +----------------------------------+-----------------------------------+
-        | 1st input tensor format (1B)     | [nth* input tensor format (1B)]   |
-        +----------------------------------+-----------------------------------+
-        | 1st output tensor format (1B)    | [nth* output tensor format (1B)]  |
-        +----------------------------------+-----------------------------------+
+        +----------------------------+-----------------------------+------------------------+
+        | Neutron inputs length (1B) | Neutron outputs length (1B) | Input args length (1B) |
+        +----------------------------+-----------+-----------------+------------------------+
+        | 1st input tensor format (1B)           | [nth* input tensor format (1B)]          |
+        +----------------------------------------+------------------------------------------+
+        | 1st output tensor format (1B)          | [nth* output tensor format (1B)]         |
+        +----------------------------------------+------------------------------------------+
+        | 1st input map (1B)                     | [nth* input map (1B)]                    |
+        +----------------------------------------+------------------------------------------+
+        | 1st output map (1B)                    | [nth* output map (1B)]                   |
+        +----------------------------------------+------------------------------------------+
 
         :param io_formats: IO tensors formats.
         :return: Bytes representation of payload header.
@@ -265,19 +265,43 @@ class PayloadComposer:
         inputs = io_formats["inputs"]
         outputs = io_formats["outputs"]
 
-        assert len(inputs) < 256, "Models with more than 255 inputs are not supported."
         assert (
-            len(outputs) < 256
+            len(neutron_artifacts.input_indices) < 256
+        ), "Models with more than 255 inputs are not supported."
+        assert (
+            len(neutron_artifacts.output_indices) < 256
         ), "Models with more than 255 outputs are not supported."
 
-        header_data = [len(inputs)]
-        header_data.append(len(outputs))
+        header_data = [len(neutron_artifacts.input_indices)]
+        header_data.append(len(neutron_artifacts.output_indices))
+        header_data.append(len(inputs))
 
-        for _tensor, tensor_format in inputs.items():
-            header_data.append(1 if tensor_format == TensorFormat.CHANNELS_LAST else 0)
+        for input_name in neutron_artifacts.input_names:
+            try:
+                header_data.append(
+                    1
+                    if inputs[input_name.decode()] == TensorFormat.CHANNELS_LAST
+                    else 0
+                )
+            except KeyError:
+                raise AssertionError(
+                    f"Input tensor `{input_name.decode()}` not found in the converted model."
+                )
 
-        for _tensor, tensor_format in outputs.items():
-            header_data.append(1 if tensor_format == TensorFormat.CHANNELS_LAST else 0)
+        for output_name in neutron_artifacts.output_names:
+            try:
+                header_data.append(
+                    1
+                    if outputs[output_name.decode()] == TensorFormat.CHANNELS_LAST
+                    else 0
+                )
+            except KeyError:
+                raise AssertionError(
+                    f"Output tensor `{output_name.decode()}` not found in the converted model."
+                )
+
+        header_data.extend(neutron_artifacts.input_indices)
+        header_data.extend(neutron_artifacts.output_indices)
 
         # noinspection PyTypeChecker
         return np.array(header_data, dtype=np.uint8)
@@ -314,9 +338,9 @@ class PayloadComposer:
 
         +----------------------------------------------------------------------------------------------------------------+
         |                                            16 bytes aligned blocks                                             |
-        +===========================+===========================+============================+===========================+
-        | Input formats length (1B) | Output formats length (1B) | [nth* input format (1B)]  | [nth* output format (1B)] |
-        +---------------------------+--------------------------- +---------------------------+---------------------------+
+        +================================================================================================================+
+        |                                                     Header                                                     |
+        +----------------------------------------------------------------------------------------------------------------+
         |                                                Neutron microcode                                               |
         +----------------------------------------------------------------------------------------------------------------+
         |                                                 Neutron weights                                                |
@@ -331,9 +355,9 @@ class PayloadComposer:
         :param neutron_model: Neutron model with single NeutronGraph node.
         :return: 16 bytes aligned binary payload.
         """
-        header = self._create_payload_header(io_formats)
-
         # Extract the Neutron microcode, weights and kernels from the Neutron Node in the `neutron_model`.
         neutron_artifacts = extract_artifacts_from_neutron_node(neutron_model)
+
+        header = self._create_payload_header(io_formats, neutron_artifacts)
 
         return self._pack_with_alignment(header, neutron_artifacts)
