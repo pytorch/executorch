@@ -84,4 +84,5 @@ jobs:
         set -eux
 
         PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
