@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
     ET_LOG(
         Info,
         "PTD data map created with %" PRIu64 " keys.",
-        ptd_data_map->get_num_keys().get());
+        static_cast<uint64_t>(ptd_data_map->get_num_keys().get()));
   }
 
   std::vector<std::string> inputs_storage;
