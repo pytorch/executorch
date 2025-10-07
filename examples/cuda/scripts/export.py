@@ -1,16 +1,18 @@
-# Copyright © 2023 Apple Inc. All rights reserved.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 #
-# Please refer to the license found in the LICENSE file in the root directory of the source tree.
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Example script for exporting simple models to flatbuffer with CUDA delegate.
 
 import argparse
 import pathlib
 
 import torch
 
-# pyre-fixme[21]: Could not find module `executorch.backends.apple.coreml.compiler`.
 from executorch.backends.cuda.cuda_backend import CudaBackend
 
-# pyre-fixme[21]: Could not find module `executorch.backends.apple.coreml.partition`.
 from executorch.backends.cuda.cuda_partitioner import CudaPartitioner
 
 from executorch.examples.models import MODEL_NAME_TO_MODEL
@@ -28,7 +30,6 @@ _EDGE_COMPILE_CONFIG = EdgeCompileConfig(
     _check_ir_validity=False,
     _skip_dim_order=True,  # TODO(T182928844): enable dim_order in backend
 )
-aten = torch.ops.aten
 
 
 def is_fbcode():
@@ -95,7 +96,7 @@ def main():
     # Add decompositions for triton to generate kernels.
     exported_programs = exported_programs.run_decompositions(
         {
-            aten.conv1d.default: conv1d_to_conv2d,
+            torch.ops.aten.conv1d.default: conv1d_to_conv2d,
         }
     )
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]):

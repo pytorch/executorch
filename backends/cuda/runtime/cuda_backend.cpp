@@ -209,17 +209,17 @@ class ET_EXPERIMENTAL CudaBackend final
       return Error::InvalidArgument;
     }
 
-    // NOTE: ExecutorTorch tensors are always on CPU/host memory
+    // NOTE: ExecuTorch tensors are always on CPU/host memory
     // We need to create GPU copies for CUDA kernel execution
     std::vector<AOTITensorHandle> gpu_inputs(
         n_inputs); // GPU copies for kernel execution
     std::vector<AOTITensorHandle> gpu_outputs(
         n_outputs); // GPU tensors for kernel output
 
-    // Process input tensors: ExecutorTorch provides CPU tensors, create GPU
+    // Process input tensors: ExecuTorch provides CPU tensors, create GPU
     // copies
     for (int i = 0; i < n_inputs; i++) {
-      // Get tensor dimensions and properties from ExecutorTorch CPU tensor
+      // Get tensor dimensions and properties from ExecuTorch CPU tensor
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
       auto scalar_type = cpu_tensor->scalar_type();
@@ -252,10 +252,10 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
     ET_LOG(Info, "Inputs copied to GPU");
-    // Process output tensors: create GPU counterparts for ExecutorTorch CPU
+    // Process output tensors: create GPU counterparts for ExecuTorch CPU
     // tensors
     for (int i = 0; i < n_outputs; i++) {
-      // Get output tensor dimensions from ExecutorTorch CPU tensor
+      // Get output tensor dimensions from ExecuTorch CPU tensor
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
       auto scalar_type = cpu_output_tensor->scalar_type();
@@ -313,7 +313,7 @@ class ET_EXPERIMENTAL CudaBackend final
           i);
     }
 
-    // Clean up GPU tensors that we created (ExecutorTorch tensors are always
+    // Clean up GPU tensors that we created (ExecuTorch tensors are always
     // CPU, so all GPU tensors are our copies)
     for (int i = 0; i < n_inputs; i++) {
       // All GPU input tensors were created by us, delete them
@@ -366,7 +366,6 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     delete handle;
-    // clear_all_tensors();
   }
 };
 
