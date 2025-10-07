@@ -81,6 +81,7 @@ from executorch.backends.arm._passes import (
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
+    InsertRescaleInt32Pass,
     InsertRescalePass,
     InsertTableOpsPass,
     MatchArgDtypePass,
@@ -214,6 +215,7 @@ class ArmPassManager(PassManager):
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
+        self.add_pass(InsertRescaleInt32Pass())
 
         self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
