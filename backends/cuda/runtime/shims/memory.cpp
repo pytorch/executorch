@@ -10,7 +10,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/shims/utils.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
 #include <cstdlib> // For posix_memalign
@@ -308,42 +308,48 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
 
       // Find the reference count for this memory address
       auto memory_it = memory_to_n_tensor.find(data_ptr);
-      if (memory_it != memory_to_n_tensor.end()) {
-        int32_t ref_count = memory_it->second;
 
-        if (ref_count == NOT_OWN) {
-          // Tensor never owned the memory, skip freeing
-          // Just remove tensor from tracking
-          tensors.erase(it);
-          return Error::Ok;
-        } else if (ref_count == 1) {
-          // Only current tensor using this memory, free it
-          // Determine if it's GPU memory
-          cudaPointerAttributes attributes{};
-          ET_CUDA_CHECK_OR_RETURN_ERROR(
-              cudaPointerGetAttributes(&attributes, data_ptr));
+      ET_CHECK_OR_RETURN_ERROR(
+          memory_it != memory_to_n_tensor.end(),
+          Internal,
+          "Internal error: memory not found during deletion");
 
-          if (attributes.type == cudaMemoryTypeManaged) {
-            // This is CUDA managed memory - free with proper synchronization
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
-          } else {
-            // This is CPU memory - free immediately
-            free(data_ptr);
-            data_ptr = nullptr;
-          }
+      int32_t ref_count = memory_it->second;
 
-          // Remove from memory tracking
-          memory_to_n_tensor.erase(memory_it);
-        } else if (ref_count > 1) {
-          // Other tensors still using this memory, just decrement count
-          memory_to_n_tensor[data_ptr] = ref_count - 1;
+      ET_CHECK_OR_RETURN_ERROR(
+          ref_count >= 0 || ref_count == NOT_OWN,
+          Internal,
+          "Internal error: invalid ref count %d",
+          ref_count)
+
+      if (ref_count == NOT_OWN) {
+        // Tensor never owned the memory, skip freeing
+        // Just remove tensor from tracking
+        tensors.erase(it);
+        return Error::Ok;
+      } else if (ref_count == 1) {
+        // Only current tensor using this memory, free it
+        // Determine if it's GPU memory
+        cudaPointerAttributes attributes{};
+        ET_CUDA_CHECK_OR_RETURN_ERROR(
+            cudaPointerGetAttributes(&attributes, data_ptr));
+
+        if (attributes.type == cudaMemoryTypeManaged) {
+          // This is CUDA managed memory - free with proper synchronization
+          ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
+          ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
+        } else {
+          // This is CPU memory - free immediately
+          free(data_ptr);
+          data_ptr = nullptr;
         }
+
+        // Remove from memory tracking
+        memory_to_n_tensor.erase(memory_it);
       } else {
-        ET_CHECK_OR_RETURN_ERROR(
-            false,
-            Internal,
-            "Internal error: memory not found during deletion");
+        // ref_count > 1
+        // Other tensors still using this memory, just decrement count
+        memory_to_n_tensor[data_ptr] = ref_count - 1;
       }
 
       // Remove tensor from set (this will call the destructor if it's the last
@@ -379,7 +385,6 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking) {
   aoti_torch_get_dtype(src, &src_dtype);
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(self_dtype));
-
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(src_dtype));
 
   // Check dtype compatibility - both tensors must have the same dtype
