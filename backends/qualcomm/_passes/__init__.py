@@ -22,6 +22,7 @@ from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_roll import DecomposeRoll
 from .decompose_silu import DecomposeSilu
+from .decompose_threshold import DecomposeThreshold
 from .decompose_wrap_with_autocast import DecomposeWrapWithAutocast
 from .expand_broadcast_tensor_shape import ExpandBroadcastTensorShape
 from .fixed_linear_keep_dim import FixedLinearKeepDim
@@ -63,6 +64,7 @@ __all__ = [
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeThreshold,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
