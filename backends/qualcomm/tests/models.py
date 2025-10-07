@@ -598,28 +598,6 @@ class Conv2dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
-class Conv3dSequential(torch.nn.Module):
-    def __init__(self, bias=True):
-        super().__init__()
-        self.first = torch.nn.Conv3d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=(3, 3, 3),
-            padding=1,
-            bias=bias,
-        )
-        self.second = torch.nn.Conv3d(
-            in_channels=3,
-            out_channels=2,
-            kernel_size=(3, 3, 3),
-            padding=1,
-            bias=bias,
-        )
-
-    def forward(self, x):
-        return self.second(self.first(x))
-
-
 class Conv2dSingle(torch.nn.Module):
     def __init__(
         self,
@@ -724,6 +702,28 @@ class Conv2dTopK(torch.nn.Module):
         x = self.conv(x)
         topk_values, topk_indices = torch.topk(x, 5, dim=1)
         return topk_values
+
+
+class Conv3dSequential(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.first = torch.nn.Conv3d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            bias=bias,
+        )
+        self.second = torch.nn.Conv3d(
+            in_channels=3,
+            out_channels=2,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.second(self.first(x))
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
@@ -1507,6 +1507,15 @@ class Pad(torch.nn.Module):
         )
 
 
+class Permute(torch.nn.Module):
+    def __init__(self, dims: List[int]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x):
+        return x.permute(self.dims)
+
+
 class PixelShuffle(torch.nn.Module):
     def __init__(self, scale):
         super().__init__()
@@ -1540,11 +1549,12 @@ class PixelUnshuffleMathEquivalent(torch.nn.Module):
 
 
 class PowTensorScalar(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, exponent=2):
         super().__init__()
+        self.exponent = exponent
 
     def forward(self, x):
-        return torch.pow(x, 2)
+        return torch.pow(x, self.exponent)
 
 
 class PReLUDefault(torch.nn.Module):
@@ -1999,6 +2009,19 @@ class Tanh(torch.nn.Module):
 
     def forward(self, x):
         return torch.tanh(x)
+
+
+class Threshold(torch.nn.Module):
+    def __init__(self, threshold=0.0, value=0.0, inplace=False):
+        super().__init__()
+        self.threshold = threshold
+        self.value = value
+        self.inplace = inplace
+
+    def forward(self, x):
+        return torch.nn.functional.threshold(
+            x, threshold=self.threshold, value=self.value, inplace=self.inplace
+        )
 
 
 class TopKandIndex(torch.nn.Module):
