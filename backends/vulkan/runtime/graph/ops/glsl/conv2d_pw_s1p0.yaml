@@ -9,8 +9,6 @@ conv2d_pw_s1p0:
     OPERATOR: X
     NDIM: 3
     DTYPE: float
-    TILE_SIZE_X: 1
-    TILE_SIZE_Y: 4
   generate_variant_forall:
     DTYPE:
       - VALUE: half

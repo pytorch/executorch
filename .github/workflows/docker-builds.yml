@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [linux.2xlarge]
+        runner: [linux.4xlarge]
         docker-image-name: [
           executorch-ubuntu-22.04-gcc9,
           executorch-ubuntu-22.04-clang12,

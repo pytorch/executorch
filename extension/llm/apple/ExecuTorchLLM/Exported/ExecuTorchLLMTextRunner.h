@@ -25,12 +25,23 @@ __attribute__((deprecated("This API is experimental.")))
 
  @param modelPath      File system path to the serialized model.
  @param tokenizerPath  File system path to the tokenizer data.
- @param tokens         An array of NSString special tokens to use during tokenization.
+ @return An initialized ExecuTorchLLMTextRunner instance.
+*/
+- (instancetype)initWithModelPath:(NSString *)modelPath
+                    tokenizerPath:(NSString *)tokenizerPath;
+
+/**
+ Initializes a text LLM runner with the given model and tokenizer paths,
+ and a list of special tokens to include in the tokenizer.
+
+ @param modelPath      File system path to the serialized model.
+ @param tokenizerPath  File system path to the tokenizer data.
+ @param specialTokens  An array of NSString special tokens to use during tokenization.
  @return An initialized ExecuTorchLLMTextRunner instance.
 */
 - (instancetype)initWithModelPath:(NSString *)modelPath
                     tokenizerPath:(NSString *)tokenizerPath
-                    specialTokens:(NSArray<NSString *> *)tokens
+                    specialTokens:(NSArray<NSString *> *)specialTokens
     NS_DESIGNATED_INITIALIZER;
 
 /**
@@ -60,10 +71,10 @@ __attribute__((deprecated("This API is experimental.")))
  @param error      On failure, populated with an NSError explaining the issue.
  @return YES if generation completes successfully, NO if an error occurred.
 */
-- (BOOL)generate:(NSString *)prompt
-           config:(ExecuTorchLLMConfig *)config
-withTokenCallback:(nullable void (^)(NSString *token))callback
-            error:(NSError **)error
+- (BOOL)generateWithPrompt:(NSString *)prompt
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString *token))callback
+                     error:(NSError **)error
     NS_SWIFT_NAME(generate(_:_:tokenCallback:));
 
 /**

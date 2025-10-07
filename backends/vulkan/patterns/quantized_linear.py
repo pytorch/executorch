@@ -92,9 +92,11 @@ class QuantizedLinearMatch(PatternMatch):
             return
 
         # Identify input node
-        self.fp_input_node, self.quantize_input_node, dq_node = (
-            utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[0])
-        )
+        (
+            self.fp_input_node,
+            self.quantize_input_node,
+            dq_node,
+        ) = utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[0])
         assert self.fp_input_node is not None
         self.all_nodes.append(self.fp_input_node)
 
@@ -386,7 +388,7 @@ def make_linear_dq8ca_q4gsw_op(
         weight_sums_node = create_constant_placeholder(
             exp_program=ep,
             graph=graph_module.graph,
-            kind=InputKind.CONSTANT_TENSOR,
+            kind=InputKind.PARAMETER,
             name=sums_name,
             data=sum_per_quant_group,
         )
@@ -429,7 +431,7 @@ def make_linear_q8ta_q8csw_custom_op(
         weight_sums_node = create_constant_placeholder(
             exp_program=ep,
             graph=graph_module.graph,
-            kind=InputKind.CONSTANT_TENSOR,
+            kind=InputKind.PARAMETER,
             name=sums_name,
             data=sum_per_output_channel,
         )

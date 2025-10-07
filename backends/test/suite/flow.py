@@ -1,3 +1,8 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 
 from dataclasses import dataclass, field
@@ -43,6 +48,9 @@ class TestFlow:
 
     def should_skip_test(self, test_name: str) -> bool:
         return any(pattern in test_name for pattern in self.skip_patterns)
+
+    def __str__(self):
+        return self.name
 
 
 def all_flows() -> dict[str, TestFlow]:
@@ -119,10 +127,18 @@ def all_flows() -> dict[str, TestFlow]:
         logger.info(f"Skipping QNN flow registration: {e}")
 
     try:
-        from executorch.backends.test.suite.flows.arm import ARM_TOSA_FLOW
+        from executorch.backends.test.suite.flows.arm import (
+            ARM_ETHOS_U55_FLOW,
+            ARM_ETHOS_U85_FLOW,
+            ARM_TOSA_FP_FLOW,
+            ARM_TOSA_INT_FLOW,
+        )
 
         flows += [
-            ARM_TOSA_FLOW,
+            ARM_TOSA_FP_FLOW,
+            ARM_TOSA_INT_FLOW,
+            ARM_ETHOS_U55_FLOW,
+            ARM_ETHOS_U85_FLOW,
         ]
     except Exception as e:
         logger.info(f"Skipping ARM flow registration: {e}")

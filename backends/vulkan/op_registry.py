@@ -16,8 +16,6 @@ import executorch.backends.vulkan.utils as utils
 
 import torch
 
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkMemoryLayout
-
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -48,6 +46,9 @@ class OpFeatures:
         # Optional check function used during partitioning to determine if a node's
         # inputs are supported by the operator implementation.
         "are_node_inputs_supported_fn",
+        # Optional function to determine valid representation sets for input and outputs
+        # once a node's actual inputs are known.
+        "pick_io_storage_fn",
     ]
 
     def __init__(
@@ -61,6 +62,7 @@ class OpFeatures:
         supports_resize: bool = False,
         supports_prepacking: bool = False,
         are_node_inputs_supported_fn: Optional[Callable] = allow_node,
+        pick_io_storage_fn: Optional[Callable] = None,
     ):
         self.inputs_storage: utils.TensorRepSetList = utils.TensorRepSetList(
             inputs_storage if inputs_storage is not None else []
@@ -77,15 +79,21 @@ class OpFeatures:
         self.supports_prepacking = supports_prepacking
 
         self.are_node_inputs_supported_fn = are_node_inputs_supported_fn
+        self.pick_io_storage_fn = pick_io_storage_fn
 
     def make_op_repsets(
         self,
         op_node: torch.fx.Node,
         texture_limits: utils.ImageExtents = utils.DEFAULT_TEXTURE_LIMITS,
     ) -> utils.OpRepSets:
-        return utils.OpRepSets(
-            self.inputs_storage, self.outputs_storage, op_node, texture_limits
-        )
+        inputs_storage = self.inputs_storage
+        outputs_storage = self.outputs_storage
+        if self.pick_io_storage_fn is not None:
+            i_storage, o_storage = self.pick_io_storage_fn(op_node)
+            inputs_storage = utils.TensorRepSetList(i_storage)
+            outputs_storage = utils.TensorRepSetList(o_storage)
+
+        return utils.OpRepSets(inputs_storage, outputs_storage, op_node, texture_limits)
 
 
 #######################
@@ -410,27 +418,15 @@ def register_softmax_op():
 )
 def register_reduce_op():
     def check_reduce_node(node: torch.fx.Node) -> bool:
-        dim_list = node.args[1]
-        if isinstance(dim_list, list) and len(dim_list) > 2:
+        # Only one argument implies that the reduction is over the entire tensor, which
+        # is not supported yet.
+        if len(node.args) == 1:
             return False
 
-        if isinstance(dim_list, list) and len(dim_list) == 2:
-            # Try to get the memory layout for this node
-            try:
-                memory_layout = utils.get_node_memory_layout(node)
-
-                # If we have memory layout information, check if any dimension in dim_list corresponds to a packed dimension
-                if (
-                    memory_layout is not None
-                    and memory_layout != VkMemoryLayout.DEFAULT_LAYOUT
-                ):
-                    # For now only default layout is supported for 2D reduction.
-                    # Because we can't determine if the input is NCHW or NHWC here,
-                    # assume the reduction dimension is packed so we cannot support it.
-                    return False
-            except (AssertionError, KeyError, AttributeError):
-                # If we can't get memory layout information, we'll assume the dims aren't packed
-                pass
+        dim_list = node.args[1]
+        # Only 1D and 2D reductions are supported at the moment.
+        if isinstance(dim_list, list) and len(dim_list) > 2:
+            return False
 
         def try_find_keepdim_arg(node: torch.fx.Node) -> bool:
             for arg in node.args:
@@ -446,10 +442,41 @@ def register_reduce_op():
 
         return True
 
+    def pick_io_storage_for_reduce(node: torch.fx.Node):
+        inputs_storage = utils.ANY_TEXTURE
+        outputs_storage = utils.ANY_TEXTURE
+
+        input_tensor = node.args[0]
+        ndim = input_tensor.meta["val"].ndim
+        dim_list = node.args[1]
+        if isinstance(dim_list, list) and len(dim_list) == 2:
+            reduce_dim1_whcn = utils.nchw_dim_to_whcn_dim(dim_list[0], ndim)
+            reduce_dim2_whcn = utils.nchw_dim_to_whcn_dim(dim_list[1], ndim)
+
+            possible_packed_dims = {0, 1, 2}
+            possible_packed_dims.discard(reduce_dim1_whcn)
+            possible_packed_dims.discard(reduce_dim2_whcn)
+
+            packed_dim = possible_packed_dims.pop()
+            assert packed_dim in [0, 1, 2]
+
+            if packed_dim == 0:
+                inputs_storage = utils.WIDTH_PACKED_TEXTURE
+                outputs_storage = utils.WIDTH_PACKED_TEXTURE
+            elif packed_dim == 1:
+                inputs_storage = utils.HEIGHT_PACKED_TEXTURE
+                outputs_storage = utils.HEIGHT_PACKED_TEXTURE
+            else:
+                inputs_storage = utils.CHANNELS_PACKED_TEXTURE
+                outputs_storage = utils.CHANNELS_PACKED_TEXTURE
+
+        return inputs_storage, outputs_storage
+
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         supports_resize=True,
         are_node_inputs_supported_fn=check_reduce_node,
+        pick_io_storage_fn=pick_io_storage_for_reduce,
     )
 
 
@@ -474,6 +501,23 @@ def register_2d_pool_op():
     ]
 )
 def register_convolution_op():
+    def check_conv_node(node: torch.fx.Node) -> bool:
+        x = node.args[0]
+        x_shape = x.meta["val"].size()
+        # 4-D input implies 2D convolution
+        if len(x_shape) == 4:
+            batches = x.meta["val"].size()[0]
+            if batches != 1:
+                return False
+        # 3-D input implies 1D convolution
+        if len(x_shape) == 3:
+            transpose = node.args[6]
+            # Transposed 1D convolution is not supported yet
+            if transpose:
+                return False
+
+        return True
+
     return OpFeatures(
         inputs_storage=[
             utils.CHANNELS_PACKED_TEXTURE,  # input
@@ -490,23 +534,27 @@ def register_convolution_op():
         ],
         supports_resize=True,
         supports_prepacking=True,
+        are_node_inputs_supported_fn=check_conv_node,
     )
 
 
 @update_features(
     [
-        exir_ops.edge.et_vk.conv2d_q8ta_q8csw.default,
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default,
+        exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default,
     ]
 )
 def register_quantized_conv_op():
     return OpFeatures(
         inputs_storage=[
-            utils.CHANNELS_PACKED_TEXTURE,  # input
+            utils.PACKED_INT8_4W4C_BUFFER,  # input
             utils.NO_STORAGE,  # input_scale (non tensor)
             utils.NO_STORAGE,  # input_zero_point (non tensor)
             utils.NO_STORAGE,  # weight (prepacked)
             utils.NO_STORAGE,  # weight_sums (prepacked)
             utils.NO_STORAGE,  # weight_scales (prepacked)
+            utils.NO_STORAGE,  # output_scale (non tensor)
+            utils.NO_STORAGE,  # output_zero_point (non tensor)
             utils.NO_STORAGE,  # bias (prepacked)
             utils.NO_STORAGE,  # kernel_size (non tensor)
             utils.NO_STORAGE,  # stride (non tensor)
@@ -517,6 +565,53 @@ def register_quantized_conv_op():
         ],
         supports_resize=False,
         supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.add_q8ta_q8ta_q8to.default,
+    ]
+)
+def register_quantized_binary_op():
+    return OpFeatures(
+        inputs_storage=utils.PACKED_INT8_4W4C_BUFFER,
+        supports_resize=False,
+        supports_prepacking=True,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.quantize_q8ta_for_conv2d.default,
+    ]
+)
+def register_quantize_for_conv2d_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+        ],
+        outputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,
+        ],
+        supports_resize=False,
+    )
+
+
+@update_features(
+    [
+        exir_ops.edge.et_vk.dequantize_q8to_from_conv2d.default,
+    ]
+)
+def register_dequantize_for_conv2d_op():
+    return OpFeatures(
+        inputs_storage=[
+            utils.PACKED_INT8_4W4C_BUFFER,
+        ],
+        outputs_storage=[
+            utils.CHANNELS_PACKED_TEXTURE,
+        ],
+        supports_resize=False,
     )
 
 
@@ -666,6 +761,7 @@ def register_ported_ops_with_prepacking():
     return OpFeatures(
         inputs_storage=utils.CHANNELS_PACKED_TEXTURE,
         supports_prepacking=True,
+        supports_resize=True,
     )
 
 
@@ -696,6 +792,7 @@ def register_ported_ops_with_prepacking_all_dims():
     return OpFeatures(
         inputs_storage=utils.ANY_TEXTURE,
         supports_prepacking=True,
+        supports_resize=True,
     )
 
 

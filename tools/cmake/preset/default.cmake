@@ -67,11 +67,11 @@ define_overridable_option(
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension" BOOL
-  OFF
+  ON # Required by executor_runner
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR "Build the Flat Tensor extension" BOOL
-  OFF
+  ON # Required by executor_runner
 )
 define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_LLM "Build the LLM extension" BOOL OFF

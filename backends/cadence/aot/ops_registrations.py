@@ -329,7 +329,7 @@ lib.define(
     "Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False) -> (Tensor out)"
 )
 lib.define(
-    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=0, bool ceil_mode=False, "
+    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=[], bool ceil_mode=False, "
     "bool count_include_pad=True, int? divisor_override=None, Tensor? in_zero_point=None, bool channel_last=False) -> (Tensor out)"
 )
 lib.define(
@@ -525,7 +525,7 @@ lib.define(
     "Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "avg_pool2d.out(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=0, "
+    "avg_pool2d.out(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=[], "
     "bool ceil_mode=False, bool count_include_pad=True, int? divisor_override=None, "
     "Tensor? in_zero_point=None, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -2244,10 +2244,10 @@ def avg_pool2d_meta(
     kernel_size: Tuple[int],
     stride: Tuple[int],
     padding: Tuple[int],
-    ceil_mode: bool,
-    count_include_pad: Optional[bool] = True,
+    ceil_mode: bool = False,
+    count_include_pad: bool = True,
     divisor_override: Optional[int] = None,
-    in_zero_point: Optional[int] = None,
+    in_zero_point: Optional[torch.Tensor] = None,
     channel_last: bool = False,
 ) -> torch.Tensor:
     # Use torch native meta kernels when operator semantics are similar

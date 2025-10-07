@@ -161,7 +161,6 @@ def test_ge_tensor_u85_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -177,7 +176,6 @@ def test_ge_scalar_u85_INT(test_module):
         test_module().get_inputs(),
         GreaterEqual.aten_op_tensor,
         GreaterEqual.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

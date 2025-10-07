@@ -133,7 +133,7 @@ class CadenceAtenQuantizer(Quantizer):
             if not no_outside_users(fused_partition):
                 continue
 
-            anchors = self.pattern.get_anchors(model, fused_partition)
+            anchors, _ = self.pattern.get_anchors(model, fused_partition)
             if not anchors or anchors.empty:
                 continue
             if is_annotated(

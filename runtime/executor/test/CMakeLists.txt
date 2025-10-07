@@ -191,4 +191,4 @@ target_link_libraries(test_backend_compiler_lib PUBLIC executorch_core)
 
 executorch_target_link_options_shared_lib(test_backend_compiler_lib)
 
-install(TARGETS test_backend_compiler_lib DESTINATION lib)
+install(TARGETS test_backend_compiler_lib DESTINATION ${CMAKE_INSTALL_LIBDIR})

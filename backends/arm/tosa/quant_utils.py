@@ -77,6 +77,59 @@ def insert_rescale_ops_to_int32_maxscale(
     return [rescaled_lhs, rescaled_rhs], back_scale
 
 
+def insert_rescale_ops_int16_to_int32_maxscale(
+    tosa_graph: Any, inputs: list[TosaArg], node: Node, tosa_spec=None
+) -> tuple[list[Any], float]:
+    """For ADD and SUB with int16 inputs, we rescale to int32 using a different common scale(2*max(left scale,right scale))
+    compared to all the other cases. We multiply the left and right scales by 1<<12 giving us extra precision
+    for the computation without overflowing.
+
+    Returns a list of the rescaled nodes and the scale factor used,
+    needed by insert_rescale_op_to_int16.
+    """
+
+    if len(inputs) > 2:
+        raise ValueError("More than two inputs not supported")
+
+    tensors = inputs.copy()
+    # Reshape tensor according to TOSA dim order
+    for tensor in tensors:
+        dim_order = tensor.dim_order
+        tensor.shape = [tensor.shape[i] for i in dim_order]
+
+    input_qparams = get_input_qparams(node)
+    lhs_qparams, rhs_qparams = input_qparams.values()
+    lhs_scale = lhs_qparams.get_scale_per_tensor()
+    rhs_scale = rhs_qparams.get_scale_per_tensor()
+    # Common scale for the two numbers
+    max_scale_2x = 2 * max(lhs_scale, rhs_scale)
+    SHIFT_INT16 = 12
+    # We are adding two int16 numbers. If the zero point is non-null, the result will be in the range [-131070;131070], therefore we need 18 bits for the result.
+    # We have a 32-bit accumulator, so we can shift to the left by 12 bits and not overflow. In reality, because we divide by the 2*max(lhs_scale,rhs_scale)
+    # we are shifting to the left by 11.
+    lhs_factor = (1 << SHIFT_INT16) * lhs_scale / max_scale_2x
+    rhs_factor = (1 << SHIFT_INT16) * rhs_scale / max_scale_2x
+    rescaled_lhs = build_rescale_to_int32(
+        tosa_graph,
+        tensors[0],
+        lhs_qparams.get_zp_per_tensor(),
+        lhs_factor,
+        tosa_spec=tosa_spec,
+    )
+    rescaled_rhs = build_rescale_to_int32(
+        tosa_graph,
+        tensors[1],
+        rhs_qparams.get_zp_per_tensor(),
+        rhs_factor,
+        tosa_spec=tosa_spec,
+    )
+    out_qparam = get_output_qparams(node)[0]
+    out_scale = out_qparam.get_scale_per_tensor()
+    back_scale = max_scale_2x / (out_scale * (1 << SHIFT_INT16))
+
+    return [rescaled_lhs, rescaled_rhs], back_scale
+
+
 def insert_rescale_ops_to_int32(
     tosa_graph: Any,
     inputs: list[TosaArg],

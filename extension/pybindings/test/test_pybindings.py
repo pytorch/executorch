@@ -701,7 +701,7 @@ class PybindingsTest(unittest.TestCase):
         bundled_buffer = serialize_from_bundled_program_to_flatbuffer(bundled_program)
         bundled_module = self.runtime._load_bundled_program_from_buffer(bundled_buffer)
 
-        # Load module from bundled program with external data
+        # Load module from bundled program with external data buffer
         executorch_module_bundled = (
             self.runtime._load_for_executorch_from_bundled_program(
                 bundled_module, data_buffer
@@ -709,6 +709,23 @@ class PybindingsTest(unittest.TestCase):
         )
         executorch_output_bundled = executorch_module_bundled.forward(inputs)[0]
         self.assertTrue(torch.allclose(expected, executorch_output_bundled))
+
+        # Load module from bundled program with external data file
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ptd_file = os.path.join(tmpdir, "linear.ptd")
+            with open(ptd_file, "wb") as ptd:
+                ptd.write(data_buffer)
+            executorch_module_bundled_data_file = (
+                self.runtime._load_for_executorch_from_bundled_program(
+                    bundled_module, ptd_file
+                )
+            )
+            executorch_output_bundled_data_file = (
+                executorch_module_bundled_data_file.forward(inputs)[0]
+            )
+            self.assertTrue(
+                torch.allclose(expected, executorch_output_bundled_data_file)
+            )
 
         # Test 6: Bundled program without external data should fail
         executorch_module_bundled_no_data = (

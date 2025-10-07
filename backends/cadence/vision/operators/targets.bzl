@@ -21,6 +21,25 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
     if deps == None:
         deps = []
 
+    # Determine which headers to export based on operator name
+    exported_headers = ["operators.h"]
+    
+    # Add quantized_ops.h header for quantized operators
+    quantized_ops = [
+        "quantized_fully_connected_out",
+        "quantized_matmul_out", 
+        "quantized_layer_norm",
+        "quantized_relu_out",
+        "quantized_conv_out",
+        "quantized_linear_out",
+        "quantize_per_tensor",
+        "dequantize_per_tensor",
+        "requantize_out"
+    ]
+    
+    if name in quantized_ops:
+        exported_headers.append("quantized_ops.h")
+
     runtime.cxx_library(
         name = op_name,
         srcs = [op_name + ".cpp"],
@@ -31,7 +50,7 @@ def define_operator(name: str, deps: list[str] | None = None) -> None:
         ],
         compatible_with = ["ovr_config//cpu:xtensa"],
         deps = deps + common_deps,
-        exported_headers = ["operators.h"],
+        exported_headers = exported_headers,
     )
 
 OPERATORS = [

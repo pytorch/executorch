@@ -152,6 +152,7 @@ gen_operators_lib(
 install(
   TARGETS quantized_kernels quantized_ops_lib
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/kernels/quantized/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/quantized/
 )

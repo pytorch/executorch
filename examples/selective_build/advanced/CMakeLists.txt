@@ -139,7 +139,12 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 target_link_libraries(
   selective_build_test
-  PRIVATE executorch_core extension_evalue_util extension_runner_util
-          gflags::gflags ${selected_kernel_target}
+  PRIVATE executorch_core
+          extension_evalue_util
+          extension_runner_util
+          gflags::gflags
+          extension_flat_tensor
+          extension_data_loader
+          ${selected_kernel_target}
 )
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})

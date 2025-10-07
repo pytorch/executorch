@@ -55,7 +55,7 @@ Result<const flat_tensor_flatbuffer::NamedData*> get_named_data(
   if (named_data == nullptr) {
     return Error::NotFound;
   }
-  for (int i = 0; i < named_data->size(); i++) {
+  for (flatbuffers::uoffset_t i = 0; i < named_data->size(); ++i) {
     if (key.size() == named_data->Get(i)->key()->size() &&
         std::strncmp(
             named_data->Get(i)->key()->c_str(),

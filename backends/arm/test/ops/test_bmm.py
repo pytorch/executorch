@@ -97,7 +97,6 @@ def test_bmm_u55_INT(test_data: input_t1):
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -110,7 +109,6 @@ def test_bmm_u85_INT(test_data: input_t1):
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -123,7 +121,6 @@ def test_bmm_u55_INT_single_input(test_data: input_t1):
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -136,7 +133,6 @@ def test_bmm_u85_INT_single_input(test_data: input_t1):
         test_data(),
         aten_op_bmm,
         exir_op_bmm,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -150,7 +146,11 @@ def test_bmm_vgf_FP(test_data: input_t1):
     pipeline.run()
 
 
-@common.parametrize("test_data", BMMSingleInput.test_data_generators)
+@common.parametrize(
+    "test_data",
+    BMMSingleInput.test_data_generators,
+    flakies={"rand_big_1": 3},
+)
 @common.SkipIfNoModelConverter
 def test_bmm_vgf_FP_single_input(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](

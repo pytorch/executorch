@@ -471,7 +471,7 @@ class QuantFusion(ExportPass):
                 pattern.partition_types(),
             )
             for fused_partition in fused_partitions:
-                anchors = pattern.get_anchors(graph_module, fused_partition)
+                anchors, op_node = pattern.get_anchors(graph_module, fused_partition)
                 if not anchors or anchors.empty:
                     continue
                 if any(self.is_fused(p.nodes) for p in fused_partition):
@@ -512,13 +512,10 @@ class QuantFusion(ExportPass):
                 bias_inputs = [node.args[0] for node in dequants_biases]
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
-                # The node is the first index of the list and first of the tuple
-                anchor_output_node = anchors.output[0][0]
+                assert op_node is not None, "op_node is None"
+                quant_node = list(op_node.users.keys())[0]
 
-                assert len(anchor_output_node.users) == 1
-                quant_node = list(anchor_output_node.users.keys())[0]
-
-                with graph_module.graph.inserting_after(anchor_output_node):
+                with graph_module.graph.inserting_after(op_node):
                     args = tuple(
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
@@ -532,7 +529,7 @@ class QuantFusion(ExportPass):
                         )
                     elif isinstance(pattern, CatPattern):
                         args, kwargs = get_args_and_kwargs_cat(
-                            inputs_inputs, other_inputs, anchor_output_node
+                            inputs_inputs, other_inputs, op_node
                         )
                     elif isinstance(pattern, ConvReluPatterns):
                         # For ConvReLU, we are fusing Conv+ReLU
@@ -563,7 +560,7 @@ class QuantFusion(ExportPass):
                             dequants_weights,
                             bias_inputs,
                             quant_node,
-                            anchor_output_node,
+                            op_node,
                         )
                     elif isinstance(pattern, LinearPattern):
                         args, kwargs = get_args_and_kwargs_linear(
@@ -618,20 +615,28 @@ class QuantFusion(ExportPass):
                             inputs_inputs,
                             dequants_inputs,
                             quant_node,
-                            anchor_output_node,
+                            op_node,
                         )
+
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
                         args,
                         kwargs,
                     )
-                    fused.meta = quant_node.meta
-                    quant_node.replace_all_uses_with(fused)
+
+                    if len(anchors.output) > 0:
+                        fused.meta = quant_node.meta
+                        quant_node.replace_all_uses_with(fused)
+                    else:
+                        fused.meta = op_node.meta
+                        op_node.replace_all_uses_with(fused)
+                        if op_node.op == "output":
+                            _ = graph_module.graph.output((fused,))
 
             legalize_graph(graph_module)
             graph_module.graph.eliminate_dead_code()
-            # pyre-fixme[7]: Incompatible return type
             graph_module.recompile()
+        return PassResult(graph_module, True)
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified

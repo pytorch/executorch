@@ -62,6 +62,11 @@ Error MultimodalRunner::load() {
     ET_LOG(Info, format, __VA_ARGS__);     \
   }
 
+Error MultimodalRunner::prefill(std::vector<MultimodalInput>&& inputs) {
+  // Forward to the const reference version
+  return prefill(inputs);
+}
+
 Error MultimodalRunner::prefill(const std::vector<MultimodalInput>& inputs) {
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -70,6 +75,16 @@ Error MultimodalRunner::prefill(const std::vector<MultimodalInput>& inputs) {
     ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
   }
   return Error::Ok;
+}
+
+Error MultimodalRunner::generate(
+    std::vector<MultimodalInput>&& inputs,
+    const GenerationConfig& config,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const Stats&)> stats_callback) {
+  // Forward to the const reference version
+  return generate(
+      inputs, config, std::move(token_callback), std::move(stats_callback));
 }
 
 Error MultimodalRunner::generate(

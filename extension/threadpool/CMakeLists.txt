@@ -43,7 +43,7 @@ target_compile_options(extension_threadpool PUBLIC ${_common_compile_options})
 install(
   TARGETS extension_threadpool
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

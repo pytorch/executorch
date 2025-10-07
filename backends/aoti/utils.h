@@ -73,6 +73,23 @@ inline AOTITorchError validate_storage_offset(int64_t storage_offset) {
   return Error::Ok;
 }
 
+// Check if tensor is in contiguous memory format (NCHW for 4D tensors)
+// Contiguous format means strides decrease from left to right:
+// For NCHW: strides = [C*H*W, H*W, W, 1]
+inline bool is_tensor_contiguous(
+    int64_t ndim,
+    const int64_t* sizes,
+    const int64_t* strides) {
+  int64_t expected_stride = 1;
+  for (int64_t i = ndim - 1; i >= 0; i--) {
+    if (strides[i] != expected_stride) {
+      return false;
+    }
+    expected_stride *= sizes[i];
+  }
+  return true;
+}
+
 } // extern "C"
 
 } // namespace aoti

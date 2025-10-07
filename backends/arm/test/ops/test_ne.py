@@ -171,7 +171,6 @@ def test_ne_tensor_u85_INT(test_module):
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -192,7 +191,6 @@ def test_ne_scalar_u85_INT(test_module):
         test_module.get_inputs(),
         NotEqual.decomposed_ops,
         NotEqual.decomposed_exir_ops,
-        run_on_fvp=True,
     )
     pipeline.run()
 

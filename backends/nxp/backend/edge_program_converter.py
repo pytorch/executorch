@@ -18,6 +18,7 @@ from torch.export.graph_signature import InputKind
 from torch.fx import Node
 from torch.nn.parameter import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.backend.node_format_inference import (
     NodeFormat,
     NodeFormatInference,
@@ -42,6 +43,7 @@ functions_converters = {
     exir_ops.edge.aten.permute_copy.default: PermuteCopyConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
@@ -54,12 +56,14 @@ class EdgeProgramToIRConverter:
     """
 
     _default_conversion_config = ConversionConfig()
+    _default_target_spec = NeutronTargetSpec("imxrt700", "SDK_25_09")
     _default_delegation_options = CustomDelegationOptions()
 
     def convert_program(
         self,
         edge_program: ExportedProgram,
-        conversion_config=_default_conversion_config,
+        conversion_config: ConversionConfig = _default_conversion_config,
+        neutron_target_spec: NeutronTargetSpec = _default_target_spec,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> (bytes, dict):
         """
@@ -67,6 +71,7 @@ class EdgeProgramToIRConverter:
 
         :param edge_program: Converter ExportedProgram.
         :param conversion_config: ConversionConfig instance.
+        :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
         :param custom_delegation_options: Custom user options which affect node delegation.
         :return: TFLite flatbuffers as bytes.
         """
@@ -76,6 +81,7 @@ class EdgeProgramToIRConverter:
         cc = self.build_conversion_context(
             parameters_mapping,
             node_formats,
+            neutron_target_spec,
             conversion_config,
             custom_delegation_options,
         )
@@ -173,11 +179,12 @@ class EdgeProgramToIRConverter:
     def build_conversion_context(
         parameters_mapping: dict,
         node_formats: dict[Node, NodeFormat],
+        neutron_target_spec: NeutronTargetSpec,
         conversion_config: ConversionConfig = _default_conversion_config,
         custom_delegation_options: CustomDelegationOptions = _default_delegation_options,
     ) -> ConversionContext:
         tflite_builder = AtenModelBuilderDirector(
-            3, "TFLite from EdgeProgram", conversion_config
+            3, "TFLite from EdgeProgram", neutron_target_spec, conversion_config
         )
 
         # Add "sentinel" buffer (defined in schema.fbs)

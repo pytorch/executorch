@@ -24,6 +24,7 @@ from executorch.backends.qualcomm.quantizer.qconfig import (
 )
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
+from executorch.examples.models.gemma import convert_weights as convert_gemma_weights
 from executorch.examples.models.gemma3 import convert_weights as convert_gemma3_weights
 from executorch.examples.models.phi_4_mini import (
     convert_weights as convert_phi_4_mini_weights,
@@ -297,6 +298,36 @@ class Llama3_2_3B_Instruct(LLMModelConfig):
     custom_annotation = (
         annotate_kv_8bit,
         annotate_output_16a8w,
+    )
+
+
+@register_llm_model("gemma-2b")
+@dataclass(init=False, frozen=True)
+class Gemma_2B(LLMModelConfig):
+    repo_id: str = "google/gemma-2b-it"
+    params_path: str = os.path.join(
+        BASE_DIR, "../../../models/gemma/config/2b_config.json"
+    )
+    convert_weights = convert_gemma_weights
+    transform_weight = False
+    instruct_model = True
+
+    num_sharding = 4
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 64
+    masked_softmax = True
+    seq_mse_candidates = 0
+    r1 = False
+    r2 = False
+    r3 = False
+    quantization_config_wv_sha_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        annotate_kv_8bit,
+        annotate_output_16a8w,
+        partial(annotate_wv_sha, quantization_config=quantization_config_wv_sha_16a8w),
     )
 
 

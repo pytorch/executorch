@@ -90,6 +90,7 @@ gen_operators_lib(
 install(
   TARGETS cortex_m_kernels cortex_m_ops_lib cmsis-nn
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/backends/cortex_m/ops/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/backends/cortex_m/ops/
 )

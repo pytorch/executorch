@@ -1,4 +1,4 @@
-# Building and Running Llama 3 8B Instruct with Qualcomm AI Engine Direct Backend
+# Run Llama 3 8B on Android (with Qualcomm AI Engine Direct Backend)
 
 This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Engine Direct Backend and running the model on a Qualcomm device.
 
@@ -56,7 +56,7 @@ backend:
   qnn:
     enabled: True
     num_sharding: 8
-    
+
 
 # export_llm
 python -m extension.llm.export.export_llm \
@@ -136,6 +136,7 @@ You should see the message:
 ```
 
 ## What is coming?
+
 - Performance improvements
 - Reduce the memory pressure during inference to support 12GB Qualcomm devices
 - Support more LLMs (Qwen, Phi-4-mini, etc.)

@@ -434,8 +434,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   EValue* size_wrapped_vals[3] = {
       &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
   int64_t size_unwrapped_vals[3] = {0, 0, 0};
-  EValue size_int_list_evalue = EValue(
-      BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> size_boxed_list(
+      size_wrapped_vals, size_unwrapped_vals, 3);
+  EValue size_int_list_evalue = EValue(&size_boxed_list);
 
   int64_t bad_size1[3] = {-1, 3, -1}; // two inferred dimensions
   EValue bad_size_as_evals1[3] = {
@@ -443,8 +444,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   EValue* bad_size_wrapped_vals1[3] = {
       &bad_size_as_evals1[0], &bad_size_as_evals1[1], &bad_size_as_evals1[2]};
   int64_t bad_size_unwrapped_vals1[3] = {0, 0, 0};
-  EValue bad_size_int_list_evalue1 = EValue(BoxedEvalueList<int64_t>(
-      bad_size_wrapped_vals1, bad_size_unwrapped_vals1, 3));
+  BoxedEvalueList<int64_t> bad_size_boxed_list1(
+      bad_size_wrapped_vals1, bad_size_unwrapped_vals1, 3);
+  EValue bad_size_int_list_evalue1 = EValue(&bad_size_boxed_list1);
 
   int64_t bad_size2[3] = {-2, -3, 1}; // negative size not supported
   EValue bad_size_as_evals2[3] = {
@@ -452,8 +454,9 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
   EValue* bad_size_wrapped_vals2[3] = {
       &bad_size_as_evals2[0], &bad_size_as_evals2[1], &bad_size_as_evals2[2]};
   int64_t bad_size_unwrapped_vals2[3] = {0, 0, 0};
-  EValue bad_size_int_list_evalue2 = EValue(BoxedEvalueList<int64_t>(
-      bad_size_wrapped_vals2, bad_size_unwrapped_vals2, 3));
+  BoxedEvalueList<int64_t> bad_size_boxed_list2(
+      bad_size_wrapped_vals2, bad_size_unwrapped_vals2, 3);
+  EValue bad_size_int_list_evalue2 = EValue(&bad_size_boxed_list2);
 
   // ***************************************************************************
   // Make outs for tests
@@ -525,8 +528,9 @@ TEST_F(RegisterPrimOpsTest, TestETViewDynamic) {
   EValue* size_wrapped_vals[3] = {
       &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
   int64_t size_unwrapped_vals[3] = {0, 0, 0};
-  EValue size_int_list_evalue = EValue(
-      BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> size_boxed_list_2(
+      size_wrapped_vals, size_unwrapped_vals, 3);
+  EValue size_int_list_evalue = EValue(&size_boxed_list_2);
 
 #ifdef USE_ATEN_LIB
   // ATen mode tensors don't need dynamism specification.
@@ -560,8 +564,9 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
   EValue* size_wrapped_vals[3] = {
       &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
   int64_t size_unwrapped_vals[3] = {0, 0, 0};
-  EValue size_int_list_evalue = EValue(
-      BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> size_boxed_list_3(
+      size_wrapped_vals, size_unwrapped_vals, 3);
+  EValue size_int_list_evalue = EValue(&size_boxed_list_3);
 
   int64_t bad_size[3] = {0, 1, -1}; // bad size: cannot infer with 0
   EValue bad_size_as_evals[3] = {
@@ -569,8 +574,9 @@ TEST_F(RegisterPrimOpsTest, TestETViewEmpty) {
   EValue* bad_size_wrapped_vals[3] = {
       &bad_size_as_evals[0], &bad_size_as_evals[1], &bad_size_as_evals[2]};
   int64_t bad_size_unwrapped_vals[3] = {0, 0, 0};
-  EValue bad_size_int_list_evalue = EValue(BoxedEvalueList<int64_t>(
-      bad_size_wrapped_vals, bad_size_unwrapped_vals, 3));
+  BoxedEvalueList<int64_t> bad_size_boxed_list(
+      bad_size_wrapped_vals, bad_size_unwrapped_vals, 3);
+  EValue bad_size_int_list_evalue = EValue(&bad_size_boxed_list);
 
   auto out = tf.make({3, 1, 0}, {}, {});
   EValue out_evalue = EValue(out);
@@ -880,8 +886,9 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     EValue* size_wrapped_vals[3] = {
         &size_as_evals[0], &size_as_evals[1], &size_as_evals[2]};
     int64_t size_unwrapped_vals[3] = {0, 0, 0};
-    EValue size_int_list_evalue = EValue(
-        BoxedEvalueList<int64_t>(size_wrapped_vals, size_unwrapped_vals, 3));
+    BoxedEvalueList<int64_t> size_boxed_list_4(
+        size_wrapped_vals, size_unwrapped_vals, 3);
+    EValue size_int_list_evalue = EValue(&size_boxed_list_4);
 
     EValue* stack[2] = {&self_evalue, &size_int_list_evalue};
 
