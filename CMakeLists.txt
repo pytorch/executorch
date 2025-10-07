@@ -587,6 +587,16 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  # Build common AOTI functionality (required for CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
+  # Build CUDA-specific AOTI functionality
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda)
+  # Add aoti_cuda to backends - it already depends on aoti_common
+  list(APPEND _executorch_backends aoti_cuda)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)

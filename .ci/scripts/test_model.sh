@@ -63,6 +63,14 @@ build_cmake_executor_runner() {
         ${COMMON} \
         -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  elif [[ "$backend_string_select" == "CUDA" ]]; then
+    echo "Backend $backend_string_select selected"
+    cmake -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CUDA=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
+        ${COMMON} \
+        -B${CMAKE_OUTPUT_DIR} .
+    cmake --build ${CMAKE_OUTPUT_DIR} -j4
   else
     cmake -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
@@ -323,6 +331,13 @@ test_model_with_mediatek() {
   EXPORTED_MODEL=$(find "./${EXPORT_SCRIPT}" -type f -name "*.pte" -print -quit)
 }
 
+test_model_with_cuda() {
+  # Export a basic .pte and .ptd, then run the model.
+  "${PYTHON_EXECUTABLE}" -m examples.cuda.scripts.export --model_name="${MODEL_NAME}" --output_dir "./"
+  build_cmake_executor_runner "CUDA"
+  ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte" --data_path "./aoti_cuda_blob.ptd"
+}
+
 
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
@@ -372,6 +387,12 @@ elif [[ "${BACKEND}" == *"xnnpack"* ]]; then
 elif [[ "${BACKEND}" == "mediatek" ]]; then
   echo "Testing ${MODEL_NAME} with mediatek..."
   test_model_with_mediatek
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "cuda" ]]; then
+  echo "Testing ${MODEL_NAME} with cuda..."
+  test_model_with_cuda
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
