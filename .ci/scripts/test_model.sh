@@ -67,6 +67,7 @@ build_cmake_executor_runner() {
     echo "Backend $backend_string_select selected"
     cmake -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_CUDA=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         ${COMMON} \
         -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4
