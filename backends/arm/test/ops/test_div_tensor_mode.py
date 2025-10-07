@@ -99,7 +99,12 @@ def test_div_tensor_mode_tosa_INT(data):
 
 @common.XfailIfNoCorstone300
 @common.parametrize(
-    "data", test_data, xfails={"mode_trunc": "CPU op missing in unittests"}
+    "data",
+    test_data,
+    xfails={
+        "mode_trunc": "CPU op missing in unittests",
+        "op_floor_div_rank4_large_randn": "Not supported",
+    },
 )
 def test_div_tensor_mode_u55_INT(data):
     mode, inputs = data()
