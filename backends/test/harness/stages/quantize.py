@@ -18,6 +18,14 @@ from torchao.quantization.pt2e.quantizer import Quantizer
 from torchao.quantization.quant_api import quantize_
 from torchao.utils import unwrap_tensor_subclass
 
+from torchao.quantization.quant_api import (
+    Int8DynamicActivationIntxWeightConfig,
+    IntxWeightOnlyConfig,
+    quantize_,
+)
+
+from torchao.utils import unwrap_tensor_subclass
+
 
 class Quantize(Stage):
     def __init__(

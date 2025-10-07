@@ -9,6 +9,7 @@ from executorch.backends.test.harness.stages import (
     Export,
     Partition,
     Quantize,
+    Quantize_,
     RunPasses,
     Serialize,
     Stage,
