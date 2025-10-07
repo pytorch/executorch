@@ -9,10 +9,10 @@ import traceback
 from abc import abstractmethod
 from typing import List, Optional, Set, Type
 
-from executorch.exir.pass_base import ExportPass, NodeMetadata
+from executorch.exir.pass_base import ExportPass, NodeMetadata, RequireExportedProgram
 
 
-class ArmPass(ExportPass):
+class ArmPass(RequireExportedProgram, ExportPass):
     """Base class for Arm passes"""
 
     @property

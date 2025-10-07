@@ -1,22 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.exir.pass_base import ExportPass
-from torch.export import ExportedProgram
+from executorch.exir.pass_base import ExportPass, RequireExportedProgram
 
 
-class XNNPACKPass(ExportPass):
+class XNNPACKPass(RequireExportedProgram, ExportPass):
     """
     An abstract interface for XNNPACK backend passes.
     """
 
-    def __init__(self, exported_program: ExportedProgram) -> None:
-        super().__init__()
-        self._exported_program = exported_program
-
-    @property
-    def exported_program(self) -> ExportedProgram:
-        return self._exported_program
+    ...
