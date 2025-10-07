@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
         std::move(ptd_data_map_result.get()));
     ET_LOG(
         Info,
-        "PTD data map created with %zu keys.",
+        "PTD data map created with %" PRIu64 " keys.",
         ptd_data_map->get_num_keys().get());
   }
 
