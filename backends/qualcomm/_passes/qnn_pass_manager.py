@@ -225,9 +225,9 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
         # DecomposeFloorDivide does not apply to the annotation pipeline,
-        # as using qdq with the CPU model would reduce accuracy.
+        # since the CPU QDQ model would reduce accuracy.
         # We keep div and floor operations in floating-point to maintain precision.
-        # This paas is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
+        # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
         self.add_pass(DecomposeFloorDivide())
         self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
