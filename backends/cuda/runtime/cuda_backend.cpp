@@ -48,7 +48,8 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-class CudaBackend final : public ::executorch::runtime::BackendInterface {
+class ET_EXPERIMENTAL CudaBackend final
+    : public ::executorch::runtime::BackendInterface {
  private:
   Error register_shared_library_functions(void* so_handle) const {
     AOTInductorModelContainerCreateWithDevice =
@@ -146,6 +147,10 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
         static_cast<const char*>(aoti_cuda_buffer->data()),
         aoti_cuda_buffer->size());
 
+    if (!outfile) {
+      ET_LOG(Error, "Failed to write to file %s", so_path.c_str());
+      return Error::AccessFailed;
+    }
     // Finish writing the file to disk
     outfile.close();
 
@@ -324,6 +329,9 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle_) const override {
+    if (handle_ == nullptr) {
+      return;
+    }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
     // Delete the container BEFORE closing the shared library
@@ -336,6 +344,7 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
             "AOTInductorModelContainerDelete failed with error code %d",
             delete_result);
       }
+      handle->container_handle = nullptr;
     }
 
     // Now close the shared library
@@ -356,8 +365,8 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
       }
     }
 
-    free(handle);
-    clear_all_tensors();
+    delete handle;
+    // clear_all_tensors();
   }
 };
 

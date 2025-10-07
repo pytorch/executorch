@@ -83,5 +83,5 @@ jobs:
       script: |
         set -eux
 
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
-        source .ci/scripts/test_model.sh "${{ matrix.model }}"
+        PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
+        PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
