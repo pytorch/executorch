@@ -19,6 +19,7 @@ def define_common_targets():
             "//executorch/devtools/etdump:etdump_flatcc",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
+            "//executorch/extension/flat_tensor:flat_tensor_data_map",
             "//executorch/extension/runner_util:inputs",
         ],
         external_deps = [
@@ -38,6 +39,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
+            "//executorch/extension/flat_tensor:flat_tensor_data_map",
             "//executorch/extension/runner_util:inputs",
             "//executorch/extension/threadpool:cpuinfo_utils",
             "//executorch/extension/threadpool:threadpool",
