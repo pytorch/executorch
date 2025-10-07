@@ -316,14 +316,16 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
           i);
     }
 
-    // Clean up GPU tensors that we created (ExecutorTorch tensors are always
-    // CPU, so all GPU tensors are our copies)
-    for (int i = 0; i < n_inputs; i++) {
-      // All GPU input tensors were created by us, delete them
-      aoti_torch_delete_tensor_object(gpu_inputs[i]);
-    }
+    // // Clean up GPU tensors that we created (ExecutorTorch tensors are always
+    // // CPU, so all GPU tensors are our copies)
+    // for (int i = 0; i < n_inputs; i++) {
+    //   ET_LOG(Info, "Deleting GPU input tensor %d", i);
+    //   // All GPU input tensors were created by us, delete them
+    //   aoti_torch_delete_tensor_object(gpu_inputs[i]);
+    // }
 
     for (int i = 0; i < n_outputs; i++) {
+      ET_LOG(Info, "Deleting GPU output tensor %d", i);
       // All GPU output tensors were created by us, delete them
       aoti_torch_delete_tensor_object(gpu_outputs[i]);
     }
@@ -346,27 +348,40 @@ class CudaBackend final : public ::executorch::runtime::BackendInterface {
       } else {
         ET_LOG(Info, "Destroyed CUDA stream: %p", handle->cuda_stream);
       }
+      handle->cuda_stream = nullptr;
     }
 
     // Delete the container BEFORE closing the shared library
-    if (handle->container_handle != nullptr) {
-      AOTIRuntimeError delete_result =
-          AOTInductorModelContainerDelete(handle->container_handle);
-      if (delete_result != Error::Ok) {
-        ET_LOG(
-            Error,
-            "AOTInductorModelContainerDelete failed with error code %d",
-            delete_result);
-      }
-    }
+    // if (handle->container_handle != nullptr) {
+    //   ET_LOG(Info, "Deleting container_handle: %p",handle->container_handle);
+    //   AOTIRuntimeError delete_result =
+    //       AOTInductorModelContainerDelete(handle->container_handle);
+    //   if (delete_result != Error::Ok) {
+    //     ET_LOG(
+    //         Error,
+    //         "AOTInductorModelContainerDelete failed with error code %d",
+    //         delete_result);
+    //   }
+    //   handle->container_handle = nullptr;
+    // }
+
+    ET_LOG(Info, "Deleted container_handle: %p", handle->container_handle);
 
     // Now close the shared library
     if (handle->so_handle != nullptr) {
       dlclose(handle->so_handle);
+      handle->so_handle = nullptr;
     }
 
+    ET_LOG(Info, "Deleted so_handle: %p", handle->so_handle);
+
     free(handle);
+
+    ET_LOG(Info, "Deleted AOTI delegate handle: %p", handle);
+
     clear_all_tensors();
+
+    ET_LOG(Info, "Deleted all tensors");
   }
 };
 

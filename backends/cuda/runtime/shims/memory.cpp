@@ -271,10 +271,16 @@ void clear_all_tensors() {
   // Use aoti_torch_delete_tensor_object to properly delete each tensor
   // Note: We need to collect tensor pointers first since deletion modifies the
   // set
-  auto old_tensors =
-      std::move(tensors); // tensors is now empty and no need to copy
-  for (const auto& tensor_shared : old_tensors) {
-    aoti_torch_delete_tensor_object(tensor_shared.get());
+  ET_LOG(Info, "Clearing all tensors...");
+  std::vector<Tensor*> tensor_ptrs;
+  tensor_ptrs.reserve(tensors.size());
+  for (const auto& tensor_shared : tensors) {
+    tensor_ptrs.push_back(tensor_shared.get());
+  }
+
+  // Now delete each tensor - this will modify the global tensors set
+  for (Tensor* tensor_ptr : tensor_ptrs) {
+    aoti_torch_delete_tensor_object(tensor_ptr);
   }
 
   // tensors set should now be empty, but ensure it's cleared
