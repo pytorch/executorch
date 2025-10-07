@@ -37,6 +37,9 @@ from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mm_converter import (
     MMConverter,
 )
+from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.mul_tensor_converter import (
+    MulTensorConverter,
+)
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters.permute_copy_converter import (
     PermuteCopyConverter,
 )
@@ -86,4 +89,5 @@ __all__ = [
     "HardTanhConverter",
     "SigmoidConverter",
     "TanhConverter",
+    "MulTensorConverter"
 ]

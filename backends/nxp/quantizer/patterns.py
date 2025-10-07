@@ -479,6 +479,32 @@ class MeanDimPattern(SharedSpecPattern):
         return [torch.ops.aten.mean.dim]
 
 
+class MulTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Mul Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[torch.nn.Module]:
+        return [torch.ops.aten.mul.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        inputs = [(node, NodeArgsIdx(0))]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, NodeArgsIdx(0)), (node, NodeArgsIdx(1))]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+
 class PadPattern(SharedSpecPattern):
     """
     Quantizer for Pad operator.
