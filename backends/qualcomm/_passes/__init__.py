@@ -31,6 +31,7 @@ from .fuse_consecutive_transpose import FuseConsecutiveTranspose
 from .i64_to_i32 import I64toI32
 from .insert_io_qdq import InsertIOQDQ
 from .insert_requantize import InsertRequantize
+from .insert_reshape_for_reduce_ops import InsertReshapeForReduceOps
 from .layout_transform import LayoutTransform
 from .lift_constant_scalar_operands import LiftConstantScalarOperands
 from .recompose_pixel_unshuffle import RecomposePixelUnshuffle
@@ -42,7 +43,6 @@ from .replace_arange_args import ReplaceArangeArgs
 from .replace_inf_values import ReplaceInfValues
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
-
 
 __all__ = [
     AnnotateAdaptiveAvgPool1D,
@@ -71,6 +71,7 @@ __all__ = [
     FuseConsecutiveTranspose,
     I64toI32,
     InsertIOQDQ,
+    InsertReshapeForReduceOps,
     InsertRequantize,
     LayoutTransform,
     LiftConstantScalarOperands,
