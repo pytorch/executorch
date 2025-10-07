@@ -370,6 +370,8 @@ _one_to_one_shared_input_or_input_act_qspec = [
     torch.ops.aten.dropout_.default,
     torch.ops.aten.adaptive_avg_pool2d.default,
     torch.ops.aten.alias_copy.default,
+    torch.ops.aten.pixel_shuffle.default,
+    torch.ops.aten.pixel_unshuffle.default,
 ]
 
 
