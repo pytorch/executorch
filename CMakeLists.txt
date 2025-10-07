@@ -1021,6 +1021,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
                             extension_runner_util gflags executorch_backends
   )
 
+  if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+    list(APPEND _executor_runner_libs extension_flat_tensor)
+  endif()
+
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
   elseif(EXECUTORCH_BUILD_CADENCE)
