@@ -24,7 +24,7 @@ from executorch.extension.export_util.utils import save_pte_program
 from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.nn.attention import SDPBackend
 
-# Script to export a model with coreml delegation.
+# Script to export a model with CUDA delegation.
 
 _EDGE_COMPILE_CONFIG = EdgeCompileConfig(
     _check_ir_validity=False,
