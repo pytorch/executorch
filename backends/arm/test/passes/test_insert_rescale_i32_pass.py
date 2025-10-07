@@ -22,11 +22,10 @@ class NeedsRescaleOps(torch.nn.Module):
         super().__init__()
 
     def forward(self, x, y):
-        a = x - y
-        c = torch.maximum(a, y)
-        d = torch.abs(c)
-        e = d > c
-        return e
+        a = torch.maximum(x, y)
+        b = torch.abs(a)
+        c = a > b
+        return c
 
     def get_inputs(self, dtype) -> input_t:
         if dtype == torch.float32:
@@ -46,8 +45,8 @@ def test_insert_rescales():
     ops_not_before = {"executorch_exir_dialects_backend__ops_tosa_RESCALE_default"}
     ops_after = {
         # "number of op nodes with i8 output" + "number of i8 node inputs"
-        "executorch_exir_dialects_backend__ops_tosa_RESCALE_default": 3
-        + 7,
+        "executorch_exir_dialects_backend__ops_tosa_RESCALE_default": 2
+        + 5,
     }
     pipeline = PassPipeline[input_t](
         module,
