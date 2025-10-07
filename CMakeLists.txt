@@ -1022,7 +1022,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   )
 
   # Add all extensions
-  list(APPEND _executor_runner_libs executorch_extensions)
+  list(APPEND _executor_runner_libs ${_executorch_extensions})
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)

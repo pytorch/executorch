@@ -118,7 +118,7 @@ list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(custom_ops_executor_runner ${_executor_runner__srcs})
 target_link_libraries(
   custom_ops_executor_runner custom_ops_lib executorch extension_evalue_util
-  extension_runner_util gflags
+  extension_runner_util gflags extension_data_loader extension_flat_tensor
 )
 target_compile_options(
   custom_ops_executor_runner PUBLIC ${_common_compile_options}
