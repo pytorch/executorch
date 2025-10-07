@@ -55,15 +55,13 @@ build_cmake_executor_runner() {
   rm -rf ${CMAKE_OUTPUT_DIR}
   mkdir ${CMAKE_OUTPUT_DIR}
   # Common options:
-  COMMON="-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
-        -DPYTHON_EXECUTABLE=\"$PYTHON_EXECUTABLE\""
+  COMMON="-DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE"
   if [[ "$backend_string_select" == "XNNPACK" ]]; then
     echo "Backend $backend_string_select selected"
-    (cd ${CMAKE_OUTPUT_DIR} \
-      && cmake -DCMAKE_BUILD_TYPE=Release \
+    cmake -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        ${COMMON} ..)
+        ${COMMON} \
+        -B${CMAKE_OUTPUT_DIR} .
     cmake --build ${CMAKE_OUTPUT_DIR} -j4
   else
     cmake -DCMAKE_BUILD_TYPE=Debug \

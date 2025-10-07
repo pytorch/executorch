@@ -61,6 +61,8 @@ test_cmake_custom_op_2() {
   retry cmake \
         -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
         -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${build_dir} \
         ${example_dir}
