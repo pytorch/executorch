@@ -50,5 +50,5 @@ executorch_target_link_options_shared_lib(aoti_common)
 install(
   TARGETS aoti_common
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
