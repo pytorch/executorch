@@ -226,7 +226,7 @@ if(EXECUTORCH_BUILD_CPUINFO)
   install(
     TARGETS cpuinfo
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -269,7 +269,7 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   install(
     TARGETS pthreadpool pthreadpool_interface fxdiv
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -708,7 +708,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   install(
     TARGETS torchao_ops_executorch torchao_kernels_aarch64
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -719,7 +719,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     install(
       TARGETS kleidiai
       EXPORT ExecuTorchTargets
-      DESTINATION lib
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}
       INCLUDES
       DESTINATION ${_common_include_directories}
     )
@@ -999,7 +999,7 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
   install(
     TARGETS executorch_selected_kernels
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 else()
   # No selective build - link the full library.
