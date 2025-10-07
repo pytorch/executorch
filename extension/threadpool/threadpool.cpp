@@ -128,8 +128,7 @@ ThreadPool* get_threadpool() {
     auto result = cpuinfo_get_processors_count();
 #else
     // Set threads equal to the number of performance cores.
-    auto result =
-        ::executorch::extension::cpuinfo::get_num_performant_cores();
+    auto result = ::executorch::extension::cpuinfo::get_num_performant_cores();
 #endif
 
     /*
@@ -140,7 +139,7 @@ ThreadPool* get_threadpool() {
      * tricky to detect if we are running under tsan, for now capping the
      * default threadcount to the tsan limit unconditionally.
      */
-    constexpr int tsan_thread_limit = 63;
+    constexpr unsigned int tsan_thread_limit = 63;
     return std::min(result, tsan_thread_limit);
   })();
 
