@@ -46,13 +46,13 @@ with open("mv2_xnnpack.pte", "wb") as file:
     et_program.write_to_file(file)
 ```
 
-See [Partitioner API](/backends/xnnpack/reference/xnnpack-partitioner-api.md) for a reference on available partitioner options.
+See [Partitioner API](/backends/xnnpack/xnnpack-partitioner) for a reference on available partitioner options.
 
 ----
 
 ## Quantization
 
-The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. See [XNNPACK Quantization](/backends/xnnpack/reference/xnnpack-reference-quantization.md) for more information on available quantization schemes and APIs.
+The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. See [XNNPACK Quantization](/backends/xnnpack/xnnpack-quantization) for more information on available quantization schemes and APIs.
 
 ----
 
@@ -78,10 +78,25 @@ target_link_libraries(
 
 No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.
 
+## Reference
+
+**→{doc}`xnnpack-troubleshooting` — Debug common issues.**
+
+**→{doc}`xnnpack-partitioner` — Partitioner options.**
+
+**→{doc}`xnnpack-quantization` — Supported quantization schemes.**
+
+**→{doc}`xnnpack-op-support` — Supported operators.**
+
+**→{doc}`xnnpack-arch-internals` — XNNPACK backend internals.**
+
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
 :hidden:
 :caption: XNNPACK Backend
 
-reference/xnnpack-reference
-tutorials/xnnpack-tutorials
+xnnpack-troubleshooting
+xnnpack-partitioner
+xnnpack-quantization
+xnnpack-op-support
+xnnpack-arch-internals
