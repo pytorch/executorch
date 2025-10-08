@@ -1590,7 +1590,7 @@ class ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass(ExportPass):
         updated_args = list(args)
         for op_arg_index in args_to_be_replaced:
             arg = args[op_arg_index]
-            if not arg.is_tensor():
+            if not isinstance(arg, ProxyValue) or not arg.is_tensor():
                 return super().call_operator(op, args, kwargs, meta)
 
             if not isinstance(arg.node.target, EdgeOpOverload):
@@ -1644,7 +1644,7 @@ class ReplaceAtenAvgPoolWithCadenceAvgPoolPass(ExportPass):
         ceil_mode = args[4] if len(args) >= 5 else False
         count_include_pad = args[5] if len(args) >= 6 else True
         divisor_override = args[6] if len(args) >= 7 else None
-        zero_point = torch.tensor(0, dtype=torch.int32)
+        zero_point = args[7] if len(args) >= 8 else None
 
         # If the op is avg_pool1d, then we need to reshape the 3d input to a 4d
         # tensor.

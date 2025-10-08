@@ -7,12 +7,6 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa.quant_utils as tqutils
-
-from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
-    get_input_qparams,
-)
-
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -22,9 +16,8 @@ from executorch.backends.arm.operators.operator_validation_utils import (
     validate_same_dtype,
     validate_valid_dtype,
 )
-from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.mapping import TosaArg
-from executorch.backends.arm.tosa.utils import tosa_shape
+from executorch.backends.arm.tosa.specification import TosaSpecification
 from torch.fx import Node
 
 
@@ -56,35 +49,12 @@ class MaxVisitor(NodeVisitor):
         validate_valid_dtype(
             self.target,
             [*inputs, output],
-            [ts.DType.INT8, ts.DType.INT32, ts.DType.FP32],
+            [ts.DType.INT32, ts.DType.FP32],
             output.tosa_spec,
         )
 
-        scale_back = 1.0
-        max_output = output
-        if inputs[0].dtype == ts.DType.INT8:
-            input_qparams = get_input_qparams(node)
-            if len(input_qparams) != 2:
-                raise ValueError(
-                    f"Both inputs need to have quantization information for {node}"
-                )
-            if input_qparams[0] != input_qparams[1]:
-                raise ValueError(
-                    "Both inputs must have the same quantization parameters for MAX"
-                )
-
-            operand_inputs, scale_back = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node, self.tosa_spec
-            )
-
-            output.shape = tosa_shape(output.shape, output.dim_order)
-            max_output = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
-        else:
-            operand_inputs = inputs
-
         attr_maximum = ts.TosaSerializerAttribute()
-
-        # Set to PROPOGATE as default
+        # Set to PROPAGATE as default
         attr_maximum.MaximumAttribute(nan_mode=NanPropagationMode.PROPAGATE)
 
         self._serialize_operator(
@@ -92,15 +62,9 @@ class MaxVisitor(NodeVisitor):
             tosa_graph,
             ts.TosaOp.Op().MAXIMUM,
             [
-                operand_inputs[0].name,
-                operand_inputs[1].name,
+                inputs[0].name,
+                inputs[1].name,
             ],
-            [max_output.name],
+            [output.name],
             attr_maximum,
         )
-
-        if output.dtype == ts.DType.INT8:
-            # insert RESCALE from int32 back to int8
-            tqutils.insert_rescale_op_to_int8(
-                tosa_graph, max_output, scale_back, node, self.tosa_spec
-            )

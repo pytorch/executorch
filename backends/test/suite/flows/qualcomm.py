@@ -42,7 +42,7 @@ def _create_qnn_flow(
 
 QNN_TEST_FLOW = _create_qnn_flow("qnn")
 QNN_16A16W_TEST_FLOW = _create_qnn_flow(
-    "qnn_16a16w", quantize=True, quant_dtype=QuantDtype.use_8a8w, use_fp16=False
+    "qnn_16a16w", quantize=True, quant_dtype=QuantDtype.use_16a16w, use_fp16=False
 )
 QNN_16A8W_TEST_FLOW = _create_qnn_flow(
     "qnn_16a8w", quantize=True, quant_dtype=QuantDtype.use_16a8w, use_fp16=False

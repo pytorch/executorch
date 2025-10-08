@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -110,9 +111,11 @@ class TorchExportStage(Stage):
         aten_transform_passes: Optional[
             List[Callable[[str, ExportedProgram], ExportedProgram]]
         ] = None,
+        strict=True,
     ) -> None:
         super().__init__()
         self._aten_transform_passes = aten_transform_passes
+        self.strict = strict
 
     @property
     def stage_type(self) -> str:
@@ -147,7 +150,7 @@ class TorchExportStage(Stage):
                     model,
                     example_inputs[method_name][0],
                     dynamic_shapes=method_dynamic_shapes,
-                    strict=True,
+                    strict=self.strict,
                 )
 
                 # Apply pre-edge transform passes if available

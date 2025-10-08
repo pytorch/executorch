@@ -289,6 +289,7 @@ jobs:
           - test_arm_baremetal: test_models_ethos-u55
           - test_arm_baremetal: test_models_ethos-u85
           - test_arm_baremetal: test_smaller_stories_llama
+          - test_arm_baremetal: test_memory_allocation
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -851,6 +852,7 @@ jobs:
           -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
           -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
           -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
           -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
           -DEXECUTORCH_BUILD_XNNPACK=ON \
           -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
