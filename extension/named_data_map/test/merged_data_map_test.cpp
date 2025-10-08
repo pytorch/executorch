@@ -23,7 +23,7 @@
 using namespace ::testing;
 using executorch::extension::FileDataLoader;
 using executorch::extension::FlatTensorDataMap;
-using executorch::extension::MergedDataMap;
+using executorch::extension::merged_data_map::MergedDataMap;
 using executorch::runtime::DataLoader;
 using executorch::runtime::Error;
 using executorch::runtime::NamedDataMap;
