@@ -10,6 +10,7 @@ from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm.tosa.mapping import TosaSpecialDtype
 from executorch.backends.transforms.utils import create_constant_placeholder
+from executorch.exir import ExportedProgram
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -25,6 +26,10 @@ class AddBiasPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = (exir_ops.edge.aten.convolution.default,)
+
+    def __init__(self, exported_program: ExportedProgram) -> None:
+        super().__init__()
+        self.exported_program = exported_program
 
     def call(self, graph_module):
         modified = False

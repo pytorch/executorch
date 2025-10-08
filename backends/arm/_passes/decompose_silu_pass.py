@@ -8,13 +8,14 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.pass_base import ExportPass
 
 aten_silu_ops = (torch.ops.aten.silu.default, torch.ops.aten.silu_.default)
 
 
-class DecomposeSiluPass(ExportPass):
+class DecomposeSiluPass(ArmPass):
     """
     This pass decomposes silu into a mul and a sigmoid node.
 
@@ -34,6 +35,8 @@ class DecomposeSiluPass(ExportPass):
         mul_op = torch.ops.aten.mul.Tensor
 
         original = args[0]
-        sigmoid = super().call_operator(sigmoid_op, (original,), {}, meta)
+        sigmoid = super().call_operator(sigmoid_op, (original,), {}, meta, updated=True)
 
-        return super().call_operator(mul_op, (original, sigmoid), {}, meta)
+        return super().call_operator(
+            mul_op, (original, sigmoid), {}, meta, updated=True
+        )
