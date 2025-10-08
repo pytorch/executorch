@@ -27,7 +27,7 @@ static constexpr auto kDecoderStartTokenId = "decoder_start_token_id";
 static constexpr auto kEosId = "get_eos_id";
 static constexpr auto kMaxContextLen = "get_max_context_len";
 } // namespace
-Runner::Runner(
+WhisperRunner::WhisperRunner(
     const std::string& model_path,
     const std::string& tokenizer_json_path)
     : tokenizer_json_path_(tokenizer_json_path) {
@@ -35,12 +35,12 @@ Runner::Runner(
   decoder_ = std::make_unique<WhisperDecoder>(model_path);
   tokenizer_ = std::make_unique<tokenizers::HFTokenizer>();
 }
-bool Runner::is_loaded() const {
+bool WhisperRunner::is_loaded() const {
   return encoder_->is_method_loaded() && decoder_->is_method_loaded() &&
       tokenizer_->is_loaded() && sampler_;
 }
 
-Error Runner::load() {
+Error WhisperRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -108,33 +108,28 @@ Error Runner::load() {
 
   return Error::Ok;
 }
-uint64_t Runner::logits_to_token(
+uint64_t WhisperRunner::logits_to_token(
     const executorch::aten::Tensor& logits_tensor) {
   return sampler_->sample(logits_tensor.data_ptr<float>());
 }
-/**
- * @param inputs: A vector containing one element: a vector of bytes that
- * encodes a float tensor in little-endian byte order.
- *
- */
-Error Runner::transcribe(
+Error WhisperRunner::transcribe(
     int32_t seq_len,
-    std::vector<std::vector<char>>& inputs,
-    std::function<void(const std::string&)> token_callback) {
+    executorch::extension::llm::Audio& audio,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const executorch::extension::llm::Stats&)>
+        stats_callback) {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
     stats_.model_load_end_ms = time_in_ms();
   }
-  ET_CHECK_MSG(inputs.size() == 1, "The input size of whisper should be one.");
-
   ET_LOG(Info, "Start Encoding");
   stats_.encoder_inference_start_ms = time_in_ms();
   auto input_features_tensor_ptr = from_blob(
-      inputs[0].data(),
+      audio.data.data(),
       // (1, processor.feature_extractor.feature_size,
       // processor.feature_extractor.nb_max_frames)
-      {1, 80, 3000},
+      {audio.batch_size, audio.n_bins, audio.n_frames}, // {1, 80, 3000}
       ScalarType::Float);
   Result<Tensor> encoder_out = encoder_->encode(input_features_tensor_ptr);
   auto encoder_out_tensor_ptr = make_tensor_ptr(encoder_out.get());
@@ -188,7 +183,7 @@ Error Runner::transcribe(
   return Error::Ok;
 }
 
-Error Runner::print_performance() {
+Error WhisperRunner::print_performance() {
   ET_LOG(Info, "\tTotal Generated token:\t\t\t\t%ld", num_generated_token_);
 
   ET_LOG(
