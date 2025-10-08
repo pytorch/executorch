@@ -103,7 +103,7 @@ def test_div_tensor_mode_tosa_INT(data):
     test_data,
     xfails={
         "mode_trunc": "CPU op missing in unittests",
-        "mode_floor" : "Not supported",
+        "mode_floor": "Not supported",
         "op_floor_div_rank4_large_randn": "Not supported",
     },
 )
