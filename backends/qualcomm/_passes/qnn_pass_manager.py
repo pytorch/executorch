@@ -28,6 +28,7 @@ from executorch.backends.qualcomm._passes import (
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeThreshold,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -37,6 +38,7 @@ from executorch.backends.qualcomm._passes import (
     I64toI32,
     InsertIOQDQ,
     InsertRequantize,
+    InsertReshapeForReduceOps,
     LayoutTransform,
     LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
@@ -200,6 +202,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
@@ -207,6 +210,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(InsertReshapeForReduceOps())
         return self._transform(graph_module)
 
     def transform_for_export_pipeline(
@@ -216,6 +220,7 @@ class QnnPassManager(PassManager):
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
         self.add_pass(DecomposeWrapWithAutocast())
@@ -226,6 +231,7 @@ class QnnPassManager(PassManager):
             self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(InsertReshapeForReduceOps())
         self._transform(exported_program.graph_module)
         ep = lift_constant_tensor_pass(exported_program)
         return ep

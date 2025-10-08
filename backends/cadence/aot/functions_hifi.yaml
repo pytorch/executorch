@@ -548,3 +548,8 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor_out
+
+- func: cadence::quantized_w8a32_linear.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_w8a32_linear_out
