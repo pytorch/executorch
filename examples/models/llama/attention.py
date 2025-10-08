@@ -516,3 +516,18 @@ class AttentionMHA(Attention):
         output = self.wo(output)
 
         return output, None
+
+
+@register_attention("skip")
+class AttentionSkip(Attention):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        **kwargs: ForwardOptions,
+    ) -> Tuple[torch.Tensor, Optional[Any]]:
+        return x, None

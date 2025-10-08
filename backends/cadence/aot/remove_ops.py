@@ -9,7 +9,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import cast, List, Optional, Sequence, Set
+from typing import cast, List, Optional, Sequence, Set, Type
 
 import torch
 import torch.fx
@@ -926,19 +926,25 @@ class RemoveCatFromSliceCopyPass(ExportPass):
         return super().call(graph_module)
 
 
+class CommonRemovePasses:
+    passes: List[Type[ExportPass]] = [
+        RemoveCloneOpPass,
+        RemoveAliasCopyOpPass,
+        RemoveNopExpandOpPass,
+        RemoveNopSliceOrViewOpPass,
+        RemoveNopSelectOpPass,
+        RemoveToOpsPass,
+        RemoveZeroSizedCatArgsPass,
+    ]
+
+
 class CadenceRemoveNops:
-    passes = [
+    passes: List[Type[ExportPass]] = CommonRemovePasses.passes + [
         SimplifySliceOpPass,
         RemoveCloneOpsTransformImported,
-        RemoveToOpsPass,
         RemoveNopRequantizeOpPass,
-        RemoveZeroSizedCatArgsPass,
-        RemoveNopSliceOrViewOpPass,
-        RemoveNopExpandOpPass,
         RemoveZeroSizedConstantPadNd,
-        RemoveCloneOpPass,
         RemoveContiguousOpPass,
-        RemoveAliasCopyOpPass,
         RemoveNopMulOpPass,
         RemoveNopAddOpPass,
         RemoveNopLinalgVectorNormOpPass,
