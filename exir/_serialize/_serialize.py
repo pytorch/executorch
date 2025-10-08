@@ -16,12 +16,12 @@ from executorch.exir._serialize.data_serializer import (
     DataEntry,
     DataPayload,
     DataSerializer,
-    TensorLayout,
 )
 
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.emit import EmitterOutput
 from executorch.exir.schema import Tensor, TensorDataLocation
+from executorch.exir.tensor_layout import TensorLayout
 
 
 def serialize_for_executorch(
