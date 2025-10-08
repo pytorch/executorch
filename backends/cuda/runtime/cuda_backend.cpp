@@ -97,10 +97,10 @@ class ET_EXPERIMENTAL CudaBackend final
     auto aoti_cuda_buffer = named_data_map->get_data(so_blob_key.c_str());
     ET_CHECK_OR_RETURN_ERROR(
         aoti_cuda_buffer.ok(),
-        aoti_cuda_buffer.error(),
+        Internal,
         "Failed to get data for key %s: 0x%x",
         so_blob_key.c_str(),
-        aoti_cuda_buffer.error());
+        static_cast<uint32_t>(aoti_cuda_buffer.error()));
 
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
@@ -299,20 +299,19 @@ class ET_EXPERIMENTAL CudaBackend final
     if (handle->cuda_stream != nullptr) {
       cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
       cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
-      ET_CHECK_OR_LOG(
+      ET_CHECK_OR_LOG_ERROR(
           stream_err == cudaSuccess,
           "Failed to destroy CUDA stream: %s",
           cudaGetErrorString(stream_err));
       handle->cuda_stream = nullptr;
     }
 
-    // We noticed that AOTInductorModelContainerDelete doesn't work well with
-    // mutitple .so files when we tried to use it to delete container handle,
-    // since freeing one of them will free some sharing resources, leading to
-    // segfault when trying to free the other .so files. Now we do not explicted
-    // delete the container and defer to OS to handle them.
-    // TODO(gasoonjia): find a better and safer solution to delete the
-    // container.
+    // NOTE: AOTInductorModelContainerDelete does not work correctly with
+    // multiple .so files. Deleting one container frees shared resources,
+    // which causes segmentation faults when attempting to delete other
+    // containers. As a workaround, we skip explicit container deletion
+    // and defer cleanup to the OS.
+    // TODO(gasoonjia): Find a proper solution for safe container deletion.
     // AOTInductorModelContainerDelete(handle->container_handle);
 
     // Now close the shared library
