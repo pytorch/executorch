@@ -94,6 +94,8 @@ class DecomposeMeanDimPass(ArmPass):
         input_shape = list(x.data.shape)
         output_shape = list(meta["val"].shape)
         dims_to_reduce = get_node_arg(args, 1)
+        if dims_to_reduce is None:
+            dims_to_reduce = range(len(input_shape))
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
         dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 
