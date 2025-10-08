@@ -322,7 +322,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (handle->container_handle != nullptr) {
       AOTIRuntimeError delete_result =
           AOTInductorModelContainerDelete(handle->container_handle);
-      ET_CHECK_OR_LOG(
+      ET_CHECK_OR_LOG_ERROR(
           delete_result == Error::Ok,
           "Failed to delete AOTInductorModelContainer with error code %d",
           delete_result);
@@ -338,7 +338,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (!handle->so_path.empty()) {
       std::error_code remove_error;
       std::filesystem::remove(handle->so_path, remove_error);
-      ET_CHECK_OR_LOG(
+      ET_CHECK_OR_LOG_ERROR(
           !remove_error,
           "Failed to remove temporary shared library %s: %s",
           handle->so_path.c_str(),
