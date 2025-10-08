@@ -286,18 +286,6 @@ class ET_EXPERIMENTAL CudaBackend final
           i);
     }
 
-    // Clean up GPU tensors that we created (ExecuTorch tensors are always
-    // CPU, so all GPU tensors are our copies)
-    for (int i = 0; i < n_inputs; i++) {
-      // All GPU input tensors were created by us, delete them
-      aoti_torch_delete_tensor_object(gpu_inputs[i]);
-    }
-
-    for (int i = 0; i < n_outputs; i++) {
-      // All GPU output tensors were created by us, delete them
-      aoti_torch_delete_tensor_object(gpu_outputs[i]);
-    }
-
     return Error::Ok;
   }
 
@@ -318,16 +306,13 @@ class ET_EXPERIMENTAL CudaBackend final
       handle->cuda_stream = nullptr;
     }
 
-    // Delete the container BEFORE closing the shared library
-    if (handle->container_handle != nullptr) {
-      AOTIRuntimeError delete_result =
-          AOTInductorModelContainerDelete(handle->container_handle);
-      ET_CHECK_OR_LOG_ERROR(
-          delete_result == Error::Ok,
-          "Failed to delete AOTInductorModelContainer with error code %d",
-          delete_result);
-      handle->container_handle = nullptr;
-    }
+    // NOTE: AOTInductorModelContainerDelete does not work correctly with
+    // multiple .so files. Deleting one container frees shared resources,
+    // which causes segmentation faults when attempting to delete other
+    // containers. As a workaround, we skip explicit container deletion
+    // and defer cleanup to the OS.
+    // TODO(gasoonjia): Find a proper solution for safe container deletion.
+    // AOTInductorModelContainerDelete(handle->container_handle);
 
     // Now close the shared library
     if (handle->so_handle != nullptr) {
@@ -346,6 +331,7 @@ class ET_EXPERIMENTAL CudaBackend final
     }
 
     delete handle;
+    clear_all_tensors();
   }
 };
 
