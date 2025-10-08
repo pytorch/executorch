@@ -524,7 +524,6 @@ class Conv2dReluPattern1(ConvReluBasePattern):
 
 
 class SoftmaxPattern(QuantizationPattern):
-
     def partition_types(self) -> List[OpOverload]:
         return [torch.ops.aten._softmax.default]
 
@@ -546,3 +545,57 @@ class SoftmaxPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_softmax.default
+
+
+class MixedW8A32LinearPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.linear.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-ignore[29]
+        linear_layer = fused_partition[0].nodes[-1]
+
+        # Bail if the arguments have different shapes than expected
+        if len(linear_layer.args) != 3 or len(linear_layer.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                linear_layer,
+            )
+
+        input_node = linear_layer.args[0]
+        input_shape = input_node.meta["tensor_meta"].shape
+
+        # Bail if the weights are not multiple of 4 (SIMD)
+        if input_shape[-1] % 4 != 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                linear_layer,
+            )
+        # Currenly only supporting vector-matrix multiplication
+        if len(input_shape) > 0 and input_shape[-2] != 1:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                linear_layer,
+            )
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(linear_layer, 1)],
+                biases=[(linear_layer, 2)],
+                output=[],
+                others=[(linear_layer, 0)],
+            ),
+            linear_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_linear.default
