@@ -468,8 +468,3 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::generic::requantize_per_tensor_out
-
-- func: cadence::quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, Tensor indices, bool pruned_weights, *, Tensor(a!) out) -> Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: impl::generic::quantized_embedding_byte_out
