@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cuda_runtime.h>
 #include <dlfcn.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -16,7 +17,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -24,6 +24,7 @@
 #include <executorch/backends/aoti/aoti_model_container.h>
 #include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 
 namespace executorch {
 namespace backends {
@@ -182,6 +183,12 @@ class ET_EXPERIMENTAL CudaBackend final
     handle->so_handle = so_handle;
     handle->so_path = so_path.string();
     handle->container_handle = container_handle;
+
+    // Create a CUDA stream for asynchronous execution
+    cudaStream_t cuda_stream;
+    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
+    handle->cuda_stream = static_cast<void*>(cuda_stream);
+
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -288,7 +295,7 @@ class ET_EXPERIMENTAL CudaBackend final
         n_inputs,
         gpu_outputs.data(), // Use GPU output tensors
         n_outputs,
-        nullptr, // Pass the actual CUDA stream!
+        handle->cuda_stream, // Pass the actual CUDA stream
         nullptr); // proxy_executor_handle can remain nullptr
 
     if (error != Error::Ok) {
@@ -333,6 +340,17 @@ class ET_EXPERIMENTAL CudaBackend final
       return;
     }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
+
+    // Destroy the CUDA stream if it exists
+    if (handle->cuda_stream != nullptr) {
+      cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
+      cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
+      ET_CHECK_OR_LOG_ERROR(
+          stream_err == cudaSuccess,
+          "Failed to destroy CUDA stream: %s",
+          cudaGetErrorString(stream_err));
+      handle->cuda_stream = nullptr;
+    }
 
     // Delete the container BEFORE closing the shared library
     if (handle->container_handle != nullptr) {
