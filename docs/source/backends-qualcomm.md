@@ -74,10 +74,9 @@ This example is verified with SM8550 and SM8450.
  - A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 26c.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
-   - Click the "Get Software" button to download a version of QNN SDK.
-   - However, at the moment of updating this tutorial, the above website doesn't provide QNN SDK newer than 2.22.6.
-   - The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.
-   - [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
+   - Click the "Get Software" button to download the latest version of the QNN SDK.
+   - Although newer versions are available, we have verified and recommend using QNN 2.37.0 for stability.
+   - You can download it directly from the following link: [QNN 2.37.0](https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.37.0.250724/v2.37.0.250724.zip)
 
 The directory with installed Qualcomm AI Engine Direct SDK looks like:
 ```
@@ -365,7 +364,7 @@ The model, inputs, and output location are passed to `qnn_executorch_runner` by 
 
 ## Supported model list
 
-Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
+Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
 
 ## How to Support a Custom Model in HTP Backend
 
