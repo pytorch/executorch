@@ -168,6 +168,19 @@ class LinearModule(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+    
+
+class SliceTensorModule(torch.nn.Module):
+    def __init__(self, dim, start, end, step):
+        self.dim = dim
+        self.start = start
+        self.end = end
+        self.step = step
+
+        super().__init__()
+
+    def forward(self, x):
+        return torch.slice_copy(x, dim, start, end, step)
 
 
 class AddmmModule(torch.nn.Module):

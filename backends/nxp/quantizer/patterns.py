@@ -548,6 +548,15 @@ class ViewPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.view.default]
+    
+
+class SlicePattern(SharedSpecPattern):
+    """
+    Quantizer for Slice operator.
+    """
+
+    def partition_types(self):
+        return [torch.ops.aten.slice.Tensor]
 
 
 class SoftMaxPattern(QuantizationPattern):
