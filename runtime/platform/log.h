@@ -181,6 +181,20 @@ using ::executorch::runtime::LogLevel;
           ##__VA_ARGS__);                                            \
     }                                                                \
   } while (0)
+
+/**
+ * Check a condition and log an error message if the condition is false.
+ *
+ * @param[in] _condition The condition to check.
+ * @param[in] _format Log message format string.
+ */
+#define ET_CHECK_OR_LOG(_condition, _format, ...) \
+  do {                                            \
+    if (!(_condition)) {                          \
+      ET_LOG(Error, _format, ##__VA_ARGS__);      \
+    }                                             \
+  } while (0)
+
 #else // ET_LOG_ENABLED
 
 /**
@@ -190,5 +204,13 @@ using ::executorch::runtime::LogLevel;
  * @param[in] _format Log message format string.
  */
 #define ET_LOG(_level, _format, ...) ((void)0)
+
+/**
+ * Check a condition and log an error message if the condition is false.
+ *
+ * @param[in] _condition The condition to check.
+ * @param[in] _format Log message format string.
+ */
+#define ET_CHECK_OR_LOG(_condition, _format, ...) ((void)0)
 
 #endif // ET_LOG_ENABLED
