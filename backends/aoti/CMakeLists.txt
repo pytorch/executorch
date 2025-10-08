@@ -41,10 +41,7 @@ target_compile_options(aoti_common PUBLIC -fexceptions -frtti -fPIC)
 target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
 
 # Link against PyTorch libraries and standard libraries
-target_link_libraries(
-  aoti_common
-  PUBLIC extension_tensor ${CMAKE_DL_LIBS}
-)
+target_link_libraries(aoti_common PUBLIC extension_tensor ${CMAKE_DL_LIBS})
 executorch_target_link_options_shared_lib(aoti_common)
 
 install(
