@@ -1,6 +1,7 @@
-# Run Llama 3 8B on Android (with Qualcomm AI Engine Direct Backend)
+# Run Llama 3 3B Instruct on Android (with Qualcomm AI Engine Direct Backend)
 
-This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Engine Direct Backend and running the model on a Qualcomm device.
+This tutorial demonstrates how to export and run the Llama 3 3B Instruct model on a Qualcomm device using the Qualcomm AI Engine Direct Backend via ExecuTorch.
+We use a static Llama [implementation](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/oss_scripts/llama/model/static_llama.py) to optimize performance and memory usage during on-device inference.
 
 ## Prerequisites
 
@@ -13,10 +14,8 @@ This tutorial demonstrates how to export Llama 3 8B Instruct for Qualcomm AI Eng
 
 ## Instructions
 
-### Step 1: Prepare the checkpoint of the model and optimized matrix from [Spin Quant](https://github.com/facebookresearch/SpinQuant)
-
-1. For Llama 3 tokenizer and checkpoint, please refer to https://github.com/meta-llama/llama-models/blob/main/README.md for further instructions on how to download `tokenizer.model`, `consolidated.00.pth` and `params.json`.
-2. To get the optimized matrix, please refer to [SpinQuant on GitHub](https://github.com/facebookresearch/SpinQuant). You can download the optimized rotation matrices in the Quantized Models section. Please choose **LLaMA-3-8B/8B_W4A16KV16_lr_1.5_seed_0**.
+### Step 1: Prepare the checkpoint and tokenizer of the model.
+1. For Llama 3 tokenizer and checkpoint, please refer to [instructions](https://www.llama.com/models/llama-3) for further instructions on how to download `tokenizer.model`, `consolidated.00.pth` and `params.json`.
 
 ### Step 2: Export to ExecuTorch with Qualcomm AI Engine Direct Backend
 Deploying large language models like Llama 3 on-device presents the following challenges:
@@ -25,121 +24,83 @@ Deploying large language models like Llama 3 on-device presents the following ch
 2. High model loading and inference time.
 3. Difficulty in quantization.
 
-To address these challenges, we have implemented the following solutions:
-1. Using `quantization.pt2e_quantize = "qnn_16a4w'` to quantize activations and weights, thereby reducing the on-disk model size and alleviating memory pressure during inference.
-2. Using `backed.qnn.num_sharding = 8` to shard the model into sub-parts.
-3. Performing graph transformations to convert or decompose operations into more accelerator-friendly operations.
-4. Using `backend.qnn.optimized_rotation_path = "<path_to_optimized_matrix>"` to apply R1 and R2 of [Spin Quant](https://github.com/facebookresearch/SpinQuant) to improve accuracy.
-5. Using `quantization.calibration_data = "<|start_header_id|>system<|end_header_id|..."` to ensure that during quantization, the calibration includes special tokens in the prompt template. For more details on the prompt template, refer to [the model card](https://llama.meta.com/docs/model-cards-and-prompt-formats/meta-llama-3/).
+To address these, we apply the following optimizations:
+
+1. Quantization: Use `QuantDtype.use_16a4w_block` for post-training quantization to reduce model size and memory usage
+
+2. Mixed Precision Quantization: compresses KV cache tensors to 8-bit and applies `QuantDtype.use_16a8w` to the LM head.
+
+3. SeqMSE Quantization: optimizes the parameter encodings of each layer of a model individually to minimize the difference between the layer’s original and quantized outputs. SeqMSE uses a search-based approach with `seq_mse_candidates` = 1000. (Implementation details: [SeqMSE pass](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/_passes/seq_mse.py))
+
+4. Model Sharding: Set `num_sharding` = 4 to shard the model into sub-parts. This helps reduce memory pressure and improve performance during on-device inference.
+
+5. Graph Transformations: Convert operations into accelerator-friendly formats for better runtime performance.
+
+You can find the full optimization configuration in this [file](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/oss_scripts/llama/__init__.py), as shown below:
+
+``` python
+@register_llm_model("llama3_2-1b_instruct")
+@dataclass(init=False, frozen=True)
+class Llama3_2_1B_Instruct(LLMModelConfig):
+    repo_id = None
+    params_path = None
+    convert_weights = None
+    transform_weight = True
+    # The Llama3_2 enabled should be instruct, however, Llama's tokenizer does not provide utility to apply chat template.
+    instruct_model = False
+    
+    num_sharding = 1
+    # quant config
+    ptq = QuantDtype.use_16a4w_block
+    group_size = 32
+    masked_softmax = False
+    seq_mse_candidates = 1000
+    r1 = False
+    r2 = False
+    r3 = False
+    quantization_config_down_proj_16a8w = get_ptq_per_channel_quant_config(
+        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
+    )
+    custom_annotation = (
+        annotate_kv_8bit,
+        annotate_output_16a8w,
+        partial(
+            annotate_down_proj, quantization_config=quantization_config_down_proj_16a8w
+        ),
+    )
+```
+
 
 To export with the Qualcomm AI Engine Direct Backend, ensure the following:
 
-1. The host machine has more than 100GB of memory (RAM + swap space).
+1. The host machine has more than 64GB of memory (RAM + swap space).
 2. The entire process takes a few hours.
 
 ```bash
-# path/to/config.yaml
-base:
-  model_class: llama3
-  checkpoint: path/to/consolidated.00.pth
-  params: path/to/params.json
-  tokenizer_path: path/to/tokenizer.model
-  metadata: '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}'
-model:
-  use_kv_cache: True
-  enable_dynamic_shape: False
-quantization:
-  pt2e_quantize: qnn_16a4w
-  # Please note that calibration_data must include the prompt template for special tokens.
-  calibration_data: "<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-backend:
-  qnn:
-    enabled: True
-    num_sharding: 8
-
-
-# export_llm
-python -m extension.llm.export.export_llm \
-  --config path/to/config.yaml
+# export llama
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --compile_only
 ```
+Note: end-to-end [instructions](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/oss_scripts/llama/README.md)
 
 ### Step 3: Invoke the Runtime on an Android smartphone with Qualcomm SoCs
-1. Build executorch with Qualcomm AI Engine Direct Backend for android
-    ```bash
-    cmake \
-        -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake" \
-        -DANDROID_ABI=arm64-v8a \
-        -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
-        -DEXECUTORCH_BUILD_QNN=ON \
-        -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-        -Bcmake-android-out .
-
-    cmake --build cmake-android-out -j16 --target install --config Release
-    ```
-2. Build llama runner for android
-```bash
-    cmake \
-        -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK_ROOT}"/build/cmake/android.toolchain.cmake  \
-        -DANDROID_ABI=arm64-v8a \
-        -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-        -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=python \
-        -DEXECUTORCH_BUILD_QNN=ON \
-        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_KERNELS_LLM=ON \
-        -Bcmake-android-out/examples/models/llama examples/models/llama
-
-    cmake --build cmake-android-out/examples/models/llama -j16 --config Release
-```
-3. Run on Android via adb shell
-*Pre-requisite*: Make sure you enable USB debugging via developer options on your phone
-
 **3.1 Connect your android phone**
 
-**3.2 We need to push required QNN libraries to the device.**
-```bash
-# make sure you have write-permission on below path.
-DEVICE_DIR=/data/local/tmp/llama
-adb shell mkdir -p ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV73Stub.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV75Stub.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_DIR}
-```
+**3.2 Make sure the following artifact is present before running the model.**
+-- artifact/
+   └── llama_qnn.pte
 
-**3.3 Upload model, tokenizer and llama runner binary to phone**
+**3.3 Run model**
 ```bash
-adb push <model.pte> ${DEVICE_DIR}
-adb push <tokenizer.model> ${DEVICE_DIR}
-adb push cmake-android-out/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
-adb push cmake-out-android/examples/models/llama/llama_main ${DEVICE_DIR}
-```
-
-**3.4 Run model**
-```bash
-adb shell "cd ${DEVICE_DIR} && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n\" --seq_len 128"
-```
-You should see the message:
-```
-<|start_header_id|>system<|end_header_id|>\n\nYou are a funny chatbot.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nCould you tell me about Facebook?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nHello! I'd be delighted to chat with you about Facebook. Facebook is a social media platform that was created in 2004 by Mark Zuckerberg and his colleagues while he was a student at Harvard University. It was initially called "Facemaker" but later changed to Facebook, which is a combination of the words "face" and "book". The platform was initially intended for people to share their thoughts and share information with their friends, but it quickly grew to become one of the
+# Run llama
+python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --checkpoint consolidated.00.pth --params params.json --tokenizer_model tokenizer.model --decoder_model llama3_2-3b_instruct --model_mode kv --max_seq_len 1024 --prompt "I would like to learn python, could you teach me with a simple example?" --tasks wikitext --limit 1 --pre_gen_pte ${PATH_TO_ARTIFACT}
 ```
 
 ## What is coming?
-
 - Performance improvements
 - Reduce the memory pressure during inference to support 12GB Qualcomm devices
-- Support more LLMs (Qwen, Phi-4-mini, etc.)
+- Broader LLM Support via [Optimum ExecuTorch](https://github.com/huggingface/optimum-executorch?tab=readme-ov-file#llms-large-language-models)
+
+  - Already supported models (e.g.): Llama2, Llama3, Gemma, Qwen, Phi-4, SmolLM. For usage examples, please refer to [README](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/oss_scripts/llama/README.md)
 
 ## FAQ
 
