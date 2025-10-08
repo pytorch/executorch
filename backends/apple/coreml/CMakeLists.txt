@@ -241,7 +241,6 @@ if(APPLE)
   )
 
   if(EXECUTORCH_BUILD_DEVTOOLS)
-    target_compile_options(executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED)
     target_compile_options(coremldelegate PRIVATE "-frtti")
     target_compile_options(libprotobuf-lite PRIVATE "-frtti")
   else()

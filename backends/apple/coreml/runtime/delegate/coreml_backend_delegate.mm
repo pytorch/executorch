@@ -25,6 +25,7 @@
 #import <unordered_map>
 #import <vector>
 
+#undef ET_EVENT_TRACER_ENABLED
 #ifdef ET_EVENT_TRACER_ENABLED
 #import <model_event_logger_impl.h>
 #endif

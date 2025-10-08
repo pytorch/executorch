@@ -322,6 +322,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     identifier.append(to_string(compute_units));
 }
 
+#undef ET_EVENT_TRACER_ENABLED
 #if ET_EVENT_TRACER_ENABLED
 ETCoreMLAsset * _Nullable make_asset(NSURL *url,
                                      NSString *identifier,
