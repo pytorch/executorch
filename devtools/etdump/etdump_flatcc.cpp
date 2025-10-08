@@ -51,6 +51,8 @@ Result<executorch_flatbuffer_ScalarType_enum_t> get_flatbuffer_scalar_type(
       return executorch_flatbuffer_ScalarType_CHAR;
     case executorch::aten::ScalarType::Short:
       return executorch_flatbuffer_ScalarType_SHORT;
+    case executorch::aten::ScalarType::Half:
+      return executorch_flatbuffer_ScalarType_HALF;
     case executorch::aten::ScalarType::Float:
       return executorch_flatbuffer_ScalarType_FLOAT;
     case executorch::aten::ScalarType::Int:
