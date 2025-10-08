@@ -19,9 +19,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
@@ -659,6 +657,4 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda
