@@ -23,7 +23,8 @@ model = resnet18(weights=ResNet18_Weights)
 model = model.eval()
 normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-model_inputs = (normalize(torch.randn((1, 3, 224, 224))),)
+# Using torch.rand * 2 - 1 to generate numbers in the range [-1;1] like an RGB image
+model_inputs = (normalize(torch.rand((1, 3, 224, 224)) * 2 - 1),)
 
 input_t = Tuple[torch.Tensor]
 
@@ -69,10 +70,9 @@ def test_resnet_u55_INT(per_channel_quantization):
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
-        atol=0.5,
+        atol=0.25,
         qtol=1,
     )
     pipeline.run()
@@ -90,10 +90,9 @@ def test_resnet_u85_INT(per_channel_quantization):
         model_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
         use_to_edge_transform_and_lower=True,
         per_channel_quantization=per_channel_quantization,
-        atol=0.5,
+        atol=0.25,
         qtol=1,
     )
     pipeline.run()

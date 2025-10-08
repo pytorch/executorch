@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MixedW8A32LinearPattern,
     QuantizationPattern,
     ReluPattern0,
     ReluPattern1,
@@ -109,6 +110,13 @@ qconfig_A16 = QuantizationConfig(
     None,
 )
 
+qconfig_A32W8sym = QuantizationConfig(
+    input_activation=None,
+    output_activation=None,
+    weight=wgt_qspec_sym8s,
+    bias=wgt_qspec_sym8s,
+)
+
 
 class CadenceAtenQuantizer(Quantizer):
     def __init__(
@@ -133,7 +141,7 @@ class CadenceAtenQuantizer(Quantizer):
             if not no_outside_users(fused_partition):
                 continue
 
-            anchors = self.pattern.get_anchors(model, fused_partition)
+            anchors, _ = self.pattern.get_anchors(model, fused_partition)
             if not anchors or anchors.empty:
                 continue
             if is_annotated(
@@ -299,6 +307,20 @@ class CadenceFusedConvReluQuantizer(CadenceQuantizer):
         quantizers = quantizers + get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(AddPattern(), qconfig_A8W8))
         quantizers.append(CadenceAtenQuantizer(CatPattern(), qconfig_A8W8))
+        super().__init__(quantizers)
+
+
+class CadenceW8A32MixedQuantizer(CadenceQuantizer):
+    """
+    Quantizer for mixed quantization, 8 bit weights and 32 bit activations
+    TODO: Experimental quantizer, not yet well supported in OSS
+    """
+
+    def __init__(self) -> None:
+        quantizers = []
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32LinearPattern(), qconfig_A32W8sym)
+        )
         super().__init__(quantizers)
 
 

@@ -172,7 +172,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor([[0]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -197,7 +197,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor([[-2, -8]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -220,7 +220,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor([[0, 0]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -244,7 +244,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [1073741824], dtype=torch.int32
                     ),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     0,  # out_zero_point
                     torch.tensor(
                         [[[0, -2, -4], [-2, -7, -12]]], dtype=dtype
@@ -270,7 +270,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (1.0 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     1,  # out_zero_point
                     torch.tensor([[1, 1]], dtype=dtype),  # expected_output
                     per_tensor,
@@ -295,7 +295,7 @@ class TestRefImplementations(unittest.TestCase):
                     torch.tensor(
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (1.0 * 2^31)
-                    torch.tensor([0], dtype=torch.int64),  # out_shift
+                    torch.tensor([0], dtype=torch.int32),  # out_shift
                     1,  # out_zero_point
                     torch.tensor([[1, 1]], dtype=dtype),  # expected_output
                     False,
@@ -317,7 +317,7 @@ class TestRefImplementations(unittest.TestCase):
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (0.125 * 2^31)
                     torch.tensor(
-                        [1], dtype=torch.int64
+                        [1], dtype=torch.int32
                     ),  # out_shift (shift=1, doubles the scale)
                     1,  # out_zero_point
                     torch.tensor([[1, 2]], dtype=dtype),  # expected_output
@@ -339,7 +339,7 @@ class TestRefImplementations(unittest.TestCase):
                         [268435456], dtype=torch.int32
                     ),  # out_multiplier (0.125 * 2^31)
                     torch.tensor(
-                        [1], dtype=torch.int64
+                        [1], dtype=torch.int32
                     ),  # out_shift (shift=1, doubles the scale)
                     1,  # out_zero_point
                     torch.tensor([[1, 2]], dtype=dtype),  # expected_output
@@ -1156,3 +1156,1153 @@ class TestRefImplementations(unittest.TestCase):
             torch.ops.cadence.where_Scalar(input_tensor, 1.0, 0.0)
 
         self.assertIn("condition must be a bool tensor", str(context.exception))
+
+    @expand(
+        [
+            (
+                "h1xhd4",
+                torch.tensor([[[[1.0, 2.0, 3.0, 4.0]]]], dtype=torch.float32),
+                torch.tensor([[0.0, 0.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[[[1.0, 3.0, 2.0, 4.0]]]], dtype=torch.float32),
+            ),
+            (
+                "h2xhd4",
+                torch.tensor(
+                    [[[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]]],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [[[[1.0, -4.0, 2.0, 3.0], [5, -8.0, 6.0, 7.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "s2xh2xhd4",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                            [[9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[1.0, 0.0], [1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
+                            [[9.0, -12.0, 10.0, 11.0], [13.0, -16.0, 14.0, 15.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "pos_not_none",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+                            [[9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([[1.0, 0.0], [0.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[0.0, 1.0], [1.0, 0.0]], dtype=torch.float32),
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, -4.0, 2.0, 3.0], [5.0, -8.0, 6.0, 7.0]],
+                            [[-10.0, 11.0, 9.0, 12.0], [-14.0, 15.0, 13.0, 16.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+                torch.tensor([1, 0]),
+            ),
+        ]
+    )
+    def test_rope(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        sin_tensor: torch.Tensor,
+        cos_tensor: torch.Tensor,
+        expected_output: torch.Tensor,
+        pos: torch.Tensor | None = None,
+    ) -> None:
+        output = torch.ops.cadence.rope(input_tensor, sin_tensor, cos_tensor, pos)
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            input_tensor.shape,
+            f"Output shape should match input shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Test case 1: Basic 2D convolution (NCHW format)
+            (
+                "basic_2d_nchw",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 0.0], [0.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2 (identity-like filter)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                False,  # channel_last
+                torch.tensor(
+                    [[[[5.0]]]], dtype=torch.float32
+                ),  # expected: 1*1 + 4*1 = 5
+            ),
+            # Test case 2: Basic 2D convolution (NHWC format)
+            (
+                "basic_2d_nhwc",
+                torch.tensor(
+                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
+                ),  # input: 1x2x2x1 (NHWC)
+                torch.tensor(
+                    [[[[1.0], [0.0]], [[0.0], [1.0]]]], dtype=torch.float32
+                ),  # weight: 1x2x2x1 (NHWC format)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                True,  # channel_last
+                torch.tensor(
+                    [[[[5.0]]]], dtype=torch.float32
+                ),  # expected: 1*1 + 4*1 = 5
+            ),
+            # Test case 3: 2D convolution with stride=2
+            (
+                "conv2d_stride2",
+                torch.tensor(
+                    [
+                        [
+                            [
+                                [1.0, 2.0, 3.0, 4.0],
+                                [5.0, 6.0, 7.0, 8.0],
+                                [9.0, 10.0, 11.0, 12.0],
+                                [13.0, 14.0, 15.0, 16.0],
+                            ]
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # input: 1x1x4x4
+                torch.tensor(
+                    [[[[1.0, 1.0], [1.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2 (sum filter)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (2, 2),  # stride=2
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                False,  # channel_last
+                torch.tensor([[[[14.0, 22.0], [46.0, 54.0]]]], dtype=torch.float32),
+            ),
+            # Test case 4: 2D convolution with padding=1
+            (
+                "conv2d_padding1",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 0.0], [0.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (1, 1),  # padding=1
+                (1, 1),  # dilation
+                1,  # groups
+                False,  # channel_last
+                torch.tensor(
+                    [[[[1.0, 2.0, 0.0], [3.0, 5.0, 2.0], [0.0, 3.0, 4.0]]]],
+                    dtype=torch.float32,
+                ),  # expected with padding
+            ),
+            # Test case 5: 2D convolution with dilation=2
+            (
+                "conv2d_dilation2",
+                torch.tensor(
+                    [
+                        [
+                            [
+                                [1.0, 2.0, 3.0, 4.0],
+                                [5.0, 6.0, 7.0, 8.0],
+                                [9.0, 10.0, 11.0, 12.0],
+                                [13.0, 14.0, 15.0, 16.0],
+                            ]
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # input: 1x1x4x4
+                torch.tensor(
+                    [[[[1.0, 1.0], [1.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (2, 2),  # dilation=2
+                1,  # groups
+                False,  # channel_last
+                torch.tensor([[[[24.0, 28.0], [40.0, 44.0]]]], dtype=torch.float32),
+            ),
+            # Test case 6: 2D grouped convolution (groups=2)
+            (
+                "conv2d_groups2",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0], [3.0, 4.0]],  # first input channel
+                            [[5.0, 6.0], [7.0, 8.0]],  # second input channel
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # input: 1x2x2x2
+                torch.tensor(
+                    [
+                        [[[1.0, 1.0], [1.0, 1.0]]],  # first group weight
+                        [[[0.5, 0.5], [0.5, 0.5]]],  # second group weight
+                    ],
+                    dtype=torch.float32,
+                ),  # weight: 2x1x2x2
+                torch.tensor([0.0, 1.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                2,  # groups=2
+                False,  # channel_last
+                torch.tensor([[[[10.0]], [[14.0]]]], dtype=torch.float32),
+            ),
+            # Test case 7: 1D convolution (NCL format)
+            (
+                "conv1d_ncl",
+                torch.tensor(
+                    [[[1.0, 2.0, 3.0, 4.0]]], dtype=torch.float32
+                ),  # input: 1x1x4
+                torch.tensor([[[1.0, 1.0]]], dtype=torch.float32),  # weight: 1x1x2
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride (only stride[1] is used for 1D)
+                (0, 0),  # padding (only padding[1] is used for 1D)
+                (1, 1),  # dilation (only dilation[1] is used for 1D)
+                1,  # groups
+                False,  # channel_last
+                torch.tensor(
+                    [[[3.0, 5.0, 7.0]]], dtype=torch.float32
+                ),  # expected: [1+2, 2+3, 3+4]
+            ),
+            # Test case 8: 1D convolution (NLC format)
+            (
+                "conv1d_nlc",
+                torch.tensor(
+                    [[[1.0], [2.0], [3.0], [4.0]]], dtype=torch.float32
+                ),  # input: 1x4x1 (NLC)
+                torch.tensor(
+                    [[[1.0], [1.0]]], dtype=torch.float32
+                ),  # weight: 1x2x1 (NLC)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                True,  # channel_last
+                torch.tensor([[[3.0], [5.0], [7.0]]], dtype=torch.float32),
+            ),
+            # Test case 9: Multi-channel input and output
+            (
+                "multi_channel",
+                torch.tensor(
+                    [
+                        [
+                            [[1.0, 2.0], [3.0, 4.0]],  # first input channel
+                            [[0.5, 1.0], [1.5, 2.0]],  # second input channel
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # input: 1x2x2x2
+                torch.tensor(
+                    [
+                        [  # first output channel
+                            [[1.0, 0.0], [0.0, 1.0]],  # weights for first input channel
+                            [
+                                [2.0, 0.0],
+                                [0.0, 2.0],
+                            ],  # weights for second input channel
+                        ],
+                        [  # second output channel
+                            [[0.5, 0.5], [0.5, 0.5]],  # weights for first input channel
+                            [
+                                [1.0, 1.0],
+                                [1.0, 1.0],
+                            ],  # weights for second input channel
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),  # weight: 2x2x2x2
+                torch.tensor([0.0, 1.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                False,  # channel_last
+                torch.tensor([[[[10.0]], [[11.0]]]], dtype=torch.float32),
+            ),
+            # Test case 10: Convolution with non-zero bias
+            (
+                "conv2d_with_bias",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 0.0], [0.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([10.0], dtype=torch.float32),  # bias=10
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                False,  # channel_last
+                torch.tensor(
+                    [[[[15.0]]]], dtype=torch.float32
+                ),  # expected: 5 + 10 = 15
+            ),
+        ]
+    )
+    def test_convolution(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.convolution(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            groups,
+            channel_last,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"Output shape should match expected shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Basic 2D transposed convolution with stride=1 (current test case - corrected name)
+            (
+                "basic_2d_stride1",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 1.0], [1.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                False,  # channel_last
+                torch.tensor(
+                    [[[[1.0, 3.0, 2.0], [4.0, 10.0, 6.0], [3.0, 7.0, 4.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2D transposed convolution with channel_last=True (NHWC format)
+            (
+                "channel_last_nhwc",
+                torch.tensor(
+                    [[[[1.0], [2.0]], [[3.0], [4.0]]]], dtype=torch.float32
+                ),  # input: 1x2x2x1 (NHWC)
+                torch.tensor(
+                    [[[[1.0], [1.0]], [[1.0], [1.0]]]], dtype=torch.float32
+                ),  # weight: 1x2x2x1 (NHWC)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                True,  # channel_last=True
+                torch.tensor(
+                    [
+                        [
+                            [[1.0], [3.0], [2.0]],
+                            [[4.0], [10.0], [6.0]],
+                            [[3.0], [7.0], [4.0]],
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2D transposed convolution with non-zero bias
+            (
+                "with_bias",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                torch.tensor(
+                    [[[[1.0, 0.0], [0.0, 1.0]]]], dtype=torch.float32
+                ),  # weight: 1x1x2x2
+                torch.tensor([5.0], dtype=torch.float32),  # bias=5.0
+                (1, 1),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                False,  # channel_last
+                torch.tensor(
+                    [[[[6.0, 7.0, 5.0], [8.0, 10.0, 7.0], [5.0, 8.0, 9.0]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 1D transposed convolution (3D tensor, NLC format)
+            (
+                "conv1d_nlc",
+                torch.tensor(
+                    [[[1.0], [2.0], [3.0]]], dtype=torch.float32
+                ),  # input: 1x3x1 (NLC)
+                torch.tensor(
+                    [[[1.0], [0.5]]], dtype=torch.float32
+                ),  # weight: 1x2x1 (NLC)
+                torch.tensor([0.0], dtype=torch.float32),  # bias
+                (2, 0),  # stride
+                (0, 0),  # padding
+                (1, 1),  # dilation
+                1,  # groups
+                (0, 0),  # output_padding
+                True,  # channel_last=True
+                torch.tensor(
+                    [[[1.0], [0.5], [2.0], [1.0], [3.0], [1.5]]], dtype=torch.float32
+                ),
+            ),
+        ]
+    )
+    def test_transposed_convolution(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        output_padding: tuple[int, int],
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.transposed_convolution(
+            input_tensor,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            output_padding,
+            groups,
+            channel_last,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"Output shape should match expected shape in {name}",
+        )
+
+        # Verify output matches expected values
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            # Basic non-quantized average pooling
+            (
+                "basic_non_quantized",
+                torch.tensor(
+                    [
+                        [
+                            [
+                                [1.0, 2.0, 3.0, 4.0],
+                                [5.0, 6.0, 7.0, 8.0],
+                                [9.0, 10.0, 11.0, 12.0],
+                                [13.0, 14.0, 15.0, 16.0],
+                            ]
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # input: 1x1x4x4
+                (2, 2),  # kernel_size
+                (2, 2),  # stride
+                (0, 0),  # padding
+                False,  # ceil_mode
+                False,  # count_include_pad
+                None,  # divisor_override
+                None,  # in_zero_point (non-quantized)
+                False,  # channel_last
+                torch.tensor(
+                    [[[[3.5, 5.5], [11.5, 13.5]]]], dtype=torch.float32
+                ),  # expected: average of 2x2 blocks
+            ),
+            # Non-quantized with count_include_pad=True and padding
+            (
+                "non_quantized_count_include_pad",
+                torch.tensor(
+                    [[[[1.0, 2.0], [3.0, 4.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                (3, 3),  # kernel_size (larger than input)
+                (1, 1),  # stride
+                (1, 1),  # padding
+                False,  # ceil_mode
+                True,  # count_include_pad=True
+                None,  # divisor_override
+                None,  # in_zero_point (non-quantized)
+                False,  # channel_last
+                torch.tensor(
+                    [[[[2.5, 2.5], [2.5, 2.5]]]],
+                    dtype=torch.float32,
+                ),
+            ),
+            # Non-quantized with divisor_override
+            (
+                "non_quantized_divisor_override",
+                torch.tensor(
+                    [[[[2.0, 4.0], [6.0, 8.0]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                (2, 2),  # kernel_size
+                (1, 1),  # stride
+                (0, 0),  # padding
+                False,  # ceil_mode
+                False,  # count_include_pad
+                2,  # divisor_override (instead of 4)
+                None,  # in_zero_point (non-quantized)
+                False,  # channel_last
+                torch.tensor(
+                    [[[[10.0]]]], dtype=torch.float32
+                ),  # expected: (2+4+6+8)/2 = 10
+            ),
+            # Quantized with non-zero zero_point and padding
+            (
+                "quantized_nonzero_zero_point",
+                torch.tensor(
+                    [[[[130, 132], [134, 136]]]], dtype=torch.uint8
+                ),  # input: 1x1x2x2, values around zero_point=128
+                (3, 3),  # kernel_size
+                (1, 1),  # stride
+                (1, 1),  # padding
+                False,  # ceil_mode
+                True,  # count_include_pad=True
+                None,  # divisor_override
+                128,  # in_zero_point=128 (padded areas will have this value)
+                False,  # channel_last
+                torch.tensor(
+                    [[[[130, 130], [130, 130]]]], dtype=torch.uint8
+                ),  # expected: averages including padded zero_point values
+            ),
+            # Quantized with divisor_override
+            (
+                "quantized_divisor_override",
+                torch.tensor(
+                    [[[[64, 96], [128, 160]]]], dtype=torch.float32
+                ),  # input: 1x1x2x2
+                (2, 2),  # kernel_size
+                (1, 1),  # stride
+                (0, 0),  # padding
+                False,  # ceil_mode
+                False,  # count_include_pad
+                2,  # divisor_override (instead of 4)
+                None,  # in_zero_point=None
+                False,  # channel_last
+                torch.tensor(
+                    [[[[224]]]], dtype=torch.float32
+                ),  # expected: (64+96+128+160)/2 = 224
+            ),
+            # Large values that need clamping
+            (
+                "quantized_clamping_test",
+                torch.tensor(
+                    [[[[120, 125], [125, 127]]]], dtype=torch.int8
+                ),  # input: 1x1x2x2, large values for int8
+                (2, 2),  # kernel_size
+                (1, 1),  # stride
+                (0, 0),  # padding
+                False,  # ceil_mode
+                False,  # count_include_pad
+                None,  # divisor_override
+                0,  # in_zero_point=0
+                False,  # channel_last
+                torch.tensor(
+                    [[[[124]]]], dtype=torch.int8
+                ),  # expected: (120+125+125+127)/4 = 124.25 -> 124, within int8 range
+            ),
+        ]
+    )
+    def test_avg_pool2d(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        kernel_size: tuple[int, int],
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        ceil_mode: bool,
+        count_include_pad: bool,
+        divisor_override: int | None,
+        in_zero_point: int | None,
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.avg_pool2d(
+            input_tensor,
+            kernel_size,
+            stride,
+            padding,
+            ceil_mode,
+            count_include_pad,
+            divisor_override,
+            in_zero_point if in_zero_point is None else torch.tensor([in_zero_point]),
+            channel_last,
+        )
+
+        # Verify output properties
+        self.assertEqual(
+            output.dtype,
+            input_tensor.dtype,
+            f"Output dtype should match input dtype in {name}",
+        )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"Output shape should match expected shape in {name}",
+        )
+
+        # Verify output matches expected values
+        if input_tensor.dtype.is_floating_point:
+            self.assertTrue(
+                torch.allclose(output, expected_output, rtol=1e-4, atol=1e-4),
+                f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+            )
+        else:
+            self.assertTrue(
+                torch.equal(output, expected_output),
+                f"Output values don't match expected in {name}. Got {output}, expected {expected_output}",
+            )
+
+    @expand(
+        [
+            # Basic 2x2 kernel, stride 1, no padding, NCHW
+            (
+                "nchw_basic_2x2",
+                torch.tensor(
+                    [[[[1, 2, 3], [4, 5, 6], [7, 8, 9]]]], dtype=torch.float32
+                ),  # (N=1, C=1, H=3, W=3)
+                (2, 2),  # kernel_size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (1, 1),  # stride
+                None,  # in_zero_point
+                False,  # channel_last
+                False,
+                torch.tensor(
+                    [
+                        [[1, 2, 4, 5], [2, 3, 5, 6], [4, 5, 7, 8], [5, 6, 8, 9]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2x2 kernel, stride 2, no padding, NCHW
+            (
+                "nchw_stride2",
+                torch.tensor(
+                    [[[[1, 2, 3], [4, 5, 6], [7, 8, 9]]]], dtype=torch.float32
+                ),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (2, 2),
+                None,
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [[1, 2, 4, 5]],
+                    ],
+                    dtype=torch.float32,  # Only every other patch in each dim
+                ),
+            ),
+            # 2x2 kernel, stride 1, padding 1, NCHW
+            (
+                "nchw_padding1",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.float32),  # (1,1,2,2)
+                (2, 2),
+                (1, 1),
+                (1, 1),
+                (1, 1),
+                None,
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [0, 0, 0, 1],
+                            [0, 0, 1, 2],
+                            [0, 0, 2, 0],
+                            [0, 1, 0, 3],
+                            [1, 2, 3, 4],
+                            [2, 0, 4, 0],
+                            [0, 3, 0, 0],
+                            [3, 4, 0, 0],
+                            [4, 0, 0, 0],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2x2 kernel, stride 1, no padding, NHWC
+            (
+                "nhwc_basic_2x2",
+                torch.tensor(
+                    [[[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]]]],
+                    dtype=torch.float32,
+                ),  # (N=1, H=3, W=3, C=1)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                True,
+                False,
+                torch.tensor(
+                    [
+                        [[1, 2, 4, 5], [2, 3, 5, 6], [4, 5, 7, 8], [5, 6, 8, 9]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # 2x2 kernel, stride 1, no padding, NCHW, in_zero_point=1
+            (
+                "nchw_in_zero_point_no_padding",
+                torch.tensor([[[[2, 3, 4], [5, 6, 7], [8, 9, 10]]]], dtype=torch.int8),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                torch.tensor(1, dtype=torch.int32),
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [[2, 3, 5, 6], [3, 4, 6, 7], [5, 6, 8, 9], [6, 7, 9, 10]],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+            (
+                "nchw_in_zero_point_with_padding=1_and_stride=2",
+                torch.tensor([[[[2, 3, 4], [5, 6, 7], [8, 9, 10]]]], dtype=torch.int8),
+                (2, 2),
+                (1, 1),
+                (1, 1),
+                (2, 2),
+                torch.tensor(-1, dtype=torch.int32),
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [-1, -1, -1, 2],
+                            [-1, -1, 3, 4],
+                            [-1, 5, -1, 8],
+                            [6, 7, 9, 10],
+                        ],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+            # 2x2 kernel, stride 1, no padding, NHWC, in_zero_point=2
+            (
+                "nhwc_in_zero_point",
+                torch.tensor(
+                    [[[[3], [4], [5]], [[6], [7], [8]], [[9], [10], [11]]]],
+                    dtype=torch.int8,
+                ),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                torch.tensor(2, dtype=torch.int32),
+                True,
+                False,
+                torch.tensor(
+                    [
+                        [[3, 4, 6, 7], [4, 5, 7, 8], [6, 7, 9, 10], [7, 8, 10, 11]],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+            # Multi-channel input, 2x2 kernel, stride 1, no padding, NCHW
+            (
+                "nchw_multi_channel",
+                torch.tensor(
+                    [
+                        [
+                            [[1, 2, 3], [4, 5, 6], [7, 8, 9]],  # channel 0
+                            [[10, 11, 12], [13, 14, 15], [16, 17, 18]],  # channel 1
+                        ]
+                    ],
+                    dtype=torch.float32,
+                ),  # (1,2,3,3)
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                None,
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 2, 4, 5, 10, 11, 13, 14],
+                            [2, 3, 5, 6, 11, 12, 14, 15],
+                            [4, 5, 7, 8, 13, 14, 16, 17],
+                            [5, 6, 8, 9, 14, 15, 17, 18],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            # Multi-channel input and multi-channel zero-point
+            (
+                "nchw_multi_channel_and_zero_point_no_padding",
+                torch.tensor([[[1, 2, 3]], [[4, 5, 6]]], dtype=torch.int32),
+                (1, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                torch.tensor([-1, -2], dtype=torch.int32),
+                False,
+                False,
+                torch.tensor([[[1, 2], [2, 3]], [[4, 5], [5, 6]]], dtype=torch.int32),
+            ),
+            (
+                "nchw_multi_channel_and_zero_point_with_padding=1_and_stride=(2, 1)",
+                torch.tensor([[[1, 2, 3]], [[4, 5, 6]]], dtype=torch.int32),
+                (1, 2),
+                (1, 1),
+                (2, 1),
+                (2, 2),
+                torch.tensor([-1, -2], dtype=torch.int32),
+                False,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [-1, -1],
+                            [-1, -1],
+                            [-1, 1],
+                            [2, 3],
+                            [-1, -1],
+                            [-1, -1],
+                        ],
+                        [
+                            [-2, -2],
+                            [-2, -2],
+                            [-2, 4],
+                            [5, 6],
+                            [-2, -2],
+                            [-2, -2],
+                        ],
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "per_tensor",
+                torch.tensor(
+                    [[[[3], [4], [5]], [[6], [7], [8]], [[9], [10], [11]]]],
+                    dtype=torch.int8,
+                ),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                2,
+                True,
+                True,
+                torch.tensor(
+                    [
+                        [[3, 4, 6, 7], [4, 5, 7, 8], [6, 7, 9, 10], [7, 8, 10, 11]],
+                    ],
+                    dtype=torch.int8,
+                ),
+            ),
+        ]
+    )
+    def test_im2row(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        kernel_size: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int],
+        stride: tuple[int, int],
+        in_zero_point: torch.Tensor | None,
+        channel_last: bool,
+        per_tensor: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        if per_tensor:
+            output = torch.ops.cadence.im2row.per_tensor(
+                input_tensor,
+                kernel_size,
+                dilation,
+                padding,
+                stride,
+                in_zero_point,
+                channel_last,
+            )
+        else:
+            output = torch.ops.cadence.im2row(
+                input_tensor,
+                kernel_size,
+                dilation,
+                padding,
+                stride,
+                in_zero_point,
+                channel_last,
+            )
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"im2row output shape mismatch in {name}",
+        )
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"im2row output mismatch in {name}: got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            (
+                "basic_2x2",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                (0, 0),
+                None,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 0, 0, 0],
+                            [1, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [1, 0, 3, 0],
+                            [1, 2, 3, 4],
+                            [0, 2, 0, 4],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 4],
+                            [0, 0, 0, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "basic_2x2_with_zero_point",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),
+                (1, 1),
+                (0, 0),
+                (1, 1),
+                (0, 0),
+                torch.tensor(100, dtype=torch.int32),
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 100, 100, 100],
+                            [1, 2, 100, 100],
+                            [100, 2, 100, 100],
+                            [1, 100, 3, 100],
+                            [1, 2, 3, 4],
+                            [100, 2, 100, 4],
+                            [100, 100, 3, 100],
+                            [100, 100, 3, 4],
+                            [100, 100, 100, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "basic_2x2_with_stride_2",
+                torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int32),
+                (2, 2),  # kernel size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (2, 2),  # stride
+                (0, 0),  # output padding
+                None,
+                False,
+                torch.tensor(
+                    [
+                        [
+                            [1, 0, 0, 0],
+                            [1, 0, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [1, 0, 0, 0],
+                            [1, 0, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 2, 0, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 0, 4],
+                            [0, 0, 0, 4],
+                            [0, 0, 3, 0],
+                            [0, 0, 3, 0],
+                            [0, 0, 0, 4],
+                            [0, 0, 0, 4],
+                        ]
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+            (
+                "batch2_with_batch2_zero_point",
+                torch.tensor(
+                    [
+                        [[[1, 2], [3, 4]]],
+                        [[[5, 6], [7, 8]]],
+                    ],
+                    dtype=torch.int32,
+                ),  # input: (2,1,2,2)
+                (2, 2),  # kernel_size
+                (1, 1),  # dilation
+                (0, 0),  # padding
+                (1, 1),  # stride
+                (0, 0),  # output_padding
+                torch.tensor([100, 200], dtype=torch.int32),  # in_zero_point per batch
+                False,  # channel_last
+                torch.tensor(
+                    [
+                        [
+                            [1, 100, 100, 100],
+                            [1, 2, 100, 100],
+                            [100, 2, 100, 100],
+                            [1, 100, 3, 100],
+                            [1, 2, 3, 4],
+                            [100, 2, 100, 4],
+                            [100, 100, 3, 100],
+                            [100, 100, 3, 4],
+                            [100, 100, 100, 4],
+                        ],
+                        [
+                            [5, 200, 200, 200],
+                            [5, 6, 200, 200],
+                            [200, 6, 200, 200],
+                            [5, 200, 7, 200],
+                            [5, 6, 7, 8],
+                            [200, 6, 200, 8],
+                            [200, 200, 7, 200],
+                            [200, 200, 7, 8],
+                            [200, 200, 200, 8],
+                        ],
+                    ],
+                    dtype=torch.int32,
+                ),
+            ),
+        ]
+    )
+    def test_transposed_im2row(
+        self,
+        name: str,
+        input_tensor: torch.Tensor,
+        kernel_size: tuple[int, int],
+        dilation: tuple[int, int],
+        padding: tuple[int, int],
+        stride: tuple[int, int],
+        output_padding: tuple[int, int],
+        in_zero_point: torch.Tensor | int | None,
+        channel_last: bool,
+        expected_output: torch.Tensor,
+    ) -> None:
+        output = torch.ops.cadence.transposed_im2row(
+            input_tensor,
+            kernel_size,
+            dilation,
+            padding,
+            stride,
+            output_padding,
+            in_zero_point,
+            channel_last,
+        )
+
+        self.assertEqual(
+            output.shape,
+            expected_output.shape,
+            f"transposed_im2row output shape mismatch in {name}: got {output.shape}, expected {expected_output.shape}",
+        )
+        self.assertTrue(
+            torch.equal(output, expected_output),
+            f"transposed_im2row output mismatch in {name}: got {output}, expected {expected_output}",
+        )
