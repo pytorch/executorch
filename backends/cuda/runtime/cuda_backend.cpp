@@ -97,10 +97,10 @@ class ET_EXPERIMENTAL CudaBackend final
     auto aoti_cuda_buffer = named_data_map->get_data(so_blob_key.c_str());
     ET_CHECK_OR_RETURN_ERROR(
         aoti_cuda_buffer.ok(),
-        aoti_cuda_buffer.error(),
+        Internal,
         "Failed to get data for key %s: 0x%x",
         so_blob_key.c_str(),
-        aoti_cuda_buffer.error());
+        static_cast<uint32_t>(aoti_cuda_buffer.error()));
 
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
@@ -311,7 +311,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (handle->cuda_stream != nullptr) {
       cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
       cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
-      ET_CHECK_OR_LOG(
+      ET_CHECK_OR_LOG_ERROR(
           stream_err == cudaSuccess,
           "Failed to destroy CUDA stream: %s",
           cudaGetErrorString(stream_err));
