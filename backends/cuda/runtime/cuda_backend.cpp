@@ -342,7 +342,7 @@ class ET_EXPERIMENTAL CudaBackend final
           !remove_error,
           "Failed to remove temporary shared library %s: %s",
           handle->so_path.c_str(),
-          remove_error.message().c_str())
+          remove_error.message().c_str());
     }
 
     delete handle;
