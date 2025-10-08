@@ -161,7 +161,7 @@ if(${ANDROID})
   install(
     TARGETS enn_backend enn_logging
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 endif()
 
