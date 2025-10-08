@@ -62,7 +62,6 @@ xcuserdata/
 /include/
 /share/
 /version.py
-*.csv
 *_etdump
 
 # Android

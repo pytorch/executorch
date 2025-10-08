@@ -78,10 +78,27 @@ target_link_libraries(
 
 No additional steps are necessary to use the backend beyond linking the target. Any XNNPACK-delegated .pte file will automatically run on the registered backend.
 
+## Reference
+
+**→{doc}`xnnpack-partitioner` — Partitioner options.**
+
+**→{doc}`xnnpack-quantization` — Supported quantization schemes.**
+
+**→{doc}`xnnpack-op-support` — Supported operators.**
+
+**→{doc}`xnnpack-troubleshooting` — Debug common issues.**
+
+## Internals
+
+**→{doc}`xnnpack-arch-internals` — XNNPACK backend internals.**
+
 ```{toctree}
-:maxdepth: 1
+:maxdepth: 2
 :hidden:
 :caption: XNNPACK Backend
 
-reference/xnnpack-reference
-tutorials/xnnpack-tutorials
+xnnpack-partitioner
+xnnpack-quantization
+xnnpack-op-support
+xnnpack-troubleshooting
+xnnpack-arch-internals
