@@ -289,6 +289,7 @@ jobs:
           - test_arm_baremetal: test_models_ethos-u55
           - test_arm_baremetal: test_models_ethos-u85
           - test_arm_baremetal: test_smaller_stories_llama
+          - test_arm_baremetal: test_memory_allocation
       fail-fast: false
     with:
       runner: linux.2xlarge.memory
@@ -594,15 +595,22 @@ jobs:
     strategy:
       matrix:
         model: [qwen3_4b, phi_4_mini]
+        runner: [linux.2xlarge]
+        docker-image: [executorch-ubuntu-22.04-clang12]
+        backend: [xnnpack]
         include:
           - model: qwen3_4b
-            test_with_runner: true
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
           - model: phi_4_mini
-            test_with_runner: false
+            runner: linux.arm64.2xlarge
+            docker-image: executorch-ubuntu-22.04-gcc11-aarch64
+            backend: torchao
       fail-fast: false
     with:
-      runner: linux.2xlarge
-      docker-image: ci-image:executorch-ubuntu-22.04-clang12
+      runner: ${{ matrix.runner }}
+      docker-image: ci-image:${{ matrix.docker-image }}
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
@@ -612,9 +620,14 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+
+        if [[ "${{ matrix.backend }}" == "torchao" ]]; then
+          BUILD_TORCHAO_EXPERIMENTAL=1 TORCHAO_BUILD_CPU_AARCH64=1 TORCHAO_BUILD_KLEIDIAI=1 TORCHAO_ENABLE_ARM_NEON_DOT=1 TORCHAO_PARALLEL_BACKEND=OPENMP pip install third-party/ao
+        fi
+
         pip install -U "huggingface_hub[cli]"
 
-        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.test_with_runner && '--test_with_runner' || '' }}
+        bash .ci/scripts/test_torchao_huggingface_checkpoints.sh ${{ matrix.model }} ${{ matrix.model != 'phi_4_mini' && '--test_with_runner' || '' }}  ${{ matrix.backend == 'torchao' && '--use_torchao_kernels' || '' }}
 
   test-multimodal-macos:
     if: ${{ !github.event.pull_request.head.repo.fork }}
@@ -811,11 +824,26 @@ jobs:
         echo "Recipe: $RECIPE"
         echo "Quantize: $QUANTIZE"
 
-        echo "::group::Set up ExecuTorch"
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool cmake
+
+        echo "::group::Setup ExecuTorch"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
+        echo "::endgroup::"
+
+        echo "::group::Setup Huggingface"
+        pip install -U "huggingface_hub[cli]" accelerate
+        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
+        echo "::endgroup::"
+
+        echo "::group::Test MODEL: $MODEL RECIPE: $RECIPE QUANTIZE: $QUANTIZE"
+        export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
+        python .ci/scripts/test_huggingface_optimum_model.py --model "$MODEL" --recipe "$RECIPE" $QUANTIZE --model_dir "$OUTPUT_DIR"
+        echo "::endgroup::"
+
         # Build executor_runner with ETdump enabled
         PYTHON_EXECUTABLE=python cmake -DPYTHON_EXECUTABLE=python \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
@@ -824,6 +852,7 @@ jobs:
           -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
           -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
           -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+          -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
           -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
           -DEXECUTORCH_BUILD_XNNPACK=ON \
           -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -833,25 +862,6 @@ jobs:
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -Bcmake-out .
         cmake --build cmake-out -j16 --target install --config Release
-        echo "::endgroup::"
-
-        echo "::group::Set up Hugging Face"
-        pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        git clone https://github.com/huggingface/optimum-executorch
-        pushd optimum-executorch
-        # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout $OPTIMUM_ET_COMMIT
-        python install_dev.py --skip_override_torch
-        popd
-        pip list
-        echo "::endgroup::"
-
-        echo "::group::Run tests"
-        export OUTPUT_DIR="$(pwd)/${MODEL}_${RECIPE}_${QUANTIZE}"
-        python .ci/scripts/test_huggingface_optimum_model.py --model ${MODEL} --recipe ${RECIPE} ${QUANTIZE} --model_dir ${OUTPUT_DIR}
-        echo "::endgroup::"
 
         echo "::group::Generate artifacts for performance profiling"
         ./cmake-out/executor_runner \
@@ -918,16 +928,11 @@ jobs:
         ${CONDA_RUN} python install_executorch.py
         echo "::endgroup::"
 
-        echo "::group::Set up Hugging Face"
-        pip install -U "huggingface_hub[cli]"
-        huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
-        OPTIMUM_ET_COMMIT=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
-        git clone https://github.com/huggingface/optimum-executorch
-        pushd optimum-executorch
-        # There is no release yet, for CI stability, always test from the same commit on main
-        git checkout $OPTIMUM_ET_COMMIT
-        ${CONDA_RUN} python install_dev.py --skip_override_torch
-        popd
+        echo "::group::Set up Huggingface"
+        ${CONDA_RUN} pip install -U "huggingface_hub[cli]" accelerate
+        ${CONDA_RUN} huggingface-cli login --token $SECRET_EXECUTORCH_HF_TOKEN
+        OPTIMUM_ET_VERSION=$(cat .ci/docker/ci_commit_pins/optimum-executorch.txt)
+        ${CONDA_RUN} pip install git+https://github.com/huggingface/optimum-executorch.git@${OPTIMUM_ET_VERSION}
         ${CONDA_RUN} pip list
         echo "::endgroup::"
 

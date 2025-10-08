@@ -109,7 +109,6 @@ def test_div_tensor_u55_INT(test_data: Tuple):
         test_data(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -122,7 +121,6 @@ def test_div_tensor_u85_INT(test_data: Tuple):
         test_data(),
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

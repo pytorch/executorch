@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
-from enum import Enum
 
 import torch
 
@@ -16,8 +15,10 @@ from executorch.backends.nxp.backend.ir.converter.builder.aten_model_builder_dir
     AtenModelBuilderDirector,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator import tflite_model
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx import Node
+from torch.fx.passes.infra.partitioner import Partition
 from torch.nn import Parameter
 
 
@@ -37,15 +38,8 @@ def _is_dequant_node(node: torch.fx.Node) -> bool:
     ]
 
 
-class Target(Enum):
-    IGNORE = "ignore"  # No target platform. Any target specific restrictions will be ignored.
-
-    RT700 = "imxrt700"
-    IMX95 = "imx95"
-
-    @classmethod
-    def values(cls) -> list[str]:
-        return [elt.value for elt in cls]
+def is_not_qdq_node(node: torch.fx.Node) -> bool:
+    return not (_is_quant_node(node) or _is_dequant_node(node))
 
 
 class NodeConverter(ABC):
@@ -89,7 +83,7 @@ class NodeConverter(ABC):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
@@ -98,32 +92,49 @@ class NodeConverter(ABC):
             can be used by operators with no target specific requirements.
 
         :param node: The node (edge operator) to check.
-        :param target: Value of the `Target` enum representing the target platform to check for.
+        :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
         :param parameters_mapping: Dictionary mapping tensor names to their static data (if they have it).
         :param custom_delegation_options: Custom options which affect delegation.
         """
-        return target == Target.RT700
+        return True
 
     @classmethod
     def is_supported(
         cls,
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         """Check if the given `node` is supported in the IR and on the given `target` platform.
 
         :param node: torch.Node to check.
-        :param target: Value of the `Target` enum representing the target platform to check for.
+        :param neutron_target_spec: Object for querying the target platform to retrieve its properties.
         :param parameters_mapping: Dict mapping tensor names to their data.
         :param custom_delegation_options: Custom user options which affect node delegation.
         """
         return cls._is_supported_in_IR(
             node, parameters_mapping, custom_delegation_options
         ) and cls._is_supported_on_target(
-            node, target, parameters_mapping, custom_delegation_options
+            node, neutron_target_spec, parameters_mapping, custom_delegation_options
         )
+
+    @classmethod
+    def supports_partitioning_result(
+        cls,
+        node: Node,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+    ):
+        """Check if the given `node` supports the assigned partitioning, which is stored  the `partition_list`. Child
+            classes can overwrite this method in case they have delegation restrictions based on the context defined by
+            the partitioning result.
+
+        :param node: torch.Node to check.
+        :param partition_list: List of proposed partitions.
+        :param custom_delegation_options: Custom user options which affect node delegation.
+        """
+        return True
 
     @staticmethod
     def _has_shared_q_params_if_quantized(node: Node) -> bool:

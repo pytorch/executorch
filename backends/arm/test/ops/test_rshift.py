@@ -96,14 +96,13 @@ def test_bitwise_right_shift_tensor_tosa_INT_scalar(test_data):
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-@XfailIfNoCorstone300
+@common.XfailIfNoCorstone300
 def test_bitwise_right_shift_tensor_u55_INT_scalar(test_data):
     pipeline = EthosU55PipelineINT[scalar_input_t](
         RshiftScalar(),
         test_data(),
         RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
 
@@ -113,14 +112,13 @@ def test_bitwise_right_shift_tensor_u55_INT_scalar(test_data):
 
 
 @common.parametrize("test_data", RshiftScalar.test_data)
-@XfailIfNoCorstone320
+@common.XfailIfNoCorstone320
 def test_bitwise_right_shift_tensor_u85_INT_scalar(test_data):
     pipeline = EthosU85PipelineINT[scalar_input_t](
         RshiftScalar(),
         test_data(),
         RshiftScalar.torch_op_INT,
         RshiftScalar.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()
@@ -188,7 +186,6 @@ def test_bitwise_right_shift_tensor_u55_INT(test_data):
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
 
@@ -205,7 +202,6 @@ def test_bitwise_right_shift_tensor_u85_INT(test_data):
         test_data(),
         RshiftTensor.torch_op,
         RshiftTensor.exir_op,
-        run_on_fvp=True,
     )
     pipeline.pop_stage("check.quant_nodes")
     pipeline.run()

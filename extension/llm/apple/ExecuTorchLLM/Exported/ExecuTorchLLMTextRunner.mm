@@ -29,14 +29,21 @@ using namespace executorch::runtime;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
+                    tokenizerPath:(NSString*)tokenizerPath {
+  return [self initWithModelPath:modelPath
+                   tokenizerPath:tokenizerPath
+                   specialTokens:@[]];
+}
+
+- (instancetype)initWithModelPath:(NSString*)modelPath
                     tokenizerPath:(NSString*)tokenizerPath
-                    specialTokens:(NSArray<NSString*>*)tokens {
+                    specialTokens:(NSArray<NSString*>*)specialTokens {
   self = [super init];
   if (self) {
     _modelPath = [modelPath copy];
     _tokenizerPath = [tokenizerPath copy];
     _specialTokens = std::make_unique<std::vector<std::string>>();
-    for (NSString *token in tokens) {
+    for (NSString *token in specialTokens) {
       _specialTokens->emplace_back(token.UTF8String);
     }
   }
@@ -74,10 +81,10 @@ using namespace executorch::runtime;
   return YES;
 }
 
-- (BOOL)generate:(NSString*)prompt
-           config:(ExecuTorchLLMConfig *)config
-withTokenCallback:(nullable void (^)(NSString*))callback
-            error:(NSError**)error {
+- (BOOL)generateWithPrompt:(NSString*)prompt
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString*))callback
+                     error:(NSError**)error {
   if (![self loadWithError:error]) {
     return NO;
   }
