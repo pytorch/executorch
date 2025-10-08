@@ -105,7 +105,7 @@ Follow the steps below to setup your build environment:
      ```bash
    ./openvino_build.sh --enable_python
    ```
-   **Build C++ Runtime Libraries for OpenVINO Backend**: Run the `openvino_build.sh` script with the `--cpp_runtime` flag to build the C++ runtime libraries as shown in the below command. The compiled libraries files and binaries can be found in the `<executorch_root>/cmake-out` directory. The binary located at `<executorch_root>/cmake-out/backends/openvino/openvino_executor_runner` can be used to run inference with vision models.
+   **Build C++ Runtime Libraries for OpenVINO Backend**: Run the `openvino_build.sh` script with the `--cpp_runtime` flag to build the C++ runtime libraries as shown in the below command. The compiled libraries files and binaries can be found in the `<executorch_root>/cmake-out` directory. The binary located at `<executorch_root>/cmake-out/executor_runner` can be used to run inference with vision models.
      ```bash
    ./openvino_build.sh --cpp_runtime
    ```
