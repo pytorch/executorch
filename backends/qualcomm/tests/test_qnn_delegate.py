@@ -397,8 +397,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_einsum_outer_product(self):
         module = EinsumOuterProduct()  # noqa: F405
@@ -466,8 +466,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_and(self):
         module = And(torch.tensor(1.7), torch.tensor(0.2))  # noqa: F405
@@ -505,8 +505,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_mul(self):
         test_comb = [
@@ -532,8 +532,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_or(self):
         test_comb = [
@@ -607,8 +607,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     @unittest.expectedFailure
     def test_qnn_backend_elu(self):
@@ -650,10 +650,10 @@ class TestQNNFloatingPointOperator(TestQNN):
         for module in modules:
             for sample_input in sample_inputs:
                 with self.subTest(i=index):
+                    index += 1
                     self.lower_module_and_test_output(
                         module, sample_input, passes_job=passes_job
                     )
-                    index += 1
 
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
@@ -676,6 +676,21 @@ class TestQNNFloatingPointOperator(TestQNN):
             {
                 QCOM_MODULE: [FloorDiv()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [
+                    (torch.randint(-100, 100, (10, 10)), torch.full((10, 10), 3)),
+                    (
+                        torch.randint(-100, 100, (10, 10)).float(),
+                        torch.full((10, 10), 2.5),
+                    ),
+                    (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.tensor([10]), torch.arange(1, 5)),  # Failed
+                    (torch.arange(-10, 10), torch.tensor([2])),
+                    (torch.randint(-100, 100, (20,)), torch.full((20,), 2)),
+                    (torch.randint(-100, 100, (5, 10)), torch.full((5, 10), 2)),
+                    (torch.randint(-100, 100, (3, 4, 5)), torch.full((3, 4, 5), 2)),
+                    (
+                        torch.randint(-100, 100, (2, 3, 4, 5)),
+                        torch.full((2, 3, 4, 5), 2),
+                    ),
                     (torch.randn(2, 5, 1, 3), eps + torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), eps + torch.randn([4, 1])),
                 ],
@@ -691,8 +706,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_fold(self):
         sample_input = (torch.randn(3, 512, 256),)
@@ -972,8 +987,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_less_equal(self):
         test_comb = [
@@ -1228,8 +1243,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
@@ -1356,8 +1371,8 @@ class TestQNNFloatingPointOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        self.lower_module_and_test_output(module, sample_input)
                         index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_stack(self):
         module = Stack()  # noqa: F405
@@ -2168,9 +2183,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
+                        index += 1
                         gm = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(gm, sample_input)
-                        index += 1
 
     def test_qnn_backend_element_wise_and(self):
         module = And(torch.tensor(1.7), torch.tensor(0.2))  # noqa: F405
@@ -2209,9 +2224,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
+                        index += 1
                         gm = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(gm, sample_input)
-                        index += 1
 
     def test_qnn_backend_element_wise_mul(self):
         test_comb = [
@@ -2237,9 +2252,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
+                        index += 1
                         gm = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(gm, sample_input)
-                        index += 1
 
     def test_qnn_backend_element_wise_or(self):
         test_comb = [
@@ -2315,9 +2330,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
+                        index += 1
                         gm = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(gm, sample_input)
-                        index += 1
 
     def test_qnn_backend_elu(self):
         module = Elu()  # noqa: F405
@@ -2366,11 +2381,11 @@ class TestQNNQuantizedOperator(TestQNN):
         for module in modules:
             for sample_input in sample_inputs:
                 with self.subTest(i=index):
+                    index += 1
                     module = self.get_qdq_module(module, sample_input)
                     self.lower_module_and_test_output(
                         module, sample_input, passes_job=passes_job
                     )
-                    index += 1
 
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
@@ -2396,6 +2411,21 @@ class TestQNNQuantizedOperator(TestQNN):
             {
                 QCOM_MODULE: [FloorDiv()],  # noqa: F405
                 QCOM_SAMPLE_INPUTS: [
+                    (torch.randint(-100, 100, (10, 10)), torch.full((10, 10), 3)),
+                    (
+                        torch.randint(-100, 100, (10, 10)).float(),
+                        torch.full((10, 10), 2.5),
+                    ),
+                    (torch.randint(-1000, 1000, (10, 10)), torch.full((10, 10), 100)),
+                    (torch.tensor([10]), torch.arange(1, 5)),
+                    (torch.arange(-10, 10), torch.tensor([2])),
+                    (torch.randint(-100, 100, (20,)), torch.full((20,), 2)),
+                    (torch.randint(-100, 100, (5, 10)), torch.full((5, 10), 2)),
+                    (torch.randint(-100, 100, (3, 4, 5)), torch.full((3, 4, 5), 2)),
+                    (
+                        torch.randint(-100, 100, (2, 3, 4, 5)),
+                        torch.full((2, 3, 4, 5), 2),
+                    ),
                     (torch.randn(2, 5, 1, 3), eps + torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), eps + torch.randn([4, 1])),
                 ],
@@ -2411,9 +2441,12 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        gm = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(gm, sample_input)
                         index += 1
+                        # Support int input cases with bypass_check=True
+                        gm = self.get_qdq_module(
+                            module, sample_input, bypass_check=True
+                        )
+                        self.lower_module_and_test_output(gm, sample_input)
 
     def test_qnn_backend_fold(self):
         sample_input = (torch.randn(3, 512, 256),)
@@ -2719,9 +2752,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
+                        index += 1
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
-                        index += 1
 
     def test_qnn_backend_less_equal(self):
         test_comb = [
@@ -3023,9 +3056,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        qdq_module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(qdq_module, sample_input)
                         index += 1
+                        module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
@@ -3175,9 +3208,9 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
+                        index += 1
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
-                        index += 1
 
     def test_qnn_backend_softmax(self):
         modules = [Softmax(dim=1), Softmax(dim=-1)]  # noqa: F405
