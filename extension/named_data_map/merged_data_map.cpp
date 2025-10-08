@@ -21,7 +21,7 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 
 namespace executorch::extension {
-
+namespace ET_MERGED_DATA_MAP_NAMESPACE {
 /*static*/ Result<MergedDataMap> MergedDataMap::load(
     Span<const NamedDataMap*> named_data_maps) {
   std::vector<const NamedDataMap*> valid_data_maps;
@@ -114,4 +114,6 @@ ET_NODISCARD Result<const char*> MergedDataMap::get_key(uint32_t index) const {
   // Shouldn't reach here.
   return Error::Internal;
 }
+
+} // namespace ET_MERGED_DATA_MAP_NAMESPACE
 } // namespace executorch::extension

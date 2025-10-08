@@ -63,6 +63,6 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   install(
     TARGETS optimized_native_cpu_ops_lib
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 endif()

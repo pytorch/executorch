@@ -39,6 +39,7 @@ namespace executorch {
 namespace extension {
 namespace ET_MODULE_NAMESPACE {
 
+using ET_MERGED_DATA_MAP_NAMESPACE::MergedDataMap;
 using ET_RUNTIME_NAMESPACE::MethodMeta;
 using ET_RUNTIME_NAMESPACE::Program;
 

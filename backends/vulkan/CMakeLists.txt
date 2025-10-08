@@ -132,7 +132,7 @@ set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 install(
   TARGETS vulkan_backend vulkan_schema
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${COMMON_INCLUDES}
 )
