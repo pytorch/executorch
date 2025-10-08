@@ -106,9 +106,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         set -eux
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
 
         echo "::group::Setup ExecuTorch"
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh --build-tool "cmake"
@@ -153,19 +150,19 @@ jobs:
 
         # Check if the output contains "Run latency (ms):"
         if echo "$OUTPUT" | grep -q "Run latency (ms):"; then
-          echo "✅ Found expected output: 'Run latency (ms):'"
+          echo "Found expected output: 'Run latency (ms):'"
           if [ $EXIT_CODE -eq 139 ]; then
-            echo "⚠️  Exit code 139 (segfault) detected, but passing since we have the expected output"
+            echo "Exit code 139 (segfault) detected, but passing since we have the expected output"
             exit 0
           elif [ $EXIT_CODE -ne 0 ]; then
-            echo "❌ Unexpected exit code: $EXIT_CODE"
+            echo "Unexpected exit code: $EXIT_CODE"
             exit $EXIT_CODE
           else
-            echo "✅ Command succeeded with exit code 0"
+            echo "Command succeeded with exit code 0"
             exit 0
           fi
         else
-          echo "❌ Expected output 'Run latency (ms):' not found in output"
+          echo "Expected output 'Run latency (ms):' not found in output"
           exit 1
         fi
         echo "::endgroup::"
