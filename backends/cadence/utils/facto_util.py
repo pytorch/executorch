@@ -222,6 +222,34 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2),
                 ]
             )
+        case "transpose_copy.int":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                ]
+            )
+        case "permute_copy.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int8, torch.uint8]),
+                    cp.Rank.Le(
+                        lambda deps: 5
+                    ),  # xa_nn_transpose only supports up to 5D
+                    cp.Rank.Ge(lambda deps: 1),  # Must have at least 1 dimension
+                ]
+            )
+        case "sqrt.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                ]
+            )
+        case "clamp.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                ]
+            )
         case "rsqrt.default":
             tensor_constraints.extend(
                 [
@@ -230,6 +258,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                         lambda deps, dtype, struct: 0
                     ),  # only generate real numbers
                     cp.Value.Le(lambda deps, dtype, struct: 2**2),
+                ]
+            )
+        case "relu.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                 ]
             )
         case "mean.dim":
@@ -241,8 +275,15 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
         case "exp.default":
             tensor_constraints.extend(
                 [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**2)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**2),
+                ]
+            )
+        case "tanh.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                 ]
             )
         case "slice_copy.Tensor":
@@ -251,6 +292,34 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Rank.Le(lambda deps: 2),
                     cp.Value.Ge(lambda deps, dtype, struct: 1),
                     cp.Value.Le(lambda deps, dtype, struct: 2),
+                ]
+            )
+        case "div.Scalar" | "add.Tensor" | "mul.Tensor" | "sub.Tensor":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(
+                        lambda deps: [
+                            torch.int32,
+                            torch.int64,
+                            torch.float32,
+                        ]
+                    ),
+                ]
+            )
+        case "split_copy.Tensor":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(
+                        lambda deps: [
+                            torch.int32,
+                            torch.int64,
+                            torch.float32,
+                        ]
+                    ),
+                    cp.Value.Ge(lambda deps, dtype, struct: 1),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**3),
+                    cp.Rank.Le(lambda deps: 3),
+                    cp.Size.Le(lambda deps, r, d: 2**2),
                 ]
             )
         case "constant_pad_nd.default":
@@ -281,6 +350,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**3),
                     cp.Size.Le(lambda deps, r, d: 2**3),
                     cp.Rank.Le(lambda deps: 2**2),
+                ]
+            )
+        case "pow.Tensor_Scalar":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
                 ]
             )
         case "div.Tensor_mode" | "minimum.default":
