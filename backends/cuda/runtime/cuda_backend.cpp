@@ -345,7 +345,7 @@ class ET_EXPERIMENTAL CudaBackend final
     if (handle->cuda_stream != nullptr) {
       cudaStream_t cuda_stream = static_cast<cudaStream_t>(handle->cuda_stream);
       cudaError_t stream_err = cudaStreamDestroy(cuda_stream);
-      ET_CHECK_OR_LOG(
+      ET_CHECK_OR_LOG_ERROR(
           stream_err == cudaSuccess,
           "Failed to destroy CUDA stream: %s",
           cudaGetErrorString(stream_err));
