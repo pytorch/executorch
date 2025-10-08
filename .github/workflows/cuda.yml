@@ -93,6 +93,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    secrets: inherit
     strategy:
       fail-fast: false
     with:
