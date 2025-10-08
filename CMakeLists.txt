@@ -640,6 +640,11 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   list(APPEND _executorch_extensions extension_module_static)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/named_data_map)
+  list(APPEND _executorch_extensions extension_named_data_map)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
     set(SUPPORT_REGEX_LOOKAHEAD ON)
