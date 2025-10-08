@@ -1358,7 +1358,7 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
         )
 
 
-@register_annotator([torch.ops.aten.where.self])
+@register_annotator([torch.ops.aten.where.self, torch.ops.aten.where.ScalarSelf])
 def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -1368,7 +1368,6 @@ def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
         assert isinstance(input_node, Node)
         if _is_float_tensor(input_node):
             input_qspec_map[input_node] = quantization_config.input_activation
-
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=(

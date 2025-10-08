@@ -10,7 +10,7 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-source openvino/dist/setupvars.sh
+source openvino/setupvars.sh
 cd backends/openvino/tests
 python test_runner.py --test_type ops
 python test_runner.py --test_type models
