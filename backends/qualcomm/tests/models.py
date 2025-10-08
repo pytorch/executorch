@@ -450,7 +450,34 @@ class ContextBinaryExample(torch.nn.Module):
             "x": torch.randn((1, 3, 3, 3)),
             "y": torch.randn((2, 1, 5, 5)),
         }
+class Conv1d(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels=3,
+        out_channels=6,
+        kernel_size=3,
+        stride=1,
+        padding=0,
+        dilation=1,
+        groups=1,
+        bias=True,
+        padding_mode="zeros",
+    ):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=bias,
+            padding_mode=padding_mode,
+        )
 
+    def forward(self, x):
+        return self.conv(x)
 
 class Conv1dSequential(torch.nn.Module):
     def __init__(self, bias=True):
@@ -474,7 +501,6 @@ class Conv1dSequential(torch.nn.Module):
     def forward(self, x):
         return self.second(self.first(x))
 
-
 # small models
 class Conv1dReluLogSoftmax(torch.nn.Module):
     def __init__(self, dim):
@@ -489,6 +515,35 @@ class Conv1dReluLogSoftmax(torch.nn.Module):
         x = self.logsoftmax(x)
         return x
 
+
+class Conv2d(torch.nn.Module):
+    def __init__(
+        self,
+        in_channels=3,
+        out_channels=6,
+        kernel_size: Union[int, Tuple[int, int]] = 3,
+        stride: Union[int, Tuple[int, int]] = 1,
+        padding: Union[int, Tuple[int, int]] = 0,
+        dilation: Union[int, Tuple[int, int]] = 1,
+        groups=1,
+        bias=True,
+        padding_mode="zeros",
+    ):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            bias=bias,
+            padding_mode=padding_mode,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
 
 class Conv2dArgmin(torch.nn.Module):
     def __init__(self):
@@ -1508,6 +1563,14 @@ class Pad(torch.nn.Module):
             x[:, 1:], [0, 0, 0, 1, 0, 0], value=0.0, mode="constant"
         )
 
+class PadGeneric(torch.nn.Module):
+    def __init__(self, mode, pad = (1, 1, 1, 1)):
+        super().__init__()
+        self.mode = mode
+        self.pad = pad
+
+    def forward(self, x):
+        return torch.ops.aten.pad.default(x, self.pad, mode=self.mode)
 
 class Permute(torch.nn.Module):
     def __init__(self, dims: List[int]):
@@ -1878,6 +1941,15 @@ class SliceScatter(torch.nn.Module):
             y, dim=self.dim, start=self.start, end=self.end, step=self.step
         )
 
+
+class SliceConv2d(torch.nn.Module):
+    def __init__(self, in_ch=1, out_ch=2, k=1):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(in_ch, out_ch, kernel_size=k, bias=True)
+
+    def forward(self, x):
+        y = torch.ops.aten.slice.Tensor(x, -2, 0, 1)
+        return torch.ops.aten.conv2d.default(y, self.conv.weight, self.conv.bias)
 
 class Softmax(torch.nn.Module):
     def __init__(self, dim):

@@ -315,12 +315,27 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv1d_mode(self):
+        # N=4 batches, C=3 channels, length L=32  (L>=2 so "reflect" is valid)
+        L = 32
+        sample_input = (torch.arange(4 * 3 * L, dtype=torch.float32).reshape(4, 3, L) / 1000.0,)
+        for mode in ["zeros", "reflect", "replicate", "circular"]:
+            module = Conv1d(padding=1, padding_mode=mode)  # noqa: F405
+            self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+
+    def test_qnn_backend_conv2d_mode(self):
+        sample_input = (torch.randn(4, 3, 16, 16),)
+        for mode in ["zeros", "reflect", "replicate", "circular"]:
+            module = Conv2d(padding=1, padding_mode=mode)  # noqa: F405
+            self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_channel_last(self):
         modules = [
@@ -1182,6 +1197,61 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 8, 128]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pad_generic(self):
+        test_comb = [
+            # --- replicate ---
+            {
+                QCOM_MODULE: [PadGeneric("replicate", (1, 1, 1, 1))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 17.0).reshape(1, 1, 4, 4),)],
+            },
+            {
+                # Small 2x3 input with large padding (edge replication stress)
+                QCOM_MODULE: [PadGeneric("replicate", (2, 2, 2, 2))],  # (L,R,T,B)
+                QCOM_SAMPLE_INPUTS: [(torch.tensor([[[[1., 2., 3.],
+                                                    [4., 5., 6.]]]]),)],
+            },
+            {
+                # Batch>1, Channels>1, asymmetric pads
+                QCOM_MODULE: [PadGeneric("replicate", (1, 0, 0, 2))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(2*3*4*5, dtype=torch.float32)
+                                    .reshape(2, 3, 4, 5),)],
+            },
+
+            # --- circular ---
+            {
+                QCOM_MODULE: [PadGeneric("circular", (1, 1, 1, 1))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 17.0).reshape(1, 1, 4, 4),)],
+            },
+            {
+                # Asymmetric circular pad
+                QCOM_MODULE: [PadGeneric("circular", (2, 0, 1, 0))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 1.0 + 1*1*5*4)
+                                    .reshape(1, 1, 5, 4),)],
+            },
+
+            # --- reflect ---
+            # For reflect, each pad must be <= size-1 along that dim.
+            {
+                QCOM_MODULE: [PadGeneric("reflect", (1, 1, 1, 0))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 1.0 + 1*1*3*4)
+                                    .reshape(1, 1, 3, 4),)],
+            },
+
+            # --- constant (value defaults to 0.0 in aten.pad.default) ---
+            {
+                QCOM_MODULE: [PadGeneric("constant", (2, 0, 0, 1))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 10.0).reshape(1, 1, 3, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index, mode=module.mode, pad=module.pad):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
     def test_qnn_backend_permute(self):
         modules = [
             Permute([0, 2, 3, 1]),  # noqa: F405
@@ -1331,11 +1401,13 @@ class TestQNNFloatingPointOperator(TestQNN):
             SliceCopyDefaultParameter(),  # noqa: F405
             SliceCopy(),  # noqa: F405
             SliceCopyWithStep(),  # noqa: F405
+            SliceConv2d()
         ]
         sample_inputs = [
             (torch.randn([2, 1, 320, 512]),),
             (torch.randn([1, 512]), torch.randn([1, 8])),
             (torch.randn([1, 512]), torch.randn([1, 8])),
+            (torch.randn(1, 1, 2, 6), )
         ]
         for module, sample_input in zip(modules, sample_inputs):
             self.lower_module_and_test_output(module, sample_input)
@@ -2011,6 +2083,22 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv1d_mode(self):
+        sample_input = (torch.arange(4 * 3 * 16 * 16).reshape(4, 3, 16, 16).float() / 1000,)
+        for mode in ["zeros", "reflect", "replicate", "circular"]:
+            module = Conv1d(padding=1, padding_mode=mode)  # noqa: F405
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv1d_mode(self):
+        # N=4 batches, C=3 channels, length L=32  (L>=2 so "reflect" is valid)
+        L = 32
+        sample_input = (torch.arange(4 * 3 * L, dtype=torch.float32).reshape(4, 3, L) / 1000.0,)
+        for mode in ["zeros", "reflect", "replicate", "circular"]:
+            module = Conv1d(padding=1, padding_mode=mode)  # noqa: F405
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d(self):
         modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
@@ -2018,6 +2106,13 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_mode(self):
+        sample_input = (torch.randn(4, 3, 16, 16),)
+        for mode in ["zeros", "reflect", "replicate", "circular"]:
+            module = Conv2d(padding=1, padding_mode=mode)  # noqa: F405
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_block(self):
         o_ch, i_ch, kernel, padding = 32, 512, (1, 1), 0
@@ -2991,6 +3086,61 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pad_generic(self):
+        test_comb = [
+            # --- replicate ---
+            {
+                QCOM_MODULE: [PadGeneric("replicate", (1, 1, 1, 1))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 17.0).reshape(1, 1, 4, 4),)],
+            },
+            {
+                # Small 2x3 input with large padding (edge replication stress)
+                QCOM_MODULE: [PadGeneric("replicate", (2, 2, 2, 2))],  # (L,R,T,B)
+                QCOM_SAMPLE_INPUTS: [(torch.tensor([[[[1., 2., 3.],
+                                                    [4., 5., 6.]]]]),)],
+            },
+            {
+                # Batch>1, Channels>1, asymmetric pads
+                QCOM_MODULE: [PadGeneric("replicate", (1, 0, 0, 2))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(2*3*4*5, dtype=torch.float32)
+                                    .reshape(2, 3, 4, 5),)],
+            },
+
+            # --- circular ---
+            {
+                QCOM_MODULE: [PadGeneric("circular", (1, 1, 1, 1))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 17.0).reshape(1, 1, 4, 4),)],
+            },
+            {
+                # Asymmetric circular pad
+                QCOM_MODULE: [PadGeneric("circular", (2, 0, 1, 0))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 1.0 + 1*1*5*4)
+                                    .reshape(1, 1, 5, 4),)],
+            },
+
+            # --- reflect ---
+            # For reflect, each pad must be <= size-1 along that dim.
+            {
+                QCOM_MODULE: [PadGeneric("reflect", (1, 1, 1, 0))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 1.0 + 1*1*3*4)
+                                    .reshape(1, 1, 3, 4),)],
+            },
+
+            # --- constant (value defaults to 0.0 in aten.pad.default) ---
+            {
+                QCOM_MODULE: [PadGeneric("constant", (2, 0, 0, 1))],
+                QCOM_SAMPLE_INPUTS: [(torch.arange(1.0, 10.0).reshape(1, 1, 3, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index, mode=module.mode, pad=module.pad):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
     def test_qnn_backend_permute(self):
         modules = [
             Permute([0, 2, 3, 1]),  # noqa: F405
@@ -3167,11 +3317,13 @@ class TestQNNQuantizedOperator(TestQNN):
             SliceCopyDefaultParameter(),  # noqa: F405
             SliceCopy(),  # noqa: F405
             SliceCopyWithStep(),  # noqa: F405
+            SliceConv2d()
         ]
         sample_inputs = [
             (torch.randn([2, 1, 320, 512]),),
             (torch.randn([1, 512]), torch.randn([1, 8])),
             (torch.randn([1, 512]), torch.randn([1, 8])),
+            (torch.randn(1, 1, 2, 6), )
         ]
         for module, sample_input in zip(modules, sample_inputs):
             module = self.get_qdq_module(module, sample_input)

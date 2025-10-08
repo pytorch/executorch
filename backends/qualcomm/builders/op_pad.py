@@ -18,7 +18,13 @@ from .qnn_constants import OpPad, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Pad(NodeVisitor):
-    target = ["aten.constant_pad_nd.default"]
+    target = [
+        "aten.constant_pad_nd.default",
+        "aten.pad.default",               
+        # Add tests before adding these two to the list  
+        # "aten.reflection_pad2d.default",
+        # "aten.replication_pad2d.default",
+    ]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -49,48 +55,72 @@ class Pad(NodeVisitor):
         )
         pad_output_tensors = [output_tensor_wrapper]
 
+        # ---- Pad amount ([rank, 2], uint32) ----
         pad_amount_shape = [input_tensor.dim(), 2]
-        # pytorch padding start from the last index
-        pad_amount = np.reshape(cast(List[int], node.args[1]), (-1, 2))[::-1].astype(
-            np.uint32
-        )
-        # fulfill the pad amount for each idex of tensor
-        if zero_amounts := pad_amount_shape[0] - pad_amount.shape[0]:
-            pad_amount = np.concatenate(
-                (np.array([(0, 0)] * zero_amounts), pad_amount)
-            ).astype(np.uint32)
+        # PyTorch pad order is from the *last* dim: e.g. 2D = [L, R, T, B]
+        pad_amount = np.reshape(
+            np.array(cast(List[int], node.args[1]), dtype=np.int64), (-1, 2)
+        )[:: -1]  # reverse to go from last->first to first->last
 
+        # expand to all ranks if needed
+        if pad_amount_shape[0] - pad_amount.shape[0] > 0:
+            zeros = np.zeros((pad_amount_shape[0] - pad_amount.shape[0], 2), dtype=np.int64)
+            pad_amount = np.concatenate((zeros, pad_amount), axis=0)
+
+        # remap rows if backend axis order is provided (backend_pos -> pt_dim)
         if QCOM_AXIS_ORDER in node.meta:
-            pad_amount = pad_amount[list(node.meta[QCOM_AXIS_ORDER])]
-        pad_amount_val = node.args[2]
+            axis_order = list(node.meta[QCOM_AXIS_ORDER])  # e.g. (0,2,3,1)
+            pad_amount = pad_amount[axis_order]
 
+        pad_amount = pad_amount.astype(np.uint32, copy=False)
+
+        # ---- Mode/scheme ----
+        if len(node.args) >= 3 and isinstance(node.args[2], str):
+            mode = node.args[2]
+        else:
+            # default to constant
+            mode = "constant"
+
+        scheme_map = {
+            "constant": OpPad.Scheme.CONSTANT,
+            "reflect":  OpPad.Scheme.MIRROR_REFLECT,
+            "replicate": OpPad.Scheme.EDGE, # I think this is supposed to be correct, but the result is wrong
+        }
+        scheme_u32 = np.uint32(scheme_map[mode])
+
+        # ---- Build op ----
         pad_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name,
-            QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpPad.op_name,
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpPad.op_name
         )
         pad_op.AddInputTensors(pad_input_tensors)
         pad_op.AddOutputTensors(pad_output_tensors)
 
-        # For now, we only support constant (0) padding due to torch implementation
         pad_op.AddScalarParam(
             OpPad.param_scheme,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {QCOM_DATA: np.uint32(OpPad.Scheme.CONSTANT)},
+            {QCOM_DATA: scheme_u32}, # scheme (UINT32)
         )
 
-        pad_op.AddScalarParam(
-            OpPad.param_pad_constant_value,
-            QNN_TENSOR_TYPE_MAP[type(pad_amount_val)],
-            {QCOM_DATA: pad_amount_val},
-        )
+        # pad_constant_value only for constant mode
+        if mode == "constant":
+            pad_value = None
+            if len(node.args) > 2 and not isinstance(node.args[2], str):
+                pad_value = node.args[2]
+            if pad_value is None:
+                pad_value = 0.0
+            pad_op.AddScalarParam(
+                OpPad.param_pad_constant_value,
+                QNN_TENSOR_TYPE_MAP[type(pad_value)],
+                {QCOM_DATA: pad_value},
+            )
 
+        # pad_amount tensor param (UINT32, shape [rank, 2])
         pad_op.AddTensorParam(
             OpPad.param_pad_amount,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            len(pad_amount_shape),
-            pad_amount_shape,
-            pad_amount,
+            len(pad_amount_shape),                 
+            pad_amount_shape,                      
+            pad_amount,                            
             True,
         )
 
