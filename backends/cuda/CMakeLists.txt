@@ -55,8 +55,6 @@ target_link_options(aoti_cuda PUBLIC -Wl,--export-dynamic)
 target_link_libraries(
   aoti_cuda
   PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
-         # Link PyTorch libraries for AOTI CUDA functions
-         ${TORCH_LIBRARIES}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
