@@ -30,7 +30,9 @@ set(_aoti_common_sources aoti_model_container.cpp common_shims.cpp)
 add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
   aoti_common
-  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}> $<INSTALL_INTERFACE:include>
+  PUBLIC $<BUILD_INTERFACE:${EXECUTORCH_ROOT}>
+         $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${EXECUTORCH_ROOT}/..>
          # PyTorch AOTI headers from ExecuTorch's torch detection
          ${TORCH_INCLUDE_DIRS}
 )
@@ -50,5 +52,5 @@ executorch_target_link_options_shared_lib(aoti_common)
 install(
   TARGETS aoti_common
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )

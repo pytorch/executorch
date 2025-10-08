@@ -564,6 +564,14 @@ lib.define(
     "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
+lib.define(
+    "quantized_w8a32_linear(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+lib.define(
+    "quantized_w8a32_linear.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)"
+)
+
+
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
 aten_lib = Library("aten", "FRAGMENT")
 aten_lib.define(
@@ -2562,3 +2570,22 @@ def quantized_softmax_per_tensor_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_linear")
+def quantized_w8a32_linear_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [in_dim, out_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    src_shape = list(src.shape)
+    weight_shape = weight.shape
+    assert len(weight_shape) == 2
+    assert src_shape[-1] == weight_shape[-1]
+    src_shape[-1] = weight_shape[0]
+    return src.new_empty(src_shape, dtype=src.dtype)
