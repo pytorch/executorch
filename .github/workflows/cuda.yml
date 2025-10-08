@@ -136,6 +136,7 @@ jobs:
               -DEXECUTORCH_BUILD_CUDA=ON \
               -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
               -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+              -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
               -DEXECUTORCH_BUILD_TESTS=ON \
               -Bcmake-out .
         cmake --build cmake-out -j$(( $(nproc) - 1 )) --target voxtral_runner
