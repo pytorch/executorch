@@ -21,7 +21,7 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-# Use ExecuTorch's standard way to find PyTorch libraries for AOTI
+# Use ExecuTorch's standard way to find PyTorch headers for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
@@ -40,11 +40,8 @@ target_compile_options(aoti_common PUBLIC -fexceptions -frtti -fPIC)
 # Ensure symbols are exported properly
 target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
 
-# Link against PyTorch libraries and standard libraries
-target_link_libraries(
-  aoti_common
-  PUBLIC extension_tensor ${CMAKE_DL_LIBS}
-)
+# Link against standard libraries
+target_link_libraries(aoti_common PUBLIC extension_tensor ${CMAKE_DL_LIBS})
 executorch_target_link_options_shared_lib(aoti_common)
 
 install(

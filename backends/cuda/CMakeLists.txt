@@ -30,7 +30,7 @@ endif()
 
 find_package(CUDAToolkit REQUIRED)
 
-# Use ExecutorTorch's standard way to find PyTorch libraries for AOTI
+# Use ExecutorTorch's standard way to find PyTorch headers for AOTI
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
@@ -51,10 +51,9 @@ target_compile_options(aoti_cuda PUBLIC -fexceptions -frtti -fPIC)
 # Ensure symbols are exported properly
 target_link_options(aoti_cuda PUBLIC -Wl,--export-dynamic)
 
-# Link against CUDA::cudart, common AOTI library, and PyTorch CUDA libraries
+# Link against CUDA::cudart, common AOTI library and standard libraries
 target_link_libraries(
-  aoti_cuda
-  PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
+  aoti_cuda PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
