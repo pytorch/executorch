@@ -266,6 +266,18 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   executorch_move_interface_include_directories_to_build_time_only(
     pthreadpool_interface
   )
+
+  if(APPLE)
+    # Use hidden visibility for pthreadpool on Apple platforms to avoid issues
+    # with pthreadpool symbols from libtorch_cpu taking precedence over the ones
+    # from the pthreadpool library statically linked in _portable_lib. The
+    # pthreadpool public APIs are marked as weak by default on some Apple
+    # platforms, so setting to hidden visibility works around this by not
+    # putting the symbol in the indirection table. See
+    # https://github.com/pytorch/executorch/issues/14321 for more details.
+    target_compile_options(pthreadpool PRIVATE -fvisibility=hidden)
+  endif()
+
   install(
     TARGETS pthreadpool pthreadpool_interface fxdiv
     EXPORT ExecuTorchTargets
