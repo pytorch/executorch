@@ -44,8 +44,6 @@ target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
 target_link_libraries(
   aoti_common
   PUBLIC extension_tensor ${CMAKE_DL_LIBS}
-         # Link PyTorch libraries for AOTI functions
-         ${TORCH_LIBRARIES}
 )
 executorch_target_link_options_shared_lib(aoti_common)
 
