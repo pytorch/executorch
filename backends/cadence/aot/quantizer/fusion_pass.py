@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MixedW8A32LinearPattern,
     ReluPattern0,
     ReluPattern1,
     SoftmaxPattern,
@@ -390,6 +391,29 @@ def get_args_and_kwargs_relu(
     return args, kwargs
 
 
+def get_args_and_kwargs_mixed_w8a32_linear(
+    graph_module: GraphModule,
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    dequants_biases: List[fx.Node],
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    w_scale_ = dequants_weights[0].args[1]
+    b_scale_ = dequants_biases[0].args[1]
+
+    args = (
+        other_inputs[0],
+        weights_inputs[0],
+        w_scale_,
+        bias_inputs[0],
+        b_scale_,
+    )
+    kwargs = {}
+
+    return args, kwargs
+
+
 def get_args_and_kwargs_softmax(
     graph_module: GraphModule,
     inputs_inputs: List[fx.Node],
@@ -616,6 +640,15 @@ class QuantFusion(ExportPass):
                             dequants_inputs,
                             quant_node,
                             op_node,
+                        )
+                    elif isinstance(pattern, MixedW8A32LinearPattern):
+                        args, kwargs = get_args_and_kwargs_mixed_w8a32_linear(
+                            graph_module,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            dequants_biases,
                         )
 
                     fused = graph_module.graph.call_function(
