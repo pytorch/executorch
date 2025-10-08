@@ -36,6 +36,10 @@ UNARY_ELEMENTWISE_OPS = [
     exir_ops.edge.aten.tanh.default,
     exir_ops.edge.aten.sign.default,
     exir_ops.edge.aten.reciprocal.default,
+    exir_ops.edge.aten.gelu.default,
+    exir_ops.edge.aten.rsqrt.default,
+    exir_ops.edge.aten.exp.default,
+    exir_ops.edge.aten.log.default,
 ]
 
 
