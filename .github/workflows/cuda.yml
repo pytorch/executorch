@@ -144,6 +144,7 @@ jobs:
         echo "::group::Run Voxtral Runner"
         # Capture output and allow exit code 139 if we have the expected printout
         set +e
+        export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         OUTPUT=$(cmake-out/backends/cuda/voxtral_runner model.pte aoti_cuda_blob.ptd 2>&1)
         EXIT_CODE=$?
         set -e
