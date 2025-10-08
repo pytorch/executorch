@@ -323,11 +323,12 @@ class ET_EXPERIMENTAL CudaBackend final
     // Remove the temporary shared library file
     if (!handle->so_path.empty()) {
       std::error_code remove_error;
+      std::filesystem::remove(handle->so_path, remove_error);
       ET_CHECK_OR_LOG(
           !remove_error,
           "Failed to remove temporary shared library %s: %s",
           handle->so_path.c_str(),
-          remove_error.message().c_str())
+          remove_error.message().c_str());
     }
 
     delete handle;
