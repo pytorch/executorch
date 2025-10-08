@@ -996,15 +996,32 @@ class _Emitter(torch.fx.Interpreter):
         # If it's a delegate call, collect the list of debug handles that are consumed by this
         # delegate call and store it in the debug handle map.
         if target == executorch_call_delegate:
-            debug_handle_list = []
             # Use the lowered_module to fetch the original graph and its debug
             # handles.
+            print(lowered_module.original_module)
+            # we need to store the debug handles in the same order as the values returned
+            output_nodes = []
+            for node in lowered_module.original_module.graph.nodes:
+                if node.op == "output":
+                    for n in node.args[0]:
+                        output_nodes.append(n)
+            output_nodes_set = set(output_nodes)
+
+            debug_handle_list = []
+            output_nodes_debug_handles_list = []
             for node in lowered_module.original_module.graph.nodes:
                 if (
-                    node.op == "call_function"
+                    node not in output_nodes_set
+                    and node.op == "call_function"
                     and node.meta.get("debug_handle") is not None
                 ):
                     debug_handle_list.append(node.meta.get("debug_handle"))
+            for node in output_nodes:
+                if node.meta.get("debug_handle") is not None:
+                    output_nodes_debug_handles_list.append(node.meta.get("debug_handle"))
+            # This allows us to order output node's debug handle exactly in the order
+            # in which outputs are returned from delegate
+            debug_handle_list = debug_handle_list + output_nodes_debug_handles_list
             output_node = lowered_module.original_module.graph.output_node()
             outputs = output_node.args[0]
             num_outputs = len(outputs) if isinstance(outputs, (list, tuple)) else 1
