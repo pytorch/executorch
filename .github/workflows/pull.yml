@@ -490,8 +490,8 @@ jobs:
       build-tool: buck2
       docker-image: ci-image:executorch-ubuntu-22.04-clang12
 
-  unittest-arm-backend-with-no-fvp:
-    name: unittest-arm-backend-with-no-fvp
+  unittest-arm-backend-with-no-deps:
+    name: unittest-arm-backend-with-no-deps
     uses: pytorch/test-infra/.github/workflows/linux_job_v2.yml@main
     permissions:
       id-token: write
@@ -499,8 +499,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - test_arm_baremetal: test_pytest_ops
-          - test_arm_baremetal: test_pytest_models
+          - test_arm_baremetal: test_pytest_ops_no_target
+          - test_arm_baremetal: test_pytest_models_no_target
+          - test_arm_baremetal: test_pytest_ops_tosa
+          - test_arm_baremetal: test_pytest_models_tosa
+          - test_arm_baremetal: test_run_tosa
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -516,7 +519,7 @@ jobs:
         source .ci/scripts/utils.sh
         install_executorch "--use-pt-pinned-commit"
 
-        .ci/scripts/setup-arm-baremetal-tools.sh
+        .ci/scripts/setup-arm-baremetal-tools.sh --disable-ethos-u-deps
 
         ARM_TEST=${{ matrix.test_arm_baremetal }}
 
