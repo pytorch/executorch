@@ -82,7 +82,7 @@ To perform 8-bit quantization with the PT2E flow, perform the following steps pr
 1) Create an instance of the `XnnpackQuantizer` class. Set quantization parameters.
 2) Use `torch.export.export` to prepare for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
-4) For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
+4) For static quantization, run the prepared model with representative samples to calibrate the quantized tensor activation ranges.
 5) Call `convert_pt2e` to quantize the model.
 6) Export and lower the model using the standard flow.
 

@@ -14,7 +14,7 @@ Quantization in ExecuTorch is backend-specific. Each backend defines how models 
 The PT2E quantization workflow has three main steps:
 
 1. Configure a backend-specific quantizer.
-2. Prepare, calibrate, convert, and evalute the quantized model in PyTorch
+2. Prepare, calibrate, convert, and evaluate the quantized model in PyTorch
 3. Lower the model to the target backend
 
 ## 1. Configure a Backend-Specific Quantizer

@@ -89,6 +89,6 @@ _Executor_ is the entry point to load the program and execute it. The execution 
 
 ## Developer Tools
 
-It should be efficient for users to go from research to production using the flow above. Productivity is essentially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
+It should be efficient for users to go from research to production using the flow above. Productivity is especially important, for users to author, optimize and deploy their models. We provide [ExecuTorch Developer Tools](devtools-overview.md) to improve productivity. The Developer Tools are not in the diagram. Instead it's a tool set that covers the developer workflow in all three phases.
 
 During the program preparation and execution, users can use the ExecuTorch Developer Tools to profile, debug, or visualize the program. Since the end-to-end flow is within the PyTorch ecosystem, users can correlate and display performance data along with graph visualization as well as direct references to the program source code and model hierarchy. We consider this to be a critical component for quickly iterating and lowering PyTorch programs to edge devices and environments.
