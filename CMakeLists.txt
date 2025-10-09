@@ -297,8 +297,8 @@ endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options
-  $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 
 # Let files say "include <executorch/path/to/header.h>".
@@ -790,9 +790,10 @@ if(EXECUTORCH_BUILD_PYBIND)
       bundled_module PUBLIC ${_common_include_directories}
     )
     target_compile_options(
-      bundled_module PUBLIC
-      $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+      bundled_module
+      PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+             -fPIC>
     )
   endif()
 
@@ -865,8 +866,13 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # compile options for pybind
   set(_pybind_compile_options
-    $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR /wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC -frtti -fexceptions>
+      $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+      /GR
+      /wd4996>
+      $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+      -fPIC
+      -frtti
+      -fexceptions>
   )
 
   # util lib

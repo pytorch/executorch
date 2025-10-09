@@ -17,11 +17,13 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 set(_common_compile_options
-  $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
-  list(APPEND _common_compile_options "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-march=armv8.2-a+dotprod>")
+  list(APPEND _common_compile_options
+       "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-march=armv8.2-a+dotprod>"
+  )
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
@@ -138,10 +140,15 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC pthreadpool cpuinfo)
   endif()
   target_compile_options(
-    custom_ops_aot_lib PUBLIC
-    $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR /wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC -frtti -fexceptions>
-    ${_common_compile_options}
+    custom_ops_aot_lib
+    PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+           /GR
+           /wd4996>
+           $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+           -fPIC
+           -frtti
+           -fexceptions>
+           ${_common_compile_options}
   )
 
   install(
