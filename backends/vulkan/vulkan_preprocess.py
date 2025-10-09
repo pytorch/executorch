@@ -173,6 +173,9 @@ class VulkanBackend(BackendDetails):
             [
                 FuseBatchNormPass(program),
                 FusePatternsPass(),
+                FuseClampsPass(),
+                FuseConvClampPass(),
+                FuseClampBinaryOpPass(),
                 AddmmToLinearTransform(),
                 RemoveRedundantOpsTransform(),
                 FuseQuantizedOpsTransform(),
@@ -181,9 +184,6 @@ class VulkanBackend(BackendDetails):
                 SqueezeUnsqueezeInputs(),
                 FuseViewCopyTransform(),
                 ViewCopyToSqueezeUnsqueezePass(),
-                FuseClampsPass(),
-                FuseConvClampPass(),
-                FuseClampBinaryOpPass(),
             ],
         )
 
