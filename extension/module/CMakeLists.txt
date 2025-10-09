@@ -29,7 +29,7 @@ else()
 endif()
 target_link_libraries(
   extension_module PRIVATE executorch_core extension_data_loader
-                           extension_flat_tensor
+                           extension_flat_tensor extension_named_data_map
 )
 target_include_directories(
   extension_module PUBLIC ${_common_include_directories}
@@ -42,8 +42,9 @@ target_compile_options(
 # after cleaning up CMake targets.
 add_library(extension_module_static STATIC ${_extension_module__srcs})
 target_link_libraries(
-  extension_module_static PRIVATE executorch_core extension_data_loader
-                                  extension_flat_tensor
+  extension_module_static
+  PRIVATE executorch_core extension_data_loader extension_flat_tensor
+          extension_named_data_map
 )
 target_include_directories(
   extension_module_static PUBLIC ${_common_include_directories}
