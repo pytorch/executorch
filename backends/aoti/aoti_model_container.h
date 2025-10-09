@@ -77,6 +77,8 @@ struct AOTIDelegateHandle {
   void* so_handle;
   std::string so_path;
   AOTInductorModelContainerHandle container_handle;
+  void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
+                     // dependency
 };
 
 } // namespace aoti
