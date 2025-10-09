@@ -320,7 +320,7 @@ lib.define(
     "float out_scale, int out_zero_point) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
+    "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "Tensor indices, bool pruned_weights=False) -> (Tensor X)"
 )
 lib.define(
@@ -514,7 +514,7 @@ lib.define(
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
+    "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "Tensor indices, bool pruned_weights=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -2314,6 +2314,28 @@ def transposed_im2row_meta(
     output_size = torch.Size((batch_size, output_length, n_output_plane))
 
     return input.new_empty(output_size, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_embedding_byte")
+def quantized_embedding_byte_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: torch.Tensor | None,
+    indices: torch.Tensor,
+    pruned_weights: bool = False,
+) -> torch.Tensor:
+    assert not pruned_weights
+    assert len(weight.shape) == 2
+    assert 1 <= len(weight_scales.shape) <= 2
+    if len(weight_scales.shape) == 2:
+        num_groups = weight_scales.shape[-1]
+        assert weight.shape[1] % num_groups == 0
+
+    if weight_zero_points is not None:
+        assert weight_zero_points.shape == weight_scales.shape
+
+    assert 1 <= len(indices.shape) <= 2
+    return torch.empty(*indices.shape, weight.shape[1], dtype=torch.float32)
 
 
 @register_fake("cadence::where_Scalar")

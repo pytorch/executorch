@@ -1572,3 +1572,34 @@ def transposed_im2row(
     # Optionally, flatten to (N, num_patches, patch_size) if needed
     patches = patches.view(N, C * H_in * W_in, -1).transpose(1, 2).contiguous()
     return patches
+
+
+@impl(m, "quantized_embedding_byte")
+def quantized_embedding_byte(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: torch.Tensor | None,
+    indices: torch.Tensor,
+    pruned_weights: bool = False,
+) -> torch.Tensor:
+    if pruned_weights:
+        raise NotImplementedError("Pruned weights not supported")
+
+    # Cannot use torch.ops.quantized_decomposed.embedding_byte.dtype because
+    # it doesn't support num_groups == 1
+    num_groups = 1
+    if len(weight_scales.shape) == 2:
+        num_groups = weight_scales.shape[1]
+
+    group_size = weight.shape[1] // num_groups
+    weight = torch.ops.torchao.dequantize_affine.default(
+        input=weight,
+        block_size=(1, group_size),
+        scale=weight_scales,
+        zero_point=weight_zero_points,
+        input_dtype=weight.dtype,
+        quant_min=torch.iinfo(weight.dtype).min,
+        quant_max=torch.iinfo(weight.dtype).max,
+    )
+
+    return weight[indices]
