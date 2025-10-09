@@ -19,6 +19,8 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
     default_flags = []
     android_flags = []
 
+    debug_mode = read_config("etvk", "debug", "0") == "1"
+
     if not no_volk:
         for flags in [default_flags, android_flags]:
             flags.append("-DUSE_VULKAN_WRAPPER")
@@ -31,6 +33,10 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         mac_flags = default_flags
         if link_moltenvk:
             mac_flags = []
+
+        if debug_mode:
+            mac_flags.append("-DETVK_BOOST_STACKTRACE_AVAILABLE")
+            default_flags.append("-DETVK_BOOST_STACKTRACE_AVAILABLE")
 
         VK_API_PREPROCESSOR_FLAGS += select({
             "DEFAULT": default_flags,
@@ -59,7 +65,6 @@ def get_vulkan_preprocessor_flags(no_volk, is_fbcode):
         if etvk_default_cache_path != "":
             VK_API_PREPROCESSOR_FLAGS += ["-DETVK_DEFAULT_CACHE_PATH={}".format(etvk_default_cache_path)]
 
-        debug_mode = read_config("etvk", "debug", "0") == "1"
         if debug_mode:
             VK_API_PREPROCESSOR_FLAGS += ["-DVULKAN_DEBUG"]
 
@@ -136,6 +141,8 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False, no_volk = Fal
     )
 
 def define_common_targets(is_fbcode = False):
+    debug_mode = read_config("etvk", "debug", "0") == "1"
+
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
         srcs = [
@@ -199,6 +206,10 @@ def define_common_targets(is_fbcode = False):
                 mac_deps = [
                     "//third-party/khronos:moltenVK_static"
                 ]
+
+            if debug_mode:
+                mac_deps.append("fbsource//third-party/boost:boost")
+                default_deps.append("fbsource//third-party/boost:boost")
 
             VK_API_DEPS += select({
                 "DEFAULT": default_deps,
