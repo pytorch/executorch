@@ -34,9 +34,7 @@
 #define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
   ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetLastError())
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 // Enum for supported data types in et-cuda backend
 enum class SupportedDTypes : int32_t {
@@ -125,6 +123,4 @@ inline AOTITorchError validate_dtype(int32_t dtype) {
 }
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda

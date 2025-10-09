@@ -13,9 +13,7 @@
 #include <executorch/backends/cuda/runtime/guard.h>
 #include <cstdint>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 using executorch::backends::aoti::AOTITorchError;
 
@@ -99,6 +97,4 @@ AOTITorchError aoti_torch_get_current_cuda_stream(
 
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda
