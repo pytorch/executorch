@@ -41,8 +41,8 @@ To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's Mu
 The Voxtral runner will do the following things:
 
 - Audio Input:
-  - Option A:  Pass the raw audio tensor into exported preprocessor to produce a mel spectrogram tensor.
-  - Option B:  If starting directly with an already processed audio input tensor, format the inputs to the multimodal runner (metadata tokens, audio tokens, text tokens, etc.).
+   - Option A:  Pass raw audio data from a `.wav` file into the exported preprocessor to produce a mel spectrogram tensor.
+   - Option B:  If starting directly with an already processed audio input tensor (preprocessed mel spectrogram), format the inputs to the multimodal runner (metadata tokens, audio tokens, text tokens, etc.).
 - Feed the formatted inputs to the multimodal modal runner.
 
 
@@ -66,13 +66,26 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Re
 
 ## Running the model
 You can download the `tekken.json` tokenizer from [Voxtral's HuggingFace repo](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507).
+
+### Running with raw audio (.wav file)
+For raw audio files (`.wav`), you must provide a preprocessor to convert the audio into mel spectrogram format:
 ```
 ./cmake-out/examples/models/voxtral/voxtral_runner \
   --model_path path/to/model.pte \
   --tokenizer_path path/to/tekken.json \
   --prompt "What can you tell me about this audio?" \
-  --audio_path path/to/audio_input.bin \
-  --processor_path path/to/voxtral_preprocessor.pte # If you're passing raw audio file in audio_path
+  --audio_path path/to/audio_input.wav \
+  --processor_path path/to/voxtral_preprocessor.pte
+```
+
+### Running with preprocessed audio (.bin file)
+If you already have a preprocessed mel spectrogram saved as a `.bin` file, you can skip the preprocessor:
+```
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path path/to/model.pte \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What can you tell me about this audio?" \
+  --audio_path path/to/preprocessed_audio.bin
 ```
 
 Example output:
