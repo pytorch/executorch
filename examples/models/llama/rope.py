@@ -240,7 +240,7 @@ class Rope(torch.nn.Module):
             self.precompute_freqs_cis = partial(
                 hf_precompute_freqs_cis,
                 partial_rotary_factor=self.params.partial_rotary_factor,
-                device=self.params.device,
+                device=getattr(self.params, "device", "cpu"),
             )
             self.apply_rotary_emb = hf_apply_rotary_emb
         else:
@@ -249,7 +249,7 @@ class Rope(torch.nn.Module):
                 use_scaled=self.params.use_scaled_rope,
                 scale_factor=self.params.rope_scale_factor,
                 high_freq_factor=self.params.high_freq_factor,
-                device=self.params.device,
+                device=getattr(self.params, "device", "cpu"),
             )
             self.apply_rotary_emb = RotaryEmbedding()
 

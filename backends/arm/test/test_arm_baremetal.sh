@@ -366,5 +366,20 @@ test_smaller_stories_llama() {
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_memory_allocation() {
+    echo "${TEST_SUITE_NAME}: Test ethos-u memory allocation with run.sh"
+
+    mkdir -p arm_test/test_run
+    # Ethos-U85
+    echo "${TEST_SUITE_NAME}: Test target Ethos-U85"
+    examples/arm/run.sh --et_build_root=arm_test/test_run --target=ethos-u85-128 --model_name=examples/arm/example_modules/add.py &> arm_test/test_run/full.log
+    python3 backends/arm/test/test_memory_allocator_log.py --log arm_test/test_run/full.log \
+            --require "model_pte_program_size" "<= 3000 B" \
+            --require "method_allocator_planned" "<= 64 B" \
+            --require "method_allocator_loaded" "<= 1024 B" \
+            --require "method_allocator_input" "<= 4 B" \
+            --require "Total DRAM used" "<= 0.06 KiB"
+    echo "${TEST_SUITE_NAME}: PASS"
+}
 
 ${TEST_SUITE}

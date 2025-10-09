@@ -127,9 +127,16 @@ int32_t aoti_torch_layout_strided() {
 }
 
 // Dtype constants - these return the PyTorch dtype codes
-// Currently only float32 is supported, but using robust enum-based approach
 int32_t aoti_torch_dtype_float32() {
   return 6; // PyTorch's float32 dtype code
+}
+
+int32_t aoti_torch_dtype_bfloat16() {
+  return 15; // PyTorch's bfloat16 dtype code
+}
+
+int32_t aoti_torch_dtype_int64() {
+  return 4; // PyTorch's int64 dtype code
 }
 
 // Cleanup functions
