@@ -285,7 +285,9 @@ def get_calibration_data(
 ):
     # Firstly, if the model is being evaluated, take the evaluators calibration function if it has one
     if evaluator_name is not None:
-        return evaluator_calibration_data(evaluator_name, evaluator_config)
+        evaluator_data = evaluator_calibration_data(evaluator_name, evaluator_config)
+        if evaluator_data is not None:
+            return evaluator_data
 
     # If the model is in the calibration_data dictionary, get the data from there
     # This is used for the simple model examples provided
