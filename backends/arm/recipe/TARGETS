@@ -1,0 +1,51 @@
+# Copyright 2025 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# @noautodeps
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "arm_recipe_types",
+    srcs = ["arm_recipe_types.py"],
+    deps = [
+        "//executorch/export:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "arm_recipe",
+    srcs = ["recipe.py"],
+    deps = [
+        "//executorch/backends/arm:arm_compile_spec",
+        "//executorch/backends/arm:_factory",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:lib",
+        "//executorch/export:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "arm_recipe_provider",
+    srcs = ["arm_recipe_provider.py"],
+    deps = [
+        ":arm_recipe",
+        ":arm_recipe_types",
+        "//executorch/backends/arm/quantizer:lib",
+        "//executorch/backends/arm/test:common",
+        "//executorch/backends/arm:_factory",
+        "//executorch/export:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":arm_recipe",
+        ":arm_recipe_provider",
+        ":arm_recipe_types",
+        "//executorch/export:lib",
+    ],
+)
