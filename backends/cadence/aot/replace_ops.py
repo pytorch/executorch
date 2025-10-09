@@ -2156,6 +2156,52 @@ class ReplaceAdaptiveAvgPoolWithAtenAvgPoolPass(ExportPass):
         )
 
 
+@register_cadence_pass(CadencePassAttribute(opt_level=0))
+class ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding(ExportPass):
+    """
+    Replace torch.ops.quantized_decomposed.embedding_byte.dtype with
+    torch.ops.cadence.quantized_embedding_byte
+    """
+
+    def call_operator(
+        self,
+        op: torch._ops.OpOverload,
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        # Check if the op is the quantized_decomposed.embedding_byte.dtype
+        if (
+            op == exir_ops.edge.quantized_decomposed.embedding_byte.default
+            or op == exir_ops.edge.quantized_decomposed.embedding_byte.dtype
+        ):
+            # Replace with cadence.quantized_embedding_byte
+            if len(args) < 6:
+                raise AssertionError(
+                    f"Expected 6 arguments for embedding_byte, got {len(args)}"
+                )
+            embedding = args[0]
+            scales = args[1]
+            weight_zero_points = args[2]
+            indices = args[5]
+            if op == exir_ops.edge.quantized_decomposed.embedding_byte.dtype:
+                dtype = kwargs.get("dtype", None)
+                if dtype is not None and dtype != torch.float32:
+                    raise AssertionError(
+                        f"Unsupported output dtype for embedding_byte: {dtype}"
+                    )
+
+            new_args = (embedding, scales, weight_zero_points, indices, False)
+            new_kwargs = {}
+            return super().call_operator(
+                exir_ops.edge.cadence.quantized_embedding_byte.default,
+                new_args,
+                new_kwargs,
+                meta,
+            )
+        return super().call_operator(op, args, kwargs, meta)
+
+
 class CommonReplacePasses:
     passes = [
         ReplaceSqueezeAndUnsqueezeWithViewPass,
@@ -2168,6 +2214,7 @@ class CommonReplacePasses:
         ReplacePT2QuantWithCadenceQuantPass,
         ReplacePT2DequantWithCadenceDequantPass,
         ReplacePowWithMulPass,
+        ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding,
     ]
 
 
