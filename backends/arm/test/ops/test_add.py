@@ -78,7 +78,7 @@ class Add2(torch.nn.Module):
 
 class Add3(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return x + y
+        return torch.add(x, y, alpha=1.5)
 
     test_data: list[input_t2] = {
         "3d_randn_diff_rank": lambda: (torch.randn(1, 4, 5), torch.randn(4, 1)),
