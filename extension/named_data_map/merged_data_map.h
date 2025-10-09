@@ -13,7 +13,15 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef USE_ATEN_LIB
+#define ET_MERGED_DATA_MAP_NAMESPACE merged_data_map::aten
+#else // !USE_ATEN_LIB
+#define ET_MERGED_DATA_MAP_NAMESPACE merged_data_map
+#endif // USE_ATEN_LIB
+
 namespace executorch::extension {
+
+namespace ET_MERGED_DATA_MAP_NAMESPACE {
 /**
  * A NamedDataMap implementation that wraps other NamedDataMaps.
  */
@@ -103,4 +111,5 @@ class MergedDataMap final
   std::unordered_map<std::string, uint32_t> key_to_map_index_;
 };
 
+} // namespace ET_MERGED_DATA_MAP_NAMESPACE
 } // namespace executorch::extension
