@@ -26,9 +26,7 @@
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 #define LOAD_SYMBOL(name, handle)                                \
   do {                                                           \
@@ -335,14 +333,13 @@ class ET_EXPERIMENTAL CudaBackend final
   }
 };
 
-} // namespace cuda
+} // namespace executorch::backends::cuda
 
+namespace executorch::backends {
 namespace {
 auto cls = cuda::CudaBackend();
 executorch::runtime::Backend backend{"CudaBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
 } // namespace
-
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends

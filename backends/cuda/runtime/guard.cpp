@@ -9,9 +9,7 @@
 #include <executorch/backends/cuda/runtime/guard.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 namespace {
 // Thread-local stream storage (private to this file)
@@ -146,6 +144,4 @@ Result<CUDAStreamGuard> CUDAStreamGuard::create(
   return stream_guard;
 }
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda
