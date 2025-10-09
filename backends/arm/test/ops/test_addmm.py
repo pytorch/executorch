@@ -167,7 +167,6 @@ def test_addmm_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_addmm_vgf_FP(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Addmm(),
@@ -181,7 +180,6 @@ def test_addmm_vgf_FP(test_data: input_t1):
 
 @common.parametrize("test_data", test_data_suite)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_addmm_vgf_INT(test_data: input_t1):
     pipeline = VgfPipeline[input_t1](
         Addmm(),
