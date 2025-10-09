@@ -36,9 +36,6 @@ say() {
 
 say "Cloning the Demo App"
 
-# Work around intermittent SPM clone failures over HTTP/2 ("expected 'packfile'")
-git config --global http.version HTTP/1.1
-
 git clone --depth 1 https://github.com/meta-pytorch/executorch-examples.git
 
 say "Installing CoreML Backend Requirements"
@@ -65,6 +62,8 @@ say "Creating Simulator"
 xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"
 
 say "Running Tests"
+
+xcodebuild -resolvePackageDependencies -project "$APP_PATH.xcodeproj" -scheme MobileNetClassifierTest
 
 xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
