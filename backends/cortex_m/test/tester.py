@@ -8,11 +8,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import torch
-
-from backends.xnnpack.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
 from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
@@ -35,6 +30,11 @@ from executorch.backends.test.harness.stages import (
     ToExecutorch,
 )
 from executorch.backends.xnnpack._passes import XNNPACKPassManager
+
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 
 
 class CortexMQuantize(Quantize):
