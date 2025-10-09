@@ -92,6 +92,7 @@ from executorch.backends.arm._passes import (
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
+    RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -211,6 +212,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
 
+        self.add_pass(RewriteMatmulPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
@@ -297,6 +299,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(RewriteMatmulPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())

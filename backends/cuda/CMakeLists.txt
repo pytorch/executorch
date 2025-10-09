@@ -36,7 +36,7 @@ find_package_torch()
 
 # CUDA-specific AOTI functionality
 set(_aoti_cuda_sources runtime/cuda_backend.cpp runtime/shims/memory.cpp
-                       runtime/shims/tensor_attribute.cpp
+                       runtime/shims/tensor_attribute.cpp runtime/guard.cpp
 )
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
@@ -61,6 +61,15 @@ target_link_libraries(
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)
 executorch_target_link_options_shared_lib(aoti_cuda)
+
+if(BUILD_TESTING)
+  # Add runtime
+  add_executable(voxtral_runner tests/voxtral_runner.cpp)
+  target_link_libraries(
+    voxtral_runner PUBLIC aoti_cuda extension_module_static
+                          extension_flat_tensor portable_ops_lib
+  )
+endif()
 
 install(
   TARGETS aoti_cuda

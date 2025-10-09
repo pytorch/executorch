@@ -5,13 +5,15 @@ oncall("executorch")
 runtime.cxx_library(
     name = "runtime_shims",
     srcs = [
+        "guard.cpp",
         "shims/memory.cpp",
         "shims/tensor_attribute.cpp",
     ],
     headers = [
+        "guard.h",
         "shims/memory.h",
         "shims/tensor_attribute.h",
-        "shims/utils.h",
+        "utils.h",
     ],
     # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
     link_whole = True,
