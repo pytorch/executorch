@@ -36,6 +36,7 @@ say() {
 
 say "Cloning the Demo App"
 
+git config --global http.postBuffer 524288000
 git clone --depth 1 https://github.com/meta-pytorch/executorch-examples.git
 
 say "Installing CoreML Backend Requirements"
@@ -62,13 +63,6 @@ say "Creating Simulator"
 xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"
 
 say "Running Tests"
-
-# Cleanup all caches
-rm -rf \
-  ~/Library/org.swift.swiftpm \
-  ~/Library/Caches/org.swift.swiftpm \
-  ~/Library/Caches/com.apple.dt.Xcode \
-  ~/Library/Developer/Xcode/DerivedData
 
 xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
