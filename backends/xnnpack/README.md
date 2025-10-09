@@ -134,4 +134,4 @@ create an issue on [github](https://www.github.com/pytorch/executorch/issues).
 ## See Also
 For more information about the XNNPACK Backend, please check out the following resources:
 - [XNNPACK Backend](https://pytorch.org/executorch/main/backends-xnnpack)
-- [XNNPACK Backend Internals](https://pytorch.org/executorch/main/backend-delegates-xnnpack-reference)
+- [XNNPACK Backend Internals](https://pytorch.org/executorch/main/backends/xnnpack/backend-delegates-xnnpack-reference)
