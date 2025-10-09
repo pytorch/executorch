@@ -14,7 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class FuseClampPass(ExportPass):
+class FuseConvClampPass(ExportPass):
     """
     Some activations like ReLU and hardtanh can be fused with certain operators (e.g. convolution) preceding it.
     """
@@ -25,6 +25,7 @@ class FuseClampPass(ExportPass):
     FUSEABLE_ACTIVATIONS = [
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.clamp.default,
     ]
 
     def get_output_min_max_from_activation(self, activation_node):
@@ -36,6 +37,13 @@ class FuseClampPass(ExportPass):
             output_max = 1.0
             if len(activation_node.args) > 1:
                 output_min = activation_node.args[1]
+                output_max = activation_node.args[2]
+        elif activation_node.target == exir_ops.edge.aten.clamp.default:
+            output_min = None
+            output_max = None
+            if len(activation_node.args) >= 2:
+                output_min = activation_node.args[1]
+            if len(activation_node.args) >= 3:
                 output_max = activation_node.args[2]
 
         return output_min, output_max
