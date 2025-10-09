@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef CONV2D_INT8_INPUT_TILE_LOAD
+#define CONV2D_INT8_INPUT_TILE_LOAD
+
+#extension GL_EXT_control_flow_attributes : require
+
+#include "linear_int8_input_tile.glslh"
+
+struct Int8InputTileIndex {
+#ifdef PACKED_INT8_INPUT_BUFFER
+  int data;
+#else
+  ivec3 data;
+#endif
+};
+
+Int8InputTileIndex make_initial_int8_input_tile_index(
+    const Conv2dBlockIndex block_idx,
+    const Conv2dBlockExtents block_extents) {
+  Int8InputTileIndex idx;
+#ifdef PACKED_INT8_INPUT_BUFFER
+  idx.data = block_idx.data.y * block_extents.data_xz +
+      block_idx.data.x * block_extents.data.z;
+#else
+  idx.data = ivec3(block_idx.data.x, block_idx.data.y, 0);
+#endif
+  return idx;
+}
+
+Int8InputTileIndex make_initial_int8_input_tile_index(
+    const Conv2dBlockIndex block_idx,
+    const Conv2dBlockExtents block_extents,
+    const int group_k4_offset) {
+  Int8InputTileIndex idx;
+#ifdef PACKED_INT8_INPUT_BUFFER
+  idx.data = block_idx.data.y * block_extents.data_xz +
+      block_idx.data.x * block_extents.data.z + group_k4_offset;
+#else
+  idx.data = ivec3(block_idx.data.x, block_idx.data.y, group_k4_offset);
+#endif
+  return idx;
+}
+
+void load_packed_int8_input_tile(
+    out Int8InputTile int8_tile,
+    const Int8InputTileIndex idx) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+  int8_tile.data[0][0] = t_packed_int8_input[idx.data];
+#else
+  int8_tile.data[0][0] = texelFetch(t_packed_int8_input, idx.data, 0);
+#endif
+
+  // Guard against unsupported tile sizes
+#if TILE_M4 != 1 || TILE_K4 != 1
+  not_implemented;
+#endif
+}
+
+void increment_k4(inout Int8InputTileIndex idx) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+  idx.data += 1;
+#else
+  idx.data.z += 1;
+#endif
+}
+
+#endif // CONV2D_INT8_INPUT_TILE_LOAD

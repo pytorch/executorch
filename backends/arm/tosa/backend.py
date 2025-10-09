@@ -104,10 +104,15 @@ class TOSABackend(BackendDetails):
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
 
-        assert (
+        if not (
             tosa_spec.version.major == ts.TOSA_VERSION_MAJOR
             and tosa_spec.version.minor == ts.TOSA_VERSION_MINOR
-        ), f"TOSA serializer version ({ts.TOSA_VERSION_MAJOR}.{ts.TOSA_VERSION_MINOR}) doesn't match specification {tosa_spec}"
+        ):
+            raise RuntimeError(
+                f"TOSA serializer version "
+                f"({ts.TOSA_VERSION_MAJOR}.{ts.TOSA_VERSION_MINOR}) "
+                f"doesn't match specification {tosa_spec}"
+            )
 
         # TODO: Fix the need to lazily import this.
         from executorch.backends.arm._passes import ArmPassManager
@@ -201,8 +206,8 @@ class TOSABackend(BackendDetails):
         hardware.
         """
 
-        new_compile_spec = TosaCompileSpec.__new__(TosaCompileSpec)
-        new_compile_spec._set_compile_specs(
-            compile_spec.tosa_spec, [], compile_spec.get_intermediate_path()
+        return (
+            TosaCompileSpec(compile_spec.tosa_spec)
+            .dump_intermediate_artifacts_to(compile_spec.get_intermediate_path())
+            .dump_debug_info(compile_spec.tosa_debug_mode)
         )
-        return new_compile_spec

@@ -7,8 +7,6 @@
 
 from typing import Any, List
 
-import executorch.backends.arm.tosa.quant_utils as tqutils
-
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -56,22 +54,11 @@ class LessEqualVisitor(NodeVisitor):
         )
         validate_valid_dtype(self.target, output, ts.DType.BOOL, output.tosa_spec)
 
-        input_nodes = inputs
-        # Handle quantization
-        if inputs[0].dtype == ts.DType.INT8:
-            # Rescale inputs to 32 bit
-            rescaled_inputs, _ = tqutils.insert_rescale_ops_to_int32(
-                tosa_graph, inputs, node, self.tosa_spec
-            )
-
-            # Update IO
-            input_nodes = rescaled_inputs
-
         self._serialize_operator(
             node,
             tosa_graph,
             ts.TosaOp.Op().GREATER_EQUAL,
-            [input_nodes[1].name, input_nodes[0].name],
+            [inputs[1].name, inputs[0].name],
             [output.name],
             None,
         )

@@ -223,6 +223,7 @@ class SingleLlama:
         custom_annotations=(),
         scales_state_dict=None,
         chat_template=None,
+        lookahead_config=None,
     ):
         self.quant_dtype = quant_dtype
         quantizer = make_custom_quantizer(
@@ -290,6 +291,7 @@ class SingleLlama:
             prompt=prompt,
             use_i64_token=args.embedding_quantize is not None,
             event_name="prepare_pt2e_prompt",
+            lookahead_config=lookahead_config,
         )
         if scales_state_dict:
             set_scales(
@@ -325,6 +327,13 @@ class SingleLlama:
                     chat_template, args.prompt[0], args.system_prompt
                 )
             )
+
+            # Gemma may produce unexpected output if the prompt contains an extra <bos> token.
+            # This can happen after applying a prompt template, which might inject <bos> unintentionally.
+            # To prevent decoding issues, we explicitly remove <bos> token
+            if chat_template and args.decoder_model in {"gemma-2b", "gemma3-1b"}:
+                prompt = prompt.replace("<bos>", "")
+
             graph_module_inference(
                 use_kv_cache=self.llama_meta["get_use_kv_cache"],
                 get_example_inputs=self.get_example_inputs,
@@ -336,6 +345,7 @@ class SingleLlama:
                 prompt=prompt,
                 use_i64_token=args.embedding_quantize is not None,
                 event_name="convert_pt2e_prompt",
+                lookahead_config=lookahead_config,
             )
 
     def save_logits_quant_attrs(self):
@@ -497,13 +507,6 @@ def compile(
                 )
             )
         elif args.model_mode == "lookahead":
-            # TODO: Lookahead decoding is not yet supported for gemma3-1b.
-            # This will be implemented once the model architecture and KV update logic are adapted.
-            if args.decoder_model == "gemma3-1b":
-                raise NotImplementedError(
-                    "gemma3-1b does not currently support lookahead decoding."
-                )
-
             llama_instance_list.append(
                 LLM_VARIANT_ARCHS.get(args.decoder_model, LlamaModel)(
                     kv_config,
@@ -538,14 +541,13 @@ def compile(
         state_dict = torch.load(
             checkpoint, weights_only=True, map_location="cpu", mmap=True
         )
-        if args.decoder_model == "gemma3-1b":
+        if args.decoder_model in {"gemma-2b", "gemma3-1b"}:
             for k, v in state_dict.items():
                 if "norm" not in k:
                     continue
                 # Llama does x.to(float16) * w whilst Gemma3 is (x * w).to(float16)
                 # See https://github.com/huggingface/transformers/pull/29402
                 state_dict[k] = v.float() + torch.ones(v.shape, dtype=torch.float32)
-
     else:
         state_dict = torch.load(
             args.checkpoint, weights_only=True, map_location="cpu", mmap=True
@@ -697,6 +699,11 @@ def compile(
         custom_annotations = decoder_model_config.custom_annotation
         kv_quant_attrs = {}
         for i, llama_instance in enumerate(llama_instance_list):
+            lookahead_config = (
+                (args.window, args.ngram, args.gcap)
+                if i == 0 and args.model_mode == "lookahead"
+                else None
+            )
             llama_instance.quantize(
                 quant_dtype=quant_dtype,
                 args=args,
@@ -704,6 +711,7 @@ def compile(
                 custom_annotations=custom_annotations,
                 scales_state_dict=scales_state_dict,
                 chat_template=chat_template,
+                lookahead_config=lookahead_config,
             )
             # If hybrid and lookahead mode, we store kv output quant_attrs and apply to prefill output quant_attrs later
             if i == 0 and args.model_mode in ["hybrid", "lookahead"]:
@@ -1284,7 +1292,11 @@ def export_llama(args) -> None:
         )
         tokenizer_artifacts = tokenizer.save_pretrained(args.artifact)
         tokenizer_config = tokenizer_artifacts[0]
-        runtime_tokenizer_path = tokenizer_artifacts[-1]
+        if args.decoder_model == "gemma-2b":
+            # For Gemma, use tokenizer.model as it doesn't provide pre_tokenizer in tokenizer.json.
+            runtime_tokenizer_path = tokenizer_artifacts[-3]
+        else:
+            runtime_tokenizer_path = tokenizer_artifacts[-1]
         tokenizer = get_tokenizer(runtime_tokenizer_path, tokenizer_config)
 
     # TODO: Remove this once error is resolved.

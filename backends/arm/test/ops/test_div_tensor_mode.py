@@ -36,6 +36,14 @@ class DivTensorModeFloat(torch.nn.Module):
         return torch.div(x, y, rounding_mode=self.mode)
 
 
+def _rank4_large_randn_case():
+    torch.manual_seed(0)
+    x = 200 * torch.randn(5, 10, 25, 20) + 1
+    torch.manual_seed(1)
+    y = torch.rand(5, 10, 25, 20) + 1
+    return x, y
+
+
 test_data = {
     "mode_none": lambda: (None, (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3)),
     "mode_floor": lambda: (
@@ -47,6 +55,13 @@ test_data = {
         (torch.randn(4, 8), torch.randn(4, 8).abs() + 1e-3),
     ),
     "int_denominator": lambda: (None, (torch.randn(4, 8), 2)),
+    "op_floor_div_rank4_large_randn": lambda: (
+        "floor",
+        (
+            200 * torch.randn(5, 10, 25, 20) + 1,
+            torch.rand(5, 10, 25, 20) + 1,
+        ),
+    ),
 }
 
 
@@ -84,7 +99,13 @@ def test_div_tensor_mode_tosa_INT(data):
 
 @common.XfailIfNoCorstone300
 @common.parametrize(
-    "data", test_data, xfails={"mode_trunc": "CPU op missing in unittests"}
+    "data",
+    test_data,
+    xfails={
+        "mode_trunc": "CPU op missing in unittests",
+        "mode_floor": "Not supported",
+        "op_floor_div_rank4_large_randn": "Not supported",
+    },
 )
 def test_div_tensor_mode_u55_INT(data):
     mode, inputs = data()
@@ -94,10 +115,10 @@ def test_div_tensor_mode_u55_INT(data):
         model,
         inputs,
         aten_ops=model.aten_ops_int,
-        exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
+    pipeline.pop_stage("check_not.exir")
+    pipeline.pop_stage("check_count.exir")
     pipeline.run()
 
 
@@ -113,7 +134,6 @@ def test_div_tensor_mode_u85_INT(data):
         aten_ops=model.aten_ops_int,
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.run()
 

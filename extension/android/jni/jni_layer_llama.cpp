@@ -140,13 +140,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<jstring> data_path) {
+      facebook::jni::alias_ref<jobject> data_files) {
     return makeCxxInstance(
         model_type_category,
         model_path,
         tokenizer_path,
         temperature,
-        data_path);
+        data_files);
   }
 
   ExecuTorchLlmJni(
@@ -154,7 +154,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<jstring> data_path = nullptr) {
+      facebook::jni::alias_ref<jobject> data_files = nullptr) {
     temperature_ = temperature;
 #if defined(ET_USE_THREADPOOL)
     // Reserve 1 thread for the main thread.
@@ -173,18 +173,32 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           model_path->toStdString().c_str(),
           llm::load_tokenizer(tokenizer_path->toStdString()));
     } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
-      std::optional<const std::string> data_path_str = data_path
-          ? std::optional<const std::string>{data_path->toStdString()}
-          : std::nullopt;
+      std::vector<std::string> data_files_vector;
+      if (data_files != nullptr) {
+        // Convert Java List<String> to C++ std::vector<string>
+        auto list_class = facebook::jni::findClassStatic("java/util/List");
+        auto size_method = list_class->getMethod<jint()>("size");
+        auto get_method =
+            list_class->getMethod<facebook::jni::local_ref<jobject>(jint)>(
+                "get");
+
+        jint size = size_method(data_files);
+        for (jint i = 0; i < size; ++i) {
+          auto str_obj = get_method(data_files, i);
+          auto jstr = facebook::jni::static_ref_cast<jstring>(str_obj);
+          data_files_vector.push_back(jstr->toStdString());
+        }
+      }
       runner_ = executorch::extension::llm::create_text_llm_runner(
           model_path->toStdString(),
           llm::load_tokenizer(tokenizer_path->toStdString()),
-          data_path_str);
+          data_files_vector);
 #if defined(EXECUTORCH_BUILD_QNN)
     } else if (model_type_category == MODEL_TYPE_QNN_LLAMA) {
       std::unique_ptr<executorch::extension::Module> module = std::make_unique<
           executorch::extension::Module>(
           model_path->toStdString().c_str(),
+          data_files_set,
           executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors);
       std::string decoder_model = "llama3"; // use llama3 for now
       runner_ = std::make_unique<example::Runner<uint16_t>>( // QNN runner
@@ -192,7 +206,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           decoder_model.c_str(),
           model_path->toStdString().c_str(),
           tokenizer_path->toStdString().c_str(),
-          data_path->toStdString().c_str(),
           "");
       model_type_category_ = MODEL_TYPE_CATEGORY_LLM;
 #endif
@@ -268,7 +281,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       for (int i = 0; i < image_size; i++) {
         image_data[i] = image_data_jint[i];
       }
-      llm::Image image_runner{image_data, width, height, channels};
+      llm::Image image_runner{std::move(image_data), width, height, channels};
       prefill_inputs_.emplace_back(
           llm::MultimodalInput{std::move(image_runner)});
     }

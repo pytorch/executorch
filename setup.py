@@ -467,11 +467,10 @@ class InstallerBuildExt(build_ext):
             # Following code is for building the Qualcomm backend.
             from backends.qualcomm.scripts.download_qnn_sdk import (
                 _download_qnn_sdk,
-                check_glibc_exist_and_validate,
                 is_linux_x86,
             )
 
-            if is_linux_x86() and check_glibc_exist_and_validate():
+            if is_linux_x86():
                 os.environ["EXECUTORCH_BUILDING_WHEEL"] = "1"
 
                 with tempfile.TemporaryDirectory() as tmpdir:
@@ -815,6 +814,9 @@ class CustomBuild(build):
             cmake_build_args += ["--target", "portable_lib"]
             cmake_build_args += ["--target", "selective_build"]
 
+        if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"):
+            cmake_build_args += ["--target", "_llm_runner"]
+
         if cmake_cache.is_enabled("EXECUTORCH_BUILD_EXTENSION_MODULE"):
             cmake_build_args += ["--target", "extension_module"]
 
@@ -883,6 +885,11 @@ setup(
             src="selective_build.cp*" if _is_windows() else "selective_build.*",
             modpath="executorch.codegen.tools.selective_build",
             dependent_cmake_flags=["EXECUTORCH_BUILD_PYBIND"],
+        ),
+        BuiltExtension(
+            src="extension/llm/runner/_llm_runner.*",  # @lint-ignore https://github.com/pytorch/executorch/blob/cb3eba0d7f630bc8cec0a9cc1df8ae2f17af3f7a/scripts/lint_xrefs.sh
+            modpath="executorch.extension.llm.runner._llm_runner",
+            dependent_cmake_flags=["EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER"],
         ),
         BuiltExtension(
             src="executorchcoreml.*",

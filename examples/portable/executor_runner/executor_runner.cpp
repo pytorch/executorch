@@ -26,6 +26,7 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/method.h>
@@ -50,6 +51,7 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_string(data_path, "", "Path to data file.");
 DEFINE_string(inputs, "", "Comma-separated list of input files");
 DEFINE_string(
     output_file,
@@ -72,6 +74,7 @@ DEFINE_int32(
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
 using executorch::extension::FileDataLoader;
+using executorch::extension::FlatTensorDataMap;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::EventTracer;
@@ -171,25 +174,65 @@ int main(int argc, char** argv) {
       "FileDataLoader::from() failed: 0x%" PRIx32,
       (uint32_t)loader.error());
 
+  // Load .ptd file if provided
+  std::unique_ptr<FileDataLoader> ptd_loader;
+  std::unique_ptr<FlatTensorDataMap> ptd_data_map;
+  if (!FLAGS_data_path.empty()) {
+    const char* data_path = FLAGS_data_path.c_str();
+    Result<FileDataLoader> ptd_loader_result = FileDataLoader::from(data_path);
+    ET_CHECK_MSG(
+        ptd_loader_result.ok(),
+        "FileDataLoader::from() failed for PTD file: 0x%" PRIx32,
+        (uint32_t)ptd_loader_result.error());
+    ptd_loader =
+        std::make_unique<FileDataLoader>(std::move(ptd_loader_result.get()));
+    ET_LOG(Info, "PTD file %s is loaded.", data_path);
+
+    Result<FlatTensorDataMap> ptd_data_map_result =
+        FlatTensorDataMap::load(ptd_loader.get());
+    ET_CHECK_MSG(
+        ptd_data_map_result.ok(),
+        "FlatTensorDataMap::load() failed for PTD file: 0x%" PRIx32,
+        (uint32_t)ptd_data_map_result.error());
+    ptd_data_map = std::make_unique<FlatTensorDataMap>(
+        std::move(ptd_data_map_result.get()));
+    ET_LOG(
+        Info,
+        "PTD data map created with %" PRIu64 " keys.",
+        static_cast<uint64_t>(ptd_data_map->get_num_keys().get()));
+  }
+
   std::vector<std::string> inputs_storage;
   std::vector<std::pair<char*, size_t>> input_buffers;
 
   std::stringstream list_of_input_files(FLAGS_inputs);
-  std::string token;
+  std::string path;
 
-  while (std::getline(list_of_input_files, token, ',')) {
-    std::ifstream input_file_handle(token, std::ios::binary | std::ios::ate);
+  // First reserve memory for number of vector elements to avoid vector
+  // reallocations when emplacing back.
+  std::vector<std::string> file_paths;
+  while (std::getline(list_of_input_files, path, ',')) {
+    file_paths.push_back(std::move(path));
+  }
+  inputs_storage.reserve(file_paths.size());
+
+  for (const auto& file_path : file_paths) {
+    std::ifstream input_file_handle(
+        file_path, std::ios::binary | std::ios::ate);
+
     if (!input_file_handle) {
-      ET_LOG(Error, "Failed to open input file: %s\n", token.c_str());
+      ET_LOG(Error, "Failed to open input file: %s\n", file_path.c_str());
       return 1;
     }
 
     std::streamsize file_size = input_file_handle.tellg();
     input_file_handle.seekg(0, std::ios::beg);
 
+    // Reserve memory for actual file contents.
     inputs_storage.emplace_back(file_size, '\0');
+
     if (!input_file_handle.read(&inputs_storage.back()[0], file_size)) {
-      ET_LOG(Error, "Failed to read input file: %s\n", token.c_str());
+      ET_LOG(Error, "Failed to read input file: %s\n", file_path.c_str());
       return 1;
     }
 
@@ -282,7 +325,10 @@ int main(int argc, char** argv) {
   //
   EventTraceManager tracer;
   Result<Method> method = program->load_method(
-      method_name, &memory_manager, tracer.get_event_tracer());
+      method_name,
+      &memory_manager,
+      tracer.get_event_tracer(),
+      ptd_data_map.get());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,

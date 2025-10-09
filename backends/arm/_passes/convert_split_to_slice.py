@@ -5,6 +5,8 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
@@ -18,6 +20,8 @@ class ConvertSplitToSlicePass(ExportPass):
     """
     Replace a split operation with many slice operations.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     split_ops = (
         exir_ops.edge.aten.split_with_sizes_copy.default,

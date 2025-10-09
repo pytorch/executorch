@@ -122,6 +122,8 @@ Runner<T>::Runner(
     decoder_model_version_ = DecoderModelVersion::kLlama2;
   } else if (decoder_model_version == "llama3") {
     decoder_model_version_ = DecoderModelVersion::kLlama3;
+  } else if (decoder_model_version == "gemma") {
+    decoder_model_version_ = DecoderModelVersion::kGemma;
   } else if (decoder_model_version == "gemma3") {
     decoder_model_version_ = DecoderModelVersion::kGemma3;
     cache_mode_ = CacheMode::HybridCache;
@@ -182,8 +184,7 @@ Error Runner<T>::load() {
     eos_ids->insert(tokenizer_->encode("<|eot|>", 0, 0).get()[0]);
     eos_ids->insert(tokenizer_->encode("<|end_of_text|>", 0, 0).get()[0]);
   } else {
-    tokenizer_ =
-        example::load_llama_tokenizer(tokenizer_path_, Version::Default);
+    tokenizer_ = llm::load_tokenizer(tokenizer_path_);
     if (tokenizer_ == nullptr) {
       ET_LOG(
           Error, "Failed to load tokenizer with %s", tokenizer_path_.c_str());
@@ -200,7 +201,9 @@ Error Runner<T>::load() {
       decoder_model_version_ == DecoderModelVersion::kSmollm2_135m ||
       decoder_model_version_ == DecoderModelVersion::kSmollm3) {
     eos_ids->insert(tokenizer_->encode("<|im_end|>", 0, 0).get()[0]);
-  } else if (decoder_model_version_ == DecoderModelVersion::kGemma3) {
+  } else if (
+      decoder_model_version_ == DecoderModelVersion::kGemma ||
+      decoder_model_version_ == DecoderModelVersion::kGemma3) {
     eos_ids->insert(tokenizer_->encode("<end_of_turn>", 0, 0).get()[0]);
   }
 
@@ -286,12 +289,6 @@ Error Runner<T>::load() {
           sliding_window,
           cache_mode_});
   if (eval_mode_ == EvalMode::kLookaheadDecoding) {
-    // TODO: sliding window attention will be supported in future.
-    if (sliding_window < context_len_) {
-      ET_CHECK_MSG(
-          false,
-          "Lookahead decoding (eval_mode == 2) is not yet supported for sliding window attention.");
-    }
     token_generator_ = std::make_unique<LhdTokenGenerator<T>>(
         tokenizer_.get(),
         decoder_runner_.get(),
@@ -308,7 +305,8 @@ Error Runner<T>::load() {
             ngram_,
             window_,
             gcap_,
-            sliding_window},
+            sliding_window,
+            cache_mode_},
         &stats_);
   } else {
     token_generator_ = std::make_unique<TokenGenerator<T>>(

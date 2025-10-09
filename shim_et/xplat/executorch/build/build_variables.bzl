@@ -341,6 +341,10 @@ EXTENSION_MODULE_SRCS = [
     "extension/module/module.cpp",
 ]
 
+EXTENSION_NAMED_DATA_MAP_SRCS = [
+    "extension/named_data_map/merged_data_map.cpp",
+]
+
 EXTENSION_RUNNER_UTIL_SRCS = [
     "extension/runner_util/inputs.cpp",
     "extension/runner_util/inputs_portable.cpp",
@@ -465,6 +469,7 @@ XNNPACK_BACKEND_BUCK_SRCS = [
     "runtime/XNNHeader.cpp",
     "runtime/XNNPACKBackend.cpp",
     "runtime/XNNWeightsCache.cpp",
+    "runtime/XNNWorkspaceManager.cpp",
     "runtime/profiling/XNNProfiler.cpp",
 ]
 

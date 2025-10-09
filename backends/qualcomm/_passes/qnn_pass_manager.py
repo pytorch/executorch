@@ -18,14 +18,18 @@ from executorch.backends.qualcomm._passes import (
     ConvertLinearToConv2d,
     ConvertSquareToPow,
     DecomposeAny,
+    DecomposeBinaryAlpha,
     DecomposeCDist,
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeFloorDivide,
+    DecomposeGlu,
     DecomposeLinalgVectorNorm,
     DecomposeMinMaxDim,
     DecomposeRoll,
     DecomposeSilu,
+    DecomposeThreshold,
     DecomposeWrapWithAutocast,
     ExpandBroadcastTensorShape,
     FixedLinearKeepDim,
@@ -35,6 +39,7 @@ from executorch.backends.qualcomm._passes import (
     I64toI32,
     InsertIOQDQ,
     InsertRequantize,
+    InsertReshapeForReduceOps,
     LayoutTransform,
     LiftConstantScalarOperands,
     RecomposePixelUnshuffle,
@@ -193,26 +198,37 @@ class QnnPassManager(PassManager):
         self.add_pass(RecomposePixelUnshuffle(quantization_capture=True))
         self.add_pass(RecomposeRmsNorm(quantization_capture=True))
         self.add_pass(ReplaceArangeArgs())
+        self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
         self.add_pass(DecomposeSilu())
+        self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeWrapWithAutocast())
         self.add_pass(DecomposeEinsum())
         self.add_pass(DecomposeExpM1())
+        self.add_pass(DecomposeGlu())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(ReplaceInfValues())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(InsertReshapeForReduceOps())
         return self._transform(graph_module)
 
     def transform_for_export_pipeline(
         self, exported_program: ExportedProgram, convert_linear_to_conv2d: bool = False
     ):
+        self.add_pass(DecomposeBinaryAlpha())
         self.add_pass(DecomposeCDist())
         self.add_pass(DecomposeScaledDotProductAttention())
         self.add_pass(DecomposeRoll())
+        self.add_pass(DecomposeThreshold())
         self.add_pass(DecomposeLinalgVectorNorm(quantization_capture=True))
         self.add_pass(DecomposeExpM1())
+        # DecomposeFloorDivide does not apply to the annotation pipeline,
+        # since the CPU QDQ model would reduce accuracy.
+        # We keep div and floor operations in floating-point to maintain precision.
+        # This pass is needed before to_edge pipeline to avoid mixed type for div operator with RemoveMixedTypeOperators pass.
+        self.add_pass(DecomposeFloorDivide())
         self.add_pass(DecomposeWrapWithAutocast())
         # this pass will rewrite state_dict, it needs to be accomplished before
         # to_edge_transform_and_lower
@@ -221,6 +237,7 @@ class QnnPassManager(PassManager):
             self.add_pass(ConvertLinearToConv2d(exported_program))
         self.add_pass(ConvertSquareToPow())
         self.add_pass(LiftConstantScalarOperands())
+        self.add_pass(InsertReshapeForReduceOps())
         self._transform(exported_program.graph_module)
         ep = lift_constant_tensor_pass(exported_program)
         return ep

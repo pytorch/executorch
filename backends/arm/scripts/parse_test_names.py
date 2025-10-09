@@ -26,6 +26,8 @@ CUSTOM_EDGE_OPS = [
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
     "alias_copy.default",
+    "pixel_shuffle.default",
+    "pixel_unshuffle.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
@@ -94,6 +96,9 @@ def parse_test_name(
     # Special case for convolution
     op = op.removesuffix("_1d")
     op = op.removesuffix("_2d")
+
+    # Remove suffix for 16 bit activation and 8 bit weight test cases
+    op = op.removesuffix("_16a8w")
 
     assert target != "None", f"{test_name} does not contain one of {TARGETS}"
     assert (

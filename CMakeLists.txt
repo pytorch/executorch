@@ -226,7 +226,7 @@ if(EXECUTORCH_BUILD_CPUINFO)
   install(
     TARGETS cpuinfo
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -266,10 +266,22 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   executorch_move_interface_include_directories_to_build_time_only(
     pthreadpool_interface
   )
+
+  if(APPLE)
+    # Use hidden visibility for pthreadpool on Apple platforms to avoid issues
+    # with pthreadpool symbols from libtorch_cpu taking precedence over the ones
+    # from the pthreadpool library statically linked in _portable_lib. The
+    # pthreadpool public APIs are marked as weak by default on some Apple
+    # platforms, so setting to hidden visibility works around this by not
+    # putting the symbol in the indirection table. See
+    # https://github.com/pytorch/executorch/issues/14321 for more details.
+    target_compile_options(pthreadpool PRIVATE -fvisibility=hidden)
+  endif()
+
   install(
     TARGETS pthreadpool pthreadpool_interface fxdiv
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -587,6 +599,16 @@ endif()
 
 if(EXECUTORCH_BUILD_CORTEX_M)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cortex_m)
+  list(APPEND _executorch_backends coretex_m_backend)
+endif()
+
+if(EXECUTORCH_BUILD_CUDA)
+  # Build common AOTI functionality (required for CUDA)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/aoti)
+  # Build CUDA-specific AOTI functionality
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cuda)
+  # Add aoti_cuda to backends - it already depends on aoti_common
+  list(APPEND _executorch_backends aoti_cuda)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -630,6 +652,11 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   list(APPEND _executorch_extensions extension_module_static)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/named_data_map)
+  list(APPEND _executorch_extensions extension_named_data_map)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_LLM)
   if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
     set(SUPPORT_REGEX_LOOKAHEAD ON)
@@ -648,15 +675,6 @@ if(EXECUTORCH_BUILD_EXTENSION_LLM)
     )
   endif()
   list(APPEND _executorch_extensions tokenizers)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
-  list(APPEND _executorch_extensions extension_llm_runner)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
@@ -717,7 +735,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
   install(
     TARGETS torchao_ops_executorch torchao_kernels_aarch64
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES
     DESTINATION ${_common_include_directories}
   )
@@ -728,7 +746,7 @@ if(EXECUTORCH_BUILD_KERNELS_TORCHAO)
     install(
       TARGETS kleidiai
       EXPORT ExecuTorchTargets
-      DESTINATION lib
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}
       INCLUDES
       DESTINATION ${_common_include_directories}
     )
@@ -738,9 +756,6 @@ endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
 
-  # Add codegen tools subdirectory for selective_build pybind module
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
-
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
@@ -748,6 +763,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(NOT EXECUTORCH_BUILD_DEVTOOLS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
+
+  # Add codegen tools subdirectory for selective_build pybind module
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/codegen/tools)
 
   # Create bundled_module target only for pybindings when bundled_program exists
   # This target has hard dependencies on devtools generated headers
@@ -869,6 +887,21 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PRIVATE ${_dep_libs})
 
+  # Set RPATH to find PyTorch libraries relative to the installation location
+  # This goes from executorch/extension/pybindings up to site-packages, then to
+  # torch/lib
+  if(APPLE)
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                              INSTALL_RPATH "@loader_path/../../../torch/lib"
+    )
+  else()
+    set_target_properties(
+      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+    )
+  endif()
+
   install(
     TARGETS portable_lib
     EXPORT ExecuTorchTargets
@@ -887,6 +920,15 @@ endif()
 if(EXECUTORCH_BUILD_EXTENSION_TRAINING)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/training)
   list(APPEND _executorch_extensions extension_training)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/runner)
+  list(APPEND _executorch_extensions extension_llm_runner)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_LLM_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/apple)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_LLM)
@@ -984,7 +1026,7 @@ if(NOT EXECUTORCH_SELECT_OPS_YAML STREQUAL ""
   install(
     TARGETS executorch_selected_kernels
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 else()
   # No selective build - link the full library.
@@ -1005,6 +1047,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   set(_executor_runner_libs executorch extension_evalue_util
                             extension_runner_util gflags executorch_backends
   )
+
+  if(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR)
+    list(APPEND _executor_runner_libs extension_flat_tensor)
+  endif()
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)

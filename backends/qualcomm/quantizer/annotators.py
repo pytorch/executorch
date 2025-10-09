@@ -68,7 +68,7 @@ def _is_float_tensor(node: Node):
         or not isinstance(node.meta["val"], FakeTensor)
     ):
         return False
-    return node.meta["val"].dtype == torch.float32
+    return node.meta["val"].dtype in (torch.bfloat16, torch.float32)
 
 
 def _mark_nodes_as_annotated(nodes: List[Node]):
@@ -674,7 +674,7 @@ def annotate_pad(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.reshape.default])
+@register_annotator([torch.ops.aten.reshape.default, torch.ops.aten.unflatten.int])
 def annotate_reshape(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -879,7 +879,7 @@ def annotate_unsqueeze_copy(
         annotate_single_in_share_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.transpose.int])
+@register_annotator([torch.ops.aten.transpose.int, torch.ops.aten.swapaxes.default])
 def annotate_transpose(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
@@ -1094,11 +1094,13 @@ def annotate_cdist(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator(
     [
+        torch.ops.aten.conv1d.default,
         torch.ops.aten.conv2d.default,
         torch.ops.aten.conv2d.padding,
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv3d.default,
         torch.ops.aten.conv_transpose1d.default,
+        torch.ops.aten.conv_transpose2d.input,
+        torch.ops.aten.conv_transpose3d.input,
         torch.ops.aten.convolution.default,
     ]
 )
@@ -1356,7 +1358,7 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
         )
 
 
-@register_annotator([torch.ops.aten.where.self])
+@register_annotator([torch.ops.aten.where.self, torch.ops.aten.where.ScalarSelf])
 def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return
@@ -1366,7 +1368,6 @@ def annotate_where(node: Node, quantization_config: QuantizationConfig) -> None:
         assert isinstance(input_node, Node)
         if _is_float_tensor(input_node):
             input_qspec_map[input_node] = quantization_config.input_activation
-
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         output_qspec=(

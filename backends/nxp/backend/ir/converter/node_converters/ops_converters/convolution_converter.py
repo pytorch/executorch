@@ -25,7 +25,6 @@ from executorch.backends.nxp.backend.ir.converter.conversion.translator import (
 from executorch.backends.nxp.backend.ir.converter.node_converter import (
     CustomDelegationOptions,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.converter.node_converters.shared import (
     conv_utils,
@@ -45,6 +44,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options import 
     depthwise_conv_2d_options,
     reshape_options,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -53,45 +53,38 @@ class ConvolutionConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        match target:
-            case Target.RT700:
-                activations = node.args[0]
-                weights = node.args[1]
-                groups = node.args[8]
+        activations = node.args[0]
+        weights = node.args[1]
+        groups = node.args[8]
 
-                if activations.meta["val"].shape[0] != 1:
-                    # Only batch size 1 is supported on neutron.
-                    return False
+        if activations.meta["val"].shape[0] != 1:
+            # Only batch size 1 is supported on neutron.
+            return False
 
-                if groups == 1:  # Regular convolution.
-                    pass
-                elif conv_utils.group_conv_convertible_as_depthwise(
-                    node, groups
-                ):  # Depthwise convolution.
-                    # Only supported if the weights are static, because TFLite `DepthwiseConv2D` uses permuted
-                    #  weights. In case the weights are dynamic, a Transpose operator would have to be added, which
-                    #  is not supported on Neutron.
-                    if not node_is_effectively_static_tensor(
-                        weights, parameters_mapping
-                    ):
-                        return False
-                elif conv_utils.group_conv_convertible_into_multiple_convolutions(
-                    node, groups
-                ):  # Separable conv. This should never be reached, as the node should have been decomposed into
-                    #  multiple parallel convolutions by the `SplitGroupConvolution` pre-processing pass.
-                    logging.warning("Group convolution was not decomposed.")
-                    return False
-                else:  # Unexpected case (should never happen).
-                    return False
-
-                return True
-
-            case _:
+        if groups == 1:  # Regular convolution.
+            pass
+        elif conv_utils.group_conv_convertible_as_depthwise(
+            node, groups
+        ):  # Depthwise convolution.
+            # Only supported if the weights are static, because TFLite `DepthwiseConv2D` uses permuted
+            #  weights. In case the weights are dynamic, a Transpose operator would have to be added, which
+            #  is not supported on Neutron.
+            if not node_is_effectively_static_tensor(weights, parameters_mapping):
                 return False
+        elif conv_utils.group_conv_convertible_into_multiple_convolutions(
+            node, groups
+        ):  # Separable conv. This should never be reached, as the node should have been decomposed into
+            #  multiple parallel convolutions by the `SplitGroupConvolution` pre-processing pass.
+            logging.warning("Group convolution was not decomposed.")
+            return False
+        else:  # Unexpected case (should never happen).
+            return False
+
+        return True
 
     @staticmethod
     def _is_supported_in_IR(
@@ -238,7 +231,7 @@ class ConvolutionConverter(NodeConverter):
     def _convert_unpadded_2D(
         self, t_op: tflite_model.Operator, conv_params: ConvParameters
     ) -> conv_utils.ConvConversionResult:
-        """Convert the `aten.convolution` into TFLite. The `padding` and `builtin_options` must be converter by the
+        """Convert the `aten.convolution` into TFLite. The `padding` and `builtin_options` must be converted by the
         caller.
         """
         common.assign_2d_strides(t_op.builtin_options, conv_params.stride)
@@ -321,6 +314,10 @@ class ConvolutionConverter(NodeConverter):
                 t_op.tmp_inputs[1] = self.builder.create_transposed_tensor(
                     weight_tensor, perm
                 )
+
+                if t_op.tmp_inputs[1].quantization is not None:
+                    # Model is quantized
+                    t_op.tmp_inputs[1].quantization.quantized_dimension = 3
             else:
                 raise NotImplementedError("Dynamic Depthwise Conv weights.")
 

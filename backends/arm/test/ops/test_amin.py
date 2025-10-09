@@ -29,12 +29,16 @@ class Amin(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return torch.amin(x, self.dim, self.keep_dims)
+        if self.dim is None:
+            return torch.amin(x, keepdim=self.keep_dims)
+        else:
+            return torch.amin(x, self.dim, self.keep_dims)
 
-    test_data: Dict[str, input_t] = {
+    test_data: Dict = {
         "rank_1_dim_0": lambda: ((torch.rand([10]),), 0, False),
         "rank_2_dim_1_keep_dims": lambda: ((torch.rand([2, 2]),), (1,), True),
         "rank_4_all_dim": lambda: ((torch.rand([1, 2, 5, 5]),), (0, 1, 2, 3), False),
+        "rank_4_no_dim": lambda: ((torch.rand([1, 2, 5, 5]),), None, False),
         "rank_4_0,3_keep_dims": lambda: ((torch.rand([1, 2, 2, 2]),), (0, 3), True),
         "rank_4_mult_batches": lambda: ((torch.rand([2, 2, 2, 2]),), (0), True),
     }
@@ -52,7 +56,7 @@ class Min(torch.nn.Module):
         x = torch.min(x, self.dim)
         return x[0]
 
-    test_data: Dict[str, input_t] = {
+    test_data: Dict = {
         "rank_1_dim_0": lambda: ((torch.rand([10]),), 0),
         "rank_2_dim_1": lambda: ((torch.rand([2, 2]),), 1),
         "rank_4_dim_2": lambda: ((torch.rand([2, 2, 2, 2]),), 2),
@@ -112,7 +116,6 @@ def test_amin_u85_INT(test_data: Amin.input_t):
         Amin(dim, keep_dims),
         data,
         Amin.aten_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -152,6 +155,7 @@ def test_min_dim_tosa_FP_not_delegated():
 
 @common.parametrize("test_data", Amin.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amin_vgf_FP(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
@@ -162,6 +166,7 @@ def test_amin_vgf_FP(test_data: Amin.input_t):
 
 @common.parametrize("test_data", Amin.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_amin_vgf_INT(test_data: Amin.input_t):
     data, dim, keep_dims = test_data()
     pipeline = VgfPipeline[Amin.input_t](
@@ -175,6 +180,7 @@ def test_amin_vgf_INT(test_data: Amin.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_min_dim_vgf_FP_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](
@@ -188,6 +194,7 @@ def test_min_dim_vgf_FP_to_amin(test_data: Min.input_t):
 
 @common.parametrize("test_data", Min.test_data)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_min_dim_vgf_INT_to_amin(test_data: Min.input_t):
     data, dim = test_data()
     pipeline = VgfPipeline[Min.input_t](

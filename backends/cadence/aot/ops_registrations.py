@@ -29,10 +29,76 @@ lib.define(
 )
 
 lib.define(
+    "quantize_per_tensor_asym8s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym8s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym8u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym8u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym16s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym16s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym16u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym16u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantize_per_tensor_asym32s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "quantize_per_tensor_asym32s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "dequantize_per_tensor(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
 )
 lib.define(
     "dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym8u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16u(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym16u.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "dequantize_per_tensor_asym32s(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
+)
+lib.define(
+    "dequantize_per_tensor_asym32s.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
 lib.define(
@@ -86,28 +152,28 @@ lib.define(
 )
 
 lib.define(
-    "quantized_conv_nhwc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_matmul(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False) -> (Tensor Z)"
@@ -122,100 +188,100 @@ lib.define(
     "quantized_matmul_asym8sxasym8s_asym8s.out(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv1d_nchw_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv1d_nchw_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv1d_nchw_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv1d_nchw_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv1d_nhwc_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv1d_nhwc_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv1d_nhwc_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv1d_nhwc_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
+    "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
+    "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor_out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, int weight_zero_point, float bias_scale, float out_scale, int out_zero_point, int out_multiplier, int out_shift, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
     "quantized_matmul_asym8uxasym8u_asym8u(Tensor X, int X_zero_point, Tensor Y, int Y_zero_point, Tensor? bias, int out_multiplier, int out_shift, int out_zero_point, bool transposed=False) -> (Tensor Z)"
@@ -263,7 +329,7 @@ lib.define(
     "Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False) -> (Tensor out)"
 )
 lib.define(
-    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=0, bool ceil_mode=False, "
+    "avg_pool2d(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=[], bool ceil_mode=False, "
     "bool count_include_pad=True, int? divisor_override=None, Tensor? in_zero_point=None, bool channel_last=False) -> (Tensor out)"
 )
 lib.define(
@@ -459,7 +525,7 @@ lib.define(
     "Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "avg_pool2d.out(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=0, "
+    "avg_pool2d.out(Tensor input, int[2] kernel_size, int[2] stride=[], int[2] padding=[], "
     "bool ceil_mode=False, bool count_include_pad=True, int? divisor_override=None, "
     "Tensor? in_zero_point=None, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
@@ -496,6 +562,20 @@ lib.define(
 )
 lib.define(
     "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_w8a32_linear(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+lib.define(
+    "quantized_w8a32_linear.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_w8a32_conv(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+lib.define(
+    "quantized_w8a32_conv.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)"
 )
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
@@ -554,8 +634,128 @@ def quantize_per_tensor_meta(
     return input.new_empty(input.size(), dtype=dtype)
 
 
+@register_fake("cadence::quantize_per_tensor_asym8s")
+def quantize_per_tensor_asym8s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym8u")
+def quantize_per_tensor_asym8u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym16s")
+def quantize_per_tensor_asym16s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym16u")
+def quantize_per_tensor_asym16u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
+@register_fake("cadence::quantize_per_tensor_asym32s")
+def quantize_per_tensor_asym32s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=dtype)
+
+
 @register_fake("cadence::dequantize_per_tensor")
 def dequantize_per_tensor_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym8s")
+def dequantize_per_tensor_asym8s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym8u")
+def dequantize_per_tensor_asym8u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym16s")
+def dequantize_per_tensor_asym16s_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym16u")
+def dequantize_per_tensor_asym16u_meta(
+    input: torch.Tensor,
+    scale: float,
+    zero_point: int,
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    return input.new_empty(input.size(), dtype=torch.float)
+
+
+@register_fake("cadence::dequantize_per_tensor_asym32s")
+def dequantize_per_tensor_asym32s_meta(
     input: torch.Tensor,
     scale: float,
     zero_point: int,
@@ -717,8 +917,8 @@ def quantized_linear_asym8uxasym8u_asym8u_per_tensor_meta(
     return src.new_empty(out_size, dtype=src.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc")
-def quantized_conv_nhwc_meta(
+@register_fake("cadence::quantized_conv2d_nhwc")
+def quantized_conv2d_nhwc_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -761,8 +961,8 @@ def quantized_conv_nhwc_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw")
-def quantized_conv_nchw_meta(
+@register_fake("cadence::quantized_conv2d_nchw")
+def quantized_conv2d_nchw_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -805,8 +1005,8 @@ def quantized_conv_nchw_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw.per_tensor")
-def quantized_conv_nchw_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nchw.per_tensor")
+def quantized_conv2d_nchw_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -849,8 +1049,8 @@ def quantized_conv_nchw_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc.per_tensor")
-def quantized_conv_nhwc_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nhwc.per_tensor")
+def quantized_conv2d_nhwc_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -893,8 +1093,8 @@ def quantized_conv_nhwc_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor")
+def quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -942,8 +1142,8 @@ def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor")
+def quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -991,8 +1191,8 @@ def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor")
+def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1040,8 +1240,8 @@ def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor")
+def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1089,8 +1289,8 @@ def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
+def quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1138,8 +1338,8 @@ def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
+def quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1187,8 +1387,8 @@ def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
+def quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1236,8 +1436,8 @@ def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake("cadence::quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
+def quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1285,8 +1485,10 @@ def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake(
+    "cadence::quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor"
+)
+def quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1334,8 +1536,10 @@ def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake(
+    "cadence::quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor"
+)
+def quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1383,8 +1587,10 @@ def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake(
+    "cadence::quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor"
+)
+def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -1432,8 +1638,10 @@ def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake(
+    "cadence::quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor"
+)
+def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2050,10 +2258,10 @@ def avg_pool2d_meta(
     kernel_size: Tuple[int],
     stride: Tuple[int],
     padding: Tuple[int],
-    ceil_mode: bool,
-    count_include_pad: Optional[bool] = True,
+    ceil_mode: bool = False,
+    count_include_pad: bool = True,
     divisor_override: Optional[int] = None,
-    in_zero_point: Optional[int] = None,
+    in_zero_point: Optional[torch.Tensor] = None,
     channel_last: bool = False,
 ) -> torch.Tensor:
     # Use torch native meta kernels when operator semantics are similar
@@ -2190,8 +2398,8 @@ def roi_align_box_processor_meta(
     return rois.new_empty((rois.shape[0], 80), dtype=torch.uint8)
 
 
-@register_fake("cadence::quantized_conv1d_nchw_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv1d_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake("cadence::quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor")
+def quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2226,8 +2434,8 @@ def quantized_conv1d_nchw_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv1d_nchw_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv1d_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake("cadence::quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor")
+def quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2262,8 +2470,8 @@ def quantized_conv1d_nchw_asym8uxsym8u_asym8u_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv1d_nhwc_asym8sxsym8s_asym8s.per_tensor")
-def quantized_conv1d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
+@register_fake("cadence::quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor")
+def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2298,8 +2506,8 @@ def quantized_conv1d_nhwc_asym8sxsym8s_asym8s_per_tensor_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
-@register_fake("cadence::quantized_conv1d_nhwc_asym8uxsym8u_asym8u.per_tensor")
-def quantized_conv1d_nhwc_asym8uxsym8u_asym8u_per_tensor_meta(
+@register_fake("cadence::quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor")
+def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor_meta(
     input: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -2368,3 +2576,51 @@ def quantized_softmax_per_tensor_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_linear")
+def quantized_w8a32_linear_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [in_dim, out_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    src_shape = list(src.shape)
+    weight_shape = weight.shape
+    assert len(weight_shape) == 2
+    assert src_shape[-1] == weight_shape[-1]
+    src_shape[-1] = weight_shape[0]
+    return src.new_empty(src_shape, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_conv")
+def quantized_w8a32_conv_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [batch, in_channel, in_length]
+    # weight comes in shape [out_ch, in_ch, kernel_dim]
+    # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
+    assert len(src.shape) == 3
+
+    kernel_size, out_channels, in_channels = weight.shape
+    assert in_channels == src.shape[-1]
+
+    # Compute the output tensor size
+    output_size = get_conv1d_output_size(
+        src.permute(0, 2, 1).shape,
+        out_channels,
+        stride=1,
+        padding=0,
+        dilation=1,
+        kernel_size=kernel_size,
+        channel_last=False,
+    )
+    return src.new_empty(output_size, dtype=src.dtype)

@@ -4,7 +4,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
+import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -66,7 +66,6 @@ def test_adaptive_avg_pool2d_u55_INT(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
@@ -79,13 +78,13 @@ def test_adaptive_avg_pool2d_u85_INT(test_data):
         test_data(),
         AdaptiveAveragePool2d.aten_op,
         AdaptiveAveragePool2d.exir_op,
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     ).run()
 
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_adaptive_avg_pool2d_vgf_FP(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
@@ -99,6 +98,7 @@ def test_adaptive_avg_pool2d_vgf_FP(test_data):
 
 @common.parametrize("test_data", AdaptiveAveragePool2d.test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_adaptive_avg_pool2d_vgf_INT(test_data):
     pipeline = VgfPipeline[input_t](
         AdaptiveAveragePool2d(),
@@ -115,7 +115,7 @@ class MeanDim(torch.nn.Module):
     test_data_suite: dict[str, tuple] = {
         "rank_1_keepdim": lambda: (
             torch.rand(7),
-            (0),
+            0,
             True,
         ),
         "rank_2_keepdim": lambda: (
@@ -166,6 +166,11 @@ class MeanDim(torch.nn.Module):
         "rand_0123_keepdim": lambda: (
             torch.rand(1, 5, 7, 3),
             (0, 1, 2, 3),
+            True,
+        ),
+        "rand_none_keepdim": lambda: (
+            torch.rand(1, 5, 7, 3),
+            None,
             True,
         ),
         "rank_1": lambda: (
@@ -280,7 +285,6 @@ def test_mean_dim_tosa_INT(test_data):
         (test_data,),
         [],  # Might be sum, avgpool, or both
         symmetric_io_quantization=True,
-        custom_path="MEANDIM",
     )
     pipeline.run()
 
@@ -301,7 +305,6 @@ def test_mean_dim_u55_INT(test_data):
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.add_stage_after(
@@ -321,7 +324,6 @@ def test_mean_dim_u85_INT(test_data):
         MeanDim(dim, keep_dim),
         (test_data,),
         [],  # Might be sum, avgpool, or both
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.run()
@@ -329,6 +331,7 @@ def test_mean_dim_u85_INT(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_mean_dim_vgf_FP(test_data):
     test_data_val, dim, keep_dim = test_data()
     pipeline = VgfPipeline[input_t](
@@ -343,6 +346,7 @@ def test_mean_dim_vgf_FP(test_data):
 
 @common.parametrize("test_data", MeanDim.test_data_suite)
 @common.SkipIfNoModelConverter
+@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_mean_dim_vgf_INT(test_data):
     test_data_val, dim, keep_dim = test_data()
     pipeline = VgfPipeline[input_t](

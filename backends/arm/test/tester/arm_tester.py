@@ -28,17 +28,11 @@ import serializer.tosa_serializer as ts  # type: ignore[import-untyped]
 
 import torch.fx
 import torch.utils._pytree as pytree
-
 from executorch.backends.arm._passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
-from executorch.backends.arm.ethosu import EthosUCompileSpec, EthosUPartitioner
-from executorch.backends.arm.quantizer import (
-    EthosUQuantizer,
-    get_symmetric_quantization_config,
-    TOSAQuantizer,
-    VgfQuantizer,
-)
+from executorch.backends.arm.ethosu import EthosUCompileSpec
+from executorch.backends.arm.quantizer import get_symmetric_quantization_config
 from executorch.backends.arm.test.runner_utils import (
     dbg_tosa_fb_to_json,
     get_output_quantization_params,
@@ -53,9 +47,13 @@ from executorch.backends.arm.test.tester.serialize import Serialize
 from executorch.backends.arm.tosa import TosaSpecification
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
 from executorch.backends.arm.tosa.mapping import extract_tensor_meta
-from executorch.backends.arm.tosa.partitioner import TOSAPartitioner
 
-from executorch.backends.arm.vgf import VgfCompileSpec, VgfPartitioner
+from executorch.backends.arm.util._factory import (
+    create_partitioner,
+    create_quantizer,
+    parse_compile_spec,
+)
+from executorch.backends.arm.vgf import VgfCompileSpec
 
 from executorch.backends.test.harness.error_statistics import ErrorStatistics
 from executorch.backends.test.harness.stages import Stage, StageType
@@ -83,7 +81,6 @@ from executorch.exir.program._program import (
     _copy_module,
     _update_exported_program_graph_module,
 )
-
 from tabulate import tabulate
 
 from torch.export.graph_signature import ExportGraphSignature, InputSpec, OutputSpec
@@ -103,12 +100,6 @@ def _dump_lowered_modules_artifact(
         artifact.exported_program().graph_signature
     )
 
-    def get_output_format(lowered_module) -> str | None:
-        for spec in lowered_module.compile_specs:
-            if spec.key == "output_format":
-                return spec.value.decode()
-        return None
-
     for node in graph_module.graph.nodes:
         if node.op == "get_attr" and node.name.startswith("lowered_module_"):
             lowered_module = getattr(graph_module, node.name)
@@ -116,13 +107,13 @@ def _dump_lowered_modules_artifact(
                 lowered_module, LoweredBackendModule
             ), f"Attribute {node.name} must be of type LoweredBackendModule."
 
-            output_format = get_output_format(lowered_module)
-            if output_format == "tosa":
+            compile_spec = parse_compile_spec(lowered_module.compile_specs)
+            if isinstance(compile_spec, TosaCompileSpec):
                 tosa_fb = lowered_module.processed_bytes
                 to_print = dbg_tosa_fb_to_json(tosa_fb)
                 to_print = pformat(to_print, compact=True, indent=1)
                 output += f"\nTOSA deserialized {node.name}: \n{to_print}\n"
-            elif output_format == EthosUCompileSpec.get_output_format():
+            elif isinstance(compile_spec, EthosUCompileSpec):
                 vela_cmd_stream = lowered_module.processed_bytes
                 output += f"\nVela command stream {node.name}: \n{vela_cmd_stream}\n"
             else:
@@ -284,13 +275,7 @@ class ArmTester(Tester):
         quantize_stage: Optional[tester.Quantize] = None,
     ):
         if quantize_stage is None:
-            quantizer = None
-            if isinstance(self.compile_spec, TosaCompileSpec):
-                quantizer = TOSAQuantizer(self.compile_spec)
-            elif isinstance(self.compile_spec, EthosUCompileSpec):
-                quantizer = EthosUQuantizer(self.compile_spec)
-            elif isinstance(self.compile_spec, VgfCompileSpec):
-                quantizer = VgfQuantizer(self.compile_spec)
+            quantizer = create_quantizer(self.compile_spec)
             quantize_stage = tester.Quantize(
                 quantizer,
                 get_symmetric_quantization_config(),
@@ -312,14 +297,7 @@ class ArmTester(Tester):
 
     def partition(self, partition_stage: Optional[Partition] = None):
         if partition_stage is None:
-            if isinstance(self.compile_spec, TosaCompileSpec):
-                arm_partitioner = TOSAPartitioner(self.compile_spec)
-            elif isinstance(self.compile_spec, EthosUCompileSpec):
-                arm_partitioner = EthosUPartitioner(self.compile_spec)
-            elif isinstance(self.compile_spec, VgfCompileSpec):
-                arm_partitioner = VgfPartitioner(self.compile_spec)
-            else:
-                raise ValueError("compile spec doesn't target any Arm Partitioner")
+            arm_partitioner = create_partitioner(self.compile_spec)
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
 
@@ -329,7 +307,7 @@ class ArmTester(Tester):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
         additional_checks: Optional[
-            List[Union[DontPartition | DontPartitionModule | DontPartitionName]]
+            List[DontPartition | DontPartitionModule | DontPartitionName]
         ] = None,
         transform_passes: Optional[
             Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
@@ -343,20 +321,9 @@ class ArmTester(Tester):
 
         if to_edge_and_lower_stage is None:
             if partitioners is None:
-                if isinstance(self.compile_spec, TosaCompileSpec):
-                    arm_partitioner = TOSAPartitioner(
-                        self.compile_spec, additional_checks
-                    )
-                elif isinstance(self.compile_spec, EthosUCompileSpec):
-                    arm_partitioner = EthosUPartitioner(
-                        self.compile_spec, additional_checks
-                    )
-                elif isinstance(self.compile_spec, VgfCompileSpec):
-                    arm_partitioner = VgfPartitioner(
-                        self.compile_spec, additional_checks
-                    )
-                else:
-                    raise ValueError("compile spec doesn't target any Arm Partitioner")
+                arm_partitioner = create_partitioner(
+                    self.compile_spec, additional_checks
+                )
                 partitioners = [arm_partitioner]
             to_edge_and_lower_stage = ToEdgeTransformAndLower(
                 partitioners,
@@ -463,6 +430,10 @@ class ArmTester(Tester):
         for run_iteration in range(num_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
 
+            # Avoid issues with inplace operators
+            test_input = copy.deepcopy(reference_input)
+            original_input = copy.deepcopy(reference_input)
+
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
                 for generated_input in reference_input
@@ -477,16 +448,16 @@ class ArmTester(Tester):
                 # Run exported module directly
                 test_outputs, _ = pytree.tree_flatten(
                     self._calculate_reference_output(
-                        exported_program.module(), reference_input
+                        exported_program.module(), test_input
                     )
                 )
             else:
                 # Run lowered model with target
                 test_outputs, _ = pytree.tree_flatten(
-                    test_stage.run_artifact(reference_input)
+                    test_stage.run_artifact(test_input)
                 )
 
-            logger.info(f"\n      Input: {reference_input}")
+            logger.info(f"\n      Input: {original_input}")
             logger.info(f"\n Ref output: {reference_outputs}")
             logger.info(f"\nTest output: {test_outputs}")
 
@@ -743,22 +714,19 @@ def _get_tosa_operator_distribution(
     op_list = []
     id = 0
     while lowered_module := getattr(graph_module, f"lowered_module_{id}", None):
-        for spec in lowered_module.compile_specs:
-            if spec.key != "output_format":
-                continue
-            if spec.value == b"tosa":
-                tosa_fb = lowered_module.processed_bytes
-                tosa_json = dbg_tosa_fb_to_json(tosa_fb)
-                for region in tosa_json["regions"]:
-                    for block in region["blocks"]:
-                        op_list.extend(
-                            [operator["op"] for operator in block["operators"]]
-                        )
-                break
-            elif spec.value == EthosUCompileSpec.get_output_format().encode():
-                return "Can not get operator distribution for Vela command stream."
-            else:
-                return f"Unknown output format '{spec.value}'."
+        compile_spec = parse_compile_spec(lowered_module.compile_specs)
+        if isinstance(compile_spec, TosaCompileSpec):
+            tosa_fb = lowered_module.processed_bytes
+            tosa_json = dbg_tosa_fb_to_json(tosa_fb)
+            for region in tosa_json["regions"]:
+                for block in region["blocks"]:
+                    op_list.extend([operator["op"] for operator in block["operators"]])
+        elif isinstance(compile_spec, EthosUCompileSpec):
+            return "Can not get operator distribution for Vela command stream."
+        elif isinstance(compile_spec, VgfCompileSpec):
+            return "Can not get operator distribution for VGF."
+        else:
+            return f"Unknown output format '{compile_spec.get_output_format()}'."
         id += 1
     if id == 0:
         return "No delegate with name 'lowered_module_0 found in graph module."

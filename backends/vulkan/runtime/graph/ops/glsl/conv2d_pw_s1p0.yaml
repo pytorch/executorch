@@ -9,8 +9,6 @@ conv2d_pw_s1p0:
     OPERATOR: X
     NDIM: 3
     DTYPE: float
-    FUSED_OP: A
-    IS_FUSED: 0
   generate_variant_forall:
     DTYPE:
       - VALUE: half

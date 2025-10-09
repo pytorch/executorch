@@ -15,6 +15,12 @@
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
+@interface ExecuTorchLLMConfig ()
+
+- (const llm::GenerationConfig &)nativeConfig;
+
+@end
+
 @implementation ExecuTorchLLMImage
 
 - (instancetype)initWithData:(NSData *)data
@@ -26,6 +32,22 @@ using namespace executorch::runtime;
     _width = width;
     _height = height;
     _channels = channels;
+    _isFloat = NO;
+  }
+  return self;
+}
+
+- (instancetype)initWithFloatData:(NSData *)data
+                            width:(NSInteger)width
+                           height:(NSInteger)height
+                         channels:(NSInteger)channels {
+  self = [super init];
+  if (self) {
+    _data = [data copy];
+    _width = width;
+    _height = height;
+    _channels = channels;
+    _isFloat = YES;
   }
   return self;
 }
@@ -47,6 +69,22 @@ using namespace executorch::runtime;
     _batchSize = batchSize;
     _bins = bins;
     _frames = frames;
+    _isFloat = NO;
+  }
+  return self;
+}
+
+- (instancetype)initWithFloatData:(NSData *)data
+                        batchSize:(NSInteger)batchSize
+                             bins:(NSInteger)bins
+                           frames:(NSInteger)frames {
+  self = [super init];
+  if (self) {
+    _data = [data copy];
+    _batchSize = batchSize;
+    _bins = bins;
+    _frames = frames;
+    _isFloat = YES;
   }
   return self;
 }
@@ -156,14 +194,15 @@ using namespace executorch::runtime;
   return YES;
 }
 
-- (BOOL)generate:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
-   sequenceLength:(NSInteger)seq_len
-withTokenCallback:(nullable void (^)(NSString *))callback
-            error:(NSError **)error {
+- (BOOL)generateWithInputs:(NSArray<ExecuTorchLLMMultimodalInput *> *)inputs
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString *))callback
+                     error:(NSError **)error {
   if (![self loadWithError:error]) {
     return NO;
   }
   std::vector<llm::MultimodalInput> nativeInputs;
+  nativeInputs.reserve((size_t)inputs.count);
   for (ExecuTorchLLMMultimodalInput *input in inputs) {
     switch (input.type) {
       case ExecuTorchLLMMultimodalInputTypeText:
@@ -171,13 +210,50 @@ withTokenCallback:(nullable void (^)(NSString *))callback
         break;
       case ExecuTorchLLMMultimodalInputTypeImage: {
         ExecuTorchLLMImage *image = input.image;
-        std::vector<uint8_t> data((uint8_t *)image.data.bytes, (uint8_t *)image.data.bytes + image.data.length);
-        nativeInputs.emplace_back(llm::MultimodalInput(llm::Image{
-          .data = std::move(data),
-          .width = (int32_t)image.width,
-          .height = (int32_t)image.height,
-          .channels = (int32_t)image.channels
-        }));
+        if (image.isFloat) {
+          const float *buffer = (const float *)image.data.bytes;
+          size_t elementCount = (size_t)image.data.length / sizeof(float);
+          std::vector<float> data(buffer, buffer + elementCount);
+          nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
+            std::move(data),
+            (int32_t)image.width,
+            (int32_t)image.height,
+            (int32_t)image.channels
+          )));
+        } else {
+          const uint8_t *buffer = (const uint8_t *)image.data.bytes;
+          std::vector<uint8_t> data(buffer, buffer + image.data.length);
+          nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
+            std::move(data),
+            (int32_t)image.width,
+            (int32_t)image.height,
+            (int32_t)image.channels
+          )));
+        }
+        break;
+      }
+      case ExecuTorchLLMMultimodalInputTypeAudio: {
+        ExecuTorchLLMAudio *audio = input.audio;
+        if (audio.isFloat) {
+          const float *buffer = (const float *)audio.data.bytes;
+          size_t elementCount = (size_t)audio.data.length / sizeof(float);
+          std::vector<float> data(buffer, buffer + elementCount);
+          nativeInputs.emplace_back(llm::MultimodalInput(llm::Audio(
+            std::move(data),
+            (int32_t)audio.batchSize,
+            (int32_t)audio.bins,
+            (int32_t)audio.frames
+          )));
+        } else {
+          const uint8_t *buffer = (const uint8_t *)audio.data.bytes;
+          std::vector<uint8_t> data(buffer, buffer + audio.data.length);
+          nativeInputs.emplace_back(llm::MultimodalInput(llm::Audio(
+            std::move(data),
+            (int32_t)audio.batchSize,
+            (int32_t)audio.bins,
+            (int32_t)audio.frames
+          )));
+        }
         break;
       }
       default: {
@@ -192,7 +268,7 @@ withTokenCallback:(nullable void (^)(NSString *))callback
   }
   auto status = _runner->generate(
     std::move(nativeInputs),
-    llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
+    config.nativeConfig,
     [callback](const std::string& token) {
       if (callback) {
         callback(@(token.c_str()));
@@ -213,6 +289,12 @@ withTokenCallback:(nullable void (^)(NSString *))callback
 - (void)stop {
   if (_runner) {
     _runner->stop();
+  }
+}
+
+- (void)reset {
+  if (_runner) {
+    _runner->reset();
   }
 }
 

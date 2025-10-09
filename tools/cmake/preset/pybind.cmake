@@ -17,17 +17,24 @@ set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM ON)
 set_overridable_option(EXECUTORCH_BUILD_KERNELS_LLM_AOT ON)
+set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER ON)
-set_overridable_option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 set_overridable_option(EXECUTORCH_BUILD_EXTENSION_MODULE ON)
+set_overridable_option(EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP ON)
 
+# TODO(larryliu0820): Temporarily disable building llm_runner for Windows wheel
+# due to the issue of tokenizer file path length limitation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
+  set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
+  set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set_overridable_option(EXECUTORCH_BUILD_COREML ON)
   set_overridable_option(EXECUTORCH_BUILD_EXTENSION_TRAINING ON)
+  set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM_RUNNER ON)
+  set_overridable_option(EXECUTORCH_BUILD_EXTENSION_LLM ON)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_SYSTEM_NAME STREQUAL
                                                "WIN32"
 )

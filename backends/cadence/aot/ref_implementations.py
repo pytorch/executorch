@@ -6,16 +6,17 @@
 
 # pyre-strict
 
-
 from typing import Callable
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
-
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
+torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 
 qdtype_map: dict[ScalarType, torch.dtype] = {
     ScalarType.QINT8: torch.qint8,
@@ -38,7 +39,7 @@ def quantize_per_tensor(
 
     Args:
         - input_tensor (Tensor): input tensor
-        - scale (float): Inverse of quantization scale. Derived from the ratio
+        - scale (float): Quantization scale. Derived from the ratio
             between the min/max of the floating-point tensor and the
             min/max of the quantized range, and then inverted.
         - zero_point (int): The point which represents 0 in the quantized
@@ -64,10 +65,13 @@ def quantize_per_tensor(
             f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_quant_types}"
         )
 
-    quantized = torch.round(input_tensor * scale + zero_point).to(dtype)
-    return torch.max(
-        torch.min(quantized, torch.tensor(quant_max)),
-        torch.tensor(quant_min),
+    return torch.ops.quantized_decomposed.quantize_per_tensor(
+        input_tensor,
+        scale,
+        zero_point,
+        quant_min,
+        quant_max,
+        dtype,
     )
 
 
@@ -97,7 +101,7 @@ def dequantize_per_tensor(
             is already provided.
         - quant_max (int): The largest value in the quantized domain. Unused since scale
             is already provided.
-        - dtype (torch.dtype): The type of the output tensor. Must be a floating point type.
+        - dtype (torch.dtype): The type of the input tensor.
     """
     supported_quant_types = [
         torch.int8,
@@ -108,23 +112,15 @@ def dequantize_per_tensor(
     ]
     if input_tensor.dtype not in supported_quant_types:
         raise ValueError(f"Input dtype must be one of {supported_quant_types}")
-    supported_dequant_types = [
-        torch.float,
-        torch.float32,
-        torch.float16,
-        torch.bfloat16,
-    ]
-    if dtype not in supported_dequant_types:
-        raise ValueError(
-            f"Unsupported dtype to dequantize to. Supported dtypes must be one of {supported_dequant_types}"
-        )
+    if input_tensor.dtype != dtype:
+        raise ValueError("Input dtype must match dtype")
 
-    # Needed to prevent underflow in cases where the zero_point is larger than
-    # the quantized value.
-    if not input_tensor.dtype.is_signed:
-        input_tensor = input_tensor.to(torch.int32)
-
-    return (input_tensor - zero_point).to(dtype) * scale
+    # Use the reference implementation from torch quantized_decomposed library
+    # Unlike quantize_per_tensor, dequantize_per_tensor doesn't have a behavior
+    # difference, since there's no rounding algorithm (just arithmetic).
+    return torch.ops.quantized_decomposed.dequantize_per_tensor(
+        input_tensor, scale, zero_point, quant_min, quant_max, dtype
+    )
 
 
 @impl(m, "quantized_add.per_tensor")
@@ -180,12 +176,10 @@ def quantized_add_per_tensor(
     dequant_X = X_scale * (X - X_zero_point)
     dequant_Y = Y_scale * (Y - Y_zero_point)
 
-    out_scale_inv = 1 / out_scale
-
     # q_min/q_max are unused args
     return quantize_per_tensor(
         dequant_X + dequant_Y,
-        out_scale_inv,
+        out_scale,
         out_zero_point,
         torch.iinfo(dtype).min,
         torch.iinfo(dtype).max,
@@ -259,8 +253,7 @@ def quantized_linear_common(
         - out_zero_point (int): The quantized mapping of zero for the output
         - offset (Tensor): Unused
     """
-    out_scale = -out_multiplier * (1 / (1 << 31)) * (2**out_shift)
-    out_scale_inv = 1 / out_scale
+    out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
 
     N, K = weight.shape
 
@@ -281,7 +274,7 @@ def quantized_linear_common(
     )
     return quantize_per_tensor(
         out,
-        out_scale_inv,
+        out_scale,
         out_zero_point,
         torch.iinfo(dtype).min,
         torch.iinfo(dtype).max,
@@ -337,8 +330,8 @@ def quantized_linear_variant(
                 if out_shift.numel() != 1:
                     raise ValueError("out_shift must be a scalar")
 
-                if out_shift.dtype != torch.int64:
-                    raise ValueError("out_shift must be an int64")
+                if out_shift.dtype != torch.int32:
+                    raise ValueError("out_shift must be an int32")
 
                 _out_shift = int(out_shift.item())
                 _out_multiplier = int(out_multiplier[0].item())
@@ -397,6 +390,17 @@ def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor:
 @impl(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, True, torch.uint8, torch.uint8)
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "fully_connected")
+def fully_connected(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+) -> torch.Tensor:
+    if input_tensor.shape[0] != 1:
+        raise ValueError("Fully connected linear only supports batch size of 1")
+    return F.linear(input_tensor, weight, bias)
 
 
 @impl(m, "quantized_matmul")
@@ -538,7 +542,7 @@ def quantized_layer_norm_per_tensor(
         )
 
     float_input_tensor = dequantize_per_tensor(
-        input_tensor, X_scale, X_zero_point, -128, 127, torch.float32
+        input_tensor, X_scale, X_zero_point, -128, 127, input_tensor.dtype
     )
     out = torch.nn.functional.layer_norm(
         float_input_tensor, normalized_shape, weight, bias, eps=eps
@@ -546,7 +550,7 @@ def quantized_layer_norm_per_tensor(
 
     return quantize_per_tensor(
         out,
-        1 / output_scale,
+        output_scale,
         output_zero_point,
         torch.iinfo(input_tensor.dtype).min,
         torch.iinfo(input_tensor.dtype).max,
@@ -615,7 +619,7 @@ def quantized_conv_per_tensor(
 
     return quantize_per_tensor(
         float_out,
-        1.0 / output_scale,
+        output_scale,
         output_zero_point,
         torch.iinfo(input_tensor.dtype).min,
         torch.iinfo(input_tensor.dtype).max,
@@ -623,8 +627,8 @@ def quantized_conv_per_tensor(
     )
 
 
-@impl(m, "quantized_conv_nchw.per_tensor")
-def quantized_conv_nchw_per_tensor(
+@impl(m, "quantized_conv2d_nchw.per_tensor")
+def quantized_conv2d_nchw_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -679,8 +683,8 @@ def quantized_conv_nchw_per_tensor(
     )
 
 
-@impl(m, "quantized_conv_nhwc.per_tensor")
-def quantized_conv_nhwc_per_tensor(
+@impl(m, "quantized_conv2d_nhwc.per_tensor")
+def quantized_conv2d_nhwc_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor,
@@ -800,7 +804,7 @@ def quantized_conv_variant(
             # Call the appropriate base function
             match layout:
                 case "nchw":
-                    return quantized_conv_nchw_per_tensor(
+                    return quantized_conv2d_nchw_per_tensor(
                         input_tensor,
                         weight,
                         bias,
@@ -817,7 +821,7 @@ def quantized_conv_variant(
                         out_shift,
                     )
                 case "nhwc":
-                    return quantized_conv_nhwc_per_tensor(
+                    return quantized_conv2d_nhwc_per_tensor(
                         input_tensor,
                         weight,
                         bias,
@@ -841,84 +845,248 @@ def quantized_conv_variant(
     return decorator
 
 
-@impl(m, "quantized_conv_nchw_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
-def quantized_conv_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
-def quantized_conv_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
-def quantized_conv_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
-def quantized_conv_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
-def quantized_conv_nchw_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
-def quantized_conv_nchw_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
-def quantized_conv_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
-def quantized_conv_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
-def quantized_conv_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor() -> (
+    torch.Tensor
+): ...
 
 
-@impl(m, "quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
-def quantized_conv_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor() -> (
+    torch.Tensor
+): ...
 
 
-@impl(m, "quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
-def quantized_conv_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor() -> (
+    torch.Tensor
+): ...
 
 
-@impl(m, "quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
-def quantized_conv_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> (
+    torch.Tensor
+): ...
 
 
-@impl(m, "quantized_conv1d_nchw_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8, is_1d=True)
-def quantized_conv1d_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv1d_nchw_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8, is_1d=True)
-def quantized_conv1d_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv1d_nhwc_asym8sxsym8s_asym8s.per_tensor")
+@impl(m, "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8, is_1d=True)
-def quantized_conv1d_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
+def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv1d_nhwc_asym8uxsym8u_asym8u.per_tensor")
+@impl(m, "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8, is_1d=True)
-def quantized_conv1d_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
+
+
+@impl(m, "convolution")
+def convolution(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    conv_is_1d = len(input_tensor.shape) == 3
+    if channel_last:
+        if conv_is_1d:
+            input_tensor = input_tensor.movedim(-1, 1).contiguous()
+            if len(weight.shape) != 3:
+                raise ValueError("Weight tensor must be 3D if input is 3D")
+            weight = weight.movedim(-1, 1).contiguous()
+        else:
+            input_tensor = input_tensor.movedim(-1, -3)
+            if len(weight.shape) != 4:
+                raise ValueError("Weight tensor must be 4D if input is nd > 3")
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+
+    _stride: tuple[int, int] | int = stride
+    _padding: tuple[int, int] | int = padding
+    _dilation: tuple[int, int] | int = dilation
+
+    if conv_is_1d:
+        conv = torch.nn.functional.conv1d
+        _stride = stride[0]
+        _padding = padding[0]
+        _dilation = dilation[0]
+    else:
+        conv = torch.nn.functional.conv2d
+
+    conv_out = conv(input_tensor, weight, bias, _stride, _padding, _dilation, groups)
+    if channel_last:
+        if conv_is_1d:
+            conv_out = conv_out.movedim(1, -1).contiguous()
+        else:
+            conv_out = conv_out.movedim(-3, -1).contiguous()
+
+    return conv_out
+
+
+@impl(m, "transposed_convolution")
+def transposed_convolution(
+    input_tensor: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    output_padding: tuple[int, int],
+    groups: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+
+    conv_is_1d = len(input_tensor.shape) == 3
+    if channel_last:
+        if conv_is_1d:
+            input_tensor = input_tensor.movedim(-1, 1).contiguous()
+            if len(weight.shape) != 3:
+                raise ValueError("Weight tensor must be 3D if input is 3D")
+            weight = weight.movedim(-1, 1).contiguous()
+        else:
+            input_tensor = input_tensor.movedim(-1, -3)
+            if len(weight.shape) != 4:
+                raise ValueError("Weight tensor must be 4D if input is nd > 3")
+            weight = torch.permute(weight, (0, -1, 1, 2)).contiguous()
+
+    _stride: tuple[int, int] | int = stride
+    _padding: tuple[int, int] | int = padding
+    _dilation: tuple[int, int] | int = dilation
+    _output_padding: tuple[int, int] | int = output_padding
+    if conv_is_1d:
+        conv = torch.nn.functional.conv_transpose1d
+        _stride = stride[0]
+        _padding = padding[0]
+        _dilation = dilation[0]
+        _output_padding = output_padding[0]
+    else:
+        conv = torch.nn.functional.conv_transpose2d
+
+    conv_out = conv(
+        input_tensor,
+        weight,
+        bias,
+        _stride,
+        _padding,
+        _output_padding,
+        groups,
+        _dilation,
+    )
+    if channel_last:
+        if conv_is_1d:
+            conv_out = conv_out.movedim(1, -1).contiguous()
+        else:
+            conv_out = conv_out.movedim(-3, -1).contiguous()
+
+    return conv_out
+
+
+@impl(m, "avg_pool2d")
+def avg_pool2d(
+    input_tensor: torch.Tensor,
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    ceil_mode: bool = False,
+    count_include_pad: bool = False,
+    divisor_override: int | None = None,
+    in_zero_point: torch.Tensor | None = None,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    if channel_last:
+        raise NotImplementedError("Channel last is not yet supported for avg_pool2d")
+
+    in_dtype = input_tensor.dtype
+    pad_h, pad_w = padding
+    if in_zero_point is not None:
+        # Avg pool2d does not allow non-0 padding,
+        # so we manually pad the input
+        pad_value = in_zero_point.item()
+        if not count_include_pad:
+            # To simulate this, just pad with 0s
+            pad_value = 0
+
+        input_tensor = torch.nn.functional.pad(
+            input_tensor,
+            (pad_w, pad_w, pad_h, pad_h),
+            mode="constant",
+            value=pad_value,
+        ).float()
+
+        padding = (0, 0)
+
+    out = torch.nn.functional.avg_pool2d(
+        input_tensor,
+        kernel_size,
+        stride,
+        padding,
+        ceil_mode,
+        count_include_pad,
+        divisor_override,
+    )
+
+    if in_zero_point is not None:
+        min_val = torch.iinfo(in_dtype).min
+        max_val = torch.iinfo(in_dtype).max
+        out = torch.clamp(torch.round(out), min_val, max_val)
+
+    return out.to(in_dtype)
 
 
 def quantized_relu_common(
@@ -942,8 +1110,10 @@ def quantized_relu_common(
     if X.dtype not in supported_dtypes:
         raise ValueError(f"X dtype must be one of {supported_dtypes}. Got {X.dtype}")
 
-    out_scale = -out_multiplier * (1 / (1 << 31)) * (2**out_shift)
-    dequantized_X = torch.where(X > X_zero_point, X - X_zero_point, torch.zeros_like(X))
+    out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
+    dequantized_X = torch.where(
+        X > X_zero_point, X - X_zero_point, torch.zeros_like(X)
+    ).to(torch.float32)
     return quantize_per_tensor(
         dequantized_X,
         out_scale,
@@ -1027,13 +1197,13 @@ def quantized_relu_asym8s_asym8s_per_tensor() -> torch.Tensor: ...
 def quantized_relu_asym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "requantize")
-def requantize(
+@impl(m, "requantize.per_tensor")
+def requantize_per_tensor(
     input: torch.Tensor,
-    in_scale: torch.Tensor,
-    in_zero_point: torch.Tensor,
-    out_scale: torch.Tensor,
-    out_zero_point: torch.Tensor,
+    in_scale: float,
+    in_zero_point: int,
+    out_scale: float,
+    out_zero_point: int,
     dtype: ScalarType,
 ) -> torch.Tensor:
     if dtype in qdtype_map:
@@ -1041,11 +1211,6 @@ def requantize(
         return torch.quantize_per_tensor(
             torch.dequantize(input), out_scale, out_zero_point, qdtype_map[dtype]
         )
-
-    # For in_scale or out_scale other than scalar, it requires quant/dequant
-    # per channel, but the channel dimension value is missing
-    if in_scale.numel() > 1 or out_scale.numel() > 1:
-        raise NotImplementedError("Only scalar scales are supported")
 
     quant_min = torch.iinfo(input.dtype).min
     quant_max = torch.iinfo(input.dtype).max
@@ -1056,15 +1221,354 @@ def requantize(
     return torch.ops.quantized_decomposed.quantize_per_tensor(
         torch.ops.quantized_decomposed.dequantize_per_tensor(
             input,
-            in_scale.flatten()[0],
-            in_zero_point.flatten()[0],
+            in_scale,
+            in_zero_point,
             quant_min,
             quant_max,
             input.dtype,
         ),
-        out_scale.flatten()[0],
-        out_zero_point.flatten()[0],
+        out_scale,
+        out_zero_point,
         out_quant_min,
         out_quant_max,
         dtype,
     )
+
+
+@impl(m, "rms_norm")
+def rms_norm(
+    X: torch.Tensor,
+    normalized_shape: tuple[int],
+    W: torch.Tensor,
+    eps: float,
+) -> torch.Tensor:
+    return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
+
+
+@impl(m, "where_Scalar")
+def where_Scalar(
+    condition: torch.Tensor,
+    if_true: float,
+    if_false: float,
+) -> torch.Tensor:
+    if condition.dtype != torch.bool:
+        raise ValueError("condition must be a bool tensor")
+
+    return torch.where(condition, if_true, if_false)
+
+
+@impl(m, "rope")
+def rope(
+    input_tensor: torch.Tensor,
+    sin_tensor: torch.Tensor,
+    cos_tensor: torch.Tensor,
+    pos: torch.Tensor | None,
+) -> torch.Tensor:
+    original_shape = input_tensor.shape
+
+    if len(original_shape) not in [4, 5]:
+        raise ValueError(
+            f"Input tensor must be 4D or 5D. Got {len(original_shape)}D tensor"
+        )
+    if original_shape[0] != 1:
+        raise ValueError("Input tensor must have batch size 1")
+    if len(original_shape) == 5:
+        input_tensor = input_tensor.view(
+            input_tensor.shape[0], input_tensor.shape[1], input_tensor.shape[2], -1
+        )
+
+    _, s, h, hd = input_tensor.shape
+
+    if hd % 2:
+        raise ValueError("Hidden dimension must be divisible by 2")
+
+    if sin_tensor.shape != (s, hd // 2) or cos_tensor.shape != (s, hd // 2):
+        raise ValueError(
+            f"sin_tensor and cos_tensor must have shape {s, hd // 2}. Got {sin_tensor.shape} and {cos_tensor.shape}"
+        )
+
+    if pos is not None:
+        if pos.shape != (input_tensor.shape[1],):
+            raise ValueError(
+                f"pos must have shape {input_tensor.shape[1]}. Got {pos.shape}"
+            )
+        sin_tensor = sin_tensor[pos]
+        cos_tensor = cos_tensor[pos]
+
+    sin_tensor = sin_tensor.unsqueeze(1)
+    cos_tensor = cos_tensor.unsqueeze(1)
+
+    x0, x1 = input_tensor[..., ::2], input_tensor[..., 1::2]
+    rotated = torch.cat(
+        [x0 * cos_tensor - x1 * sin_tensor, x0 * sin_tensor + x1 * cos_tensor], dim=-1
+    )
+    return rotated.view(original_shape)
+
+
+@impl(m, "im2row")
+def im2row(
+    input_tensor: torch.Tensor,
+    kernel_size: tuple[int, int],
+    dilation: tuple[int, int],
+    padding: tuple[int, int],
+    stride: tuple[int, int],
+    in_zero_point: torch.Tensor,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    """
+    Converts an input tensor into a 2D matrix where each row is a flattened sliding window (patch)
+    from the input, suitable for use in convolution as a matrix multiplication (im2row).
+
+    Args:
+        - input_tensor: Input tensor of shape (N, C, H, W) or (N, H, W, C) if channel_last.
+        - kernel_size: Size of the convolution kernel.
+        - dilation: Dilation of the convolution kernel.
+        - padding: Padding to apply to the input.
+        - stride: Stride of the convolution.
+        - in_zero_point : Zero point for input quantization (broadcastable to input).
+        - channel_last: If True, input is in NHWC format, else NCHW.
+
+    Returns:
+        - Tensor of shape (N, num_patches, patch_size)
+    """
+    if len(input_tensor.shape) == 3:
+        height_dim = 1 if channel_last else 2
+        input_tensor = input_tensor.unsqueeze(height_dim)
+
+    if in_zero_point is not None:
+        if in_zero_point.numel() != 1 and in_zero_point.shape != (
+            input_tensor.shape[0],
+        ):
+            raise ValueError(
+                f"Input zero point must be a scalar or broadcastable to input shape {input_tensor.shape}"
+            )
+        if in_zero_point.dtype != torch.int32:
+            raise ValueError("Input zero point must be an int32 tensor")
+
+    if channel_last:
+        input_tensor = input_tensor.movedim(-1, -3).contiguous()  # NHWC -> NCHW
+
+    N, C, H, W = input_tensor.shape
+    kH, kW = kernel_size
+    dH, dW = dilation
+    pH, pW = padding
+    sH, sW = stride
+
+    # Handle padding with zero point values
+    if in_zero_point is not None and (pH > 0 or pW > 0):
+        # Expand zero point to (N, 1, 1, 1) for broadcasting
+        in_zero_point = in_zero_point.expand(N)
+
+        # Pad input with the per-batch zero point values
+        input_tensor = torch.stack(
+            [
+                torch.nn.functional.pad(
+                    input_tensor[i],
+                    (pW, pW, pH, pH),
+                    mode="constant",
+                    value=in_zero_point[i].item(),
+                )
+                for i in range(len(input_tensor))
+            ]
+        )
+
+        padding = (0, 0)  # Already padded manually
+
+    # Use unfold to extract sliding local blocks
+    # Unfold: (N, C, H, W) -> (N, C, L, kH, kW), where L = number of sliding windows
+    # torch.nn.functional.unfold returns (N, C*kH*kW, L)
+    patches = torch.nn.functional.unfold(
+        input_tensor.float(),  # unfold not implemented for int
+        kernel_size=(kH, kW),
+        dilation=(dH, dW),
+        padding=padding,
+        stride=(sH, sW),
+    ).to(
+        input_tensor.dtype
+    )  # (N, C*kH*kW, L)
+
+    # Transpose to (N, L, C*kH*kW)
+    patches = patches.transpose(1, 2).contiguous()
+
+    # Reshape to (N*L, C*kH*kW)
+    patches = patches.view(N, -1, C * kH * kW)
+
+    # If channel_last, output should be in NHWC patch order (but im2row is always row-major)
+    return patches
+
+
+@impl(m, "im2row.per_tensor")
+def im2row_per_tensor(
+    input_tensor: torch.Tensor,
+    kernel_size: tuple[int, int],
+    dilation: tuple[int, int],
+    padding: tuple[int, int],
+    stride: tuple[int, int],
+    in_zero_point: int,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    return im2row(
+        input_tensor,
+        kernel_size,
+        dilation,
+        padding,
+        stride,
+        torch.tensor(in_zero_point, dtype=torch.int32),
+        channel_last,
+    )
+
+
+@impl(m, "transposed_im2row")
+def transposed_im2row(
+    input_tensor: torch.Tensor,
+    kernel_size: tuple[int, int],
+    dilation: tuple[int, int],
+    padding: tuple[int, int],
+    stride: tuple[int, int],
+    output_padding: tuple[int, int],
+    in_zero_point: torch.Tensor,
+    channel_last: bool = False,
+) -> torch.Tensor:
+    """
+    Converts input tensor patches into im2row format for transposed convolutions.
+    This function extracts patches from input in a pattern suitable for transposed convolution.
+
+    Args:
+        - input_tensor: Input spatial tensor, NCHW or NHWC format (3D or 4D).
+        - kernel_size: Size of the convolution kernel.
+        - dilation: Dilation of the convolution kernel.
+        - padding: Padding to apply to the input.
+        - stride: Stride of the convolution.
+        - output_padding: Additional output padding for transposed convolution.
+        - in_zero_point: Zero point for input quantization (broadcastable to input).
+        - channel_last: If True, input is in NHWC format, else NCHW.
+
+    Returns:
+        - 3D tensor of shape (N, output_h * output_w, kernel_h * kernel_w * in_c)
+    """
+    # Handle 1D convolution case by adding height dimension
+    if len(input_tensor.shape) == 3:
+        height_dim = 1 if channel_last else 2
+        input_tensor = input_tensor.unsqueeze(height_dim)
+
+    if in_zero_point is not None:
+        if in_zero_point.dtype != torch.int32:
+            raise ValueError("Input zero point must be an int32 tensor")
+
+    # Move to NCHW for processing if needed
+    if channel_last:
+        input_tensor = input_tensor.movedim(-1, -3).contiguous()  # NHWC -> NCHW
+
+    N, C, H_in, W_in = input_tensor.shape
+
+    # Output: (N, C*H_in*W_in, H_out, W_out)
+    H_out = (
+        (H_in - 1) * stride[0]
+        + kernel_size[0]
+        + output_padding[0]
+        - 2 * padding[0]
+        + dilation[0] * (kernel_size[0] - 1)
+    )
+    W_out = (
+        (W_in - 1) * stride[1]
+        + kernel_size[1]
+        + output_padding[1]
+        - 2 * padding[1]
+        + dilation[1] * (kernel_size[1] - 1)
+    )
+
+    # For each input pixel, create a channel where the upsampled (transposed conv) patch is placed
+    # Output: (N, C*H_in*W_in, H_out, W_out)
+    inp_flat = input_tensor.reshape(N, C * H_in * W_in)
+
+    # Calculate output spatial size
+    H_out = (
+        (H_in - 1) * stride[0]
+        - 2 * padding[0]
+        + dilation[0] * (kernel_size[0] - 1)
+        + output_padding[0]
+        + 1
+    )
+    W_out = (
+        (W_in - 1) * stride[1]
+        - 2 * padding[1]
+        + dilation[1] * (kernel_size[1] - 1)
+        + output_padding[1]
+        + 1
+    )
+
+    # Compute the upsampled (top-left) position for each input pixel
+    h_idx = torch.arange(H_in, device=input_tensor.device)
+    w_idx = torch.arange(W_in, device=input_tensor.device)
+    grid_h, grid_w = torch.meshgrid(h_idx, w_idx, indexing="ij")
+    out_h_idx = grid_h * stride[0] - padding[0]
+    out_w_idx = grid_w * stride[1] - padding[1]
+
+    # Compute all input pixel positions (flattened)
+    ch_idx = torch.arange(C * H_in * W_in, device=input_tensor.device)
+    ij_idx = ch_idx % (H_in * W_in)
+    i_idx = ij_idx // W_in
+    j_idx = ij_idx % W_in
+
+    # For each input pixel, compute the output positions for the kernel window
+    kh_idx = torch.arange(kernel_size[0], device=input_tensor.device)
+    kw_idx = torch.arange(kernel_size[1], device=input_tensor.device)
+    kh_grid, kw_grid = torch.meshgrid(kh_idx, kw_idx, indexing="ij")
+    kh_grid = kh_grid.reshape(-1)
+    kw_grid = kw_grid.reshape(-1)
+    num_kernel = kernel_size[0] * kernel_size[1]
+
+    # Broadcast to all channels and kernel positions
+    ch_idx_b = ch_idx.repeat_interleave(num_kernel)
+    n_kernel = ch_idx.shape[0] * num_kernel
+
+    i_idx_b = i_idx.repeat_interleave(num_kernel)
+    j_idx_b = j_idx.repeat_interleave(num_kernel)
+    kh_b = kh_grid.repeat(ch_idx.shape[0])
+    kw_b = kw_grid.repeat(ch_idx.shape[0])
+
+    h_out = out_h_idx[i_idx_b, j_idx_b] + kh_b * dilation[0]
+    w_out = out_w_idx[i_idx_b, j_idx_b] + kw_b * dilation[1]
+
+    # Mask for valid output positions
+    valid = (h_out >= 0) & (h_out < H_out) & (w_out >= 0) & (w_out < W_out)
+
+    # Prepare indices for advanced indexing
+    n_idx = (
+        torch.arange(N, device=input_tensor.device)
+        .view(-1, 1)
+        .expand(N, n_kernel)
+        .reshape(-1)
+    )
+    ch_idx_full = ch_idx_b.expand(N, n_kernel).reshape(-1)
+    h_out_full = h_out.expand(N, n_kernel).reshape(-1)
+    w_out_full = w_out.expand(N, n_kernel).reshape(-1)
+    valid_full = valid.expand(N, n_kernel).reshape(-1)
+
+    # Gather input values for each channel
+    inp_vals = inp_flat[:, ch_idx_b].reshape(-1)
+
+    # Create output tensor
+    patches = torch.zeros((N, C * H_in * W_in, H_out, W_out), dtype=input_tensor.dtype)
+
+    # If in_zero_point is provided, fill patches with it
+    if in_zero_point is not None:
+        if in_zero_point.numel() == 1:
+            patches.fill_(in_zero_point.item())
+        else:
+            # Broadcast in_zero_point to (N, C, H_in, W_in)
+            assert in_zero_point.shape == (N,)
+            in_zero_point = in_zero_point.view(N, 1, 1, 1)
+            patches = patches + in_zero_point
+
+    # Scatter input values to output positions (only valid positions)
+    patches[
+        n_idx[valid_full],
+        ch_idx_full[valid_full],
+        h_out_full[valid_full],
+        w_out_full[valid_full],
+    ] = inp_vals[valid_full]
+
+    # Optionally, flatten to (N, num_patches, patch_size) if needed
+    patches = patches.view(N, C * H_in * W_in, -1).transpose(1, 2).contiguous()
+    return patches

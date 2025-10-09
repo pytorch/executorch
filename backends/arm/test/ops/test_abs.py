@@ -55,7 +55,10 @@ def test_abs_tosa_INT(test_data: torch.Tensor):
 @common.XfailIfNoCorstone300
 def test_abs_u55_INT(test_data: torch.Tensor):
     pipeline = EthosU55PipelineINT[input_t1](
-        Abs(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Abs(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -64,7 +67,10 @@ def test_abs_u55_INT(test_data: torch.Tensor):
 @common.XfailIfNoCorstone320
 def test_abs_u85_INT(test_data: torch.Tensor):
     pipeline = EthosU85PipelineINT[input_t1](
-        Abs(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Abs(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 

@@ -1,0 +1,58 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.cxx_library(
+    name = "runtime_shims",
+    srcs = [
+        "guard.cpp",
+        "shims/cuda_guard.cpp",
+        "shims/memory.cpp",
+        "shims/tensor_attribute.cpp",
+    ],
+    headers = [
+        "guard.h",
+        "shims/cuda_guard.h",
+        "shims/memory.h",
+        "shims/tensor_attribute.h",
+        "utils.h",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    # Constructor needed for backend registration.
+    compiler_flags = ["-Wno-global-constructors"],
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    deps = [
+        "//executorch/backends/aoti:common_shims",
+        "//executorch/extension/tensor:tensor",
+        "//executorch/runtime/core:core",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/runtime/platform:platform",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
+    name = "cuda_backend",
+    srcs = [
+        "cuda_backend.cpp",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    # Constructor needed for backend registration.
+    compiler_flags = ["-Wno-global-constructors"],
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    deps = [
+        ":runtime_shims",
+        "//executorch/backends/aoti:aoti_common",
+        "//executorch/runtime/backend:interface",
+        "//executorch/runtime/core/exec_aten/util:tensor_util",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)

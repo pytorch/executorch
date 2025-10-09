@@ -2,6 +2,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+"""Define TOSA profile support lists for INT and FP.
+
+Expose static sets of EXIR operator overloads used by the TOSA partitioner to
+seed positive support checks for different profiles.
+
+"""
 
 import operator
 from typing import Final, Set
@@ -12,6 +18,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 # INT profile: ops supported via native TOSA ops, decompositions/transformations, precompute, TableOps, etc.
+# Note that ops supported via pre-quantization decompositions are not included here.
 TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.abs.default,
     exir_ops.edge.aten.add.Tensor,
@@ -24,6 +31,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.bitwise_and.Scalar,
     exir_ops.edge.aten.bitwise_or.Scalar,
     exir_ops.edge.aten.bitwise_xor.Scalar,
+    exir_ops.edge.aten.cos.default,
     exir_ops.edge.aten.logical_and.default,
     exir_ops.edge.aten.logical_or.default,
     exir_ops.edge.aten.logical_xor.default,
@@ -39,8 +47,6 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.hardsigmoid.default,
     exir_ops.edge.aten.hardtanh.default,
     exir_ops.edge.aten.hardswish.default,
-    exir_ops.edge.aten.div.Tensor,
-    exir_ops.edge.aten.div.Tensor_mode,
     exir_ops.edge.aten.eq.Tensor,
     exir_ops.edge.aten.eq.Scalar,
     exir_ops.edge.aten.erf.default,
@@ -61,16 +67,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.lt.Tensor,
     exir_ops.edge.aten.lt.Scalar,
     exir_ops.edge.aten.mul.Tensor,
-    exir_ops.edge.aten.ne.Tensor,
-    exir_ops.edge.aten.ne.Scalar,
     exir_ops.edge.aten.neg.default,
-    exir_ops.edge.aten.add.Scalar,
-    exir_ops.edge.aten.sub.Scalar,
-    exir_ops.edge.aten.mul.Scalar,
-    exir_ops.edge.aten.div.Scalar,
-    exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-    exir_ops.edge.aten.native_layer_norm.default,
-    exir_ops.edge.aten.native_group_norm.default,
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten.mean.dim,
     exir_ops.edge.aten.mm.default,
@@ -79,25 +76,17 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.repeat.default,
     exir_ops.edge.aten.reciprocal.default,
     exir_ops.edge.aten.relu.default,
-    exir_ops.edge.aten.leaky_relu.default,
-    exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.rsqrt.default,
-    exir_ops.edge.aten.round.default,
-    exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten.select_copy.int,
-    exir_ops.edge.aten._log_softmax.default,
     exir_ops.edge.aten.sub.Tensor,
     exir_ops.edge.aten.tanh.default,
     exir_ops.edge.aten.upsample_bilinear2d.vec,
     exir_ops.edge.aten.upsample_nearest2d.vec,
-    exir_ops.edge.aten.var.correction,
-    exir_ops.edge.aten.var.dim,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    exir_ops.edge.aten.where.self,
     operator.getitem,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
@@ -113,6 +102,7 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     torch.ops.aten.scalar_tensor.default,
     exir_ops.edge.aten.gelu.default,
     exir_ops.edge.aten.alias_copy.default,
+    exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sinh.default,
     exir_ops.edge.aten.atan.default,
     exir_ops.edge.aten.acosh.default,
@@ -120,14 +110,12 @@ TOSA_PRO_INT_SupportList: Final[Set] = {
     exir_ops.edge.aten.sign.default,
     exir_ops.edge.aten.asin.default,
     exir_ops.edge.aten.atanh.default,
-    exir_ops.edge.aten.addmm.default,
     exir_ops.edge.aten.masked_fill.Scalar,
     exir_ops.edge.aten.asinh.default,
     exir_ops.edge.aten.cosh.default,
-    exir_ops.edge.aten.glu.default,
-    exir_ops.edge.aten.logit.default,
     exir_ops.edge.aten.acos.default,
     exir_ops.edge.aten.elu.default,
+    exir_ops.edge.aten.bitwise_not.default,
 }
 
 
@@ -147,6 +135,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.cat.default,
     exir_ops.edge.aten.ceil.default,
     exir_ops.edge.aten.clamp.default,
+    exir_ops.edge.aten.cos.default,
     exir_ops.edge.aten.cumsum.default,
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.permute_copy.default,
@@ -211,7 +200,6 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.pow.Tensor_Tensor,
-    exir_ops.edge.aten.where.self,
     operator.getitem,
     exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.amax.default,
@@ -223,6 +211,7 @@ TOSA_PRO_FP_SupportList: Final[Set] = {
     torch.ops.aten.scalar_tensor.default,
     exir_ops.edge.aten.gelu.default,
     exir_ops.edge.aten.alias_copy.default,
+    exir_ops.edge.aten.sin.default,
     exir_ops.edge.aten.sinh.default,
     exir_ops.edge.aten.atan.default,
     exir_ops.edge.aten.acosh.default,

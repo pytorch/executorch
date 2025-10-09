@@ -53,8 +53,8 @@ function help() {
     echo "  --no_delegate                          Do not delegate the model (can't override builtin models)"
     echo "  --no_quantize                          Do not quantize the model (can't override builtin models)"
     echo "  --portable_kernels=<OPS>               TO BE DEPRECATED: Alias to select_ops_list."
-    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delegated) kernels to include Default: ${select_ops_list}"
-    echo "                                           NOTE: This is used when select_ops_model is not possible to use, e.g. for semihosting or bundleio."
+    echo "  --select_ops_list=<OPS>                Comma separated list of portable (non delagated) kernels to include Default: ${select_ops_list}"
+    echo "                                           NOTE: This is only used when building for semihosting."
     echo "                                           See https://docs.pytorch.org/executorch/stable/kernel-library-selective-build.html for more information."
     echo "  --target=<TARGET>                      Target to build and run for Default: ${target}"
     echo "  --output=<FOLDER>                      Target build output folder Default: ${output_folder}"
@@ -225,7 +225,6 @@ if [[ -z "$model_name" ]]; then
     test_model=(
         "softmax"   # 0
         "add"       # 1
-        "add3"      # 2
         "qadd"      # 3
         "qadd2"     # 4
         "qops"      # 5
@@ -234,7 +233,6 @@ if [[ -z "$model_name" ]]; then
     model_compiler_flags=(
         ""                      # 0 softmax
         "--delegate"            # 1 add
-        "--delegate"            # 2 add3
         "--delegate --quantize" # 3 qadd
         "--delegate --quantize" # 4 qadd2
         "--delegate --quantize" # 5 qops

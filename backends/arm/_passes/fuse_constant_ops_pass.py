@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from typing import Set, Type
 
 import torch._export.utils
 import torch.fx
@@ -12,6 +13,9 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     get_first_fake_tensor,
     get_param_tensor,
     is_persistent_buffer,
+)
+from executorch.backends.arm._passes.fuse_equal_placeholders_pass import (
+    FuseEqualPlaceholdersPass,
 )
 from executorch.backends.transforms.utils import (
     create_constant_placeholder,
@@ -40,6 +44,8 @@ class FuseConstantArgsPass(ExportPass):
         def f():
             return x
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__()
@@ -108,8 +114,10 @@ class FuseConstantArgsPass(ExportPass):
             if node.op != "call_function":
                 continue
             if node.target in [
-                exir_ops.backend.tosa.TABLE.default,
+                exir_ops.backend.tosa.MATMUL.default,
                 exir_ops.backend.tosa.RESCALE.default,
+                exir_ops.backend.tosa.RESIZE.default,
+                exir_ops.backend.tosa.TABLE.default,
                 exir_ops.backend.tosa.TRANSPOSE.default,
             ]:
                 continue
@@ -167,6 +175,8 @@ class ComputeConstantOpsAOT(ExportPass):
         def f(node_name_pre_computed):
             return node_name_pre_computed
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {FuseEqualPlaceholdersPass}
 
     targeted_ops = [
         exir_ops.edge.aten.full.default,

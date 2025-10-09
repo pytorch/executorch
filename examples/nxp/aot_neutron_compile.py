@@ -15,8 +15,8 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
-from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
-    RemoveIOQuantOpsPass,
+from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
+    NeutronEdgePassManager,
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
@@ -33,7 +33,6 @@ from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
-
 from .models.mobilenet_v2 import MobilenetV2
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -164,9 +163,9 @@ if __name__ == "__main__":  # noqa C901
         "-c",
         "--neutron_converter_flavor",
         required=False,
-        default="SDK_25_06",
+        default="SDK_25_09",
         help="Flavor of installed neutron-converter module. Neutron-converter module named "
-        "'neutron_converter_SDK_24_12' has flavor 'SDK_24_12'.",
+        "'neutron_converter_SDK_25_09' has flavor 'SDK_25_09'.",
     )
     parser.add_argument(
         "-q",
@@ -228,7 +227,7 @@ if __name__ == "__main__":  # noqa C901
 
     module = exported_program.module()
 
-    # 4. Quantize if required
+    # 3. Quantize if required
     if args.quantize:
         if calibration_inputs is None:
             logging.warning(
@@ -254,39 +253,30 @@ if __name__ == "__main__":  # noqa C901
         quantized_str = "quantized " if args.quantize else ""
         print(f"\nAccuracy of the {quantized_str}`{args.model_name}`: {accuracy}\n")
 
-    # 5. Export to edge program
-    partitioner_list = []
-    if args.delegate is True:
-        partitioner_list = [
-            NeutronPartitioner(
-                generate_neutron_compile_spec(
-                    args.target,
-                    args.neutron_converter_flavor,
-                    operators_not_to_delegate=args.operators_not_to_delegate,
-                )
-            )
-        ]
+    # 4. Transform and lower
 
-    edge_program = to_edge_transform_and_lower(
-        export(module, example_inputs, strict=True),
-        partitioner=partitioner_list,
-        compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-        ),
+    compile_spec = generate_neutron_compile_spec(
+        args.target,
+        operators_not_to_delegate=args.operators_not_to_delegate,
+        neutron_converter_flavor=args.neutron_converter_flavor,
     )
-    logging.debug(f"Exported graph:\n{edge_program.exported_program().graph}")
+    partitioners = [NeutronPartitioner(compile_spec)] if args.delegate else []
 
-    if args.remove_quant_io_ops:
-        edge_program = edge_program.transform(
-            [RemoveIOQuantOpsPass(edge_program_manager=edge_program)]
-        )
-        logging.debug(
-            f"Exported graph (RemoveIOQuantOpsPass):\n{edge_program.exported_program().graph}"
-        )
+    edge_program_manager = to_edge_transform_and_lower(
+        export(module, example_inputs, strict=True),
+        partitioner=partitioners,
+        compile_config=EdgeCompileConfig(),
+    )
 
-    # 6. Export to ExecuTorch program
+    edge_program_manager = NeutronEdgePassManager(
+        remove_io_quant_ops=args.remove_quant_io_ops
+    )(edge_program_manager)
+
+    logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
+
+    # 5. Export to ExecuTorch program
     try:
-        exec_prog = edge_program.to_executorch(
+        exec_prog = edge_program_manager.to_executorch(
             config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
@@ -306,7 +296,7 @@ if __name__ == "__main__":  # noqa C901
 
     logging.debug(f"Executorch program:\n{executorch_program_to_str(exec_prog)}")
 
-    # 7. Serialize to *.pte
+    # 6. Serialize to *.pte
     model_name = f"{args.model_name}" + (
         "_nxp_delegate" if args.delegate is True else ""
     )
