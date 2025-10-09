@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MixedW8A32ConvPattern,
     MixedW8A32LinearPattern,
     ReluPattern0,
     ReluPattern1,
@@ -478,6 +479,52 @@ def get_args_and_kwargs_softmax(
         out_zero_point_tensor,
     )
     kwargs = {}
+
+    return args, kwargs
+
+
+def get_args_and_kwargs_mixed_w8a32_conv(
+    graph_module: GraphModule,
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    dequants_biases: List[fx.Node],
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    # Stride, padding, dilation, groups not supported yet
+    if len(op_node.args) > 3:
+        assert op_node.args[3] == [1]  # Stride
+    if len(op_node.args) > 4:
+        assert op_node.args[4] == [0]  # Padding
+    if len(op_node.args) > 5:
+        assert op_node.args[5] == [1]  # Dilation
+    if len(op_node.args) > 6:
+        assert op_node.args[6] == 1  # Groups
+
+    assert len(dequants_weights) == 1
+    assert len(dequants_biases) == 1
+    W_scale_ = dequants_weights[0].args[1]
+    B_scale_ = dequants_biases[0].args[1]
+
+    transposed_inputs = graph_module.graph.call_function(
+        torch.ops.aten.permute.default,
+        (other_inputs[0], [0, 2, 1]),  # NCL -> NLC
+    )
+    transposed_weights = graph_module.graph.call_function(
+        torch.ops.aten.permute.default,
+        (weights_inputs[0], [2, 0, 1]),  # NCL -> NLC
+    )
+
+    args = (
+        transposed_inputs,
+        transposed_weights,
+        W_scale_,
+        bias_inputs[0],
+        B_scale_,
+    )
+    kwargs = {}
+
     return args, kwargs
 
 
@@ -649,6 +696,16 @@ class QuantFusion(ExportPass):
                             dequants_weights,
                             bias_inputs,
                             dequants_biases,
+                        )
+                    elif isinstance(pattern, MixedW8A32ConvPattern):
+                        args, kwargs = get_args_and_kwargs_mixed_w8a32_conv(
+                            graph_module,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            dequants_biases,
+                            op_node,
                         )
 
                     fused = graph_module.graph.call_function(
