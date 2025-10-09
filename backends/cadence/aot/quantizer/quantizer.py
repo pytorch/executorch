@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
+    MixedW8A32ConvPattern,
     MixedW8A32LinearPattern,
     QuantizationPattern,
     ReluPattern0,
@@ -320,6 +321,9 @@ class CadenceW8A32MixedQuantizer(CadenceQuantizer):
         quantizers = []
         quantizers.append(
             CadenceAtenQuantizer(MixedW8A32LinearPattern(), qconfig_A32W8sym)
+        )
+        quantizers.append(
+            CadenceAtenQuantizer(MixedW8A32ConvPattern(), qconfig_A32W8sym)
         )
         super().__init__(quantizers)
 
