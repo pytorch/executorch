@@ -44,6 +44,12 @@ __attribute__((objc_subclassing_restricted))
                     channels:(NSInteger)channels
     NS_DESIGNATED_INITIALIZER;
 
+- (instancetype)initWithFloatData:(NSData *)data
+                            width:(NSInteger)width
+                           height:(NSInteger)height
+                         channels:(NSInteger)channels
+    NS_DESIGNATED_INITIALIZER;
+
 @property(nonatomic, readonly) NSData *data;
 
 @property(nonatomic, readonly) NSInteger width;
@@ -51,6 +57,8 @@ __attribute__((objc_subclassing_restricted))
 @property(nonatomic, readonly) NSInteger height;
 
 @property(nonatomic, readonly) NSInteger channels;
+
+@property(nonatomic, readonly) BOOL isFloat;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
@@ -80,6 +88,12 @@ __attribute__((objc_subclassing_restricted))
                       frames:(NSInteger)frames
     NS_DESIGNATED_INITIALIZER;
 
+- (instancetype)initWithFloatData:(NSData *)data
+                        batchSize:(NSInteger)batchSize
+                             bins:(NSInteger)bins
+                           frames:(NSInteger)frames
+    NS_DESIGNATED_INITIALIZER;
+
 @property(nonatomic, readonly) NSData *data;
 
 @property(nonatomic, readonly) NSInteger batchSize;
@@ -87,6 +101,8 @@ __attribute__((objc_subclassing_restricted))
 @property(nonatomic, readonly) NSInteger bins;
 
 @property(nonatomic, readonly) NSInteger frames;
+
+@property(nonatomic, readonly) BOOL isFloat;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
