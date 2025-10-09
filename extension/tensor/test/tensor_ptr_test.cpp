@@ -347,7 +347,7 @@ TEST_F(TensorPtrTest, TensorSharingImplResizingAffectsBothVector) {
 TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt32) {
   std::vector<int32_t> data = {1, 2, 3, 4};
   auto tensor = make_tensor_ptr({2, 2}, data);
-  auto new_tensor = make_tensor_ptr(*tensor);
+  auto new_tensor = make_tensor_ptr(tensor);
 
   EXPECT_EQ(new_tensor->dim(), tensor->dim());
   EXPECT_EQ(new_tensor->size(0), tensor->size(0));
@@ -360,7 +360,7 @@ TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt32) {
 TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt32) {
   std::vector<int32_t> data = {1, 2, 3, 4};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
-  auto cloned_tensor = clone_tensor_ptr(*tensor);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
 
   EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
   EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
@@ -371,6 +371,56 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt32) {
   EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[0], 1);
   EXPECT_EQ(cloned_tensor->const_data_ptr<int32_t>()[3], 4);
   EXPECT_EQ(cloned_tensor->scalar_type(), executorch::aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrInt32) {
+  std::vector<int32_t> data = {1, 2, 3, 4};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<int32_t>(), tensor->const_data_ptr<int32_t>());
+  EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Int);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrDouble) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<double>(), tensor->const_data_ptr<double>());
+  EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Double);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrInt64) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor = make_tensor_ptr({2, 2}, data);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(
+      new_tensor->const_data_ptr<int64_t>(), tensor->const_data_ptr<int64_t>());
+  EXPECT_EQ(new_tensor->scalar_type(), executorch::aten::ScalarType::Long);
+}
+
+TEST_F(TensorPtrTest, MakeTensorPtrFromTensorPtrNull) {
+  auto tensor = make_tensor_ptr({2, 2}, nullptr);
+  auto new_tensor = make_tensor_ptr(tensor);
+
+  EXPECT_EQ(new_tensor->dim(), tensor->dim());
+  EXPECT_EQ(new_tensor->size(0), tensor->size(0));
+  EXPECT_EQ(new_tensor->size(1), tensor->size(1));
+  EXPECT_EQ(new_tensor->const_data_ptr(), tensor->const_data_ptr());
+  EXPECT_EQ(new_tensor->const_data_ptr(), nullptr);
 }
 
 TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt32) {
@@ -392,7 +442,7 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrInt32) {
 TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorDouble) {
   std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
   auto tensor = make_tensor_ptr({2, 2}, data);
-  auto new_tensor = make_tensor_ptr(*tensor);
+  auto new_tensor = make_tensor_ptr(tensor);
 
   EXPECT_EQ(new_tensor->dim(), tensor->dim());
   EXPECT_EQ(new_tensor->size(0), tensor->size(0));
@@ -405,7 +455,7 @@ TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorDouble) {
 TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorDouble) {
   std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
-  auto cloned_tensor = clone_tensor_ptr(*tensor);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
 
   EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
   EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));
@@ -437,7 +487,7 @@ TEST_F(TensorPtrTest, CloneTensorPtrFromTensorPtrDouble) {
 TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt64) {
   std::vector<int64_t> data = {100, 200, 300, 400};
   auto tensor = make_tensor_ptr({2, 2}, data);
-  auto new_tensor = make_tensor_ptr(*tensor);
+  auto new_tensor = make_tensor_ptr(tensor);
 
   EXPECT_EQ(new_tensor->dim(), tensor->dim());
   EXPECT_EQ(new_tensor->size(0), tensor->size(0));
@@ -450,7 +500,7 @@ TEST_F(TensorPtrTest, MakeTensorPtrFromExistingTensorInt64) {
 TEST_F(TensorPtrTest, CloneTensorPtrFromExistingTensorInt64) {
   std::vector<int64_t> data = {100, 200, 300, 400};
   auto tensor = make_tensor_ptr({2, 2}, std::move(data));
-  auto cloned_tensor = clone_tensor_ptr(*tensor);
+  auto cloned_tensor = clone_tensor_ptr(tensor);
 
   EXPECT_EQ(cloned_tensor->dim(), tensor->dim());
   EXPECT_EQ(cloned_tensor->size(0), tensor->size(0));

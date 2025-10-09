@@ -338,17 +338,35 @@ inline TensorPtr make_tensor_ptr(const executorch::aten::Tensor& tensor) {
 #ifndef USE_ATEN_LIB
       std::vector<executorch::aten::DimOrderType>(
           tensor.dim_order().begin(), tensor.dim_order().end()),
-      std::vector<executorch::aten::StridesType>(
-          tensor.strides().begin(), tensor.strides().end()),
-      tensor.scalar_type(),
-      tensor.shape_dynamism()
 #else // USE_ATEN_LIB
       {},
+#endif // USE_ATEN_LIB
       std::vector<executorch::aten::StridesType>(
           tensor.strides().begin(), tensor.strides().end()),
       tensor.scalar_type()
+#ifndef USE_ATEN_LIB
+          ,
+      tensor.shape_dynamism()
 #endif // USE_ATEN_LIB
   );
+}
+
+/**
+ * Creates a TensorPtr to manage a new Tensor with the same properties
+ * as the Tensor referenced by the given TensorPtr, sharing the same data
+ * without owning it.
+ *
+ * This is a convenience overload equivalent to make_tensor_ptr(*tensor_ptr).
+ * It does not extend the lifetime of the underlying buffer; if the original
+ * owner releases the storage, all views aliasing it become dangling.
+ *
+ * @param tensor_ptr The TensorPtr whose underlying Tensor is used to initialize
+ *                   the returned view.
+ * @return A new TensorPtr managing a Tensor with the same properties as the
+ *         original.
+ */
+inline TensorPtr make_tensor_ptr(const TensorPtr& tensor_ptr) {
+  return make_tensor_ptr(*tensor_ptr);
 }
 
 /**
