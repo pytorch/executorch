@@ -8,9 +8,7 @@
 
 #include <executorch/backends/cuda/runtime/shims/cuda_guard.h>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 extern "C" {
 
@@ -104,6 +102,4 @@ AOTITorchError aoti_torch_get_current_cuda_stream(
 
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda

@@ -12,9 +12,7 @@
 #include <executorch/backends/aoti/common_shims.h>
 #include <cstdint>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 using executorch::backends::aoti::AOTITorchError;
 using executorch::backends::aoti::Tensor;
@@ -145,6 +143,4 @@ aoti_torch_copy_(Tensor* self, Tensor* src, int32_t non_blocking);
 void clear_all_tensors();
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda
