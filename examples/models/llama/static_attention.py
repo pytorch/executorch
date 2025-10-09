@@ -259,7 +259,7 @@ class StaticAttentionIOManager:
         }
 
         rope = Rope(config)
-        freqs = rope.get_freqs(None, config.max_seq_len)
+        freqs = rope.get_freqs(None, config.max_context_len)
         self.freqs_cos = freqs[0].to(dtype)
         self.freqs_sin = freqs[1].to(dtype)
 

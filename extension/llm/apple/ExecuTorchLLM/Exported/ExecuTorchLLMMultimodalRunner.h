@@ -145,7 +145,7 @@ __attribute__((objc_subclassing_restricted))
  @return A retained ExecuTorchLLMMultimodalInput instance of type Audio.
 */
 + (instancetype)inputWithAudio:(ExecuTorchLLMAudio *)audio
-    NS_SWIFT_NAME(init(audio:))
+    NS_SWIFT_NAME(init(_:))
     NS_RETURNS_RETAINED;
 
 @property(nonatomic, readonly) ExecuTorchLLMMultimodalInputType type;
