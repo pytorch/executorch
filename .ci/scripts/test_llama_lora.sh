@@ -122,8 +122,8 @@ RESULT2=$(cat result2.txt)
 if [[ "${RESULT2}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT2}"
+  # Do not clean up files if test passes, as they're re-used in the next test.
   echo "Success"
-  cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT2}"
@@ -164,7 +164,6 @@ if [[ "${RESULT3}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT3}"
   echo "Success"
-  cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
   echo "Actual result: ${RESULT3}"
@@ -172,3 +171,5 @@ else
   cleanup_files
   exit 1
 fi
+
+cleanup_files
