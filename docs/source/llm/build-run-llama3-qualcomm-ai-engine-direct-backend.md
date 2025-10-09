@@ -26,47 +26,41 @@ Deploying large language models like Llama 3 on-device presents the following ch
 
 To address these, we apply the following optimizations:
 
-1. Quantization: Use `QuantDtype.use_16a4w_block` for post-training quantization to reduce model size and memory usage
+1. Quantization: Use `QuantDtype.use_16a4w_block` for post-training quantization to reduce model size and memory usage.
 
 2. Mixed Precision Quantization: compresses KV cache tensors to 8-bit and applies `QuantDtype.use_16a8w` to the LM head.
 
-3. SeqMSE Quantization: optimizes the parameter encodings of each layer of a model individually to minimize the difference between the layer’s original and quantized outputs. SeqMSE uses a search-based approach with `seq_mse_candidates` = 1000. (Implementation details: [SeqMSE pass](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/_passes/seq_mse.py))
+3. Model Sharding: Set `num_sharding` = 4 to shard the model into sub-parts. This helps reduce memory pressure and improve performance during on-device inference. The number of shards might be different depending on the model size.
 
-4. Model Sharding: Set `num_sharding` = 4 to shard the model into sub-parts. This helps reduce memory pressure and improve performance during on-device inference.
-
-5. Graph Transformations: Convert operations into accelerator-friendly formats for better runtime performance.
+4. Graph Transformations: Convert operations into accelerator-friendly formats for better runtime performance.
 
 You can find the full optimization configuration in this [file](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/oss_scripts/llama/__init__.py), as shown below:
 
 ``` python
-@register_llm_model("llama3_2-1b_instruct")
+@register_llm_model("llama3_2-3b_instruct")
 @dataclass(init=False, frozen=True)
-class Llama3_2_1B_Instruct(LLMModelConfig):
+class Llama3_2_3B_Instruct(LLMModelConfig):
     repo_id = None
     params_path = None
     convert_weights = None
     transform_weight = True
     # The Llama3_2 enabled should be instruct, however, Llama's tokenizer does not provide utility to apply chat template.
     instruct_model = False
-    
-    num_sharding = 1
+
+    num_sharding = 4
     # quant config
     ptq = QuantDtype.use_16a4w_block
-    group_size = 32
+    group_size = 32  # Group size used in block quantization for weight quantization. Will only be used when ptq = 16a4w_block
     masked_softmax = False
-    seq_mse_candidates = 1000
+  
+    # SeqMSE Quantization: optimizes the parameter encodings of each layer of a model individually to minimize the difference between the layer’s original and quantized outputs. (Implementation details: ./backends/qualcomm/_passes/seq_mse.py) In this configuration, we set `seq_mse_candidates` = 0, which means SeqMSE quantization is not applied.
+    seq_mse_candidates = 0
     r1 = False
     r2 = False
     r3 = False
-    quantization_config_down_proj_16a8w = get_ptq_per_channel_quant_config(
-        torch.uint16, weight_dtype=torch.int8, act_observer=MinMaxObserver
-    )
     custom_annotation = (
         annotate_kv_8bit,
         annotate_output_16a8w,
-        partial(
-            annotate_down_proj, quantization_config=quantization_config_down_proj_16a8w
-        ),
     )
 ```
 
@@ -105,4 +99,4 @@ python examples/qualcomm/oss_scripts/llama/llama.py -b build-android -s ${SERIAL
 ## FAQ
 
 If you encounter any issues while reproducing the tutorial, please file a github
-issue on ExecuTorch repo and tag use `#qcom_aisw` tag
+[issue](https://github.com/pytorch/executorch/issues) on ExecuTorch repo and tag use `#qcom_aisw` tag
