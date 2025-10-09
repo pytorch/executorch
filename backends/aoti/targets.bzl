@@ -51,7 +51,7 @@ def define_common_targets():
         link_whole = True,
         supports_python_dlopen = True,
         visibility = ["@EXECUTORCH_CLIENTS"],
-        deps = [
+        exported_deps = [
             ":common_shims",
             ":model_container",
         ],

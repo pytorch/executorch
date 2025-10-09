@@ -38,7 +38,7 @@ namespace ET_MERGED_DATA_MAP_NAMESPACE {
 
   // Check for duplicate keys.
   std::unordered_map<std::string, uint32_t> key_to_map_index;
-  for (auto i : c10::irange(valid_data_maps.size())) {
+  for (const uint32_t i : c10::irange(valid_data_maps.size())) {
     const auto cur_map = valid_data_maps[i];
     uint32_t num_keys = cur_map->get_num_keys().get();
     for (auto j : c10::irange(num_keys)) {
@@ -47,7 +47,7 @@ namespace ET_MERGED_DATA_MAP_NAMESPACE {
       ET_CHECK_OR_RETURN_ERROR(
           inserted,
           InvalidArgument,
-          "Duplicate key %s in named data maps at index %u and %lu",
+          "Duplicate key %s in named data maps at index %u and %" PRIu32,
           cur_key,
           it->second,
           i);

@@ -599,3 +599,65 @@ class MixedW8A32LinearPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_w8a32_linear.default
+
+
+class MixedW8A32ConvPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv1d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-ignore[29]
+        conv_layer = fused_partition[0].nodes[-1]
+
+        # Bail if the arguments have different shapes than expected
+        # Stride, padding, dilation and groups are not supported
+        if len(conv_layer.args) != 3 or len(conv_layer.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                conv_layer,
+            )
+
+        cnn_weights = conv_layer.args[1]
+        if hasattr(cnn_weights.meta, "tensor_meta"):
+            cnn_weights_shape = cnn_weights.meta["tensor_meta"].shape
+            # Bail if the channels are not multiple of 4 (SIMD)
+            if cnn_weights_shape[0] % 4 != 0:
+                return (
+                    PartitionAnchors(
+                        empty=True,
+                    ),
+                    conv_layer,
+                )
+            if cnn_weights_shape[1] % 4 != 0:
+                return (
+                    PartitionAnchors(
+                        empty=True,
+                    ),
+                    conv_layer,
+                )
+            # Bail if the kernel size is not 3
+            if cnn_weights_shape[2] != 3:
+                return (
+                    PartitionAnchors(
+                        empty=True,
+                    ),
+                    conv_layer,
+                )
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                weights=[(conv_layer, 1)],
+                biases=[(conv_layer, 2)],
+                output=[],
+                others=[(conv_layer, 0)],
+            ),
+            conv_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_conv.default

@@ -32,3 +32,4 @@ def define_common_targets():
     cuda_shim_cpp_unittest("aoti_torch_create_tensor_from_blob_v2")
     cuda_shim_cpp_unittest("aoti_torch__reinterpret_tensor")
     cuda_shim_cpp_unittest("aoti_torch_copy_")
+    cuda_shim_cpp_unittest("aoti_torch_cuda_guard")
