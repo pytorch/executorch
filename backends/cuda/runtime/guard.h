@@ -14,9 +14,7 @@
 #include <executorch/runtime/core/result.h>
 #include <cstdint>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 using executorch::runtime::Error;
 using executorch::runtime::Result;
@@ -190,6 +188,4 @@ class CUDAStreamGuard {
   DeviceIndex device_index_;
 };
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda
