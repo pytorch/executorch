@@ -112,9 +112,7 @@ file(GLOB_RECURSE vulkan_runtime_utils_cpp ${RUNTIME_PATH}/utils/*.cpp)
 # vulkan_backend
 
 # Try to find boost to log stack traces when throwing exceptions
-find_package(
-  Boost 1.89 COMPONENTS stacktrace_basic stacktrace_addr2line
-)
+find_package(Boost 1.89 COMPONENTS stacktrace_basic stacktrace_addr2line)
 
 file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 list(APPEND vulkan_backend_cpp ${vulkan_graph_cpp})
