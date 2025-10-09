@@ -387,13 +387,15 @@ class _Emitter(torch.fx.Interpreter):
 
         # Update buffer_idx to point to the end of the list where we are adding the new buffer.
         buffer = Buffer(storage=buffer_data)
-
         # Tensor is stored outside of the PTE file.
         if (
             spec.extra_tensor_info is not None
             and spec.extra_tensor_info.fully_qualified_name is not None
             and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
         ):
+            print(f"EXTERNAL CONSTANT {spec.extra_tensor_info.fully_qualified_name}")
+            if spec.extra_tensor_info.fully_qualified_name == "_tensor_constant_2":
+                breakpoint()
             assert (
                 constant_tag is not None
             ), "Constant tag is not set for external tensor"
@@ -466,9 +468,15 @@ class _Emitter(torch.fx.Interpreter):
                 and spec.extra_tensor_info.location == TensorDataLocation.EXTERNAL
             ):
                 buffer_idx = self.program_state.external_constant_hash.get(hashed, -1)
+                if buffer_idx != -1:
+                    # Save the constant tag for the external tensor
+                    if constant_tag not in self.program_state.external_constant_map:
+                        self.program_state.external_constant_map[constant_tag] = {}
+                    self.program_state.external_constant_map[constant_tag][
+                        spec.extra_tensor_info.fully_qualified_name  # pyre-ignore Undefined attribute [16]: `Optional` has no attribute `fully_qualified_name`.
+                    ] = buffer_idx
             else:
                 buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
-
             # Haven't seen this constant before.
             if buffer_idx == -1:
                 buffer_idx = self._save_new_const_tensor(
@@ -1645,18 +1653,23 @@ class _TopLevelEmitter(_Emitter):
             # suggest that the same abstract buffer is mutable in another entry point so we should
             # compel it to be considered mutable in all entry points at emission just as the user did with
             # memory planning.
-            is_mutable_buffer |= (
-                _is_buffer(self.node, self.exported_program.graph_signature)
-                and spec.mem_id is not None
-                and spec.mem_offset is not None
-            )
-
+            # is_mutable_buffer |= (
+            #     _is_buffer(self.node, self.exported_program.graph_signature)
+            #     and spec.mem_id is not None
+            #     and spec.mem_offset is not None
+            # )
+            # if fqn is not None:
+            #     print(f"Node {fqn} is mutable buffer: {is_mutable_buffer}, with cnstant_tag {constant_tag}")
+    
             # If the placeholder has a constant_tag, it is external to the PTE file
             # and requires a fqn and location=TensorDataLocation.EXTERNAL
             if constant_tag is not None:
                 assert (
                     fqn is not None
                 ), "constant tagged tensors require a fully qualified name"
+
+                if fqn == "_tensor_constant_2":
+                    breakpoint()
                 if spec.extra_tensor_info is None:
                     spec.extra_tensor_info = ExtraTensorInfo(
                         fully_qualified_name=fqn, location=TensorDataLocation.EXTERNAL
@@ -1666,8 +1679,10 @@ class _TopLevelEmitter(_Emitter):
                     spec.extra_tensor_info.location = TensorDataLocation.EXTERNAL
 
             if is_mutable_buffer:
+                print("MUTABLE_BUFFE: ", fqn, spec.mem_id, spec.mem_offset)
                 # Emit names if we are supposed to.
                 if self.emitter_state.emit_mutable_buffer_names:
+                    breakpoint()
                     if spec.extra_tensor_info is None:
                         spec.extra_tensor_info = ExtraTensorInfo(
                             fully_qualified_name=fqn,
@@ -1675,6 +1690,7 @@ class _TopLevelEmitter(_Emitter):
                         )
                     else:
                         spec.extra_tensor_info.fully_qualified_name = fqn
+                        spec.extra_tensor_info.location = TensorDataLocation.SEGMENT
                 # if We aren't emitting the name then it needs to be memory planned.
                 elif spec.mem_id is None or spec.mem_offset is None:
                     raise InternalError(

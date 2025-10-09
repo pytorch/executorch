@@ -33,6 +33,7 @@ class PropagateCustomMetaPass(XNNPACKPass):
                 continue
 
             if "custom" in parent_node.meta:
+                print(f"PROPAGATING CUSTOM META FROM {parent_node.name} TO {node.name}")
                 node.meta["custom"] = parent_node.meta["custom"]
 
         graph_module.recompile()

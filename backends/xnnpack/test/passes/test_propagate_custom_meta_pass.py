@@ -8,8 +8,6 @@ import unittest
 
 from typing import Tuple, Union
 
-import executorch.backends.test.harness.stages as BaseStages
-
 import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
@@ -35,7 +33,6 @@ try:
 except:
     has_quantized_ops = False
     print("Missing quantized ops")
-
 
 class TestPropagateCustomMetaPass(unittest.TestCase):
     class ModuleLinear(torch.nn.Module):
@@ -86,7 +83,7 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
     def _test_linear(
         self,
         partitioner: XnnpackPartitioner,
-        quantization_stage: Union[BaseStages.Quantize, BaseStages.Quantize_],
+        quantization_stage: Union[BaseStages.Quantize, BaseStages.Quantize_]
     ):
         eager_model = self.ModuleLinear(
             in_size=1,
@@ -134,8 +131,8 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
             weight_granularity=PerGroup(32),
         )
         self._test_linear(
-            DynamicallyQuantizedPartitioner, BaseStages.Quantize_(config=linear_config)
-        )
+            DynamicallyQuantizedPartitioner,
+            BaseStages.Quantize_(config=linear_config))
 
     def test_pt2e_quantize(self):
         # Quantize with pt2e quantize.
@@ -148,10 +145,7 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
             get_symmetric_quantization_config(is_per_channel=True, is_dynamic=True),
         ]
         partitioners = []
-        for config_precision in [
-            ConfigPrecisionType.STATIC_QUANT,
-            ConfigPrecisionType.DYNAMIC_QUANT,
-        ]:
+        for config_precision in [ConfigPrecisionType.STATIC_QUANT, ConfigPrecisionType.DYNAMIC_QUANT]:
             for per_op_mode in [True, False]:
                 partitioners.append(
                     XnnpackPartitioner(
@@ -161,6 +155,4 @@ class TestPropagateCustomMetaPass(unittest.TestCase):
                 )
         for quant_config in quant_configs:
             for partitioner in partitioners:
-                self._test_linear(
-                    partitioner, XNNPackQuantize(quantization_config=quant_config)
-                )
+                self._test_linear(partitioner, XNNPackQuantize(quantization_config=quant_config))
