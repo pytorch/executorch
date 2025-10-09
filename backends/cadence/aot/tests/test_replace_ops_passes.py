@@ -45,6 +45,7 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
     ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
+    ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding,
     ReplaceTransposedConvWithLinearPass,
     ReplaceTrivialConvWithLinear,
     ReplaceWhereWithFullArgsWithWhereScalar,
@@ -2267,5 +2268,50 @@ class TestReplaceLinalgSvdPass(unittest.TestCase):
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.cadence.linalg_svd.default),
+            1,
+        )
+
+    @expand([("dtype",), ("default",)])
+    @torch.no_grad()
+    def test_replace_quantized_embedding(
+        self,
+        name: str,
+    ) -> None:
+        embedding = torch.ones(5, 6, dtype=torch.int8)
+        indices = torch.tensor([0, 2], dtype=torch.int32)
+        scales = torch.ones(5, 2, dtype=torch.float32)
+        zero_points = None
+
+        original_gm = single_op_builder(
+            placeholders=(embedding, scales, indices),
+            op=(
+                exir_ops.edge.quantized_decomposed.embedding_byte.dtype
+                if name == "dtype"
+                else exir_ops.edge.quantized_decomposed.embedding_byte.default
+            ),
+            args=(embedding, scales, zero_points, -128, 127, indices),
+            kwargs={"dtype": torch.float32} if name == "dtype" else {},
+        )
+
+        p = ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding()
+        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                (
+                    exir_ops.edge.quantized_decomposed.embedding_byte.dtype
+                    if name == "dtype"
+                    else exir_ops.edge.quantized_decomposed.embedding_byte.default
+                ),
+            ),
+            0,
+        )
+
+        self.assertEqual(
+            count_node(
+                graph_after_passes,
+                exir_ops.edge.cadence.quantized_embedding_byte.default,
+            ),
             1,
         )
