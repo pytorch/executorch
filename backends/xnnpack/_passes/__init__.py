@@ -22,6 +22,7 @@ from executorch.backends.xnnpack._passes.convert_to_upsample_bilinear2d import (
 from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatenate
 from executorch.backends.xnnpack._passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack._passes.fuse_batch_norm import FuseBatchNormPass
+from executorch.backends.xnnpack._passes.mean_dim_rewrite_pass import MeanDimRewritePass
 from executorch.backends.xnnpack._passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack._passes.remove_redundant_copy_pass import (
     RemoveRedundantCopyPass,
@@ -66,6 +67,7 @@ class XNNPACKPassManager:
                 DecomposeConcatenate,
                 RemoveGetItemPass,
                 Conv1dUnsqueezePass,
+                MeanDimRewritePass,
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
                 RemoveRedundantCopyPass,
