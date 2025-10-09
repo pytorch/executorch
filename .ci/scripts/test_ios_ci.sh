@@ -63,7 +63,12 @@ xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"
 
 say "Running Tests"
 
-xcodebuild -resolvePackageDependencies -project "$APP_PATH.xcodeproj" -scheme MobileNetClassifierTest
+# Cleanup all caches
+rm -rf \
+  ~/Library/org.swift.swiftpm \
+  ~/Library/Caches/org.swift.swiftpm \
+  ~/Library/Caches/com.apple.dt.Xcode \
+  ~/Library/Developer/Xcode/DerivedData
 
 xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
