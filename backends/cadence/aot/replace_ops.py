@@ -2168,6 +2168,7 @@ class CommonReplacePasses:
         ReplacePT2QuantWithCadenceQuantPass,
         ReplacePT2DequantWithCadenceDequantPass,
         ReplacePowWithMulPass,
+        ReplaceNopTransposeOrPermuteWithViewPass,
     ]
 
 
@@ -2208,7 +2209,6 @@ class CadenceReplaceOpsInGraph:
         ReplaceIm2RowWithViewPass,
         MakeSliceAndCatDimOutermostPass,
         ReplaceMatmulWithTransposedMatmulPass,
-        ReplaceNopTransposeOrPermuteWithViewPass,
         ReplaceLinearWithFullyConnectedOpPass,
         ReplaceScalarTensorWithFullPass,
         ReplaceInfArgInFullWithValuePass,
