@@ -27,6 +27,7 @@ from .convert_squeezes_to_view import ConvertSqueezesToViewPass  # noqa
 from .convert_to_clamp import ConvertToClampPass  # noqa
 from .decompose_acosh_pass import DecomposeAcoshPass  # noqa
 from .decompose_adaptive_avg_pool2d_pass import DecomposeAdaptiveAvgPool2dPass  # noqa
+from .decompose_add_sub_alpha_pass import DecomposeAddSubAlphaPass  # noqa
 from .decompose_addmm_pass import DecomposeAddmmPass  # noqa
 from .decompose_asin_and_acos_pass import DecomposeAsinAndAcosPass  # noqa
 from .decompose_asinh_pass import DecomposeAsinhPass  # noqa

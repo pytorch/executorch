@@ -79,6 +79,11 @@ class Sub2(torch.nn.Module):
         return x - y
 
 
+class SubAlpha(torch.nn.Module):
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return torch.sub(x, y, alpha=5)
+
+
 class SubTan(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
@@ -115,6 +120,18 @@ def test_sub_tensor_tosa_FP_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
     pipeline.run()
 
 
+@common.parametrize("test_data", sub_tan_test_data)
+def test_sub_tensor_tosa_FP_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction with alpha (TOSA FP)"""
+    pipeline = TosaPipelineFP[input_t2](
+        SubAlpha(),
+        test_data(),
+        aten_op,
+        exir_op,
+    )
+    pipeline.run()
+
+
 @common.parametrize("test_data", sub_test_data)
 def test_sub_tensor_tosa_INT(test_data):
     """Test Subtraction (TOSA INT)"""
@@ -134,6 +151,15 @@ def test_sub_tensor_tosa_INT_3(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
     pipeline = TosaPipelineINT[input_t2](
         SubTan(), test_data(), aten_op, exir_op, qtol=0
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_data", sub_tan_test_data)
+def test_sub_tensor_tosa_INT_alpha(test_data: Tuple[torch.Tensor, torch.Tensor]):
+    """Test Two-Operand Subtraction with alpha (TOSA INT)"""
+    pipeline = TosaPipelineINT[input_t2](
+        SubAlpha(), test_data(), aten_op, exir_op, qtol=0
     )
     pipeline.run()
 
