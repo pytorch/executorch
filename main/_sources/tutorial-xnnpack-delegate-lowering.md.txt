@@ -74,7 +74,7 @@ After lowering to the XNNPACK Program, we can then prepare it for executorch and
 
 
 ## Lowering a Quantized Model to XNNPACK
-The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to [Custom Quantization](quantization-custom-quantization.md) note. For the sake of this tutorial, we will leverage the `quantize()` python helper function conveniently added to the `executorch/executorch/examples` folder.
+The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to [Quantization Overview](quantization-overview.md). For the sake of this tutorial, we will leverage the `quantize()` python helper function conveniently added to the `executorch/executorch/examples` folder.
 
 ```python
 from torch.export import export

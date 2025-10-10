@@ -1220,7 +1220,7 @@ document.write(`
 <span class="p">)</span>
 </pre></div>
 </div>
-<p>The macro makes a call to gen_oplist.py, which requires a <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228">distinct selection</a> of API choice. <code class="docutils literal notranslate"><span class="pre">OPS_SCHEMA_YAML</span></code>, <code class="docutils literal notranslate"><span class="pre">ROOT_OPS</span></code>, <code class="docutils literal notranslate"><span class="pre">INCLUDE_ALL_OPS</span></code>, and <code class="docutils literal notranslate"><span class="pre">OPS_FROM_MODEL</span></code> are mutually exclusive options, and should not be used in conjunction.</p>
+<p>The macro makes a call to gen_oplist.py, which requires a <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228">distinct selection</a> of API choice. <code class="docutils literal notranslate"><span class="pre">OPS_SCHEMA_YAML</span></code>, <code class="docutils literal notranslate"><span class="pre">ROOT_OPS</span></code>, <code class="docutils literal notranslate"><span class="pre">INCLUDE_ALL_OPS</span></code>, and <code class="docutils literal notranslate"><span class="pre">OPS_FROM_MODEL</span></code> are mutually exclusive options, and should not be used in conjunction.</p>
 <section id="select-all-ops">
 <h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Link to this heading">#</a></h3>
 <p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
@@ -1244,7 +1244,7 @@ document.write(`
 </section>
 <section id="example-walkthrough">
 <h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Link to this heading">#</a></h2>
-<p>In <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72">examples/selective_build/CMakeLists.txt</a>, we have the following cmake config options:</p>
+<p>In <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt">examples/selective_build/CMakeLists.txt</a>, we have the following cmake config options:</p>
 <ol class="arabic simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_YAML</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code></p></li>
@@ -1252,7 +1252,7 @@ document.write(`
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_FROM_MODEL</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_DTYPE_SELECTIVE_BUILD</span></code></p></li>
 </ol>
-<p>These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the <code class="docutils literal notranslate"><span class="pre">gen_selected_ops</span></code> <a class="reference external" href="https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L110-L123">function</a>. The following table describes some examples of how the invocation changes when these configs are set:</p>
+<p>These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the <code class="docutils literal notranslate"><span class="pre">gen_selected_ops</span></code> <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt">function</a>. The following table describes some examples of how the invocation changes when these configs are set:</p>
 <div class="pst-scrollable-table-container"><table class="table">
 <thead>
 <tr class="row-odd"><th class="head text-center"><p>Example cmake Call</p></th>
