@@ -6,7 +6,11 @@
 
 import torch
 from executorch.backends.arm.test.common import parametrize
-from executorch.backends.cortex_m.test.tester import CortexMTester, McuTestCase
+from executorch.backends.cortex_m.test.tester import (
+    CortexMTester,
+    McuTestCase,
+    ramp_tensor,
+)
 from executorch.backends.test.suite.operators.test_add import Model, ModelAlpha
 
 
@@ -80,19 +84,19 @@ test_cases = {
     ),
     "self_rank_2_pos": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(0, 1000, 10).reshape((10, 1)),),
+        (ramp_tensor(0, 1000, (10, 1)),),
     ),
     "self_rank_3_neg": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(-100, 0, 8).reshape((2, 2, 2)),),
+        (ramp_tensor(-100, 0, (2, 2, 2)),),
     ),
     "self_rank_4_small": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(-0.1, 0.1, 16).reshape(2, 2, 2, 2),),
+        (ramp_tensor(-0.1, 0.1, (2, 2, 2, 2)),),
     ),
     "self_rank_5": McuTestCase(
         CortexMSelfAdd(),
-        (torch.linspace(-5, 5, 32).reshape(2, 2, 2, 2, 2),),
+        (ramp_tensor(-5, 5, (2, 2, 2, 2, 2)),),
     ),
     "scalar_scalar": McuTestCase(
         CortexMScalarAdd(),
@@ -117,15 +121,15 @@ test_cases = {
     "broadcast_3": McuTestCase(
         CortexMTensorAdd(),
         (
-            torch.linspace(-2, 2, 4).reshape(2, 1, 2, 1),
-            torch.linspace(-5, 5, 4).reshape(1, 2, 1, 2),
+            ramp_tensor(-2, 2, (2, 1, 2, 1)),
+            ramp_tensor(-5, 5, (1, 2, 1, 2)),
         ),
     ),
     "alpha": McuTestCase(
         CortexMAlphaAdd(0.5),
         (
-            torch.linspace(-10, 10, 20).reshape(4, 5),
-            torch.linspace(-20, 20, 20).reshape(4, 5),
+            ramp_tensor(-10, 10, (4, 5)),
+            ramp_tensor(-20, 20, (4, 5)),
         ),
     ),
 }
