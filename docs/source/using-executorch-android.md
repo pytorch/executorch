@@ -72,7 +72,7 @@ curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250
 curl -O https://ossci-android.s3.amazonaws.com/executorch/release/snapshot-20250412/executorch.aar.sha256sums
 ```
 
-We aim to make every daily snapshot available and useable. However, for best stability, please use releases, not snapshots.
+We aim to make every daily snapshot available and usable. However, for best stability, please use releases, not snapshots.
 
 ## Using AAR file
 

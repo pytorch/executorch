@@ -18,6 +18,7 @@ from .decompose_cdist import DecomposeCDist
 from .decompose_col_im import DecomposeColIm
 from .decompose_einsum import DecomposeEinsum
 from .decompose_expm1 import DecomposeExpM1
+from .decompose_glu import DecomposeGlu
 from .decompose_linalg_vector_norm import DecomposeLinalgVectorNorm
 from .decompose_minmaxdim import DecomposeMinMaxDim
 from .decompose_roll import DecomposeRoll
@@ -60,6 +61,7 @@ __all__ = [
     DecomposeColIm,
     DecomposeEinsum,
     DecomposeExpM1,
+    DecomposeGlu,
     DecomposeLinalgVectorNorm,
     DecomposeMinMaxDim,
     DecomposeRoll,
