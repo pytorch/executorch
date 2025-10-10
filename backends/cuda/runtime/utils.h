@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <vector>
 
-// CUDA error checking macro
+// CUDA error checking macro (with return)
 #define ET_CUDA_CHECK_OR_RETURN_ERROR(EXPR) \
   do {                                      \
     const cudaError_t err = EXPR;           \
@@ -30,14 +30,34 @@
     return Error::Internal;                 \
   } while (0)
 
-// Kernel launch check macro
+// CUDA error checking macro (without return, for use in void functions)
+#define ET_CUDA_CHECK(EXPR)                                         \
+  do {                                                              \
+    const cudaError_t err = EXPR;                                   \
+    if (err == cudaSuccess) {                                       \
+      break;                                                        \
+    }                                                               \
+    ET_LOG(                                                         \
+        Error,                                                      \
+        "%s:%d CUDA error: %s",                                     \
+        __FILE__,                                                   \
+        __LINE__,                                                   \
+        cudaGetErrorString(err));                                   \
+    ET_CHECK_MSG(false, "CUDA error: %s", cudaGetErrorString(err)); \
+  } while (0)
+
+// Kernel launch check macro (with return)
 #define ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR() \
   ET_CUDA_CHECK_OR_RETURN_ERROR(cudaGetLastError())
+
+// Kernel launch check macro (without return, for use in void functions)
+#define ET_CUDA_KERNEL_LAUNCH_CHECK() ET_CUDA_CHECK(cudaGetLastError())
 
 namespace executorch::backends::cuda {
 
 // Enum for supported data types in et-cuda backend
 enum class SupportedDTypes : int32_t {
+  INT32 = 3, // PyTorch's int64 dtype code
   INT64 = 4, // PyTorch's int64 dtype code
   FLOAT32 = 6, // PyTorch's float32 dtype code
   BFLOAT16 = 15, // PyTorch's bfloat16 dtype code
@@ -99,6 +119,7 @@ using AOTITorchError = Error;
 // Helper function to check if a dtype is supported in ET CUDA backend
 inline bool is_dtype_supported_in_et_cuda(int32_t dtype) {
   switch (dtype) {
+    case static_cast<int32_t>(SupportedDTypes::INT32):
     case static_cast<int32_t>(SupportedDTypes::INT64):
     case static_cast<int32_t>(SupportedDTypes::FLOAT32):
     case static_cast<int32_t>(SupportedDTypes::BFLOAT16):
@@ -113,8 +134,9 @@ inline AOTITorchError validate_dtype(int32_t dtype) {
   ET_CHECK_OR_RETURN_ERROR(
       is_dtype_supported_in_et_cuda(dtype),
       InvalidArgument,
-      "Unsupported dtype: %d. Supported dtypes: %d (int64), %d (float32), %d (bfloat16)",
+      "Unsupported dtype: %d. Supported dtypes: %d (int32), %d (int64), %d (float32), %d (bfloat16)",
       dtype,
+      static_cast<int32_t>(SupportedDTypes::INT32),
       static_cast<int32_t>(SupportedDTypes::INT64),
       static_cast<int32_t>(SupportedDTypes::FLOAT32),
       static_cast<int32_t>(SupportedDTypes::BFLOAT16));
