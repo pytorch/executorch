@@ -28,7 +28,9 @@ from torch.export.passes import move_to_device_pass
 from torch.nn.attention import SDPBackend
 
 # exist fallback operators in et namespace;
-supported_fallback_kernels: Dict[str, Any] = {}
+supported_fallback_kernels: Dict[str, Any] = {
+    "at::_ops::_weight_int4pack_mm::call": None,
+}
 
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
