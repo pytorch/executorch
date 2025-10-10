@@ -1,7 +1,7 @@
 # Arm&reg; Ethos&trade;-U NPU Backend
 
 The Arm&reg; Ethos&trade;-U backend targets Edge/IoT-type AI use-cases by enabling optimal execution of quantized models on
-[Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
+[Arm&reg; Ethos&trade;-U55 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u55), [Arm&reg; Ethos&trade;-U65 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u65), and
 [Arm&reg; Ethos&trade;-U85 NPU](https://www.arm.com/products/silicon-ip-cpu/ethos/ethos-u85), leveraging [TOSA](https://www.mlplatform.org/tosa/) and the
 [ethos-u-vela](https://pypi.org/project/ethos-u-vela/) graph compiler. This document is a technical reference for using the Ethos-U backend, for a top level view with code examples
 please refer to the [Arm Ethos-U Backend Tutorial](https://docs.pytorch.org/executorch/stable/tutorial-arm-ethos-u.html).
@@ -282,4 +282,4 @@ full network is converted to use channels last. A word of caution must be given 
 unsupported ops being inserted into the graph, and it is currently not widely tested, so the feature must so far be viewed as experimental.
 
 ## See Also
-- [Arm Ethos-U Backend Tutorial](tutorial-arm.md)
+- [Arm Ethos-U Backend Tutorial](tutorial-arm-ethos-u.md)

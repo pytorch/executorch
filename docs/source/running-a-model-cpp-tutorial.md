@@ -6,7 +6,7 @@ In this tutorial, we will cover how to run an ExecuTorch model in C++ using the 
 
 For a high level overview of the ExecuTorch Runtime please see [Runtime Overview](runtime-overview.md), and for more in-depth documentation on
 each API please see the [Runtime API Reference](executorch-runtime-api-reference.rst).
-[Here](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp) is a fully functional version C++ model runner, and the [Setting up ExecuTorch](getting-started-setup.md) doc shows how to build and run it.
+[Here](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp) is a fully functional version C++ model runner, and the [Setting up ExecuTorch](getting-started-setup.rst) doc shows how to build and run it.
 
 
 ## Prerequisites

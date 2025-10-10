@@ -194,7 +194,7 @@ regenerate_bundled_program = deserialize_from_flatbuffer_to_bundled_program(seri
 ```
 
 ## Runtime Stage
-This stage mainly focuses on executing the model with the bundled inputs and and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
+This stage mainly focuses on executing the model with the bundled inputs and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
 
 
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer

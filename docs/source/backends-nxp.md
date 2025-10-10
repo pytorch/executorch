@@ -23,7 +23,7 @@ If you want to test the runtime, you'll also need:
 - Hardware with NXP's [i.MXRT700](https://www.nxp.com/products/i.MX-RT700) chip or a testing board like MIMXRT700-AVK
 - [MCUXpresso IDE](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE) or [MCUXpresso Visual Studio Code extension](https://www.nxp.com/design/design-center/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC)
 
-## Using NXP backend 
+## Using NXP backend
 
 To test converting a neural network model for inference on NXP eIQ Neutron Backend, you can use our example script:
 
@@ -36,14 +36,14 @@ For a quick overview how to convert a custom PyTorch model, take a look at our [
 
 ### Partitioner API
 
-The partitioner is defined in `NeutronPartitioner` in `backends/nxp/neutron_partitioner.py`. It has the following 
+The partitioner is defined in `NeutronPartitioner` in `backends/nxp/neutron_partitioner.py`. It has the following
 arguments:
 * `compile_spec` - list of key-value pairs defining compilation. E.g. for specifying platform (i.MXRT700) and Neutron Converter flavor.
 * `custom_delegation_options` - custom options for specifying node delegation.
 
 ### Quantization
 
-The quantization for Neutron Backend is defined in `NeutronQuantizer` in `backends/nxp/quantizer/neutron_quantizer.py`. 
+The quantization for Neutron Backend is defined in `NeutronQuantizer` in `backends/nxp/quantizer/neutron_quantizer.py`.
 The quantization follows PT2E workflow, INT8 quantization is supported. Operators are quantized statically, activations
 follow affine and weights symmetric per-tensor quantization scheme.
 
