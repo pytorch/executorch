@@ -1,17 +1,21 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import unittest
 
+from executorch.backends.arm.quantizer.arm_quantizer import TOSAQuantizer
+
 from executorch.devtools.backend_debug import get_delegation_info
 from executorch.examples.models.llama.export_llama_lib import (
     _export_llama,
     build_args_parser,
+    get_quantizer_and_quant_params,
 )
-from executorch.extension.llm.export.config.llm_config import LlmConfig
+from executorch.extension.llm.export.config.llm_config import LlmConfig, Pt2eQuantize
 
 UNWANTED_OPS = [
     "aten_permute_copy_default",
@@ -48,3 +52,17 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         for op, _op_info in delegation_info.delegation_by_operator.items():
             self.assertTrue(op not in UNWANTED_OPS)
+
+    def test_get_quantizer_and_quant_params_returns_tosa_quantizer(self):
+        llm_config = LlmConfig()
+        llm_config.backend.tosa.enabled = True
+        llm_config.quantization.pt2e_quantize = Pt2eQuantize.tosa_8a8w
+
+        pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(
+            llm_config
+        )
+
+        self.assertIsNone(pt2e_quant_params)
+        self.assertIsNone(quant_dtype)
+        self.assertEqual(len(quantizers), 1)
+        self.assertIsInstance(quantizers[0], TOSAQuantizer)
