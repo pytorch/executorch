@@ -187,7 +187,7 @@ To quantize a PyTorch model for the Core ML backend, use the `CoreMLQuantizer`.
 Quantization with the Core ML backend requires exporting the model for iOS 17 or later.
 To perform 8-bit quantization with the PT2E flow, follow these steps:
 
-1) Create a [`coremltools.optimize.torch.quantization.LinearQuantizerConfig`](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use to to create an instance of a `CoreMLQuantizer`.
+1) Create a [`coremltools.optimize.torch.quantization.LinearQuantizerConfig`](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use it to create an instance of a `CoreMLQuantizer`.
 2) Use `torch.export.export` to export a graph module that will be prepared for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
 4) Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
@@ -386,4 +386,4 @@ If you're using Python 3.13, try reducing your python version to Python 3.12.  c
 ### At runtime
 1. [ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
 
-This means the model requires the the Core ML opset 'CoreML7', which requires running the model on iOS >= 17 or macOS >= 14.
+This means the model requires the Core ML opset 'CoreML7', which requires running the model on iOS >= 17 or macOS >= 14.
