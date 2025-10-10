@@ -81,7 +81,7 @@ endif()
 install(
   TARGETS openvino_backend
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )

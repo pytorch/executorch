@@ -21,11 +21,13 @@ def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False
     if kernel_name == "aten":
         generated_lib_and_op_deps = [
             "//executorch/kernels/aten:generated_lib",
-            #TODO(T187390274): consolidate all aten ops into one target
-            "//executorch/kernels/aten/cpu:op__to_dim_order_copy_aten",
             "//executorch/kernels/aten:generated_lib_headers",
             "//executorch/kernels/test:supported_features_aten",
         ]
+          
+        if "dim_order" in op_root:
+            generated_lib_and_op_deps.append("//executorch/kernels/aten/cpu:" + op_root + "_aten")
+
     else:
         generated_lib_and_op_deps = [
             "//executorch/kernels/{}/cpu:{}".format(kernel_name, op_root),

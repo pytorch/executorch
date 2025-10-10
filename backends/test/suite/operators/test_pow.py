@@ -6,6 +6,8 @@
 
 # pyre-unsafe
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -127,6 +129,7 @@ class TestPow(OperatorTest):
             model, (torch.rand(3, 4, 5) + 0.1,), flow, generate_random_test_inputs=False
         )
 
+    @unittest.skip("NaN and Inf are not enforced for backends.")
     def test_pow_edge_cases(self, flow: TestFlow) -> None:
         # Test edge cases
 

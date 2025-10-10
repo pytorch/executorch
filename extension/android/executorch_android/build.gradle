@@ -15,6 +15,7 @@ plugins {
 
 def qnnVersion = System.properties['qnnVersion']
 def execuTorchVersion = System.properties['execuTorchVersion']
+def flavor = System.properties['flavor']
 
 android {
     namespace = "org.pytorch.executorch"
@@ -49,7 +50,7 @@ task copyTestRes(type: Exec) {
 }
 
 dependencies {
-    implementation 'com.facebook.fbjni:fbjni:0.5.1'
+    implementation 'com.facebook.fbjni:fbjni:0.7.0'
     implementation 'com.facebook.soloader:nativeloader:0.10.5'
     implementation libs.core.ktx
     testImplementation 'junit:junit:4.12'
@@ -69,7 +70,7 @@ mavenPublishing {
   publishToMavenCentral()
   signAllPublications()
 
-  coordinates("org.pytorch", "executorch-android" + (qnnVersion ? "-qnn" : ""), execuTorchVersion ? execuTorchVersion : "0.7.0-SNAPSHOT")
+  coordinates("org.pytorch", "executorch-android" + (flavor ? "-" + flavor : ""), execuTorchVersion ? execuTorchVersion : "1.0.0-SNAPSHOT")
 
   pom {
     name = "ExecuTorch Android"

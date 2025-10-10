@@ -24,9 +24,9 @@ VALID_TARGETS=(
 )
 
 # Default models for MCU validation with portable kernels
-DEFAULT_MODELS=(mv2 mv3 lstm)
+DEFAULT_MODELS=(mv2 mv3 lstm qadd qlinear)
 # Available models (on FVP)
-AVAILABLE_MODELS=(mv2 mv3 lstm)
+AVAILABLE_MODELS=(mv2 mv3 lstm qadd qlinear)
 # Add the following models if you want to enable them later (atm they are not working on FVP)
 # edsr w2l ic3 ic4 resnet18 resnet50
 
@@ -257,6 +257,7 @@ for model in "${MODELS[@]}"; do
         -m "$model" \
         --target="$ETHOS_TARGET" \
         --quantize \
+        --enable_qdq_fusion_pass \
         --output="arm_test/$model"; then
         echo "❌ AOT compilation failed for $model"
         MODEL_SUCCESS=false

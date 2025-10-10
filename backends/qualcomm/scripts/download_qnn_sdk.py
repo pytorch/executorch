@@ -4,14 +4,17 @@ import logging
 import os
 import pathlib
 import platform
+import re
 import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
 
-# Module logger (library-friendly)
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -32,6 +35,83 @@ def is_linux_x86() -> bool:
         "i386",
         "i686",
     )
+
+
+#########################
+# Cache directory helper
+#########################
+
+APP_NAMESPACE = ["executorch", "qnn"]
+
+
+def _get_staging_dir(*parts: str) -> pathlib.Path:
+    r"""
+    Return a cross-platform staging directory for staging SDKs/libraries.
+
+    - On Linux:
+        ~/.cache/executorch/qnn/<parts...>
+        (falls back to $HOME/.cache if $XDG_CACHE_HOME is unset)
+
+    - On Windows (not supported yet, but as placeholder):
+        %LOCALAPPDATA%\executorch\qnn\<parts...>
+        (falls back to $HOME/AppData/Local if %LOCALAPPDATA% is unset)
+
+    - Override:
+        If QNN_STAGING_DIR is set in the environment, that path is used instead.
+
+    Args:
+        parts (str): Subdirectories to append under the root staging dir.
+
+    Returns:
+        pathlib.Path: Fully qualified staging path.
+    """
+    # Environment override wins
+    base = os.environ.get("QNN_STAGING_DIR")
+    if base:
+        return pathlib.Path(base).joinpath(*parts)
+
+    system = platform.system().lower()
+    if system == "windows":
+        # On Windows, prefer %LOCALAPPDATA%, fallback to ~/AppData/Local
+        base = pathlib.Path(
+            os.environ.get("LOCALAPPDATA", pathlib.Path.home() / "AppData" / "Local")
+        )
+    elif is_linux_x86():
+        # On Linux/Unix, prefer $XDG_CACHE_HOME, fallback to ~/.cache
+        base = pathlib.Path(
+            os.environ.get("XDG_CACHE_HOME", pathlib.Path.home() / ".cache")
+        )
+    else:
+        raise ValueError(f"Unsupported platform: {system}")
+
+    return base.joinpath(*APP_NAMESPACE, *parts)
+
+
+def _atomic_download(url: str, dest: pathlib.Path):
+    """
+    Download URL into dest atomically:
+      - Write to a temp file in the same dir
+      - Move into place if successful
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Temp file in same dir (guarantees atomic rename)
+    with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp:
+        tmp_path = pathlib.Path(tmp.name)
+
+    try:
+        urllib.request.urlretrieve(url, tmp_path)
+        tmp_path.replace(dest)  # atomic rename
+    except Exception:
+        # Clean up partial file on failure
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+
+####################
+# qnn sdk download management
+####################
 
 
 def _download_archive(url: str, archive_path: pathlib.Path) -> bool:
@@ -111,10 +191,11 @@ def _download_qnn_sdk(dst_folder=SDK_DIR) -> Optional[pathlib.Path]:
         f"Qualcomm_AI_Runtime_Community/All/{QNN_VERSION}/v{QNN_VERSION}.zip"
     )
     QAIRT_CONTENT_DIR = f"qairt/{QNN_VERSION}"
-
     if not is_linux_x86():
-        logger.info("Skipping Qualcomm SDK (only supported on Linux x86).")
+        logger.info("[QNN] Skipping Qualcomm SDK (only supported on Linux x86).")
         return None
+    else:
+        logger.info("[QNN] Downloading Qualcomm SDK for Linux x86")
 
     dst_folder.mkdir(parents=True, exist_ok=True)
 
@@ -173,6 +254,136 @@ def _extract_tar(archive_path: pathlib.Path, prefix: str, target_dir: pathlib.Pa
                     dst.write(src.read())
 
 
+####################
+# libc management
+####################
+
+GLIBC_VERSION = "2.34"
+GLIBC_REEXEC_GUARD = "QNN_GLIBC_REEXEC"
+MINIMUM_LIBC_VERSION = GLIBC_VERSION
+
+
+def _get_glibc_libdir() -> pathlib.Path:
+    glibc_root = _get_staging_dir(f"glibc-{GLIBC_VERSION}")
+    return glibc_root / "lib"
+
+
+def _parse_version(v: str) -> tuple[int, int]:
+    """Turn '2.34' → (2,34) so it can be compared."""
+    parts = v.split(".")
+    return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+
+
+def _current_glibc_version() -> str:
+    """Return system glibc version string (via ctypes)."""
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        func = libc.gnu_get_libc_version
+        func.restype = ctypes.c_char_p
+        return func().decode()
+    except Exception as e:
+        return f"error:{e}"
+
+
+def _resolve_glibc_loader() -> pathlib.Path | None:
+    """Return staged ld.so path if available."""
+    for p in [
+        _get_glibc_libdir() / f"ld-{GLIBC_VERSION}.so",
+        _get_glibc_libdir() / "ld-linux-x86-64.so.2",
+    ]:
+        if p.exists():
+            return p
+    return None
+
+
+def _stage_prebuilt_glibc():
+    """Download + extract Fedora 35 glibc RPM into /tmp."""
+    logger.info(">>> Staging prebuilt glibc-%s from Fedora 35 RPM", GLIBC_VERSION)
+    _get_glibc_libdir().mkdir(parents=True, exist_ok=True)
+    rpm_path = _get_staging_dir("glibc") / "glibc.rpm"
+    work_dir = _get_staging_dir("glibc") / "extracted"
+    rpm_url = (
+        "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/35/"
+        "Everything/x86_64/os/Packages/g/glibc-2.34-7.fc35.x86_64.rpm"
+    )
+
+    rpm_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("[glibc] Downloading %s -> %s", rpm_url, rpm_path)
+    try:
+        urllib.request.urlretrieve(rpm_url, rpm_path)
+    except Exception as e:
+        logger.error("[glibc] Failed to download %s: %s", rpm_url, e)
+        raise
+
+    # Extract
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+    work_dir.mkdir(parents=True)
+    subprocess.check_call(["bsdtar", "-C", str(work_dir), "-xf", str(rpm_path)])
+
+    # Copy runtime libs
+    staged = [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "librt.so.1",
+        "libm.so.6",
+        "libutil.so.1",
+    ]
+    for lib in staged:
+        src = work_dir / "lib64" / lib
+        if src.exists():
+            shutil.copy2(src, _get_glibc_libdir() / lib)
+            logger.info("[glibc] Staged %s", lib)
+        else:
+            logger.warning("[glibc] Missing %s in RPM", lib)
+
+
+def ensure_glibc_minimum(min_version: str = GLIBC_VERSION):
+    """
+    Ensure process runs under glibc >= min_version.
+    - If system glibc is new enough → skip.
+    - Else → stage Fedora RPM and re-exec under staged loader.
+    """
+    current = _current_glibc_version()
+    logger.info("[glibc] Current loaded glibc: %s", current)
+
+    # If system glibc already sufficient → skip everything
+    m = re.match(r"(\d+\.\d+)", current)
+    if m and _parse_version(m.group(1)) >= _parse_version(min_version):
+        logger.info("[glibc] System glibc >= %s, no staging needed.", min_version)
+        return
+
+    # Avoid infinite loop
+    if os.environ.get(GLIBC_REEXEC_GUARD) == "1":
+        logger.info("[glibc] Already re-exec'd once, continuing.")
+        return
+
+    # Stage prebuilt if not already staged
+    if not (_get_glibc_libdir() / "libc.so.6").exists():
+        _stage_prebuilt_glibc()
+
+    loader = _resolve_glibc_loader()
+    if not loader:
+        logger.error("[glibc] Loader not found in %s", _get_glibc_libdir())
+        return
+
+    logger.info(
+        "[glibc] Re-execing under loader %s with libdir %s", loader, _get_glibc_libdir()
+    )
+    os.environ[GLIBC_REEXEC_GUARD] = "1"
+    os.execv(
+        str(loader),
+        [str(loader), "--library-path", str(_get_glibc_libdir()), sys.executable]
+        + sys.argv,
+    )
+
+
+####################
+# libc++ management
+####################
+
 LLVM_VERSION = "14.0.0"
 LIBCXX_BASE_NAME = f"clang+llvm-{LLVM_VERSION}-x86_64-linux-gnu-ubuntu-18.04"
 LLVM_URL = f"https://github.com/llvm/llvm-project/releases/download/llvmorg-{LLVM_VERSION}/{LIBCXX_BASE_NAME}.tar.xz"
@@ -190,12 +401,17 @@ def _stage_libcxx(target_dir: pathlib.Path):
         logger.info("[libcxx] Already staged at %s, skipping download", target_dir)
         return
 
-    temp_tar = pathlib.Path("/tmp") / f"{LIBCXX_BASE_NAME}.tar.xz"
-    temp_extract = pathlib.Path("/tmp") / LIBCXX_BASE_NAME
+    libcxx_stage = _get_staging_dir(f"libcxx-{LLVM_VERSION}")
+    temp_tar = libcxx_stage / f"{LIBCXX_BASE_NAME}.tar.xz"
+    temp_extract = libcxx_stage / LIBCXX_BASE_NAME
 
     if not temp_tar.exists():
         logger.info("[libcxx] Downloading %s", LLVM_URL)
-        urllib.request.urlretrieve(LLVM_URL, temp_tar)
+        _atomic_download(LLVM_URL, temp_tar)
+
+    # Sanity check before extracting
+    if not temp_tar.exists() or temp_tar.stat().st_size == 0:
+        raise FileNotFoundError(f"[libcxx] Tarball missing or empty: {temp_tar}")
 
     logger.info("[libcxx] Extracting %s", temp_tar)
     with tarfile.open(temp_tar, "r:xz") as tar:
@@ -369,6 +585,10 @@ def install_qnn_sdk() -> bool:
     Returns:
         True if both steps succeeded (or were already satisfied), else False.
     """
-    ok_libcxx = _ensure_libcxx_stack()
-    ok_qnn = _ensure_qnn_sdk_lib()
-    return bool(ok_qnn and ok_libcxx)
+    logger.info("[QNN] Starting SDK installation")
+
+    # Make sure we’re running under >= 2.34
+    ensure_glibc_minimum(GLIBC_VERSION)
+
+    # libc++ and QNN SDK setup
+    return _ensure_libcxx_stack() and _ensure_qnn_sdk_lib()

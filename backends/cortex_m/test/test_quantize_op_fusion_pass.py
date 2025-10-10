@@ -313,7 +313,7 @@ class TestQuantizedOpFusionPass(unittest.TestCase):
         # Apply passes
         transformed_program = self._apply_passes(edge_program)
 
-        # Generate ExecutorTorch program
+        # Generate ExecuTorch program
         executorch_program = transformed_program.to_executorch()
 
         # Verify the program contains the expected fused operator

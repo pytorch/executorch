@@ -1,5 +1,5 @@
 param (
-    [string]$editable = $false
+    [string]$editable = "false"
 )
 
 conda create --yes --quiet -n et python=3.12

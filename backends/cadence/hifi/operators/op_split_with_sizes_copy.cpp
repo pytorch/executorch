@@ -28,7 +28,6 @@ using torch::executor::Error;
 using torch::executor::KernelRuntimeContext;
 using torch::executor::linearize_access_indexes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -157,4 +156,3 @@ void split_with_sizes_copy_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -95,7 +95,6 @@ def test_native_layer_norm_u55_INT(test_data):
         model,
         test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.run()
@@ -109,7 +108,6 @@ def test_native_layer_norm_u85_INT(test_data):
         model,
         test_data,
         "torch.ops.aten.sub.Tensor",  # Just check for sub op included in the layernorm decomposition
-        run_on_fvp=True,
         symmetric_io_quantization=True,
     )
     pipeline.run()

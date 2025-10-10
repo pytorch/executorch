@@ -42,7 +42,7 @@ android {
 dependencies {
   implementation(files("libs/executorch.aar"))
   implementation("com.facebook.soloader:soloader:0.10.5")
-  implementation("com.facebook.fbjni:fbjni:0.5.1")
+  implementation("com.facebook.fbjni:fbjni:0.7.0")
   implementation("com.google.code.gson:gson:2.8.6")
   implementation("org.json:json:20250107")
   implementation("androidx.core:core-ktx:1.13.1")

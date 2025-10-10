@@ -20,6 +20,7 @@ from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import
 
 from executorch.backends.arm.tosa.mapping import TosaArg
 from torch.fx import Node
+
 from tosa.RoundingMode import RoundingMode  # type: ignore
 
 
@@ -72,6 +73,59 @@ def insert_rescale_ops_to_int32_maxscale(
     out_qparam = get_output_qparams(node)[0]
     out_scale = out_qparam.get_scale_per_tensor()
     back_scale = max_scale_2x / (out_scale * (1 << SHIFT_INT8))
+
+    return [rescaled_lhs, rescaled_rhs], back_scale
+
+
+def insert_rescale_ops_int16_to_int32_maxscale(
+    tosa_graph: Any, inputs: list[TosaArg], node: Node, tosa_spec=None
+) -> tuple[list[Any], float]:
+    """For ADD and SUB with int16 inputs, we rescale to int32 using a different common scale(2*max(left scale,right scale))
+    compared to all the other cases. We multiply the left and right scales by 1<<12 giving us extra precision
+    for the computation without overflowing.
+
+    Returns a list of the rescaled nodes and the scale factor used,
+    needed by insert_rescale_op_to_int16.
+    """
+
+    if len(inputs) > 2:
+        raise ValueError("More than two inputs not supported")
+
+    tensors = inputs.copy()
+    # Reshape tensor according to TOSA dim order
+    for tensor in tensors:
+        dim_order = tensor.dim_order
+        tensor.shape = [tensor.shape[i] for i in dim_order]
+
+    input_qparams = get_input_qparams(node)
+    lhs_qparams, rhs_qparams = input_qparams.values()
+    lhs_scale = lhs_qparams.get_scale_per_tensor()
+    rhs_scale = rhs_qparams.get_scale_per_tensor()
+    # Common scale for the two numbers
+    max_scale_2x = 2 * max(lhs_scale, rhs_scale)
+    SHIFT_INT16 = 12
+    # We are adding two int16 numbers. If the zero point is non-null, the result will be in the range [-131070;131070], therefore we need 18 bits for the result.
+    # We have a 32-bit accumulator, so we can shift to the left by 12 bits and not overflow. In reality, because we divide by the 2*max(lhs_scale,rhs_scale)
+    # we are shifting to the left by 11.
+    lhs_factor = (1 << SHIFT_INT16) * lhs_scale / max_scale_2x
+    rhs_factor = (1 << SHIFT_INT16) * rhs_scale / max_scale_2x
+    rescaled_lhs = build_rescale_to_int32(
+        tosa_graph,
+        tensors[0],
+        lhs_qparams.get_zp_per_tensor(),
+        lhs_factor,
+        tosa_spec=tosa_spec,
+    )
+    rescaled_rhs = build_rescale_to_int32(
+        tosa_graph,
+        tensors[1],
+        rhs_qparams.get_zp_per_tensor(),
+        rhs_factor,
+        tosa_spec=tosa_spec,
+    )
+    out_qparam = get_output_qparams(node)[0]
+    out_scale = out_qparam.get_scale_per_tensor()
+    back_scale = max_scale_2x / (out_scale * (1 << SHIFT_INT16))
 
     return [rescaled_lhs, rescaled_rhs], back_scale
 
@@ -245,7 +299,9 @@ def compute_multiplier_and_shift(
         const_2_power_15_or_31 = 1 << offset
         shifted_mantissa = round(mantissa * const_2_power_15_or_31)
 
-        assert shifted_mantissa <= const_2_power_15_or_31
+        assert (
+            shifted_mantissa <= const_2_power_15_or_31
+        ), f"Mantissa {shifted_mantissa} exceeds limit {const_2_power_15_or_31}"
 
         if shifted_mantissa == const_2_power_15_or_31:
             shifted_mantissa = shifted_mantissa // 2
@@ -255,13 +311,19 @@ def compute_multiplier_and_shift(
         shift = offset - shift
 
         # INT32_MAX, 2^31 - 1
-        assert shifted_mantissa <= (const_2_power_15_or_31 - 1)
+        assert shifted_mantissa <= (const_2_power_15_or_31 - 1), (
+            f"Mantissa {shifted_mantissa} exceeds signed max "
+            f"{const_2_power_15_or_31 - 1}"
+        )
 
         multiplier = shifted_mantissa
 
         if shift > 62:
             multiplier = multiplier >> min(31, shift - 62)
             shift = 62
+
+        assert multiplier >= 0, "Multiplier should be non-negative"
+        assert shift >= 2 and shift <= 62, "Shift should be in range [2, 62]"
         multipliers.append(multiplier)
         shifts.append(shift)
     return multipliers, shifts
@@ -313,10 +375,11 @@ def build_rescale(
     per_channel=False,
 ):
     import serializer.tosa_serializer as ts  # type: ignore
+
     import tosa.Op as TosaOp  # type: ignore
 
-    scaleWidth = 32
-    is_scale32 = True
+    scaleWidth = 16 if input_node.dtype == ts.DType.INT48 else 32
+    is_scale32 = False if input_node.dtype == ts.DType.INT48 else True
     multipliers, shifts = compute_multiplier_and_shift(scale, scaleWidth)
     rescale_inputs = create_const_ops_for_rescale(
         tosa_fb,

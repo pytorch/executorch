@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import json
 import logging
 import os
 import random
@@ -14,7 +15,7 @@ import zipfile
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, cast, Optional, Tuple
 
 import torch
 from torch.nn.modules import Module
@@ -197,3 +198,77 @@ class MobileNetV2Evaluator(GenericModelEvaluator):
 
         output["metrics"]["accuracy"] = {"top-1": top1_correct, "top-5": top5_correct}
         return output
+
+
+evaluators: dict[str, type[GenericModelEvaluator]] = {
+    "generic": GenericModelEvaluator,
+    "mv2": MobileNetV2Evaluator,
+}
+
+
+def evaluator_calibration_data(
+    evaluator_name: str,
+    evaluator_config: str | None,
+):
+    evaluator = evaluators[evaluator_name]
+
+    if hasattr(evaluator, "get_calibrator"):
+        assert evaluator_config is not None
+
+        config_path = Path(evaluator_config)
+        with config_path.open() as f:
+            config = json.load(f)
+
+        if evaluator is MobileNetV2Evaluator:
+            return evaluator.get_calibrator(
+                training_dataset_path=config["training_dataset_path"]
+            )
+        else:
+            raise RuntimeError(f"Unknown evaluator: {evaluator_name}")
+
+
+def evaluate_model(
+    model_name: str,
+    intermediates: str,
+    model_fp32: torch.nn.Module,
+    model_int8: torch.nn.Module,
+    example_inputs: Tuple[torch.Tensor],
+    evaluator_name: str,
+    evaluator_config: str | None,
+) -> None:
+    evaluator = evaluators[evaluator_name]
+
+    # Get the path of the TOSA flatbuffer that is dumped
+    intermediates_path = Path(intermediates)
+    tosa_paths = list(intermediates_path.glob("*.tosa"))
+
+    if evaluator.REQUIRES_CONFIG:
+        assert evaluator_config is not None
+
+        config_path = Path(evaluator_config)
+        with config_path.open() as f:
+            config = json.load(f)
+
+        if evaluator == MobileNetV2Evaluator:
+            mv2_evaluator = cast(type[MobileNetV2Evaluator], evaluator)
+            init_evaluator: GenericModelEvaluator = mv2_evaluator(
+                model_name,
+                model_fp32,
+                model_int8,
+                example_inputs,
+                str(tosa_paths[0]),
+                batch_size=config["batch_size"],
+                validation_dataset_path=config["validation_dataset_path"],
+            )
+        else:
+            raise RuntimeError(f"Unknown evaluator {evaluator_name}")
+    else:
+        init_evaluator = evaluator(
+            model_name, model_fp32, model_int8, example_inputs, str(tosa_paths[0])
+        )
+
+    quant_metrics = init_evaluator.evaluate()
+    output_json_path = intermediates_path / "quant_metrics.json"
+
+    with output_json_path.open("w") as json_file:
+        json.dump(quant_metrics, json_file)

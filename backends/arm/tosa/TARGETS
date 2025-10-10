@@ -1,34 +1,31 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "mapping",
     srcs = [
         "mapping.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/tosa_tools:serializer",
         "//caffe2:torch",
         ":specification",
     ],
 )
-python_library(
+runtime.python_library(
     name = "quant_utils",
     srcs = [
         "quant_utils.py",
     ],
     deps = [
         "fbsource//third-party/pypi/numpy:numpy",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/serializer:serializer",
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/tosa:tosa",
-        "fbsource//third-party/tosa_tools/v1.00/serialization_lib/python/tosa:tosa",
+        "fbsource//third-party/tosa_tools:serializer",
+        "fbsource//third-party/tosa_tools:tosa",
         "//executorch/backends/arm:constants",
         ":mapping",
         "//executorch/exir/dialects:lib",
     ],
 )
-python_library(
+runtime.python_library(
     name = "specification",
     srcs = [
         "specification.py",
@@ -38,24 +35,52 @@ python_library(
         "//executorch/exir/backend:compile_spec_schema",
     ],
 )
-python_library(
+runtime.python_library(
     name = "utils",
     srcs = [
         "utils.py",
     ],
     deps = [
-        "fbsource//third-party/tosa_tools/v0.80/serialization_lib/python/serializer:serializer",
         ":quant_utils",
         "//executorch/backends/arm/operators:node_visitor",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "tosa",
     srcs = [
         "__init__.py",
     ],
     deps = [
        ":specification",
+    ],
+)
+
+runtime.python_library(
+    name = "compile_spec",
+    srcs = [
+        "compile_spec.py",
+    ],
+    deps = [
+        ":tosa",
+        ":specification",
+        "//executorch/backends/arm:arm_compile_spec",
+    ],
+)
+
+runtime.python_library(
+    name = "partitioner",
+    srcs = [
+        "backend.py",
+        "partitioner.py",
+    ],
+    deps = [
+        ":compile_spec",
+        "//executorch/backends/arm:constants",
+        "//executorch/backends/arm:process_node",
+        "//executorch/backends/arm/debug:schema",
+        "//executorch/backends/arm/operator_support:operator_support",
+        "//executorch/backends/arm/_passes:passes",
+        "//executorch/exir:lib",
     ],
 )

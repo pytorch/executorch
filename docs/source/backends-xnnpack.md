@@ -67,10 +67,11 @@ The XNNPACK delegate can also be used as a backend to execute symmetrically quan
 
 ### Supported Quantization Schemes
 The XNNPACK delegate supports the following quantization schemes:
+
 - 8-bit symmetric weights with 8-bit asymmetric activations (via the PT2E quantization flow).
-    - Supports both static and dynamic activations.
-    - Supports per-channel and per-tensor schemes.
-    - Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.
+  - Supports both static and dynamic activations.
+  - Supports per-channel and per-tensor schemes.
+  - Supports linear, convolution, add, mul, cat, and adaptive avg pool 2d operators.
 
 Weight-only quantization is not currently supported on XNNPACK.
 
@@ -81,7 +82,7 @@ To perform 8-bit quantization with the PT2E flow, perform the following steps pr
 1) Create an instance of the `XnnpackQuantizer` class. Set quantization parameters.
 2) Use `torch.export.export` to prepare for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
-4) For static quantization, run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
+4) For static quantization, run the prepared model with representative samples to calibrate the quantized tensor activation ranges.
 5) Call `convert_pt2e` to quantize the model.
 6) Export and lower the model using the standard flow.
 

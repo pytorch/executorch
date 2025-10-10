@@ -13,6 +13,9 @@ from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_conv_pass import (
 from executorch.backends.nxp.aten_passes.fuse_batch_norm_with_linear_pass import (
     FuseBatchNormWithLinearPass,
 )
+from executorch.backends.nxp.aten_passes.fuse_linear_and_add_pass import (
+    FuseLinearAndAddPass,
+)
 from executorch.backends.nxp.aten_passes.remove_nodes_with_known_outputs import (
     RemoveNodesWithKnownOutputs,
 )
@@ -38,6 +41,7 @@ class NeutronAtenPassManager(PassManager):
             SplitGroupConvolution(),
             SplitGRUBasedOnNumLayers(),
             RemoveNodesWithKnownOutputs(),
+            FuseLinearAndAddPass(),
         ]
 
         super().__init__(passes)

@@ -5,13 +5,14 @@
 #define T ${buffer_scalar_type(DTYPE)}
 
 ${define_required_extensions(DTYPE)}
+${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
 #include "indexing.glslh"
 
 ${layout_declare_tensor(B, "w", "t_outp", DTYPE, STORAGE)}
-${layout_declare_tensor(B, "r", "nchw_in", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "r", "nchw_in", BUF_DTYPE, STORAGE)}
 
 ${layout_declare_ubo(B, "BufferMetadata", "outp")}
 
@@ -44,5 +45,5 @@ void main() {
     nchwi = tensor_idx_to_contiguous_idx(outp, outp_tidx);
   }
 
-  t_outp[outp_bufi] = nchw_in[nchwi];
+  t_outp[outp_bufi] = T(nchw_in[nchwi]);
 }

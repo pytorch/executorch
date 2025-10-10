@@ -90,9 +90,9 @@
     [self->_buffer addObject:@{
       @"level" : @(level),
       @"timestamp" : @(timestamp),
-      @"filename" : filename,
+      @"filename" : filename ?: @"(null)",
       @"line" : @(line),
-      @"message" : message
+      @"message" : message ?: @"(null)"
     }];
   });
   for (id<ExecuTorchLogSink> sink in sinks) {

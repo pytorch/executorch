@@ -14,7 +14,9 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 
+#if defined(__clang__)
 #pragma clang diagnostic ignored "-Wdeprecated"
+#endif
 
 namespace executorch {
 using runtime::Error;

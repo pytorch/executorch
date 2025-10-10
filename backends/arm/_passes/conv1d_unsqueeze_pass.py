@@ -6,6 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from typing import Set, Type
+
+from executorch.backends.arm._passes.add_bias_pass import AddBiasPass
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -20,6 +25,8 @@ class Conv1dUnsqueezePass(ExportPass):
     2) perform a conv2d (with a modified version of the original conv1d args)
     3) squeeze the output back down to 3d.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {AddBiasPass, SizeAdjustInputPass}
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.convolution.default:

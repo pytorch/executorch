@@ -71,7 +71,6 @@ def test_hardtanh_u55_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -84,7 +83,6 @@ def test_hardtanh_u85_INT(test_data: torch.Tensor):
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

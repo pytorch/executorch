@@ -199,8 +199,7 @@ We use [`lintrunner`](https://pypi.org/project/lintrunner/) to help make sure th
 code follows our standards. Set it up with:
 
 ```
-pip install lintrunner==0.12.7
-pip install lintrunner-adapters==0.12.4
+./install_requirements.sh  # (automatically run by install_executorch.sh)
 lintrunner init
 ```
 

@@ -20,6 +20,7 @@ enum VkDataType : byte {
   FLOAT32 = 5,
   FLOAT64 = 6,
   INT64 = 7,
+  UNSET = 127,
 }
 
 // Describes what kind of GPU resource should be used to represent a tensor. The
@@ -39,6 +40,8 @@ enum VkMemoryLayout : ubyte {
   TENSOR_WIDTH_PACKED = 0,
   TENSOR_HEIGHT_PACKED = 1,
   TENSOR_CHANNELS_PACKED = 2,
+  PACKED_INT8_4W4C = 3,
+  PACKED_INT8_4H4W = 4,
   DEFAULT_LAYOUT = 255,
 }
 
@@ -55,6 +58,9 @@ table VkTensor {
   storage_type:VkStorageType = DEFAULT_STORAGE;
   // Memory layout that should be used to represent this tensor
   memory_layout:VkMemoryLayout = DEFAULT_LAYOUT;
+  // dtype to use for staging buffer. This may be different from the tensor's datatype
+  // if force_fp16 is enabled to force all float tensors to be represented as fp16.
+  staging_datatype:VkDataType = UNSET;
 }
 
 table Null {}

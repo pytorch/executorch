@@ -568,6 +568,8 @@ int main(int argc, char** argv) {
     ET_LOG(
         Info,
         "Input list not provided. Inputs prepared with default values set.");
+
+    // Run the method
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -575,6 +577,31 @@ int main(int argc, char** argv) {
         method_name,
         (int)status);
     ET_LOG(Info, "Model executed successfully.");
+
+    // Warm up
+    ET_LOG(Info, "Perform %d inferences for warming up", FLAGS_warm_up);
+    for (int i = 0; i < FLAGS_warm_up; ++i) {
+      status = method->execute();
+    }
+
+    // Inference with designated iterations
+    auto before_exec = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < FLAGS_iteration; ++i) {
+      status = method->execute();
+    }
+    auto after_exec = std::chrono::high_resolution_clock::now();
+    double interval_infs =
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            after_exec - before_exec)
+            .count() /
+        1000.0;
+
+    ET_LOG(
+        Info,
+        "%d inferences took %f ms, avg %f ms",
+        FLAGS_iteration,
+        interval_infs,
+        interval_infs / (float)FLAGS_iteration);
   }
 
   // Dump the etdump data containing profiling/debugging data to the specified

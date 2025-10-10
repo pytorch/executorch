@@ -64,13 +64,7 @@ def test_log_softmax_tosa_INT(test_data):
     pipeline.run()
 
 
-@common.parametrize(
-    "test_data",
-    LogSoftmax.test_data,
-    xfails={
-        "randn_neg_dim": "MLBEDSW-11032: ILLEGAL_OFM_BASE error: Base addresses must be aligned to brick depth on u55."
-    },
-)
+@common.parametrize("test_data", LogSoftmax.test_data)
 @common.XfailIfNoCorstone300()
 def test_log_softmax_u55_INT(test_data):
     data, dim = test_data()
@@ -78,7 +72,6 @@ def test_log_softmax_u55_INT(test_data):
         LogSoftmax(dim),
         data,
         [],
-        run_on_fvp=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -93,7 +86,6 @@ def test_log_softmax_u85_INT(test_data):
         LogSoftmax(dim),
         data,
         [],
-        run_on_fvp=True,
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -125,6 +117,4 @@ def test_log_softmax_vgf_INT(test_data):
         tosa_version="TOSA-1.0+INT",
     )
     pipeline.add_stage_after("quantize", pipeline.tester.check_not, [aten_op])
-    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
-    # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

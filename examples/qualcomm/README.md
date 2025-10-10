@@ -111,12 +111,13 @@ This section outlines the essential APIs and utilities provided to streamline th
    Creates a clean directory for storing model outputs or intermediate results. If the directory already exists, it will be deleted and recreated to ensure a consistent environment for each run.
 
 ## Additional Dependency
+This example requires the following Python packages:
+- pandas and scikit-learn: used in the mobilebert multi-class text classification example.
+- graphviz (optional): used for visualizing QNN graphs during debugging.
 
-The mobilebert multi-class text classification example requires `pandas` and `sklearn`.
 Please install them by something like
-
 ```bash
-pip install scikit-learn pandas
+pip install scikit-learn pandas graphviz
 ```
 
 ## Limitation

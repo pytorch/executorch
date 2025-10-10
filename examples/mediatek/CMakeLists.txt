@@ -122,6 +122,11 @@ if(${ANDROID})
       ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/abseil-cpp
   )
   set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/re2)
+  set(THIRD_PARTY_JSON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../third-party/json)
+  set(THIRD_PARTY_UNICODE_DIR
+      ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/llama.cpp-unicode
+  )
+  set(THIRD_PARTY_PCRE2_DIR ${EXTENSIONS_LLM_DIR}/tokenizers/third-party/pcre2)
   set(ABSL_ENABLE_INSTALL ON)
   set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
@@ -134,9 +139,22 @@ if(${ANDROID})
     ${THIRD_PARTY_RE2_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/re2
   )
+  add_subdirectory(
+    ${THIRD_PARTY_JSON_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/json
+  )
+  add_subdirectory(
+    ${THIRD_PARTY_UNICODE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/llama.cpp-unicode
+  )
+  add_subdirectory(
+    ${THIRD_PARTY_PCRE2_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
   # Build tokenizers
+  set(SUPPORT_REGEX_LOOKAHEAD ON)
   set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizers)
   add_library(tokenizer STATIC)
   target_include_directories(
@@ -147,8 +165,12 @@ if(${ANDROID})
            ${LLAMA2_TOKENIZER_DIR}/include
            ${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2
            ${EXECUTORCH_ROOT}/extension/llm/tokenizers/include
+           ${THIRD_PARTY_JSON_DIR}
+           ${THIRD_PARTY_UNICODE_DIR}/include
+           ${THIRD_PARTY_PCRE2_DIR}
   )
   target_link_libraries(tokenizer PRIVATE re2::re2)
+
   target_sources(
     tokenizer
     PRIVATE
@@ -157,7 +179,53 @@ if(${ANDROID})
       ${LLAMA2_TOKENIZER_DIR}/src/regex.cpp
       ${LLAMA2_TOKENIZER_DIR}/src/bpe_tokenizer_base.cpp
       ${LLAMA2_TOKENIZER_DIR}/src/re2_regex.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/hf_tokenizer.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/pre_tokenizer.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/token_decoder.cpp
+      ${LLAMA2_TOKENIZER_DIR}/src/normalizer.cpp
+      ${LLAMA2_TOKENIZER_DIR}/third-party/llama.cpp-unicode/src/unicode.cpp
+      ${LLAMA2_TOKENIZER_DIR}/third-party/llama.cpp-unicode/src/unicode-data.cpp
       ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama/tokenizer/llama_tiktoken.cpp
+  )
+
+  # Add support for regex_lookahead
+  set(PCRE2_STATIC_PIC ON)
+  set(PCRE2_BUILD_PCRE2_8 ON)
+  set(PCRE2_BUILD_PCRE2_16 OFF)
+  set(PCRE2_BUILD_PCRE2_32 OFF)
+  set(PCRE2_BUILD_TESTS OFF)
+  set(PCRE2_BUILD_PCRE2GREP OFF)
+  set(PCRE2_BUILD_PCRE2TEST OFF)
+  set(PCRE2_BUILD_PCRE2GPERF OFF)
+  set(PCRE2_BUILD_DOCS OFF)
+  set(PCRE2_BUILD_LIBPCRE2_PDB OFF)
+
+  # Set the INTERFACE_INCLUDE_DIRECTORIES property for pcre2-8-static
+  set_target_properties(
+    pcre2-8-static
+    PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/tokenizers/third-party/pcre2>
+  )
+  add_library(
+    regex_lookahead STATIC
+    ${LLAMA2_TOKENIZER_DIR}/src/pcre2_regex.cpp
+    ${LLAMA2_TOKENIZER_DIR}/src/regex_lookahead.cpp
+    ${LLAMA2_TOKENIZER_DIR}/src/std_regex.cpp
+  )
+  add_library(tokenizer::regex_lookahead ALIAS regex_lookahead)
+  target_link_libraries(regex_lookahead PUBLIC pcre2-8-static)
+  target_include_directories(
+    regex_lookahead
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  )
+  target_link_libraries(tokenizer PUBLIC regex_lookahead)
+  install(
+    TARGETS regex_lookahead pcre2-8-static
+    EXPORT tokenizers-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
 
   # Include directory for neuron headers
@@ -174,7 +242,11 @@ if(${ANDROID})
 
   target_link_libraries(
     mtk_llama_executor_runner ${_executor_runner_libs} neuron_backend gflags
-    mtk_llama_executor_lib tokenizer
+    mtk_llama_executor_lib
+  )
+  target_link_libraries(
+    mtk_llama_executor_runner tokenizer
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,regex_lookahead>
   )
   target_compile_options(
     mtk_llama_executor_runner PUBLIC ${_common_compile_options}

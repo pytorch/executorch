@@ -653,6 +653,16 @@ void compute_weight_sums(
     int64_t out_features,
     int64_t elements_per_output_feature);
 
+// Compute weight sums for 4D quantized conv2d operations
+// Weight layout: [C_out, K_h, K_w, align_up_4(C_in_per_group)]
+void compute_weight_sums_4d(
+    ValueSpec& weight_sums,
+    const ValueSpec& quantized_weight,
+    int64_t out_channels,
+    int64_t kernel_h,
+    int64_t kernel_w,
+    int64_t aligned_in_channels);
+
 // Compute weight sums for 4-bit group symmetric quantized weights
 void compute_weight_sums_4bit_grouped(
     ValueSpec& weight_sums,

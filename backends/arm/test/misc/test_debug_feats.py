@@ -14,7 +14,7 @@ from typing import Tuple
 import pytest
 
 import torch
-from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
+from executorch.backends.arm.common.arm_compile_spec import ArmCompileSpec
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
@@ -200,7 +200,7 @@ def test_dump_tosa_debug_json(test_data: input_t1):
             aten_op=[],
             exir_op=[],
             custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpecBuilder.DebugMode.JSON,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.JSON,
         )
 
         pipeline.pop_stage("run_method_and_compare_outputs")
@@ -231,7 +231,7 @@ def test_dump_tosa_debug_tosa(test_data: input_t1):
             aten_op=[],
             exir_op=[],
             custom_path=tmpdir,
-            tosa_debug_mode=ArmCompileSpecBuilder.DebugMode.TOSA,
+            tosa_debug_mode=ArmCompileSpec.DebugMode.TOSA,
         )
 
         pipeline.pop_stage("run_method_and_compare_outputs")
@@ -262,9 +262,10 @@ class Add(torch.nn.Module):
 
 
 @common.parametrize("test_data", Add.inputs)
+@common.XfailIfNoCorstone300
 def test_fail_dump_tosa_ops(caplog, test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
-        Add(), test_data, [], [], use_to_edge_transform_and_lower=True, run_on_fvp=False
+        Add(), test_data, [], [], use_to_edge_transform_and_lower=True
     )
     pipeline.dump_operator_distribution("to_edge_transform_and_lower")
     pipeline.run()

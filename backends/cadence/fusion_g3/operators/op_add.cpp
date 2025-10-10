@@ -24,7 +24,6 @@ using ::executorch::runtime::canCast;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace G3 {
 namespace native {
@@ -368,4 +367,3 @@ Tensor& add_scalar_out(
 } // namespace native
 } // namespace G3
 } // namespace impl
-} // namespace cadence

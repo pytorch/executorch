@@ -1,0 +1,287 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#ifndef IM2COL_PACKED_INT8_GLSLH
+#define IM2COL_PACKED_INT8_GLSLH
+
+#include "common.glslh"
+
+struct Conv2dBlockElementIndex {
+  int x4;
+  int y;
+  int z4;
+
+  int row;
+  int col;
+};
+
+struct Im2ColBlockLoadIndices {
+  bool block_aligned;
+  bool cols_aligned;
+  bool rows_contiguous;
+
+  int im2col_w_start;
+  int im2col_h;
+  int k_in_group_start;
+  int group_idx;
+
+  Conv2dBlockElementIndex block_idx_start;
+};
+
+Conv2dBlockElementIndex tidx_to_block_elem_idx(const TensorIndex4D tidx) {
+  Conv2dBlockElementIndex block_idx;
+  block_idx.x4 = div_4(tidx.data.x);
+  block_idx.row = mod_4(tidx.data.x);
+
+  block_idx.y = tidx.data.y;
+
+  block_idx.z4 = div_4(tidx.data.z);
+  block_idx.col = mod_4(tidx.data.z);
+
+  return block_idx;
+}
+
+TensorIndex4D get_input_tensor_tidx(
+    const int w,
+    const int h,
+    const int k_in_group,
+    const int group_idx) {
+  TensorIndex4D tidx;
+  tidx.data.w = 0;
+
+  const int c_in_group = k_in_group % conv2d_params.in_channels_per_group;
+  const int row = k_in_group / conv2d_params.in_channels_per_group;
+  const int kernel_x = row % conv2d_params.kernel_size.x;
+  const int kernel_y = row / conv2d_params.kernel_size.x;
+
+  tidx.data.z = group_idx * conv2d_params.in_channels_per_group + c_in_group;
+
+  tidx.data.x = (w * conv2d_params.stride.x) - conv2d_params.padding.x +
+      (kernel_x * conv2d_params.dilation.x);
+  tidx.data.y = (h * conv2d_params.stride.y) - conv2d_params.padding.y +
+      (kernel_y * conv2d_params.dilation.y);
+
+  return tidx;
+}
+
+Im2ColBlockLoadIndices im2col_block_idx_to_load_ixs(
+    Conv2dBlockIndex im2col_block_idx) {
+  const int im2col_w = mul_4(im2col_block_idx.data.x);
+  const int im2col_h = im2col_block_idx.data.y;
+  const int im2col_k = mul_4(im2col_block_idx.data.z);
+
+  const int group_idx = im2col_k / conv2d_params.K_per_group;
+  const int k_in_group = im2col_k % conv2d_params.K_per_group;
+
+  TensorIndex4D input_tidx =
+      get_input_tensor_tidx(im2col_w, im2col_h, k_in_group, group_idx);
+
+  bool cols_aligned = (mod_4(input_tidx.data.z) == 0) &&
+      (input_tidx.data.z + 3 < conv2d_params.in_channels_per_group);
+
+  bool rows_aligned = mod_4(input_tidx.data.x) == 0;
+  bool rows_contiguous = conv2d_params.stride.x == 1;
+
+  Im2ColBlockLoadIndices load_ixs;
+  load_ixs.block_aligned = cols_aligned && rows_aligned && rows_contiguous;
+  load_ixs.cols_aligned = cols_aligned;
+  load_ixs.rows_contiguous = rows_contiguous;
+
+  load_ixs.im2col_w_start = im2col_w;
+  load_ixs.im2col_h = im2col_h;
+  load_ixs.k_in_group_start = k_in_group;
+  load_ixs.group_idx = group_idx;
+
+  load_ixs.block_idx_start = tidx_to_block_elem_idx(input_tidx);
+
+  return load_ixs;
+}
+
+bool is_block_elem_idx_in_bounds(
+    const Conv2dBlockElementIndex idx,
+    const Conv2dBlockExtents block_extents) {
+  const ivec3 block_idx = ivec3(idx.x4, idx.y, idx.z4);
+  if (any(lessThan(block_idx, ivec3(0))) ||
+      any(greaterThanEqual(block_idx, block_extents.data))) {
+    return false;
+  }
+  return true;
+}
+
+int load_packed_int8_input_element(
+    const Conv2dBlockElementIndex idx,
+    const Conv2dBlockExtents block_extents,
+    const int input_zp) {
+  // bounds checking
+  if (!is_block_elem_idx_in_bounds(idx, block_extents)) {
+    return input_zp;
+  }
+#ifdef PACKED_INT8_INPUT_BUFFER
+  const int buf_idx =
+      idx.y * block_extents.data_xz + idx.x4 * block_extents.data.z + idx.z4;
+  const ivec4 tile = t_packed_int8_input[buf_idx];
+#else
+  const ivec4 tile =
+      texelFetch(t_packed_int8_input, ivec3(idx.x4, idx.y, idx.z4), 0);
+#endif
+  return extract_8bit_from_packed_int_le(tile[idx.row], idx.col);
+}
+
+Conv2dBlockElementIndex get_packed_int8_input_element_idx(
+    const int im2col_w,
+    const int im2col_h,
+    const int k_in_group,
+    const int group_idx) {
+  TensorIndex4D input_tidx =
+      get_input_tensor_tidx(im2col_w, im2col_h, k_in_group, group_idx);
+
+  return tidx_to_block_elem_idx(input_tidx);
+}
+
+ivec4 load_im2col_block_aligned(
+    const Im2ColBlockLoadIndices load_ixs,
+    const Conv2dBlockExtents block_extents) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+  const int buf_idx = load_ixs.block_idx_start.y * block_extents.data_xz +
+      load_ixs.block_idx_start.x4 * block_extents.data.z +
+      load_ixs.block_idx_start.z4;
+  return t_packed_int8_input[buf_idx];
+#else
+  return texelFetch(
+      t_packed_int8_input,
+      ivec3(
+          load_ixs.block_idx_start.x4,
+          load_ixs.block_idx_start.y,
+          load_ixs.block_idx_start.z4),
+      0);
+#endif
+}
+
+ivec4 load_im2col_block_c_aligned_w_contiguous(
+    const Im2ColBlockLoadIndices load_ixs,
+    const Conv2dBlockExtents block_extents,
+    const ivec4 input_zps) {
+  ivec4 im2col_block;
+  Conv2dBlockElementIndex block_elem_idx = load_ixs.block_idx_start;
+
+#ifdef PACKED_INT8_INPUT_BUFFER
+  int buf_idx = load_ixs.block_idx_start.y * block_extents.data_xz +
+      load_ixs.block_idx_start.x4 * block_extents.data.z +
+      load_ixs.block_idx_start.z4;
+#endif
+
+  ivec4 in_block = input_zps;
+  if (is_block_elem_idx_in_bounds(block_elem_idx, block_extents)) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+    in_block = t_packed_int8_input[buf_idx];
+#else
+    in_block = texelFetch(
+        t_packed_int8_input,
+        ivec3(block_elem_idx.x4, block_elem_idx.y, block_elem_idx.z4),
+        0);
+#endif
+  }
+
+  int current_row = 0;
+  int r_limit = min(4 - block_elem_idx.row, 4);
+  for (int r = 0; r < r_limit; r++) {
+    im2col_block[current_row++] = in_block[r + block_elem_idx.row];
+  }
+
+  in_block = input_zps;
+  block_elem_idx.x4++;
+#ifdef PACKED_INT8_INPUT_BUFFER
+  buf_idx += block_extents.data.z;
+#endif
+
+  if (is_block_elem_idx_in_bounds(block_elem_idx, block_extents)) {
+#ifdef PACKED_INT8_INPUT_BUFFER
+    in_block = t_packed_int8_input[buf_idx];
+#else
+    in_block = texelFetch(
+        t_packed_int8_input,
+        ivec3(block_elem_idx.x4, block_elem_idx.y, block_elem_idx.z4),
+        0);
+#endif
+  }
+
+  for (int r = 0; current_row < 4; ++r) {
+    im2col_block[current_row++] = in_block[r];
+  }
+
+  return im2col_block;
+}
+
+ivec4 load_im2col_block_no_alignment(
+    const Im2ColBlockLoadIndices load_ixs,
+    const Conv2dBlockExtents block_extents,
+    const int input_zp) {
+  ivec4 im2col_block;
+
+  for (int r = 0; r < 4; r++) {
+    const int im2col_w = load_ixs.im2col_w_start + r;
+    ivec4 row_values;
+    for (int c = 0; c < 4; c++) {
+      const int k_in_group = load_ixs.k_in_group_start + c;
+
+      if (k_in_group >= conv2d_params.logical_K_per_group) {
+        row_values[c] = input_zp;
+        continue;
+      }
+
+      Conv2dBlockElementIndex block_idx = get_packed_int8_input_element_idx(
+          im2col_w, load_ixs.im2col_h, k_in_group, load_ixs.group_idx);
+
+      row_values[c] =
+          load_packed_int8_input_element(block_idx, block_extents, input_zp);
+    }
+
+    im2col_block[r] = pack_into_int32(row_values);
+  }
+  return im2col_block;
+}
+
+ivec4 load_im2col_block(
+    const Im2ColBlockLoadIndices load_ixs,
+    const Conv2dBlockExtents block_extents,
+    const int input_zp,
+    const ivec4 input_zps) {
+  if (load_ixs.cols_aligned && load_ixs.rows_contiguous) {
+    return load_im2col_block_c_aligned_w_contiguous(
+        load_ixs, block_extents, input_zps);
+  }
+  return load_im2col_block_no_alignment(load_ixs, block_extents, input_zp);
+}
+
+#ifdef DEBUG_MODE
+
+void printLoadIndices(const Im2ColBlockLoadIndices load_ixs) {
+  debugPrintfEXT("LoadIndices: \\n");
+
+  if (load_ixs.block_aligned) {
+    debugPrintfEXT("  block_aligned \\n");
+  }
+  if (load_ixs.cols_aligned) {
+    debugPrintfEXT("  cols_aligned \\n");
+  }
+  if (load_ixs.rows_contiguous) {
+    debugPrintfEXT("  rows_contiguous \\n");
+  }
+
+  debugPrintfEXT(
+      "  block_idx_start: %d %d %d || %d %d \\n",
+      load_ixs.block_idx_start.x4,
+      load_ixs.block_idx_start.y,
+      load_ixs.block_idx_start.z4,
+      load_ixs.block_idx_start.row,
+      load_ixs.block_idx_start.col);
+}
+
+#endif
+
+#endif // IM2COL_PACKED_INT8_GLSLH

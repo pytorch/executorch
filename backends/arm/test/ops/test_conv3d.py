@@ -367,7 +367,6 @@ def test_convolution_3d_u55_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()
@@ -382,7 +381,6 @@ def test_convolution_3d_u85_INT(test_data):
         model.get_inputs(),
         aten_op,
         exir_op,
-        run_on_fvp=True,
         per_channel_quantization=per_channel_quantization,
     )
     pipeline.run()

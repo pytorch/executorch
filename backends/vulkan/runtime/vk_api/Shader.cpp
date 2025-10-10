@@ -32,7 +32,9 @@ ShaderInfo::ShaderInfo(
     const bool requires_shader_int16_ext,
     const bool requires_16bit_storage_ext,
     const bool requires_8bit_storage_ext,
-    const bool requires_integer_dot_product_ext)
+    const bool requires_integer_dot_product_ext,
+    const bool requires_shader_int64_ext,
+    const bool requires_shader_float64_ext)
     : src_code{
           spirv_bin,
           size,
@@ -43,7 +45,9 @@ ShaderInfo::ShaderInfo(
       requires_shader_int16(requires_shader_int16_ext),
       requires_16bit_storage(requires_16bit_storage_ext),
       requires_8bit_storage(requires_8bit_storage_ext),
-      requires_integer_dot_product(requires_integer_dot_product_ext) {
+      requires_integer_dot_product(requires_integer_dot_product_ext),
+      requires_shader_int64(requires_shader_int64_ext),
+      requires_shader_float64(requires_shader_float64_ext) {
 }
 
 bool operator==(const ShaderInfo& _1, const ShaderInfo& _2) {

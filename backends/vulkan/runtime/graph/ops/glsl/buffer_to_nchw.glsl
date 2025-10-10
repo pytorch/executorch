@@ -3,14 +3,16 @@
 #define PRECISION ${PRECISION}
 
 #define T ${buffer_scalar_type(DTYPE)}
+#define DST_T ${buffer_scalar_type(BUF_DTYPE)}
 
 ${define_required_extensions(DTYPE)}
+${define_required_extensions(BUF_DTYPE)}
 
 layout(std430) buffer;
 
 #include "indexing.glslh"
 
-${layout_declare_tensor(B, "w", "nchw_buf", DTYPE, STORAGE)}
+${layout_declare_tensor(B, "w", "nchw_buf", BUF_DTYPE, STORAGE)}
 ${layout_declare_tensor(B, "r", "t_inp", DTYPE, STORAGE)}
 
 ${layout_declare_ubo(B, "BufferMetadata", "inp")}
@@ -32,5 +34,5 @@ void main() {
 
   uint nchwi = tensor_idx_to_contiguous_idx(inp, inp_tidx);
 
-  nchw_buf[nchwi] = t_inp[inp_bufi];
+  nchw_buf[nchwi] = DST_T(t_inp[inp_bufi]);
 }

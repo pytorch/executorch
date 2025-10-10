@@ -164,6 +164,14 @@ def get_propagated_const_tensor_dict(
         with torch.no_grad():
             # Execute the `node.target` and create a new propagated constant tensor.
             prop_constant_tensor = node.target(*args_data, **kwargs_data)
+
+            # ExecuTorch doesn't support zero strides, so we need to ensure the tensor is contiguous
+            # if it has any zero strides from broadcasting/expansion operations
+            if (
+                isinstance(prop_constant_tensor, torch.Tensor)
+                and 0 in prop_constant_tensor.stride()
+            ):
+                prop_constant_tensor = prop_constant_tensor.contiguous()
         const_node_to_tensor[node] = prop_constant_tensor
 
     return const_node_to_tensor

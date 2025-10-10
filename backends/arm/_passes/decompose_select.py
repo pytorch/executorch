@@ -6,10 +6,15 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
+)
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -19,6 +24,8 @@ class DecomposeSelectPass(ExportPass):
     """
     This pass decomposes select into slice + squeeze to ensure that Aten and TOSA outputs has the same rank (input rank -1)
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:

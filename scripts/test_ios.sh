@@ -15,7 +15,7 @@ set -e
 
 OUTPUT="${1:-executorch}"
 EXIT_STATUS=0
-APP_PATH="executorch-examples/apple/ExecuTorchDemo/ExecuTorchDemo"
+APP_PATH="executorch-examples/mv3/apple/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 

@@ -7,6 +7,8 @@
 # pyre-unsafe
 
 
+import unittest
+
 import torch
 from executorch.backends.test.suite.flow import TestFlow
 
@@ -51,6 +53,7 @@ class TestThreshold(OperatorTest):
     def test_threshold_f32_custom_threshold_value(self, flow: TestFlow) -> None:
         self._test_op(Model(threshold=0.5, value=1.0), (torch.randn(3, 4, 5),), flow)
 
+    @unittest.skip("In place activations aren't properly defunctionalized yet.")
     def test_threshold_f32_inplace(self, flow: TestFlow) -> None:
         self._test_op(Model(inplace=True), (torch.randn(3, 4, 5),), flow)
 

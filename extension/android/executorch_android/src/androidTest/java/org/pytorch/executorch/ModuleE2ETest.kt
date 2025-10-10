@@ -10,7 +10,6 @@ package org.pytorch.executorch
 import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import androidx.test.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import java.io.File
@@ -18,6 +17,7 @@ import java.io.IOException
 import java.net.URISyntaxException
 import org.apache.commons.io.FileUtils
 import org.junit.Assert
+import org.junit.Assert.assertArrayEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -70,6 +70,7 @@ class ModuleE2ETest {
 
         val module = Module.load(getTestFilePath("/mv3_xnnpack_fp32.pte"))
         val expectedBackends = arrayOf("XnnpackBackend")
+        assertArrayEquals(expectedBackends, module.getMethodMetadata("forward").backends)
     }
 
     @Test

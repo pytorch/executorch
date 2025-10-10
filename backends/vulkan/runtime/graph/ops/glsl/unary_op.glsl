@@ -61,6 +61,7 @@ void main() {
   }
 
   VEC4_T in_texel = texelFetch(t_in, pos, 0);
+
   imageStore(t_out, pos, VEC4_T(op(in_texel, minimum, maximum)));
 }
 

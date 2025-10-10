@@ -44,13 +44,20 @@ class PermuteVisitor(NodeVisitor):
         self.define_nodes_tensor_inputs_outputs(node, xnn_graph, vals_to_ids)
 
         # input
-        input_id = vals_to_ids[get_input_node(node, 0)]
+        input_node = get_input_node(node, 0)
+        input_id = vals_to_ids[input_node]
 
         # output
         output_id = vals_to_ids[node]
 
         # permutation
+        input_rank = input_node.meta["val"].dim()
         permute_order = cast(List[int], node.args[1])
+
+        # Handle negative dimensions by converting them to positive indices
+        permute_order = [
+            (dim + input_rank) if dim < 0 else dim for dim in permute_order
+        ]
 
         # change permute order if under channels last
         is_channels_last = node.meta.get(

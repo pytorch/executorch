@@ -63,6 +63,9 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
+    # Device to use for the model: "cpu" or "cuda" (needed for QAT)
+    # Only used for creating Rope parameters
+    device: str = "cpu"
     # Generate logits for all inputs. When it's True, it would take big memory usage
     # at runtime. Enable it only necessary (e.g., use perplexity tools that requires
     # logits for all input tokens.)
@@ -78,6 +81,9 @@ class ModelArgs:
     use_qk_norm: bool = False  # apply normalization to q and k in the attention
     qk_norm_before_rope: bool = False  # when to apply qk norm
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
+    no_rope_layer_interval: Optional[int] = (
+        None  # Interval at which to skip RoPE. From Rope to Nope and Back Again: A New Hybrid Attention Strategy (https://huggingface.co/papers/2501.18795).
+    )
     partial_rotary_factor: float = 1.0
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.

@@ -3,7 +3,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import cast, Set, Type
+
 import torch
+from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
+from executorch.backends.arm._passes.convert_squeezes_to_view import (
+    ConvertSqueezesToViewPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -28,6 +34,8 @@ class ConvertMinMaxPass(ExportPass):
         amax(dim2, keepdim = True)
         squeeze(dim = [dim1, dim2])
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {ConvertSqueezesToViewPass}
 
     def check_argmax(self, node):
         """
@@ -94,20 +102,28 @@ class ConvertMinMaxPass(ExportPass):
             replace_node, op, squeeze_op = self.get_variables(node)
 
             # Unwrap args
-            if len(node.args) == 2:
+            if len(node.args) == 1:
+                # If dims is unspecified, min/max over all dims.
+                input_node = cast(torch.fx.Node, node.args[0])
+                input_shape = get_first_fake_tensor(input_node).shape
+                dims = range(len(input_shape))
+                keepdims = False
+            elif len(node.args) == 2:
                 input_node, dims = node.args
                 keepdims = False
             elif len(node.args) == 3:
                 input_node, dims, keepdims = node.args
             else:
-                raise RuntimeError(f"Unexpected arg size in {node.name}")
+                raise RuntimeError(
+                    f"Unexpected arg size {len(node.args)} in {node.name}"
+                )
 
             try:
-                iter(dims)
-            except:
-                dims = [dims]
+                iter(dims)  # type:ignore[assignment]
+            except Exception:
+                dims = [dims]  # type:ignore[assignment]
             else:
-                dims = list(dims)
+                dims = list(dims)  # type:ignore[assignment]
 
             # Unroll multi-dimensional reduction and keep-dims arg
             with graph_module.graph.inserting_before(node):

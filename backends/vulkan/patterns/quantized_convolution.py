@@ -76,11 +76,13 @@ class QuantizedConvolutionMatch(PatternMatch):
         # Identify output node
         self.output_node = self.anchor_node
 
-        out_channels = self.output_node.meta["val"].shape[-1]
-        # The implementation requires that for grouped convolutions, a group does not
-        # cross any texel boundary. The output channels per group must be a multiple of
-        # 4. If this is not true, then don't match the pattern.
-        if self.groups > 1 and (out_channels / self.groups) % 4 == 0:
+        out_channels = self.output_node.meta["val"].shape[-3]
+        # The implementation requires that for non-depthwise grouped convolutions, a
+        # group does not cross the texel boundary. The output channels per group must be
+        # a multiple of 4. If this is not true, then don't match the pattern.
+        if (self.groups > 1 and self.groups < out_channels) and (
+            out_channels / self.groups
+        ) % 4 != 0:
             return
 
         # Identify bias node, if applicable
@@ -93,23 +95,37 @@ class QuantizedConvolutionMatch(PatternMatch):
                 self.all_nodes.extend(arg_chain)
 
         # Identify input node
-        self.fp_input_node, self.quantize_input_node, dq_node = (
-            utils.maybe_skip_q_dq_arg_chain(self.anchor_node.args[0])
-        )
-        assert self.fp_input_node is not None
-        self.all_nodes.append(self.fp_input_node)
-        assert self.quantize_input_node is not None
-        assert dq_node is not None
+        primary_input_node = self.anchor_node.args[0]
+        assert isinstance(primary_input_node, torch.fx.Node)
+        # Argument must be a dequant node for static quantization
+        if not utils.is_dequant_node(primary_input_node):
+            return
 
-        self.input_scales_node = self.quantize_input_node.args[1]
-        self.input_zeros_node = self.quantize_input_node.args[2]
+        self.dequantize_input_node = primary_input_node
+        self.quantize_input_node = self.dequantize_input_node.args[0]
 
-        self.all_nodes.extend(
-            [
-                self.quantize_input_node,
-                dq_node,
-            ]
-        )
+        self.input_scales_node = self.dequantize_input_node.args[1]
+        self.input_zeros_node = self.dequantize_input_node.args[2]
+
+        self.all_nodes.extend([self.dequantize_input_node])
+
+        # The convolution output must have only one user; it will be either a relu node
+        # or a dequantize node.
+        if len(self.output_node.users) != 1:
+            return
+
+        cur_node = list(self.output_node.users)[0]
+        self.relu_node = None
+        if cur_node.target == exir_ops.edge.aten.relu.default:
+            self.relu_node = cur_node
+            cur_node = list(cur_node.users)[0]
+
+        if not utils.is_quant_node(cur_node):
+            return
+
+        self.quantize_output_node = cur_node
+        self.output_scales_node = self.quantize_output_node.args[1]
+        self.output_zeros_node = self.quantize_output_node.args[2]
 
         self.match_found = True
 
@@ -161,13 +177,26 @@ def make_conv2d_q8ta_q8csw_custom_op(
         bias_tensor = get_param_tensor(ep, match.bias_node)
         assert bias_tensor is not None
 
-    OC, IC, H, W = weight_tensor.shape
+    OC, IC_per_group, H, W = weight_tensor.shape
 
-    # Reshape weight tensor from (OC, IC, H, W) to (OC, H * W * IC) (i.e. matrix format)
-    # This prepares the weights for Im2Col-based convolution
-    weight_tensor = (
-        weight_tensor.permute(0, 2, 3, 1).contiguous().view(OC, H * W * IC).contiguous()
-    )
+    is_depthwise_conv = IC_per_group == 1 and match.groups == OC
+
+    if is_depthwise_conv:
+        assert OC % 4 == 0, "depthwise conv requires that OC is divisible by 4"
+        # Depthwise convs use a specialized layout; the weight tensor is reshaped to
+        # (H, W, OC)
+        weight_tensor = (
+            weight_tensor.permute(2, 3, 1, 0).contiguous().view(H, W, OC).contiguous()
+        )
+    else:
+        # Reshape weight tensor from (OC, IC_per_group, H, W) to (OC, H * W * IC_per_group)
+        # (i.e. matrix format). This prepares the weights for Im2Col-based convolution.
+        weight_tensor = (
+            weight_tensor.permute(0, 2, 3, 1)
+            .contiguous()
+            .view(OC, H * W * IC_per_group)
+            .contiguous()
+        )
 
     # Need to make sure that OC dim is a multiple of 4 so that data load/stores are well
     # aligned with texel boundaries. Add padding to align to the next multiple of 4 if
@@ -178,6 +207,7 @@ def make_conv2d_q8ta_q8csw_custom_op(
     utils.align_width_and_update_state_dict(
         ep, match.weight_scales_node, weight_scales_tensor
     )
+
     if bias_tensor is not None:
         utils.align_width_and_update_state_dict(ep, match.bias_node, bias_tensor)
 
@@ -185,7 +215,7 @@ def make_conv2d_q8ta_q8csw_custom_op(
     with graph_module.graph.inserting_before(first_graph_node):
         qweight_tensor_name = utils.get_tensor_name(ep, match.weight_node)
         # Pre-compute the weight sums which are needed to apply activation zero point
-        # when using integer accumulation. For the reshaped 2D weight matrix (IC * H * W, OC),
+        # when using integer accumulation. For the reshaped 2D weight matrix (IC_per_group * H * W, OC),
         # sum over dimension 0 to get sums per output channel
         sum_per_output_channel = weight_tensor.sum(dim=1).to(torch.int32).contiguous()
         sums_name = qweight_tensor_name + "_sums"
@@ -201,16 +231,22 @@ def make_conv2d_q8ta_q8csw_custom_op(
         )
 
     with graph_module.graph.inserting_before(match.output_node):
+        op_target = exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to.default
+        if is_depthwise_conv:
+            op_target = exir_ops.edge.et_vk.conv2d_q8ta_q8csw_q8to_dw.default
+
         qconv_node = graph_module.graph.create_node(
             "call_function",
-            exir_ops.edge.et_vk.conv2d_q8ta_q8csw.default,
+            op_target,
             args=(
-                match.fp_input_node,
+                match.quantize_input_node,
                 match.input_scales_node,
                 match.input_zeros_node,
                 match.weight_node,
                 weight_sums_node,
                 match.weight_scales_node,
+                match.output_scales_node,
+                match.output_zeros_node,
                 match.bias_node,  # Add bias after weight_scales
                 [H, W],  # Pass kernel size information before stride
                 match.stride,
@@ -221,4 +257,4 @@ def make_conv2d_q8ta_q8csw_custom_op(
         )
 
     qconv_node.meta["val"] = match.output_node.meta["val"]
-    match.output_node.replace_all_uses_with(qconv_node)
+    match.quantize_output_node.replace_all_uses_with(qconv_node)

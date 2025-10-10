@@ -9,15 +9,11 @@
 import unittest
 from typing import Tuple
 
+import pytest
 import torch
 import torchaudio
 
-from executorch.backends.test.suite.flow import TestFlow
-from executorch.backends.test.suite.models import (
-    model_test_cls,
-    model_test_params,
-    run_model_test,
-)
+from executorch.backends.test.suite import dtype_to_str
 from torch.export import Dim
 
 #
@@ -47,64 +43,68 @@ class PatchedConformer(torch.nn.Module):
         return x.transpose(0, 1)
 
 
-@model_test_cls
-class TorchAudio(unittest.TestCase):
-    @model_test_params(dtypes=[torch.float32], supports_dynamic_shapes=False)
-    def test_conformer(
-        self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool
-    ):
-        inner_model = torchaudio.models.Conformer(
-            input_dim=80,
-            num_heads=4,
-            ffn_dim=128,
-            num_layers=4,
-            depthwise_conv_kernel_size=31,
-        )
-        model = PatchedConformer(inner_model)
-        lengths = torch.randint(1, 400, (10,))
+@pytest.mark.parametrize("dtype", [torch.float32], ids=dtype_to_str)
+@pytest.mark.parametrize("use_dynamic_shapes", [False], ids=["static_shapes"])
+def test_conformer(test_runner, dtype: torch.dtype, use_dynamic_shapes: bool):
+    inner_model = torchaudio.models.Conformer(
+        input_dim=80,
+        num_heads=4,
+        ffn_dim=128,
+        num_layers=4,
+        depthwise_conv_kernel_size=31,
+    )
+    model = PatchedConformer(inner_model).eval().to(dtype)
+    lengths = torch.randint(1, 400, (10,))
 
-        encoder_padding_mask = torchaudio.models.conformer._lengths_to_padding_mask(
-            lengths
-        )
-        inputs = (
-            torch.rand(10, int(lengths.max()), 80),
-            encoder_padding_mask,
-        )
+    encoder_padding_mask = torchaudio.models.conformer._lengths_to_padding_mask(lengths)
+    inputs = (
+        torch.rand(10, int(lengths.max()), 80),
+        encoder_padding_mask,
+    )
 
-        run_model_test(model, inputs, flow, dtype, None)
+    test_runner.lower_and_run_model(model, inputs)
 
-    @model_test_params(dtypes=[torch.float32])
-    def test_wav2letter(
-        self, flow: TestFlow, dtype: torch.dtype, use_dynamic_shapes: bool
-    ):
-        model = torchaudio.models.Wav2Letter()
-        inputs = (torch.randn(1, 1, 1024, dtype=dtype),)
-        dynamic_shapes = (
-            {
-                "x": {
-                    2: Dim("d", min=900, max=1024),
-                }
+
+@pytest.mark.parametrize("dtype", [torch.float32], ids=dtype_to_str)
+@pytest.mark.parametrize(
+    "use_dynamic_shapes", [False, True], ids=["static_shapes", "dynamic_shapes"]
+)
+def test_wav2letter(test_runner, dtype: torch.dtype, use_dynamic_shapes: bool):
+    model = torchaudio.models.Wav2Letter().to(dtype)
+    inputs = (torch.randn(1, 1, 1024, dtype=dtype),)
+    dynamic_shapes = (
+        {
+            "x": {
+                2: Dim("d", min=900, max=1024),
             }
-            if use_dynamic_shapes
-            else None
-        )
-        run_model_test(model, inputs, flow, dtype, dynamic_shapes)
+        }
+        if use_dynamic_shapes
+        else None
+    )
 
-    @unittest.skip("This model times out on all backends.")
-    def test_wavernn(
-        self,
-        flow: TestFlow,
-        dtype: torch.dtype,
-        use_dynamic_shapes: bool,
-    ):
-        model = torchaudio.models.WaveRNN(
+    test_runner.lower_and_run_model(model, inputs, dynamic_shapes=dynamic_shapes)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32], ids=dtype_to_str)
+@pytest.mark.parametrize("use_dynamic_shapes", [False], ids=["static_shapes"])
+@unittest.skip("This model times out on all backends.")
+def test_wavernn(
+    test_runner,
+    dtype: torch.dtype,
+    use_dynamic_shapes: bool,
+):
+    model = (
+        torchaudio.models.WaveRNN(
             upsample_scales=[5, 5, 8], n_classes=512, hop_length=200
-        ).eval()
-
-        # See https://docs.pytorch.org/audio/stable/generated/torchaudio.models.WaveRNN.html#forward
-        inputs = (
-            torch.randn(1, 1, (64 - 5 + 1) * 200),  # waveform
-            torch.randn(1, 1, 128, 64),  # specgram
         )
+        .eval()
+        .to(dtype)
+    )
 
-        run_model_test(model, inputs, flow, dtype, None)
+    # See https://docs.pytorch.org/audio/stable/generated/torchaudio.models.WaveRNN.html#forward
+    inputs = (
+        torch.randn(1, 1, (64 - 5 + 1) * 200).to(dtype),  # waveform
+        torch.randn(1, 1, 128, 64).to(dtype),  # specgram
+    )
+
+    test_runner.lower_and_run_model(model, inputs)

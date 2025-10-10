@@ -6,6 +6,8 @@
 # The TOSA BITWISE_AND, BITWISE_OR, and BITWISE_XOR don't handle bool as input
 # If input/output is bool lest add a cast/conversion pass before/after to/from int8.
 
+from typing import Set, Type
+
 import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -14,6 +16,8 @@ from executorch.exir.pass_base import ExportPass
 
 class CastBoolToInt8Pass(ExportPass):
     """Casts the input to int8 if it is not already and casts back the output to the original input dtype."""
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = {
         exir_ops.edge.aten.bitwise_and.Tensor,

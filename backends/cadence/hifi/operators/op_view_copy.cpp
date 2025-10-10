@@ -20,7 +20,6 @@ using torch::executor::Error;
 using torch::executor::get_view_copy_target_size;
 using torch::executor::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -70,4 +69,3 @@ Tensor& view_copy_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

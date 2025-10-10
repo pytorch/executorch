@@ -1,4 +1,4 @@
-# Backends and Delegates
+# Understanding Backends and Delegates
 
 Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch
 

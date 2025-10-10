@@ -19,7 +19,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -44,8 +43,7 @@ class HiFiDivTest : public OperatorTest {
       const Tensor& b,
       optional<string_view> mode,
       Tensor& out) {
-    return ::cadence::impl::HiFi::native::div_out_mode(
-        context_, a, b, mode, out);
+    return ::impl::HiFi::native::div_out_mode(context_, a, b, mode, out);
   }
 };
 
@@ -70,4 +68,3 @@ TEST_F(HiFiDivTest, DISABLED_Int32FloorDivideTest) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

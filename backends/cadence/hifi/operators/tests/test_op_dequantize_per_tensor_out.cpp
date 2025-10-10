@@ -18,7 +18,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -46,7 +45,7 @@ class HiFiDequantizePerTensorTest : public OperatorTest {
       int64_t quant_max,
       ScalarType dtype,
       Tensor& out) {
-    return ::cadence::impl::HiFi::native::dequantize_per_tensor_out(
+    return ::impl::HiFi::native::dequantize_per_tensor_out(
         context_, input, scale, zero_point, quant_min, quant_max, dtype, out);
   }
 };
@@ -101,4 +100,3 @@ TEST_F(HiFiDequantizePerTensorTest, OneDimensionalTest) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

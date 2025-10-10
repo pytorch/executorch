@@ -19,7 +19,6 @@
 
 #include <executorch/backends/cadence/hifi/operators/operators.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -45,7 +44,7 @@ class HiFiQuantizePerTensorTest : public OperatorTest {
       __ET_UNUSED int64_t quant_max,
       ScalarType dtype,
       Tensor& out) {
-    ::cadence::impl::HiFi::native::quantize_per_tensor_out(
+    ::impl::HiFi::native::quantize_per_tensor_out(
         context_, input, scale, zero_point, quant_min, quant_max, dtype, out);
   }
 };
@@ -162,4 +161,3 @@ TEST_F(HiFiQuantizePerTensorTest, CheckSingleElementUInt16Quantize) {
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

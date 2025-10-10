@@ -160,7 +160,7 @@ void print_tensor(std::ostream& os, executorch::aten::Tensor tensor) {
     break;
 
   switch (tensor.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND2(Bool, Half, PRINT_TENSOR_DATA)
+    ET_FORALL_REALHBBF16_TYPES(PRINT_TENSOR_DATA)
     default:
       os << "[<unhandled scalar type " << (int)tensor.scalar_type() << ">]";
   }

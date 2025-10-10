@@ -15,7 +15,6 @@ using executorch::aten::Tensor;
 using executorch::runtime::getLeadingDims;
 using torch::executor::RuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -132,4 +131,3 @@ void quantized_matmul_asym8uxasym8u_asym8u_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -10,7 +10,6 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <xa_nnlib_kernels_api.h>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -72,4 +71,3 @@ void quantized_linear_asym8uxasym8u_asym8u_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

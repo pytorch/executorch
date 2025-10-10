@@ -22,7 +22,96 @@ from facto.specdb.db import SpecDictDB
 MAX_CASES = 50
 
 
+# Global cache to store generated shapes per tensor to ensure consistency
+_shape_cache: dict[str, list[int]] = {}
+
+
 def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
+    # Constraint to limit tensor size to < 4000 bytes with fully randomized shapes
+    import random
+
+    def get_dtype_bytes(dtype: torch.dtype) -> int:
+        """Get the number of bytes per element for a given dtype"""
+        dtype_bytes = {
+            torch.int8: 1,
+            torch.uint8: 1,
+            torch.int16: 2,
+            torch.uint16: 2,
+            torch.int32: 4,
+            torch.float32: 4,
+            torch.int64: 8,
+            torch.float64: 8,
+            torch.bool: 1,
+            torch.float: 4,  # alias for float32
+            torch.int: 4,  # alias for int32
+            torch.long: 8,  # alias for int64
+        }
+        return dtype_bytes.get(dtype, 4)  # Default to 4 bytes if dtype not found
+
+    def generate_random_shape_with_byte_limit(
+        rank: int, dtype: torch.dtype, max_bytes: int = 3999, seed_base: int = 42
+    ) -> list[int]:
+        """Generate a random shape with given rank ensuring total byte size < max_bytes"""
+        random.seed(seed_base + rank)
+
+        bytes_per_element = get_dtype_bytes(dtype)
+        max_elements = max_bytes // bytes_per_element
+
+        # Start with all dimensions as 1
+        shape = [1] * rank
+        remaining_elements = (
+            max_elements - 1
+        )  # Leave room since we start with product=1
+
+        # Randomly distribute the remaining capacity across dimensions
+        for i in range(rank):
+            if remaining_elements <= 1:
+                break
+
+            # Calculate maximum size this dimension can have without exceeding limit
+            current_product = 1
+            for j in range(rank):
+                if j != i:
+                    current_product *= shape[j]
+
+            max_size_for_dim = min(
+                remaining_elements // current_product, 50
+            )  # Cap at 50
+            if max_size_for_dim > shape[i]:
+                # Randomly choose a size between current and max
+                new_size = random.randint(shape[i], max_size_for_dim)
+                shape[i] = new_size
+                remaining_elements = max_elements // (current_product * new_size)
+                remaining_elements = max(1, remaining_elements)
+
+        # Final random shuffle of the dimensions to make it more random
+        random.shuffle(shape)
+        return shape
+
+    def random_size_constraint(deps: object, r: int, d: int) -> int:
+        """Generate random sizes ensuring total byte size < 4000 bytes"""
+        # Use conservative approach: assume worst case is 4 bytes per element (float32/int32)
+        # This ensures we never exceed 4000 bytes regardless of actual dtype
+        worst_case_dtype = torch.float32  # 4 bytes per element
+
+        # Create a unique key for this tensor configuration
+        cache_key = f"{r}_{d}_conservative"
+
+        if cache_key not in _shape_cache:
+            # Generate a new random shape for this rank using worst-case byte estimation
+            shape = generate_random_shape_with_byte_limit(
+                r, worst_case_dtype, max_bytes=3999, seed_base=42 + r * 10 + d
+            )
+            _shape_cache[cache_key] = shape
+
+        # Return the size for dimension d, ensuring we don't go out of bounds
+        cached_shape = _shape_cache[cache_key]
+        return cached_shape[d] if d < len(cached_shape) else 1
+
+    max_size_constraint = cp.Size.Le(
+        lambda deps, r, d: random_size_constraint(deps, r, d)
+    )
+
     tensor_constraints = (
         [
             cp.Dtype.In(
@@ -39,7 +128,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             cp.Value.Le(lambda deps, dtype, struct: 2**4),
             cp.Rank.Ge(lambda deps: 1),
             cp.Size.Ge(lambda deps, r, d: 1),
-            cp.Size.Le(lambda deps, r, d: 2**9),
+            max_size_constraint,
             cp.Rank.Le(lambda deps: 2**3),
         ]
         if op_name
@@ -62,7 +151,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
             cp.Value.Le(lambda deps, dtype, struct: 2**4),
             cp.Rank.Ge(lambda deps: 1),
             cp.Size.Ge(lambda deps, r, d: 1),
-            cp.Size.Le(lambda deps, r, d: 2**9),
+            max_size_constraint,
             cp.Rank.Le(lambda deps: 2**3),
         ]
     )
@@ -76,9 +165,9 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
-                    cp.Size.Le(lambda deps, r, d: 2**9),
+                    max_size_constraint,
                 ]
-            else:
+            elif index == 1:  # input tensor(a)
                 tensor_constraints = [
                     cp.Dtype.In(
                         lambda deps: [
@@ -94,7 +183,26 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**4),
                     cp.Rank.Ge(lambda deps: 1),
                     cp.Size.Ge(lambda deps, r, d: 1),
-                    cp.Size.Le(lambda deps, r, d: 2**9),
+                    max_size_constraint,
+                ]
+            else:  # input tensor(b)
+                tensor_constraints = [
+                    cp.Dtype.In(
+                        lambda deps: [
+                            torch.int8,
+                            torch.int16,
+                            torch.uint8,
+                            torch.uint16,
+                            torch.int32,
+                            torch.float32,
+                        ]
+                    ),
+                    cp.Dtype.Eq(lambda deps: deps[1].dtype),
+                    cp.Value.Ge(lambda deps, dtype, struct: -(2**4)),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**4),
+                    cp.Rank.Ge(lambda deps: 1),
+                    cp.Size.Ge(lambda deps, r, d: 1),
+                    max_size_constraint,
                 ]
         case "embedding.default":
             tensor_constraints = [
@@ -104,7 +212,7 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                 cp.Value.Le(lambda deps, dtype, struct: 2**4),
                 cp.Rank.Ge(lambda deps: 1),
                 cp.Size.Ge(lambda deps, r, d: 1),
-                cp.Size.Le(lambda deps, r, d: 2**9),
+                max_size_constraint,
             ]
         case "sigmoid.default":
             tensor_constraints.extend(
@@ -112,6 +220,34 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Dtype.In(lambda deps: [torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -2),
                     cp.Value.Le(lambda deps, dtype, struct: 2),
+                ]
+            )
+        case "transpose_copy.int":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                ]
+            )
+        case "permute_copy.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int8, torch.uint8]),
+                    cp.Rank.Le(
+                        lambda deps: 5
+                    ),  # xa_nn_transpose only supports up to 5D
+                    cp.Rank.Ge(lambda deps: 1),  # Must have at least 1 dimension
+                ]
+            )
+        case "sqrt.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
+                ]
+            )
+        case "clamp.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
                 ]
             )
         case "rsqrt.default":
@@ -124,6 +260,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**2),
                 ]
             )
+        case "relu.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
+                ]
+            )
         case "mean.dim":
             tensor_constraints.extend(
                 [
@@ -133,8 +275,15 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
         case "exp.default":
             tensor_constraints.extend(
                 [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                     cp.Value.Ge(lambda deps, dtype, struct: -(2**2)),
                     cp.Value.Le(lambda deps, dtype, struct: 2**2),
+                ]
+            )
+        case "tanh.default":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32]),
                 ]
             )
         case "slice_copy.Tensor":
@@ -143,6 +292,34 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Rank.Le(lambda deps: 2),
                     cp.Value.Ge(lambda deps, dtype, struct: 1),
                     cp.Value.Le(lambda deps, dtype, struct: 2),
+                ]
+            )
+        case "div.Scalar" | "add.Tensor" | "mul.Tensor" | "sub.Tensor":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(
+                        lambda deps: [
+                            torch.int32,
+                            torch.int64,
+                            torch.float32,
+                        ]
+                    ),
+                ]
+            )
+        case "split_copy.Tensor":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(
+                        lambda deps: [
+                            torch.int32,
+                            torch.int64,
+                            torch.float32,
+                        ]
+                    ),
+                    cp.Value.Ge(lambda deps, dtype, struct: 1),
+                    cp.Value.Le(lambda deps, dtype, struct: 2**3),
+                    cp.Rank.Le(lambda deps: 3),
+                    cp.Size.Le(lambda deps, r, d: 2**2),
                 ]
             )
         case "constant_pad_nd.default":
@@ -173,6 +350,12 @@ def apply_tensor_contraints(op_name: str, index: int) -> list[object]:
                     cp.Value.Le(lambda deps, dtype, struct: 2**3),
                     cp.Size.Le(lambda deps, r, d: 2**3),
                     cp.Rank.Le(lambda deps: 2**2),
+                ]
+            )
+        case "pow.Tensor_Scalar":
+            tensor_constraints.extend(
+                [
+                    cp.Dtype.In(lambda deps: [torch.float32, torch.int32]),
                 ]
             )
         case "div.Tensor_mode" | "minimum.default":

@@ -66,6 +66,8 @@ struct ShaderInfo final {
   bool requires_16bit_storage = false;
   bool requires_8bit_storage = false;
   bool requires_integer_dot_product = false;
+  bool requires_shader_int64 = false;
+  bool requires_shader_float64 = false;
 
   explicit ShaderInfo();
 
@@ -78,7 +80,9 @@ struct ShaderInfo final {
       const bool requires_shader_int16_ext,
       const bool requires_16bit_storage_ext,
       const bool requires_8bit_storage_ext,
-      const bool requires_integer_dot_product_ext);
+      const bool requires_integer_dot_product_ext,
+      const bool requires_shader_int64_ext,
+      const bool requires_shader_float64_ext);
 
   operator bool() const {
     return src_code.bin != nullptr;

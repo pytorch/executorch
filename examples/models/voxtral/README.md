@@ -18,11 +18,6 @@ cd optimum-executorch
 python install_dev.py
 ```
 
-We are currently working on a Transformers pin bump for Optimum. In the meantime, manually override the Transformers dep to the earliest compatible version.
-```
-pip install git+https://github.com/huggingface/transformers@6121e9e46c4fc4e5c91d9f927aef5490691850cf#egg=transformers
-```
-
 ## Using the export CLI
 We export Voxtral using the Optimum CLI, which will export `model.pte` to the `voxtral` output directory:
 ```
@@ -32,7 +27,9 @@ optimum-cli export executorch \
   --recipe "xnnpack" \
   --use_custom_sdpa \
   --use_custom_kv_cache \
+  --max_seq_len 2048 \
   --qlinear 8da4w \
+  --qlinear_encoder 8da4w \
   --qembedding 4w \
   --output_dir="voxtral"
 ```
@@ -44,17 +41,18 @@ To run the model, we will use the Voxtral runner, which utilizes ExecuTorch's Mu
 The Voxtral runner will do the following things:
 
 - Audio Input:
-  - Option A:  Pass the raw audio tensor into exported preprocessor to produce a mel spectrogram tensor.
-  - Option B:  If starting directly with an already processed audio input tensor, format the inputs to the multimodal runner (metadata tokens, audio tokens, text tokens, etc.).
+   - Option A:  Pass raw audio data from a `.wav` file into the exported preprocessor to produce a mel spectrogram tensor.
+   - Option B:  If starting directly with an already processed audio input tensor (preprocessed mel spectrogram), format the inputs to the multimodal runner (metadata tokens, audio tokens, text tokens, etc.).
 - Feed the formatted inputs to the multimodal modal runner.
 
 
-# [Option A] Exporting the audio preprocessor
+## Exporting the audio preprocessor
 The exported model takes in a mel spectrogram input tensor as its audio inputs.
 We provide a simple way to transform raw audio data into a mel spectrogram by exporting a version of Voxtral's audio preprocessor used directly by Transformers.
 
 ```
-python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --output_file voxtral_preprocessor.pte
+# Export a preprocessor that can handle audio up to 5 mins (300s).
+python -m executorch.extension.audio.mel_spectrogram --feature_size 128 --stack_output --max_audio_len 300 --output_file voxtral_preprocessor.pte
 ```
 
 ## Building the multimodal runner
@@ -68,13 +66,26 @@ cmake -DCMAKE_INSTALL_PREFIX=cmake-out -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Re
 
 ## Running the model
 You can download the `tekken.json` tokenizer from [Voxtral's HuggingFace repo](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507).
+
+### Running with raw audio (.wav file)
+For raw audio files (`.wav`), you must provide a preprocessor to convert the audio into mel spectrogram format:
 ```
 ./cmake-out/examples/models/voxtral/voxtral_runner \
   --model_path path/to/model.pte \
   --tokenizer_path path/to/tekken.json \
   --prompt "What can you tell me about this audio?" \
-  --audio_path path/to/audio_input.bin \
-  --processor_path path/to/voxtral_preprocessor.pte # If you're passing raw audio file in audio_path
+  --audio_path path/to/audio_input.wav \
+  --processor_path path/to/voxtral_preprocessor.pte
+```
+
+### Running with preprocessed audio (.bin file)
+If you already have a preprocessed mel spectrogram saved as a `.bin` file, you can skip the preprocessor:
+```
+./cmake-out/examples/models/voxtral/voxtral_runner \
+  --model_path path/to/model.pte \
+  --tokenizer_path path/to/tekken.json \
+  --prompt "What can you tell me about this audio?" \
+  --audio_path path/to/preprocessed_audio.bin
 ```
 
 Example output:

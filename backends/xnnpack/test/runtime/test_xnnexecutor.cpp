@@ -18,7 +18,7 @@ using executorch::runtime::Span;
 using executorch::runtime::testing::TensorFactory;
 
 TEST(XNNExecutorTest, ArgumentWithTooManyDimensions) {
-  XNNExecutor executor;
+  XNNExecutor executor({});
   xnn_subgraph_t subgraph = nullptr;
   xnn_runtime_t rt = nullptr;
   et_pal_init();

@@ -89,7 +89,7 @@ input_tensor: torch.Tensor = torch.randn(1, 3, 224, 224)
 program = runtime.load_program("model.pte")
 method = program.load_method("forward")
 output: List[torch.Tensor] = method.execute([input_tensor])
-print("Run succesfully via executorch")
+print("Run successfully via executorch")
 
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 import torchvision.models as models

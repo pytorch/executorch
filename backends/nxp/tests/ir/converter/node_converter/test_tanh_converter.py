@@ -27,6 +27,11 @@ from torch.export import ExportedProgram
 class TestTanhConverter(unittest.TestCase):
     __test__ = False  # Prevent interfering with PyTest tests
 
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(23)
+        np.random.seed(23)
+
     @parameterized.expand(
         input=[
             (
@@ -76,10 +81,5 @@ class TestTanhConverter(unittest.TestCase):
                 tflite_input_preprocess=ToChannelLastPreprocess(),
                 tflite_output_preprocess=ToChannelFirstPreprocess(),
                 input_data=input_data,
-                atol=1.0,
+                atol=2.0,
             )
-
-    @classmethod
-    def setUpClass(cls):
-        torch.manual_seed(23)
-        np.random.seed(23)

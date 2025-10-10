@@ -111,7 +111,7 @@ The flatbuffer-encoded metadata follows the headers and contains:
 ### Tensor Layout
 
 If a data segment contains a canonical tensor, it may have associated layout information:
-- **Scalar type**: Data type (float32, int32, etc.) using ExecutorTorch scalar types.
+- **Scalar type**: Data type (float32, int32, etc.) using ExecuTorch scalar types.
 - **Sizes**: Dimensions of the tensor.
 - **Dim order**: Memory layout order specifying how dimensions are arranged in memory.
 

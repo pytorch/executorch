@@ -14,8 +14,10 @@
 #include <executorch/extension/llm/runner/audio.h>
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/runtime/platform/compiler.h>
+#include <cstdint>
 #include <string>
 #include <variant>
+#include <vector>
 
 namespace executorch::extension::llm {
 
@@ -29,15 +31,46 @@ class ET_EXPERIMENTAL MultimodalInput {
   /// Type of multimodal input data
   enum class Type {
     TEXT, ///< Text string input
+    TOKENS, ///< Tokenizer encoded input (vector of token IDs)
     IMAGE, ///< Processed image input
     AUDIO, ///< Processed audio input
     RAW_AUDIO, ///< Raw unprocessed audio input (straight from audio file)
     UNSUPPORTED ///< Unsupported input type
   };
 
+  /**
+   * Return a human-readable name for a MultimodalInput::Type.
+   * Preferred for logging and debugging; returns string literals.
+   */
+  static constexpr const char* TypeName(Type t) noexcept {
+    switch (t) {
+      case Type::TEXT:
+        return "text";
+      case Type::TOKENS:
+        return "tokens";
+      case Type::IMAGE:
+        return "image";
+      case Type::AUDIO:
+        return "audio";
+      case Type::RAW_AUDIO:
+        return "raw_audio";
+      default:
+        return "unknown";
+    }
+  }
+
+  /** Convenience wrapper that returns a std::string. */
+  static inline std::string TypeToString(Type t) {
+    return TypeName(t);
+  }
+
   // Constructors
   explicit MultimodalInput(const std::string& text) : data_(text) {}
   explicit MultimodalInput(std::string&& text) : data_(std::move(text)) {}
+  explicit MultimodalInput(const std::vector<uint64_t>& tokens)
+      : data_(tokens) {}
+  explicit MultimodalInput(std::vector<uint64_t>&& tokens)
+      : data_(std::move(tokens)) {}
   explicit MultimodalInput(const Image& image) : data_(image) {}
   explicit MultimodalInput(Image&& image) : data_(std::move(image)) {}
   explicit MultimodalInput(const Audio& audio) : data_(audio) {}
@@ -63,6 +96,13 @@ class ET_EXPERIMENTAL MultimodalInput {
    */
   bool is_text() const noexcept {
     return std::holds_alternative<std::string>(data_);
+  }
+
+  /**
+   * Check if this input contains pre-tokenized data.
+   */
+  bool is_tokens() const noexcept {
+    return std::holds_alternative<std::vector<uint64_t>>(data_);
   }
 
   /**
@@ -97,6 +137,8 @@ class ET_EXPERIMENTAL MultimodalInput {
   Type get_type() const noexcept {
     if (is_text())
       return Type::TEXT;
+    if (is_tokens())
+      return Type::TOKENS;
     if (is_image())
       return Type::IMAGE;
     if (is_audio())
@@ -104,6 +146,15 @@ class ET_EXPERIMENTAL MultimodalInput {
     if (is_raw_audio())
       return Type::RAW_AUDIO;
     return Type::UNSUPPORTED;
+  }
+
+  /**
+   * Get a human-readable name for the contained input type.
+   * Returns one of: "text", "tokens", "image", "audio", "raw_audio", or
+   * "unknown".
+   */
+  const char* type_name() const noexcept {
+    return TypeName(get_type());
   }
 
   /**
@@ -131,6 +182,21 @@ class ET_EXPERIMENTAL MultimodalInput {
    */
   std::string&& get_text() && {
     return std::get<std::string>(std::move(data_));
+  }
+
+  /**
+   * Get the token vector from this input.
+   */
+  const std::vector<uint64_t>& get_tokens() const& {
+    return std::get<std::vector<uint64_t>>(data_);
+  }
+
+  std::vector<uint64_t>& get_tokens() & {
+    return std::get<std::vector<uint64_t>>(data_);
+  }
+
+  std::vector<uint64_t>&& get_tokens() && {
+    return std::get<std::vector<uint64_t>>(std::move(data_));
   }
 
   /**
@@ -250,6 +316,16 @@ class ET_EXPERIMENTAL MultimodalInput {
     return std::get_if<Image>(&data_);
   }
 
+  /** Try to get the tokens from this input safely. */
+  const std::vector<uint64_t>* try_get_tokens() const noexcept {
+    return std::get_if<std::vector<uint64_t>>(&data_);
+  }
+
+  /** Try to get the tokens from this input safely (mutable). */
+  std::vector<uint64_t>* try_get_tokens() noexcept {
+    return std::get_if<std::vector<uint64_t>>(&data_);
+  }
+
   /**
    * Try to get the audio data from this input safely.
    * @return Pointer to the Audio object if this input contains audio,
@@ -287,7 +363,8 @@ class ET_EXPERIMENTAL MultimodalInput {
   }
 
  private:
-  std::variant<std::string, Image, Audio, RawAudio> data_;
+  std::variant<std::string, std::vector<uint64_t>, Image, Audio, RawAudio>
+      data_;
 };
 
 // Convenience factory functions
@@ -305,6 +382,16 @@ inline MultimodalInput make_image_input(const Image& image) noexcept {
 
 inline MultimodalInput make_image_input(Image&& image) noexcept {
   return MultimodalInput(std::move(image));
+}
+
+inline MultimodalInput make_token_input(
+    const std::vector<uint64_t>& tokens) noexcept {
+  return MultimodalInput(tokens);
+}
+
+inline MultimodalInput make_token_input(
+    std::vector<uint64_t>&& tokens) noexcept {
+  return MultimodalInput(std::move(tokens));
 }
 
 inline MultimodalInput make_audio_input(const Audio& audio) noexcept {

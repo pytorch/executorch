@@ -162,7 +162,6 @@ def test_lt_tensor_u85_INT(test_module):
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -178,7 +177,6 @@ def test_lt_scalar_u85_INT(test_module):
         test_module().get_inputs(),
         LessThan.aten_op_tensor,
         LessThan.exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

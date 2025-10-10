@@ -5,7 +5,7 @@
 
 # pyre-unsafe
 
-from typing import cast, TypeAlias
+from typing import cast, Set, Type, TypeAlias
 
 import torch.fx
 from executorch.backends.arm._passes.arm_pass_utils import create_node
@@ -184,6 +184,8 @@ class SizeAdjustInputPass(ExportPass):
     slice op is inserted to remove the remaining edges (rows and columns) of the
     input.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         graph = graph_module.graph

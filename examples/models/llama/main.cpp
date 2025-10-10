@@ -105,6 +105,8 @@ int32_t main(int32_t argc, char** argv) {
       ET_LOG(Error, "Failed to warmup llama runner");
       return 1;
     }
+    // reset kv cache pos to 0
+    runner->reset();
   }
   // generate
   executorch::extension::llm::GenerationConfig config{

@@ -97,7 +97,7 @@ class TestLlava(unittest.TestCase):
         )[0]
         llava_module.run_method(
             "text_decoder",
-            (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_before_img),
+            (pte_embeds_before_img, torch.tensor([start_pos], dtype=torch.int64)),
         )
 
         # Update the start_pos. start_pos is used in kv cache. The source of truth
@@ -105,12 +105,12 @@ class TestLlava(unittest.TestCase):
         start_pos += pte_embeds_before_img.shape[1]
 
         # pte prefill image
-        pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
+        pte_embeds_img = llava_module.run_method("vision_encoder", (resized,))[0]
         llava_module.run_method(
             "text_decoder",
             (
-                torch.tensor([start_pos], dtype=torch.int64),
                 pte_embeds_img,
+                torch.tensor([start_pos], dtype=torch.int64),
             ),
         )
 
@@ -123,7 +123,7 @@ class TestLlava(unittest.TestCase):
         )[0]
         pte_prefill_after_img = llava_module.run_method(
             "text_decoder",
-            (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_after_img),
+            (pte_embeds_after_img, torch.tensor([start_pos], dtype=torch.int64)),
         )[0]
 
         # Update the logits for each prefill (kv cache) step.
@@ -140,7 +140,7 @@ class TestLlava(unittest.TestCase):
             )[0]
             logits = llava_module.run_method(
                 "text_decoder",
-                (torch.tensor([start_pos + i], dtype=torch.int64), token_embeds),
+                (token_embeds, torch.tensor([start_pos + i], dtype=torch.int64)),
             )[0]
             new_tokens.append(torch.argmax(logits).item())
 

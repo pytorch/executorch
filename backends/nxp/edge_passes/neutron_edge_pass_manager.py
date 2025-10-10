@@ -10,6 +10,10 @@ from executorch.backends.nxp.edge_passes.move_auxiliary_operator_into_separate_q
     MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass,
 )
 from executorch.backends.nxp.edge_passes.neutron_edge_pass import NeutronEdgePass
+
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
+)
 from executorch.exir import EdgeProgramManager
 from executorch.exir.program._program import (
     _get_updated_graph_signature,
@@ -24,7 +28,9 @@ from torch.fx.passes.infra.pass_manager import PassManager
 
 class NeutronEdgePassManager(PassManager):
 
-    def __init__(self, passes: list[NeutronEdgePass] = None):
+    def __init__(
+        self, passes: list[NeutronEdgePass] = None, remove_io_quant_ops: bool = False
+    ):
         passes: list[NeutronEdgePass] = passes or [
             MoveLeadingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
             MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(),
@@ -34,6 +40,8 @@ class NeutronEdgePassManager(PassManager):
             passes,
             steps=10,  # Empirical value. At most 10 cycles of passes will be run.
         )
+
+        self.remove_io_quant_ops = remove_io_quant_ops
 
     def _transform_graph_module(self, module: nn.Module) -> PassResult:
         """Apply the passes to a single graph module."""
@@ -78,12 +86,17 @@ class NeutronEdgePassManager(PassManager):
 
             new_programs[name] = new_program
 
-        if len(new_programs) == 0:
-            # No passes were run, return the old EdgeProgramManager.
-            return epm
+        result = epm
 
-        else:
-            # Return a new EdgeProgramManager with the updated programs.
-            return EdgeProgramManager(
+        if len(new_programs) > 0:
+            # Use a new EdgeProgramManager with the updated programs if any update was performed.
+            result = EdgeProgramManager(
                 new_programs, copy.deepcopy(epm._config_methods), epm.compile_config
             )
+
+        if self.remove_io_quant_ops:
+            result = result.transform(
+                [RemoveIOQuantOpsPass(edge_program_manager=result)]
+            )
+
+        return result

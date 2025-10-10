@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from executorch.examples.models.llama.attention import (
     Attention,
     ATTENTION_REGISTRY,
+    AttentionSkip,
     ForwardOptions,
 )
 from executorch.examples.models.llama.feed_forward import FeedForward
@@ -95,7 +96,10 @@ class TransformerBlock(nn.Module):
         else:
             self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
 
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        if isinstance(self.attention, AttentionSkip):
+            self.attention_norm = nn.Identity()
+        else:
+            self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     @classmethod
@@ -120,8 +124,9 @@ class TransformerBlock(nn.Module):
         h, attn_options_update = self.attention.forward(
             self.attention_norm(x), freqs_cos, freqs_sin, **attn_options
         )
+        if not isinstance(self.attention, AttentionSkip):
+            h = x + h
 
-        h = x + h
         if hasattr(self, "block_sparse_moe"):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:

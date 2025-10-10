@@ -27,7 +27,6 @@ using torch::executor::Error;
 using torch::executor::KernelRuntimeContext;
 using torch::executor::resize_embedding_output;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -132,4 +131,3 @@ Tensor& embedding_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

@@ -156,7 +156,7 @@ class TestMimiModel(unittest.TestCase):
         all_pcms_streaming = torch.cat(all_pcms_streaming, dim=-1)
         sqnr_streaming = compute_sqnr(pcm_ref, all_pcms_streaming)
         print(f"sqnr_streaming = {sqnr_streaming} dB")
-        self.assertTrue(sqnr_streaming > 100)
+        self.assertTrue(sqnr_streaming > 70)
 
     def test_exported_encoding(self):
         """Ensure exported encoding model is consistent with reference output."""

@@ -16,7 +16,7 @@ from .qnn_constants import OpElementWiseAnd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class OpAnd(NodeVisitor):
-    target = ["aten.bitwise_and.Tensor"]
+    target = ["aten.bitwise_and.Tensor", "aten.logical_and.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

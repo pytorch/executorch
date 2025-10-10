@@ -27,12 +27,12 @@ def export_model_combined(
     with_external_tensor_data: bool = False,
 ) -> ExecuTorchModule:
     """
-    Export a PyTorch model to an ExecutorTorch module format, optionally with external tensor data.
+    Export a PyTorch model to an ExecuTorch module format, optionally with external tensor data.
 
     This function takes a PyTorch model and sample input/label tensors,
     wraps the model with a loss function, exports it using torch.export,
     applies forward-backward pass optimization, converts it to edge format,
-    and finally to ExecutorTorch format. If with_external_tensor_data is True,
+    and finally to ExecuTorch format. If with_external_tensor_data is True,
     the model will be exported with external constants and mutable weights.
 
     TODO: set dynamic shape for the batch size here.
@@ -45,7 +45,7 @@ def export_model_combined(
             Defaults to False.
 
     Returns:
-        ExecuTorchModule: The exported model in ExecutorTorch format ready for deployment
+        ExecuTorchModule: The exported model in ExecuTorch format ready for deployment
     """
     criterion = torch.nn.CrossEntropyLoss()
     model_with_loss = ModelWithLoss(net, criterion)
@@ -72,17 +72,17 @@ def export_model_combined(
 
 def get_pte_only(net: torch.nn.Module) -> ExecuTorchModule:
     """
-    Generate an ExecutorTorch module from a PyTorch model without external tensor data.
+    Generate an ExecuTorch module from a PyTorch model without external tensor data.
 
     This function retrieves a sample input and label tensor from the test data loader,
-    and uses them to export the given PyTorch model to an ExecutorTorch module format
+    and uses them to export the given PyTorch model to an ExecuTorch module format
     without external constants or mutable weights.
 
     Args:
         net (torch.nn.Module): The PyTorch model to be exported.
 
     Returns:
-        ExecuTorchModule: The exported model in ExecutorTorch format.
+        ExecuTorchModule: The exported model in ExecuTorch format.
     """
     _, test_loader = get_data_loaders()
     # get a sample input and label tensor
@@ -95,17 +95,17 @@ def get_pte_only(net: torch.nn.Module) -> ExecuTorchModule:
 
 def get_pte_with_ptd(net: torch.nn.Module) -> ExecuTorchModule:
     """
-    Generate an ExecutorTorch module from a PyTorch model with external tensor data.
+    Generate an ExecuTorch module from a PyTorch model with external tensor data.
 
     This function retrieves a sample input and label tensor from the test data loader,
-    and uses them to export the given PyTorch model to an ExecutorTorch module format
+    and uses them to export the given PyTorch model to an ExecuTorch module format
     with external constants and mutable weights.
 
     Args:
         net (torch.nn.Module): The PyTorch model to be exported.
 
     Returns:
-        ExecuTorchModule: The exported model in ExecutorTorch format with external tensor data.
+        ExecuTorchModule: The exported model in ExecuTorch format with external tensor data.
     """
     _, test_loader = get_data_loaders()
     # get a sample input and label tensor
@@ -121,7 +121,7 @@ def export_model(
     with_ptd: bool = False,
 ) -> ExecuTorchModule:
     """
-    Export a PyTorch model to ExecutorTorch format, optionally with external tensor data.
+    Export a PyTorch model to ExecuTorch format, optionally with external tensor data.
 
     This function is a high-level wrapper that handles getting sample data and
     calling the appropriate export function based on the with_ptd flag.
@@ -132,7 +132,7 @@ def export_model(
             Defaults to False.
 
     Returns:
-        ExecuTorchModule: The exported model in ExecutorTorch format
+        ExecuTorchModule: The exported model in ExecuTorch format
     """
     _, test_loader = get_data_loaders()
     validation_sample_data = next(iter(test_loader))
@@ -145,13 +145,13 @@ def export_model(
 
 def save_model(ep: ExecuTorchModule, model_path: str) -> None:
     """
-    Save an ExecutorTorch model to a specified file path.
+    Save an ExecuTorch model to a specified file path.
 
-    This function writes the buffer of an ExecutorTorchModule to a
+    This function writes the buffer of an ExecuTorchModule to a
     file in binary format.
 
     Args:
-        ep (ExecuTorchModule): The ExecutorTorch module to be saved.
+        ep (ExecuTorchModule): The ExecuTorch module to be saved.
         model_path (str): The file path where the model will be saved.
     """
     with open(model_path, "wb") as file:

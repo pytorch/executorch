@@ -1,0 +1,19 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+binary_q8ta_q8ta_q8to:
+  parameter_names_with_default_values:
+    OPERATOR: X + Y
+    NDIM: 3
+    DTYPE: float
+    PACKING: C_packed
+    IO_STORAGE: buffer
+  generate_variant_forall:
+    IO_STORAGE:
+      - VALUE: buffer
+  shader_variants:
+    - NAME: add_q8ta_q8ta_q8to
+      OPERATOR: X + Y

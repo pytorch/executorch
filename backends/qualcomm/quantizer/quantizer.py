@@ -161,6 +161,7 @@ class ModuleQConfig:
                 {
                     torch.ops.aten.conv1d.default,
                     torch.ops.aten.conv2d.default,
+                    torch.ops.aten.conv3d.default,
                     torch.ops.aten.conv_transpose2d.input,
                 }
             )

@@ -7,7 +7,7 @@
 #include "arm_memory_allocator.h"
 
 ArmMemoryAllocator::ArmMemoryAllocator(uint32_t size, uint8_t* base_address)
-    : MemoryAllocator(size, base_address), used_(0), peak_used_(0) {}
+    : MemoryAllocator(size, base_address), used_(0) {}
 
 void* ArmMemoryAllocator::allocate(size_t size, size_t alignment) {
   void* ret = executorch::runtime::MemoryAllocator::allocate(size, alignment);
@@ -22,18 +22,12 @@ void* ArmMemoryAllocator::allocate(size_t size, size_t alignment) {
     } else {
       used_ = (used_ | (alignment - 1)) + 1 + size;
     }
-    if (used_ > peak_used_)
-      peak_used_ = used_;
   }
   return ret;
 }
 
 size_t ArmMemoryAllocator::used_size() const {
   return used_;
-}
-
-size_t ArmMemoryAllocator::peak_used() const {
-  return peak_used_;
 }
 
 size_t ArmMemoryAllocator::free_size() const {

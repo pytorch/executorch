@@ -14,9 +14,9 @@ using namespace ::testing;
 using executorch::extension::llm::Image;
 using executorch::extension::llm::make_image_input;
 using executorch::extension::llm::make_text_input;
+using executorch::extension::llm::make_token_input;
 using executorch::extension::llm::MultimodalInput;
 
-namespace {
 class MultimodalInputTest : public Test {
  protected:
   std::string createTestText() {
@@ -28,21 +28,13 @@ class MultimodalInputTest : public Test {
   }
 
   Image createTestImage() {
-    Image img;
-    img.width = 224;
-    img.height = 224;
-    img.channels = 3;
-    img.data = std::vector<uint8_t>(224 * 224 * 3, 128); // Fill with gray
-    return img;
+    std::vector<uint8_t> data(224 * 224 * 3, 128); // Fill with gray
+    return Image(std::move(data), 224, 224, 3);
   }
 
   Image createTestImageSmall() {
-    Image img;
-    img.width = 32;
-    img.height = 32;
-    img.channels = 1;
-    img.data = std::vector<uint8_t>(32 * 32, 255); // Fill with white
-    return img;
+    std::vector<uint8_t> data(32 * 32, 255); // Fill with white
+    return Image(std::move(data), 32, 32, 1);
   }
 };
 
@@ -76,28 +68,28 @@ TEST_F(MultimodalInputTest, ImageConstructorFromImage) {
   EXPECT_FALSE(input.is_text());
   EXPECT_TRUE(input.is_image());
   EXPECT_EQ(input.get_type(), MultimodalInput::Type::IMAGE);
-  EXPECT_EQ(input.get_image().width, 224);
-  EXPECT_EQ(input.get_image().height, 224);
-  EXPECT_EQ(input.get_image().channels, 3);
-  EXPECT_EQ(input.get_image().data.size(), 224 * 224 * 3);
+  EXPECT_EQ(input.get_image().width(), 224);
+  EXPECT_EQ(input.get_image().height(), 224);
+  EXPECT_EQ(input.get_image().channels(), 3);
+  EXPECT_EQ(input.get_image().get_uint8_data().size(), 224 * 224 * 3);
 }
 
 TEST_F(MultimodalInputTest, ImageConstructorFromRvalueImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
-  size_t data_size = img.data.size();
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
+  size_t data_size = img.get_uint8_data().size();
 
   MultimodalInput input(std::move(img));
 
   EXPECT_FALSE(input.is_text());
   EXPECT_TRUE(input.is_image());
   EXPECT_EQ(input.get_type(), MultimodalInput::Type::IMAGE);
-  EXPECT_EQ(input.get_image().width, width);
-  EXPECT_EQ(input.get_image().height, height);
-  EXPECT_EQ(input.get_image().channels, channels);
-  EXPECT_EQ(input.get_image().data.size(), data_size);
+  EXPECT_EQ(input.get_image().width(), width);
+  EXPECT_EQ(input.get_image().height(), height);
+  EXPECT_EQ(input.get_image().channels(), channels);
+  EXPECT_EQ(input.get_image().get_uint8_data().size(), data_size);
 }
 
 // Test copy constructor and assignment
@@ -129,10 +121,10 @@ TEST_F(MultimodalInputTest, CopyConstructorImage) {
   MultimodalInput copy(original);
 
   EXPECT_TRUE(copy.is_image());
-  EXPECT_EQ(copy.get_image().width, 224);
-  EXPECT_EQ(copy.get_image().height, 224);
-  EXPECT_EQ(copy.get_image().channels, 3);
-  EXPECT_EQ(original.get_image().width, 224); // Original should be unchanged
+  EXPECT_EQ(copy.get_image().width(), 224);
+  EXPECT_EQ(copy.get_image().height(), 224);
+  EXPECT_EQ(copy.get_image().channels(), 3);
+  EXPECT_EQ(original.get_image().width(), 224); // Original should be unchanged
 }
 
 TEST_F(MultimodalInputTest, CopyAssignmentImage) {
@@ -143,10 +135,10 @@ TEST_F(MultimodalInputTest, CopyAssignmentImage) {
   copy = original;
 
   EXPECT_TRUE(copy.is_image());
-  EXPECT_EQ(copy.get_image().width, 224);
-  EXPECT_EQ(copy.get_image().height, 224);
-  EXPECT_EQ(copy.get_image().channels, 3);
-  EXPECT_EQ(original.get_image().width, 224); // Original should be unchanged
+  EXPECT_EQ(copy.get_image().width(), 224);
+  EXPECT_EQ(copy.get_image().height(), 224);
+  EXPECT_EQ(copy.get_image().channels(), 3);
+  EXPECT_EQ(original.get_image().width(), 224); // Original should be unchanged
 }
 
 // Test move constructor and assignment
@@ -174,32 +166,32 @@ TEST_F(MultimodalInputTest, MoveAssignmentText) {
 
 TEST_F(MultimodalInputTest, MoveConstructorImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
   MultimodalInput original(std::move(img));
   MultimodalInput moved(std::move(original));
 
   EXPECT_TRUE(moved.is_image());
-  EXPECT_EQ(moved.get_image().width, width);
-  EXPECT_EQ(moved.get_image().height, height);
-  EXPECT_EQ(moved.get_image().channels, channels);
+  EXPECT_EQ(moved.get_image().width(), width);
+  EXPECT_EQ(moved.get_image().height(), height);
+  EXPECT_EQ(moved.get_image().channels(), channels);
 }
 
 TEST_F(MultimodalInputTest, MoveAssignmentImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
   MultimodalInput original(std::move(img));
   MultimodalInput moved(createTestText()); // Start with different type
 
   moved = std::move(original);
 
   EXPECT_TRUE(moved.is_image());
-  EXPECT_EQ(moved.get_image().width, width);
-  EXPECT_EQ(moved.get_image().height, height);
-  EXPECT_EQ(moved.get_image().channels, channels);
+  EXPECT_EQ(moved.get_image().width(), width);
+  EXPECT_EQ(moved.get_image().height(), height);
+  EXPECT_EQ(moved.get_image().channels(), channels);
 }
 
 // Test getter methods with correct types
@@ -227,16 +219,13 @@ TEST_F(MultimodalInputTest, GetImageWithImageInput) {
 
   // Test const lvalue reference version
   const MultimodalInput& const_input = input;
-  EXPECT_EQ(const_input.get_image().width, 224);
-
-  // Test mutable lvalue reference version
-  Image& mutable_image = input.get_image();
-  mutable_image.width = 448;
-  EXPECT_EQ(input.get_image().width, 448);
+  EXPECT_EQ(const_input.get_image().width(), 224);
+  EXPECT_EQ(const_input.get_image().height(), 224);
+  EXPECT_EQ(const_input.get_image().channels(), 3);
 
   // Test rvalue reference version
   Image moved_image = std::move(input).get_image();
-  EXPECT_EQ(moved_image.width, 448);
+  EXPECT_EQ(moved_image.width(), 224);
 }
 
 // Test getter methods with wrong types (should throw)
@@ -296,18 +285,14 @@ TEST_F(MultimodalInputTest, TryGetImageWithImageInput) {
   const MultimodalInput& const_input = input;
   const Image* image_ptr = const_input.try_get_image();
   ASSERT_NE(image_ptr, nullptr);
-  EXPECT_EQ(image_ptr->width, 224);
-  EXPECT_EQ(image_ptr->height, 224);
-  EXPECT_EQ(image_ptr->channels, 3);
+  EXPECT_EQ(image_ptr->width(), 224);
+  EXPECT_EQ(image_ptr->height(), 224);
+  EXPECT_EQ(image_ptr->channels(), 3);
 
   // Test mutable version
   Image* mutable_image_ptr = input.try_get_image();
   ASSERT_NE(mutable_image_ptr, nullptr);
-  EXPECT_EQ(mutable_image_ptr->width, 224);
-
-  // Modify through pointer
-  mutable_image_ptr->width = 448;
-  EXPECT_EQ(input.get_image().width, 448);
+  EXPECT_EQ(mutable_image_ptr->width(), 224);
 }
 
 TEST_F(MultimodalInputTest, TryGetImageWithTextInput) {
@@ -344,22 +329,22 @@ TEST_F(MultimodalInputTest, MakeImageInputFromImage) {
   MultimodalInput input = make_image_input(img);
 
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, 224);
-  EXPECT_EQ(input.get_image().height, 224);
-  EXPECT_EQ(input.get_image().channels, 3);
+  EXPECT_EQ(input.get_image().width(), 224);
+  EXPECT_EQ(input.get_image().height(), 224);
+  EXPECT_EQ(input.get_image().channels(), 3);
 }
 
 TEST_F(MultimodalInputTest, MakeImageInputFromRvalueImage) {
   Image img = createTestImage();
-  int width = img.width;
-  int height = img.height;
-  int channels = img.channels;
+  int width = img.width();
+  int height = img.height();
+  int channels = img.channels();
   MultimodalInput input = make_image_input(std::move(img));
 
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, width);
-  EXPECT_EQ(input.get_image().height, height);
-  EXPECT_EQ(input.get_image().channels, channels);
+  EXPECT_EQ(input.get_image().width(), width);
+  EXPECT_EQ(input.get_image().height(), height);
+  EXPECT_EQ(input.get_image().channels(), channels);
 }
 
 // Test with different image sizes
@@ -368,10 +353,10 @@ TEST_F(MultimodalInputTest, DifferentImageSizes) {
   MultimodalInput input(small_img);
 
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, 32);
-  EXPECT_EQ(input.get_image().height, 32);
-  EXPECT_EQ(input.get_image().channels, 1);
-  EXPECT_EQ(input.get_image().data.size(), 32 * 32);
+  EXPECT_EQ(input.get_image().width(), 32);
+  EXPECT_EQ(input.get_image().height(), 32);
+  EXPECT_EQ(input.get_image().channels(), 1);
+  EXPECT_EQ(input.get_image().get_uint8_data().size(), 32 * 32);
 }
 
 // Test with empty text
@@ -424,11 +409,264 @@ TEST_F(MultimodalInputTest, AssignmentBetweenTypes) {
   // Assign image to text input
   input = MultimodalInput(img);
   EXPECT_TRUE(input.is_image());
-  EXPECT_EQ(input.get_image().width, 224);
+  EXPECT_EQ(input.get_image().width(), 224);
 
   // Assign text back to image input
   input = MultimodalInput(text);
   EXPECT_TRUE(input.is_text());
   EXPECT_EQ(input.get_text(), text);
 }
-} // namespace
+
+// Token-related tests
+class MultimodalInputTokenTest : public Test {
+ protected:
+  std::vector<uint64_t> createTestTokens() {
+    return {1, 2, 3, 4, 5};
+  }
+};
+
+// Test token constructors
+TEST_F(MultimodalInputTokenTest, TokenConstructorFromVector) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_FALSE(input.is_text());
+  EXPECT_FALSE(input.is_image());
+  EXPECT_EQ(input.get_type(), MultimodalInput::Type::TOKENS);
+  EXPECT_EQ(input.get_tokens(), tokens);
+  EXPECT_EQ(input.get_tokens().size(), 5);
+}
+
+TEST_F(MultimodalInputTokenTest, TokenConstructorFromRvalueVector) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  std::vector<uint64_t> original_tokens = tokens;
+  MultimodalInput input(std::move(tokens));
+
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_FALSE(input.is_text());
+  EXPECT_FALSE(input.is_image());
+  EXPECT_EQ(input.get_type(), MultimodalInput::Type::TOKENS);
+  EXPECT_EQ(input.get_tokens(), original_tokens);
+  EXPECT_EQ(input.get_tokens().size(), 5);
+}
+
+// Test token type checking
+TEST_F(MultimodalInputTokenTest, TokenTypeChecking) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_FALSE(input.is_text());
+  EXPECT_FALSE(input.is_image());
+  EXPECT_FALSE(input.is_audio());
+  EXPECT_FALSE(input.is_raw_audio());
+  EXPECT_EQ(input.get_type(), MultimodalInput::Type::TOKENS);
+  EXPECT_STREQ(input.type_name(), "tokens");
+}
+
+// Test token getters
+TEST_F(MultimodalInputTokenTest, GetTokensWithTokenInput) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+
+  // Test const lvalue reference version
+  const MultimodalInput& const_input = input;
+  EXPECT_EQ(const_input.get_tokens(), tokens);
+  EXPECT_EQ(const_input.get_tokens().size(), 5);
+
+  // Test mutable lvalue reference version
+  std::vector<uint64_t>& mutable_tokens = input.get_tokens();
+  mutable_tokens.push_back(6);
+  EXPECT_EQ(input.get_tokens().size(), 6);
+  EXPECT_EQ(input.get_tokens().back(), 6);
+
+  // Test rvalue reference version
+  std::vector<uint64_t> moved_tokens = std::move(input).get_tokens();
+  EXPECT_EQ(moved_tokens.size(), 6);
+  EXPECT_EQ(moved_tokens.back(), 6);
+}
+
+// Test token getters with wrong types (should throw)
+TEST_F(MultimodalInputTokenTest, GetTokensWithTextInputThrows) {
+  std::string text = "Hello";
+  MultimodalInput input(text);
+
+  EXPECT_THROW(input.get_tokens(), std::bad_variant_access);
+  EXPECT_THROW(std::move(input).get_tokens(), std::bad_variant_access);
+}
+
+TEST_F(MultimodalInputTokenTest, GetTextWithTokenInputThrows) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+
+  EXPECT_THROW(input.get_text(), std::bad_variant_access);
+  EXPECT_THROW(std::move(input).get_text(), std::bad_variant_access);
+}
+
+// Test safe token getters (try_get_*)
+TEST_F(MultimodalInputTokenTest, TryGetTokensWithTokenInput) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+
+  // Test const version
+  const MultimodalInput& const_input = input;
+  const std::vector<uint64_t>* tokens_ptr = const_input.try_get_tokens();
+  ASSERT_NE(tokens_ptr, nullptr);
+  EXPECT_EQ(*tokens_ptr, tokens);
+
+  // Test mutable version
+  std::vector<uint64_t>* mutable_tokens_ptr = input.try_get_tokens();
+  ASSERT_NE(mutable_tokens_ptr, nullptr);
+  EXPECT_EQ(*mutable_tokens_ptr, tokens);
+
+  // Modify through pointer
+  mutable_tokens_ptr->push_back(100);
+  EXPECT_EQ(input.get_tokens().size(), 6);
+  EXPECT_EQ(input.get_tokens().back(), 100);
+}
+
+TEST_F(MultimodalInputTokenTest, TryGetTokensWithTextInput) {
+  std::string text = "Hello";
+  MultimodalInput input(text);
+
+  // Should return nullptr for wrong type
+  EXPECT_EQ(input.try_get_tokens(), nullptr);
+
+  const MultimodalInput& const_input = input;
+  EXPECT_EQ(const_input.try_get_tokens(), nullptr);
+}
+
+// Test token convenience factory functions
+TEST_F(MultimodalInputTokenTest, MakeTokenInputFromVector) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input = make_token_input(tokens);
+
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_EQ(input.get_tokens(), tokens);
+  EXPECT_EQ(input.get_tokens().size(), 5);
+}
+
+TEST_F(MultimodalInputTokenTest, MakeTokenInputFromRvalueVector) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  std::vector<uint64_t> original_tokens = tokens;
+  MultimodalInput input = make_token_input(std::move(tokens));
+
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_EQ(input.get_tokens(), original_tokens);
+  EXPECT_EQ(input.get_tokens().size(), 5);
+}
+
+// Test token copy semantics
+TEST_F(MultimodalInputTokenTest, TokenCopyConstructor) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput original(tokens);
+  MultimodalInput copy(original);
+
+  EXPECT_TRUE(copy.is_tokens());
+  EXPECT_EQ(copy.get_tokens(), tokens);
+  EXPECT_EQ(original.get_tokens(), tokens); // Original should be unchanged
+
+  // Modify copy, original should be unaffected
+  copy.get_tokens().push_back(999);
+  EXPECT_EQ(copy.get_tokens().size(), 6);
+  EXPECT_EQ(original.get_tokens().size(), 5);
+}
+
+TEST_F(MultimodalInputTokenTest, TokenCopyAssignment) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput original(tokens);
+  MultimodalInput copy("initial text"); // Start with different type
+
+  copy = original;
+
+  EXPECT_TRUE(copy.is_tokens());
+  EXPECT_EQ(copy.get_tokens(), tokens);
+  EXPECT_EQ(original.get_tokens(), tokens); // Original should be unchanged
+}
+
+// Test token move semantics
+TEST_F(MultimodalInputTokenTest, TokenMoveConstructor) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  std::vector<uint64_t> original_tokens = tokens;
+  MultimodalInput original(std::move(tokens));
+  MultimodalInput moved(std::move(original));
+
+  EXPECT_TRUE(moved.is_tokens());
+  EXPECT_EQ(moved.get_tokens(), original_tokens);
+}
+
+TEST_F(MultimodalInputTokenTest, TokenMoveAssignment) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  std::vector<uint64_t> original_tokens = tokens;
+  MultimodalInput original(std::move(tokens));
+  MultimodalInput moved("initial text"); // Start with different type
+
+  moved = std::move(original);
+
+  EXPECT_TRUE(moved.is_tokens());
+  EXPECT_EQ(moved.get_tokens(), original_tokens);
+}
+
+// Test TypeName and TypeToString static methods for TOKENS
+TEST_F(MultimodalInputTokenTest, TypeNameAndToString) {
+  EXPECT_STREQ(
+      MultimodalInput::TypeName(MultimodalInput::Type::TOKENS), "tokens");
+  EXPECT_EQ(
+      MultimodalInput::TypeToString(MultimodalInput::Type::TOKENS), "tokens");
+
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+  EXPECT_STREQ(input.type_name(), "tokens");
+}
+
+// Test assignment between token and other types
+TEST_F(MultimodalInputTokenTest, AssignmentBetweenTokensAndOtherTypes) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  std::string text = "Hello";
+
+  MultimodalInput input(tokens);
+  EXPECT_TRUE(input.is_tokens());
+
+  // Assign text to token input
+  input = MultimodalInput(text);
+  EXPECT_TRUE(input.is_text());
+  EXPECT_EQ(input.get_text(), text);
+
+  // Assign tokens back to text input
+  input = MultimodalInput(tokens);
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_EQ(input.get_tokens(), tokens);
+}
+
+// Test token values with specific patterns
+TEST_F(MultimodalInputTokenTest, SpecificTokenValues) {
+  std::vector<uint64_t> tokens = {
+      0, 1, 2, 65535, 4294967295ULL, 18446744073709551615ULL};
+  MultimodalInput input(tokens);
+
+  EXPECT_TRUE(input.is_tokens());
+  EXPECT_EQ(input.get_tokens().size(), 6);
+  EXPECT_EQ(input.get_tokens()[0], 0);
+  EXPECT_EQ(input.get_tokens()[1], 1);
+  EXPECT_EQ(input.get_tokens()[2], 2);
+  EXPECT_EQ(input.get_tokens()[3], 65535);
+  EXPECT_EQ(input.get_tokens()[4], 4294967295ULL);
+  EXPECT_EQ(input.get_tokens()[5], 18446744073709551615ULL); // Max uint64_t
+}
+
+// Test token modification through reference
+TEST_F(MultimodalInputTokenTest, TokenModificationThroughReference) {
+  std::vector<uint64_t> tokens = createTestTokens();
+  MultimodalInput input(tokens);
+
+  // Get mutable reference and modify
+  std::vector<uint64_t>& token_ref = input.get_tokens();
+  token_ref[0] = 999;
+  token_ref.push_back(1000);
+
+  // Verify changes
+  EXPECT_EQ(input.get_tokens()[0], 999);
+  EXPECT_EQ(input.get_tokens().size(), 6);
+  EXPECT_EQ(input.get_tokens().back(), 1000);
+}

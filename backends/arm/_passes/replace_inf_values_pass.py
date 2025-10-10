@@ -7,6 +7,8 @@
 # This pass is based on backends/qualcomm/_passes/replace_inf_values.py
 # with some modification to replaced inf values.
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -15,6 +17,8 @@ class ReplaceInfValues(ExportPass):
     """
     Due to limitation in Quantizer, we need to change inf/-inf to more quantizable values.
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self):
         super(ReplaceInfValues, self).__init__()

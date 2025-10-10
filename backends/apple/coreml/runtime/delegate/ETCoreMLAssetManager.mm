@@ -254,29 +254,6 @@ get_assets_to_remove(ModelAssetsStore& store,
     
     return assets;
 }
-
-NSURL * _Nullable move_to_directory(NSURL *url,
-                                    NSURL *directoryURL,
-                                    NSFileManager *fileManager,
-                                    NSError * __autoreleasing *error) {
-    if (!url) {
-        ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorInternalError, "Move operation failed: source URL is nil.");
-        return nil;
-    }
-
-    if (!directoryURL) {
-        ETCoreMLLogErrorAndSetNSError(error, ETCoreMLErrorInternalError, "Move operation failed: destination URL is nil.");
-        return nil;
-    }
-
-    NSURL *dstURL = [directoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    if (![fileManager moveItemAtURL:url toURL:dstURL error:error]) {
-        return nil;
-    }
-
-    return dstURL;
-}
-
 } //namespace
 
 @interface ETCoreMLAssetManager () <NSFileManagerDelegate> {
@@ -322,17 +299,12 @@ NSURL * _Nullable move_to_directory(NSURL *url,
     if (!managedAssetsDirectoryURL) {
         return nil;
     }
-
+    
     NSURL *managedTrashDirectoryURL = ::create_directory_if_needed(trashDirectoryURL, @"models", fileManager, error);
     if (!managedTrashDirectoryURL) {
         return nil;
     }
-
-    NSURL *managedStagingDirectoryURL = ::create_directory_if_needed(assetsDirectoryURL, @"staging", fileManager, error);
-    if (!managedStagingDirectoryURL) {
-        return nil;
-    }
-
+    
     // If directory is empty then purge the stores
     if (::is_directory_empty(managedAssetsDirectoryURL, fileManager, nil)) {
         assetsMetaStore.impl()->purge(ec);
@@ -343,7 +315,6 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         _assetsStore = std::move(assetsStore);
         _assetsMetaStore = std::move(assetsMetaStore);
         _assetsDirectoryURL = managedAssetsDirectoryURL;
-        _stagingDirectoryURL = managedStagingDirectoryURL;
         _trashDirectoryURL = managedTrashDirectoryURL;
         _estimatedSizeInBytes = sizeInBytes.value();
         _maxAssetsSizeInBytes = maxAssetsSizeInBytes;
@@ -375,15 +346,15 @@ NSURL * _Nullable move_to_directory(NSURL *url,
                             error:error];
 }
 
-- (void)withTemporaryDirectory:(void (^)(NSURL *directoryURL))block {
-    NSURL *dstURL = [self.stagingDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    block(dstURL);
-    if (![self.fileManager fileExistsAtPath:dstURL.path]) {
-        return;
+- (nullable NSURL *)moveURL:(NSURL *)url
+     toUniqueURLInDirectory:(NSURL *)directoryURL
+                      error:(NSError * __autoreleasing *)error {
+    NSURL *dstURL = [directoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    if (![self.fileManager moveItemAtURL:url toURL:dstURL error:error]) {
+        return nil;
     }
-
-    move_to_directory(dstURL, self.trashDirectoryURL, self.fileManager, nil);
-    [self cleanupTrashDirectory];
+    
+    return dstURL;
 }
 
 - (void)cleanupAssetIfNeeded:(ETCoreMLAsset *)asset {
@@ -436,8 +407,9 @@ NSURL * _Nullable move_to_directory(NSURL *url,
             return false;
         }
         
-        // If a file already exists at `dstURL`, move it to the trash for removal.
-        move_to_directory(dstURL, self.trashDirectoryURL, self.fileManager, nil);
+        // If an asset exists move it
+        [self moveURL:dstURL toUniqueURLInDirectory:self.trashDirectoryURL error:nil];
+        
         // Move the asset to assets directory.
         if (![self.fileManager moveItemAtURL:srcURL toURL:dstURL error:error]) {
             return false;
@@ -461,25 +433,16 @@ NSURL * _Nullable move_to_directory(NSURL *url,
 }
 
 - (void)triggerCompaction {
-    if (self.estimatedSizeInBytes >= self.maxAssetsSizeInBytes) {
-        __weak __typeof(self) weakSelf = self;
-        dispatch_async(self.syncQueue, ^{
-            NSError *localError = nil;
-            if (![weakSelf _compact:self.maxAssetsSizeInBytes error:&localError]) {
-                ETCoreMLLogError(localError, "Failed to compact asset store.");
-            }
-        });
+    if (self.estimatedSizeInBytes < self.maxAssetsSizeInBytes) {
+        return;
     }
-
-    // Always clean the trash directory to ensure a minimal footprint.
-    // The `trashQueue` is serialized, so only one cleanup will run at a time.
-    [self cleanupTrashDirectory];
-}
-
-- (void)cleanupTrashDirectory {
+    
     __weak __typeof(self) weakSelf = self;
-    dispatch_async(self.trashQueue, ^{
-        [weakSelf removeFilesInTrashDirectory];
+    dispatch_async(self.syncQueue, ^{
+        NSError *localError = nil;
+        if (![weakSelf _compact:self.maxAssetsSizeInBytes error:&localError]) {
+            ETCoreMLLogError(localError, "Failed to compact asset store.");
+        }
     });
 }
 
@@ -585,7 +548,7 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         
         NSURL *assetURL = ::get_asset_url(assetValue);
         if ([self.fileManager fileExistsAtPath:assetURL.path] &&
-            !move_to_directory(assetURL, self.trashDirectoryURL, self.fileManager, error)) {
+            ![self moveURL:assetURL toUniqueURLInDirectory:self.trashDirectoryURL error:error]) {
             return false;
         }
         
@@ -686,7 +649,13 @@ NSURL * _Nullable move_to_directory(NSURL *url,
                              identifier);
         }
     }
-
+    
+    // Trigger cleanup.
+    __weak __typeof(self) weakSelf = self;
+    dispatch_async(self.trashQueue, ^{
+        [weakSelf removeFilesInTrashDirectory];
+    });
+    
     return _estimatedSizeInBytes;
 }
 
@@ -695,10 +664,7 @@ NSURL * _Nullable move_to_directory(NSURL *url,
     dispatch_sync(self.syncQueue, ^{
         result = [self _compact:sizeInBytes error:error];
     });
-
-    // Always clean the trash directory to ensure a minimal footprint.
-    // The `trashQueue` is serialized, so only one cleanup will run at a time.
-    [self cleanupTrashDirectory];
+    
     return result;
 }
 
@@ -742,7 +708,7 @@ NSURL * _Nullable move_to_directory(NSURL *url,
         }
         
         // Move the the whole assets directory to the temp directory.
-        if (!move_to_directory(self.assetsDirectoryURL, self.trashDirectoryURL, self.fileManager, error)) {
+        if (![self moveURL:self.assetsDirectoryURL toUniqueURLInDirectory:self.trashDirectoryURL error:error]) {
             return false;
         }
         
@@ -758,7 +724,13 @@ NSURL * _Nullable move_to_directory(NSURL *url,
     
     ::set_error_from_error_code(ec, error);
     // Trigger cleanup
-    [self cleanupTrashDirectory];
+    if (status) {
+        __weak __typeof(self) weakSelf = self;
+        dispatch_async(self.trashQueue, ^{
+            [weakSelf removeFilesInTrashDirectory];
+        });
+    }
+    
     return static_cast<BOOL>(status);
 }
 

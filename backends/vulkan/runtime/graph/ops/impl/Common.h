@@ -54,4 +54,11 @@ utils::uvec3 pick_hw_square_wg_size(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args);
 
+utils::uvec3 pick_wc_square_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args);
+
 } // namespace vkcompute

@@ -771,7 +771,16 @@ class ComputeGraph final {
    */
   ValueRef get_or_add_value_for_int(const int64_t val);
 
+  ValueRef set_input_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
+
+  ValueRef set_output_tensor(
+      const ValueRef idx,
+      vkapi::ScalarType staging_dtype);
+
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   ValueRef set_output_value(const ValueRef idx);
@@ -947,7 +956,20 @@ class ComputeGraph final {
 
   void
   copy_into_staging(const ValueRef idx, const void* data, const size_t numel);
+
+  void maybe_cast_and_copy_into_staging(
+      const ValueRef idx,
+      const void* data,
+      const size_t numel,
+      const vkapi::ScalarType src_data_dtype);
+
   void copy_from_staging(const ValueRef idx, void* data, const size_t numel);
+
+  void maybe_cast_and_copy_from_staging(
+      const ValueRef idx,
+      void* data,
+      const size_t numel,
+      const vkapi::ScalarType dst_data_dtype);
 
  protected:
   // Command Buffer Management

@@ -1,6 +1,6 @@
-# LLM Runner Framework for ExecutorTorch
+# LLM Runner Framework for ExecuTorch
 
-This directory contains the LLM Runner framework for ExecutorTorch, providing high-level C++ APIs for running Large Language Models with both text-only and multimodal capabilities.
+This directory contains the LLM Runner framework for ExecuTorch, providing high-level C++ APIs for running Large Language Models with both text-only and multimodal capabilities.
 
 ## Overview
 
@@ -163,6 +163,301 @@ int main() {
     return error == executorch::runtime::Error::Ok ? 0 : 1;
 }
 ```
+
+## Python API
+
+The LLM Runner framework provides Python bindings for easy integration with Python applications. The Python API mirrors the C++ interface while providing Pythonic convenience features like torch tensor support and Hugging Face compatibility.
+
+### Installation
+
+Build the Python bindings as part of the ExecuTorch build:
+
+```bash
+# Build from source with Python bindings enabled:
+# In executorch root directory
+bash install_executorch.sh
+```
+
+### Quick Start Examples
+
+#### Basic Multimodal Generation
+
+```python
+from executorch.extension.llm.runner import (
+    GenerationConfig, MultimodalRunner, 
+    make_text_input, make_image_input, make_audio_input
+)
+import torch
+
+# Create a multimodal runner
+runner = MultimodalRunner(
+    model_path="/path/to/model.pte",
+    tokenizer_path="/path/to/tokenizer.bin"
+)
+
+# Create multimodal inputs
+inputs = []
+inputs.append(make_text_input("What do you see in this image?"))
+
+# Add image from torch tensor (supports both CHW and HWC formats)
+image_tensor = torch.randint(0, 255, (3, 224, 224), dtype=torch.uint8)  # CHW format
+inputs.append(make_image_input(image_tensor))
+
+# Configure generation
+config = GenerationConfig(
+    max_new_tokens=100,
+    temperature=0.7,
+    echo=False
+)
+
+# Generate with streaming output
+def token_callback(token: str):
+    print(token, end='', flush=True)
+
+def stats_callback(stats):
+    print(f"\n[Stats] Generated {stats.num_generated_tokens} tokens")
+    inference_time = stats.inference_end_ms - stats.inference_start_ms
+    if inference_time > 0:
+        tokens_per_sec = stats.num_generated_tokens * 1000 / inference_time
+        print(f"[Stats] Speed: {tokens_per_sec:.1f} tokens/sec")
+
+runner.generate(inputs, config, token_callback, stats_callback)
+```
+
+#### Working with Different Input Types
+
+```python
+from executorch.extension.llm.runner import (
+    MultimodalRunner, GenerationConfig,
+    make_text_input, make_token_input, make_image_input, 
+    make_audio_input, make_raw_audio_input
+)
+import torch
+
+runner = MultimodalRunner("model.pte", "tokenizer.bin")
+
+# 1. Text input
+text_input = make_text_input("Analyze this multimodal content:")
+
+# 2. Pre-tokenized input (useful for chat templates)
+token_ids = [1, 15043, 445, 2420]  # Example token IDs
+token_input = make_token_input(token_ids)
+
+# 3. Image input from torch tensor
+# Supports multiple formats: (H,W,C), (C,H,W), (1,H,W,C), (1,C,H,W)
+image_hwc = torch.randint(0, 255, (224, 224, 3), dtype=torch.uint8)  # HWC
+image_input = make_image_input(image_hwc)
+
+# Float tensors also supported for normalized images
+image_float = torch.rand(3, 224, 224, dtype=torch.float32)  # CHW, normalized
+image_input_float = make_image_input(image_float)
+
+# 4. Preprocessed audio input (e.g., mel spectrograms)
+audio_features = torch.rand(1, 80, 100, dtype=torch.float32)  # (batch, n_bins, n_frames)
+audio_input = make_audio_input(audio_features)
+
+# 5. Raw audio input (for models with built-in audio processing)
+raw_audio = torch.randint(0, 255, (1, 1, 16000), dtype=torch.uint8)  # (batch, channels, samples)
+raw_audio_input = make_raw_audio_input(raw_audio)
+
+# Combine inputs and generate
+inputs = [text_input, image_input, audio_input]
+config = GenerationConfig(max_new_tokens=50, temperature=0.8)
+response = runner.generate_text(inputs, config)
+print(f"Response: {response}")
+```
+
+#### Hugging Face Integration
+
+```python
+from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig
+from transformers import AutoProcessor
+from PIL import Image
+import torch
+
+# Load HF processor for your model
+processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
+
+# Create runner
+runner = MultimodalRunner("llava_model.pte", "tokenizer.bin")
+
+# Process inputs with HF processor
+image = Image.open("photo.jpg")
+conversation = [
+    {"role": "user", "content": [
+        {"type": "text", "text": "What's in this image?"},
+        {"type": "image"}
+    ]}
+]
+
+# Apply chat template and process
+prompt = processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
+inputs_hf = processor(prompt, image, return_tensors="pt")
+
+# Generate using HF inputs directly
+config = GenerationConfig(max_new_tokens=100, temperature=0.7)
+runner.generate_hf(
+    inputs_hf, 
+    config, 
+    image_token_id=processor.tokenizer.convert_tokens_to_ids("<image>"),
+    token_callback=lambda token: print(token, end='', flush=True)
+)
+```
+
+#### Chat Session with State Management
+
+```python
+from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig, make_text_input
+
+class ChatSession:
+    def __init__(self, model_path: str, tokenizer_path: str):
+        self.runner = MultimodalRunner(model_path, tokenizer_path)
+        self.config = GenerationConfig(max_new_tokens=150, temperature=0.7, echo=False)
+        
+    def send_message(self, message: str) -> str:
+        """Send a message and get response"""
+        inputs = [make_text_input(message)]
+        response = self.runner.generate_text(inputs, self.config)
+        return response
+        
+    def send_multimodal(self, text: str, image_tensor: torch.Tensor) -> str:
+        """Send text + image and get response"""
+        inputs = [
+            make_text_input(text),
+            make_image_input(image_tensor)
+        ]
+        response = self.runner.generate_text(inputs, self.config)
+        return response
+        
+    def reset_conversation(self):
+        """Reset the conversation state"""
+        self.runner.reset()
+
+# Usage
+chat = ChatSession("model.pte", "tokenizer.bin")
+print(chat.send_message("Hello! How are you?"))
+
+# Continue conversation (KV cache maintains context)
+print(chat.send_message("What's the weather like?"))
+
+# Reset when starting new conversation
+chat.reset_conversation()
+```
+
+### Python API Classes
+
+#### GenerationConfig
+```python
+from executorch.extension.llm.runner import GenerationConfig
+
+# Create with defaults
+config = GenerationConfig()
+
+# Or specify parameters
+config = GenerationConfig(
+    max_new_tokens=100,    # Maximum tokens to generate (-1 = auto)
+    temperature=0.8,       # Sampling temperature (0.0 = deterministic)
+    echo=True,            # Echo input prompt in output
+    seq_len=2048,         # Maximum sequence length (-1 = auto)
+    num_bos=0,            # Number of BOS tokens
+    num_eos=0             # Number of EOS tokens
+)
+
+# Modify after creation
+config.temperature = 0.5
+config.max_new_tokens = 50
+```
+
+#### MultimodalInput Types
+```python
+from executorch.extension.llm.runner import (
+    MultimodalInput, make_text_input, make_token_input, 
+    make_image_input, make_audio_input
+)
+
+# Text input
+text_input = make_text_input("Hello, world!")
+print(text_input.is_text())  # True
+print(text_input.get_text())  # "Hello, world!"
+
+# Token input (pre-tokenized)
+token_input = make_token_input([1, 2, 3, 4])
+print(token_input.is_tokens())  # True
+print(token_input.get_tokens())  # [1, 2, 3, 4]
+
+# Image input from torch tensor
+import torch
+image_tensor = torch.randint(0, 255, (224, 224, 3), dtype=torch.uint8)
+image_input = make_image_input(image_tensor)
+print(image_input.is_image())  # True
+image = image_input.get_image()
+print(f"Image: {image.width}x{image.height}x{image.channels}")
+
+# Check input types safely
+if text_input.is_text():
+    text = text_input.get_text()
+elif text_input.is_image():
+    image = text_input.get_image()
+```
+
+#### Stats and Performance Monitoring
+```python
+def detailed_stats_callback(stats):
+    """Comprehensive stats monitoring"""
+    print(f"\n=== Generation Statistics ===")
+    print(f"Prompt tokens: {stats.num_prompt_tokens}")
+    print(f"Generated tokens: {stats.num_generated_tokens}")
+    
+    # Timing breakdown
+    model_load_time = stats.model_load_end_ms - stats.model_load_start_ms
+    if model_load_time > 0:
+        print(f"Model load time: {model_load_time}ms")
+    
+    inference_time = stats.inference_end_ms - stats.inference_start_ms
+    if inference_time > 0:
+        print(f"Total inference time: {inference_time}ms")
+        
+        # Calculate throughput
+        tokens_per_sec = stats.num_generated_tokens * 1000 / inference_time
+        print(f"Generation speed: {tokens_per_sec:.1f} tokens/sec")
+    
+    # Time to first token
+    if stats.first_token_ms > stats.inference_start_ms:
+        ttft = stats.first_token_ms - stats.inference_start_ms
+        print(f"Time to first token: {ttft}ms")
+    
+    # Export to JSON for logging
+    json_stats = stats.to_json_string()
+    print(f"JSON stats: {json_stats}")
+
+# Use in generation
+runner.generate(inputs, config, token_callback, detailed_stats_callback)
+```
+
+### Error Handling
+
+```python
+from executorch.extension.llm.runner import MultimodalRunner, GenerationConfig
+import torch
+
+try:
+    runner = MultimodalRunner("model.pte", "tokenizer.bin")
+    
+    # Invalid image tensor will raise RuntimeError
+    invalid_image = torch.rand(2, 224, 224, 3)  # Wrong number of dimensions
+    inputs = [make_image_input(invalid_image)]
+    
+    config = GenerationConfig(max_new_tokens=50)
+    runner.generate_text(inputs, config)
+    
+except RuntimeError as e:
+    print(f"Generation failed: {e}")
+    
+except FileNotFoundError as e:
+    print(f"Model or tokenizer file not found: {e}")
+```
+
+For more C++ API documentation and implementation details, see the [Core Components](#core-components) section below.
 
 ## Core Components
 
@@ -474,7 +769,7 @@ DeepFusion is another popular model architecture type where a pretrained encoder
 - **Llama 3.2 Vision**: Uses cross-attention layers for vision-text fusion
 - **Other cross-attention based multimodal models**
 
-For DeepFusion support, consider using the model's native inference framework or wait for future ExecutorTorch updates that may include DeepFusion architecture support.
+For DeepFusion support, consider using the model's native inference framework or wait for future ExecuTorch updates that may include DeepFusion architecture support.
 
 ## Building and Integration
 

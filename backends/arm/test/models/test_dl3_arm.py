@@ -66,7 +66,6 @@ def test_dl3_u55_INT():
         TestDl3.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
@@ -82,7 +81,6 @@ def test_dl3_u85_INT():
         TestDl3.model_example_inputs,
         aten_ops=[],
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs", rtol=1.0, atol=1.0
@@ -99,11 +97,8 @@ def test_dl3_vgf_INT():
         exir_op=[],
         tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
+        run_on_vulkan_runtime=False,  # TODO: run on vulkan runtime
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", rtol=1.0, atol=1.0
-    # )
     pipeline.run()
 
 
@@ -117,8 +112,4 @@ def test_dl3_vgf_FP():
         tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
     )
-    # TODO: MLETORCH-1167 Create Vulkan backend e2e tests
-    # pipeline.change_args(
-    #     "run_method_and_compare_outputs", rtol=1.0, atol=1.0
-    # )
     pipeline.run()

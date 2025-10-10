@@ -64,9 +64,12 @@ fi
 
 echo "Building with extra flags: ${build_with_etdump_flags} ${extra_build_flags}"
 cmake \
+    -Wall \
+    -Werror \
     -DCMAKE_BUILD_TYPE=${build_type}            \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
     -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
     -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_XNNPACK=OFF \

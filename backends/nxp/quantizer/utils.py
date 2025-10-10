@@ -49,7 +49,7 @@ def get_bias_qparams(
     act_scale, _ = obs_or_fqs[0].calculate_qparams()
     weight_scale, _ = obs_or_fqs[1].calculate_qparams()
     bias_scale = act_scale * weight_scale
-    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int32)
+    bias_zero_point = torch.zeros_like(bias_scale, dtype=torch.int64)
     return bias_scale, bias_zero_point
 
 

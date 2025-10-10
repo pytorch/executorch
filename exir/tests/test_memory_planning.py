@@ -14,6 +14,7 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir import ExecutorchBackendConfig, to_edge
+from executorch.exir.capture._capture import patch_forward
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.memory_planning import (
     _do_user_inputs_exist,
@@ -91,6 +92,24 @@ class ToyModelForMemPlanning(torch.nn.Module):
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
         return (torch.randn(10), torch.randn(10))
+
+
+class MultiEntryPointStatefulModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("state", torch.zeros(2, 2))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.state.add_(x).view(-1) * 2
+
+    def set_state(self, state: torch.Tensor) -> None:
+        self.state.copy_(state)
+
+    def get_state(self) -> torch.Tensor:
+        return self.state
+
+    def get_example_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.ones(1),)
 
 
 class ModelWithDifferentTensorSizes(torch.nn.Module):
@@ -1081,3 +1100,36 @@ class TestMap(unittest.TestCase):
                         verifier.storage_overlap(outer_spec, inner_spec),
                         f"Outer spec {outer_spec.shape=} {outer_spec.dtype=} {outer_spec.lifetime=} and inner spec {inner_spec} have storage overlap",
                     )
+
+    def test_multi_state_plan(self) -> None:
+        eager_module = MultiEntryPointStatefulModel().eval()
+        forward = export(eager_module, eager_module.get_example_inputs())
+        with patch_forward(eager_module, eager_module.get_state):
+            get_state = export(eager_module, ())
+        with patch_forward(eager_module, eager_module.set_state):
+            set_state = export(eager_module, (torch.zeros(1),))
+        edge = to_edge(
+            {"forward": forward, "set_state": set_state, "get_state": get_state}
+        )
+        et = edge.to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(share_mutable_buffers=True),
+                emit_mutable_buffer_names=True,
+            )
+        )
+        et_prog = et.executorch_program
+        count = 0
+        for plan in et_prog.execution_plan:
+            for value in plan.values:
+                if (
+                    hasattr(value.val, "allocation_info")
+                    and value.val.allocation_info is not None
+                    and value.val.allocation_info.memory_id == 2
+                ):
+                    count += 1
+                    self.assertEqual(value.val.allocation_info.memory_offset_low, 0)
+                    self.assertTrue(value.val.extra_tensor_info is not None)
+                    self.assertEqual(
+                        value.val.extra_tensor_info.fully_qualified_name, "state"
+                    )
+        self.assertEqual(count, 3)

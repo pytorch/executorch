@@ -334,13 +334,15 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_partial_match(self):
-        # Partial match between aot and runtime debug_handles will return empty
+        # Partial match between aot and runtime debug_handles will return
+        # matching debug handles from runtime
         aot_intermediate_outputs = {(2,): 100, (9,): 300}
         runtime_intermediate_outputs = {(2, 3): (200, 1), (8, 9): (300, 1)}
         actual = map_runtime_aot_intermediate_outputs(
             aot_intermediate_outputs, runtime_intermediate_outputs
         )
-        expected = {}
+        # Since the runtime output debug handle of 9 is there in aot debug handle
+        expected = {((8, 9), 300): ((8, 9), 300)}
         self.assertEqual(actual, expected)
 
     def test_map_runtime_aot_intermediate_outputs_multiple_aot_to_one_runtime(self):

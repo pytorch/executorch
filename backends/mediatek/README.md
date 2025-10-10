@@ -28,7 +28,7 @@ To get started with MediaTek's ExecuTorch libraries, download the [NeuroPilot Ex
 
 - **`mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`**: This library preprocesses the model into a MediaTek representation.
 
-- **`mtk_neuron-8.2.19-py3-none-linux_x86_64.whl`**: This library converts the model to binaries.
+- **`mtk_neuron-8.2.23-py3-none-linux_x86_64`**: This library converts the model to binaries.
 
 Additionally, make sure to copy `NeuronAdapter.h` to the following directory: `backends/mediatek/runtime/include/api/`.
 
@@ -45,7 +45,7 @@ Follow the steps below to setup your build environment:
    ```
 - Install the two .whl downloaded from NeuroPilot Portal
    ```bash
-   pip3 install mtk_neuron-8.2.19-py3-none-linux_x86_64.whl
+   pip3 install mtk_neuron-8.2.23-py3-none-linux_x86_64.whl
    pip3 install mtk_converter-8.13.0+public-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
    ```
 

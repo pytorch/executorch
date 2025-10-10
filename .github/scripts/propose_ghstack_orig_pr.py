@@ -86,6 +86,17 @@ def get_pr_stack_from_number(ref: str, repo: Repository) -> List[int]:
     return pr_stack
 
 
+def get_differential_revision(pr, repo: Repository) -> str:
+    body = repo.get_pull(pr.number).body
+    matches = re.findall(r"Differential Revision: .*", body)
+    count = len(matches)
+    if count == 1:
+        # If there's more than one Differential Revision, let's just return empty
+        # so that we can disambiguate manually.
+        return matches[0]
+    return ""
+
+
 def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
     # For the first PR, we want to merge to `main` branch, and we will update
     # as we go through the stack
@@ -100,6 +111,7 @@ def create_prs_for_orig_branch(pr_stack: List[int], repo: Repository):
         # The PR we want to create is then "branch_to_merge" <- gh/user/x/orig
         # gh/user/x/orig is the clean diff between gh/user/x/base <- gh/user/x/head
         orig_branch_merge_head = pr.base.ref.replace("base", "orig")
+        differential_revision_text = get_differential_revision(pr, repo)
         bot_metadata = f"""This PR was created by the merge bot to help merge the original PR into the main branch.
 ghstack PR number: https://github.com/pytorch/executorch/pull/{pr.number} by @{pr.user.login}
 ^ Please use this as the source of truth for the PR details, comments, and reviews
@@ -107,6 +119,7 @@ ghstack PR base: https://github.com/pytorch/executorch/tree/{pr.base.ref}
 ghstack PR head: https://github.com/pytorch/executorch/tree/{pr.head.ref}
 Merge bot PR base: https://github.com/pytorch/executorch/tree/{orig_branch_merge_base}
 Merge bot PR head: https://github.com/pytorch/executorch/tree/{orig_branch_merge_head}
+{differential_revision_text}
 @diff-train-skip-merge"""
 
         existing_orig_pr = repo.get_pulls(

@@ -23,7 +23,6 @@ using torch::executor::native::utils::apply_tritensor_elementwise_fn;
 using torch::executor::native::utils::get_compute_type;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -195,4 +194,3 @@ Tensor& where_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

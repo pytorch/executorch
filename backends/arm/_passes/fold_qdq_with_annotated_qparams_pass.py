@@ -8,15 +8,17 @@
 
 import copy
 
-from typing import cast, Dict, Set, Tuple
+from typing import cast, Dict, Set, Tuple, Type
 
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_param_tensor,
     is_param_node,
 )
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 
 from executorch.backends.arm._passes.quant_args import QuantArgs
+from executorch.backends.arm._passes.remove_noop_pass import RemoveNoopPass
 from executorch.backends.arm.constants import DQ_OPS, Q_OPS
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -70,6 +72,44 @@ def get_output_qparams(node: Node) -> dict[int, QuantArgs]:
     return output_qparams
 
 
+class RetraceFoldedDtypesPass(ExportPass):
+    """
+    FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
+    some operators are retraced to types that cannot be handled by TOSA. One
+    such example is sum.dim_IntList:
+        q (int8) -> dq (fp32) -> sum (fp32) -> q (int8) ...
+    After folding it becomes:
+        q (int8)              -> sum (int64) ->         ...
+    This pass changes types of ops in self.targeted_ops, such as sum, so that
+    the output type of that matches the type of the output_qparams.
+    """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
+
+    targeted_ops: Set[EdgeOpOverload] = {
+        exir_ops.edge.aten.sum.dim_IntList,
+    }
+
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op not in self.targeted_ops:
+            return super().call_operator(op, args, kwargs, meta)
+
+        node_kwargs = kwargs.copy()
+        output_qparams = meta["output_qparams"]
+        if len(output_qparams) == 0:
+            return super().call_operator(op, args, kwargs, meta)
+
+        output_dtype = output_qparams[0].dtype
+        node_kwargs["dtype"] = output_dtype
+        return super().call_operator(op, args, node_kwargs, meta)
+
+
 class FoldAndAnnotateQParamsPass(ArmPass):
     """
     A pass that walks the graph and removes any DQ and Q nodes before and after the target
@@ -99,6 +139,12 @@ class FoldAndAnnotateQParamsPass(ArmPass):
     The quantization parameters for x_dq and aten_add_tensor_q are stored in meta for the aten_add_tensor node.
 
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {
+        RetraceFoldedDtypesPass,
+        InsertTableOpsPass,
+        RemoveNoopPass,
+    }
 
     def fold_and_annotate_arg(
         self, graph_module: GraphModule, node: Node, arg_list: list[Node], i: int
@@ -210,6 +256,8 @@ class QuantizeOperatorArguments(ExportPass):
         - Makes sure the min and max values to clamp.default are quantized, if it's a quantized operator.
     """
 
+    _passes_required_after: Set[Type[ExportPass]] = {FoldAndAnnotateQParamsPass}
+
     def call(self, graph_module: GraphModule) -> PassResult:
         modified = False
         # Loop over the graph nodes and find full.default nodes.
@@ -243,39 +291,3 @@ class QuantizeOperatorArguments(ExportPass):
                 modified = True
 
         return PassResult(graph_module, modified)
-
-
-class RetraceFoldedDtypesPass(ExportPass):
-    """
-    FoldAndAnnotateQParamsPass folds dq and q nodes. When the graph is retraced
-    some operators are retraced to types that cannot be handled by TOSA. One
-    such example is sum.dim_IntList:
-        q (int8) -> dq (fp32) -> sum (fp32) -> q (int8) ...
-    After folding it becomes:
-        q (int8)              -> sum (int64) ->         ...
-    This pass changes types of ops in self.targeted_ops, such as sum, so that
-    the output type of that matches the type of the output_qparams.
-    """
-
-    targeted_ops: Set[EdgeOpOverload] = {
-        exir_ops.edge.aten.sum.dim_IntList,
-    }
-
-    def call_operator(
-        self,
-        op,  # pyre-ignore
-        args: Tuple[Argument, ...],
-        kwargs: Dict[str, Argument],
-        meta: NodeMetadata,
-    ) -> ProxyValue:
-        if op not in self.targeted_ops:
-            return super().call_operator(op, args, kwargs, meta)
-
-        node_kwargs = kwargs.copy()
-        output_qparams = meta["output_qparams"]
-        if len(output_qparams) == 0:
-            return super().call_operator(op, args, kwargs, meta)
-
-        output_dtype = output_qparams[0].dtype
-        node_kwargs["dtype"] = output_dtype
-        return super().call_operator(op, args, node_kwargs, meta)

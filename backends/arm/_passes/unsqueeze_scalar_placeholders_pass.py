@@ -5,6 +5,8 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import is_buffer, is_param
@@ -15,6 +17,8 @@ class UnsqueezeScalarPlaceholdersPass(ExportPass):
     Placeholders that have node.meta["val"].shape = () cause issues later in the lowering.
     This pass unsqueezes the placeholders to make sure shape is at least (1,).
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program):
         self.exported_program = exported_program

@@ -76,6 +76,7 @@ runtime::Error save_ptd(
   // Write the tensors.
   size_t total_segment_size = 0;
   uint32_t i = 0;
+  size_t tensor_count = tensor_map.size();
   for (const auto& [name, tensor] : tensor_map) {
     auto key = builder.CreateString(name);
     // Write the tensor layouts.
@@ -99,7 +100,11 @@ runtime::Error save_ptd(
         /*_fbb=*/builder,
         /*offset=*/total_segment_size,
         /*size=*/tensor.nbytes()));
-    total_segment_size += aligned_size(tensor.nbytes(), tensor_alignment);
+
+    // Do not pad the last tensor.
+    total_segment_size += (i == tensor_count - 1)
+        ? tensor.nbytes()
+        : aligned_size(tensor.nbytes(), tensor_alignment);
     i++;
   }
 

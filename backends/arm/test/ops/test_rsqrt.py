@@ -66,7 +66,6 @@ def test_rsqrt_u55_INT(test_tensor: torch.Tensor):
         test_tensor(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -79,7 +78,6 @@ def test_rsqrt_u85_INT(test_tensor: torch.Tensor):
         test_tensor(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

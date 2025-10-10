@@ -30,7 +30,7 @@ void gather_helper(
     Tensor& out,
     int64_t dim) {
   const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-  const long* index_data = index.const_data_ptr<long>();
+  const int64_t* index_data = index.const_data_ptr<int64_t>();
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
   if (index.dim() == 0) {

@@ -79,10 +79,7 @@ list(APPEND CMAKE_FIND_ROOT_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../..)
 find_package(executorch CONFIG REQUIRED FIND_ROOT_PATH_BOTH)
 executorch_target_link_options_shared_lib(executorch)
 
-# llava_runner library
-add_subdirectory(runner)
-
-set(LINK_LIBS executorch gflags)
+set(LINK_LIBS executorch gflags extension_llm_runner)
 set(link_libraries ${LINK_LIBS})
 set(_srcs main.cpp)
 
@@ -204,5 +201,5 @@ if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 target_include_directories(llava_main PUBLIC ${_common_include_directories})
-target_link_libraries(llava_main PUBLIC llava_runner ${link_libraries})
+target_link_libraries(llava_main PUBLIC ${link_libraries})
 target_compile_options(llava_main PUBLIC ${_common_compile_options})

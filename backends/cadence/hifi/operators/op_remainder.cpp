@@ -40,7 +40,6 @@ using torch::executor::native::utils::remainder_override;
 using torch::executor::native::utils::scalar_to;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -280,4 +279,3 @@ Tensor& remainder_Scalar_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

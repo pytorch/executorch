@@ -41,4 +41,10 @@ then
 elif [ $model = "emformer_rnnt" ]
 then
 	python3 model_export_scripts/emformer_rnnt.py
+elif [ $model = "bert" ]
+then
+	python3 model_export_scripts/bert.py
+elif [ $model = "distilbert" ]
+then
+	python3 model_export_scripts/distilbert.py
 fi

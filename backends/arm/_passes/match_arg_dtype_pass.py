@@ -3,6 +3,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Set, Type
+
 import torch
 from executorch.backends.arm._passes.arm_pass_utils import create_node, get_node_arg
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -37,6 +39,8 @@ class MatchArgDtypePass(ExportPass):
     cast to int8 and then to the correct target data type.
 
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = set()
 
     targeted_ops = {exir_ops.edge.aten.sub.Tensor, exir_ops.edge.aten.where.self}
 

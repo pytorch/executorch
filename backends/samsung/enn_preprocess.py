@@ -9,10 +9,16 @@ from typing import Dict, final, List
 
 import executorch.backends.samsung.python.PyEnnWrapperAdaptor as PyEnnWrapper
 import torch
+from executorch.backends.samsung._passes.annotate_qparams import AnnotateQparamsPass
+from executorch.backends.samsung._passes.annotate_scalar_parameters import (
+    AnnotateScalarParametersPass,
+)
 from executorch.backends.samsung._passes.conv1d_to_conv2d import Conv1dToConv2d
 from executorch.backends.samsung._passes.customized_constant_prop import (
     ConstantPropPass,
 )
+from executorch.backends.samsung._passes.fold_qdq import FoldQDQPass
+from executorch.backends.samsung._passes.insert_qdq import InsertQDQPass
 from executorch.backends.samsung._passes.replace_scalar_ops import ReplaceOpsWithScalar
 from executorch.backends.samsung.builders.node_visitor import get_node_visitors
 from executorch.backends.samsung.serialization.compile_options import (
@@ -53,12 +59,16 @@ class EnnBackend(BackendDetails):
 
         enn_preprocess_passes = PassManager(
             passes=[
+                AnnotateQparamsPass(edge_program),
+                FoldQDQPass(),
                 ConstantPropPass(edge_program),
                 Conv1dToConv2d(edge_program),
                 FuseBatchNormWithConvPass(edge_program),
                 AddmmToLinearTransform(),
                 ReplaceOpsWithScalar(),
                 RemoveGetItemPass(),
+                InsertQDQPass(edge_program),
+                AnnotateScalarParametersPass(edge_program),
             ]
         )
         pass_result = enn_preprocess_passes(edge_program.graph_module)

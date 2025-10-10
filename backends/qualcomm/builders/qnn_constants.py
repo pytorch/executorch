@@ -60,6 +60,15 @@ class OpConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpConv3d:
+    op_name: str = "Conv3d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_dilation: str = "dilation"
+
+
+@dataclass(init=False, frozen=True)
 class OpConvert:
     op_name: str = "Convert"
 
@@ -567,6 +576,15 @@ class OpTranspose:
 @dataclass(init=False, frozen=True)
 class OpTransposeConv2d:
     op_name: str = "TransposeConv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_output_padding: str = "output_padding"
+
+
+@dataclass(init=False, frozen=True)
+class OpTransposeConv3d:
+    op_name: str = "TransposeConv3d"
     param_stride: str = "stride"
     param_pad_amount: str = "pad_amount"
     param_group: str = "group"

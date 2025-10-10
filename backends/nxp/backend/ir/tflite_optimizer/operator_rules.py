@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -100,23 +100,3 @@ class AllInputsComeFrom(OpRule):
             operator_is_type(preceding_op, self.single_preceding_op_type, builder)
             for preceding_op in preceding_ops
         )
-
-
-@dataclass
-class WasNotInTheOriginalONNXModel(OpRule):
-    """Assures that this operator wasn't created by converting an ONNX operator from the original model, but instead
-     was added extra in order to convert a different operator.
-
-    This rule is currently only satisfied for operators added by ModelBuilder methods `create_..._before()` and
-     `create_..._after()`.
-    """
-
-    def __call__(
-        self,
-        op: tflite_model.Operator,
-        tensor_map: NameToTensorMap,
-        input_to_ops_map: InputTensorToOpsMap,
-        output_to_op_map: OutputTensorToOpMap,
-        builder: "model_builder.ModelBuilder",
-    ) -> bool:
-        return op.tmp_added_extra

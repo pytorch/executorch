@@ -8,7 +8,7 @@
 import logging
 import operator
 from dataclasses import dataclass
-from typing import Dict, final, List, Mapping
+from typing import final, Mapping
 
 import torch
 
@@ -18,12 +18,13 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from torch.export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx import Graph
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 from torch.nn import Parameter
 from executorch.backends.nxp.backend.ir.converter.node_converters.ops_converters import *  # noqa F403
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.nxp_backend import NeutronBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -33,6 +34,9 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
+
+NXP_DO_NOT_DELEGATE = "NXP_DO_NOT_DELEGATE"
+NXP_DELEGATION_TAG = "delegation_tag"
 
 
 class QDQClusterRecognizer:
@@ -60,7 +64,7 @@ class QDQClusterRecognizer:
         """
 
         compute_node: torch.fx.Node
-        ops: List[torch.fx.Node]
+        ops: list[torch.fx.Node]
 
     QUANTIZE_OPERATORS = [
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
@@ -93,7 +97,7 @@ class QDQClusterRecognizer:
     def is_auxiliary_node(node: torch.fx.Node) -> bool:
         return node.target in QDQClusterRecognizer.AUXILIARY_OPS
 
-    def get_qdq_cluster_input_part(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+    def get_qdq_cluster_input_part(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Return the list of nodes representing the input part of the QDQ cluster of the node `node`.
         Those are various dequantization nodes (see DEQUANTIZE_OPERATORS) optionally followed by auxiliary
@@ -121,7 +125,7 @@ class QDQClusterRecognizer:
         logging.debug(f"Dequant Cluster for {node} is: {qdq_cluster}")
         return qdq_cluster
 
-    def get_qdq_cluster_output_part(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+    def get_qdq_cluster_output_part(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Returns the list of nodes representing the output part of the QDQ cluster of the `node`.
         Those are various quantize nodes (see QUANTIZE_OPERATORS) preceded by auxiliary nodes.
@@ -151,7 +155,7 @@ class QDQClusterRecognizer:
         logging.debug(f"Quant Cluster for {node} is {qdq_cluster}")
         return qdq_cluster
 
-    def get_qdq_cluster(self, node: torch.fx.Node) -> List[torch.fx.Node]:
+    def get_qdq_cluster(self, node: torch.fx.Node) -> list[torch.fx.Node]:
         """
         Returns the QDQ cluster of the operator, if quantized. If operator is not quantized, returns empty list.
         """
@@ -163,7 +167,7 @@ class QDQClusterRecognizer:
         else:
             return []
 
-    def tag_nodes(self, nodes: List[torch.fx.Node], cluster_name: str) -> None:
+    def tag_nodes(self, nodes: list[torch.fx.Node], cluster_name: str) -> None:
         """
         Tags a node and its related dequant and quant nodes with a specified cluster name
         """
@@ -171,7 +175,7 @@ class QDQClusterRecognizer:
             logging.info(f"Tagging node {node} as {cluster_name}")
             node.meta["cluster"] = cluster_name
 
-    def tag_qdq_clusters(self, nodes: List[torch.fx.Node]):
+    def tag_qdq_clusters(self, nodes: list[torch.fx.Node]):
         """
         Identifies QDQ clusters and tag them based on compute operation inside.
         """
@@ -206,6 +210,7 @@ supported_ops = {
     exir_ops.edge.aten.mm.default: MMConverter,  # noqa F405
     exir_ops.edge.aten.relu.default: ReLUConverter,  # noqa F405
     exir_ops.edge.aten._softmax.default: SoftmaxConverter,  # noqa F405
+    exir_ops.edge.aten.sub.Tensor: SubTensorConverter,  # noqa F405
     exir_ops.edge.aten.tanh.default: TanhConverter,  # noqa F405
     exir_ops.edge.aten.view_copy.default: ViewCopyConverter,  # noqa F405
     exir_ops.edge.aten.sigmoid.default: SigmoidConverter,  # noqa F405
@@ -216,14 +221,14 @@ class NeutronSupportedOperators(OperatorSupportBase):
 
     def __init__(
         self,
-        qdq_clusters: Dict[str, QDQClusterRecognizer.QDQCluster],
-        target: Target,
-        operators_not_to_delegate: List[str],
+        qdq_clusters: dict[str, QDQClusterRecognizer.QDQCluster],
+        neutron_target_spec: NeutronTargetSpec,
+        operators_not_to_delegate: list[str],
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ):
         self.qdq_clusters = qdq_clusters
-        self.target = target
+        self.neutron_target_spec = neutron_target_spec
         self.operators_not_to_delegate = operators_not_to_delegate
         self.parameters_mapping = parameters_mapping
         self.custom_delegation_options = custom_delegation_options
@@ -246,6 +251,11 @@ class NeutronSupportedOperators(OperatorSupportBase):
         """
         Operator checking function for compute nodes.
         """
+
+        if hasattr(node, "meta") and node.meta.get(NXP_DO_NOT_DELEGATE, False):
+            # The delegation of this node has been prohibited.
+            return False
+
         if not self.is_node_delegatable(node):
             return False
 
@@ -260,7 +270,7 @@ class NeutronSupportedOperators(OperatorSupportBase):
             # TODO: `view_copy` node should be delegated only if it's not the only operator in the cluster.
             node_converter.is_supported(
                 node,
-                self.target,
+                self.neutron_target_spec,
                 self.parameters_mapping,
                 self.custom_delegation_options,
             )
@@ -296,35 +306,58 @@ class NeutronSupportedOperators(OperatorSupportBase):
 class NeutronPartitioner(Partitioner):
     def __init__(
         self,
-        compile_spec: List[CompileSpec],
+        compile_spec: list[CompileSpec],
         custom_delegation_options: CustomDelegationOptions | None = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
+        target = self.delegation_spec[1][2].value.decode()
+        converter_flavor = self.delegation_spec[1][3].value.decode()
+        self.neutron_target_spec = NeutronTargetSpec(target, converter_flavor)
+
+    def validate_partitioning_result(
+        self,
+        graph: Graph,
+        partition_list: list[Partition],
+        custom_delegation_options: CustomDelegationOptions,
+    ) -> bool:
+        all_delegated_nodes = {
+            node for partition in partition_list for node in partition.nodes
+        }
+        partitioning_valid = True
+        for node in graph.nodes:
+            if (
+                node in all_delegated_nodes
+                and hasattr(node, "target")
+                and node.target in supported_ops
+            ):
+                if not supported_ops[node.target].supports_partitioning_result(
+                    node, partition_list, custom_delegation_options
+                ):
+                    # This node is not supported within its partition. Exclude it from delegation in the future.
+                    partitioning_valid = False
+                    node.meta[NXP_DO_NOT_DELEGATE] = True
+
+        return partitioning_valid
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logging.info("NeutronPartitioner::partition")
         partition_tags = {}
+        partition_list = []
 
         graph_module = exported_program.graph_module
         nodes = list(graph_module.graph.nodes)
 
         qdq_cluster_recognizer = QDQClusterRecognizer()
         qdq_cluster_recognizer.tag_qdq_clusters(nodes)
+
         graph_module.recompile()
 
-        target = None
-        operators_not_to_delegate = ""
-        for spec in self.delegation_spec.compile_specs:
-            if spec.key == "target":
-                target = Target(spec.value.decode())
-            if spec.key == "operators_not_to_delegate":
-                operators_not_to_delegate = spec.value.decode().split(",")
-        assert target is not None
+        operators_not_to_delegate = self.delegation_spec[1][4].value.decode().split(",")
         logging.info(f"Operators not to delegate: {operators_not_to_delegate}")
 
         parameters_mapping = EdgeProgramToIRConverter.map_inputs_to_parameters(
@@ -334,7 +367,7 @@ class NeutronPartitioner(Partitioner):
             exported_program.graph_module,
             NeutronSupportedOperators(
                 qdq_cluster_recognizer.cluster_map,
-                target,
+                self.neutron_target_spec,
                 operators_not_to_delegate,
                 parameters_mapping,
                 self.custom_delegation_options,
@@ -342,11 +375,24 @@ class NeutronPartitioner(Partitioner):
             allows_single_node_partition=True,
         )
 
-        partition_list = capability_partitioner.propose_partitions()
+        iteration_limit = len(exported_program.graph.nodes)
+        for _ in range(iteration_limit):
+            # Run the partitioning.
+            partition_list = capability_partitioner.propose_partitions()
+
+            # Check if the nodes support the partitioning result. Mark the problematic nodes with `NXP_DO_NOT_DELEGATE`.
+            partitioning_valid = self.validate_partitioning_result(
+                exported_program.graph, partition_list, self.custom_delegation_options
+            )
+            if partitioning_valid:
+                # The result of the partitioning is fine
+                break
+
+        # Mark the partitions in the node `meta` attribute.
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
+                node.meta[NXP_DELEGATION_TAG] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
 
         tag_constant_data(exported_program)

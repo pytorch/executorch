@@ -1,11 +1,11 @@
 # Profiling and Debugging
 
-To faciliate model and runtime integration, ExecuTorch provides tools to profile model resource utilization, numerics, and more. This section describes the available troubleshooting tools and steps to resolve issues when integrating ExecuTorch.
+To facilitate model and runtime integration, ExecuTorch provides tools to profile model resource utilization, numerics, and more. This section describes the available troubleshooting tools and steps to resolve issues when integrating ExecuTorch.
 
 ## General Troubleshooting Steps
 
 - To troubleshoot failure of runtime API calls, such as loading or running a model, ensure that ExecuTorch framework logging is enabled. See [Logging](using-executorch-runtime-integration.md#logging) for more information.
-- As a prelimatinary step to troubleshoot slow run times, ensure that performance testing is being done in a release build, and that the model is delegated. See [Inference is Slow](using-executorch-faqs.md#inference-is-slow--performance-troubleshooting) for more information.
+- As a preliminary step to troubleshoot slow run times, ensure that performance testing is being done in a release build, and that the model is delegated. See [Inference is Slow](using-executorch-faqs.md#inference-is-slow--performance-troubleshooting) for more information.
 - Check [Frequently Asked Questions](using-executorch-faqs.md) for common issues and questions encountered during install, model export, and runtime integration.
 
 ## Developer Tools

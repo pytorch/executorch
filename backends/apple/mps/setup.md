@@ -16,7 +16,7 @@ The MPS backend device maps machine learning computational graphs and primitives
 * [Setting up ExecuTorch](../../../docs/source/getting-started-setup.rst)
 * [Building ExecuTorch with CMake](../../../docs/source/using-executorch-cpp.md#building-with-cmake)
 * [ExecuTorch iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
-* [ExecuTorch iOS LLaMA Demo App](../../../docs/source/llm/llama-demo-ios.md)
+* [ExecuTorch LLM iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple)
 :::
 ::::
 

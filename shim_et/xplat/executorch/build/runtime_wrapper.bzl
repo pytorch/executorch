@@ -182,7 +182,7 @@ def _patch_kwargs_common(kwargs):
     # don't pick up unexpected clients while things are still in flux.
     if not kwargs.pop("_is_external_target", False):
         for target in kwargs.get("visibility", []):
-            if not (target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
+            if not (target == "PUBLIC" or target.startswith("//executorch") or target.startswith("//pytorch/tokenizers") or target.startswith("@")):
                 fail("Please manage all external visibility using the " +
                      "EXECUTORCH_CLIENTS list in " +
                      "//executorch/build/fb/clients.bzl. " +
@@ -199,7 +199,7 @@ def _patch_kwargs_common(kwargs):
         env.patch_deps(kwargs, dep_type)
 
     if "visibility" not in kwargs:
-        kwargs["visibility"] = ["//executorch/..."]
+        kwargs["visibility"] = ["PUBLIC"]
 
     # Patch up references to "//executorch/..." in lists of build targets,
     # if necessary.
@@ -290,6 +290,7 @@ def _cxx_test(*args, **kwargs):
 
 def _cxx_python_extension(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     kwargs["srcs"] = _patch_executorch_references(kwargs["srcs"])
     if "types" in kwargs:
         kwargs["types"] = _patch_executorch_references(kwargs["types"])
@@ -324,8 +325,19 @@ def _genrule(*args, **kwargs):
         kwargs["name"] += "_static"
         env.genrule(*args, **kwargs)
 
+def _remove_caffe2_deps(kwargs):
+    if not env.is_oss:
+        return
+    # We don't have Buckified PyTorch in OSS. At least let buck query work.
+    MISSING_BUCK_DIRS = ("//caffe2", "//pytorch", "fbsource//third-party")
+    for dep_type in ('deps', 'exported_deps'):
+        if dep_type not in kwargs:
+            continue
+        kwargs[dep_type] = [x for x in kwargs[dep_type] if not any([x.startswith(y) for y in MISSING_BUCK_DIRS])]
+
 def _python_library(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     env.python_library(*args, **kwargs)
 
 def _python_binary(*args, **kwargs):
@@ -334,6 +346,7 @@ def _python_binary(*args, **kwargs):
 
 def _python_test(*args, **kwargs):
     _patch_kwargs_common(kwargs)
+    _remove_caffe2_deps(kwargs)
     env.python_test(*args, **kwargs)
 
 def get_oss_build_kwargs():

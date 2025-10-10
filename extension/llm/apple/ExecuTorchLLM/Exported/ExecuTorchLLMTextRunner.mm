@@ -15,6 +15,12 @@
 using namespace executorch::extension;
 using namespace executorch::runtime;
 
+@interface ExecuTorchLLMConfig ()
+
+- (const llm::GenerationConfig &)nativeConfig;
+
+@end
+
 @implementation ExecuTorchLLMTextRunner {
   NSString *_modelPath;
   NSString *_tokenizerPath;
@@ -23,14 +29,21 @@ using namespace executorch::runtime;
 }
 
 - (instancetype)initWithModelPath:(NSString*)modelPath
+                    tokenizerPath:(NSString*)tokenizerPath {
+  return [self initWithModelPath:modelPath
+                   tokenizerPath:tokenizerPath
+                   specialTokens:@[]];
+}
+
+- (instancetype)initWithModelPath:(NSString*)modelPath
                     tokenizerPath:(NSString*)tokenizerPath
-                    specialTokens:(NSArray<NSString*>*)tokens {
+                    specialTokens:(NSArray<NSString*>*)specialTokens {
   self = [super init];
   if (self) {
     _modelPath = [modelPath copy];
     _tokenizerPath = [tokenizerPath copy];
     _specialTokens = std::make_unique<std::vector<std::string>>();
-    for (NSString *token in tokens) {
+    for (NSString *token in specialTokens) {
       _specialTokens->emplace_back(token.UTF8String);
     }
   }
@@ -68,16 +81,16 @@ using namespace executorch::runtime;
   return YES;
 }
 
-- (BOOL)generate:(NSString*)prompt
-    sequenceLength:(NSInteger)seq_len
-withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error {
+- (BOOL)generateWithPrompt:(NSString*)prompt
+                    config:(ExecuTorchLLMConfig *)config
+             tokenCallback:(nullable void (^)(NSString*))callback
+                     error:(NSError**)error {
   if (![self loadWithError:error]) {
     return NO;
   }
   auto status = _runner->generate(
     prompt.UTF8String,
-    llm::GenerationConfig{.seq_len = static_cast<int32_t>(seq_len)},
+    config.nativeConfig,
     [callback](const std::string& token) {
       if (callback) {
         callback(@(token.c_str()));
@@ -98,6 +111,12 @@ withTokenCallback:(nullable void (^)(NSString*))callback
 - (void)stop {
   if (_runner) {
     _runner->stop();
+  }
+}
+
+- (void)reset {
+  if (_runner) {
+    _runner->reset();
   }
 }
 

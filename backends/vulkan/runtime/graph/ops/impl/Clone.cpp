@@ -76,6 +76,7 @@ void add_image_to_buffer_node(
     const ValueRef buffer) {
   std::string kernel_name = "clone_image_to_buffer";
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
+  add_dtype_suffix(kernel_name, graph.dtype_of(buffer));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(
@@ -103,6 +104,7 @@ void add_buffer_to_image_node(
     const ValueRef image) {
   std::string kernel_name = "clone_buffer_to_image";
   add_dtype_suffix(kernel_name, graph.dtype_of(image));
+  add_dtype_suffix(kernel_name, graph.dtype_of(buffer));
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   graph.execute_nodes().emplace_back(new DynamicDispatchNode(

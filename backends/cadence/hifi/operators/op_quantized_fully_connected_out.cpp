@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cmath>
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -271,4 +270,3 @@ void quantized_fully_connected_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

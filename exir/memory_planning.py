@@ -245,6 +245,8 @@ class Verifier:
                 assert len(specs) > 0, "Expect tensor specs"
                 specs = list(filter(lambda spec: not spec.const, specs))
                 if len(specs) == 0:
+                    # all outputs are const so no need to allocate memory just say we suceeded
+                    graph_output_allocated = self.alloc_graph_output
                     continue
                 allocated = any(
                     spec is None or spec.mem_offset is not None for spec in specs
@@ -408,6 +410,7 @@ def collect_specs_from_nodes(  # noqa: C901
     ignore_graph_input: bool = False,
     ignore_graph_output: bool = False,
     ignore_mutable_buffers: bool = False,
+    share_mutable_buffers: bool = False,
     ignore_const: bool = True,
     ignore_out_var_node: bool = True,
     dedup: bool = True,

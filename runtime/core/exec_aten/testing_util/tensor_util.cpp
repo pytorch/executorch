@@ -29,6 +29,43 @@ namespace testing {
 namespace {
 
 /**
+ * Returns true if the two elements are close according to the description on
+ * `tensors_are_close()`.
+ *
+ * T must be a floating point type. Non-floating point data should be compared
+ * directly.
+ */
+template <typename T>
+bool element_is_close(const T a, const T b, double rtol, double atol) {
+  if constexpr (c10::is_reduced_floating_point_v<T>) {
+    // MSVC complains about ambiguous overloads, so explicitly cast to float to
+    // compare.
+    return element_is_close(
+        static_cast<float>(a), static_cast<float>(b), rtol, atol);
+  } else {
+    if (std::isnan(a) && std::isnan(b)) {
+      // NaN == NaN
+    } else if (!std::isfinite(a) && !std::isfinite(b) && ((a > 0) == (b > 0))) {
+      // -Inf == -Inf
+      // +Inf == +Inf
+    } else if (rtol == 0 && atol == 0) {
+      // Exact comparison; avoid unnecessary math.
+      if (a != b) {
+        return false;
+      }
+    } else {
+      auto allowed_error = atol + std::abs(rtol * b);
+      auto actual_error = std::abs(a - b);
+      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+}
+
+/**
  * Returns true if the two arrays are close according to the description on
  * `tensors_are_close()`.
  *
@@ -55,23 +92,8 @@ bool data_is_close(
     const auto ai = a[i];
     const auto bi = b[i];
 
-    if (std::isnan(ai) && std::isnan(bi)) {
-      // NaN == NaN
-    } else if (
-        !std::isfinite(ai) && !std::isfinite(bi) && ((ai > 0) == (bi > 0))) {
-      // -Inf == -Inf
-      // +Inf == +Inf
-    } else if (rtol == 0 && atol == 0) {
-      // Exact comparison; avoid unnecessary math.
-      if (ai != bi) {
-        return false;
-      }
-    } else {
-      auto allowed_error = atol + std::abs(rtol * bi);
-      auto actual_error = std::abs(ai - bi);
-      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
-        return false;
-      }
+    if (!element_is_close(ai, bi, rtol, atol)) {
+      return false;
     }
   }
   return true;

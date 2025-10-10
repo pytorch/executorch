@@ -22,7 +22,8 @@ namespace runtime {
 struct ExtendedHeader {
   /**
    * To find the header, callers should provide at least this many bytes of the
-   * head of the serialized Program data.
+   * head of the serialized Program data. Keep this in sync with NUM_HEAD_BYTES
+   * in //executorch/exir/_serialize/program.py
    */
   static constexpr size_t kNumHeadBytes = 64;
 
@@ -70,6 +71,14 @@ struct ExtendedHeader {
    * is present.
    */
   uint64_t segment_base_offset;
+
+  /**
+   * The size of all the segment data, in bytes. Zero if:
+   * - no segment is present
+   * - the segment_data_size field doesn't exist in the header - the case for
+   *   older PTE files.
+   */
+  uint64_t segment_data_size;
 };
 
 } // namespace runtime

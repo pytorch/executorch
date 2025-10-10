@@ -28,7 +28,7 @@ target_compile_options(extension_tensor PUBLIC ${_common_compile_options})
 install(
   TARGETS extension_tensor
   EXPORT ExecuTorchTargets
-  DESTINATION lib
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES
   DESTINATION ${_common_include_directories}
 )

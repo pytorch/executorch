@@ -23,7 +23,7 @@ class MultipleDelegatesModule(torch.nn.Module):
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
         z = x + y
-        s = torch.tan(z)
+        s = torch.max(z)
         return s * z
 
 

@@ -24,7 +24,6 @@ using torch::executor::native::utils::apply_bitensor_elementwise_fn;
 using torch::executor::native::utils::get_compute_type;
 using torch::executor::native::utils::SupportedTensorDtypes;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -225,4 +224,3 @@ Tensor& atan2_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence

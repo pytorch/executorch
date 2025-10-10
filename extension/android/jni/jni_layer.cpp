@@ -389,6 +389,16 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
   readLogBuffer() {
+    return readLogBufferUtil();
+  }
+
+  static facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
+  readLogBufferStatic(facebook::jni::alias_ref<jclass>) {
+    return readLogBufferUtil();
+  }
+
+  static facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>>
+  readLogBufferUtil() {
 #ifdef __ANDROID__
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<jstring>> ret;
@@ -500,6 +510,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("executeNative", ExecuTorchJni::execute),
         makeNativeMethod("loadMethodNative", ExecuTorchJni::load_method),
         makeNativeMethod("readLogBufferNative", ExecuTorchJni::readLogBuffer),
+        makeNativeMethod(
+            "readLogBufferStaticNative", ExecuTorchJni::readLogBufferStatic),
         makeNativeMethod("etdump", ExecuTorchJni::etdump),
         makeNativeMethod("getMethods", ExecuTorchJni::getMethods),
         makeNativeMethod("getUsedBackends", ExecuTorchJni::getUsedBackends),

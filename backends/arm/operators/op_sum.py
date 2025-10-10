@@ -67,7 +67,9 @@ class SumVisitor_INT(NodeVisitor):
             dtype=ts.DType.INT32,
         )
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().REDUCE_SUM,
             [rescaled_inputs[0].name],
             [intermediate.name],
@@ -111,7 +113,9 @@ class SumVisitor_FP(SumVisitor_INT):
         attr = ts.TosaSerializerAttribute()
         attr.ReduceSumAttribute(tensor.dim_order.index(dim))
 
-        tosa_graph.addOperator(
+        self._serialize_operator(
+            node,
+            tosa_graph,
             ts.TosaOp.Op().REDUCE_SUM,
             [tensor.name],
             [output.name],

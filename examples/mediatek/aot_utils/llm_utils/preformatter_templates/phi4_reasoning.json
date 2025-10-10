@@ -1,0 +1,6 @@
+{
+    "description": "Template used by Phi-4.",
+    "prompt_input": "<|system|>Your name is Phi, an AI expert developed by Microsoft.<|end|><|user|>{instruction}<|end|><|assistant|>",
+    "prompt_no_input": "<|system|>Your name is Phi, an AI expert developed by Microsoft.<|end|><|user|>{instruction}<|end|><|assistant|>",
+    "response_split": "<|assistant|>"
+}

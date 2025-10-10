@@ -5,15 +5,28 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes.convert_to_clamp import ConvertToClampPass
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    FoldAndAnnotateQParamsPass,
+)
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.backends.arm.constants import Q_OPS
+from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
 class FuseQuantizedActivationPass(ExportPass):
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ConvertToClampPass,
+        FoldAndAnnotateQParamsPass,
+        RemoveGetItemPass,
+    }
+
     @staticmethod
     def _is_fuseable_quantized_activation(node: Node):
         """Fuse activations that have a 0 lower bound and quantized with a qmin zero-point"""

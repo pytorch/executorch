@@ -10,7 +10,7 @@ A React Native mobile application for running LLaMA language models using ExecuT
 
 - Run LLaMA models directly on device, build the UI using React Native
 - Tested using Llama 3.2 SpinQuant 1B on iPhone 12 Pro
-- The setup is heavily inspired by the [LLaMA iOS app example](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/apple_ios/LLaMA)
+- The setup is heavily inspired by the [etLLM app](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple)
 
 
 ## Prerequisites

@@ -96,7 +96,6 @@ def test_clamp_u55_INT(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
 
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
@@ -115,7 +114,6 @@ def test_clamp_u85_INT(test_data):
         (input_tensor,),
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("run_method_and_compare_outputs", qtol=1)
 
@@ -149,6 +147,4 @@ def test_clamp_vgf_INT(test_data):
         exir_op,
         tosa_version="TOSA-1.0+INT",
     )
-    # TODO: MLETORCH-1136 Change args of run_method_and_compare_outputs of the vgf tests
-    # pipeline.change_args("run_method_and_compare_outputs", qtol=1)
     pipeline.run()

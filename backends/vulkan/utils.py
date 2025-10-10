@@ -128,7 +128,7 @@ def is_param_node(program: ExportedProgram, node: torch.fx.Node) -> bool:
         is_get_attr_node(node)
         or is_param(program, node)
         or is_buffer(program, node)
-        or is_constant(program, node)
+        or is_lifted_tensor_constant(program, node)
     )
 
 
@@ -206,6 +206,8 @@ def is_tensor_arg_node(node: Any) -> bool:
     if isinstance(node, torch.fx.Node):
         return is_tensor_node(node)
     elif isinstance(node, (list, tuple)):
+        if len(node) == 0:
+            return False
         return all(is_tensor_node(n) for n in node)
 
     return False
@@ -348,6 +350,8 @@ all_memory_layouts: Set[VkMemoryLayout] = {
     VkMemoryLayout.TENSOR_WIDTH_PACKED,
     VkMemoryLayout.TENSOR_HEIGHT_PACKED,
     VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+    VkMemoryLayout.PACKED_INT8_4W4C,
+    VkMemoryLayout.PACKED_INT8_4H4W,
 }
 
 MemoryLayoutSet = Set[VkMemoryLayout]
@@ -400,6 +404,12 @@ def required_image_extents(sizes: torch.Size, layout: VkMemoryLayout) -> ImageEx
         height = (height + 3) // 4
     elif layout == VkMemoryLayout.TENSOR_CHANNELS_PACKED:
         channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4W4C:
+        width = (width + 3) // 4
+        channels = (channels + 3) // 4
+    elif layout == VkMemoryLayout.PACKED_INT8_4H4W:
+        height = (height + 3) // 4
+        width = (width + 3) // 4
     else:
         raise RuntimeError(f"Unsupported memory layout {layout}")
 
@@ -691,6 +701,8 @@ def make_filtered_tensor_repset(
 
 
 ## Convenience TensorRepSet definitions
+
+PACKED_INT8_4W4C_BUFFER = TensorRepSet({VkMemoryLayout.PACKED_INT8_4W4C}, set())
 
 CONTIGUOUS_ANY = TensorRepSet(
     {VkMemoryLayout.TENSOR_WIDTH_PACKED}, {VkMemoryLayout.TENSOR_WIDTH_PACKED}
@@ -1218,6 +1230,16 @@ def is_in_8bit_range(tensor: torch.Tensor) -> bool:
 ##
 
 
+def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
+    # Handle negative indices for nchw_dim
+    if nchw_dim < 0:
+        nchw_dim += ndim
+
+    assert nchw_dim >= 0 and nchw_dim < ndim
+    whcn_dim = (ndim - 1) - nchw_dim
+    return whcn_dim
+
+
 def get_tensor_val_str(tensor_val: FakeTensor) -> str:
     return f"{tensor_val.dtype}: {tensor_val.shape}"
 
@@ -1269,6 +1291,7 @@ def update_program_state_dict(
     updated_tensor: torch.Tensor,
 ) -> None:
     target_name = None
+    kind = None
     # Iterate over all the tensors in the graph signature, and find
     # the one corresponding to the parameter/buffer name
     for input_ in program.graph_signature.input_specs:
@@ -1277,6 +1300,7 @@ def update_program_state_dict(
             and isinstance(input_.arg, TensorArgument)
             and input_.arg.name == buffer_name
         ):
+            kind = input_.kind
             target_name = input_.target
             break
 
@@ -1285,6 +1309,9 @@ def update_program_state_dict(
         target_name is not None
     ), f"could not find {buffer_name} in source program signature"
     assert target_name in program.state_dict, f"could not find {target_name}"
+
+    if kind == InputKind.PARAMETER:
+        updated_tensor = torch.nn.Parameter(updated_tensor, requires_grad=False)
 
     # Finally, overwrite the current tensor with updated tensor
     program.state_dict[target_name] = updated_tensor

@@ -23,12 +23,13 @@ the top level ExecuTorch package. For third-party dependencies, please refer to
 At a minimum, a delegate must provide CMake support for building its C++
 sources.
 
-For the CMake setup, the delegate dir should be included by the
-top level `CMakeLists.txt` file using `add_subdirectory` CMake command, and
-should be built conditionally with an ExecuTorch build flag like
-`EXECUTORCH_BUILD_<DELEGATE_NAME>`, see `EXECUTORCH_BUILD_XNNPACK` for example.
-For third-party dependencies, please refer to
-[this](backend-delegates-dependencies.md).
+For the CMake setup:
+
+- The delegate directory should be included by the top-level `CMakeLists.txt` file using the `add_subdirectory` command.
+- It should be built conditionally using an ExecuTorch build flag like `EXECUTORCH_BUILD_<DELEGATE_NAME>`.
+(See `EXECUTORCH_BUILD_XNNPACK` for an example.)
+
+For third-party dependencies, please refer to [this](backend-delegates-dependencies.md).
 
 <!---
 TODO: Add more details. Need to insert a CMake layer in `executorch/backends` to
@@ -49,9 +50,7 @@ Common test types:
 
 ## Documentation
 
-A delegate must contain a `executorch/backends/<delegate_name>/README.md`
-explaining the basics of the delegate, directory structure, features, and known
-issues if any.
+A delegate must include:
 
-Any extra setup steps beyond the ones listed above should be documented in
-`executorch/backends/<delegate_name>/setup.md`
+- `executorch/backends/<delegate_name>/README.md` – covering the basics of the delegate, its directory structure, features, and any known issues.
+- `executorch/backends/<delegate_name>/setup.md` – documenting any additional setup steps beyond the ones listed above.
