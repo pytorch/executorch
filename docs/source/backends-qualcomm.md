@@ -238,7 +238,7 @@ adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV79Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
 ```
 
 ***Step 2***.  We also need to indicate dynamic linkers on Android and Hexagon
