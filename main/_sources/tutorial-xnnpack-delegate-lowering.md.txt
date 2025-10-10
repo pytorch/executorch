@@ -11,7 +11,7 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 :::{grid-item-card}  Before you begin it is recommended you go through the following:
 :class-card: card-prerequisites
 * [Setting up ExecuTorch](getting-started-setup.rst)
-* [Model Lowering Tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial)
+* [Model Lowering Tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->
 * [ExecuTorch XNNPACK Delegate](backends-xnnpack.md)
 :::
 ::::

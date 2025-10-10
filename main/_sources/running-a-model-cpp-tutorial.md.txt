@@ -12,7 +12,7 @@ each API please see the [Runtime API Reference](executorch-runtime-api-reference
 ## Prerequisites
 
 You will need an ExecuTorch model to follow along. We will be using
-the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->.
 
 ## Model Loading
 
