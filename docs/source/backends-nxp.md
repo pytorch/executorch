@@ -10,14 +10,14 @@ For up-to-date status about running ExecuTorch on Neutron Backend please visit t
 
 ## Features
 
-Executorch v1.0 supports running machine learning models on selected NXP chips (for now only i.MXRT700).
+ExecuTorch v1.0 supports running machine learning models on selected NXP chips (for now only i.MXRT700).
 Among currently supported machine learning models are:
 - Convolution-based neutral networks
-- Full support for MobileNetv2 and CifarNet
+- Full support for MobileNetV2 and CifarNet
 
 ## Prerequisites (Hardware and Software)
 
-In order to succesfully build executorch project and convert models for NXP eIQ Neutron Backend you will need a computer running Windows or Linux.
+In order to successfully build ExecuTorch project and convert models for NXP eIQ Neutron Backend you will need a computer running Linux.
 
 If you want to test the runtime, you'll also need:
 - Hardware with NXP's [i.MXRT700](https://www.nxp.com/products/i.MX-RT700) chip or a testing board like MIMXRT700-AVK
@@ -75,5 +75,5 @@ m = convert_pt2e(m)
 
 ## Runtime Integration
 
-To learn how to run the converted model on the NXP hardware, use one of our example projects on using executorch runtime from MCUXpresso IDE example projects list.
+To learn how to run the converted model on the NXP hardware, use one of our example projects on using ExecuTorch runtime from MCUXpresso IDE example projects list.
 For more finegrained tutorial, visit [this manual page](https://mcuxpresso.nxp.com/mcuxsdk/latest/html/middleware/eiq/executorch/docs/nxp/topics/example_applications.html).
