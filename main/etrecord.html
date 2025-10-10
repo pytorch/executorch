@@ -1152,13 +1152,109 @@ It should be provided to the <a class="reference external" href="model-inspector
 </section>
 <section id="generating-an-etrecord">
 <h2>Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#generating-an-etrecord" title="Link to this heading">#</a></h2>
-<p>The user should use the following API to generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> file. They
-will be expected to provide the Edge Dialect program (returned by the call to <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code>),
-the ExecuTorch program (returned by the call to <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>), and optional models that
-they are interested in working with via our tooling.</p>
+<p>There are multiple ways to generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> for debugging purposes:</p>
+<section id="method-1-using-the-generate-etrecord-parameter-recommended">
+<h3>Method 1: Using the <code class="docutils literal notranslate"><span class="pre">generate_etrecord</span></code> Parameter (Recommended)<a class="headerlink" href="#method-1-using-the-generate-etrecord-parameter-recommended" title="Link to this heading">#</a></h3>
+<p>The recommended approach is to enable <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> generation by passing <code class="docutils literal notranslate"><span class="pre">generate_etrecord=True</span></code>
+to your export API calls. This can be used with:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch.export()</span></code> - High-level export API</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> - Edge dialect conversion</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code> - Edge conversion with transformations and lowering</p></li>
+</ul>
+<p>After export completes, retrieve the <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> using the <code class="docutils literal notranslate"><span class="pre">get_etrecord()</span></code> method, and save it using the <code class="docutils literal notranslate"><span class="pre">save()</span></code> method:</p>
+<p><strong>Example with</strong> <code class="docutils literal notranslate"><span class="pre">executorch.export()</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">executorch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">ExportRecipe</span>
+
+<span class="c1"># Export with ETRecord generation enabled</span>
+<span class="n">session</span> <span class="o">=</span> <span class="n">executorch</span><span class="o">.</span><span class="n">export</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+    <span class="n">example_inputs</span><span class="o">=</span><span class="p">[</span><span class="n">example_inputs</span><span class="p">],</span>
+    <span class="n">export_recipe</span><span class="o">=</span><span class="n">recipe</span><span class="p">,</span>
+    <span class="n">generate_etrecord</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Enable ETRecord generation</span>
+<span class="p">)</span>
+
+<span class="c1"># Get and save the ETRecord</span>
+<span class="n">etrecord</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;model_debug.etrecord&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Example with</strong> <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+
+<span class="c1"># Export model first</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Convert to edge with ETRecord generation</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span>
+    <span class="n">exported_program</span><span class="p">,</span>
+    <span class="n">generate_etrecord</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Enable ETRecord generation</span>
+<span class="p">)</span>
+
+<span class="c1"># Apply transformations</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">()</span>
+<span class="n">et_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Get and save ETRecord</span>
+<span class="n">etrecord</span> <span class="o">=</span> <span class="n">et_manager</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;edge_debug.etrecord&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Example with</strong> <code class="docutils literal notranslate"><span class="pre">to_edge_transform_and_lower()</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.exir.program</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_edge_transform_and_lower</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+
+<span class="c1"># Export model first</span>
+<span class="n">exported_program</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Transform and lower with ETRecord generation</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">exported_program</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="o">=</span><span class="p">[</span><span class="n">MyPartitioner</span><span class="p">()],</span>
+    <span class="n">generate_etrecord</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Enable ETRecord generation</span>
+<span class="p">)</span>
+
+<span class="n">et_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Get and save ETRecord</span>
+<span class="n">etrecord</span> <span class="o">=</span> <span class="n">et_manager</span><span class="o">.</span><span class="n">get_etrecord</span><span class="p">()</span>
+<span class="n">etrecord</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;debug.etrecord&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="method-2-using-the-generate-etrecord-function">
+<h3>Method 2: Using the <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> Function<a class="headerlink" href="#method-2-using-the-generate-etrecord-function" title="Link to this heading">#</a></h3>
+<p>You can also use the standalone <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> function to generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code>.
+This method requires you to provide the Edge Dialect program (returned by <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code>),
+the ExecuTorch program (returned by <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>), and optional models.</p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>Users should do a deepcopy of the output of <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and pass in the deepcopy to the <code class="docutils literal notranslate"><span class="pre">generate_etrecord</span></code> API. This is needed because the subsequent call, <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, does an in-place mutation and will lose debug data in the process.</p>
+<p>When using the standalone function, users should do a deepcopy of the output of <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and pass in the deepcopy to the <code class="docutils literal notranslate"><span class="pre">generate_etrecord</span></code> API. This is needed because the subsequent call, <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, does an in-place mutation and will lose debug data in the process.</p>
+</div>
+<p><strong>Example:</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.devtools</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_etrecord</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">torch.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">export</span>
+
+<span class="c1"># Export and convert to edge</span>
+<span class="n">aten_dialect</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">edge_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">aten_dialect</span><span class="p">)</span>
+
+<span class="c1"># Create copy for ETRecord (needed because to_executorch modifies in-place)</span>
+<span class="n">edge_program_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+
+<span class="c1"># Convert to ExecutorchProgramManager</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">edge_program_copy</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Generate ETRecord separately</span>
+<span class="n">generate_etrecord</span><span class="p">(</span>
+    <span class="s2">&quot;debug.etrecord&quot;</span><span class="p">,</span>
+    <span class="n">edge_program</span><span class="p">,</span>
+    <span class="n">executorch_program</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
 </div>
 <dl class="py function">
 <dt class="sig sig-object py" id="executorch.devtools.etrecord._etrecord.generate_etrecord">
@@ -1189,6 +1285,7 @@ output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
 </dl>
 </dd></dl>
 
+</section>
 </section>
 <section id="using-an-etrecord">
 <h2>Using an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#using-an-etrecord" title="Link to this heading">#</a></h2>
@@ -1315,7 +1412,11 @@ output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#overview">Overview</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#generating-an-etrecord">Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a><ul class="visible nav section-nav flex-column">
-<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.devtools.etrecord._etrecord.generate_etrecord"><code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#method-1-using-the-generate-etrecord-parameter-recommended">Method 1: Using the <code class="docutils literal notranslate"><span class="pre">generate_etrecord</span></code> Parameter (Recommended)</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#method-2-using-the-generate-etrecord-function">Method 2: Using the <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> Function</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.devtools.etrecord._etrecord.generate_etrecord"><code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#using-an-etrecord">Using an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a></li>
@@ -1544,7 +1645,7 @@ output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
        "headline": "Prerequisite | ETRecord - ExecuTorch Record",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/etrecord.html",
-       "articleBody": "Prerequisite | ETRecord - ExecuTorch Record# Overview# ETRecord is intended to be the debug artifact that is generated by users ahead of time (when they export their model to run on ExecuTorch). To draw a rough equivalent to conventional software development, ETRecord can be considered as the binary built with debug symbols that is used for debugging in GNU Debugger (gdb). It is expected that the user will supply this to the ExecuTorch Developer Tools in order for them to debug and visualize their model. ETRecord contains numerous components such as: Edge dialect graph with debug handles Delegate debug handle maps The ETRecord object itself is intended to be opaque to users and they should not access any components inside it directly. It should be provided to the Inspector API to link back performance and debug data sourced from the runtime back to the Python source code. Generating an ETRecord# The user should use the following API to generate an ETRecord file. They will be expected to provide the Edge Dialect program (returned by the call to to_edge()), the ExecuTorch program (returned by the call to to_executorch()), and optional models that they are interested in working with via our tooling. Warning Users should do a deepcopy of the output of to_edge() and pass in the deepcopy to the generate_etrecord API. This is needed because the subsequent call, to_executorch(), does an in-place mutation and will lose debug data in the process. executorch.devtools.etrecord._etrecord.generate_etrecord(et_record, edge_dialect_program, executorch_program, exported_program=None, extra_recorded_export_modules=None)[source]# Generates an ETRecord from the given objects, serializes it and saves it to the given path. The objects that will be serialized to an ETRecord are all the graph modules present in the extra_recorded_export_modules dict, the graph module present in the edge dialect program object, and also the graph module present in the ExecuTorch program object, which is the closest graph module representation of what is eventually run on the device. In addition to all the graph modules, we also serialize the program buffer, which the users can provide to the ExecuTorch runtime to run the model, and the debug handle map for Developer Tools usage. Parameters: et_record \u2013 Path to where the ETRecord file will be saved to. edge_dialect_program \u2013 EdgeProgramManager for this model returned by the call to to_edge() executorch_program \u2013 The ExecuTorch program for this model returned by the call to to_executorch() or the BundledProgram of this model exported_program \u2013 Optional graph module for this model returned by the call to torch.export from nn.Module. [Optional] (extra_recorded_export_modules) \u2013 Should be ignored by OSS users. A dictionary of graph modules with the key being the user provided name and the value being the corresponding exported module. The exported graph modules can be either the output of torch.export() or exir.to_edge(). Returns: None Using an ETRecord# Pass the ETRecord as an optional argument into the Inspector API to access this data and do post-run analysis.",
+       "articleBody": "Prerequisite | ETRecord - ExecuTorch Record# Overview# ETRecord is intended to be the debug artifact that is generated by users ahead of time (when they export their model to run on ExecuTorch). To draw a rough equivalent to conventional software development, ETRecord can be considered as the binary built with debug symbols that is used for debugging in GNU Debugger (gdb). It is expected that the user will supply this to the ExecuTorch Developer Tools in order for them to debug and visualize their model. ETRecord contains numerous components such as: Edge dialect graph with debug handles Delegate debug handle maps The ETRecord object itself is intended to be opaque to users and they should not access any components inside it directly. It should be provided to the Inspector API to link back performance and debug data sourced from the runtime back to the Python source code. Generating an ETRecord# There are multiple ways to generate an ETRecord for debugging purposes: Method 1: Using the generate_etrecord Parameter (Recommended)# The recommended approach is to enable ETRecord generation by passing generate_etrecord=True to your export API calls. This can be used with: executorch.export() - High-level export API to_edge() - Edge dialect conversion to_edge_transform_and_lower() - Edge conversion with transformations and lowering After export completes, retrieve the ETRecord using the get_etrecord() method, and save it using the save() method: Example with executorch.export(): import executorch from executorch.export import ExportRecipe # Export with ETRecord generation enabled session = executorch.export( model=model, example_inputs=[example_inputs], export_recipe=recipe, generate_etrecord=True # Enable ETRecord generation ) # Get and save the ETRecord etrecord = session.get_etrecord() etrecord.save(\"model_debug.etrecord\") Example with to_edge(): from executorch.exir.program import to_edge from torch.export import export # Export model first exported_program = export(model, example_inputs) # Convert to edge with ETRecord generation edge_manager = to_edge( exported_program, generate_etrecord=True # Enable ETRecord generation ) # Apply transformations edge_manager = edge_manager.to_backend() et_manager = edge_manager.to_executorch() # Get and save ETRecord etrecord = et_manager.get_etrecord() etrecord.save(\"edge_debug.etrecord\") Example with to_edge_transform_and_lower(): from executorch.exir.program import to_edge_transform_and_lower from torch.export import export # Export model first exported_program = export(model, example_inputs) # Transform and lower with ETRecord generation edge_manager = to_edge_transform_and_lower( exported_program, partitioner=[MyPartitioner()], generate_etrecord=True # Enable ETRecord generation ) et_manager = edge_manager.to_executorch() # Get and save ETRecord etrecord = et_manager.get_etrecord() etrecord.save(\"debug.etrecord\") Method 2: Using the generate_etrecord() Function# You can also use the standalone generate_etrecord() function to generate an ETRecord. This method requires you to provide the Edge Dialect program (returned by to_edge()), the ExecuTorch program (returned by to_executorch()), and optional models. Warning When using the standalone function, users should do a deepcopy of the output of to_edge() and pass in the deepcopy to the generate_etrecord API. This is needed because the subsequent call, to_executorch(), does an in-place mutation and will lose debug data in the process. Example: import copy from executorch.devtools import generate_etrecord from torch.export import export # Export and convert to edge aten_dialect = export(model, example_inputs, strict=True) edge_program = to_edge(aten_dialect) # Create copy for ETRecord (needed because to_executorch modifies in-place) edge_program_copy = copy.deepcopy(edge_program) # Convert to ExecutorchProgramManager executorch_program = edge_program_copy.to_executorch() # Generate ETRecord separately generate_etrecord( \"debug.etrecord\", edge_program, executorch_program, ) executorch.devtools.etrecord._etrecord.generate_etrecord(et_record, edge_dialect_program, executorch_program, exported_program=None, extra_recorded_export_modules=None)[source]# Generates an ETRecord from the given objects, serializes it and saves it to the given path. The objects that will be serialized to an ETRecord are all the graph modules present in the extra_recorded_export_modules dict, the graph module present in the edge dialect program object, and also the graph module present in the ExecuTorch program object, which is the closest graph module representation of what is eventually run on the device. In addition to all the graph modules, we also serialize the program buffer, which the users can provide to the ExecuTorch runtime to run the model, and the debug handle map for Developer Tools usage. Parameters: et_record \u2013 Path to where the ETRecord file will be saved to. edge_dialect_program \u2013 EdgeProgramManager for this model returned by the call to to_edge() executorch_program \u2013 The ExecuTorch program for this model returned by the call to to_executorch() or the BundledProgram of this model exported_program \u2013 Optional graph module for this model returned by the call to torch.export from nn.Module. [Optional] (extra_recorded_export_modules) \u2013 Should be ignored by OSS users. A dictionary of graph modules with the key being the user provided name and the value being the corresponding exported module. The exported graph modules can be either the output of torch.export() or exir.to_edge(). Returns: None Using an ETRecord# Pass the ETRecord as an optional argument into the Inspector API to access this data and do post-run analysis.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
