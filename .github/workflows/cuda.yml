@@ -256,13 +256,27 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run Voxtral Runner"
-        
+        set +e
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
-        cmake-out/examples/models/voxtral/voxtral_runner \
+        OUTPUT=$(cmake-out/examples/models/voxtral/voxtral_runner \
               --model_path model.pte \
               --data_path aoti_cuda_blob.ptd \
               --tokenizer_path tekken.json \
               --audio_path dancing.wav \
               --processor_path voxtral_preprocessor.pte \
-              --temperature 0
+              --temperature 0 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "$OUTPUT"
+
+        if ! echo "$OUTPUT" | grep -iq "dancing"; then
+          echo "Expected output 'dancing' not found in output"
+          exit 1
+        fi
+
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "Unexpected exit code: $EXIT_CODE"
+          exit $EXIT_CODE
+        fi
         echo "::endgroup::"
