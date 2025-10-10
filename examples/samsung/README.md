@@ -2,6 +2,7 @@
 
 This directory contains examples for some AI models.
 
+
 Please make sure you have built the library and executable before
 you start, if you have no idea how to build, please refer to [backend README](../../backends/samsung/README.md).
 
