@@ -40,7 +40,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   // 1. Run encoder model.
   ::executorch::runtime::EValue encoder_output;
   if (input.is_image()) {
-    Image image = input.get_image();
+    const Image& image = input.get_image();
 
     auto method_meta = ET_UNWRAP(
         module_->method_meta(kVisionEncoderMethod),
@@ -91,7 +91,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
 
     encoder_output = image_encoder_outputs[0];
   } else if (input.is_audio()) {
-    Audio audio = input.get_audio();
+    const Audio& audio = input.get_audio();
 
     // Use Audio::toTensor() for tensor creation
     auto audio_tensor =
