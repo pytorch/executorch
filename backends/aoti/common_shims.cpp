@@ -50,14 +50,36 @@ AOTITorchError aoti_torch_get_storage_offset(
 }
 
 AOTITorchError aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
-  std::vector<int64_t> strides(tensor->dim());
-  auto tensor_strides = tensor->strides();
-  for (ssize_t i = 0; i < tensor->dim(); i++) {
-    strides[i] = static_cast<int64_t>(tensor_strides[i]);
+  auto it = internal::tensor_to_strides.find(tensor);
+  bool needs_update = false;
+
+  if (it == internal::tensor_to_strides.end()) {
+    needs_update = true;
+  } else {
+    // Check if cached values are still valid
+    auto tensor_strides = tensor->strides();
+    if (it->second.size() != static_cast<size_t>(tensor->dim())) {
+      needs_update = true;
+    } else {
+      for (int i = 0; i < tensor->dim(); i++) {
+        if (it->second[i] != tensor_strides[i]) {
+          needs_update = true;
+          break;
+        }
+      }
+    }
   }
-  auto it =
-      internal::tensor_to_strides.insert_or_assign(tensor, std::move(strides))
-          .first;
+
+  if (needs_update) {
+    std::vector<int64_t> strides(tensor->dim());
+    auto tensor_strides = tensor->strides();
+    for (int i = 0; i < tensor->dim(); i++) {
+      strides[i] = tensor_strides[i];
+    }
+    it =
+        internal::tensor_to_strides.insert_or_assign(tensor, std::move(strides))
+            .first;
+  }
 
   // For 0D tensors, data() returns nullptr on empty vectors, but we need to
   // return a valid pointer
@@ -78,13 +100,35 @@ AOTITorchError aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype) {
 }
 
 AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
-  std::vector<int64_t> sizes(tensor->dim());
-  auto tensor_sizes = tensor->sizes();
-  for (ssize_t i = 0; i < tensor->dim(); i++) {
-    sizes[i] = static_cast<int64_t>(tensor_sizes[i]);
+  auto it = internal::tensor_to_sizes.find(tensor);
+  bool needs_update = false;
+
+  if (it == internal::tensor_to_sizes.end()) {
+    needs_update = true;
+  } else {
+    // Check if cached values are still valid
+    auto tensor_sizes = tensor->sizes();
+    if (it->second.size() != static_cast<size_t>(tensor->dim())) {
+      needs_update = true;
+    } else {
+      for (int i = 0; i < tensor->dim(); i++) {
+        if (it->second[i] != tensor_sizes[i]) {
+          needs_update = true;
+          break;
+        }
+      }
+    }
   }
-  auto it = internal::tensor_to_sizes.insert_or_assign(tensor, std::move(sizes))
-                .first;
+
+  if (needs_update) {
+    std::vector<int64_t> sizes(tensor->dim());
+    auto tensor_sizes = tensor->sizes();
+    for (int i = 0; i < tensor->dim(); i++) {
+      sizes[i] = tensor_sizes[i];
+    }
+    it = internal::tensor_to_sizes.insert_or_assign(tensor, std::move(sizes))
+             .first;
+  }
 
   // For 0D tensors, data() returns nullptr on empty vectors, but we need to
   // return a valid pointer
