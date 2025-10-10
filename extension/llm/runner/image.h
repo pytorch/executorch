@@ -10,9 +10,7 @@
 
 #pragma once
 #include <executorch/runtime/platform/compiler.h>
-#include <cstddef>
 #include <cstdint>
-#include <variant>
 #include <vector>
 
 #include <executorch/extension/tensor/tensor.h>
@@ -22,21 +20,19 @@ namespace executorch {
 namespace extension {
 namespace llm {
 
+// Assuming NCHW format
 class ET_EXPERIMENTAL Image {
  public:
-  // Default constructor
-  Image() : width_(0), height_(0), channels_(0) {}
-
   // Constructor for uint8_t data
   Image(
       std::vector<uint8_t>&& data,
       int32_t width,
       int32_t height,
       int32_t channels)
-      : data_(std::move(data)),
-        width_(width),
-        height_(height),
-        channels_(channels) {}
+      : Image(make_tensor_ptr(
+            {channels, height, width},
+            std::move(data),
+            executorch::aten::ScalarType::Byte)) {}
 
   // Constructor for float data
   Image(
@@ -44,78 +40,74 @@ class ET_EXPERIMENTAL Image {
       int32_t width,
       int32_t height,
       int32_t channels)
-      : data_(std::move(data)),
-        width_(width),
-        height_(height),
-        channels_(channels) {}
+      : Image(make_tensor_ptr({channels, height, width}, std::move(data))) {}
+
+  Image(executorch::extension::TensorPtr tensor) : tensor_(std::move(tensor)) {
+    ET_CHECK_MSG(tensor_, "Null tensor");
+    ET_CHECK_MSG(tensor_->dim() == 3, "Invalid tensor rank");
+  }
 
   // Getters
-  int32_t width() const {
-    return width_;
-  }
-  int32_t height() const {
-    return height_;
-  }
   int32_t channels() const {
-    return channels_;
+    return tensor_->size(0);
+  }
+
+  int32_t height() const {
+    return tensor_->size(1);
+  }
+
+  int32_t width() const {
+    return tensor_->size(2);
   }
 
   // Data access
   bool is_uint8() const {
-    return std::holds_alternative<std::vector<uint8_t>>(data_);
+    return tensor_->scalar_type() == ::executorch::aten::ScalarType::Byte;
   }
 
   bool is_float() const {
-    return std::holds_alternative<std::vector<float>>(data_);
+    return tensor_->scalar_type() == ::executorch::aten::ScalarType::Float;
   }
 
-  const std::vector<uint8_t>& get_uint8_data() const& {
-    return std::get<std::vector<uint8_t>>(data_);
+  std::vector<uint8_t> copy_uint8_data() const {
+    ET_DCHECK_MSG(is_uint8(), "Image dtype is not uint8");
+    auto data = tensor_->const_data_ptr<uint8_t>();
+    return std::vector<uint8_t>(data, data + tensor_->numel());
   }
 
-  std::vector<uint8_t>& get_uint8_data() & {
-    return std::get<std::vector<uint8_t>>(data_);
+  std::vector<uint8_t> copy_uint8_data() {
+    ET_DCHECK_MSG(is_uint8(), "Image dtype is not uint8");
+    auto data = tensor_->const_data_ptr<uint8_t>();
+    return std::vector<uint8_t>(data, data + tensor_->numel());
   }
 
-  const std::vector<float>& get_float_data() const& {
-    return std::get<std::vector<float>>(data_);
+  std::vector<float> copy_float_data() const {
+    ET_DCHECK_MSG(is_float(), "Image dtype is not float");
+    auto data = tensor_->const_data_ptr<float>();
+    return std::vector<float>(data, data + tensor_->numel());
   }
 
-  std::vector<float>& get_float_data() & {
-    return std::get<std::vector<float>>(data_);
+  std::vector<float> copy_float_data() {
+    ET_DCHECK_MSG(is_float(), "Image dtype is not float");
+    auto data = tensor_->const_data_ptr<float>();
+    return std::vector<float>(data, data + tensor_->numel());
   }
 
   executorch::runtime::Result<executorch::extension::TensorPtr> toTensor(
       bool with_batch = false) const {
-    // Note: This creates a 3D tensor (CHW). The model might expect a 4D
-    // tensor (NCHW). The caller should handle reshaping if needed.
-    std::vector<executorch::aten::SizesType> sizes = {
-        channels(), height(), width()};
     if (with_batch) {
-      sizes.insert(sizes.begin(), 1);
+      return make_tensor_ptr(
+          *tensor_,
+          {1, 
+           executorch::aten::SizesType(tensor_->size(0)),
+           executorch::aten::SizesType(tensor_->size(1)),
+           executorch::aten::SizesType(tensor_->size(2))});
     }
-    if (is_float()) {
-      return executorch::extension::from_blob(
-          const_cast<float*>(get_float_data().data()),
-          sizes,
-          ::executorch::aten::ScalarType::Float);
-    } else if (is_uint8()) {
-      return executorch::extension::from_blob(
-          const_cast<uint8_t*>(get_uint8_data().data()),
-          sizes,
-          ::executorch::aten::ScalarType::Byte);
-    }
-    ET_LOG(
-        Error, "Image data is not initialized with uint8_t or float vector.");
-    return ::executorch::runtime::Error::NotSupported;
+    return tensor_;
   }
 
  private:
-  // Assuming NCHW format
-  std::variant<std::vector<uint8_t>, std::vector<float>> data_;
-  int32_t width_;
-  int32_t height_;
-  int32_t channels_;
+  executorch::extension::TensorPtr tensor_;
 };
 
 } // namespace llm
