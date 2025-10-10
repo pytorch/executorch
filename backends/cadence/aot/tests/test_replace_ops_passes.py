@@ -6,9 +6,12 @@
 
 # pyre-strict
 
+import copy
 import operator
 import unittest
 from typing import cast, List, Optional, Sequence, Tuple, Union
+
+import executorch.backends.cadence.aot.ref_implementations  # noqa
 
 import torch
 from executorch.backends.cadence.aot.graph_builder import (
@@ -42,7 +45,6 @@ from executorch.backends.cadence.aot.replace_ops import (
     ReplaceScalarTensorWithFullPass,
     ReplaceScalarWithTensorArgPass,
     ReplaceSelectWithViewOpPass,
-    ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass,
     ReplaceSplitWithSlicePass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
     ReplaceTorchQuantizedEmbeddingWithCadenceQuantizedEmbedding,
@@ -54,9 +56,28 @@ from executorch.backends.cadence.aot.replace_ops import (
 from executorch.backends.cadence.aot.typing_stubs import expand
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, ProxyValue
-from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.utils import _pytree as pytree
+
+
+def validate(
+    original: torch.fx.GraphModule,
+    modified: torch.fx.GraphModule,
+    inputs: tuple[torch.Tensor, ...] | list[torch.Tensor],
+    pass_name: str,
+) -> None:
+    original.eval()
+    modified.eval()
+    with torch.no_grad():
+        orig_out = original(*inputs)
+        mod_out = modified(*inputs)
+
+    flat_orig_out, _ = pytree.tree_flatten(orig_out)
+    flat_mod_out, _ = pytree.tree_flatten(mod_out)
+    if not all(pytree.tree_map(torch.equal, flat_orig_out, flat_mod_out)):
+        raise AssertionError(
+            f"Pass validation failed with exact match for pass {pass_name}. Original graph {original} and modified graph {modified}"
+        )
 
 
 class TestReplaceOpsPasses(unittest.TestCase):
@@ -105,8 +126,10 @@ class TestReplaceOpsPasses(unittest.TestCase):
         y_shape: Tuple[int],
     ) -> None:
         builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn(*x_shape, dtype=torch.float32))
-        y = builder.placeholder("y", torch.randn(*y_shape, dtype=torch.float32))
+        x_ = torch.randint(0, 100, x_shape, dtype=torch.int8)
+        x = builder.placeholder("x", x_)
+        y_ = torch.randint(0, 100, y_shape, dtype=torch.int8)
+        y = builder.placeholder("y", y_)
         matmul = builder.call_operator(
             op=exir_ops.edge.cadence.quantized_matmul.default,
             args=(
@@ -134,6 +157,12 @@ class TestReplaceOpsPasses(unittest.TestCase):
                 graph_after_passes, exir_ops.edge.cadence.quantized_matmul.default
             ),
             1,
+        )
+        validate(
+            original_gm,
+            graph_after_passes,
+            (x_, y_),
+            "ReplaceMatmulWithTransposedMatmulPass",
         )
 
     @expand(
@@ -1001,152 +1030,6 @@ class TestReplaceOpsPasses(unittest.TestCase):
         )
 
     @torch.no_grad()
-    def test_replace_single_element_tensor_arguments_from_full_op_with_scalar(
-        self,
-        in_features: int = 16,
-        out_features: int = 16,
-    ) -> None:
-        src_zero_point = 0
-        out_zero_point = 0
-        builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn([1, in_features]))
-        weights = builder.placeholder(
-            "weights", torch.randn([in_features, out_features], dtype=torch.float32)
-        )
-        bias = builder.placeholder(
-            "bias", torch.randn([out_features], dtype=torch.float32)
-        )
-        quantized_input = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(x, 0.01431146077811718, 57, -128, 127, torch.int8),
-        )
-        weight_zero_point = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-        )
-        out_multiplier = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-        )
-        out_shift = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-        )
-        output = builder.call_operator(
-            op=exir_ops.edge.cadence.quantized_linear.default,
-            args=(
-                quantized_input,
-                weights,
-                bias,
-                src_zero_point,
-                weight_zero_point,
-                out_multiplier,
-                out_shift,
-                out_zero_point,
-                None,
-            ),
-        )
-        dequantized_output = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            args=(output, 0.010696045123040676, -31, -128, 127, torch.int8),
-        )
-        builder.output([dequantized_output])
-        original_gm = builder.get_graph_module()
-        p = ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
-        self.assertIsNotNone(graph_after_passes)
-        gm = dead_code_elimination_pass(graph_after_passes).graph_module
-        # By default, the quantized linear op should have constant scalar attributes.
-        self.assertTargetCountsEqual(
-            gm,
-            [
-                # No default quantized linear op.
-                (exir_ops.edge.cadence.quantized_linear.default, 0),
-                # The default quantized linear op will be replaced with quantized_linear.per_tensor.
-                (exir_ops.edge.cadence.quantized_linear.per_tensor, 1),
-                # No aten.full ops.
-                (exir_ops.edge.aten.full.default, 0),
-            ],
-        )
-
-    @torch.no_grad()
-    def test_replace_single_element_tensor_arguments_from_full_op_with_scalar_tuple_args(
-        self,
-        in_features: int = 16,
-        out_features: int = 16,
-    ) -> None:
-        src_zero_point = 0
-        out_zero_point = 0
-        builder = GraphBuilder()
-        x = builder.placeholder("x", torch.randn([1, in_features]))
-        weights = builder.placeholder(
-            "weights", torch.randn([in_features, out_features], dtype=torch.float32)
-        )
-        bias = builder.placeholder(
-            "bias", torch.randn([out_features], dtype=torch.float32)
-        )
-        quantized_input = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            args=(x, 0.01431146077811718, 57, -128, 127, torch.int8),
-        )
-        weight_zero_point = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-        )
-        out_multiplier = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-        )
-        out_shift = builder.call_operator(
-            op=exir_ops.edge.aten.full.default,
-            args=([1], 0),
-        )
-        output = builder.call_operator(
-            op=exir_ops.edge.cadence.quantized_linear.default,
-            args=(
-                quantized_input,
-                weights,
-                bias,
-                src_zero_point,
-                weight_zero_point,
-                out_multiplier,
-                out_shift,
-                out_zero_point,
-                None,
-            ),
-        )
-        dequantized_output = builder.call_operator(
-            op=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-            args=(output, 0.010696045123040676, -31, -128, 127, torch.int8),
-        )
-        builder.output([dequantized_output])
-        original_gm = builder.get_graph_module()
-
-        for node in original_gm.graph.nodes:
-            # Replace the `shape` argument for aten.full op with a tuple.
-            if node.target == exir_ops.edge.aten.full.default:
-                node.args = (tuple(node.args[0]), node.args[1])
-
-        # Apply replacement pass.
-        p = ReplaceSingleElementTensorArgumentsFromFullOpWithScalarPass()
-        graph_after_passes = cast(PassResult, p(original_gm)).graph_module
-        self.assertIsNotNone(graph_after_passes)
-        gm = dead_code_elimination_pass(graph_after_passes).graph_module
-
-        # By default, the quantized linear op should have constant scalar attributes.
-        self.assertTargetCountsEqual(
-            gm,
-            [
-                # No default quantized linear op.
-                (exir_ops.edge.cadence.quantized_linear.default, 0),
-                # The default quantized linear op will be replaced with quantized_linear.per_tensor.
-                (exir_ops.edge.cadence.quantized_linear.per_tensor, 1),
-                # No aten.full ops.
-                (exir_ops.edge.aten.full.default, 0),
-            ],
-        )
-
-    @torch.no_grad()
     def test_replace_conv1d_with_linear(self) -> None:
         x = torch.randn(1, 96, 7)
         weights = torch.randn(192, 96, 7)
@@ -1231,7 +1114,7 @@ class TestReplaceOpsPasses(unittest.TestCase):
             count_node(graph_after_passes, exir_ops.edge.cadence.convolution.default), 0
         )
         self.assertEqual(
-            count_node(graph_after_passes, exir_ops.edge.cadence.im2row.default), 1
+            count_node(graph_after_passes, exir_ops.edge.cadence.im2row.per_tensor), 1
         )
         self.assertEqual(
             count_node(graph_after_passes, exir_ops.edge.aten.linear.default), 1
@@ -1799,33 +1682,33 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
 
     def create_quantized_convolution_graph_module(
         self, channels_last: Optional[bool] = None
-    ) -> torch.fx.GraphModule:
+    ) -> tuple[tuple[torch.Tensor, ...], torch.fx.GraphModule]:
         """Helper to create a quantized conv node.
 
-        quantized_conv(
+        quantized_conv_per_tensor(
             Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding,
-            int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point,
-            Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier,
-            Tensor out_shift, bool channel_last=False) -> (Tensor Z)"
+            int[] dilation, int groups, int input_zero_point, int weight_zero_point,
+            Tensor bias_scale, float out_scale, int out_zero_point, int out_multiplier,
+            int out_shift, bool channel_last=False) -> (Tensor Z)"
         """
         if channels_last:
-            x = torch.randn(1, 224, 56, 3)
-            w = torch.randn(16, 16, 16, 3)
+            x = torch.randint(0, 100, (1, 224, 56, 3), dtype=torch.int32)
+            w = torch.randint(0, 100, (16, 16, 16, 3), dtype=torch.int32)
         else:
-            x = torch.randn(1, 3, 224, 56)
-            w = torch.randn(16, 3, 16, 16)
+            x = torch.randint(0, 100, (1, 3, 224, 56), dtype=torch.int32)
+            w = torch.randint(0, 100, (16, 3, 16, 16), dtype=torch.int32)
         b = torch.randn(16)
         stride = (2, 2)
         padding = (0, 0)
         dilation = (1, 1)
         groups = 1
         input_zero_point = 0
-        w_zero_point = torch.randn(1)
-        b_scale = torch.randn(1)
+        w_zero_point = 100
+        b_scale = 10
         out_scale = 1
         out_zero_point = 0
-        out_multiplier = torch.randn(1)
-        out_shift = torch.randn(1)
+        out_multiplier = 5
+        out_shift = 5
         args = (
             x,
             w,
@@ -1843,50 +1726,35 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             out_shift,
         )
         if channels_last is not None:
-            return single_op_builder(
-                placeholders=(
-                    x,
-                    w,
-                    b,
-                    w_zero_point,
-                    b_scale,
-                    out_multiplier,
-                    out_shift,
-                ),
-                op=exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
-                args=args,
-            )
+            op = exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor
         else:
-            return single_op_builder(
-                placeholders=(
-                    x,
-                    w,
-                    b,
-                    w_zero_point,
-                    b_scale,
-                    out_multiplier,
-                    out_shift,
-                ),
-                op=exir_ops.edge.cadence.quantized_conv2d_nchw.default,
-                args=args,
-            )
+            op = exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor
+
+        placeholders = (x, w, b)
+
+        return placeholders, single_op_builder(
+            placeholders=placeholders,
+            op=op,
+            args=args,
+        )
 
     def test_quantized_convolution_default_channel_last(self) -> None:
         # Create a graph with a single convolution node.
-        gm = self.create_quantized_convolution_graph_module()
+        placeholders, gm = self.create_quantized_convolution_graph_module()
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nchw.per_tensor), 1
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
 
         # Apply replacement pass.
         p = ReplaceConvWithChannelLastConvPass()
+        original = copy.deepcopy(gm)
         gm_after_replacement = p.call(gm).graph_module
         # Check that no replacement was made.
         self.assertEqual(
             count_node(
                 gm_after_replacement,
-                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
             ),
             1,
         )
@@ -1895,14 +1763,23 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
             count_node(gm_after_replacement, exir_ops.edge.aten.permute_copy.default),
             3,
         )
+        validate(
+            gm_after_replacement,
+            original,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
 
     def test_no_transpose_if_already_quantized_conv_channel_last(self) -> None:
         # Create a graph with a single im2row node.
-        gm = self.create_quantized_convolution_graph_module(channels_last=True)
+        placeholders, gm = self.create_quantized_convolution_graph_module(
+            channels_last=True
+        )
         # Check if graph module is valid by running exportpass on it.
+        original = copy.deepcopy(gm)
         gm = ExportPass().call(gm).graph_module
         self.assertEqual(
-            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.default), 1
+            count_node(gm, exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor), 1
         )
 
         # Apply replacement pass.
@@ -1912,11 +1789,17 @@ class TestReplaceConvWithChannelLastConvPass(unittest.TestCase):
         self.assertEqual(
             count_node(
                 gm_after_replacement,
-                exir_ops.edge.cadence.quantized_conv2d_nhwc.default,
+                exir_ops.edge.cadence.quantized_conv2d_nhwc.per_tensor,
             ),
             1,
         )
         self.assertEqual(count_node(gm, exir_ops.edge.aten.permute_copy.default), 0)
+        validate(
+            gm_after_replacement,
+            original,
+            placeholders,
+            "ReplaceConvWithChannelLastConvPass",
+        )
 
 
 class TestMakeSliceAndCatDimOutermostPass(unittest.TestCase):
