@@ -889,16 +889,21 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Set RPATH to find PyTorch libraries relative to the installation location
   # This goes from executorch/extension/pybindings up to site-packages, then to
-  # torch/lib
+  # torch/lib Note: We disable CMAKE_INSTALL_RPATH_USE_LINK_PATH for this target
+  # to avoid duplicate RPATHs that can occur with recent PyTorch versions
   if(APPLE)
     set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
-                              INSTALL_RPATH "@loader_path/../../../torch/lib"
+      portable_lib
+      PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                 INSTALL_RPATH "@loader_path/../../../torch/lib"
+                 INSTALL_RPATH_USE_LINK_PATH OFF
     )
   else()
     set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
-                              INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+      portable_lib
+      PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"
+                 INSTALL_RPATH "$ORIGIN/../../../torch/lib"
+                 INSTALL_RPATH_USE_LINK_PATH OFF
     )
   endif()
 
