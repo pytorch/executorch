@@ -81,7 +81,7 @@ with open("nanogpt.pte", "wb") as file:
 
 To export, run the script with `python export_nanogpt.py` (or python3, as appropriate for your environment). It will generate a `nanogpt.pte` file in the current directory.
 
-For more information, see [Exporting to ExecuTorch](../tutorials/export-to-executorch-tutorial) and
+For more information, see [Exporting to ExecuTorch](../tutorials/export-to-executorch-tutorial) <!-- @lint-ignore --> and
 [torch.export](https://pytorch.org/docs/stable/export.html).
 
 ## Backend delegation
