@@ -38,6 +38,28 @@ function download_ai_mlsdk_manifest() {
                --manifest-url ${mlsdk_manifest_url} \
                --manifest-branch ${mlsdk_manifest_tag} \
                -g model-converter,emulation-layer,vgf-library
+
+# Update dependencies to use gitlab tosa-mlir-translator
+# Do not indent the xml. Heredoc indentation is significant.
+mkdir -p .repo/local_manifests/
+cat > ".repo/local_manifests/tosa_gitlab.xml" <<'XML'
+<manifest>
+  <remote name="gitlab" fetch="https://git.gitlab.arm.com/"/>
+
+  <!-- remove the mlplatform entry -->
+  <remove-project name="tosa/tosa_mlir_translator"/>
+
+  <!-- re-add with GitLab repo and pin the SHA -->
+  <project
+      name="tosa/tosa-mlir-translator"
+      path="dependencies/tosa_mlir_translator"
+      remote="gitlab"
+      revision="refs/tags/v2025.07.1"
+      groups="all model-converter"
+      sync-s="true"/>
+</manifest>
+XML
+
         ./repo sync -j$(nproc)
 
         popd
