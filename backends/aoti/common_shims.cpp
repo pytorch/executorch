@@ -56,18 +56,16 @@ AOTITorchError aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
   if (it == internal::tensor_to_strides.end()) {
     needs_update = true;
   } else {
-    // Check if cached values are still valid
+    // CRITICAL: Multimodal models reuse tensors with different shapes across
+    // executions (e.g., variable-length audio). We MUST validate cached
+    // metadata matches current tensor state, or CUDA kernels will receive
+    // incorrect shapes leading to memory corruption and segfaults.
     auto tensor_strides = tensor->strides();
-    if (it->second.size() != static_cast<size_t>(tensor->dim())) {
-      needs_update = true;
-    } else {
-      for (int i = 0; i < tensor->dim(); i++) {
-        if (it->second[i] != tensor_strides[i]) {
-          needs_update = true;
-          break;
-        }
-      }
-    }
+    needs_update = !std::equal(
+        it->second.begin(),
+        it->second.end(),
+        tensor_strides.begin(),
+        tensor_strides.end());
   }
 
   if (needs_update) {
@@ -106,18 +104,16 @@ AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
   if (it == internal::tensor_to_sizes.end()) {
     needs_update = true;
   } else {
-    // Check if cached values are still valid
+    // CRITICAL: Multimodal models reuse tensors with different shapes across
+    // executions (e.g., variable-length audio). We MUST validate cached
+    // metadata matches current tensor state, or CUDA kernels will receive
+    // incorrect shapes leading to memory corruption and segfaults.
     auto tensor_sizes = tensor->sizes();
-    if (it->second.size() != static_cast<size_t>(tensor->dim())) {
-      needs_update = true;
-    } else {
-      for (int i = 0; i < tensor->dim(); i++) {
-        if (it->second[i] != tensor_sizes[i]) {
-          needs_update = true;
-          break;
-        }
-      }
-    }
+    needs_update = !std::equal(
+        it->second.begin(),
+        it->second.end(),
+        tensor_sizes.begin(),
+        tensor_sizes.end());
   }
 
   if (needs_update) {
