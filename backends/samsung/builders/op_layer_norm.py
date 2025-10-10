@@ -46,9 +46,8 @@ class LayerNormVisitor(NodeVisitor):
 
         epsilon = node.args[4] if len(node.args) > 4 else 1e-5
         params = {"epsilon": epsilon}
-
+        self._update_params_qdtype(node, params)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-
         enn_graph.define_op(
             node.name, "LAYERNORM", all_input_tensors, [output_id], params
         )

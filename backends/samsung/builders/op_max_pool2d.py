@@ -73,6 +73,7 @@ class MaxPool2dVisitor(NodeVisitor):
         params["explicit_padding"] = explicit_padding
         params["dilation_h"] = dilation[0]
         params["dilation_w"] = dilation[1]
+        self._update_params_qdtype(node, params)
 
         if len(node.args) > 5:
             ceil_mode = cast(bool, node.args[5])

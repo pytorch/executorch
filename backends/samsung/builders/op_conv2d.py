@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import cast, Dict, List
 
 import torch
@@ -56,6 +57,9 @@ class Conv2dVisitor(NodeVisitor):
         input_shape = get_shape(input)
         kernel_shape = get_shape(weight_node)
         params = {}
+        self._update_params_qdtype(node, params)
+        if "activation" in node.meta:
+            params["activation"] = node.meta["activation"]
         params["kernel_h"] = kernel_shape[2]
         params["kernel_w"] = kernel_shape[3]
         params["stride_h"] = stride[0]

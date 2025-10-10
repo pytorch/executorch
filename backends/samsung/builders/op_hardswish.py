@@ -29,7 +29,7 @@ class HardSwishVisitor(NodeVisitor):
     ) -> None:
         input = node.args[0]
         input_id = self.define_tensor(input, enn_graph, vals_to_ids)
-
+        params = {}
+        self._update_params_qdtype(node, params)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-
-        enn_graph.define_op(node.name, "HARDSWISH", [input_id], [output_id])
+        enn_graph.define_op(node.name, "HARDSWISH", [input_id], [output_id], params)

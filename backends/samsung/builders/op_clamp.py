@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import cast, Dict
 
 import torch
@@ -32,12 +33,15 @@ class ClampVisitor(NodeVisitor):
         # The default value of lower bound and upper bound
         output_min = torch.finfo(torch.float32).min
         output_max = torch.finfo(torch.float32).max
+
         if node.args[1] is not None:
             output_min = cast(float, node.args[1])
         if len(node.args) > 2 and node.args[2] is not None:
             output_max = cast(float, node.args[2])
 
         params = {"minimum": output_min, "maximum": output_max}
+        self._update_params_qdtype(node, params)
+
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
         enn_graph.define_op(node.name, "CLIP", [input_id], [output_id], params)

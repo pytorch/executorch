@@ -15,8 +15,8 @@ from executorch.backends.samsung.serialization.enn_graph_schema import EnnGraph
 
 
 @register_node_visitor
-class BMMVisitor(NodeVisitor):
-    target = ["aten.bmm.default"]
+class HardSigmoidVisitor(NodeVisitor):
+    target = "aten.hardsigmoid.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -27,17 +27,9 @@ class BMMVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> None:
-        input1 = node.args[0]
-        input_id_1 = self.define_tensor(input1, enn_graph, vals_to_ids)
-
-        input2 = node.args[1]
-        input_id_2 = self.define_tensor(input2, enn_graph, vals_to_ids)
-
-        # output
+        input = node.args[0]
+        input_id = self.define_tensor(input, enn_graph, vals_to_ids)
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
-
         params = {}
         self._update_params_qdtype(node, params)
-        enn_graph.define_op(
-            node.name, "BATCH_MATMUL", [input_id_1, input_id_2], [output_id], params
-        )
+        enn_graph.define_op(node.name, "HardSigmoid", [input_id], [output_id], params)
