@@ -145,7 +145,7 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
  * Helper function to convert a float tensor to bfloat16.
  * Creates a new tensor with bfloat16 dtype and copies/converts the data.
  */
-::executorch::runtime::Result<::executorch::extension::TensorPtr>
+inline ::executorch::runtime::Result<::executorch::extension::TensorPtr>
 convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
   ET_CHECK_OR_RETURN_ERROR(
       src_tensor->scalar_type() == ::executorch::aten::ScalarType::Float,

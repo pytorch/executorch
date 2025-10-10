@@ -170,7 +170,8 @@ class ET_EXPERIMENTAL CudaBackend final
     // static/singleton across the whole process. When we share multiple methods
     // (meaning multiple so_handle) in the same process, we need to re-register
     // the symbols from the so_handle that is being used in this execution.
-    register_shared_library_functions(handle->so_handle);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        register_shared_library_functions(handle->so_handle));
 
     size_t n_inputs;
     AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);

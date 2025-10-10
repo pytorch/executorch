@@ -67,11 +67,11 @@ Result<uint64_t> MultimodalPrefiller::prefill(
           InvalidArgument,
           "Model expects uint8_t image data, but image has float data.");
     } else {
-      ET_LOG(
-          Error,
+      ET_CHECK_OR_RETURN_ERROR(
+          false,
+          NotSupported,
           "Unsupported image encoder input dtype: %s",
           ::executorch::runtime::toString(expected_dtype));
-      return ::executorch::runtime::Error::NotSupported;
     }
 
     // The model might expect a 4D tensor (NCHW), but toTensor() returns a 3D
@@ -119,12 +119,12 @@ Result<uint64_t> MultimodalPrefiller::prefill(
             convert_to_bfloat16(audio_tensor),
             "Failed to convert audio tensor to bfloat16");
       } else {
-        ET_LOG(
-            Error,
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            NotSupported,
             "Unsupported audio encoder input dtype: %s. Expecting %s",
             ::executorch::runtime::toString(audio_tensor->scalar_type()),
             ::executorch::runtime::toString(expected_dtype));
-        return ::executorch::runtime::Error::NotSupported;
       }
     }
 
