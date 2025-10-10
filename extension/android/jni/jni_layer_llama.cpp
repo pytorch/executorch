@@ -223,6 +223,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .seq_len = seq_len,
           .temperature = temperature_,
       };
+      ET_LOG(Error, "Generating with multimodal runner %s", prompt->toStdString().c_str());
       multi_modal_runner_->generate(
           std::move(inputs),
           config,
@@ -393,18 +394,23 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     if (audio == nullptr) {
       return static_cast<jint>(Error::InvalidArgument);
     }
-    auto audio_size = audio->size();
-    std::vector<uint8_t> audio_data(audio_size);
-    if (audio_size != 0) {
-      std::vector<jbyte> audio_data_jbyte(audio_size);
-      audio->getRegion(0, audio_size, audio_data_jbyte.data());
-      for (int i = 0; i < audio_size; i++) {
-        audio_data[i] = audio_data_jbyte[i];
-      }
-      llm::Audio audio_input{std::move(audio_data), batch_size, n_bins, n_frames};
+    // auto audio_size = audio->size();
+    // std::vector<uint8_t> audio_data(audio_size);
+    // if (audio_size != 0) {
+    //   std::vector<jbyte> audio_data_jbyte(audio_size);
+    //   audio->getRegion(0, audio_size, audio_data_jbyte.data());
+    //   for (int i = 0; i < audio_size; i++) {
+    //     audio_data[i] = audio_data_jbyte[i];
+    //   }
+    //   llm::Audio audio_input{std::move(audio_data), batch_size, n_bins, n_frames};
+
       multi_modal_runner_->prefill(
-          {processRawAudioFile("/data/local/tmp/llama/audio.bin", "/data/local/tmp/llama/voxtral_preprocessor.pte")});
-    }
+          {executorch::extension::llm::make_text_input("<s>[INST][BEGIN_AUDIO]"),
+            processRawAudioFile("/data/local/tmp/llama/audio.bin", "/data/local/tmp/llama/voxtral_preprocessor.pte"),
+          executorch::extension::llm::make_text_input(std::string("What can you tell me about this audio ") + "[/INST]")});
+    // }
+
+    ET_LOG(Error, "PREFILL AUDIO INPUT GOOD!!!!!!!!!!");
     return 0;
   }
 
