@@ -400,6 +400,8 @@ jobs:
         ./install_requirements.sh --use-pt-pinned-commit
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+        strip cmake-out/test/size_test_all_ops
+        ls -la cmake-out/test/size_test_all_ops
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
@@ -437,6 +439,8 @@ jobs:
 
         # build module for executorch.extension.pybindings.portable_lib
         bash test/build_size_test.sh
+        strip cmake-out/test/size_test_all_ops
+        ls -la cmake-out/test/size_test_all_ops
         strip cmake-out/test/size_test
         output=$(ls -la cmake-out/test/size_test)
         arr=($output)
