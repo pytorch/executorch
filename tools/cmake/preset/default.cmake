@@ -87,6 +87,10 @@ define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" BOOL OFF
 )
 define_overridable_option(
+  EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP
+  "Build the Named Data Map extension" BOOL OFF
+)
+define_overridable_option(
   EXECUTORCH_BUILD_EXTENSION_TENSOR "Build the Tensor extension" BOOL OFF
 )
 define_overridable_option(
@@ -277,6 +281,12 @@ check_required_options_on(
 check_required_options_on(
   IF_ON EXECUTORCH_BUILD_EXTENSION_MODULE REQUIRES
   EXECUTORCH_BUILD_EXTENSION_DATA_LOADER EXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR
+  EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP
+)
+
+check_required_options_on(
+  IF_ON EXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP REQUIRES
+  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
 )
 
 check_required_options_on(
