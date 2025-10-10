@@ -9,7 +9,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -180,9 +179,6 @@ def get_symmetric_a16w8_view_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", View.needs_transpose_tests)
-@pytest.mark.xfail(
-    reason="missing int16 view ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13977"
-)
 def test_view_16a8w_tosa_INT(test_data: Tuple):
     """Test view operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -209,9 +205,6 @@ def test_view_16a8w_tosa_INT(test_data: Tuple):
 
 @common.parametrize("test_data", View.needs_transpose_tests)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 view operations"
-)
 def test_view_16a8w_u55_INT16(test_data: Tuple):
     """Test view operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -237,9 +230,6 @@ def test_view_16a8w_u55_INT16(test_data: Tuple):
 
 @common.parametrize("test_data", View.needs_transpose_tests)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 view operations"
-)
 def test_view_16a8w_u85_INT16(test_data: Tuple):
     """Test view operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
