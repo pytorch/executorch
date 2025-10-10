@@ -1080,61 +1080,39 @@ class TestRefImplementations(unittest.TestCase):
                 )
                 for dtype in [torch.uint8]
             ],
-            # Test case 4: Non-per-tensor
-            *[
-                (
-                    "non_per_tensor",
-                    torch.tensor([-1, -2, -3, 1, 2, 3], dtype=dtype),  # input
-                    torch.tensor([0, 0, 0, 1, 1, 1]),  # X_zero_point
-                    5,  # out_zero_point
-                    torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
-                    dtype,  # dtype
-                    torch.tensor([5, 5, 5, 5, 4, 3], dtype=dtype),
-                )
-                for dtype in [torch.int8]
-            ],
         ]
     )
     def test_quantized_relu(
         self,
         name: str,
         X: torch.Tensor,
-        X_zero_point: torch.Tensor | int,
+        X_zero_point: int,
         out_zero_point: int,
-        out_multiplier: torch.Tensor | int,
-        out_shift: torch.Tensor | int,
+        out_multiplier: int,
+        out_shift: int,
         dtype: torch.dtype,
         expected_output: torch.Tensor,
     ) -> None:
 
-        if isinstance(X_zero_point, int):
-            assert isinstance(out_multiplier, int)
-            assert isinstance(out_shift, int)
+        match dtype:
+            case torch.int8:
+                quantized_relu = (
+                    torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
+                )
+            case torch.uint8:
+                quantized_relu = (
+                    torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
+                )
+            case _:
+                quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
 
-            match dtype:
-                case torch.int8:
-                    quantized_relu = (
-                        torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
-                    )
-                case torch.uint8:
-                    quantized_relu = (
-                        torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
-                    )
-                case _:
-                    quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
-
-            output = quantized_relu(
-                X,
-                X_zero_point,
-                out_zero_point,
-                out_multiplier,
-                out_shift,
-            )
-        else:
-            output = torch.ops.cadence.quantized_relu(
-                X, X_zero_point, out_zero_point, out_multiplier, out_shift
-            )
+        output = quantized_relu(
+            X,
+            X_zero_point,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
 
         # Verify output properties
         self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
