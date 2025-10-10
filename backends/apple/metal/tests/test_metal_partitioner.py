@@ -157,7 +157,8 @@ class TestMetalPartitioner(unittest.TestCase):
         call_function_ops = [
             node.target
             for node in exported_program.graph.nodes
-            if node.op == "call_function" and isinstance(node.target, torch._ops.OpOverload)
+            if node.op == "call_function"
+            and isinstance(node.target, torch._ops.OpOverload)
         ]
 
         self.assertEqual(
@@ -169,4 +170,3 @@ class TestMetalPartitioner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
