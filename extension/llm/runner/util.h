@@ -160,7 +160,7 @@ convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
   auto* bf16_data =
       bf16_tensor->mutable_data_ptr<::executorch::aten::ScalarType::BFloat16>();
   for (size_t i = 0; i < num_elements; ++i) {
-    bf16_data[i] = ::executorch::aten::ScalarType::BFloat16(float_data[i]);
+    bf16_data[i] = ::executorch::aten::BFloat16(float_data[i]);
   }
 
   return bf16_tensor;
