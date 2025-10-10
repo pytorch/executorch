@@ -194,10 +194,10 @@ jobs:
         echo "::endgroup::"
 
         echo "::group::Run Voxtral Benchmark"
-        
+
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         cmake-out/backends/cuda/voxtral_runner model.pte aoti_cuda_blob.ptd
-        
+
         echo "::endgroup::"
 
   test-voxtral-cuda-e2e:
@@ -234,10 +234,10 @@ jobs:
         curl -L $TOKENIZER_URL -o tekken.json
         ls -al model.pte aoti_cuda_blob.ptd voxtral_preprocessor.pte tekken.json
         echo "::endgroup::"
-      
+
         echo "::group::Download Test Audio File"
         AUDIO_URL="https://github.com/voxserv/audio_quality_testing_samples/raw/refs/heads/master/testaudio/16000/test01_20s.wav"
-        curl -L $AUDIO_URL -o dancing.wav
+        curl -L $AUDIO_URL -o poem.wav
         echo "::endgroup::"
 
         echo "::group::Build Voxtral Runner"
@@ -262,7 +262,7 @@ jobs:
               --model_path model.pte \
               --data_path aoti_cuda_blob.ptd \
               --tokenizer_path tekken.json \
-              --audio_path dancing.wav \
+              --audio_path poem.wav \
               --processor_path voxtral_preprocessor.pte \
               --temperature 0 2>&1)
         EXIT_CODE=$?
@@ -270,8 +270,8 @@ jobs:
 
         echo "$OUTPUT"
 
-        if ! echo "$OUTPUT" | grep -iq "dancing"; then
-          echo "Expected output 'dancing' not found in output"
+        if ! echo "$OUTPUT" | grep -iq "poem"; then
+          echo "Expected output 'poem' not found in output"
           exit 1
         fi
 
