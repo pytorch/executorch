@@ -96,7 +96,7 @@ MemoryManager memory_manager(&method_allocator, &planned_memory);
 
 ## Loading a Method
 
-In ExecuTorch we load and initialize from the `Program` at a method granularity. Many programs will only have one method 'forward'. `load_method` is where initialization is done, from setting up tensor metadata, to intializing delegates, etc.
+In ExecuTorch we load and initialize from the `Program` at a method granularity. Many programs will only have one method 'forward'. `load_method` is where initialization is done, from setting up tensor metadata, to initializing delegates, etc.
 
 ``` cpp
 Result<Method> method = program->load_method(method_name);

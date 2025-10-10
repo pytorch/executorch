@@ -1080,61 +1080,39 @@ class TestRefImplementations(unittest.TestCase):
                 )
                 for dtype in [torch.uint8]
             ],
-            # Test case 4: Non-per-tensor
-            *[
-                (
-                    "non_per_tensor",
-                    torch.tensor([-1, -2, -3, 1, 2, 3], dtype=dtype),  # input
-                    torch.tensor([0, 0, 0, 1, 1, 1]),  # X_zero_point
-                    5,  # out_zero_point
-                    torch.tensor([1073741824]),  # out_multiplier (0.5 * 2^31)
-                    torch.tensor([1]),  # out_shift (multiply by 2^1 = 2)
-                    dtype,  # dtype
-                    torch.tensor([5, 5, 5, 5, 4, 3], dtype=dtype),
-                )
-                for dtype in [torch.int8]
-            ],
         ]
     )
     def test_quantized_relu(
         self,
         name: str,
         X: torch.Tensor,
-        X_zero_point: torch.Tensor | int,
+        X_zero_point: int,
         out_zero_point: int,
-        out_multiplier: torch.Tensor | int,
-        out_shift: torch.Tensor | int,
+        out_multiplier: int,
+        out_shift: int,
         dtype: torch.dtype,
         expected_output: torch.Tensor,
     ) -> None:
 
-        if isinstance(X_zero_point, int):
-            assert isinstance(out_multiplier, int)
-            assert isinstance(out_shift, int)
+        match dtype:
+            case torch.int8:
+                quantized_relu = (
+                    torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
+                )
+            case torch.uint8:
+                quantized_relu = (
+                    torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
+                )
+            case _:
+                quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
 
-            match dtype:
-                case torch.int8:
-                    quantized_relu = (
-                        torch.ops.cadence.quantized_relu_asym8s_asym8s.per_tensor
-                    )
-                case torch.uint8:
-                    quantized_relu = (
-                        torch.ops.cadence.quantized_relu_asym8u_asym8u.per_tensor
-                    )
-                case _:
-                    quantized_relu = torch.ops.cadence.quantized_relu_per_tensor
-
-            output = quantized_relu(
-                X,
-                X_zero_point,
-                out_zero_point,
-                out_multiplier,
-                out_shift,
-            )
-        else:
-            output = torch.ops.cadence.quantized_relu(
-                X, X_zero_point, out_zero_point, out_multiplier, out_shift
-            )
+        output = quantized_relu(
+            X,
+            X_zero_point,
+            out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
 
         # Verify output properties
         self.assertEqual(output.dtype, dtype, f"Output dtype should be {dtype}")
@@ -2305,4 +2283,117 @@ class TestRefImplementations(unittest.TestCase):
         self.assertTrue(
             torch.equal(output, expected_output),
             f"transposed_im2row output mismatch in {name}: got {output}, expected {expected_output}",
+        )
+
+    @expand(
+        [
+            (
+                "1_group",
+                torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8]], dtype=torch.int8),
+                torch.tensor([1, 1, 1], dtype=torch.float32),
+                torch.tensor([0, 0, 0], dtype=torch.int8),
+                torch.tensor([0, 2, 1], dtype=torch.int64),
+                torch.tensor(
+                    [[0.0, 1.0, 2.0], [6.0, 7.0, 8.0], [3.0, 4.0, 5.0]],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "2_groups",
+                torch.tensor(
+                    [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]], dtype=torch.int8
+                ),
+                torch.tensor([[0.5, 1.0], [1.5, 2.0], [2.5, 3.0]], dtype=torch.float32),
+                torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.int8),
+                torch.tensor([0, 2, 1], dtype=torch.int64),
+                torch.tensor(
+                    [
+                        [0.0, 0.5, 1.0, 2.0],
+                        [10.0, 12.5, 15.0, 18.0],
+                        [3.0, 4.5, 6.0, 8.0],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "1_group_none_zero_point",
+                torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8]], dtype=torch.int8),
+                torch.tensor([1, 1, 1], dtype=torch.float32),
+                None,
+                torch.tensor([0, 2, 1], dtype=torch.int64),
+                torch.tensor(
+                    [[0.0, 1.0, 2.0], [6.0, 7.0, 8.0], [3.0, 4.0, 5.0]],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "1_group_batch2",
+                torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8]], dtype=torch.int8),
+                torch.tensor([1, 1, 1], dtype=torch.float32),
+                torch.tensor([0, 0, 0], dtype=torch.int8),
+                torch.tensor([[0, 2, 1], [1, 0, 2]], dtype=torch.int64),
+                torch.tensor(
+                    [
+                        [[0.0, 1.0, 2.0], [6.0, 7.0, 8.0], [3.0, 4.0, 5.0]],
+                        [[3.0, 4.0, 5.0], [0.0, 1.0, 2.0], [6.0, 7.0, 8.0]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "2_groups_batch2",
+                torch.tensor(
+                    [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]], dtype=torch.int8
+                ),
+                torch.tensor([[0.5, 1.0], [1.5, 2.0], [2.5, 3.0]], dtype=torch.float32),
+                torch.tensor([[0, 1], [2, 3], [4, 5]], dtype=torch.int8),
+                torch.tensor([[0, 2, 1], [2, 1, 0]], dtype=torch.int64),
+                torch.tensor(
+                    [
+                        [
+                            [0.0, 0.5, 1.0, 2.0],
+                            [10.0, 12.5, 15.0, 18.0],
+                            [3.0, 4.5, 6.0, 8.0],
+                        ],
+                        [
+                            [10.0, 12.5, 15.0, 18.0],
+                            [3.0, 4.5, 6.0, 8.0],
+                            [0.0, 0.5, 1.0, 2.0],
+                        ],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+            (
+                "1_group_none_zero_point_batch2",
+                torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8]], dtype=torch.int8),
+                torch.tensor([1, 1, 1], dtype=torch.float32),
+                None,
+                torch.tensor([[0, 2, 1], [1, 0, 2]], dtype=torch.int64),
+                torch.tensor(
+                    [
+                        [[0.0, 1.0, 2.0], [6.0, 7.0, 8.0], [3.0, 4.0, 5.0]],
+                        [[3.0, 4.0, 5.0], [0.0, 1.0, 2.0], [6.0, 7.0, 8.0]],
+                    ],
+                    dtype=torch.float32,
+                ),
+            ),
+        ]
+    )
+    def test_quantized_embedding_byte(
+        self,
+        name: str,
+        weight: torch.Tensor,
+        weight_scales: torch.Tensor,
+        weight_zero_points: torch.Tensor | None,
+        indices: torch.Tensor,
+        expected_out: torch.Tensor,
+    ) -> None:
+        self.assertTrue(
+            torch.equal(
+                torch.ops.cadence.quantized_embedding_byte(
+                    weight, weight_scales, weight_zero_points, indices
+                ),
+                expected_out,
+            )
         )
