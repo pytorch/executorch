@@ -141,6 +141,43 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
   }
 }
 
+/**
+ * Helper function to convert a float tensor to bfloat16.
+ * Creates a new tensor with bfloat16 dtype and copies/converts the data.
+ */
+::executorch::runtime::Result<::executorch::extension::TensorPtr>
+convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      src_tensor->scalar_type() == ::executorch::aten::ScalarType::Float,
+      InvalidArgument,
+      "BFloat16 conversion only supported from Float source data");
+
+  size_t num_elements = src_tensor->numel();
+  auto sizes = src_tensor->sizes();
+
+  // Allocate memory for bfloat16 data
+  auto* bf16_data = new uint16_t[num_elements];
+  const float* float_data = src_tensor->const_data_ptr<float>();
+
+  // Convert float to bfloat16
+  for (size_t i = 0; i < num_elements; ++i) {
+    // bfloat16 is the upper 16 bits of float32
+    uint32_t float_bits;
+    std::memcpy(&float_bits, &float_data[i], sizeof(float));
+
+    // Rounding: add 0x7FFF to round to nearest even
+    uint32_t rounding_bias = 0x7FFF + ((float_bits >> 16) & 1);
+    bf16_data[i] = static_cast<uint16_t>((float_bits + rounding_bias) >> 16);
+  }
+
+  // Create tensor with deleter to free allocated memory
+  return ::executorch::extension::from_blob(
+      bf16_data,
+      {sizes.begin(), sizes.end()},
+      ::executorch::aten::ScalarType::BFloat16,
+      [](void* ptr) { delete[] static_cast<uint16_t*>(ptr); });
+}
+
 } // namespace llm
 } // namespace extension
 } // namespace executorch

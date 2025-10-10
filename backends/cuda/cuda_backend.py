@@ -135,6 +135,8 @@ class CudaBackend(BackendDetails):
             "aot_inductor.link_libtorch": False,
             # Package model constants and other generated files directly in the shared object (.so) file
             "aot_inductor.package_constants_in_so": True,
+            # Enable debug mode if the DEBUG environment variable is set
+            "aot_inductor.debug_compile": os.environ.get("DEBUG") == "1",
             # Enable maximum automatic tuning for optimal performance
             "max_autotune": True,
             # Use TRITON for GEMM (General Matrix Multiply) operations tuning only to avoid using operators in libtorch
