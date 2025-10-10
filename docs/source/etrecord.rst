@@ -23,13 +23,120 @@ It should be provided to the `Inspector API <model-inspector.html>`__ to link ba
 Generating an ``ETRecord``
 --------------------------
 
-The user should use the following API to generate an ``ETRecord`` file. They
-will be expected to provide the Edge Dialect program (returned by the call to ``to_edge()``),
-the ExecuTorch program (returned by the call to ``to_executorch()``), and optional models that
-they are interested in working with via our tooling.
+There are multiple ways to generate an ``ETRecord`` for debugging purposes:
+
+Method 1: Using the ``generate_etrecord`` Parameter (Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The recommended approach is to enable ``ETRecord`` generation by passing ``generate_etrecord=True``
+to your export API calls. This can be used with:
+
+* ``executorch.export()`` - High-level export API
+* ``to_edge()`` - Edge dialect conversion
+* ``to_edge_transform_and_lower()`` - Edge conversion with transformations and lowering
+
+After export completes, retrieve the ``ETRecord`` using the ``get_etrecord()`` method, and save it using the ``save()`` method:
+
+**Example with** ``executorch.export()``:
+
+.. code-block:: python
+
+    import executorch
+    from executorch.export import ExportRecipe
+
+    # Export with ETRecord generation enabled
+    session = executorch.export(
+        model=model,
+        example_inputs=[example_inputs],
+        export_recipe=recipe,
+        generate_etrecord=True  # Enable ETRecord generation
+    )
+
+    # Get and save the ETRecord
+    etrecord = session.get_etrecord()
+    etrecord.save("model_debug.etrecord")
+
+**Example with** ``to_edge()``:
+
+.. code-block:: python
+
+    from executorch.exir.program import to_edge
+    from torch.export import export
+
+    # Export model first
+    exported_program = export(model, example_inputs)
+
+    # Convert to edge with ETRecord generation
+    edge_manager = to_edge(
+        exported_program,
+        generate_etrecord=True  # Enable ETRecord generation
+    )
+
+    # Apply transformations
+    edge_manager = edge_manager.to_backend()
+    et_manager = edge_manager.to_executorch()
+
+    # Get and save ETRecord
+    etrecord = et_manager.get_etrecord()
+    etrecord.save("edge_debug.etrecord")
+
+**Example with** ``to_edge_transform_and_lower()``:
+
+.. code-block:: python
+
+    from executorch.exir.program import to_edge_transform_and_lower
+    from torch.export import export
+
+    # Export model first
+    exported_program = export(model, example_inputs)
+
+    # Transform and lower with ETRecord generation
+    edge_manager = to_edge_transform_and_lower(
+        exported_program,
+        partitioner=[MyPartitioner()],
+        generate_etrecord=True  # Enable ETRecord generation
+    )
+
+    et_manager = edge_manager.to_executorch()
+
+    # Get and save ETRecord
+    etrecord = et_manager.get_etrecord()
+    etrecord.save("debug.etrecord")
+
+Method 2: Using the ``generate_etrecord()`` Function
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+You can also use the standalone ``generate_etrecord()`` function to generate an ``ETRecord``.
+This method requires you to provide the Edge Dialect program (returned by ``to_edge()``),
+the ExecuTorch program (returned by ``to_executorch()``), and optional models.
 
 .. warning::
-    Users should do a deepcopy of the output of ``to_edge()`` and pass in the deepcopy to the ``generate_etrecord`` API. This is needed because the subsequent call, ``to_executorch()``, does an in-place mutation and will lose debug data in the process.
+    When using the standalone function, users should do a deepcopy of the output of ``to_edge()`` and pass in the deepcopy to the ``generate_etrecord`` API. This is needed because the subsequent call, ``to_executorch()``, does an in-place mutation and will lose debug data in the process.
+
+**Example:**
+
+.. code-block:: python
+
+    import copy
+    from executorch.devtools import generate_etrecord
+    from torch.export import export
+
+    # Export and convert to edge
+    aten_dialect = export(model, example_inputs, strict=True)
+    edge_program = to_edge(aten_dialect)
+
+    # Create copy for ETRecord (needed because to_executorch modifies in-place)
+    edge_program_copy = copy.deepcopy(edge_program)
+
+    # Convert to ExecutorchProgramManager
+    executorch_program = edge_program_copy.to_executorch()
+
+    # Generate ETRecord separately
+    generate_etrecord(
+        "debug.etrecord",
+        edge_program,
+        executorch_program,
+    )
 
 .. currentmodule:: executorch.devtools.etrecord._etrecord
 .. autofunction:: generate_etrecord
