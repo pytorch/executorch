@@ -42,22 +42,28 @@
    p(order)=p(order)-(sum(p)-2);
 */
 const int32_t ALIGN_2SIMD expftbl_Q30[8] = {
-    234841,    1329551,   10400465,   59570027,
-    257946177, 744260763, 1073741824, 0 /* Padding to allow for vector loads */
+    234841,
+    1329551,
+    10400465,
+    59570027,
+    257946177,
+    744260763,
+    1073741824,
+    0 /* Padding to allow for vector loads */
 };
 
 const union ufloat32uint32 ALIGN_2SIMD
     expfminmax[2] = /* minimum and maximum arguments of expf() input */
     {
         {0xc2ce8ed0}, /*-1.0327893066e+002f */
-        {0x42b17218}  /* 8.8722839355e+001f */
+        {0x42b17218} /* 8.8722839355e+001f */
 };
 
 const int32_t invln2_Q30 = 1549082005L; /* 1/ln(2), Q30 */
 
 const union ufloat32uint32 ALIGN_2SIMD log2_e[2] = {
     {0x3fb8aa3b}, /* 1.4426950216      */
-    {0x32a57060}  /* 1.9259629891e-008 */
+    {0x32a57060} /* 1.9259629891e-008 */
 };
 
 /*
@@ -70,5 +76,10 @@ p(order)=p(order)-(sum(p)-2);
 num2hex(single(p));
 */
 const union ufloat32uint32 ALIGN_2SIMD expftblf[] = {
-    {0x39655635}, {0x3aa24c7a}, {0x3c1eb2d1}, {0x3d633ddb},
-    {0x3e75ff24}, {0x3f317212}, {0x3f800000}};
+    {0x39655635},
+    {0x3aa24c7a},
+    {0x3c1eb2d1},
+    {0x3d633ddb},
+    {0x3e75ff24},
+    {0x3f317212},
+    {0x3f800000}};

@@ -125,14 +125,15 @@ build_executorch_runner_cmake() {
   clean_executorch_install_folders
   mkdir "${CMAKE_OUTPUT_DIR}"
 
-  pushd "${CMAKE_OUTPUT_DIR}" || return
   if [[ $1 == "Debug" ]]; then
       CXXFLAGS="-fsanitize=address,undefined"
   else
       CXXFLAGS=""
   fi
-  CXXFLAGS="$CXXFLAGS" retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE="${1:-Release}" ..
-  popd || return
+  CXXFLAGS="$CXXFLAGS" retry cmake \
+    -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" \
+    -DCMAKE_BUILD_TYPE="${1:-Release}" \
+    -B${CMAKE_OUTPUT_DIR} .
 
   if [ "$(uname)" == "Darwin" ]; then
     CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))

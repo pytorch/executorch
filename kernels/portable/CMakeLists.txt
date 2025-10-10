@@ -91,13 +91,14 @@ if(EXECUTORCH_BUILD_PTHREADPOOL AND EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   install(
     TARGETS optimized_portable_kernels optimized_portable_ops_lib
     EXPORT ExecuTorchTargets
-    DESTINATION lib
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
 endif()
 
 install(
   TARGETS portable_kernels portable_ops_lib
   EXPORT ExecuTorchTargets
-  DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/executorch/kernels/portable/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/executorch/kernels/portable/
 )

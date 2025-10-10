@@ -48,6 +48,7 @@ from executorch.backends.nxp.backend.ir.tflite_generator.custom_options.flex_tra
     FlexTranspose,
 )
 from executorch.backends.nxp.backend.ir.tflite_optimizer import optimizer
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 
 
 class ModelBuilder:
@@ -74,17 +75,21 @@ class ModelBuilder:
 
     _zeros_tensor_map: Dict  # Mapping 'string' shapes to 'tflT.Tensor' objects
 
-    _default_conversion_config = ConversionConfig()
+    neutron_target_spec: NeutronTargetSpec
 
     conversion_config: ConversionConfig
+
+    _default_conversion_config = ConversionConfig()
 
     def __init__(
         self,
         model_version: int,
         model_description: str,
+        neutron_target_spec: NeutronTargetSpec,
         conversion_config: ConversionConfig = _default_conversion_config,
     ) -> None:
         self._tfl_model = tflite_model.Model(model_version, model_description)
+        self.neutron_target_spec = neutron_target_spec
         self.conversion_config = conversion_config
 
         self.op_code_type_index_map = {}
@@ -471,9 +476,39 @@ class ModelBuilder:
 
         return self._tfl_model
 
-    def _assign_tensor_and_buffer_indices(  # noqa C901
-        self, allow_inputs_stripping: bool
-    ):
+    def _assign_io_tensor_indices(self, inputs, outputs, allow_inputs_stripping: bool):
+        for tensor in outputs.tmp_outputs:
+            try:
+                outputs.append(tensor.tmp_index)
+            except Exception:
+                logger.e(
+                    logger.Code.GENERATED_MODEL_INVALID,
+                    f"The tensor '{tensor.name}' is among the model outputs, but does NOT appear in the graph!",
+                )
+
+        for tensor in inputs.tmp_inputs:
+            try:
+                inputs.append(tensor.tmp_index)
+            except Exception:
+                if allow_inputs_stripping:
+                    logger.i(
+                        f"The input tensor '{tensor.name}' will not be present in generated TFLite graph."
+                    )
+                else:
+                    logger.e(
+                        logger.Code.GENERATED_MODEL_INVALID,
+                        f"The tensor '{tensor.name}' is among the model inputs, but does NOT appear in the graph!",
+                    )
+
+    def _assign_operators_io_tensor_indices(self, operators):
+        for operator in operators.vector:
+            for inputTensor in operator.tmp_inputs:
+                operator.inputs.append(inputTensor.tmp_index)
+
+            for outputTensor in operator.tmp_outputs:
+                operator.outputs.append(outputTensor.tmp_index)
+
+    def _assign_tensor_and_buffer_indices(self, allow_inputs_stripping: bool):
         """Correctly initialize all references via indices in all tensors and buffers."""
 
         # Assign each buffer its index
@@ -494,39 +529,16 @@ class ModelBuilder:
 
         # TODO Remove inputs and outputs that are not in the tensors collection
 
+        subgraph = self.get_sub_graph()
+
         # Assign 'Outputs' and 'Inputs' their tensor indices
-        outputs = self.get_sub_graph().outputs
-        for tensor in outputs.tmp_outputs:
-            try:
-                outputs.append(tensor.tmp_index)
-            except Exception:
-                logger.e(
-                    logger.Code.GENERATED_MODEL_INVALID,
-                    f"The tensor '{tensor.name}' is among the model outputs, but does NOT appear in the graph!",
-                )
-
-        inputs = self.get_sub_graph().inputs
-        for tensor in inputs.tmp_inputs:
-            try:
-                inputs.append(tensor.tmp_index)
-            except Exception:
-                if allow_inputs_stripping:
-                    logger.i(
-                        f"The input tensor '{tensor.name}' will not be present in generated TFLite graph."
-                    )
-                else:
-                    logger.e(
-                        logger.Code.GENERATED_MODEL_INVALID,
-                        f"The tensor '{tensor.name}' is among the model inputs, but does NOT appear in the graph!",
-                    )
-
+        self._assign_io_tensor_indices(
+            inputs=subgraph.inputs,
+            outputs=subgraph.outputs,
+            allow_inputs_stripping=allow_inputs_stripping,
+        )
         # Assign each operator its inputs and outputs indices
-        for operator in self.get_sub_graph().operators.vector:
-            for inputTensor in operator.tmp_inputs:
-                operator.inputs.append(inputTensor.tmp_index)
-
-            for outputTensor in operator.tmp_outputs:
-                operator.outputs.append(outputTensor.tmp_index)
+        self._assign_operators_io_tensor_indices(operators=subgraph.operators)
 
     def _build_operator_code(
         self, op_type: BuiltinOperator, version, custom_code: str = None

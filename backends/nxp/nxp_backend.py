@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,11 +18,11 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.backend.ir.converter.node_converter import Target
 from executorch.backends.nxp.backend.ir.tensor_formatting import TensorFormat
 from executorch.backends.nxp.backend.neutron_converter_manager import (
     NeutronConverterManager,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.neutron_node_extraction import (
     extract_artifacts_from_neutron_node,
     NeutronNodeArtifacts,
@@ -36,9 +36,9 @@ from torch.export.exported_program import ExportedProgram
 
 
 class NeutronCompileSpecBuilder:
+    config: NeutronTargetSpec
 
     def __init__(self):
-        self.config: Target = None
         self.compile_spec: List[CompileSpec] = []
         self.compiler_flags = []
         self.output_format = None
@@ -68,14 +68,9 @@ class NeutronCompileSpecBuilder:
             extra_flags: Extra flags for the Neutron compiler
             operators_not_to_delegate: List of operators that should not be delegated
         """
-        try:
-            self.config = Target(config)
-        except ValueError:
-            raise ValueError(
-                f"Config `{config}` is not a valid target. Must be one of `{Target.values()}`."
-            )
 
         self.neutron_converter_flavor = neutron_converter_flavor
+        self.config = NeutronTargetSpec(config, neutron_converter_flavor)
 
         assert (
             self.output_format is None
@@ -101,7 +96,7 @@ class NeutronCompileSpecBuilder:
             self.compile_spec += [
                 CompileSpec("output_format", "tflite".encode()),
                 CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
-                CompileSpec("target", self.config.value.encode()),
+                CompileSpec("target", self.config.get_name().encode()),
                 CompileSpec(
                     "neutron_converter_flavor", self.neutron_converter_flavor.encode()
                 ),
@@ -187,10 +182,11 @@ class NeutronBackend(BackendDetails):
             # Convert the edge program to TFLite.
             tflite_model, io_formats = EdgeProgramToIRConverter().convert_program(
                 edge_program,
+                neutron_target_spec=NeutronTargetSpec(target, neutron_converter_flavor),
             )
 
-            neutron_model = NeutronConverterManager().convert(
-                tflite_model, target, neutron_converter_flavor
+            neutron_model = NeutronConverterManager(neutron_converter_flavor).convert(
+                tflite_model, target
             )
 
             # Dump the tflite file if logging level is enabled

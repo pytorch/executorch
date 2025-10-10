@@ -586,12 +586,12 @@ class StaticAttentionIOManager {
    * of the prompt and method's input length. Returns the position in the output
    * that corresponds to the end of the prompt during the last inference.
    */
-  template <typename TokenT>
+  template <typename TokenT, typename LogitT>
   size_t prefill(
       executorch::runtime::Span<TokenT> tokens,
       executorch::runtime::Span<TokenT> input_buffer,
       executorch::runtime::Method& method,
-      std::function<void(executorch::runtime::Span<const float>)>
+      std::function<void(executorch::runtime::Span<const LogitT>)>
           logits_callback = nullptr) {
     ET_LOG(Info, "Prefilling at position %zu", input_pos_);
     size_t input_len = input_buffer.size();
@@ -619,7 +619,7 @@ class StaticAttentionIOManager {
           batch_len);
       if (logits_callback) {
         auto logits_tensor = method.get_output(0).toTensor();
-        auto* logits = logits_tensor.const_data_ptr<float>();
+        auto* logits = logits_tensor.const_data_ptr<LogitT>();
         logits_callback(executorch::runtime::Span(
             logits,
             logits + batch_len * logits_tensor.size(logits_tensor.dim() - 1)));

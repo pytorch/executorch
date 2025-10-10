@@ -6,7 +6,6 @@
 
 from typing import List, Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -189,7 +188,6 @@ def test_any_u85_INT(test_data: input_t1):
 
 @common.parametrize("test_data", test_data)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_any_vgf_FP(test_data: input_t1):
     op, data_fn = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -204,7 +202,6 @@ def test_any_vgf_FP(test_data: input_t1):
 
 @common.parametrize("test_data", test_data)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_any_vgf_INT(test_data: input_t1):
     op, data_fn = test_data()
     pipeline = VgfPipeline[input_t1](

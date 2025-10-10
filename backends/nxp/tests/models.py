@@ -451,6 +451,34 @@ class AddTensorOneInputModule(torch.nn.Module):
         return x + x
 
 
+class SubTensorModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x, y):
+        return x - y
+
+
+class SubTensorConvModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = Conv2dModule(padding=1, stride=1)
+
+    def forward(self, x, y):
+        x = self.conv(x)
+        return x - y
+
+
+class SubTensorOneInputModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def forward(x):
+        return x - x
+
+
 class MeanDimLinearModule(torch.nn.Module):
     def __init__(self, dim, keepdim):
         super().__init__()

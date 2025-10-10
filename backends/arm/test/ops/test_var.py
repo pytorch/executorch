@@ -6,7 +6,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 
 from executorch.backends.arm.test import common
@@ -214,7 +213,6 @@ def test_var_dim_u85_INT_no_dim(test_data: Tuple):
 
 @common.parametrize("test_data", Var.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_FP_no_dim(test_data: Tuple):
     data, keepdim, correction = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -225,7 +223,6 @@ def test_var_dim_vgf_FP_no_dim(test_data: Tuple):
 
 @common.parametrize("test_data", Var.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_INT_no_dim(test_data: Tuple):
     data, keepdim, correction = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -296,7 +293,6 @@ def test_var_dim_u85_INT(test_data: Tuple):
 
 @common.parametrize("test_data", VarDim.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_FP(test_data: Tuple):
     data, dim, keepdim, unbiased = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -307,7 +303,6 @@ def test_var_dim_vgf_FP(test_data: Tuple):
 
 @common.parametrize("test_data", VarDim.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_INT(test_data: Tuple):
     data, dim, keepdim, unbiased = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -377,7 +372,6 @@ def test_var_dim_u85_INT_correction(test_data: Tuple):
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_FP_correction(test_data: Tuple):
     data, dim, keepdim, corr = test_data()
     pipeline = VgfPipeline[input_t1](
@@ -388,7 +382,6 @@ def test_var_dim_vgf_FP_correction(test_data: Tuple):
 
 @common.parametrize("test_data", VarCorrection.test_parameters)
 @common.SkipIfNoModelConverter
-@pytest.mark.xfail(reason="MLETORCH-1410: Tensor dimension count not supported: 0")
 def test_var_dim_vgf_INT_correction(test_data: Tuple):
     data, dim, keepdim, corr = test_data()
     pipeline = VgfPipeline[input_t1](

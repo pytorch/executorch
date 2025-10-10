@@ -12,6 +12,9 @@ on:
     paths:
       - .github/workflows/test-backend-arm.yml
       - .github/workflows/_test_backend.yml
+      - .ci/scripts/test_backend.sh
+      - backends/test/suite/flow.py
+      - backends/test/suite/flows/arm.py
   workflow_dispatch:
 
 concurrency:
@@ -23,7 +26,7 @@ jobs:
     uses: ./.github/workflows/_test_backend.yml
     with:
       backend: arm
-      flows: '["arm_tosa"]'
+      flows: '["arm_tosa_fp", "arm_tosa_int", "arm_ethos_u55", "arm_ethos_u85"]'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 120
       run-linux: true

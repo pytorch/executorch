@@ -21,6 +21,7 @@ using executorch::runtime::etensor::Tensor;
 extern "C" {
 
 // Type definitions
+using AOTITensorHandle = Tensor*;
 using AOTIRuntimeError = Error;
 
 // Forward declarations for AOT Inductor model container
@@ -74,7 +75,10 @@ extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
 // AOTI Delegate Handle structure
 struct AOTIDelegateHandle {
   void* so_handle;
+  std::string so_path;
   AOTInductorModelContainerHandle container_handle;
+  void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
+                     // dependency
 };
 
 } // namespace aoti
