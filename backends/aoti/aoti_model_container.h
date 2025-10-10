@@ -70,6 +70,22 @@ extern AOTInductorModelContainerGetNumOutputsFunc
     AOTInductorModelContainerGetNumOutputs;
 extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
 
+// Function pointer types needed by Metal backend
+using AOTInductorModelContainerGetInputNameFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t input_idx,
+    const char** input_name);
+
+using AOTInductorModelContainerGetNumConstantsFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t* num_constants);
+
+// Global function pointers needed by Metal backend
+extern AOTInductorModelContainerGetInputNameFunc
+    AOTInductorModelContainerGetInputName;
+extern AOTInductorModelContainerGetNumConstantsFunc
+    AOTInductorModelContainerGetNumConstants;
+
 } // extern "C"
 
 // AOTI Delegate Handle structure

@@ -25,6 +25,12 @@ AOTInductorModelContainerGetNumOutputsFunc
     AOTInductorModelContainerGetNumOutputs = nullptr;
 AOTInductorModelContainerRunFunc AOTInductorModelContainerRun = nullptr;
 
+// Global function pointers needed by Metal backend
+AOTInductorModelContainerGetInputNameFunc
+    AOTInductorModelContainerGetInputName = nullptr;
+AOTInductorModelContainerGetNumConstantsFunc
+    AOTInductorModelContainerGetNumConstants = nullptr;
+
 } // extern "C"
 
 } // namespace aoti
