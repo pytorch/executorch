@@ -1167,6 +1167,16 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 8, 128]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_permute(self):
+        modules = [
+            Permute([0, 2, 3, 1]),  # noqa: F405
+            Permute([-1, -3, -2, -4]),  # noqa: F405
+        ]
+        sample_input = (torch.randn([2, 3, 4, 5]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
         sample_input = (torch.ones([2, 4, 3, 3]),)
@@ -1178,9 +1188,28 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pow_tensor_scalar(self):
-        module = PowTensorScalar()  # noqa: F405
-        sample_input = (torch.rand([2, 4, 3, 3]),)
-        self.lower_module_and_test_output(module, sample_input)
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    PowTensorScalar(),  # noqa: F405
+                    PowTensorScalar(1),  # noqa: F405
+                    PowTensorScalar(-1),  # noqa: F405
+                    PowTensorScalar(0.5),  # noqa: F405
+                ],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) + 0.1,)],
+            },
+            {
+                QCOM_MODULE: [PowTensorScalar(10)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) * 0.5 + 0.5,)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_prelu(self):
         test_comb = [
@@ -1370,6 +1399,17 @@ class TestQNNFloatingPointOperator(TestQNN):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_threshold(self):
+        modules = [
+            Threshold(),  # noqa: F405
+            Threshold(threshold=0.5, value=3.0, inplace=True),  # noqa: F405
+            Threshold(threshold=0.5, value=3.0, inplace=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405
@@ -2918,6 +2958,17 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_permute(self):
+        modules = [
+            Permute([0, 2, 3, 1]),  # noqa: F405
+            Permute([-1, -3, -2, -4]),  # noqa: F405
+        ]
+        sample_input = (torch.randn([2, 3, 4, 5]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pixel_shuffle(self):
         module = PixelShuffle(2)  # noqa: F405
         sample_input = (torch.ones([2, 4, 3, 3]),)
@@ -2931,10 +2982,29 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pow_tensor_scalar(self):
-        module = PowTensorScalar()  # noqa: F405
-        sample_input = (torch.rand([2, 4, 3, 3]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        test_comb = [
+            {
+                QCOM_MODULE: [
+                    PowTensorScalar(),  # noqa: F405
+                    PowTensorScalar(1),  # noqa: F405
+                    PowTensorScalar(-1),  # noqa: F405
+                    PowTensorScalar(0.5),  # noqa: F405
+                ],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) + 0.1,)],
+            },
+            {
+                QCOM_MODULE: [PowTensorScalar(10)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.rand(10, 10) * 0.5 + 0.5,)],
+            },
+        ]
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_prelu(self):
         test_comb = [
@@ -2953,8 +3023,8 @@ class TestQNNQuantizedOperator(TestQNN):
             for module in comb[QCOM_MODULE]:
                 for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
-                        module = self.get_qdq_module(module, sample_input)
-                        self.lower_module_and_test_output(module, sample_input)
+                        qdq_module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(qdq_module, sample_input)
                         index += 1
 
     def test_qnn_backend_relu(self):
@@ -3156,6 +3226,18 @@ class TestQNNQuantizedOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_threshold(self):
+        modules = [
+            Threshold(),  # noqa: F405
+            Threshold(threshold=0.5, value=3.0, inplace=True),  # noqa: F405
+            Threshold(threshold=0.5, value=3.0, inplace=False),  # noqa: F405
+        ]
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                qdq_module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(qdq_module, sample_input)
 
     def test_qnn_backend_unflatten(self):
         module = Unflatten(dim=1, sizes=(2, 3, 4))  # noqa: F405

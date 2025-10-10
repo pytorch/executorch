@@ -42,6 +42,8 @@ class TransposeVisitor(NodeVisitor):
 
         # permutation
         permute_order = cast(List[int], node.args[1])
+        # to prevent negative values
+        permute_order = [x % len(permute_order) for x in permute_order]
         permute_order_shape = [len(permute_order)]
 
         output_tensor = input_tensor.permute(permute_order)
