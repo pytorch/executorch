@@ -1,6 +1,6 @@
 from .export import Export
 from .partition import Partition
-from .quantize import Quantize
+from .quantize import Quantize, Quantize_
 from .run_passes import RunPasses
 from .serialize import Serialize
 from .stage import Stage, StageType
@@ -12,6 +12,7 @@ __all__ = [
     "Export",
     "Partition",
     "Quantize",
+    "Quantize_",
     "RunPasses",
     "Serialize",
     "Stage",

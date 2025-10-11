@@ -854,6 +854,7 @@ def _to_edge_and_lower_llama_xnnpack(
     xnnpack_extended_ops: bool = False,
     generate_etrecord: bool = False,
     verbose: bool = False,
+    gen_tag_fn: Optional[Callable[[torch.fx.Node], Optional[str]]] = None,
 ) -> LLMEdgeManager:  # noqa: C901
     partitioners = []
 
@@ -876,9 +877,22 @@ def _to_edge_and_lower_llama_xnnpack(
     if generate_etrecord:
         builder_exported.generate_etrecord = True
 
-    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+    builder = builder_exported.pt2e_quantize(quantizers)
+    from executorch.exir.passes.external_constants_pass import (
+        delegate_external_constants_pass_unlifted,
+    )
+    assert (
+        builder_exported.pre_autograd_graph_module is not None
+    ), "pre_autograd_graph_module shouldn't be None here"
+    delegate_external_constants_pass_unlifted(
+        module=builder_exported.pre_autograd_graph_module,
+        gen_tag_fn=gen_tag_fn,
+    )
+    
+    builder = builder.to_edge_transform_and_lower(
         partitioners
     )
+
     if verbose:
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
@@ -1088,6 +1102,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
         llm_config.backend.xnnpack.enabled = True
 
     if llm_config.backend.xnnpack.enabled:
+        gen_tag_fn = None
         if llm_config.export.foundation_weights_file is not None:
             gen_tag_fn: Callable[[torch.fx.Node], Optional[str]] = lambda x: (
                 llm_config.export.foundation_weights_file
@@ -1096,17 +1111,17 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             )
 
             from executorch.exir.passes.external_constants_pass import (
-                delegate_external_constants_pass_unlifted,
+                # delegate_external_constants_pass_unlifted,
                 external_constants_pass,
             )
 
-            assert (
-                builder_exported.pre_autograd_graph_module is not None
-            ), "pre_autograd_graph_module shouldn't be None here"
-            delegate_external_constants_pass_unlifted(
-                module=builder_exported.pre_autograd_graph_module,
-                gen_tag_fn=gen_tag_fn,
-            )
+            # assert (
+            #     builder_exported.pre_autograd_graph_module is not None
+            # ), "pre_autograd_graph_module shouldn't be None here"
+            # delegate_external_constants_pass_unlifted(
+            #     module=builder_exported.pre_autograd_graph_module,
+            #     gen_tag_fn=gen_tag_fn,
+            # )
 
             # Also add a pass for 'to_executorch' to tag weights that aren't delegated.
             additional_passes.append(
@@ -1123,6 +1138,7 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             xnnpack_extended_ops=llm_config.backend.xnnpack.extended_ops,
             generate_etrecord=llm_config.debug.generate_etrecord,
             verbose=llm_config.debug.verbose,
+            gen_tag_fn=gen_tag_fn,
         )
     else:
         builder = _to_edge_and_lower_llama(

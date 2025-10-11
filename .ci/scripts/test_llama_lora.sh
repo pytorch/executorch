@@ -107,8 +107,9 @@ $PYTHON_EXECUTABLE -m extension.llm.export.export_llm \
     model.dtype_override="fp32" \
     backend.xnnpack.enabled=true \
     backend.xnnpack.extended_ops=true \
-    export.output_name="${MODEL_SEPARATE}.pte" \
-    export.foundation_weights_file="${MODEL_SEPARATE}.ptd"
+    quantization.pt2e_quantize="xnnpack_dynamic" \
+    export.output_name="${MODEL}.pte" \
+    export.foundation_weights_file="${MODEL}.ptd"
 
 # Run llama runner.
 NOW=$(date +"%H:%M:%S")

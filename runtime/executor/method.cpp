@@ -394,7 +394,8 @@ Error Method::parse_external_constants(const NamedDataMap* external_data_map) {
     ET_CHECK_OR_RETURN_ERROR(
         buffer.ok(),
         InvalidExternalData,
-        "Buffer retrieved from get_data is not valid");
+        "Buffer retrieved from get_data is not valid, error: %zu",
+        buffer.error());
     new (&external_constants_[n_external_constants_].buffer)
         FreeableBuffer(std::move(buffer.get()));
 
