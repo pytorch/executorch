@@ -9,9 +9,9 @@ from typing import Optional
 import torch
 from executorch.backends.xnnpack._passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import (
+    insert_q_dq_pair,
     is_dequant,
     is_quant,
-    tag_as_implicit_q_dq,
 )
 from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -42,39 +42,6 @@ class Conv1dUnsqueezePass(XNNPACKPass):
             args=args,
             kwargs=kwargs or {},
         )
-
-    def insert_q_dq_pair(
-        self,
-        graph: torch.fx.Graph,
-        anchor: torch.fx.Node,
-        q_params: tuple,
-    ):
-        with graph.inserting_after(anchor):
-            q = self.create_node(
-                graph=graph,
-                op_target=exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-                args=(),  # We add the argument last
-            )
-            q.meta = anchor.meta.copy()
-
-            # Tag q as implicit
-            tag_as_implicit_q_dq(q)
-
-        with graph.inserting_after(q):
-            dq = self.create_node(
-                graph=graph,
-                op_target=exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-                args=(q,) + q_params,
-            )
-            dq.meta = q.meta.copy()
-
-            # Tag dq as implicit
-            tag_as_implicit_q_dq(dq)
-
-        anchor.replace_all_uses_with(dq)
-        # We add this last so the replace all uses above does not replace the quqntized
-        # node's first use
-        q.args = (anchor,) + q_params
 
     def unsqueeze_kernel_weights(self, kernel_node):
         """
@@ -173,7 +140,7 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                     # If Quantized we must insert unsqueeze --> q --> dq --> node
                     if is_dequant(input_node):
                         q_params = input_node.args[1:]
-                        self.insert_q_dq_pair(graph, unsqueeze_before, q_params)
+                        insert_q_dq_pair(graph, unsqueeze_before, q_params)
 
                     with graph.inserting_after(node):
                         squeeze_after = self.create_node(
@@ -193,7 +160,7 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                         # If quantized, insert q --> dq --> squeeze
                     if all(is_quant(original_user) for original_user in original_users):
                         q_params = original_users[0].args[1:]
-                        self.insert_q_dq_pair(graph, node, q_params)
+                        insert_q_dq_pair(graph, node, q_params)
 
         graph_module.recompile()
         # Since we are overriding "call", we need to call the parent's "call"
