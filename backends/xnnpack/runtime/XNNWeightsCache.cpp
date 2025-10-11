@@ -162,10 +162,14 @@ void* XNNWeightsCache::reserve_space(XNNWeightsCache* context, size_t n) {
 
   // return reserved_pointer;
   std::string data_container;
-  data_container.resize(n + context->kPackedAllocationAlignment);
+  auto raw_allocation_size = n + context->kPackedAllocationAlignment;
+  data_container.resize(raw_allocation_size);
   void* maybe_aligned_space = data_container.data();
-  void* aligned_space = (void*)((intptr_t)maybe_aligned_space + 64 -
-                                (intptr_t)maybe_aligned_space % 64);
+  void* aligned_space = std::align(
+      context->kPackedAllocationAlignment,
+      n,
+      maybe_aligned_space,
+      raw_allocation_size);
 
   context->packed_pointer_to_container_[aligned_space] =
       std::move(data_container);
