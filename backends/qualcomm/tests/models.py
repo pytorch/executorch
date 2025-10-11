@@ -1141,18 +1141,60 @@ class IndexCopy(torch.nn.Module):
 
 
 class IndexPut(torch.nn.Module):
-    def __init__(self, skip_mutable_buffer=False):
+    def __init__(self, skip_mutable_buffer=False, mode=0):
         super().__init__()
         self.skip_mutable_buffer = skip_mutable_buffer
         self.register_buffer(
             "k_cache",
-            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            torch.zeros((2, 1024, 12, 64), dtype=torch.float32),
             persistent=True,
         )
+        self.mode = mode
 
     def forward(self, input_pos, k_val):
-        k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
+        match self.mode:
+            case 0:
+                k_out = torch.ops.aten.index_put_(self.k_cache, [input_pos], k_val)
+            case 1:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [None, input_pos], k_val
+                )
+            case 2:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [None, None, input_pos], k_val
+                )
+            case 3:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [input_pos[0], input_pos[1]], k_val
+                )
+            case 4:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [None, input_pos[0], input_pos[1]], k_val
+                )
+            case 5:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [input_pos[0], None, input_pos[1]], k_val
+                )
+
         return k_out + 0
+
+
+class IndexPutSuite(torch.nn.Module):
+    def __init__(self, accumulate=False, in_place=False):
+        super().__init__()
+        self.accumulate = accumulate
+        self.in_place = in_place
+
+    def forward(self, x, indices, values):
+        if self.in_place:
+            # Clone the input to avoid modifying it in-place
+            result = x.clone()
+            # Apply index_put_ and return the modified tensor
+            result.index_put_(indices, values, self.accumulate)
+            return result
+        else:
+            # Use the non-in-place variant which returns a new tensor
+            return torch.index_put(x, indices, values, self.accumulate)
 
 
 class IndexSelect(torch.nn.Module):
