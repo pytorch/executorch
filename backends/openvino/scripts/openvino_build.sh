@@ -10,6 +10,9 @@ echo EXECUTORCH_ROOT=${EXECUTORCH_ROOT}
 main() {
     build_type=${1:-"--cpp_runtime"}
 
+    shift # Remove the first argument (build_type) from the list of arguments
+    args=("$@") # Capture all remaining arguments
+
     # If the first arguments is --cpp_runtime (default), build libraries for C++ runtime
     if [[ -z "$build_type" || "$build_type" == "--cpp_runtime" ]]; then
         echo "Building C++ Runtime Libraries"
@@ -43,7 +46,7 @@ main() {
 
         # Create and enter the build directory
         cd "$EXECUTORCH_ROOT"
-        ./install_executorch.sh --clean
+        ./install_executorch.sh --clean "${args[@]}"
 
         # Set parameters to configure the project with CMake
         # Note: Add any additional configuration options you need here
@@ -52,7 +55,7 @@ main() {
         export CMAKE_BUILD_ARGS="--target openvino_backend"
 
         # Build the package
-        ./install_executorch.sh --minimal
+        ./install_executorch.sh --minimal "${args[@]}"
 
         # Install torchao
         pip install third-party/ao
