@@ -12,6 +12,8 @@ import re
 import subprocess
 import sys
 
+from torch_pin import NIGHTLY_VERSION, TORCH_VERSION
+
 
 def python_is_compatible():
     # Scrape the version range from pyproject.toml, which should be in the current directory.
@@ -71,7 +73,6 @@ TORCH_URL = "https://download.pytorch.org/whl/test/cpu"
 #
 # NOTE: If you're changing, make the corresponding change in .ci/docker/ci_commit_pins/pytorch.txt
 # by picking the hash from the same date in https://hud.pytorch.org/hud/pytorch/pytorch/nightly/
-NIGHTLY_VERSION = "dev20250906"
 
 
 def install_requirements(use_pytorch_nightly):
@@ -89,7 +90,11 @@ def install_requirements(use_pytorch_nightly):
         # Setting use_pytorch_nightly to false to test the pinned PyTorch commit. Note
         # that we don't need to set any version number there because they have already
         # been installed on CI before this step, so pip won't reinstall them
-        "torch==2.9.0" if use_pytorch_nightly else "torch",
+        (
+            f"torch=={TORCH_VERSION}.{NIGHTLY_VERSION}"
+            if use_pytorch_nightly
+            else "torch"
+        ),
     ]
 
     # Install the requirements for core ExecuTorch package.
