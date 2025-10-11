@@ -892,6 +892,7 @@ jobs:
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
         pip install -r backends/nxp/requirements-tests-eiq.txt
+        PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
 
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
