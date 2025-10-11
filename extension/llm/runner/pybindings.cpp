@@ -277,11 +277,11 @@ PYBIND11_MODULE(_llm_runner, m) {
       .def_property_readonly(
           "uint8_data",
           static_cast<const std::vector<uint8_t>& (Image::*)() const&>(
-              &Image::get_uint8_data))
+              &Image::copy_uint8_data))
       .def_property_readonly(
           "float_data",
           static_cast<const std::vector<float>& (Image::*)() const&>(
-              &Image::get_float_data))
+              &Image::copy_float_data))
       .def("__repr__", [](const Image& img) {
         std::string dtype = "unknown";
         if (img.is_uint8()) {
@@ -317,15 +317,14 @@ PYBIND11_MODULE(_llm_runner, m) {
       .def_property_readonly(
           "uint8_data",
           static_cast<const std::vector<uint8_t>& (Audio::*)() const&>(
-              &Audio::get_uint8_data))
+              &Audio::copy_uint8_data))
       .def_property_readonly(
           "float_data",
           static_cast<const std::vector<float>& (Audio::*)() const&>(
-              &Audio::get_float_data))
+              &Audio::copy_float_data))
       .def_property_readonly("batch_size", &Audio::get_batch_size)
       .def_property_readonly("n_bins", &Audio::get_n_bins)
       .def_property_readonly("n_frames", &Audio::get_n_frames)
-      .def("toTensor", &Audio::toTensor)
       .def("__repr__", [](const Audio& audio) {
         std::string dtype = "unknown";
         if (audio.is_uint8()) {
@@ -473,6 +472,10 @@ PYBIND11_MODULE(_llm_runner, m) {
   m.def(
       "make_image_input",
       [](torch::Tensor image_tensor) -> MultimodalInput {
+        if (image_tensor.scalar_type() != torch::kUInt8 && image_tensor.scalar_type() != torch::kFloat) {
+          throw std::runtime_error(
+              "Unsupported image tensor dtype. Only uint8 and float32 are supported.");
+        }
         if (image_tensor.dim() == 4) {
           if (image_tensor.size(0) != 1) {
             throw std::runtime_error(
@@ -480,56 +483,24 @@ PYBIND11_MODULE(_llm_runner, m) {
           }
           image_tensor = image_tensor.squeeze(0);
         }
-
         if (image_tensor.dim() != 3) {
           throw std::runtime_error(
               "Image tensor must be 3-dimensional (H, W, C) or 4-dimensional (1, H, W, C)");
         }
-
-        int64_t height, width, channels;
         // Check for memory format and permute to CHW if necessary
         if (image_tensor.is_contiguous(at::MemoryFormat::ChannelsLast)) {
           // Input is HWC, permute to CHW
-          height = image_tensor.size(0);
-          width = image_tensor.size(1);
-          channels = image_tensor.size(2);
           image_tensor = image_tensor.permute({2, 0, 1});
-        } else if (image_tensor.is_contiguous(at::MemoryFormat::Contiguous)) {
-          // Input is CHW
-          channels = image_tensor.size(0);
-          height = image_tensor.size(1);
-          width = image_tensor.size(2);
-        } else {
+        } else if (!image_tensor.is_contiguous(at::MemoryFormat::Contiguous)) {
           throw std::runtime_error(
               "Image tensor must be contiguous in either channels last (H, W, C) or contiguous (C, H, W) format.");
         }
-
+        int64_t channels = image_tensor.size(0);
         if (channels != 3 && channels != 4) {
           throw std::runtime_error(
               "Image must have 3 (RGB) or 4 (RGBA) channels");
         }
-
-        image_tensor = image_tensor.contiguous();
-        if (image_tensor.scalar_type() == torch::kUInt8) {
-          uint8_t* data = image_tensor.data_ptr<uint8_t>();
-          std::vector<uint8_t> image_data(data, data + image_tensor.numel());
-          return MultimodalInput(Image(
-              std::move(image_data),
-              static_cast<int32_t>(width),
-              static_cast<int32_t>(height),
-              static_cast<int32_t>(channels)));
-        } else if (image_tensor.scalar_type() == torch::kFloat) {
-          float* data = image_tensor.data_ptr<float>();
-          std::vector<float> image_data(data, data + image_tensor.numel());
-          return MultimodalInput(Image(
-              std::move(image_data),
-              static_cast<int32_t>(width),
-              static_cast<int32_t>(height),
-              static_cast<int32_t>(channels)));
-        } else {
-          throw std::runtime_error(
-              "Unsupported image tensor dtype. Only uint8 and float32 are supported.");
-        }
+        return MultimodalInput(Image(tensor_to_tensor_ptr(image_tensor)));
       },
       "Create an image input from a torch tensor (H, W, C), (1, H, W, C), (C, H, W), or (1, C, H, W)",
       py::arg("image_tensor"));
@@ -537,36 +508,15 @@ PYBIND11_MODULE(_llm_runner, m) {
   m.def(
       "make_audio_input",
       [](torch::Tensor audio_tensor) -> MultimodalInput {
+        if (audio_tensor.scalar_type() != torch::kUInt8 && audio_tensor.scalar_type() != torch::kFloat) {
+          throw std::runtime_error(
+              "Unsupported audio tensor dtype. Only uint8 and float32 are supported.");
+        }
         if (audio_tensor.dim() != 3) {
           throw std::runtime_error(
               "Audio tensor must be 3-dimensional (batch_size, n_bins, n_frames)");
         }
-
-        int64_t batch_size = audio_tensor.size(0);
-        int64_t n_bins = audio_tensor.size(1);
-        int64_t n_frames = audio_tensor.size(2);
-
-        audio_tensor = audio_tensor.contiguous();
-        if (audio_tensor.scalar_type() == torch::kUInt8) {
-          uint8_t* data = audio_tensor.data_ptr<uint8_t>();
-          std::vector<uint8_t> audio_data(data, data + audio_tensor.numel());
-          return MultimodalInput(Audio(
-              std::move(audio_data),
-              static_cast<int32_t>(batch_size),
-              static_cast<int32_t>(n_bins),
-              static_cast<int32_t>(n_frames)));
-        } else if (audio_tensor.scalar_type() == torch::kFloat) {
-          float* data = audio_tensor.data_ptr<float>();
-          std::vector<float> audio_data(data, data + audio_tensor.numel());
-          return MultimodalInput(Audio(
-              std::move(audio_data),
-              static_cast<int32_t>(batch_size),
-              static_cast<int32_t>(n_bins),
-              static_cast<int32_t>(n_frames)));
-        } else {
-          throw std::runtime_error(
-              "Unsupported audio tensor dtype. Only uint8 and float32 are supported for preprocessed audio.");
-        }
+        return MultimodalInput(Audio(tensor_to_tensor_ptr(audio_tensor)));
       },
       "Create a preprocessed audio input from a torch tensor (batch_size, n_bins, n_frames)",
       py::arg("audio_tensor"));
