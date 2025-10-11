@@ -106,6 +106,7 @@ def define_common_targets():
             custom_ops_aten_kernel_deps = [":quantized_operators_aten"] if aten_mode else [],
             custom_ops_requires_aot_registration = False,
             aten_mode = aten_mode,
+            support_exceptions = False,
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
@@ -126,6 +127,7 @@ def define_common_targets():
             deps = [
                 ":q_dq_ops",
             ],
+            support_exceptions = False,
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
