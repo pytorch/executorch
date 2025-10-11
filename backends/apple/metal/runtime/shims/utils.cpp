@@ -65,13 +65,12 @@ std::vector<executorch::aten::StridesType> convert_strides_to_vector(
   std::vector<executorch::aten::StridesType> strides(ndim);
 
   if (strides_ptr != nullptr) {
-    // Use provided strides. it is ok if provided strides here is not contiguous
-    // strides since it will be used internally in CUDA delegate.
+    // Use provided strides.
     for (int64_t i = 0; i < ndim; i++) {
       strides[i] = static_cast<executorch::aten::StridesType>(strides_ptr[i]);
     }
   } else {
-    // Calculate strides from sizes using ExecutorTorch's algorithm
+    // Calculate strides from sizes.
     if (ndim > 0) {
       strides[ndim - 1] = static_cast<executorch::aten::StridesType>(
           1); // Last dimension has stride 1
