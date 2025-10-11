@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import List, Optional, Type
+
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
 
@@ -38,6 +41,9 @@ from torch._export.pass_base import PassType
 
 from torch.export import ExportedProgram
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+
 
 class XNNPACKPassManager:
     def __init__(
@@ -69,6 +75,7 @@ class XNNPACKPassManager:
                 PReLUReshapePass,
                 ChannelsLastTaggedReshapePass,
                 RemoveRedundantCopyPass,
+                RemoveCloneOpsTransform,
             ]
         else:
             self.passes = passes
@@ -92,4 +99,6 @@ class XNNPACKPassManager:
                     f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
                 )
             ep = _transform(ep, transform_pass)
+            logger.debug(f"Running {pass_.__name__} pass")
+            logger.debug(f"Transformed program: {ep}")
         return ep
