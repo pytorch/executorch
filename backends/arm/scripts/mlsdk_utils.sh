@@ -131,7 +131,7 @@ function setup_mlsdk() {
             -DSPIRV_TOOLS_PATH=../../dependencies/SPIRV-Tools        \
             -DVULKAN_HEADERS_PATH=../../dependencies/Vulkan-Headers
 
-        cmake --build build
+        cmake --build build -j$(nproc)
         cmake --install build --prefix deploy
         popd
     fi
