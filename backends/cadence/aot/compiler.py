@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
     CadenceQuantizer,
+    CadenceW8A32MixedQuantizer,
 )
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
@@ -59,6 +60,7 @@ def trace(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
+    quantizer: Optional[CadenceQuantizer] = None,
 ) -> ExportedProgram:
     """
     Trace the model with export and return an ExportedProgram.
@@ -72,6 +74,12 @@ def trace(
         torch.ops.aten.matmul.default,
         torch.ops.aten.rms_norm.default,
     ]
+
+    if isinstance(quantizer, CadenceW8A32MixedQuantizer):
+        ops_to_keep += [
+            torch.ops.aten.gru.input,
+            torch.ops.aten.gru.data,
+        ]
 
     program = trace_fn(
         model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
@@ -99,7 +107,7 @@ def prepare_pt2(
     Returns a GraphModule with the prepared model.
     """
 
-    traced_program = trace(model, inputs, dump_graphs=dump_graphs)
+    traced_program = trace(model, inputs, dump_graphs=dump_graphs, quantizer=quantizer)
     prepared_program = prepare_traced_pt2(
         traced_program, quantizer, dump_graphs=dump_graphs
     )
@@ -184,7 +192,7 @@ def get_fake_quant_model(
     # Make the model inference mode by calling model.eval()
     model.eval()
 
-    program = trace(model, inputs, dump_graphs=dump_graphs)
+    program = trace(model, inputs, dump_graphs=dump_graphs, quantizer=quantizer)
 
     if dump_graphs:
         logging.info("Graph after trace:")
