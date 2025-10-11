@@ -16,7 +16,6 @@ from executorch.exir.dialects.edge.dtype.supported import regular_tensor_str_to_
 from executorch.exir.dialects.edge.op.api import to_variant
 from executorch.exir.dialects.edge.spec.utils import get_tensor_variable_names
 
-# pyre-ignore
 from ruamel.yaml import YAML
 from torchgen.model import SchemaKind
 
@@ -166,7 +165,6 @@ class FunctionDtypeConstraint:
 
 
 def _load_edge_dialect_info() -> Dict[str, Dict[str, Any]]:
-    # pyre-ignore
     yaml = YAML(typ="safe")
     edge_yaml = resources.read_text(edge_package, "edge.yaml", encoding="utf-8")
     edge_dialect_yaml_info = yaml.load(edge_yaml)
