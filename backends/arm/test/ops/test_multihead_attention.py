@@ -3,7 +3,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import pytest
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
@@ -69,7 +68,6 @@ def test_multihead_attention_tosa_INT(test_data):
     "test_data",
     test_suite,
 )
-@pytest.mark.xfail(reason="MLETORCH-1102: Numerical issues on FVP")
 @common.XfailIfNoCorstone300
 def test_multihead_attention_u55_INT(test_data: input_t1):
     test_data, module = test_data()
@@ -90,7 +88,6 @@ def test_multihead_attention_u55_INT(test_data: input_t1):
     "test_data",
     test_suite,
 )
-@pytest.mark.xfail(reason="MLETORCH-1102: Numerical issues on FVP")
 @common.XfailIfNoCorstone320
 def test_multihead_attention_u85_INT(test_data: input_t1):
     test_data, module = test_data()
