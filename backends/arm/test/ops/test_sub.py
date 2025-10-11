@@ -149,6 +149,7 @@ def test_sub_tensor_tosa_INT_2(test_data: Tuple[torch.Tensor, torch.Tensor]):
 @common.parametrize("test_data", sub_tan_test_data)
 def test_sub_tensor_tosa_INT_3(test_data: Tuple[torch.Tensor, torch.Tensor]):
     """Test Two-Operand Subtraction (TOSA INT)"""
+    # This test has only been added to the tosa INT profile in order to catch quantization-induced errors.
     pipeline = TosaPipelineINT[input_t2](
         SubTan(), test_data(), aten_op, exir_op, qtol=0
     )

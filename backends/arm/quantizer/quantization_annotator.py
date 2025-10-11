@@ -333,6 +333,7 @@ _one_to_one_shared_input_qspec = [
     torch.ops.aten.transpose.Dimname,
     torch.ops.aten.transpose.int,
     torch.ops.aten.transpose_copy.int,
+    torch.ops.aten.t_copy.default,
     torch.ops.aten.tile.default,
     torch.ops.aten.flip.default,
     torch.ops.aten.chunk.default,
@@ -512,7 +513,8 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
             _QuantProperty(
-                1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec  # type: ignore[arg-type]
+                1,
+                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,  # type: ignore[arg-type]
             ),
         ]
         quant_properties.quant_output = _QuantProperty(0, shared_qspec)  # type: ignore[arg-type]
@@ -531,7 +533,8 @@ def get_quant_properties(  # noqa: C901
         )
         quant_properties.quant_inputs = [_QuantProperty(0, input_qspec)]  # type: ignore[arg-type]
         quant_properties.quant_output = _QuantProperty(
-            0, SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+            0,
+            SharedQuantizationSpec((node.args[0], node)),  # type: ignore[arg-type]
         )
     elif node.target in (
         torch.ops.aten.cat.default,
@@ -564,7 +567,8 @@ def get_quant_properties(  # noqa: C901
     elif node.target in _one_to_one_shared_input_qspec:
         quant_properties.quant_inputs = [_QuantProperty(0, input_act_qspec)]
         quant_properties.quant_output = _QuantProperty(
-            0, SharedQuantizationSpec((node.args[0], node))  # type: ignore[arg-type]
+            0,
+            SharedQuantizationSpec((node.args[0], node)),  # type: ignore[arg-type]
         )
     elif node.target in [
         torch.ops.aten.eq.Tensor,
@@ -577,7 +581,8 @@ def get_quant_properties(  # noqa: C901
         quant_properties.quant_inputs = [
             _QuantProperty(0, input_act_qspec),
             _QuantProperty(
-                1, input_act_qspec if node.args[0] == node.args[1] else shared_qspec  # type: ignore[arg-type]
+                1,
+                input_act_qspec if node.args[0] == node.args[1] else shared_qspec,  # type: ignore[arg-type]
             ),
         ]
         quant_properties.quant_output = None
