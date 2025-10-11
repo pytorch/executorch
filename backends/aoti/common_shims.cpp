@@ -51,13 +51,32 @@ AOTITorchError aoti_torch_get_storage_offset(
 
 AOTITorchError aoti_torch_get_strides(Tensor* tensor, int64_t** ret_strides) {
   auto it = internal::tensor_to_strides.find(tensor);
+  bool needs_update = false;
+
   if (it == internal::tensor_to_strides.end()) {
+    needs_update = true;
+  } else {
+    // CRITICAL: Multimodal models reuse tensors with different shapes across
+    // executions (e.g., variable-length audio). We MUST validate cached
+    // metadata matches current tensor state, or CUDA kernels will receive
+    // incorrect shapes leading to memory corruption and segfaults.
+    auto tensor_strides = tensor->strides();
+    needs_update = !std::equal(
+        it->second.begin(),
+        it->second.end(),
+        tensor_strides.begin(),
+        tensor_strides.end());
+  }
+
+  if (needs_update) {
     std::vector<int64_t> strides(tensor->dim());
     auto tensor_strides = tensor->strides();
     for (int i = 0; i < tensor->dim(); i++) {
       strides[i] = tensor_strides[i];
     }
-    it = internal::tensor_to_strides.emplace(tensor, std::move(strides)).first;
+    it =
+        internal::tensor_to_strides.insert_or_assign(tensor, std::move(strides))
+            .first;
   }
 
   // For 0D tensors, data() returns nullptr on empty vectors, but we need to
@@ -80,13 +99,31 @@ AOTITorchError aoti_torch_get_dtype(Tensor* tensor, int32_t* ret_dtype) {
 
 AOTITorchError aoti_torch_get_sizes(Tensor* tensor, int64_t** ret_sizes) {
   auto it = internal::tensor_to_sizes.find(tensor);
+  bool needs_update = false;
+
   if (it == internal::tensor_to_sizes.end()) {
+    needs_update = true;
+  } else {
+    // CRITICAL: Multimodal models reuse tensors with different shapes across
+    // executions (e.g., variable-length audio). We MUST validate cached
+    // metadata matches current tensor state, or CUDA kernels will receive
+    // incorrect shapes leading to memory corruption and segfaults.
+    auto tensor_sizes = tensor->sizes();
+    needs_update = !std::equal(
+        it->second.begin(),
+        it->second.end(),
+        tensor_sizes.begin(),
+        tensor_sizes.end());
+  }
+
+  if (needs_update) {
     std::vector<int64_t> sizes(tensor->dim());
     auto tensor_sizes = tensor->sizes();
     for (int i = 0; i < tensor->dim(); i++) {
       sizes[i] = tensor_sizes[i];
     }
-    it = internal::tensor_to_sizes.emplace(tensor, std::move(sizes)).first;
+    it = internal::tensor_to_sizes.insert_or_assign(tensor, std::move(sizes))
+             .first;
   }
 
   // For 0D tensors, data() returns nullptr on empty vectors, but we need to

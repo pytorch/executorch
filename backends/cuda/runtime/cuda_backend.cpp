@@ -165,6 +165,14 @@ class ET_EXPERIMENTAL CudaBackend final
       Span<EValue*> args) const override {
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
+    // Need to re-register all the symbols from the so_handle hosted by this
+    // CudaBackend instance. The reason is that these symbols are
+    // static/singleton across the whole process. When we share multiple methods
+    // (meaning multiple so_handle) in the same process, we need to re-register
+    // the symbols from the so_handle that is being used in this execution.
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        register_shared_library_functions(handle->so_handle));
+
     size_t n_inputs;
     AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);
 
@@ -223,7 +231,6 @@ class ET_EXPERIMENTAL CudaBackend final
           "Failed to copy input %d from CPU to GPU",
           i);
     }
-    ET_LOG(Info, "Inputs copied to GPU");
     // Process output tensors: create GPU counterparts for ExecuTorch CPU
     // tensors
     for (int i = 0; i < n_outputs; i++) {
@@ -253,7 +260,6 @@ class ET_EXPERIMENTAL CudaBackend final
 
       gpu_outputs[i] = gpu_output_handle;
     }
-    ET_LOG(Info, "Outputs created on GPU");
     // Run AOTI container with GPU tensors
     AOTIRuntimeError error = AOTInductorModelContainerRun(
         handle->container_handle,

@@ -46,6 +46,16 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "test_util",
+        srcs = ["test_util.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:stats",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "test_wav_loader",
         srcs = ["test_wav_loader.cpp"],
         deps = [

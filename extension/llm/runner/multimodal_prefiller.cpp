@@ -67,11 +67,11 @@ Result<uint64_t> MultimodalPrefiller::prefill(
           InvalidArgument,
           "Model expects uint8_t image data, but image has float data.");
     } else {
-      ET_LOG(
-          Error,
+      ET_CHECK_OR_RETURN_ERROR(
+          false,
+          NotSupported,
           "Unsupported image encoder input dtype: %s",
           ::executorch::runtime::toString(expected_dtype));
-      return ::executorch::runtime::Error::NotSupported;
     }
 
     // The model might expect a 4D tensor (NCHW), but toTensor() returns a 3D
@@ -93,14 +93,47 @@ Result<uint64_t> MultimodalPrefiller::prefill(
   } else if (input.is_audio()) {
     const Audio& audio = input.get_audio();
 
-    // Use Audio::toTensor() for tensor creation
+    auto method_meta = ET_UNWRAP(
+        module_->method_meta(kAudioEncoderMethod),
+        "Failed to get method_meta for %s",
+        kAudioEncoderMethod);
+
+    ET_CHECK_OR_RETURN_ERROR(
+        method_meta.num_inputs() > 0,
+        InvalidArgument,
+        "Audio encoder should have at least 1 input");
+    auto input_meta = ET_UNWRAP(
+        method_meta.input_tensor_meta(0),
+        "Cannot get input tensor meta at index 0");
+    auto expected_dtype = input_meta.scalar_type();
+
+    // Create tensor with original dtype
     auto audio_tensor =
         ET_UNWRAP(audio.toTensor(), "Failed to convert audio to tensor");
+
+    // Convert to expected dtype if needed
+    if (audio_tensor->scalar_type() != expected_dtype) {
+      if (expected_dtype == ::executorch::aten::ScalarType::BFloat16) {
+        // Convert to bfloat16
+        audio_tensor = ET_UNWRAP(
+            convert_to_bfloat16(audio_tensor),
+            "Failed to convert audio tensor to bfloat16");
+      } else {
+        ET_CHECK_OR_RETURN_ERROR(
+            false,
+            NotSupported,
+            "Unsupported audio encoder input dtype: %s. Expecting %s",
+            ::executorch::runtime::toString(audio_tensor->scalar_type()),
+            ::executorch::runtime::toString(expected_dtype));
+      }
+    }
+
     ET_LOG(
         Info,
         "Audio tensor dim: %zu, dtype: %s",
         audio_tensor->dim(),
         ::executorch::runtime::toString(audio_tensor->scalar_type()));
+
     // Run audio encoder
     auto audio_encoder_result =
         module_->execute(kAudioEncoderMethod, audio_tensor);
