@@ -1,7 +1,7 @@
 # Test ExecuTorch CUDA Build Compatibility
 # This workflow tests whether ExecuTorch can be successfully built with CUDA support
 # across different CUDA versions (12.6, 12.8, 12.9) using the command:
-# CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
+#   ./install_executorch.sh
 #
 # Note: ExecuTorch automatically detects the system CUDA version using nvcc and
 # installs the appropriate PyTorch wheel. No manual CUDA/PyTorch installation needed.
@@ -43,7 +43,7 @@ jobs:
         set -eux
 
         # Test ExecuTorch CUDA build - ExecuTorch will automatically detect CUDA version
-        # and install the appropriate PyTorch wheel when CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON"
+        # and install the appropriate PyTorch wheel
         source .ci/scripts/test-cuda-build.sh "${{ matrix.cuda-version }}"
 
   # This job will fail if any of the CUDA versions fail
@@ -83,7 +83,7 @@ jobs:
       script: |
         set -eux
 
-        PYTHON_EXECUTABLE=python CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
+        PYTHON_EXECUTABLE=python ./install_executorch.sh
         export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
         PYTHON_EXECUTABLE=python source .ci/scripts/test_model.sh "${{ matrix.model }}" cmake cuda
 
@@ -110,7 +110,7 @@ jobs:
         set -eux
 
         echo "::group::Setup ExecuTorch"
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_CUDA=ON" ./install_executorch.sh
+        ./install_executorch.sh
         echo "::endgroup::"
 
         echo "::group::Setup Huggingface"
