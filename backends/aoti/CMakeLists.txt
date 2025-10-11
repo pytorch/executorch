@@ -38,7 +38,11 @@ target_include_directories(
 )
 target_compile_options(aoti_common PUBLIC -fexceptions -frtti -fPIC)
 # Ensure symbols are exported properly
-target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
+if(APPLE)
+  target_link_options(aoti_common PUBLIC -Wl,-export_dynamic)
+else()
+  target_link_options(aoti_common PUBLIC -Wl,--export-dynamic)
+endif()
 
 # Link against ExecuTorch libraries and standard libraries
 target_link_libraries(aoti_common PUBLIC extension_tensor ${CMAKE_DL_LIBS})
