@@ -8,7 +8,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
@@ -178,9 +177,6 @@ def get_symmetric_a16w8_cat_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", Cat.test_parameters)
-@pytest.mark.xfail(
-    reason="missing int16 cat ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13978"
-)
 def test_cat_16a8w_tosa_INT(test_data: Tuple):
     """Test cat operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -206,9 +202,6 @@ def test_cat_16a8w_tosa_INT(test_data: Tuple):
 
 @common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone300
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 cat operations"
-)
 def test_cat_16a8w_u55_INT16(test_data: Tuple):
     """Test cat operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -233,9 +226,6 @@ def test_cat_16a8w_u55_INT16(test_data: Tuple):
 
 @common.parametrize("test_data", Cat.test_parameters)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 cat operations"
-)
 def test_cat_16a8w_u85_INT16(test_data: Tuple):
     """Test cat operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
