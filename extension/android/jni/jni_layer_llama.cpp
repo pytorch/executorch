@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
 
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/llm/runner/irunner.h>
@@ -41,6 +42,7 @@
 
 namespace llm = ::executorch::extension::llm;
 using ::executorch::runtime::Error;
+using executorch::extension::Module;
 
 namespace {
 bool utf8_check_validity(const char* str, size_t length) {
@@ -123,7 +125,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   std::unique_ptr<llm::IRunner> runner_;
   std::unique_ptr<executorch::extension::llm::MultimodalRunner>
       multi_modal_runner_;
-  std::vector<llm::MultimodalInput> prefill_inputs_;
 
  public:
   constexpr static auto kJavaDescriptor =
@@ -226,8 +227,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<ExecuTorchLlmCallbackJni> callback,
       jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      std::vector<llm::MultimodalInput> inputs = prefill_inputs_;
-      prefill_inputs_.clear();
+      std::vector<llm::MultimodalInput> inputs;
       if (!prompt->toStdString().empty()) {
         inputs.emplace_back(llm::MultimodalInput{prompt->toStdString()});
       }
@@ -236,6 +236,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .seq_len = seq_len,
           .temperature = temperature_,
       };
+      ET_LOG(Error, "Generating with multimodal runner %s", prompt->toStdString().c_str());
       multi_modal_runner_->generate(
           std::move(inputs),
           config,
@@ -258,17 +259,28 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
 
   // Returns status_code
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  jint append_text_input(facebook::jni::alias_ref<jstring> prompt) {
-    prefill_inputs_.emplace_back(llm::MultimodalInput{prompt->toStdString()});
-    return 0;
+  jint prefill_text_input(facebook::jni::alias_ref<jstring> prompt) {
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      runner_->prefill(prompt->toStdString(), {});
+      return 0;
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      multi_modal_runner_->prefill(
+          {llm::MultimodalInput{prompt->toStdString()}});
+      return 0;
+    }
   }
 
-  // Returns status_code
-  jint append_images_input(
+  jint prefill_images_input(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
       jint channels) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    if (image == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
     std::vector<llm::Image> images;
     if (image == nullptr) {
       return static_cast<jint>(Error::EndOfMethod);
@@ -282,10 +294,136 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         image_data[i] = image_data_jint[i];
       }
       llm::Image image_runner{std::move(image_data), width, height, channels};
-      prefill_inputs_.emplace_back(
-          llm::MultimodalInput{std::move(image_runner)});
+      multi_modal_runner_->prefill(
+          {llm::MultimodalInput{std::move(image_runner)}});
     }
 
+    return 0;
+  }
+
+  llm::MultimodalInput processRawAudioFile(
+    const std::string& audio_path,
+    const std::string& processor_path) {
+  if (processor_path.empty()) {
+    ET_LOG(Error, "Processor path is required for raw audio processing");
+    throw std::runtime_error(
+        "Processor path is required for raw audio processing");
+  }
+
+  // Load the audio processor .pte.
+  std::unique_ptr<Module> processor_module;
+  try {
+    processor_module =
+        std::make_unique<Module>(processor_path, Module::LoadMode::File);
+    auto load_error = processor_module->load();
+    if (load_error != ::executorch::runtime::Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to load processor module from: %s",
+          processor_path.c_str());
+      throw std::runtime_error("Failed to load processor module");
+    }
+  } catch (const std::exception& e) {
+    ET_LOG(Error, "Exception while loading processor module: %s", e.what());
+    throw std::runtime_error("Exception while loading processor module");
+  }
+
+  // Load the audio data from file.
+  std::ifstream f(audio_path, std::ios::binary | std::ios::ate);
+  if (!f.is_open()) {
+    ET_LOG(Error, "Failed to open audio file: %s", audio_path.c_str());
+    throw std::runtime_error("Failed to open audio file");
+  }
+
+  std::size_t n_floats = f.tellg() / sizeof(float);
+  f.seekg(0, std::ios::beg);
+
+  std::vector<float> audio_data(n_floats);
+  f.read(
+      reinterpret_cast<char*>(audio_data.data()),
+      audio_data.size() * sizeof(float));
+  f.close();
+
+  ET_LOG(
+      Info, "Loaded .bin file: %s, %zu floats", audio_path.c_str(), n_floats);
+
+  // Execute the processor
+  std::vector<executorch::aten::SizesType> tensor_shape = {
+      static_cast<executorch::aten::SizesType>(audio_data.size())};
+  auto input_tensor = executorch::extension::from_blob(
+      audio_data.data(), tensor_shape, ::executorch::aten::ScalarType::Float);
+
+  ET_LOG(Info, "Processing audio through processor module...");
+  auto result = processor_module->execute("forward", input_tensor);
+  if (!result.ok()) {
+    ET_LOG(Error, "Failed to execute processor's forward method");
+    throw std::runtime_error("Failed to execute processor forward method");
+  }
+
+  auto outputs = result.get();
+  if (outputs.empty()) {
+    ET_LOG(Error, "Processor returned no outputs");
+    throw std::runtime_error("Processor returned no outputs");
+  }
+
+  // Extract processed audio features
+  const auto& processed_tensor = outputs[0].toTensor();
+  const float* processed_data = processed_tensor.const_data_ptr<float>();
+  const auto& sizes = processed_tensor.sizes();
+
+  ET_LOG(
+      Info,
+      "Processed audio tensor shape: [%d, %d, %d]",
+      static_cast<int>(sizes[0]),
+      static_cast<int>(sizes[1]),
+      static_cast<int>(sizes[2]));
+
+  // Create Audio multimodal input from processed features
+  int32_t batch_size = static_cast<int32_t>(sizes[0]);
+  int32_t n_bins = static_cast<int32_t>(sizes[1]);
+  int32_t n_frames = static_cast<int32_t>(sizes[2]);
+  size_t total_elements = batch_size * n_bins * n_frames;
+  std::vector<float> audio_vec(processed_data, processed_data + total_elements);
+  auto processed_audio = ::executorch::extension::llm::Audio(
+      std::move(audio_vec), batch_size, n_bins, n_frames);
+  ET_LOG(
+      Info,
+      "Created processed Audio: batch_size=%d, n_bins=%d, n_frames=%d",
+      batch_size,
+      n_bins,
+      n_frames);
+  return ::executorch::extension::llm::make_audio_input(
+      std::move(processed_audio));
+}
+
+  jint prefill_audio_input(
+      facebook::jni::alias_ref<jbyteArray> audio,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    if (audio == nullptr) {
+      return static_cast<jint>(Error::InvalidArgument);
+    }
+    // auto audio_size = audio->size();
+    // std::vector<uint8_t> audio_data(audio_size);
+    // if (audio_size != 0) {
+    //   std::vector<jbyte> audio_data_jbyte(audio_size);
+    //   audio->getRegion(0, audio_size, audio_data_jbyte.data());
+    //   for (int i = 0; i < audio_size; i++) {
+    //     audio_data[i] = audio_data_jbyte[i];
+    //   }
+    //   llm::Audio audio_input{std::move(audio_data), batch_size, n_bins, n_frames};
+
+      multi_modal_runner_->prefill(
+          {executorch::extension::llm::make_text_input("<s>[INST][BEGIN_AUDIO]"),
+            processRawAudioFile("/data/local/tmp/llama/audio.bin", "/data/local/tmp/llama/voxtral_preprocessor.pte"),
+          executorch::extension::llm::make_text_input(std::string("What can you tell me about this audio ") + "[/INST]")});
+    // }
+
+    ET_LOG(Error, "PREFILL AUDIO INPUT GOOD!!!!!!!!!!");
     return 0;
   }
 
@@ -322,9 +460,11 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("stop", ExecuTorchLlmJni::stop),
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
-            "appendImagesInput", ExecuTorchLlmJni::append_images_input),
+            "appendImagesInput", ExecuTorchLlmJni::prefill_images_input),
         makeNativeMethod(
-            "appendTextInput", ExecuTorchLlmJni::append_text_input),
+            "appendTextInput", ExecuTorchLlmJni::prefill_text_input),
+        makeNativeMethod(
+            "appendAudioInput", ExecuTorchLlmJni::prefill_audio_input),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
     });
   }
