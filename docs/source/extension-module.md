@@ -6,7 +6,7 @@ In the [Detailed C++ Runtime APIs Tutorial](running-a-model-cpp-tutorial.md), we
 
 ## Example
 
-Let's see how we can run the `SimpleConv` model generated from the [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial) using the `Module` and [`TensorPtr`](extension-tensor.md) APIs:
+Let's see how we can run the `SimpleConv` model generated from the [Exporting to ExecuTorch tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore --> using the `Module` and [`TensorPtr`](extension-tensor.md) APIs:
 
 ```cpp
 #include <executorch/extension/module/module.h>

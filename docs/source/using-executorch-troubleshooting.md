@@ -16,5 +16,5 @@ The ExecuTorch developer tools, or devtools, are a collection of tooling for tro
 
 - [Frequently Asked Questions](using-executorch-faqs.md) for solutions to commonly encountered questions and issues.
 - [Introduction to the ExecuTorch Developer Tools](runtime-profiling.md) for a high-level introduction to available developer tooling.
-- [Using the ExecuTorch Developer Tools to Profile a Model](https://pytorch.org/executorch/main/tutorials/devtools-integration-tutorial) for information on runtime performance profiling.
+- [Using the ExecuTorch Developer Tools to Profile a Model](tutorials/devtools-integration-tutorial) <!-- @lint-ignore --> for information on runtime performance profiling.
 - [Inspector APIs](runtime-profiling.md) for reference material on trace inspector APIs.
