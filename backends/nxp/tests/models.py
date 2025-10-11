@@ -9,6 +9,8 @@ from typing import Callable, Collection, Union
 
 import torch
 
+from torch import nn
+
 
 class Conv1dModule(torch.nn.Module):
     def __init__(
@@ -501,3 +503,71 @@ class MeanDimConvModule(torch.nn.Module):
     def forward(self, x):
         x = self.conv(x)
         return torch.mean(x, dim=self.dim, keepdim=self.keepdim)
+
+
+def get_activation(activation, inplace):
+    match activation:
+        case "relu":
+            return nn.ReLU(inplace=inplace)
+        case "relu_hardtanh":
+            return nn.Hardtanh(inplace=inplace, min_val=0.0, max_val=float("inf"))
+        case "relu6":
+            return nn.ReLU6(inplace=inplace)
+        case "tanh":
+            if inplace:
+                return torch.tanh
+            else:
+                return torch.tanh_
+        case "sigmoid":
+            return nn.Sigmoid()
+        case _:
+            raise ValueError
+
+
+class LinearActivationModule(torch.nn.Module):
+    def __init__(
+        self, activation: str, inplace: bool, in_channels: int, mode: str = "linear"
+    ):
+        super().__init__()
+        self.mode = mode.lower()
+        assert self.mode in [
+            "linear",
+            "addmm",
+            "mm",
+        ], "Mode must be 'linear', 'addmm', or 'mm'"
+
+        if self.mode == "linear":
+            self.linear = torch.nn.Linear(in_channels, in_channels)
+        else:
+            # Manual weight and bias for addmm/mm
+            self.weight = torch.nn.Parameter(torch.empty(in_channels, in_channels))
+            self.bias = torch.nn.Parameter(torch.empty(in_channels))
+            torch.nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            torch.nn.init.uniform_(self.bias, -bound, bound)
+
+        self.activation = get_activation(activation, inplace)
+        self.eval()
+
+    def forward(self, x):
+        if self.mode == "linear":
+            x = self.linear(x)
+        if self.mode == "addmm":
+            x = torch.addmm(self.bias, x, self.weight)
+        elif self.mode == "mm":
+            x = torch.mm(x, self.weight)
+        return self.activation(x)
+
+
+class ConvActivationModule(torch.nn.Module):
+    def __init__(self, activation: str, inplace: bool, in_channels: int):
+        super().__init__()
+
+        self.conv = Conv2dModule(in_channels=in_channels)
+        self.activation = get_activation(activation, inplace)
+        self.eval()
+
+    def forward(self, x):
+        x = self.conv(x)
+        return self.activation(x)

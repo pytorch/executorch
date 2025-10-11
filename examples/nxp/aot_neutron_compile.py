@@ -15,6 +15,7 @@ import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
 
 import torch
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
@@ -114,7 +115,10 @@ def post_training_quantize(
     # Based on executorch.examples.arm.aot_amr_compiler.quantize
     logging.info("Quantizing model")
     logging.debug(f"---> Original model: {model}")
-    quantizer = NeutronQuantizer()
+    neutron_target_spec = NeutronTargetSpec(
+        target="imxrt700", neutron_converter_flavor="SDK_25_09"
+    )
+    quantizer = NeutronQuantizer(neutron_target_spec)
 
     m = prepare_pt2e(model, quantizer)
     # Calibration:
