@@ -25,6 +25,7 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LinearPattern,
     MatmulPattern,
     MixedW8A32ConvPattern,
+    MixedW8A32GruPattern,
     MixedW8A32LinearPattern,
     ReluPattern0,
     ReluPattern1,
@@ -528,6 +529,41 @@ def get_args_and_kwargs_mixed_w8a32_conv(
     return args, kwargs
 
 
+def get_args_and_kwargs_mixed_w8a32_gru(
+    graph_module: GraphModule,
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    dequants_biases: List[fx.Node],
+    op_node: fx.Node,
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
+    # Stride, padding, dilation, groups not supported yet
+
+    assert len(dequants_weights) == 2
+    assert len(dequants_biases) == 2
+    w_i_scale = dequants_weights[0].args[1]
+    w_h_scale = dequants_weights[1].args[1]
+    b_i_scale = dequants_biases[0].args[1]
+    b_h_scale = dequants_biases[1].args[1]
+
+    args = (
+        other_inputs[0],
+        other_inputs[1],
+        weights_inputs[0],
+        w_i_scale,
+        weights_inputs[1],
+        w_h_scale,
+        bias_inputs[0],
+        b_i_scale,
+        bias_inputs[1],
+        b_h_scale,
+    )
+    kwargs = {}
+
+    return args, kwargs
+
+
 class QuantFusion(ExportPass):
     # pyre-ignore[2]: Parameter `patterns` has no type specified
     def __init__(self, patterns) -> None:
@@ -699,6 +735,16 @@ class QuantFusion(ExportPass):
                         )
                     elif isinstance(pattern, MixedW8A32ConvPattern):
                         args, kwargs = get_args_and_kwargs_mixed_w8a32_conv(
+                            graph_module,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            dequants_biases,
+                            op_node,
+                        )
+                    elif isinstance(pattern, MixedW8A32GruPattern):
+                        args, kwargs = get_args_and_kwargs_mixed_w8a32_gru(
                             graph_module,
                             other_inputs,
                             weights_inputs,

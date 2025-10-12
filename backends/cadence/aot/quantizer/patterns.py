@@ -661,3 +661,60 @@ class MixedW8A32ConvPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_w8a32_conv.default
+
+
+class MixedW8A32GruPattern(QuantizationPattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.gru.input]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Tuple[PartitionAnchors, fx.Node]:
+        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
+        gru_layer = fused_partition[0].nodes[-1]
+        if len(gru_layer.kwargs) > 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                gru_layer,
+            )
+
+        # Bail if input or states are not multiple of 4 (SIMD)
+        if gru_layer.args[0].meta["tensor_meta"].shape[-1] % 4 != 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                gru_layer,
+            )
+        if gru_layer.args[1].meta["tensor_meta"].shape[-1] % 4 != 0:
+            return (
+                PartitionAnchors(
+                    empty=True,
+                ),
+                gru_layer,
+            )
+
+        class Wrapper:  # noqa: B903
+            def __init__(self, args, meta):
+                self.args = args
+                self.meta = meta
+
+        wrapper = Wrapper(tuple(gru_layer.args[2]), gru_layer.meta)
+
+        return (
+            PartitionAnchors(
+                inputs=[],
+                # pyre-fixme[6]: Expected `List[Tuple[Node, int]]` but got `List[Tuple[Wrapper, int]]`.
+                weights=[(wrapper, 0), (wrapper, 1)],
+                # pyre-fixme[6]: Expected `List[Union[Tuple[Node, int], Tuple[Node, int, DerivedQuantizationSpec]]]` but got `List[Tuple[Wrapper, int]]`.
+                biases=[(wrapper, 2), (wrapper, 3)],
+                output=[],
+                others=[(gru_layer, 0), (gru_layer, 1)],
+            ),
+            gru_layer,
+        )
+
+    def replacement_op(self) -> OpOverload:
+        return torch.ops.cadence.quantized_w8a32_gru.default
