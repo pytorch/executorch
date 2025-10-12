@@ -350,6 +350,29 @@ class TestRefImplementations(unittest.TestCase):
                 for (matmul, transposed_matmul) in ((True, False), (True, True))
                 for (per_tensor, dtype) in ((True, torch.int8),)
             ],
+            *[
+                (
+                    torch.Size([2, 1, 2]),  # src_shape: 1 sample, 2 input features
+                    torch.Size(
+                        [2, 2, 2]
+                    ),  # weight_shape: 2 output features, 2 input features
+                    2,  # in_zero_point
+                    torch.tensor([1, 1], dtype=dtype),  # weight_zero_point
+                    torch.tensor(
+                        [268435456], dtype=torch.int32
+                    ),  # out_multiplier (0.125 * 2^31)
+                    torch.tensor(
+                        [1], dtype=torch.int32
+                    ),  # out_shift (shift=1, doubles the scale)
+                    1,  # out_zero_point
+                    torch.tensor([[[1, 2]], [[0, -1]]], dtype=dtype),  # expected_output
+                    per_tensor,
+                    matmul,
+                    transposed_matmul,
+                )
+                for (matmul, transposed_matmul) in ((True, False), (True, True))
+                for (per_tensor, dtype) in ((True, torch.int8),)
+            ],
         ]
     )
     def test_quantized_linear(
@@ -380,7 +403,7 @@ class TestRefImplementations(unittest.TestCase):
             .to(expected_output.dtype)
         )
         if matmul and not transposed_matmul:
-            weight = weight.T
+            weight = weight.transpose(-1, -2)
 
         if per_tensor:
             weight_zero_point = weight_zero_point[0]
