@@ -78,8 +78,8 @@ def test_slice_tensor_tosa_INT_nhwc(test_data: torch.Tensor):
 
 
 x_fails = {
-    "ones_slice_3": "MLETORCH-1402: Slice operator has incorrect number of inputs",
-    "ones_slice_4": "MLETORCH-1402: Slice operator has incorrect number of inputs",
+    "ones_slice_3": "MLETORCH-1402: Compiler limitation when passing more than 255 char as argument to FVP.",
+    "ones_slice_4": "MLETORCH-1402: Compiler limitation when passing more than 255 char as argument to FVP.",
 }
 
 
@@ -179,7 +179,7 @@ def test_slice_tensor_16a8w_tosa_INT(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite, x_fails)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
     reason="Vela compilation fails with 'Invalid arguments' for int16 slice operations"
@@ -206,7 +206,7 @@ def test_slice_tensor_16a8w_u55_INT16(test_data: torch.Tensor):
     pipeline.run()
 
 
-@common.parametrize("test_data", test_data_suite)
+@common.parametrize("test_data", test_data_suite, x_fails)
 @common.XfailIfNoCorstone320
 @pytest.mark.xfail(
     reason="Vela compilation fails with 'Invalid arguments' for int16 slice operations"
