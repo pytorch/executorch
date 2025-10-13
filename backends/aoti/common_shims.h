@@ -61,15 +61,15 @@ int32_t aoti_torch_dtype_float32();
 int32_t aoti_torch_dtype_bfloat16();
 int32_t aoti_torch_dtype_int64();
 
+// Dtype utility function needed by Metal backend
+size_t aoti_torch_dtype_element_size(int32_t dtype);
+
 // Autograd mode functions
 int32_t aoti_torch_grad_mode_is_enabled();
 void aoti_torch_grad_mode_set_enabled(bool enabled);
 
 // Cleanup functions for clearing global state
 void cleanup_tensor_metadata();
-
-// Needed by Metal backend
-size_t aoti_torch_dtype_element_size(int32_t dtype);
 
 } // extern "C"
 
