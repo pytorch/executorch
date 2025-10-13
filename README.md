@@ -200,9 +200,9 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language)
 
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3)
+**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](https://github.com/meta-pytorch/executorch-examples/tree/main/whisper/android/WhisperApp)
 
-**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) mobile demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models
+**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models
 
 ## Key Features
 
@@ -222,7 +222,7 @@ See [Advanced Topics](https://docs.pytorch.org/executorch/main/advanced-topics-s
 - [**Documentation Home**](https://docs.pytorch.org/executorch/main/index.html) — Complete guides and tutorials
 - [**API Reference**](https://docs.pytorch.org/executorch/main/api-section.html) — Python, C++, Java/Kotlin APIs
 - [**Backend Integration**](https://docs.pytorch.org/executorch/main/backend-delegates-integration.html) — Build custom hardware backends
-- [**Troubleshooting**](https://docs.pytorch.org/executorch/main/using-executorch-troubleshooting.html) — Common issues and solutions
+- [**Troubleshooting**](https://docs.pytorch.org/executorch/main/support-section.html) — Common issues and solutions
 
 ## Community & Contributing
 
