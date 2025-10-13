@@ -176,7 +176,7 @@ class NodeVisitor:
         user_0 = self.get_first_user(node)
         if "convolution" in user_0.target.__name__:
             # OIHW (pytorch) -> HWIO (QNN)
-            quant_config[QCOM_AXIS] = 3
+            quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
             quant_config[QCOM_AXIS_ORDER] = (2, 3, 1, 0)
         elif "linear" in user_0.target.__name__:
             # OI (pytorch) -> OI (QNN)
@@ -218,7 +218,7 @@ class NodeVisitor:
         user_0 = self.get_first_user(node)
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
         if "convolution" in user_0.target.__name__:
-            quant_config[QCOM_AXIS] = 3
+            quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
         else:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 

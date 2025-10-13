@@ -1221,12 +1221,15 @@ def _load_llama_model(llm_config: LlmConfig) -> "LLMEdgeManager":
     else:
         raise ValueError(f"{modelname} is not a valid Llama model.")
 
-    model, example_inputs, example_kwarg_inputs, dynamic_shapes = (
-        EagerModelFactory.create_model(
-            module_name,
-            model_class_name,
-            llm_config=llm_config,
-        )
+    (
+        model,
+        example_inputs,
+        example_kwarg_inputs,
+        dynamic_shapes,
+    ) = EagerModelFactory.create_model(
+        module_name,
+        model_class_name,
+        llm_config=llm_config,
     )
     # Convert dtype override string to actual type.
     dtype_override = DType[llm_config.model.dtype_override.value]
@@ -1303,6 +1306,7 @@ def _get_source_transforms(  # noqa
     preq_group_size: Optional[int] = None,
     preq_embedding_quantize: Optional[str] = None,
     local_global_attention: Optional[List[int]] = None,
+    quantize_with_hqq: bool = True,
 ) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
     """
     Return a list of functions that transform a graph.
@@ -1372,7 +1376,10 @@ def _get_source_transforms(  # noqa
         """
         transforms.append(
             get_quant_embedding_transform(
-                embedding_quantize, use_shared_embedding, checkpoint_dtype
+                embedding_quantize,
+                use_shared_embedding,
+                checkpoint_dtype,
+                quantize_with_hqq,
             )
         )
 
@@ -1403,6 +1410,7 @@ def _get_source_transforms(  # noqa
                 calibration_tasks=calibration_tasks,
                 calibration_limit=calibration_limit,
                 calibration_seq_length=calibration_seq_length,
+                quantize_with_hqq=quantize_with_hqq,
             )
         )
 

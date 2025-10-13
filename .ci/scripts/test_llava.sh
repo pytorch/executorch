@@ -38,6 +38,7 @@ EXECUTORCH_COMMON_CMAKE_ARGS="                      \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON      \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
         -DEXECUTORCH_BUILD_EXTENSION_LLM=ON \
         -DEXECUTORCH_BUILD_EXTENSION_LLM_RUNNER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON      \
@@ -149,7 +150,7 @@ run_and_verify() {
 
     # verify result.txt
     RESULT=$(cat result.txt)
-    EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with"
+    EXPECTED_PREFIX="ASSISTANT: image is a black and white photo of a basketball game in progress"
 
     if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"
