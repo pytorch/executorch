@@ -290,7 +290,7 @@ Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_R
 
 ### Step-by-Step Implementation Guide
 
-Please reference [the simple example](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py) and [more compilated examples](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts) for reference
+Please reference [the simple example](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py) and [more complicated examples](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts) for reference
 #### Step 1: Prepare Your Model
 ```python
 import torch

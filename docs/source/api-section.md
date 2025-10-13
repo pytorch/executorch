@@ -7,7 +7,7 @@ In this section, find complete API documentation for ExecuTorch's export, runtim
 - {doc}`executorch-runtime-api-reference` — ExecuTorch Runtime API Reference
 - {doc}`runtime-python-api-reference` — Runtime Python API Reference
 - {doc}`api-life-cycle` — API Life Cycle
-- [Android doc →](https://pytorch.org/executorch/main/javadoc/)** — Android API Documentation
+- [Android doc →](https://pytorch.org/executorch/main/javadoc/) — Android API Documentation
 - {doc}`extension-module` — Extension Module
 - {doc}`extension-tensor` — Extension Tensor
 - {doc}`running-a-model-cpp-tutorial` — Detailed C++ Runtime APIs Tutorial

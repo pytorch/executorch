@@ -410,7 +410,7 @@ def get_args():
         required=False,
         nargs="?",
         const="generic",
-        choices=["generic", "mv2"],
+        choices=["generic", "mv2", "deit_tiny"],
         help="Flag for running evaluation of the model.",
     )
     parser.add_argument(

@@ -86,6 +86,13 @@ list(
   extension_flat_tensor
 )
 
+# Link CUDA backend
+if(EXECUTORCH_BUILD_CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  list(APPEND link_libraries aoti_cuda)
+  executorch_target_link_options_shared_lib(aoti_cuda)
+endif()
+
 # Add tokenizers
 list(APPEND link_libraries tokenizers::tokenizers)
 

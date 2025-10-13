@@ -578,6 +578,15 @@ lib.define(
     "quantized_w8a32_conv.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)"
 )
 
+lib.define(
+    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
 aten_lib = Library("aten", "FRAGMENT")
 aten_lib.define(
@@ -2646,3 +2655,19 @@ def quantized_w8a32_conv_meta(
         channel_last=False,
     )
     return src.new_empty(output_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_gru")
+def quantized_w8a32_gru_meta(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    weights_inputs: torch.Tensor,
+    w_i_scale: float,
+    weights_hidden: torch.Tensor,
+    w_h_scale: float,
+    bias_inputs: torch.Tensor,
+    b_i_scale: float,
+    bias_hidden: torch.Tensor,
+    b_h_scale: float,
+) -> torch.Tensor:
+    return inputs.new_empty((2, hidden.shape[-1]), dtype=inputs.dtype)

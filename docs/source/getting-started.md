@@ -68,7 +68,7 @@ with open("model.pte", "wb") as f:
 
 If the model requires varying input sizes, you will need to specify the varying dimensions and bounds as part of the `export` call. See [Model Export and Lowering](using-executorch-export.md) for more information.
 
-The hardware backend to target is controlled by the partitioner parameter to to\_edge\_transform\_and\_lower. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the [backend-specific documentation](backends-overview.md) for information on how to use each backend.
+The hardware backend to target is controlled by the partitioner parameter to `to_edge_transform_and_lower`. In this example, the XnnpackPartitioner is used to target mobile CPUs. See the [backend-specific documentation](backends-overview.md) for information on how to use each backend.
 
 Quantization can also be done at this stage to reduce model size and runtime. Quantization is backend-specific. See the documentation for the target backend for a full description of supported quantization schemes.
 
@@ -226,5 +226,5 @@ ExecuTorch provides a high-degree of customizability to support diverse hardware
 - [Using ExecuTorch on Android](using-executorch-android.md) and [Using ExecuTorch on iOS](using-executorch-ios.md) for mobile runtime integration.
 - [Using ExecuTorch with C++](using-executorch-cpp.md) for embedded and mobile native development.
 - [Profiling and Debugging](using-executorch-troubleshooting.md) for developer tooling and debugging.
-- [API Reference](export-to-executorch-api-reference.md) for a full description of available APIs.
+- [API Reference](export-to-executorch-api-reference.rst) for a full description of available APIs.
 - [Examples](https://github.com/pytorch/executorch/tree/main/examples) for demo apps and example code.

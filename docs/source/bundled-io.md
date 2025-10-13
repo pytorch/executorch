@@ -17,7 +17,7 @@ This stage mainly focuses on the creation of a `BundledProgram` and dumping it o
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
 
-ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate and emit sample ExecuTorch program](getting-started.md#exporting) or [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate and emit sample ExecuTorch program](getting-started.md#exporting) or [Exporting to ExecuTorch tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->.
 
 ### Step 2: Construct `List[MethodTestSuite]` to hold test info
 
@@ -194,7 +194,7 @@ regenerate_bundled_program = deserialize_from_flatbuffer_to_bundled_program(seri
 ```
 
 ## Runtime Stage
-This stage mainly focuses on executing the model with the bundled inputs and and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
+This stage mainly focuses on executing the model with the bundled inputs and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
 
 
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer
