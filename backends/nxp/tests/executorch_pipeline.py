@@ -18,6 +18,7 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -26,24 +27,12 @@ from executorch.exir import (
 )
 from executorch.extension.export_util.utils import export_to_edge
 from torch import nn
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 @dataclass
 class ModelInputSpec:
     shape: tuple[int, ...]
     dtype: torch.dtype = torch.float32
-
-
-def _quantize_model(
-    model, quantizer, calibration_inputs: list[tuple[torch.Tensor, ...]]
-):
-    m = prepare_pt2e(model, quantizer)
-    for data in calibration_inputs:
-        m(*data)
-    m = convert_pt2e(m)
-
-    return m
 
 
 def get_random_calibration_inputs(
@@ -99,10 +88,10 @@ def to_quantized_edge_program(
 
     exir_program_aten = torch.export.export(model, example_input, strict=True)
 
-    exir_program_aten__module_quant = _quantize_model(
-        exir_program_aten.module(),
-        get_quantizer_fn(),
+    exir_program_aten__module_quant = post_training_quantize(
+        exir_program_aten,
         calibration_inputs,
+        get_quantizer_fn(),
     )
 
     edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
