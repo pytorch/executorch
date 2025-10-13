@@ -56,6 +56,8 @@ List of Aten operators supported by Neutron quantizer:
 `reshape`, `view`, `softmax.int`, `sigmoid`, `tanh`, `tanh_`
 
 #### Example
+
+To quantize your model, you can either use the PT2E workflow:
 ```python
 import torch
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -71,6 +73,18 @@ m = prepare_pt2e(aten_model, quantizer)
 for data in calibration_inputs:
     m(*data)
 m = convert_pt2e(m)
+```
+
+Or you can use the predefined function for post training quantization from NXP backend implementation:
+```python
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
+
+...
+
+quantized_graph_module = post_training_quantize(
+    aten_model,
+    calibration_inputs,
+)
 ```
 
 ## Runtime Integration
