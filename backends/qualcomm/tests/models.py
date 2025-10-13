@@ -171,21 +171,23 @@ class Arange(torch.nn.Module):
 
 
 class Argmax(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim: Optional[int] = None, keepdim: bool = False):
         super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
 
     def forward(self, x):
-        x = torch.argmax(x, dim=0, keepdim=True)
-        return x
+        return torch.argmax(x, dim=self.dim, keepdim=self.keepdim)
 
 
 class Argmin(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim: Optional[int] = None, keepdim: bool = False):
         super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
 
     def forward(self, x):
-        x = torch.argmin(x, dim=0, keepdim=True)
-        return x
+        return torch.argmin(x, dim=self.dim, keepdim=self.keepdim)
 
 
 class ArgminViewSqueezeConv2D(torch.nn.Module):
@@ -589,28 +591,6 @@ class Conv2dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
-class Conv3dSequential(torch.nn.Module):
-    def __init__(self, bias=True):
-        super().__init__()
-        self.first = torch.nn.Conv3d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=(3, 3, 3),
-            padding=1,
-            bias=bias,
-        )
-        self.second = torch.nn.Conv3d(
-            in_channels=3,
-            out_channels=2,
-            kernel_size=(3, 3, 3),
-            padding=1,
-            bias=bias,
-        )
-
-    def forward(self, x):
-        return self.second(self.first(x))
-
-
 class Conv2dSingle(torch.nn.Module):
     def __init__(
         self,
@@ -715,6 +695,28 @@ class Conv2dTopK(torch.nn.Module):
         x = self.conv(x)
         topk_values, topk_indices = torch.topk(x, 5, dim=1)
         return topk_values
+
+
+class Conv3dSequential(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.first = torch.nn.Conv3d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            bias=bias,
+        )
+        self.second = torch.nn.Conv3d(
+            in_channels=3,
+            out_channels=2,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.second(self.first(x))
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
@@ -1498,6 +1500,15 @@ class Pad(torch.nn.Module):
         )
 
 
+class Permute(torch.nn.Module):
+    def __init__(self, dims: List[int]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x):
+        return x.permute(self.dims)
+
+
 class PixelShuffle(torch.nn.Module):
     def __init__(self, scale):
         super().__init__()
@@ -1531,11 +1542,12 @@ class PixelUnshuffleMathEquivalent(torch.nn.Module):
 
 
 class PowTensorScalar(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, exponent=2):
         super().__init__()
+        self.exponent = exponent
 
     def forward(self, x):
-        return torch.pow(x, 2)
+        return torch.pow(x, self.exponent)
 
 
 class PReLUDefault(torch.nn.Module):
@@ -1974,12 +1986,35 @@ class SumIntList(torch.nn.Module):
         return torch.sum(x, dim=(2, 3), keepdim=True)
 
 
+class SwapAxes(torch.nn.Module):
+    def __init__(self, axis0, axis1):
+        super().__init__()
+        self.axis0 = axis0
+        self.axis1 = axis1
+
+    def forward(self, x):
+        return torch.swapaxes(x, axis0=self.axis0, axis1=self.axis1)
+
+
 class Tanh(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
         return torch.tanh(x)
+
+
+class Threshold(torch.nn.Module):
+    def __init__(self, threshold=0.0, value=0.0, inplace=False):
+        super().__init__()
+        self.threshold = threshold
+        self.value = value
+        self.inplace = inplace
+
+    def forward(self, x):
+        return torch.nn.functional.threshold(
+            x, threshold=self.threshold, value=self.value, inplace=self.inplace
+        )
 
 
 class TopKandIndex(torch.nn.Module):
@@ -1998,6 +2033,16 @@ class Unbind(torch.nn.Module):
 
     def forward(self, x):
         return torch.unbind(x)
+
+
+class Unflatten(torch.nn.Module):
+    def __init__(self, dim, sizes):
+        super().__init__()
+        self.dim = dim
+        self.sizes = sizes
+
+    def forward(self, x):
+        return torch.unflatten(x, dim=self.dim, sizes=self.sizes)
 
 
 class Unfold(torch.nn.Module):

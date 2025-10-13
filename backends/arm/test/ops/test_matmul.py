@@ -22,6 +22,7 @@ input_t1 = Tuple[torch.Tensor, torch.Tensor]  # Input x
 
 class MatMul(torch.nn.Module):
     test_data_generators = {
+        "rand_rand_2d": lambda: (torch.rand(5, 5), torch.rand(5, 2)),
         "rand_rand_3d": lambda: (torch.rand(2, 3, 5), torch.rand(2, 5, 2)),
         "rand_rand_4d": lambda: (torch.rand(1, 2, 3, 5), torch.rand(1, 2, 5, 2)),
     }
@@ -32,6 +33,7 @@ class MatMul(torch.nn.Module):
 
 class MatMulSingleInput(torch.nn.Module):
     test_data_generators = {
+        "rand_2d": lambda: (torch.rand(5, 5),),
         "rand_3d": lambda: (torch.rand(2, 5, 5),),
         "rand_4d": lambda: (torch.rand(1, 2, 5, 5),),
     }
@@ -42,6 +44,11 @@ class MatMulSingleInput(torch.nn.Module):
 
 class MatMulCombo(torch.nn.Module):
     test_data_generators = {
+        "rand_rand_rand_2d": lambda: (
+            torch.rand(5, 5),
+            torch.rand(5, 2),
+            torch.rand(2, 5),
+        ),
         "rand_rand_rand_3d": lambda: (
             torch.rand(2, 5, 5),
             torch.rand(2, 5, 2),

@@ -54,13 +54,39 @@ void resize_binary_op_node(
   graph->virtual_resize(out, new_out_sizes);
 }
 
+int remove_clamp_from_name(std::string& op) {
+  if (op.find("clamp_0_with_") != std::string::npos) {
+    op.erase(op.find("clamp_0_with_"), 13);
+
+    // Clamp input 0
+    return 1;
+  }
+  if (op.find("clamp_1_with_") != std::string::npos) {
+    op.erase(op.find("clamp_1_with_"), 13);
+
+    // Clamp input 1
+    return 2;
+  }
+  if (op.find("_with_clamp") != std::string::npos) {
+    op.erase(op.find("_with_clamp"), 11);
+
+    // Clamp output
+    return 3;
+  }
+
+  // No clamp
+  return 0;
+}
+
 void add_binary_op_texture_node(
     ComputeGraph& graph,
     const ValueRef in1,
     const ValueRef in2,
     const ValueRef alpha,
     const ValueRef out,
-    const std::string& op_name) {
+    const std::string& op_name,
+    const float min,
+    const float max) {
   ValueRef arg1 = prepack_standard_like(graph, in1, out, true);
   ValueRef arg2 = prepack_standard_like(graph, in2, out, true);
 
@@ -80,7 +106,10 @@ void add_binary_op_texture_node(
 
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
-  kernel_name += op_name;
+
+  std::string op = op_name;
+  int clamp_type = remove_clamp_from_name(op);
+  kernel_name += op;
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_dtype_suffix(kernel_name, graph.dtype_of(in1));
 
@@ -101,7 +130,10 @@ void add_binary_op_texture_node(
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(arg1),
-       graph.hashed_layout_of(arg2)},
+       graph.hashed_layout_of(arg2),
+       clamp_type,
+       min,
+       max},
       // Resize Args
       {},
       // Resizing Logic
@@ -114,7 +146,9 @@ void add_binary_op_buffer_node(
     const ValueRef in2,
     const ValueRef alpha,
     const ValueRef out,
-    const std::string& op_name) {
+    const std::string& op_name,
+    const float min,
+    const float max) {
   // check_binary_op_args(*t_in1, *t_in2, *t_out);
 
   float alpha_val = 1.0f;
@@ -126,7 +160,9 @@ void add_binary_op_buffer_node(
 
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
-  kernel_name += op_name;
+  std::string op = op_name;
+  int clamp_type = remove_clamp_from_name(op);
+  kernel_name += op;
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
   add_dtype_suffix(kernel_name, graph.dtype_of(in1));
@@ -149,7 +185,9 @@ void add_binary_op_buffer_node(
       // Specialization Constants
       {graph.hashed_layout_of(out),
        graph.hashed_layout_of(in1),
-       graph.hashed_layout_of(in2)},
+       graph.hashed_layout_of(in2),
+       min,
+       max},
       // Resize Args
       {},
       // Resizing Logic
@@ -162,11 +200,13 @@ void add_binary_op_node(
     const ValueRef in2,
     const ValueRef alpha,
     const ValueRef out,
-    const std::string& op_name) {
+    const std::string& op_name,
+    const float min = std::numeric_limits<float>::infinity(),
+    const float max = -std::numeric_limits<float>::infinity()) {
   if (graph.is_buffer_storage(out)) {
-    add_binary_op_buffer_node(graph, in1, in2, alpha, out, op_name);
+    add_binary_op_buffer_node(graph, in1, in2, alpha, out, op_name, min, max);
   } else {
-    add_binary_op_texture_node(graph, in1, in2, alpha, out, op_name);
+    add_binary_op_texture_node(graph, in1, in2, alpha, out, op_name, min, max);
   }
 }
 
@@ -180,6 +220,40 @@ void add_binary_op_node(
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     return add_binary_op_node(                                           \
         graph, args[0], args[1], kDummyValueRef, args[2], #op_name);     \
+  }
+
+float get_val_or_inf_(ComputeGraph& graph, const ValueRef& val, bool max) {
+  if (!graph.val_is_none(val)) {
+    return graph.extract_scalar<float>(val);
+  }
+  return max ? std::numeric_limits<float>::infinity()
+             : -std::numeric_limits<float>::infinity();
+}
+
+#define DEFINE_BINARY_OP_WITH_ALPHA_FN_CLAMPED(op_name)                  \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_binary_op_node(                                           \
+        graph,                                                           \
+        args[0],                                                         \
+        args[1],                                                         \
+        args[2],                                                         \
+        args[5],                                                         \
+        #op_name,                                                        \
+        get_val_or_inf_(graph, args[3], false),                          \
+        get_val_or_inf_(graph, args[4], true));                          \
+  }
+
+#define DEFINE_BINARY_OP_FN_CLAMPED(op_name)                             \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_binary_op_node(                                           \
+        graph,                                                           \
+        args[0],                                                         \
+        args[1],                                                         \
+        kDummyValueRef,                                                  \
+        args[4],                                                         \
+        #op_name,                                                        \
+        get_val_or_inf_(graph, args[2], false),                          \
+        get_val_or_inf_(graph, args[3], true));                          \
   }
 
 DEFINE_BINARY_OP_WITH_ALPHA_FN(add);
@@ -199,6 +273,11 @@ DEFINE_BINARY_OP_FN(le);
 DEFINE_BINARY_OP_FN(gt);
 DEFINE_BINARY_OP_FN(ge);
 
+DEFINE_BINARY_OP_FN_CLAMPED(add_with_clamp);
+DEFINE_BINARY_OP_FN_CLAMPED(sub_with_clamp);
+DEFINE_BINARY_OP_FN_CLAMPED(mul_with_clamp);
+DEFINE_BINARY_OP_FN_CLAMPED(div_with_clamp);
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
   VK_REGISTER_OP(aten.sub.Tensor, sub);
@@ -212,6 +291,11 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.le.Tensor, le);
   VK_REGISTER_OP(aten.gt.Tensor, gt);
   VK_REGISTER_OP(aten.ge.Tensor, ge);
+
+  VK_REGISTER_OP(et_vk.binary_add_with_clamp.default, add_with_clamp);
+  VK_REGISTER_OP(et_vk.binary_sub_with_clamp.default, sub_with_clamp);
+  VK_REGISTER_OP(et_vk.binary_mul_with_clamp.default, mul_with_clamp);
+  VK_REGISTER_OP(et_vk.binary_div_with_clamp.default, div_with_clamp);
 }
 
 } // namespace vkcompute
