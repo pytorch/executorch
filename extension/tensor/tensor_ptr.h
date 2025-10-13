@@ -273,8 +273,7 @@ inline TensorPtr make_tensor_ptr(
 template <typename T>
 inline TensorPtr make_tensor_ptr(T value) {
   return make_tensor_ptr(
-    std::vector<executorch::aten::SizesType>{}, std::vector<T>{value});
-  }
+      std::vector<executorch::aten::SizesType>{}, std::vector<T>{value});
 }
 
 /**
