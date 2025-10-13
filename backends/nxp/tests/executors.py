@@ -368,7 +368,13 @@ def convert_run_compare(
 
 
 def graph_contains_any_of_ops(graph: Graph, ops: list) -> bool:
-    return any(node.target in ops for node in graph.nodes)
+    return graph_contains_any(
+        graph, condition=lambda n: hasattr(n, "target") and n.target in ops
+    )
+
+
+def graph_contains_any(graph: Graph, condition: Callable[[Node], bool]) -> bool:
+    return any(map(condition, graph.nodes))
 
 
 target_support_check_function = Callable[[Node, NeutronTargetSpec], bool]

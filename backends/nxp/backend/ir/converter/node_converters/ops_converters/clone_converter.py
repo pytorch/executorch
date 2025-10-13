@@ -20,6 +20,11 @@ def _has_supported_memory_format(node: Node) -> bool:
 
 
 class CloneConverter(NodeConverter):
+    """
+    This converter is responsible for converting both edge operators:
+    - aten.clone.default
+    - dim_order_ops._clone_dim_order.default
+    """
 
     @staticmethod
     def _is_supported_in_IR(
