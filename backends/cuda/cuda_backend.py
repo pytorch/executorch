@@ -129,6 +129,8 @@ class CudaBackend(BackendDetails):
                 user_input_placeholders.append(node.meta["val"])
 
         options: dict[str, typing.Any] = {
+            # Better model precision
+            "emulate_precision_casts": True,
             # Embed CUDA kernel binaries directly into the compiled shared object
             "aot_inductor.embed_kernel_binary": True,
             # Do not link against the full PyTorch/libtorch library

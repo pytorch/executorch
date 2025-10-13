@@ -35,8 +35,10 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
 # CUDA-specific AOTI functionality
-set(_aoti_cuda_sources runtime/cuda_backend.cpp runtime/shims/memory.cpp
-                       runtime/shims/tensor_attribute.cpp runtime/guard.cpp
+set(_aoti_cuda_sources
+    runtime/cuda_backend.cpp runtime/shims/memory.cpp
+    runtime/shims/tensor_attribute.cpp runtime/guard.cpp
+    runtime/shims/cuda_guard.cpp
 )
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
@@ -53,10 +55,7 @@ target_link_options(aoti_cuda PUBLIC -Wl,--export-dynamic)
 
 # Link against CUDA::cudart, common AOTI library, and PyTorch CUDA libraries
 target_link_libraries(
-  aoti_cuda
-  PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
-         # Link PyTorch libraries for AOTI CUDA functions
-         ${TORCH_LIBRARIES}
+  aoti_cuda PUBLIC aoti_common CUDA::cudart ${CMAKE_DL_LIBS}
 )
 # If you need other CUDA libraries, link them similarly:
 # target_link_libraries(aoti_cuda PUBLIC CUDA::cublas CUDA::cufft ...)

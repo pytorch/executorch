@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
 #include <executorch/extension/threadpool/threadpool.h>
 
 #include <algorithm>
@@ -13,8 +14,25 @@
 
 #include <executorch/extension/threadpool/threadpool_guard.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <cpuinfo.h>
+
+// At most one mode should be set.
+#if (                                                       \
+    defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES) && \
+    defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES))
+#error Multiple \
+            threadpool size specifiers are set.At most one of                \
+    EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES,                             \
+    and EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES may be defined.
+#endif
+
+// Default to EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES if no mode is set.
+#if !defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES) && \
+    !defined(EXECUTORCH_THREADPOOL_USE_PERFORMANCE_CORES)
+#define EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES 1
+#endif
 
 namespace executorch::extension::threadpool {
 
@@ -97,13 +115,21 @@ void ThreadPool::run(
 // get_threadpool is not thread safe due to leak_corrupted_threadpool
 // Make this part threadsafe: TODO(kimishpatel)
 ThreadPool* get_threadpool() {
+  executorch::runtime::runtime_init();
+
   if (!cpuinfo_initialize()) {
     ET_LOG(Error, "cpuinfo initialization failed");
     return nullptr; // NOLINT(facebook-hte-NullableReturn)
   }
 
   static const int num_threads = ([]() {
-    int result = cpuinfo_get_processors_count();
+#if defined(EXECUTORCH_THREADPOOL_USE_ALL_LOGICAL_CORES)
+    // Use threads=cores.
+    auto result = cpuinfo_get_processors_count();
+#else
+    // Set threads equal to the number of performance cores.
+    auto result = ::executorch::extension::cpuinfo::get_num_performant_cores();
+#endif
 
     /*
      * For llvm-tsan, holding limit for the number of locks for a single thread
@@ -113,9 +139,10 @@ ThreadPool* get_threadpool() {
      * tricky to detect if we are running under tsan, for now capping the
      * default threadcount to the tsan limit unconditionally.
      */
-    constexpr int tsan_thread_limit = 63;
+    constexpr unsigned int tsan_thread_limit = 63;
     return std::min(result, tsan_thread_limit);
   })();
+
   static auto threadpool = std::make_unique<ThreadPool>(num_threads);
 
 // Inheriting from old threadpool to get around segfault issue
