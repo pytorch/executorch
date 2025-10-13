@@ -68,12 +68,18 @@ class DecomposeGroupNormPass(ArmPass):
         SizeAdjustInputPass,
     }
 
+    _TARGET_OPS = {
+        exir_ops.edge.aten.native_group_norm.default,
+        torch.ops.aten.group_norm.default,
+    }
+
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in (
-                exir_ops.edge.aten.native_group_norm.default,
-                torch.ops.aten.group_norm.default,
+            if (
+                node.op != "call_function"
+                or node.target not in DecomposeGroupNormPass._TARGET_OPS
+                or not self.allowed_to_transform(node.meta)
             ):
                 continue
 

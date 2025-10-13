@@ -27,7 +27,7 @@ class CastBoolToInt8Pass(ArmPass):
     }
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in self.targeted_ops:
+        if op not in self.targeted_ops or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         new_args: list = []

@@ -43,7 +43,9 @@ class DecomposeAvgPool2dPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOTPass}
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_div_ops + aten_div_ops):
+        if op not in (edge_div_ops + aten_div_ops) or not self.allowed_to_transform(
+            meta
+        ):
             return super().call_operator(op, args, kwargs, meta)
 
         full_op, cat_op, avgpool_op, mul_op = get_decomposition(op)
