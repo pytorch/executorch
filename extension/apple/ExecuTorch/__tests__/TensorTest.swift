@@ -96,6 +96,19 @@ class TensorTest: XCTestCase {
     XCTAssertEqual(tensor.scalars(), dataArray)
   }
 
+  func testInitDataViewSurvivesSourceScopeEnd() {
+    let dataArray: [Float] = [1.0, 2.0, 3.0, 4.0]
+    var view: Tensor<Float>!
+    autoreleasepool {
+      let data = Data(bytes: dataArray, count: dataArray.count * MemoryLayout<Float>.size)
+      let tensor = Tensor<Float>(data: data, shape: [4])
+      view = Tensor<Float>(tensor)
+      XCTAssertEqual(view.scalars(), dataArray)
+    }
+    XCTAssertEqual(view.count, 4)
+    XCTAssertEqual(view.scalars(), dataArray)
+  }
+
   func testWithCustomStridesAndDimensionOrder() {
     let data: [Float] = [1.0, 2.0, 3.0, 4.0]
     let tensor = Tensor<Float>(
