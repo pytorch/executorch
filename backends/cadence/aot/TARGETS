@@ -425,6 +425,7 @@ python_unittest(
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:lib",
+        ":ref_implementations",
     ],
 )
 
