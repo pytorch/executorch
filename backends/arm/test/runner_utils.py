@@ -692,20 +692,25 @@ def assert_elf_path_exists(elf_path):
         )
 
 
-def get_elf_path(target_board):
+def get_elf_path(target_board: str, use_portable_ops: bool = False):
     if target_board not in VALID_TARGET:
         raise ValueError(f"Unsupported target: {target_board}")
+
+    if use_portable_ops:
+        portable_ops_str = "portable-ops_"
+    else:
+        portable_ops_str = ""
 
     if target_board in ("corstone-300", "corstone-320"):
         elf_path = os.path.join(
             "arm_test",
-            f"arm_semihosting_executor_runner_{target_board}",
+            f"arm_semihosting_executor_runner_{portable_ops_str}{target_board}",
             "arm_executor_runner",
         )
         assert_elf_path_exists(elf_path)
     elif target_board == "vkml_emulation_layer":
         elf_path = os.path.join(
-            "arm_test/arm_executor_runner_vkml",
+            f"arm_test/arm_executor_runner_{portable_ops_str}vkml",
             "executor_runner",
         )
         assert_elf_path_exists(elf_path)
@@ -713,9 +718,9 @@ def get_elf_path(target_board):
     return elf_path
 
 
-def arm_executor_runner_exists(target_board):
+def arm_executor_runner_exists(target_board: str, use_portable_ops: bool = False):
     try:
-        get_elf_path(target_board)
+        get_elf_path(target_board, use_portable_ops=use_portable_ops)
     except:
         return False
     else:
