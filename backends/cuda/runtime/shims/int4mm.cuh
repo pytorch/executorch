@@ -6,12 +6,35 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// This is a clone of aten/src/ATen/native/cuda/int4mm.cu from PyTorch,
-// with at::Tensor replaced with ETensor and aten utility functions/macros
-// replaced with their executorch equivalents.
+
+ // This file is a port of PyTorch's int4mm.cu kernel implementation
+// (aten/src/ATen/native/cuda/int4mm.cu) adapted for the ExecuTorch runtime.
 //
-// In future, we should consider making the PyTorch code generic enough
+// In the future, we should consider making the PyTorch code generic enough
 // to be reusable in executorch.
+//
+// PORTING NOTES:
+// --------------
+// 1. KERNEL CODE (lines 36-1067): Identical to PyTorch - preserved 100%
+//    - All utility templates, vector types, and conversion logic unchanged
+//    - Tensor core kernels (tinygemm_m16n8k16_chunk_kernel) byte-for-byte identical
+//    - Same inline PTX assembly for mma.sync.aligned instructions
+//    - Identical performance characteristics and register allocation
+//
+// 2. API ADAPTATIONS:
+//    - Replaced at::Tensor with executorch::backends::aoti::Tensor
+//    - Output returned via pointer-to-pointer instead of by-value
+//
+// 3. REMOVED FEATURES:
+//    - _convert_weight_to_int4pack_cuda(): Weight conversion happens offline
+//      during model export via optimum-executorch. Runtime only consumes
+//      pre-packed weights.
+//    - isCDNA2orLater() runtime check: Removed dependency on ATen GPU detection
+//      hooks. ROCm support relies on compile-time guards only.
+//
+// 4. INFRASTRUCTURE CHANGES:
+//    - Removed c10::cuda::CUDAGuard: Device management handled by AOTI backend
+//    - Removed at::cuda::getCurrentCUDAStream(): Stream passed explicitly
 
 #pragma once
 

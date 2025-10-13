@@ -26,6 +26,8 @@ AOTITorchError aoti_torch_cuda__weight_int4pack_mm(
     Tensor* qScaleAndZeros,
     Tensor** ret0) {
   // Validate input parameters first
+  // Only check for null pointers here, as the actual validation of tensor
+  // properties is done in _weight_int4pack_mm_cuda
   ET_CHECK_OR_RETURN_ERROR(
       self != nullptr,
       InvalidArgument,

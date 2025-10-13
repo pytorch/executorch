@@ -59,7 +59,7 @@ namespace executorch::backends::cuda {
 enum class SupportedDTypes : int32_t {
   INT8 = 1, // PyTorch's int8 dtype code
   INT16 = 2, // PyTorch's int16 dtype code
-  INT32 = 3, // PyTorch's int64 dtype code
+  INT32 = 3, // PyTorch's int32 dtype code
   INT64 = 4, // PyTorch's int64 dtype code
   FLOAT32 = 6, // PyTorch's float32 dtype code
   BFLOAT16 = 15, // PyTorch's bfloat16 dtype code
