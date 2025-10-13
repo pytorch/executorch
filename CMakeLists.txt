@@ -1056,7 +1056,7 @@ install(TARGETS executorch_backends executorch_extensions executorch_kernels
 
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch extension_evalue_util
+  set(_executor_runner_libs executorch extension_evalue_util xnnpack_backend
                             extension_runner_util gflags executorch_backends
   )
 

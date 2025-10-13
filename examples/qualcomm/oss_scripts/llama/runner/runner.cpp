@@ -464,6 +464,13 @@ Error Runner<T>::generate_from_prompt_or_file(
 }
 
 template <typename T>
+::executorch::runtime::Error Runner<T>::prefill(
+    const std::string& prompt,
+    const executorch::extension::llm::GenerationConfig& config) {
+  return ::Error::NotImplemented;
+}
+
+template <typename T>
 Result<DecoderModelVersion> Runner<T>::get_decoder_model_version() {
   if (!is_loaded()) {
     stats_.model_load_start_ms = time_in_ms();

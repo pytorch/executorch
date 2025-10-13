@@ -126,6 +126,17 @@ class ET_EXPERIMENTAL IRunner {
       std::function<void(const Stats&)> stats_callback) = 0;
 
   /**
+   * Prefill text inputs, for example to reload chat history.
+   * @param prompt Text prompt to prefill.
+   * @param config Configuration parameters (if non-zero num_bos and num_eos
+   * used)
+   * @return The error code. KV cache position is tracked internally in pos_.
+   */
+  virtual ::executorch::runtime::Error prefill(
+      const std::string& prompt,
+      const GenerationConfig& config = {}) = 0;
+
+  /**
    * Stop the generation process.
    */
   virtual void stop() = 0;
