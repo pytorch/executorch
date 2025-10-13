@@ -123,13 +123,14 @@ inline TensorPtr make_tensor_ptr(
       }
     } ctx;
 
-    ET_SWITCH_REALHBBF16_TYPES(type, ctx, "make_tensor_ptr", CTYPE, [&] {
-      std::transform(
-          data.begin(),
-          data.end(),
-          reinterpret_cast<CTYPE*>(casted_data.data()),
-          [](const T& val) { return static_cast<CTYPE>(val); });
-    });
+    ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+        type, ctx, "make_tensor_ptr", CTYPE, [&] {
+          std::transform(
+              data.begin(),
+              data.end(),
+              reinterpret_cast<CTYPE*>(casted_data.data()),
+              [](const T& val) { return static_cast<CTYPE>(val); });
+        });
     const auto raw_data_ptr = casted_data.data();
     auto data_ptr =
         std::make_shared<std::vector<uint8_t>>(std::move(casted_data));
