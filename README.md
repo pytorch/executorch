@@ -52,7 +52,7 @@ ExecuTorch uses **ahead-of-time (AOT) compilation** to prepare PyTorch models fo
 2. **⚙️ Compile** — Quantize, optimize, and partition to hardware backends → `.pte`
 3. **🚀 Execute** — Load `.pte` on-device via lightweight C++ runtime
 
-Models use a standardized [Core ATen operator set](https://docs.pytorch.org/executorch/main/concepts.html#core-aten-operators). [Partitioners](https://docs.pytorch.org/executorch/main/compiler-delegate-and-partitioner.html) delegate subgraphs to specialized hardware (NPU/GPU) with CPU fallback.
+Models use a standardized [Core ATen operator set](https://docs.pytorch.org/executorch/main/compiler-ir-advanced.html#intermediate-representation). [Partitioners](https://docs.pytorch.org/executorch/main/compiler-delegate-and-partitioner.html) delegate subgraphs to specialized hardware (NPU/GPU) with CPU fallback.
 
 Learn more: [How ExecuTorch Works](https://docs.pytorch.org/executorch/main/intro-how-it-works.html) • [Architecture Guide](https://docs.pytorch.org/executorch/main/getting-started-architecture.html)
 
