@@ -4,29 +4,31 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import itertools
+import unittest
+
+import kgb
 import numpy as np
-import pytest
 import torch
 
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
-from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_program
+from executorch.backends.nxp.tests.executorch_pipeline import (
+    to_edge_program,
+    to_quantized_edge_program,
+)
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
+    graph_contains_any,
     graph_contains_any_of_ops,
-    ToNCHWPreprocess,
-    ToNHWCPreprocess,
+    ToChannelFirstPreprocess,
+    ToChannelLastPreprocess,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from parameterized import parameterized
 from torch import nn
 from torch.export import ExportedProgram
-
-
-@pytest.fixture(autouse=True)
-def reseed_model_per_test_run():
-    torch.manual_seed(23)
-    np.random.seed(23)
 
 
 class SingleConvBlockWithDropout(torch.nn.Module):
@@ -74,57 +76,108 @@ class KWSFinalBlock(torch.nn.Module):
         return self.block(x)
 
 
-@pytest.mark.parametrize("inplace_dropout", [False, True])
-@pytest.mark.parametrize("input_shape", [(1, 3, 128, 128), (1, 3, 256, 256)])
-def test_conv_dropout_quant(mocker, inplace_dropout: bool, input_shape: tuple[int]):
-    model = SingleConvBlockWithDropout(
-        conv_in_channels=input_shape[1], perform_inplace_dropout=inplace_dropout
-    ).eval()
+class TestCloneConverter(unittest.TestCase):
+    __test__ = False  # Prevent interfering with PyTest tests
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(23)
+        np.random.seed(23)
 
-    quantized_program = to_quantized_edge_program(model, input_shape).exported_program()
+    @staticmethod
+    def _node_is_clone(node) -> bool:
+        clone_ops = [
+            exir_ops.edge.aten.clone.default,
+            exir_ops.edge.dim_order_ops._clone_dim_order.default,
+        ]
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+        def target_can_be_clone(node):
+            if hasattr(node, "op") and node.op == "call_function":
+                return "clone" in node.target.__name__
 
-    assert not graph_contains_any_of_ops(
-        graph=quantized_program.graph, ops=[exir_ops.edge.aten.clone.default]
+            return False
+
+        return node in clone_ops or target_can_be_clone(node)
+
+    @parameterized.expand(
+        list(itertools.product([True, False], [(1, 3, 128, 128), (1, 3, 256, 256)]))
     )
+    def test_conv_dropout_quant(self, inplace_dropout: bool, input_shape: tuple[int]):
+        model = SingleConvBlockWithDropout(
+            conv_in_channels=input_shape[1], perform_inplace_dropout=inplace_dropout
+        ).eval()
 
-    input_data = (np.random.random(input_shape) * 50).astype(np.int8)
-    convert_run_compare(
-        exported_program,
-        tfl_model=tflite_flatbuffers_model,
-        tflite_input_preprocess=ToNHWCPreprocess(),
-        tflite_output_preprocess=ToNCHWPreprocess(),
-        input_data=input_data,
-        atol=1.0,
+        with kgb.spy_on(
+            EdgeProgramToIRConverter.convert_program, call_original=True
+        ) as converter_spy:
+            quantized_program = to_quantized_edge_program(
+                model, input_shape
+            ).exported_program()
+
+            tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value
+            exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
+
+            assert not graph_contains_any(
+                graph=quantized_program.graph,
+                condition=TestCloneConverter._node_is_clone,
+            )
+
+            input_data = (np.random.random(input_shape) * 50).astype(np.int8)
+            convert_run_compare(
+                exported_program,
+                tfl_model=tflite_flatbuffers_model,
+                tflite_input_preprocess=ToChannelLastPreprocess(),
+                tflite_output_preprocess=ToChannelFirstPreprocess(),
+                input_data=input_data,
+                atol=1.0,
+            )
+
+    @parameterized.expand(
+        list(itertools.product([True, False], [(1, 3, 128, 128), (1, 3, 256, 256)]))
     )
+    def test_conv_dropout_no_quant(
+        self, inplace_dropout: bool, input_shape: tuple[int]
+    ):
+        model = SingleConvBlockWithDropout(
+            conv_in_channels=input_shape[1], perform_inplace_dropout=inplace_dropout
+        ).eval()
 
+        edge_program = to_edge_program(model, input_shape).exported_program()
 
-@pytest.mark.parametrize("inplace_dropout", [False, True])
-def test_clone_pool_view_copy_quant(
-    mocker, inplace_dropout: bool, input_shape: tuple[int] = (1, 64, 25, 5)
-):
-    model = KWSFinalBlock(input_shape).eval()
+        has_clone = graph_contains_any_of_ops(
+            graph=edge_program.graph,
+            ops=[
+                exir_ops.edge.aten.clone.default,
+                exir_ops.edge.dim_order_ops._clone_dim_order.default,
+            ],
+        )
 
-    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+        # Clone with inplace=True should not produce clone edge op and vice versa
+        assert inplace_dropout ^ has_clone
 
-    quantized_program = to_quantized_edge_program(model, input_shape).exported_program()
+    def test_clone_pool_view_copy_quant(self, input_shape: tuple[int] = (1, 64, 25, 5)):
+        model = KWSFinalBlock(input_shape).eval()
 
-    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
-    exported_program: ExportedProgram = converter_spy.call_args.args[1]
+        with kgb.spy_on(
+            EdgeProgramToIRConverter.convert_program, call_original=True
+        ) as converter_spy:
+            quantized_program = to_quantized_edge_program(
+                model, input_shape
+            ).exported_program()
 
-    assert not graph_contains_any_of_ops(
-        graph=quantized_program.graph, ops=[exir_ops.edge.aten.clone.default]
-    )
+            tflite_flatbuffers_model, _ = converter_spy.calls[-1].return_value
+            exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
 
-    input_data = (np.random.random(input_shape) * 50).astype(np.int8)
-    convert_run_compare(
-        exported_program,
-        tfl_model=tflite_flatbuffers_model,
-        tflite_input_preprocess=ToNHWCPreprocess(),
-        input_data=input_data,
-        atol=1.0,
-    )
+            assert not graph_contains_any(
+                graph=quantized_program.graph,
+                condition=TestCloneConverter._node_is_clone,
+            )
+
+            input_data = (np.random.random(input_shape) * 50).astype(np.int8)
+            convert_run_compare(
+                exported_program,
+                tfl_model=tflite_flatbuffers_model,
+                tflite_input_preprocess=ToChannelLastPreprocess(),
+                input_data=input_data,
+                atol=1.0,
+            )
