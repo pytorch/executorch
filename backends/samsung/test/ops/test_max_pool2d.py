@@ -34,19 +34,15 @@ class MaxPool2d(torch.nn.Module):
             ceil_mode=False,
         ).to(torch.float)
 
-    def get_example_inputs(self) -> tuple[torch.Tensor]:
-        input_1 = torch.randn(1, 16, 24, 24)
-        return (input_1,)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.max_pool(x)
 
 
 class TestMaxPool2d(unittest.TestCase):
-    def _test(self, module: torch.nn.Module):
+    def _test(self, module: torch.nn.Module, inputs):
         tester = SamsungTester(
             module,
-            module.get_example_inputs(),
+            inputs,
             [gen_samsung_backend_compile_spec("E9955")],
         )
         (
@@ -56,16 +52,21 @@ class TestMaxPool2d(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_max_pool2d_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs)
         )
 
     def test_fp32_max_pool2d(self):
-        self._test(MaxPool2d())
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test(MaxPool2d(), inputs)
 
     def test_fp32_max_pool2d_with_padding(self):
-        self._test(MaxPool2d(padding=1))
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test(MaxPool2d(padding=1), inputs)
 
     def test_fp32_max_pool2d_with_kernel_size(self):
-        self._test(MaxPool2d(kernel_size=4))
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test(MaxPool2d(kernel_size=4), inputs)
 
     def test_fp32_max_pool2d_with_dilation(self):
-        self._test(MaxPool2d(dilation=2))
+        inputs = (torch.randn(1, 16, 24, 24),)
+        self._test(MaxPool2d(dilation=2), inputs)

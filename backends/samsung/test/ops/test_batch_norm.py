@@ -43,6 +43,7 @@ class TestBatchNorm(unittest.TestCase):
             )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(inputs=inputs)
         )
 
     def test_fp32_batch_norm(self):
