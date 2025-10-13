@@ -158,10 +158,12 @@ PY
 
   # Install torchao based on the pinned PyTorch version
   "$PIPBIN" install torch=="${TORCH_VERSION}.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
+  "$PIPBIN" install wheel
 
   # Install torchao based on the pinned commit from third-party/ao submodule
   pushd "$REPO_ROOT/third-party/ao" > /dev/null
-  USE_CPP=0 "$PYBIN" setup.py develop
+  export USE_CPP=0
+  "$PIPBIN" install . --no-build-isolation
   popd > /dev/null
 
   echo "=== [$LABEL] Import smoke tests ==="
