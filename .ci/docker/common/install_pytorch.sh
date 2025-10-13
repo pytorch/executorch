@@ -17,7 +17,7 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
-  pip_install torch==2.9.0 torchvision torchaudio torchao=0.14.0 --index-url https://download.pytorch.org/whl/test/cpu
+  pip_install torch==2.9.0 torchvision torchaudio torchao==0.14.0 --index-url https://download.pytorch.org/whl/test/cpu
 }
 
 install_pytorch_and_domains
