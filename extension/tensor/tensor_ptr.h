@@ -272,8 +272,7 @@ inline TensorPtr make_tensor_ptr(
  */
 template <typename T>
 inline TensorPtr make_tensor_ptr(T value) {
-  return make_tensor_ptr(
-      std::vector<executorch::aten::SizesType>{}, std::vector<T>{value});
+  return make_tensor_ptr({}, std::vector<T>{value});
 }
 
 /**
@@ -373,6 +372,9 @@ inline TensorPtr make_tensor_ptr(
       std::move(dim_order),
       std::move(strides),
       tensor.scalar_type()
+#ifndef USE_ATEN_LIB
+          ,
+      tensor.shape_dynamism()
 #endif // USE_ATEN_LIB
   );
 }
