@@ -57,6 +57,8 @@ namespace executorch::backends::cuda {
 
 // Enum for supported data types in et-cuda backend
 enum class SupportedDTypes : int32_t {
+  INT8 = 1, // PyTorch's int8 dtype code
+  INT16 = 2, // PyTorch's int16 dtype code
   INT32 = 3, // PyTorch's int64 dtype code
   INT64 = 4, // PyTorch's int64 dtype code
   FLOAT32 = 6, // PyTorch's float32 dtype code
@@ -119,6 +121,8 @@ using AOTITorchError = Error;
 // Helper function to check if a dtype is supported in ET CUDA backend
 inline bool is_dtype_supported_in_et_cuda(int32_t dtype) {
   switch (dtype) {
+    case static_cast<int32_t>(SupportedDTypes::INT8):
+    case static_cast<int32_t>(SupportedDTypes::INT16):
     case static_cast<int32_t>(SupportedDTypes::INT32):
     case static_cast<int32_t>(SupportedDTypes::INT64):
     case static_cast<int32_t>(SupportedDTypes::FLOAT32):
@@ -134,8 +138,10 @@ inline AOTITorchError validate_dtype(int32_t dtype) {
   ET_CHECK_OR_RETURN_ERROR(
       is_dtype_supported_in_et_cuda(dtype),
       InvalidArgument,
-      "Unsupported dtype: %d. Supported dtypes: %d (int32), %d (int64), %d (float32), %d (bfloat16)",
+      "Unsupported dtype: %d. Supported dtypes: %d (int8), %d (int16), %d (int32), %d (int64), %d (float32), %d (bfloat16)",
       dtype,
+      static_cast<int32_t>(SupportedDTypes::INT8),
+      static_cast<int32_t>(SupportedDTypes::INT16),
       static_cast<int32_t>(SupportedDTypes::INT32),
       static_cast<int32_t>(SupportedDTypes::INT64),
       static_cast<int32_t>(SupportedDTypes::FLOAT32),

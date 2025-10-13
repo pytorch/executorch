@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 
 oncall("executorch")
 
@@ -32,6 +33,10 @@ runtime.cxx_library(
         "//executorch/runtime/core:core",
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/runtime/platform:platform",
+    ],
+    nvcc_flags = get_nvcc_arch_args() + [
+        "-_NVCC_HOST_COMPILER_FLAG_",
+        "gcc",
     ],
     external_deps = [
         ("cuda", None, "cuda-lazy"),

@@ -40,18 +40,6 @@ set(_aoti_cuda_sources
     runtime/shims/tensor_attribute.cpp runtime/guard.cpp
     runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
 )
-# Set default CUDA architectures if not specified (int4mm requires sm_80+)
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES
-      "80;86;89;90"
-      CACHE STRING "CUDA architectures"
-  )
-  message(
-    STATUS
-      "CMAKE_CUDA_ARCHITECTURES not set, using default: 80;86;89;90 (Ampere+)"
-  )
-  message(STATUS "  Override with: cmake -DCMAKE_CUDA_ARCHITECTURES=<arch> ...")
-endif()
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
   aoti_cuda
