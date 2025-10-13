@@ -273,6 +273,8 @@ class ET_EXPERIMENTAL MetalBackend final
         n_outputs,
         args.size());
 
+    int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
+
     // NOTE: ExecutorTorch tensors are always on CPU/host memory
     // We need to create GPU copies for Metal kernel execution
     std::vector<AOTITensorHandle> gpu_inputs(
@@ -308,7 +310,7 @@ class ET_EXPERIMENTAL MetalBackend final
           sizes_vec.data(),
           nullptr, // use default strides
           static_cast<int32_t>(scalar_type),
-          2, // device_type = mps
+          mps_device_type, // device_type = mps
           0, // device_index = 0
           &gpu_input_handle);
 
@@ -386,7 +388,7 @@ class ET_EXPERIMENTAL MetalBackend final
           sizes_vec.data(),
           nullptr, // use default strides
           static_cast<int32_t>(scalar_type),
-          2, // device_type = mps
+          mps_device_type, // device_type = mps
           0, // device_index = 0
           &gpu_output_handle);
 
