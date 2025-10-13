@@ -271,7 +271,7 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
       ET_CHECK_MSG(false, "Unsupported dtype in description");
     }
   } ctx;
-  ET_SWITCH_REALHBBF16_TYPES(
+  ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
     static_cast<ScalarType>(_tensor->scalar_type()),
     ctx,
     "description",
