@@ -65,22 +65,10 @@ def trace(
     """
     Trace the model with export and return an ExportedProgram.
     """
+    if quantizer is None:
+        quantizer = default_quantizer
 
-    ops_to_keep = [
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv2d.default,
-        torch.ops.aten.layer_norm.default,
-        torch.ops.aten.linear.default,
-        torch.ops.aten.matmul.default,
-        torch.ops.aten.rms_norm.default,
-    ]
-
-    if isinstance(quantizer, CadenceW8A32MixedQuantizer):
-        ops_to_keep += [
-            torch.ops.aten.gru.input,
-            torch.ops.aten.gru.data,
-        ]
-
+    ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
     program = trace_fn(
         model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
     )
