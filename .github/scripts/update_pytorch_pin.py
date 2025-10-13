@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import json
 import re
 import sys
 import urllib.request
-import json
 from datetime import datetime
+
 
 def parse_nightly_version(nightly_version):
     """
@@ -16,12 +17,13 @@ def parse_nightly_version(nightly_version):
     Returns:
         Date string in format 'YYYY-MM-DD'
     """
-    match = re.match(r'dev(\d{4})(\d{2})(\d{2})', nightly_version)
+    match = re.match(r"dev(\d{4})(\d{2})(\d{2})", nightly_version)
     if not match:
         raise ValueError(f"Invalid NIGHTLY_VERSION format: {nightly_version}")
 
     year, month, day = match.groups()
     return f"{year}-{month}-{day}"
+
 
 def get_torch_nightly_version():
     """
@@ -30,7 +32,7 @@ def get_torch_nightly_version():
     Returns:
         NIGHTLY_VERSION string
     """
-    with open('torch_pin.py', 'r') as f:
+    with open("torch_pin.py", "r") as f:
         content = f.read()
 
     match = re.search(r'NIGHTLY_VERSION\s*=\s*["\']([^"\']+)["\']', content)
@@ -38,6 +40,7 @@ def get_torch_nightly_version():
         raise ValueError("Could not find NIGHTLY_VERSION in torch_pin.py")
 
     return match.group(1)
+
 
 def get_commit_hash_for_nightly(date_str):
     """
@@ -54,8 +57,8 @@ def get_commit_hash_for_nightly(date_str):
     url = api_url + params
 
     req = urllib.request.Request(url)
-    req.add_header('Accept', 'application/vnd.github.v3+json')
-    req.add_header('User-Agent', 'ExecuTorch-Bot')
+    req.add_header("Accept", "application/vnd.github.v3+json")
+    req.add_header("User-Agent", "ExecuTorch-Bot")
 
     try:
         with urllib.request.urlopen(req) as response:
@@ -68,13 +71,16 @@ def get_commit_hash_for_nightly(date_str):
     target_title = f"{date_str} nightly release"
 
     for commit in commits:
-        commit_msg = commit.get('commit', {}).get('message', '')
+        commit_msg = commit.get("commit", {}).get("message", "")
         # Check if the first line of commit message matches
-        first_line = commit_msg.split('\n')[0].strip()
+        first_line = commit_msg.split("\n")[0].strip()
         if first_line == target_title or first_line.startswith(f"{date_str} nightly"):
-            return commit['sha']
+            return commit["sha"]
 
-    raise ValueError(f"Could not find commit with title matching '{target_title}' in nightly branch")
+    raise ValueError(
+        f"Could not find commit with title matching '{target_title}' in nightly branch"
+    )
+
 
 def update_pytorch_pin(commit_hash):
     """
@@ -83,10 +89,11 @@ def update_pytorch_pin(commit_hash):
     Args:
         commit_hash: Commit hash to write
     """
-    pin_file = '.ci/docker/ci_commit_pins/pytorch.txt'
-    with open(pin_file, 'w') as f:
+    pin_file = ".ci/docker/ci_commit_pins/pytorch.txt"
+    with open(pin_file, "w") as f:
         f.write(f"{commit_hash}\n")
     print(f"Updated {pin_file} with commit hash: {commit_hash}")
+
 
 def main():
     try:
@@ -111,5 +118,6 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
