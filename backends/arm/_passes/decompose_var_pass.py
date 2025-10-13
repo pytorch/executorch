@@ -64,7 +64,7 @@ class DecomposeVarPass(ArmPass):
             exir_ops.edge.aten.var.correction,
             torch.ops.aten.var.correction,
             torch.ops.aten.var.dim,
-        ):
+        ) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         x = args[0]

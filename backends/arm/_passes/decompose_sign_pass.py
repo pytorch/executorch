@@ -48,7 +48,7 @@ class DecomposeSignPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def call_operator(self, op, args, kwargs, meta):
-        if op not in (edge_sign, aten_sign):
+        if op not in (edge_sign, aten_sign) or not self.allowed_to_transform(meta):
             return super().call_operator(op, args, kwargs, meta)
 
         gt_op, lt_op, where_op, neg_op, mul_op, add_op = get_ops(op)
