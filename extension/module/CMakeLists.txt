@@ -35,7 +35,9 @@ target_include_directories(
   extension_module PUBLIC ${_common_include_directories}
 )
 target_compile_options(
-  extension_module PUBLIC -Wno-deprecated-declarations -fPIC
+  extension_module
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 
 # Module extension built as a static library. TODO(gjcomer) Remove this target
@@ -50,7 +52,9 @@ target_include_directories(
   extension_module_static PUBLIC ${_common_include_directories}
 )
 target_compile_options(
-  extension_module_static PUBLIC -Wno-deprecated-declarations -fPIC
+  extension_module_static
+  PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
+         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 
 # Install libraries

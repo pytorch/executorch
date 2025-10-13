@@ -70,7 +70,14 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   target_include_directories(_training_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(
-    _training_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
+    _training_lib
+    PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc
+           /GR
+           /wd4996>
+           $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations
+           -fPIC
+           -frtti
+           -fexceptions>
   )
   target_link_libraries(_training_lib PRIVATE ${_pybind_training_dep_libs})
 
