@@ -12,7 +12,6 @@
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 #include <executorch/runtime/platform/log.h>
-#include <cstdint>
 #include <cstdint> // Ensure we have int64_t, int32_t definitions
 #include <cstdio>
 #include <cstdlib>
@@ -144,7 +143,8 @@ AOTITorchError aoti_torch_empty_strided(
       dtype);
   int64_t nbytes = numel * element_size;
 
-  if (device_type == 2) { // Metal/MPS
+  int32_t mps_device_type = aoti_torch_device_type_mps();  // Returns 13
+  if (device_type == mps_device_type) {
     ptr = metal_allocate_buffer(nbytes);
     if (!ptr) {
       ET_LOG(Error, "Failed to allocate %lld bytes on Metal device", nbytes);
