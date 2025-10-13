@@ -65,7 +65,7 @@ gen_selected_ops(
 )
 ```
 
-The macro makes a call to gen_oplist.py, which requires a [distinct selection](https://github.com/BujSet/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228) of API choice. `OPS_SCHEMA_YAML`, `ROOT_OPS`, `INCLUDE_ALL_OPS`, and `OPS_FROM_MODEL` are mutually exclusive options, and should not be used in conjunction. 
+The macro makes a call to gen_oplist.py, which requires a [distinct selection](https://github.com/pytorch/executorch/blob/main/codegen/tools/gen_oplist.py#L222-L228) of API choice. `OPS_SCHEMA_YAML`, `ROOT_OPS`, `INCLUDE_ALL_OPS`, and `OPS_FROM_MODEL` are mutually exclusive options, and should not be used in conjunction.
 
 ### Select all ops
 
@@ -83,7 +83,7 @@ This API lets users pass in a list of operator names. Note that this API can be 
 
 ### Select ops from model
 
-This API lets users pass in a pte file of an exported model. When used, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes used in the model. 
+This API lets users pass in a pte file of an exported model. When used, the pte file will be parsed to generate a yaml file that enumerates the operators and dtypes used in the model.
 
 ### Dtype Selective Build
 
@@ -91,7 +91,7 @@ Beyond pruning the binary to remove unused operators, the binary size can furthe
 
 ## Example Walkthrough
 
-In [examples/selective_build/CMakeLists.txt](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L48-L72), we have the following cmake config options:
+In [examples/selective_build/CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt), we have the following cmake config options:
 
 1. `EXECUTORCH_SELECT_OPS_YAML`
 2. `EXECUTORCH_SELECT_OPS_LIST`
@@ -99,10 +99,10 @@ In [examples/selective_build/CMakeLists.txt](https://github.com/BujSet/executorc
 4. `EXECUTORCH_SELECT_OPS_FROM_MODEL`
 5. `EXECUTORCH_DTYPE_SELECTIVE_BUILD`
 
-These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the `gen_selected_ops` [function](https://github.com/BujSet/executorch/blob/main/examples/selective_build/CMakeLists.txt#L110-L123). The following table describes some examples of how the invocation changes when these configs are set:
+These options allow a user to tailor the cmake build process to utilize the different APIs, and results in different invocations on the `gen_selected_ops` [function](https://github.com/pytorch/executorch/blob/main/examples/selective_build/advanced/CMakeLists.txt). The following table describes some examples of how the invocation changes when these configs are set:
 
 | Example cmake Call | Resultant `gen_selected_ops` Invocation |
-| :----: | :---:| 
+| :----: | :---:|
 |<code><br>  cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" <br></code> | <code><br>  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "" "") <br></code> |
 |<code><br> cmake -D… -DSELECT_OPS_YAML=ON <br></code> | <code><br>  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml) <br> gen_selected_ops("${_custom_ops_yaml}" "" "") <br></code> |
 |<code><br> cmake -D… -DEXECUTORCH_SELECT_OPS_FROM_MODEL="model.pte.out" <br></code> | <code><br> gen_selected_ops("" "" "" "${_model_path}" "") <br></code> |
