@@ -143,7 +143,7 @@ AOTITorchError aoti_torch_empty_strided(
       dtype);
   int64_t nbytes = numel * element_size;
 
-  int32_t mps_device_type = aoti_torch_device_type_mps();  // Returns 13
+  int32_t mps_device_type = aoti_torch_device_type_mps(); // Returns 13
   if (device_type == mps_device_type) {
     ptr = metal_allocate_buffer(nbytes);
     if (!ptr) {
