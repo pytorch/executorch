@@ -4,11 +4,13 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
+# mypy: disable-error-code=union-attr
+
 import argparse
 import logging
 import os
 import time
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import torch
 from PIL import Image
@@ -17,7 +19,9 @@ try:
     from diffusers import LCMScheduler
     from transformers import CLIPTokenizer
 except ImportError:
-    raise ImportError("Please install diffusers and transformers: pip install diffusers transformers")
+    raise ImportError(
+        "Please install diffusers and transformers: pip install diffusers transformers"
+    )
 
 from executorch.runtime import Runtime
 
@@ -31,26 +35,32 @@ class OpenVINOLCMPipeline:
     def __init__(self, device: str = "CPU", dtype: torch.dtype = torch.float16):
         self.device = device
         self.dtype = dtype
-        self.models = {}
-        self.tokenizer = None
-        self.scheduler = None
+        self.models: Dict[str, Any] = {}
+        self.tokenizer: Optional[CLIPTokenizer] = None
+        self.scheduler: Optional[LCMScheduler] = None
         self.runtime = Runtime.get()
         self._initialized = False
 
     def load_tokenizer(self, vocab_path: str):
         """Load CLIP tokenizer"""
         try:
-            self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
+            self.tokenizer = CLIPTokenizer.from_pretrained(
+                "openai/clip-vit-base-patch32"
+            )
             logger.info("✓ Tokenizer loaded")
             return True
         except Exception as e:
             logger.error(f"Failed to load tokenizer: {e}")
             return False
 
-    def initialize_scheduler(self, original_model_id: str = "SimianLuo/LCM_Dreamshaper_v7"):
+    def initialize_scheduler(
+        self, original_model_id: str = "SimianLuo/LCM_Dreamshaper_v7"
+    ):
         """Initialize the LCM scheduler"""
         try:
-            self.scheduler = LCMScheduler.from_pretrained(original_model_id, subfolder="scheduler")
+            self.scheduler = LCMScheduler.from_pretrained(
+                original_model_id, subfolder="scheduler"
+            )
             logger.info("✓ Scheduler loaded")
             return True
         except Exception as e:
@@ -82,8 +92,11 @@ class OpenVINOLCMPipeline:
             start_time = time.time()
 
             inputs = self.tokenizer(
-                prompt, padding="max_length", max_length=77,
-                truncation=True, return_tensors="pt"
+                prompt,
+                padding="max_length",
+                max_length=77,
+                truncation=True,
+                return_tensors="pt",
             )
 
             text_encoder_method = self.models["text_encoder"].load_method("forward")
@@ -95,11 +108,13 @@ class OpenVINOLCMPipeline:
             logger.error(f"Failed to encode prompt: {e}")
             return None
 
-    def denoise_latents(self,
-                       text_embeddings: torch.Tensor,
-                       num_steps: int,
-                       guidance_scale: float,
-                       seed: Optional[int] = None):
+    def denoise_latents(
+        self,
+        text_embeddings: torch.Tensor,
+        num_steps: int,
+        guidance_scale: float,
+        seed: Optional[int] = None,
+    ):
         """Run the denoising process using the UNet model with LCM scheduler"""
         if "unet" not in self.models:
             logger.error("UNet model not loaded")
@@ -114,7 +129,7 @@ class OpenVINOLCMPipeline:
             latents = torch.randn(
                 (1, 4, 64, 64),  # Standard latent dimensions for SD
                 generator=generator,
-                dtype=self.dtype
+                dtype=self.dtype,
             )
 
             # Set timesteps for LCM
@@ -134,17 +149,25 @@ class OpenVINOLCMPipeline:
                 if latent_model_input.dtype != self.dtype:
                     latent_model_input = latent_model_input.to(self.dtype)
 
-                timestep_tensor = torch.tensor(timestep.item(), dtype=torch.long).unsqueeze(0)
-                noise_pred = unet_method.execute([latent_model_input, timestep_tensor, text_embeddings])[0]
+                timestep_tensor = torch.tensor(
+                    timestep.item(), dtype=torch.long
+                ).unsqueeze(0)
+                noise_pred = unet_method.execute(
+                    [latent_model_input, timestep_tensor, text_embeddings]
+                )[0]
 
                 if guidance_scale != 1.0:
                     noise_pred = noise_pred * guidance_scale
 
                 latents = self.scheduler.step(noise_pred, timestep, latents).prev_sample
-                logger.info(f"  Step {step+1}/{num_steps} completed ({time.time() - step_start:.3f}s)")
+                logger.info(
+                    f"  Step {step+1}/{num_steps} completed ({time.time() - step_start:.3f}s)"
+                )
 
             denoise_elapsed = time.time() - denoise_start
-            logger.info(f"Denoising completed ({denoise_elapsed:.3f}s, avg {denoise_elapsed/num_steps:.3f}s/step)")
+            logger.info(
+                f"Denoising completed ({denoise_elapsed:.3f}s, avg {denoise_elapsed/num_steps:.3f}s/step)"
+            )
             return latents
         except Exception as e:
             logger.error(f"Failed during denoising: {e}")
@@ -173,20 +196,22 @@ class OpenVINOLCMPipeline:
             logger.error(f"Failed to decode image: {e}")
             return None
 
-    def generate_image(self,
-                      prompt: str,
-                      num_steps: int = 4,
-                      guidance_scale: float = 1.0,
-                      seed: Optional[int] = None):
+    def generate_image(
+        self,
+        prompt: str,
+        num_steps: int = 4,
+        guidance_scale: float = 1.0,
+        seed: Optional[int] = None,
+    ):
         """Complete image generation pipeline using LCM"""
         if not self._initialized:
             logger.error("Pipeline not initialized")
             return None
 
-        logger.info("="*60)
+        logger.info("=" * 60)
         logger.info(f"Prompt: '{prompt}'")
         logger.info(f"Steps: {num_steps} | Guidance: {guidance_scale} | Seed: {seed}")
-        logger.info("="*60)
+        logger.info("=" * 60)
 
         total_start = time.time()
 
@@ -202,17 +227,21 @@ class OpenVINOLCMPipeline:
         if image is None:
             return None
 
-        logger.info("="*60)
-        logger.info(f"✓ Generation completed! Total time: {time.time() - total_start:.3f}s")
-        logger.info("="*60)
+        logger.info("=" * 60)
+        logger.info(
+            f"✓ Generation completed! Total time: {time.time() - total_start:.3f}s"
+        )
+        logger.info("=" * 60)
         return image
 
-    def initialize(self,
-                  text_encoder_path: str,
-                  unet_path: str,
-                  vae_path: str,
-                  vocab_path: str,
-                  original_model_id: str = "SimianLuo/LCM_Dreamshaper_v7"):
+    def initialize(
+        self,
+        text_encoder_path: str,
+        unet_path: str,
+        vae_path: str,
+        vocab_path: str,
+        original_model_id: str = "SimianLuo/LCM_Dreamshaper_v7",
+    ):
         """Initialize the LCM pipeline"""
         logger.info("Initializing pipeline...")
 
@@ -225,7 +254,7 @@ class OpenVINOLCMPipeline:
         components = {
             "text_encoder": text_encoder_path,
             "unet": unet_path,
-            "vae_decoder": vae_path
+            "vae_decoder": vae_path,
         }
 
         for component, path in components.items():
@@ -245,27 +274,46 @@ def create_argument_parser():
         epilog="""
 Example:
   python openvino_lcm.py --models_dir ./lcm_models --prompt "sunset over mountains" --steps 4
-"""
+""",
     )
 
-    parser.add_argument('--models_dir', type=str, required=True, help='Directory containing PTE models')
-    parser.add_argument('--prompt', type=str, default='a serene landscape', help='Text prompt')
-    parser.add_argument('--steps', type=int, default=4, help='Denoising steps (default: 4)')
-    parser.add_argument('--guidance', type=float, default=1.0, help='Guidance scale (default: 1.0)')
-    parser.add_argument('--seed', type=int, help='Random seed')
-    parser.add_argument('--device', choices=['CPU', 'GPU'], default='CPU', help='Target device')
-    parser.add_argument('--dtype', choices=['fp16', 'fp32'], default='fp16', help='Model dtype')
-    parser.add_argument('--output_dir', type=str, default='./lcm_outputs', help='Output directory')
-    parser.add_argument('--filename', type=str, help='Custom output filename')
-    parser.add_argument('--tokenizer_path', type=str, help='Tokenizer path (optional)')
-    parser.add_argument('--original_model_id', type=str, default='SimianLuo/LCM_Dreamshaper_v7', help='Model ID for scheduler')
+    parser.add_argument(
+        "--models_dir", type=str, required=True, help="Directory containing PTE models"
+    )
+    parser.add_argument(
+        "--prompt", type=str, default="a serene landscape", help="Text prompt"
+    )
+    parser.add_argument(
+        "--steps", type=int, default=4, help="Denoising steps (default: 4)"
+    )
+    parser.add_argument(
+        "--guidance", type=float, default=1.0, help="Guidance scale (default: 1.0)"
+    )
+    parser.add_argument("--seed", type=int, help="Random seed")
+    parser.add_argument(
+        "--device", choices=["CPU", "GPU"], default="CPU", help="Target device"
+    )
+    parser.add_argument(
+        "--dtype", choices=["fp16", "fp32"], default="fp16", help="Model dtype"
+    )
+    parser.add_argument(
+        "--output_dir", type=str, default="./lcm_outputs", help="Output directory"
+    )
+    parser.add_argument("--filename", type=str, help="Custom output filename")
+    parser.add_argument("--tokenizer_path", type=str, help="Tokenizer path (optional)")
+    parser.add_argument(
+        "--original_model_id",
+        type=str,
+        default="SimianLuo/LCM_Dreamshaper_v7",
+        help="Model ID for scheduler",
+    )
 
     return parser
 
 
 def validate_model_files(models_dir: str):
     """Validate required model files exist"""
-    for filename in ['text_encoder.pte', 'unet.pte', 'vae_decoder.pte']:
+    for filename in ["text_encoder.pte", "unet.pte", "vae_decoder.pte"]:
         if not os.path.exists(os.path.join(models_dir, filename)):
             logger.error(f"Missing: {filename}")
             return False
@@ -285,11 +333,11 @@ def main():
     pipeline = OpenVINOLCMPipeline(device=args.device, dtype=dtype)
 
     if not pipeline.initialize(
-        text_encoder_path=os.path.join(args.models_dir, 'text_encoder.pte'),
-        unet_path=os.path.join(args.models_dir, 'unet.pte'),
-        vae_path=os.path.join(args.models_dir, 'vae_decoder.pte'),
+        text_encoder_path=os.path.join(args.models_dir, "text_encoder.pte"),
+        unet_path=os.path.join(args.models_dir, "unet.pte"),
+        vae_path=os.path.join(args.models_dir, "vae_decoder.pte"),
         vocab_path=args.tokenizer_path or "",
-        original_model_id=args.original_model_id
+        original_model_id=args.original_model_id,
     ):
         return
 
@@ -299,8 +347,8 @@ def main():
 
     # Save image
     filename = args.filename or "output.jpg"
-    if not filename.endswith('.jpg'):
-        filename += '.jpg'
+    if not filename.endswith(".jpg"):
+        filename += ".jpg"
 
     output_path = os.path.join(args.output_dir, filename)
     image.save(output_path)

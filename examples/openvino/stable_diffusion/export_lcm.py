@@ -4,9 +4,12 @@
 # except in compliance with the License. See the license file found in the
 # LICENSE file in the root directory of this source tree.
 
+# mypy: disable-error-code=union-attr
+
 import argparse
 import logging
 import os
+from typing import Any, Optional
 
 import torch
 from torch.export import export
@@ -14,10 +17,12 @@ from torch.export import export
 try:
     from diffusers import DiffusionPipeline
 except ImportError:
-    raise ImportError("Please install diffusers and transformers: pip install diffusers transformers")
+    raise ImportError(
+        "Please install diffusers and transformers: pip install diffusers transformers"
+    )
 
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
-from executorch.exir import to_edge_transform_and_lower, ExecutorchBackendConfig
+from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
 
 # Configure logging
@@ -28,23 +33,25 @@ logger = logging.getLogger(__name__)
 class LCMExporter:
     """Export Latent Consistency Model (LCM) components to OpenVINO-optimized PTE files"""
 
-    def __init__(self, model_id: str = "SimianLuo/LCM_Dreamshaper_v7", dtype: torch.dtype = torch.float16):
+    def __init__(
+        self,
+        model_id: str = "SimianLuo/LCM_Dreamshaper_v7",
+        dtype: torch.dtype = torch.float16,
+    ):
         self.model_id = model_id
         self.dtype = dtype
-        self.pipeline = None
-        self.text_encoder = None
-        self.unet = None
-        self.vae = None
-        self.tokenizer = None
+        self.pipeline: Optional[DiffusionPipeline] = None
+        self.text_encoder: Any = None
+        self.unet: Any = None
+        self.vae: Any = None
+        self.tokenizer: Any = None
 
     def load_models(self) -> bool:
         """Load the LCM pipeline and extract components"""
         try:
             logger.info(f"Loading LCM pipeline: {self.model_id} (dtype: {self.dtype})")
             self.pipeline = DiffusionPipeline.from_pretrained(
-                self.model_id,
-                torch_dtype=self.dtype,
-                use_safetensors=True
+                self.model_id, torch_dtype=self.dtype, use_safetensors=True
             )
 
             # Extract individual components
@@ -64,6 +71,7 @@ class LCMExporter:
         except Exception as e:
             logger.error(f"Failed to load models: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -98,8 +106,7 @@ class LCMExporter:
 
             # Lower to edge dialect and apply OpenVINO backend
             edge_manager = to_edge_transform_and_lower(
-                exported_program,
-                partitioner=[partitioner]
+                exported_program, partitioner=[partitioner]
             )
 
             # Convert to ExecutorTorch program
@@ -111,12 +118,13 @@ class LCMExporter:
             with open(output_path, "wb") as f:
                 f.write(executorch_program.buffer)
 
-            logger.info(f"✓ Text encoder exported successfully")
+            logger.info("✓ Text encoder exported successfully")
             return True
 
         except Exception as e:
             logger.error(f"Failed to export text encoder: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -133,7 +141,9 @@ class LCMExporter:
 
                 def forward(self, latents, timestep, encoder_hidden_states):
                     # Call UNet and extract sample from the output
-                    output = self.unet(latents, timestep, encoder_hidden_states, return_dict=True)
+                    output = self.unet(
+                        latents, timestep, encoder_hidden_states, return_dict=True
+                    )
                     return output.sample
 
             unet_wrapper = UNetWrapper(self.unet)
@@ -149,14 +159,22 @@ class LCMExporter:
             text_embed_dim = self.unet.config.cross_attention_dim
             text_seq_len = 77
 
-            dummy_latents = torch.randn(batch_size, latent_channels, latent_height, latent_width, dtype=self.dtype)
+            dummy_latents = torch.randn(
+                batch_size,
+                latent_channels,
+                latent_height,
+                latent_width,
+                dtype=self.dtype,
+            )
             dummy_timestep = torch.tensor([981])  # Random timestep
-            dummy_encoder_hidden_states = torch.randn(batch_size, text_seq_len, text_embed_dim, dtype=self.dtype)
+            dummy_encoder_hidden_states = torch.randn(
+                batch_size, text_seq_len, text_embed_dim, dtype=self.dtype
+            )
 
             # Export to ATEN graph
             exported_program = export(
                 unet_wrapper,
-                (dummy_latents, dummy_timestep, dummy_encoder_hidden_states)
+                (dummy_latents, dummy_timestep, dummy_encoder_hidden_states),
             )
 
             # Configure OpenVINO compilation
@@ -165,8 +183,7 @@ class LCMExporter:
 
             # Lower to edge dialect and apply OpenVINO backend
             edge_manager = to_edge_transform_and_lower(
-                exported_program,
-                partitioner=[partitioner]
+                exported_program, partitioner=[partitioner]
             )
 
             # Convert to ExecutorTorch program
@@ -178,12 +195,13 @@ class LCMExporter:
             with open(output_path, "wb") as f:
                 f.write(executorch_program.buffer)
 
-            logger.info(f"✓ UNet exported successfully")
+            logger.info("✓ UNet exported successfully")
             return True
 
         except Exception as e:
             logger.error(f"Failed to export UNet: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -222,8 +240,7 @@ class LCMExporter:
 
             # Lower to edge dialect and apply OpenVINO backend
             edge_manager = to_edge_transform_and_lower(
-                exported_program,
-                partitioner=[partitioner]
+                exported_program, partitioner=[partitioner]
             )
 
             # Convert to ExecutorTorch program
@@ -235,12 +252,13 @@ class LCMExporter:
             with open(output_path, "wb") as f:
                 f.write(executorch_program.buffer)
 
-            logger.info(f"✓ VAE decoder exported successfully")
+            logger.info("✓ VAE decoder exported successfully")
             return True
 
         except Exception as e:
             logger.error(f"Failed to export VAE decoder: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -262,7 +280,7 @@ class LCMExporter:
 
         if success:
             logger.info(f"\n{'='*60}")
-            logger.info(f"✓ All components exported successfully!")
+            logger.info("✓ All components exported successfully!")
             logger.info(f"Output directory: {output_dir}")
             logger.info(f"{'='*60}")
         else:
@@ -280,42 +298,38 @@ def create_argument_parser():
 Examples:
   Export LCM_Dreamshaper_v7 (default):
     python export_lcm.py --output_dir ./lcm_models
-"""
+""",
     )
 
     parser.add_argument(
-        '--model_id',
+        "--model_id",
         type=str,
-        default='SimianLuo/LCM_Dreamshaper_v7',
-        help='HuggingFace model ID for LCM (default: SimianLuo/LCM_Dreamshaper_v7)'
+        default="SimianLuo/LCM_Dreamshaper_v7",
+        help="HuggingFace model ID for LCM (default: SimianLuo/LCM_Dreamshaper_v7)",
     )
 
     parser.add_argument(
-        '--output_dir',
+        "--output_dir",
         type=str,
         required=True,
-        help='Output directory for exported PTE files'
+        help="Output directory for exported PTE files",
     )
 
     parser.add_argument(
-        '--device',
-        choices=['CPU', 'GPU', 'NPU'],
-        default='CPU',
-        help='Target OpenVINO device (default: CPU)'
+        "--device",
+        choices=["CPU", "GPU", "NPU"],
+        default="CPU",
+        help="Target OpenVINO device (default: CPU)",
     )
 
     parser.add_argument(
-        '--dtype',
-        choices=['fp16', 'fp32'],
-        default='fp16',
-        help='Model data type (default: fp16)'
+        "--dtype",
+        choices=["fp16", "fp32"],
+        default="fp16",
+        help="Model data type (default: fp16)",
     )
 
-    parser.add_argument(
-        '--verbose',
-        action='store_true',
-        help='Enable verbose logging'
-    )
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
 
     return parser
 
@@ -329,11 +343,11 @@ def main() -> int:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info("LCM Model Export")
     logger.info(f"Model: {args.model_id}")
     logger.info(f"Device: {args.device} | Dtype: {args.dtype}")
-    logger.info("="*60)
+    logger.info("=" * 60)
 
     # Map dtype string to torch dtype
     dtype_map = {"fp16": torch.float16, "fp32": torch.float32}
@@ -351,7 +365,9 @@ def main() -> int:
         return 1
 
     logger.info("\nTo run inference:")
-    logger.info(f"  python openvino_lcm.py --models_dir {args.output_dir} --prompt \"your prompt\" --steps 4")
+    logger.info(
+        f'  python openvino_lcm.py --models_dir {args.output_dir} --prompt "your prompt" --steps 4'
+    )
     return 0
 
 

@@ -4,7 +4,7 @@ This example demonstrates how to run Latent Consistency Models (LCM) for fast te
 
 ## Overview
 
-Latent Consistency Models (LCMs) are optimized diffusion models that generate high-quality images in just 4-8 steps, compared to 25-50 steps required by traditional Stable Diffusion models. This implementation:
+Latent Consistency Models (LCMs) are optimized diffusion models that generate high-quality images in just 4-8 steps, compared to 25-50 steps required by traditional Stable Diffusion models.
 
 ## Environment Setup
 Follow the [instructions](../../../backends/openvino/README.md) of **Prerequisites** and **Setup** in `backends/openvino/README.md` to set up the OpenVINO backend.
