@@ -49,9 +49,14 @@ target_include_directories(
          # PyTorch AOTI headers from ExecutorTorch's torch detection
          ${TORCH_INCLUDE_DIRS}
 )
-target_compile_options(aoti_cuda PUBLIC -fexceptions -frtti -fPIC)
+target_compile_options(
+  aoti_cuda PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR>
+                   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fexceptions -frtti -fPIC>
+)
 # Ensure symbols are exported properly
-target_link_options(aoti_cuda PUBLIC -Wl,--export-dynamic)
+target_link_options(
+  aoti_cuda PUBLIC $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wl,--export-dynamic>
+)
 
 # Link against CUDA::cudart, common AOTI library, and PyTorch CUDA libraries
 target_link_libraries(
