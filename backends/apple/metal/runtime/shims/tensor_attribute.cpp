@@ -19,8 +19,7 @@ extern "C" {
 // Metal-specific device type constant
 __attribute__((__visibility__("default"))) int32_t
 aoti_torch_device_type_mps() {
-  // Let's use 2 for MPS
-  return 2;
+  return 13; // Consistent with c10/core/DeviceType.h
 }
 
 // Override aoti_torch_get_device_type to return MPS device type
