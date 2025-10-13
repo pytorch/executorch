@@ -150,8 +150,7 @@ class MetalBackend(BackendDetails):
         method_name: str,
     ) -> CompileSpec:
         """
-        Returns the compile spec representing the model compute precision, for additional details
-        please refer to the documentation for ``coremltools.precision``.
+        Generates a CompileSpec for the given method name.
         """
         return CompileSpec(
             COMPILE_SPEC_KEYS.METHOD_NAME.value,
