@@ -176,6 +176,12 @@ int32_t aoti_torch_dtype_int64() {
   return 4; // PyTorch's int64 dtype code
 }
 
+// Dtype utility function needed by Metal backend.
+// Returns the size of the dtype in bytes.
+size_t aoti_torch_dtype_element_size(int32_t dtype) {
+  return dtype_to_element_size(dtype);
+}
+
 // Cleanup functions
 void cleanup_tensor_metadata() {
   internal::tensor_to_sizes.clear();

@@ -70,6 +70,26 @@ extern AOTInductorModelContainerGetNumOutputsFunc
     AOTInductorModelContainerGetNumOutputs;
 extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
 
+// Retrieves the name of an input tensor by index from the AOTI model container.
+// Needed by Metal backend
+using AOTInductorModelContainerGetInputNameFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t input_idx,
+    const char** input_name);
+
+// Retrieves the number of constants from the AOTI model container.
+// Needed by Metal backend
+using AOTInductorModelContainerGetNumConstantsFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    size_t* num_constants);
+
+// Global function pointers (will be loaded dynamically).
+// Needed by Metal backend
+extern AOTInductorModelContainerGetInputNameFunc
+    AOTInductorModelContainerGetInputName;
+extern AOTInductorModelContainerGetNumConstantsFunc
+    AOTInductorModelContainerGetNumConstants;
+
 } // extern "C"
 
 // AOTI Delegate Handle structure
