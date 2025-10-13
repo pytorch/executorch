@@ -78,38 +78,6 @@ def define_common_targets():
     )
 
     runtime.python_library(
-        name = "fuse_clamps",
-        srcs = ["fuse_clamps.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/backends/vulkan:custom_ops_lib",
-            "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
-        name = "fuse_clamp_with_binary_op",
-        srcs = ["fuse_clamp_with_binary_op.py"],
-        visibility = [
-            "//executorch/backends/...",
-        ],
-        deps = [
-            ":utils",
-            "//caffe2:torch",
-            "//executorch/backends/vulkan:custom_ops_lib",
-            "//executorch/exir:pass_base",
-            "//executorch/exir:sym_util",
-            "//executorch/exir/dialects:lib",
-        ],
-    )
-
-    runtime.python_library(
         name = "view_copy_to_squeeze_unsqueeze",
         srcs = ["view_copy_to_squeeze_unsqueeze.py"],
         visibility = [
