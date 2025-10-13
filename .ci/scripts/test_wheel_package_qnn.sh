@@ -160,7 +160,10 @@ PY
   "$PIPBIN" install torch=="${TORCH_VERSION}.${NIGHTLY_VERSION}" --index-url "https://download.pytorch.org/whl/nightly/cpu"
 
   # Install torchao based on the pinned commit from third-party/ao submodule
-  "$PIPBIN" install third-party/ao
+    pushd "$REPO_ROOT/third-party/ao" > /dev/null
+    export USE_CPP=0
+    "$PIPBIN" install . --no-build-isolation
+    popd > /dev/null
 
   echo "=== [$LABEL] Import smoke tests ==="
   "$PYBIN" -c "import executorch; print('executorch imported successfully')"
