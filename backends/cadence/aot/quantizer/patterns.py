@@ -112,7 +112,7 @@ class AddmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.per_tensor
 
 
 class AddPattern(QuantizationPattern):
@@ -150,7 +150,7 @@ class AddPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_add.default
+        return torch.ops.cadence.quantized_add.per_tensor
 
 
 class BmmPattern(QuantizationPattern):
@@ -174,6 +174,8 @@ class BmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
+        # TODO: T240804887 This is actually a per-tensor variant,
+        # we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
 
 
@@ -265,7 +267,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -307,7 +309,7 @@ class Conv2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 class LayerNormPattern(QuantizationPattern):
@@ -345,7 +347,7 @@ class LayerNormPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_layer_norm.default
+        return torch.ops.cadence.quantized_layer_norm.per_tensor
 
 
 class LinearPattern(QuantizationPattern):
@@ -387,7 +389,7 @@ class LinearPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.per_tensor
 
 
 class MatmulPattern(QuantizationPattern):
@@ -411,6 +413,7 @@ class MatmulPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
+        # TODO: T240804887 This is actually a per-tensor variant, we just need to change the name of the op
         return torch.ops.cadence.quantized_matmul.default
 
 
@@ -437,7 +440,7 @@ class ReluBasePattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_relu.default
+        return torch.ops.cadence.quantized_relu.per_tensor
 
 
 # Regular relu op
@@ -496,7 +499,7 @@ class ConvReluBasePattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_conv2d_nchw.default
+        return torch.ops.cadence.quantized_conv2d_nchw.per_tensor
 
 
 # Conv1d + regular relu op fusion
@@ -544,7 +547,7 @@ class SoftmaxPattern(QuantizationPattern):
         )
 
     def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_softmax.default
+        return torch.ops.cadence.quantized_softmax.per_tensor
 
 
 class MixedW8A32LinearPattern(QuantizationPattern):
