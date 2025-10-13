@@ -1128,13 +1128,10 @@ document.write(`
 <span class="sd">    from pathlib import Path</span>
 
 <span class="sd">    import torch</span>
-<span class="sd">    from executorch.runtime import Verification, Runtime, Program, Method</span>
+<span class="sd">    from executorch.runtime import Runtime, Program, Method</span>
 
 <span class="sd">    et_runtime: Runtime = Runtime.get()</span>
-<span class="sd">    program: Program = et_runtime.load_program(</span>
-<span class="sd">        Path(&quot;/tmp/program.pte&quot;),</span>
-<span class="sd">        verification=Verification.Minimal,</span>
-<span class="sd">    )</span>
+<span class="sd">    program: Program = et_runtime.load_program(Path(&quot;/tmp/program.pte&quot;))</span>
 <span class="sd">    print(&quot;Program methods:&quot;, program.method_names)</span>
 <span class="sd">    forward: Method = program.load_method(&quot;forward&quot;)</span>
 
@@ -1156,21 +1153,23 @@ document.write(`
 
 <span class="sd">Example usage with ETDump generation:</span>
 
+<span class="sd">Note: ETDump requires building ExecuTorch with event tracing enabled</span>
+<span class="sd">(CMake option ``EXECUTORCH_ENABLE_EVENT_TRACER=ON``).</span>
+
 <span class="sd">.. code-block:: python</span>
 
 <span class="sd">    from pathlib import Path</span>
 <span class="sd">    import os</span>
 
 <span class="sd">    import torch</span>
-<span class="sd">    from executorch.runtime import Verification, Runtime, Program, Method</span>
+<span class="sd">    from executorch.runtime import Runtime, Program, Method</span>
 
 <span class="sd">    # Create program with etdump generation enabled</span>
 <span class="sd">    et_runtime: Runtime = Runtime.get()</span>
 <span class="sd">    program: Program = et_runtime.load_program(</span>
 <span class="sd">        Path(&quot;/tmp/program.pte&quot;),</span>
-<span class="sd">        verification=Verification.Minimal,</span>
 <span class="sd">        enable_etdump=True,</span>
-<span class="sd">        debug_buffer_size=1e7, # A large buffer size to ensure that all debug info is captured</span>
+<span class="sd">        debug_buffer_size=int(1e7),  # 10MB buffer to capture all debug info</span>
 <span class="sd">    )</span>
 
 <span class="sd">    # Load method and execute</span>
@@ -1192,10 +1191,37 @@ document.write(`
 
 <span class="sd">.. code-block:: text</span>
 
-<span class="sd">    Program methods: {&#39;forward&#39;}</span>
 <span class="sd">    ETDump file created: True</span>
 <span class="sd">    Debug file created: True</span>
 <span class="sd">    Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;debug_output.bin&#39;]</span>
+
+<span class="sd">Example usage with backend and operator introspection:</span>
+
+<span class="sd">.. code-block:: python</span>
+
+<span class="sd">    from executorch.runtime import Runtime</span>
+
+<span class="sd">    runtime = Runtime.get()</span>
+
+<span class="sd">    # Check available backends</span>
+<span class="sd">    backends = runtime.backend_registry.registered_backend_names</span>
+<span class="sd">    print(f&quot;Available backends: {backends}&quot;)</span>
+
+<span class="sd">    # Check if a specific backend is available</span>
+<span class="sd">    if runtime.backend_registry.is_available(&quot;XnnpackBackend&quot;):</span>
+<span class="sd">        print(&quot;XNNPACK backend is available&quot;)</span>
+
+<span class="sd">    # List all registered operators</span>
+<span class="sd">    operators = runtime.operator_registry.operator_names</span>
+<span class="sd">    print(f&quot;Number of registered operators: {len(operators)}&quot;)</span>
+
+<span class="sd">Example output:</span>
+
+<span class="sd">.. code-block:: text</span>
+
+<span class="sd">    Available backends: [&#39;XnnpackBackend&#39;, ...]  # Depends on your build configuration</span>
+<span class="sd">    XNNPACK backend is available</span>
+<span class="sd">    Number of registered operators: 247  # Depends on linked kernels</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
@@ -1233,10 +1259,10 @@ document.write(`
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Executes the method with the given inputs.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            inputs: The inputs to the method.</span>
+<span class="sd">            inputs: A sequence of input values, typically torch.Tensor objects.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The outputs of the method.</span>
+<span class="sd">            A list of output values, typically torch.Tensor objects.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span></div>
 
@@ -1245,8 +1271,11 @@ document.write(`
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the method.</span>
 
+<span class="sd">        The metadata includes information about input and output specifications,</span>
+<span class="sd">        such as tensor shapes, data types, and memory requirements.</span>
+
 <span class="sd">        Returns:</span>
-<span class="sd">            The metadata for the method.</span>
+<span class="sd">            The MethodMeta object containing method specifications.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span><span class="o">.</span><span class="n">method_meta</span><span class="p">()</span></div>
 
@@ -1272,9 +1301,7 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">method_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns method names of the `Program` as a set of strings.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns method names of the Program as a set of strings.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
 
 <div class="viewcode-block" id="Program.load_method">
@@ -1297,13 +1324,13 @@ document.write(`
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">metadata</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MethodMeta</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the specified method.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the metadata for the specified method without loading it.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            method_name: The name of the method.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The outputs of the method.</span>
+<span class="sd">            The metadata for the method, including input/output specifications.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">)</span>
 
@@ -1329,14 +1356,17 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">registered_backend_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the names of all registered backends as a list of strings.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the names of all registered backends as a list of strings.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_registered_backend_names</span><span class="p">()</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">is_available</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">backend_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the names of all registered backends as a list of strings.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Checks if a specific backend is available in the runtime.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            backend_name: The name of the backend to check (e.g., &quot;XnnpackBackend&quot;).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            True if the backend is available, False otherwise.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_is_available</span><span class="p">(</span><span class="n">backend_name</span><span class="p">)</span>
 
@@ -1352,9 +1382,7 @@ document.write(`
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">operator_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns the names of all registered operators as a set of strings.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the names of all registered operators as a set of strings.&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_get_operator_names</span><span class="p">())</span></div>
 
 
@@ -1366,6 +1394,10 @@ document.write(`
 
 <span class="sd">    This can be used to concurrently load and execute any number of ExecuTorch</span>
 <span class="sd">    programs and methods.</span>
+
+<span class="sd">    Attributes:</span>
+<span class="sd">        backend_registry: Registry for querying available hardware backends.</span>
+<span class="sd">        operator_registry: Registry for querying available operators/kernels.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
 <div class="viewcode-block" id="Runtime.get">
@@ -1399,11 +1431,17 @@ document.write(`
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads an ExecuTorch program from a PTE binary.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            data: The binary program data to load; typically PTE data.</span>
-<span class="sd">            verification: level of program verification to perform.</span>
+<span class="sd">            data: The binary program data to load. Can be a file path (str or Path),</span>
+<span class="sd">                bytes/bytearray, or a file-like object.</span>
+<span class="sd">            verification: Level of program verification to perform (Minimal or InternalConsistency).</span>
+<span class="sd">                Default is InternalConsistency.</span>
+<span class="sd">            enable_etdump: If True, enables ETDump profiling for runtime performance analysis.</span>
+<span class="sd">                Default is False.</span>
+<span class="sd">            debug_buffer_size: Size of the debug buffer in bytes for ETDump data.</span>
+<span class="sd">                Only used when enable_etdump=True. Default is 0.</span>
 
 <span class="sd">        Returns:</span>
-<span class="sd">            The loaded program.</span>
+<span class="sd">            The loaded Program instance.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">(</span><span class="n">Path</span><span class="p">,</span> <span class="nb">str</span><span class="p">)):</span>
             <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program</span><span class="p">(</span>
@@ -1413,20 +1451,21 @@ document.write(`
                 <span class="n">program_verification</span><span class="o">=</span><span class="n">verification</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">return</span> <span class="n">Program</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">):</span>
-            <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
-        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">):</span>
-            <span class="n">data_bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
         <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">):</span>
             <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">data</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">):</span>
+            <span class="n">data_bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;read&quot;</span><span class="p">):</span>
+            <span class="c1"># File-like object with read() method</span>
+            <span class="n">data_bytes</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">.&quot;</span>
             <span class="p">)</span>
         <span class="n">p</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_legacy_module</span><span class="o">.</span><span class="n">_load_program_from_buffer</span><span class="p">(</span>
             <span class="n">data_bytes</span><span class="p">,</span>
-            <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-            <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">enable_etdump</span><span class="o">=</span><span class="n">enable_etdump</span><span class="p">,</span>
+            <span class="n">debug_buffer_size</span><span class="o">=</span><span class="n">debug_buffer_size</span><span class="p">,</span>
             <span class="n">program_verification</span><span class="o">=</span><span class="n">verification</span><span class="p">,</span>
         <span class="p">)</span>
 
@@ -1695,7 +1734,7 @@ document.write(`
        "headline": "executorch.runtime",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/_modules/executorch/runtime.html",
-       "articleBody": "Source code for executorch.runtime # Copyright (c) Meta Platforms, Inc. and affiliates. # All rights reserved. # # This source code is licensed under the BSD-style license found in the # LICENSE file in the root directory of this source tree. \"\"\" Example usage: .. code-block:: python from pathlib import Path import torch from executorch.runtime import Verification, Runtime, Program, Method et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), verification=Verification.Minimal, ) print(\"Program methods:\", program.method_names) forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) print(f\"Ran forward({inputs})\") print(f\" outputs: {outputs}\") Example output: .. code-block:: text Program methods: {\u0027forward\u0027} Ran forward((tensor([[1., 1.], [1., 1.]]), tensor([[1., 1.], [1., 1.]]))) outputs: [tensor([[2., 2.], [2., 2.]])] Example usage with ETDump generation: .. code-block:: python from pathlib import Path import os import torch from executorch.runtime import Verification, Runtime, Program, Method # Create program with etdump generation enabled et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), verification=Verification.Minimal, enable_etdump=True, debug_buffer_size=1e7, # A large buffer size to ensure that all debug info is captured ) # Load method and execute forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) # Write etdump result to file etdump_file = \"/tmp/etdump_output.etdp\" debug_file = \"/tmp/debug_output.bin\" program.write_etdump_result_to_file(etdump_file, debug_file) # Check that files were created print(f\"ETDump file created: {os.path.exists(etdump_file)}\") print(f\"Debug file created: {os.path.exists(debug_file)}\") print(\"Directory contents:\", os.listdir(\"/tmp\")) Example output: .. code-block:: text Program methods: {\u0027forward\u0027} ETDump file created: True Debug file created: True Directory contents: [\u0027program.pte\u0027, \u0027etdump_output.etdp\u0027, \u0027debug_output.bin\u0027] \"\"\" import functools from pathlib import Path from types import ModuleType from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union try: from executorch.extension.pybindings.portable_lib import ( # type: ignore[import-not-found] ExecuTorchMethod, ExecuTorchProgram, MethodMeta, Verification, ) except ModuleNotFoundError as e: raise ModuleNotFoundError( \"Prebuilt \u003csite-packages\u003e/extension/pybindings/_portable_lib.so \" \"is not found. Please reinstall ExecuTorch from pip.\" ) from e [docs] class Method: \"\"\"An ExecuTorch method, loaded from a Program. This can be used to execute the method with inputs. \"\"\" def __init__(self, method: ExecuTorchMethod) -\u003e None: self._method = method [docs] def execute(self, inputs: Sequence[Any]) -\u003e Sequence[Any]: \"\"\"Executes the method with the given inputs. Args: inputs: The inputs to the method. Returns: The outputs of the method. \"\"\" return self._method(inputs) @property def metadata(self) -\u003e MethodMeta: \"\"\"Gets the metadata for the method. Returns: The metadata for the method. \"\"\" return self._method.method_meta() [docs] class Program: \"\"\"An ExecuTorch program, loaded from binary PTE data. This can be used to load the methods/models defined by the program. \"\"\" def __init__(self, program: ExecuTorchProgram, data: Optional[bytes]) -\u003e None: # Hold the data so the program is not freed. self._data = data self._program = program self._methods: Dict[str, Optional[Method]] = {} # The names of the methods are preemptively added to the dictionary, # but only map to None until they are loaded. for method_idx in range(self._program.num_methods()): self._methods[self._program.get_method_name(method_idx)] = None @property def method_names(self) -\u003e Set[str]: \"\"\" Returns method names of the `Program` as a set of strings. \"\"\" return set(self._methods.keys()) [docs] def load_method(self, name: str) -\u003e Optional[Method]: \"\"\"Loads a method from the program. Args: name: The name of the method to load. Returns: The loaded method. \"\"\" method = self._methods[name] if method is None: method = Method(self._program.load_method(name)) self._methods[name] = method return method def metadata(self, method_name: str) -\u003e MethodMeta: \"\"\"Gets the metadata for the specified method. Args: method_name: The name of the method. Returns: The outputs of the method. \"\"\" return self._program.method_meta(method_name) def write_etdump_result_to_file( self, etdump_path: str, debug_buffer_path: str ) -\u003e None: \"\"\"Writes the etdump and debug result to a file. Args: etdump_path: The path to the etdump file. debug_buffer_path: The path to the debug buffer file. \"\"\" self._program.write_etdump_result_to_file(etdump_path, debug_buffer_path) class BackendRegistry: \"\"\"The registry of backends that are available to the runtime.\"\"\" def __init__(self, legacy_module: ModuleType) -\u003e None: # TODO: Expose the kernel callables to Python. self._legacy_module = legacy_module @property def registered_backend_names(self) -\u003e List[str]: \"\"\" Returns the names of all registered backends as a list of strings. \"\"\" return self._legacy_module._get_registered_backend_names() def is_available(self, backend_name: str) -\u003e bool: \"\"\" Returns the names of all registered backends as a list of strings. \"\"\" return self._legacy_module._is_available(backend_name) [docs] class OperatorRegistry: \"\"\"The registry of operators that are available to the runtime.\"\"\" def __init__(self, legacy_module: ModuleType) -\u003e None: # TODO: Expose the kernel callables to Python. self._legacy_module = legacy_module @property def operator_names(self) -\u003e Set[str]: \"\"\" Returns the names of all registered operators as a set of strings. \"\"\" return set(self._legacy_module._get_operator_names()) [docs] class Runtime: \"\"\"An instance of the ExecuTorch runtime environment. This can be used to concurrently load and execute any number of ExecuTorch programs and methods. \"\"\" [docs] @staticmethod @functools.lru_cache(maxsize=1) def get() -\u003e \"Runtime\": \"\"\"Gets the Runtime singleton.\"\"\" import executorch.extension.pybindings.portable_lib as legacy_module # type: ignore[import-not-found] return Runtime(legacy_module=legacy_module) def __init__(self, *, legacy_module: ModuleType) -\u003e None: # Public attributes. self.backend_registry = BackendRegistry(legacy_module) self.operator_registry = OperatorRegistry(legacy_module) # Private attributes. self._legacy_module = legacy_module [docs] def load_program( self, data: Union[bytes, bytearray, BinaryIO, Path, str], *, verification: Verification = Verification.InternalConsistency, enable_etdump: bool = False, debug_buffer_size: int = 0, ) -\u003e Program: \"\"\"Loads an ExecuTorch program from a PTE binary. Args: data: The binary program data to load; typically PTE data. verification: level of program verification to perform. Returns: The loaded program. \"\"\" if isinstance(data, (Path, str)): p = self._legacy_module._load_program( str(data), enable_etdump=enable_etdump, debug_buffer_size=debug_buffer_size, program_verification=verification, ) return Program(p, data=None) elif isinstance(data, BinaryIO): data_bytes = data.read() elif isinstance(data, bytearray): data_bytes = bytes(data) elif isinstance(data, bytes): data_bytes = data else: raise TypeError( f\"Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got {type(data).__name__}.\" ) p = self._legacy_module._load_program_from_buffer( data_bytes, enable_etdump=False, debug_buffer_size=0, program_verification=verification, ) return Program(p, data=data_bytes)",
+       "articleBody": "Source code for executorch.runtime # Copyright (c) Meta Platforms, Inc. and affiliates. # All rights reserved. # # This source code is licensed under the BSD-style license found in the # LICENSE file in the root directory of this source tree. \"\"\" Example usage: .. code-block:: python from pathlib import Path import torch from executorch.runtime import Runtime, Program, Method et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program(Path(\"/tmp/program.pte\")) print(\"Program methods:\", program.method_names) forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) print(f\"Ran forward({inputs})\") print(f\" outputs: {outputs}\") Example output: .. code-block:: text Program methods: {\u0027forward\u0027} Ran forward((tensor([[1., 1.], [1., 1.]]), tensor([[1., 1.], [1., 1.]]))) outputs: [tensor([[2., 2.], [2., 2.]])] Example usage with ETDump generation: Note: ETDump requires building ExecuTorch with event tracing enabled (CMake option ``EXECUTORCH_ENABLE_EVENT_TRACER=ON``). .. code-block:: python from pathlib import Path import os import torch from executorch.runtime import Runtime, Program, Method # Create program with etdump generation enabled et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), enable_etdump=True, debug_buffer_size=int(1e7), # 10MB buffer to capture all debug info ) # Load method and execute forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) # Write etdump result to file etdump_file = \"/tmp/etdump_output.etdp\" debug_file = \"/tmp/debug_output.bin\" program.write_etdump_result_to_file(etdump_file, debug_file) # Check that files were created print(f\"ETDump file created: {os.path.exists(etdump_file)}\") print(f\"Debug file created: {os.path.exists(debug_file)}\") print(\"Directory contents:\", os.listdir(\"/tmp\")) Example output: .. code-block:: text ETDump file created: True Debug file created: True Directory contents: [\u0027program.pte\u0027, \u0027etdump_output.etdp\u0027, \u0027debug_output.bin\u0027] Example usage with backend and operator introspection: .. code-block:: python from executorch.runtime import Runtime runtime = Runtime.get() # Check available backends backends = runtime.backend_registry.registered_backend_names print(f\"Available backends: {backends}\") # Check if a specific backend is available if runtime.backend_registry.is_available(\"XnnpackBackend\"): print(\"XNNPACK backend is available\") # List all registered operators operators = runtime.operator_registry.operator_names print(f\"Number of registered operators: {len(operators)}\") Example output: .. code-block:: text Available backends: [\u0027XnnpackBackend\u0027, ...] # Depends on your build configuration XNNPACK backend is available Number of registered operators: 247 # Depends on linked kernels \"\"\" import functools from pathlib import Path from types import ModuleType from typing import Any, BinaryIO, Dict, List, Optional, Sequence, Set, Union try: from executorch.extension.pybindings.portable_lib import ( # type: ignore[import-not-found] ExecuTorchMethod, ExecuTorchProgram, MethodMeta, Verification, ) except ModuleNotFoundError as e: raise ModuleNotFoundError( \"Prebuilt \u003csite-packages\u003e/extension/pybindings/_portable_lib.so \" \"is not found. Please reinstall ExecuTorch from pip.\" ) from e [docs] class Method: \"\"\"An ExecuTorch method, loaded from a Program. This can be used to execute the method with inputs. \"\"\" def __init__(self, method: ExecuTorchMethod) -\u003e None: self._method = method [docs] def execute(self, inputs: Sequence[Any]) -\u003e Sequence[Any]: \"\"\"Executes the method with the given inputs. Args: inputs: A sequence of input values, typically torch.Tensor objects. Returns: A list of output values, typically torch.Tensor objects. \"\"\" return self._method(inputs) @property def metadata(self) -\u003e MethodMeta: \"\"\"Gets the metadata for the method. The metadata includes information about input and output specifications, such as tensor shapes, data types, and memory requirements. Returns: The MethodMeta object containing method specifications. \"\"\" return self._method.method_meta() [docs] class Program: \"\"\"An ExecuTorch program, loaded from binary PTE data. This can be used to load the methods/models defined by the program. \"\"\" def __init__(self, program: ExecuTorchProgram, data: Optional[bytes]) -\u003e None: # Hold the data so the program is not freed. self._data = data self._program = program self._methods: Dict[str, Optional[Method]] = {} # The names of the methods are preemptively added to the dictionary, # but only map to None until they are loaded. for method_idx in range(self._program.num_methods()): self._methods[self._program.get_method_name(method_idx)] = None @property def method_names(self) -\u003e Set[str]: \"\"\"Returns method names of the Program as a set of strings.\"\"\" return set(self._methods.keys()) [docs] def load_method(self, name: str) -\u003e Optional[Method]: \"\"\"Loads a method from the program. Args: name: The name of the method to load. Returns: The loaded method. \"\"\" method = self._methods[name] if method is None: method = Method(self._program.load_method(name)) self._methods[name] = method return method def metadata(self, method_name: str) -\u003e MethodMeta: \"\"\"Gets the metadata for the specified method without loading it. Args: method_name: The name of the method. Returns: The metadata for the method, including input/output specifications. \"\"\" return self._program.method_meta(method_name) def write_etdump_result_to_file( self, etdump_path: str, debug_buffer_path: str ) -\u003e None: \"\"\"Writes the etdump and debug result to a file. Args: etdump_path: The path to the etdump file. debug_buffer_path: The path to the debug buffer file. \"\"\" self._program.write_etdump_result_to_file(etdump_path, debug_buffer_path) class BackendRegistry: \"\"\"The registry of backends that are available to the runtime.\"\"\" def __init__(self, legacy_module: ModuleType) -\u003e None: # TODO: Expose the kernel callables to Python. self._legacy_module = legacy_module @property def registered_backend_names(self) -\u003e List[str]: \"\"\"Returns the names of all registered backends as a list of strings.\"\"\" return self._legacy_module._get_registered_backend_names() def is_available(self, backend_name: str) -\u003e bool: \"\"\"Checks if a specific backend is available in the runtime. Args: backend_name: The name of the backend to check (e.g., \"XnnpackBackend\"). Returns: True if the backend is available, False otherwise. \"\"\" return self._legacy_module._is_available(backend_name) [docs] class OperatorRegistry: \"\"\"The registry of operators that are available to the runtime.\"\"\" def __init__(self, legacy_module: ModuleType) -\u003e None: # TODO: Expose the kernel callables to Python. self._legacy_module = legacy_module @property def operator_names(self) -\u003e Set[str]: \"\"\"Returns the names of all registered operators as a set of strings.\"\"\" return set(self._legacy_module._get_operator_names()) [docs] class Runtime: \"\"\"An instance of the ExecuTorch runtime environment. This can be used to concurrently load and execute any number of ExecuTorch programs and methods. Attributes: backend_registry: Registry for querying available hardware backends. operator_registry: Registry for querying available operators/kernels. \"\"\" [docs] @staticmethod @functools.lru_cache(maxsize=1) def get() -\u003e \"Runtime\": \"\"\"Gets the Runtime singleton.\"\"\" import executorch.extension.pybindings.portable_lib as legacy_module # type: ignore[import-not-found] return Runtime(legacy_module=legacy_module) def __init__(self, *, legacy_module: ModuleType) -\u003e None: # Public attributes. self.backend_registry = BackendRegistry(legacy_module) self.operator_registry = OperatorRegistry(legacy_module) # Private attributes. self._legacy_module = legacy_module [docs] def load_program( self, data: Union[bytes, bytearray, BinaryIO, Path, str], *, verification: Verification = Verification.InternalConsistency, enable_etdump: bool = False, debug_buffer_size: int = 0, ) -\u003e Program: \"\"\"Loads an ExecuTorch program from a PTE binary. Args: data: The binary program data to load. Can be a file path (str or Path), bytes/bytearray, or a file-like object. verification: Level of program verification to perform (Minimal or InternalConsistency). Default is InternalConsistency. enable_etdump: If True, enables ETDump profiling for runtime performance analysis. Default is False. debug_buffer_size: Size of the debug buffer in bytes for ETDump data. Only used when enable_etdump=True. Default is 0. Returns: The loaded Program instance. \"\"\" if isinstance(data, (Path, str)): p = self._legacy_module._load_program( str(data), enable_etdump=enable_etdump, debug_buffer_size=debug_buffer_size, program_verification=verification, ) return Program(p, data=None) elif isinstance(data, bytes): data_bytes = data elif isinstance(data, bytearray): data_bytes = bytes(data) elif hasattr(data, \"read\"): # File-like object with read() method data_bytes = data.read() else: raise TypeError( f\"Expected data to be bytes, bytearray, a path to a .pte file, or a file-like object, but got {type(data).__name__}.\" ) p = self._legacy_module._load_program_from_buffer( data_bytes, enable_etdump=enable_etdump, debug_buffer_size=debug_buffer_size, program_verification=verification, ) return Program(p, data=data_bytes)",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",

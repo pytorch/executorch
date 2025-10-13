@@ -1137,13 +1137,10 @@ document.write(`
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Verification</span><span class="p">,</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
 
 <span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
-<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
-    <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
-    <span class="n">verification</span><span class="o">=</span><span class="n">Verification</span><span class="o">.</span><span class="n">Minimal</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Program methods:&quot;</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">method_names</span><span class="p">)</span>
 <span class="n">forward</span><span class="p">:</span> <span class="n">Method</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">load_method</span><span class="p">(</span><span class="s2">&quot;forward&quot;</span><span class="p">)</span>
 
@@ -1163,19 +1160,20 @@ Ran forward((tensor([[1., 1.],
 </pre></div>
 </div>
 <p>Example usage with ETDump generation:</p>
+<p>Note: ETDump requires building ExecuTorch with event tracing enabled
+(CMake option <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code>).</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Verification</span><span class="p">,</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span><span class="p">,</span> <span class="n">Program</span><span class="p">,</span> <span class="n">Method</span>
 
 <span class="c1"># Create program with etdump generation enabled</span>
 <span class="n">et_runtime</span><span class="p">:</span> <span class="n">Runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
 <span class="n">program</span><span class="p">:</span> <span class="n">Program</span> <span class="o">=</span> <span class="n">et_runtime</span><span class="o">.</span><span class="n">load_program</span><span class="p">(</span>
     <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/tmp/program.pte&quot;</span><span class="p">),</span>
-    <span class="n">verification</span><span class="o">=</span><span class="n">Verification</span><span class="o">.</span><span class="n">Minimal</span><span class="p">,</span>
     <span class="n">enable_etdump</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-    <span class="n">debug_buffer_size</span><span class="o">=</span><span class="mf">1e7</span><span class="p">,</span> <span class="c1"># A large buffer size to ensure that all debug info is captured</span>
+    <span class="n">debug_buffer_size</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="mf">1e7</span><span class="p">),</span>  <span class="c1"># 10MB buffer to capture all debug info</span>
 <span class="p">)</span>
 
 <span class="c1"># Load method and execute</span>
@@ -1195,10 +1193,33 @@ Ran forward((tensor([[1., 1.],
 </pre></div>
 </div>
 <p>Example output:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Program methods: {&#39;forward&#39;}
-ETDump file created: True
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>ETDump file created: True
 Debug file created: True
 Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;debug_output.bin&#39;]
+</pre></div>
+</div>
+<p>Example usage with backend and operator introspection:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">executorch.runtime</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runtime</span>
+
+<span class="n">runtime</span> <span class="o">=</span> <span class="n">Runtime</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+
+<span class="c1"># Check available backends</span>
+<span class="n">backends</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">backend_registry</span><span class="o">.</span><span class="n">registered_backend_names</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Available backends: </span><span class="si">{</span><span class="n">backends</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Check if a specific backend is available</span>
+<span class="k">if</span> <span class="n">runtime</span><span class="o">.</span><span class="n">backend_registry</span><span class="o">.</span><span class="n">is_available</span><span class="p">(</span><span class="s2">&quot;XnnpackBackend&quot;</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;XNNPACK backend is available&quot;</span><span class="p">)</span>
+
+<span class="c1"># List all registered operators</span>
+<span class="n">operators</span> <span class="o">=</span> <span class="n">runtime</span><span class="o">.</span><span class="n">operator_registry</span><span class="o">.</span><span class="n">operator_names</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Number of registered operators: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">operators</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example output:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Available backends: [&#39;XnnpackBackend&#39;, ...]  # Depends on your build configuration
+XNNPACK backend is available
+Number of registered operators: 247  # Depends on linked kernels
 </pre></div>
 </div>
 <dl class="py class">
@@ -1207,6 +1228,18 @@ Directory contents: [&#39;program.pte&#39;, &#39;etdump_output.etdp&#39;, &#39;d
 <dd><p>An instance of the ExecuTorch runtime environment.</p>
 <p>This can be used to concurrently load and execute any number of ExecuTorch
 programs and methods.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.backend_registry">
+<span class="sig-name descname"><span class="pre">backend_registry</span></span><a class="headerlink" href="#executorch.runtime.Runtime.backend_registry" title="Link to this definition">#</a></dt>
+<dd><p>Registry for querying available hardware backends.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="executorch.runtime.Runtime.operator_registry">
+<span class="sig-name descname"><span class="pre">operator_registry</span></span><a class="headerlink" href="#executorch.runtime.Runtime.operator_registry" title="Link to this definition">#</a></dt>
+<dd><p>Registry for querying available operators/kernels.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="executorch.runtime.Runtime.get">
 <em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/runtime.html#Runtime.get"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.runtime.Runtime.get" title="Link to this definition">#</a></dt>
@@ -1220,12 +1253,18 @@ programs and methods.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> – The binary program data to load; typically PTE data.</p></li>
-<li><p><strong>verification</strong> – level of program verification to perform.</p></li>
+<li><p><strong>data</strong> – The binary program data to load. Can be a file path (str or Path),
+bytes/bytearray, or a file-like object.</p></li>
+<li><p><strong>verification</strong> – Level of program verification to perform (Minimal or InternalConsistency).
+Default is InternalConsistency.</p></li>
+<li><p><strong>enable_etdump</strong> – If True, enables ETDump profiling for runtime performance analysis.
+Default is False.</p></li>
+<li><p><strong>debug_buffer_size</strong> – Size of the debug buffer in bytes for ETDump data.
+Only used when enable_etdump=True. Default is 0.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The loaded program.</p>
+<dd class="field-even"><p>The loaded Program instance.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1266,7 +1305,7 @@ programs and methods.</p>
 <dl class="py property">
 <dt class="sig sig-object py" id="executorch.runtime.Program.method_names">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">method_names</span></span><a class="headerlink" href="#executorch.runtime.Program.method_names" title="Link to this definition">#</a></dt>
-<dd><p>Returns method names of the <cite>Program</cite> as a set of strings.</p>
+<dd><p>Returns method names of the Program as a set of strings.</p>
 </dd></dl>
 
 </dd></dl>
@@ -1282,10 +1321,10 @@ This can be used to execute the method with inputs.</p>
 <dd><p>Executes the method with the given inputs.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>inputs</strong> – The inputs to the method.</p>
+<dd class="field-odd"><p><strong>inputs</strong> – A sequence of input values, typically torch.Tensor objects.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The outputs of the method.</p>
+<dd class="field-even"><p>A list of output values, typically torch.Tensor objects.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1294,9 +1333,11 @@ This can be used to execute the method with inputs.</p>
 <dt class="sig sig-object py" id="executorch.runtime.Method.metadata">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">metadata</span></span><a class="headerlink" href="#executorch.runtime.Method.metadata" title="Link to this definition">#</a></dt>
 <dd><p>Gets the metadata for the method.</p>
+<p>The metadata includes information about input and output specifications,
+such as tensor shapes, data types, and memory requirements.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The metadata for the method.</p>
+<dd class="field-odd"><p>The MethodMeta object containing method specifications.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -1423,6 +1464,8 @@ This can be used to execute the method with inputs.</p>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.runtime.Runtime"><code class="docutils literal notranslate"><span class="pre">Runtime</span></code></a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.runtime.Runtime.backend_registry"><code class="docutils literal notranslate"><span class="pre">Runtime.backend_registry</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.runtime.Runtime.operator_registry"><code class="docutils literal notranslate"><span class="pre">Runtime.operator_registry</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.runtime.Runtime.get"><code class="docutils literal notranslate"><span class="pre">Runtime.get()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#executorch.runtime.Runtime.load_program"><code class="docutils literal notranslate"><span class="pre">Runtime.load_program()</span></code></a></li>
 </ul>
@@ -1666,7 +1709,7 @@ This can be used to execute the method with inputs.</p>
        "headline": "Runtime Python API Reference",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/runtime-python-api-reference.html",
-       "articleBody": "Runtime Python API Reference# The Python executorch.runtime module wraps the C++ ExecuTorch runtime. It can load and execute serialized .pte program files: see the Export to ExecuTorch Tutorial for how to convert a PyTorch nn.Module to an ExecuTorch .pte program file. Execution accepts and returns torch.Tensor values, making it a quick way to validate the correctness of the program. For detailed information on how APIs evolve and the deprecation process, please refer to the ExecuTorch API Life Cycle and Deprecation Policy. Example usage: from pathlib import Path import torch from executorch.runtime import Verification, Runtime, Program, Method et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), verification=Verification.Minimal, ) print(\"Program methods:\", program.method_names) forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) print(f\"Ran forward({inputs})\") print(f\" outputs: {outputs}\") Example output: Program methods: {\u0027forward\u0027} Ran forward((tensor([[1., 1.], [1., 1.]]), tensor([[1., 1.], [1., 1.]]))) outputs: [tensor([[2., 2.], [2., 2.]])] Example usage with ETDump generation: from pathlib import Path import os import torch from executorch.runtime import Verification, Runtime, Program, Method # Create program with etdump generation enabled et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), verification=Verification.Minimal, enable_etdump=True, debug_buffer_size=1e7, # A large buffer size to ensure that all debug info is captured ) # Load method and execute forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) # Write etdump result to file etdump_file = \"/tmp/etdump_output.etdp\" debug_file = \"/tmp/debug_output.bin\" program.write_etdump_result_to_file(etdump_file, debug_file) # Check that files were created print(f\"ETDump file created: {os.path.exists(etdump_file)}\") print(f\"Debug file created: {os.path.exists(debug_file)}\") print(\"Directory contents:\", os.listdir(\"/tmp\")) Example output: Program methods: {\u0027forward\u0027} ETDump file created: True Debug file created: True Directory contents: [\u0027program.pte\u0027, \u0027etdump_output.etdp\u0027, \u0027debug_output.bin\u0027] class executorch.runtime.Runtime(*, legacy_module)[source]# An instance of the ExecuTorch runtime environment. This can be used to concurrently load and execute any number of ExecuTorch programs and methods. static get()[source]# Gets the Runtime singleton. load_program(data, *, verification=\u003cVerification.InternalConsistency: 1\u003e, enable_etdump=False, debug_buffer_size=0)[source]# Loads an ExecuTorch program from a PTE binary. Parameters: data \u2013 The binary program data to load; typically PTE data. verification \u2013 level of program verification to perform. Returns: The loaded program. class executorch.runtime.OperatorRegistry(legacy_module)[source]# The registry of operators that are available to the runtime. property operator_names# Returns the names of all registered operators as a set of strings. class executorch.runtime.Program(program, data)[source]# An ExecuTorch program, loaded from binary PTE data. This can be used to load the methods/models defined by the program. load_method(name)[source]# Loads a method from the program. Parameters: name \u2013 The name of the method to load. Returns: The loaded method. property method_names# Returns method names of the Program as a set of strings. class executorch.runtime.Method(method)[source]# An ExecuTorch method, loaded from a Program. This can be used to execute the method with inputs. execute(inputs)[source]# Executes the method with the given inputs. Parameters: inputs \u2013 The inputs to the method. Returns: The outputs of the method. property metadata# Gets the metadata for the method. Returns: The metadata for the method.",
+       "articleBody": "Runtime Python API Reference# The Python executorch.runtime module wraps the C++ ExecuTorch runtime. It can load and execute serialized .pte program files: see the Export to ExecuTorch Tutorial for how to convert a PyTorch nn.Module to an ExecuTorch .pte program file. Execution accepts and returns torch.Tensor values, making it a quick way to validate the correctness of the program. For detailed information on how APIs evolve and the deprecation process, please refer to the ExecuTorch API Life Cycle and Deprecation Policy. Example usage: from pathlib import Path import torch from executorch.runtime import Runtime, Program, Method et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program(Path(\"/tmp/program.pte\")) print(\"Program methods:\", program.method_names) forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) print(f\"Ran forward({inputs})\") print(f\" outputs: {outputs}\") Example output: Program methods: {\u0027forward\u0027} Ran forward((tensor([[1., 1.], [1., 1.]]), tensor([[1., 1.], [1., 1.]]))) outputs: [tensor([[2., 2.], [2., 2.]])] Example usage with ETDump generation: Note: ETDump requires building ExecuTorch with event tracing enabled (CMake option EXECUTORCH_ENABLE_EVENT_TRACER=ON). from pathlib import Path import os import torch from executorch.runtime import Runtime, Program, Method # Create program with etdump generation enabled et_runtime: Runtime = Runtime.get() program: Program = et_runtime.load_program( Path(\"/tmp/program.pte\"), enable_etdump=True, debug_buffer_size=int(1e7), # 10MB buffer to capture all debug info ) # Load method and execute forward: Method = program.load_method(\"forward\") inputs = (torch.ones(2, 2), torch.ones(2, 2)) outputs = forward.execute(inputs) # Write etdump result to file etdump_file = \"/tmp/etdump_output.etdp\" debug_file = \"/tmp/debug_output.bin\" program.write_etdump_result_to_file(etdump_file, debug_file) # Check that files were created print(f\"ETDump file created: {os.path.exists(etdump_file)}\") print(f\"Debug file created: {os.path.exists(debug_file)}\") print(\"Directory contents:\", os.listdir(\"/tmp\")) Example output: ETDump file created: True Debug file created: True Directory contents: [\u0027program.pte\u0027, \u0027etdump_output.etdp\u0027, \u0027debug_output.bin\u0027] Example usage with backend and operator introspection: from executorch.runtime import Runtime runtime = Runtime.get() # Check available backends backends = runtime.backend_registry.registered_backend_names print(f\"Available backends: {backends}\") # Check if a specific backend is available if runtime.backend_registry.is_available(\"XnnpackBackend\"): print(\"XNNPACK backend is available\") # List all registered operators operators = runtime.operator_registry.operator_names print(f\"Number of registered operators: {len(operators)}\") Example output: Available backends: [\u0027XnnpackBackend\u0027, ...] # Depends on your build configuration XNNPACK backend is available Number of registered operators: 247 # Depends on linked kernels class executorch.runtime.Runtime(*, legacy_module)[source]# An instance of the ExecuTorch runtime environment. This can be used to concurrently load and execute any number of ExecuTorch programs and methods. backend_registry# Registry for querying available hardware backends. operator_registry# Registry for querying available operators/kernels. static get()[source]# Gets the Runtime singleton. load_program(data, *, verification=\u003cVerification.InternalConsistency: 1\u003e, enable_etdump=False, debug_buffer_size=0)[source]# Loads an ExecuTorch program from a PTE binary. Parameters: data \u2013 The binary program data to load. Can be a file path (str or Path), bytes/bytearray, or a file-like object. verification \u2013 Level of program verification to perform (Minimal or InternalConsistency). Default is InternalConsistency. enable_etdump \u2013 If True, enables ETDump profiling for runtime performance analysis. Default is False. debug_buffer_size \u2013 Size of the debug buffer in bytes for ETDump data. Only used when enable_etdump=True. Default is 0. Returns: The loaded Program instance. class executorch.runtime.OperatorRegistry(legacy_module)[source]# The registry of operators that are available to the runtime. property operator_names# Returns the names of all registered operators as a set of strings. class executorch.runtime.Program(program, data)[source]# An ExecuTorch program, loaded from binary PTE data. This can be used to load the methods/models defined by the program. load_method(name)[source]# Loads a method from the program. Parameters: name \u2013 The name of the method to load. Returns: The loaded method. property method_names# Returns method names of the Program as a set of strings. class executorch.runtime.Method(method)[source]# An ExecuTorch method, loaded from a Program. This can be used to execute the method with inputs. execute(inputs)[source]# Executes the method with the given inputs. Parameters: inputs \u2013 A sequence of input values, typically torch.Tensor objects. Returns: A list of output values, typically torch.Tensor objects. property metadata# Gets the metadata for the method. The metadata includes information about input and output specifications, such as tensor shapes, data types, and memory requirements. Returns: The MethodMeta object containing method specifications.",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
