@@ -937,6 +937,7 @@ class CommonRemovePasses:
         RemoveZeroSizedCatArgsPass,
         RemovePermutesAroundElementwiseOps,
         RemoveSqueezeViewBeforeElementwiseOps,
+        RemoveCatFromSliceCopyPass,
     ]
 
 
