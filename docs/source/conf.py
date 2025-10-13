@@ -24,7 +24,7 @@ import shutil
 import sys
 from typing import Any
 
-import pytorch_sphinx_theme2  # type: ignore[import-not-found]
+import pytorch_sphinx_theme2  # type: ignore[import-untyped]
 
 # To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
