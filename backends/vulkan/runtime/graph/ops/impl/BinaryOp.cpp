@@ -161,7 +161,6 @@ void add_binary_op_buffer_node(
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
   std::string op = op_name;
-  int clamp_type = remove_clamp_from_name(op);
   kernel_name += op;
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
