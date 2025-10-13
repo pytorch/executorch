@@ -131,7 +131,11 @@ NSInteger ExecuTorchElementCountOfShape(NSArray<NSNumber *> *shape) {
   auto tensor = make_tensor_ptr(
     *reinterpret_cast<TensorPtr *>(otherTensor.nativeInstance)
   );
-  return [self initWithNativeInstance:&tensor];
+  self = [self initWithNativeInstance:&tensor];
+  if (self) {
+    _data = otherTensor->_data;
+  }
+  return self;
 }
 
 - (instancetype)copy {
