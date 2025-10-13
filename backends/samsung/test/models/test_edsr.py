@@ -8,8 +8,6 @@
 
 import unittest
 
-import torch
-
 from executorch.backends.samsung.serialization.compile_options import (
     gen_samsung_backend_compile_spec,
 )
@@ -17,17 +15,16 @@ from executorch.backends.samsung.test.tester import SamsungTester
 from executorch.examples.models.edsr import EdsrModel
 
 
-class Test_Milestone_Edsr(unittest.TestCase):
+class TestMilestoneEdsr(unittest.TestCase):
     def test_edsr_fp16(self):
         model = EdsrModel().get_eager_model()
         example_input = EdsrModel().get_example_inputs()
-
+        tester = SamsungTester(
+            model, example_input, [gen_samsung_backend_compile_spec("E9955")]
+        )
         (
-            SamsungTester(model,
-                          example_input,
-                          [gen_samsung_backend_compile_spec("E9955")],)
-            .export()
+            tester.export()
             .to_edge_transform_and_lower()
             .to_executorch()
-            .run_method_and_compare_outputs(atol=0.02, rtol=0.02)
+            .run_method_and_compare_outputs(inputs=example_input, atol=0.02)
         )
