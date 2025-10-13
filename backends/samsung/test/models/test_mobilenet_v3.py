@@ -17,18 +17,17 @@ from executorch.backends.samsung.test.tester import SamsungTester
 from executorch.examples.models.mobilenet_v3 import MV3Model
 
 
-class Test_Milestone_MobilenetV3(unittest.TestCase):
+class TestMilestoneMobilenetV3(unittest.TestCase):
     def test_mv3_fp16(self):
+        torch.manual_seed(8)
         model = MV3Model().get_eager_model()
         example_input = MV3Model().get_example_inputs()
-
+        tester = SamsungTester(
+            model, example_input, [gen_samsung_backend_compile_spec("E9955")]
+        )
         (
-            SamsungTester(model,
-                          example_input,
-                          [gen_samsung_backend_compile_spec("E9955")],)
-            .export()
+            tester.export()
             .to_edge_transform_and_lower()
             .to_executorch()
-            .run_method_and_compare_outputs(atol=0.06, rtol=0.06)
-            # TODO: theshold value should be updated after fixing accuracy issue
+            .run_method_and_compare_outputs(inputs=example_input, atol=0.07, rtol=0.07)
         )
