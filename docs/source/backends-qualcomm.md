@@ -238,7 +238,7 @@ adb push ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV79Stub.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so ${DEVICE_DIR}
 adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so ${DEVICE_DIR}
-adb push ${QNN_SDK_ROOT}/lib/hexagon-v75/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
+adb push ${QNN_SDK_ROOT}/lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so ${DEVICE_DIR}
 ```
 
 ***Step 2***.  We also need to indicate dynamic linkers on Android and Hexagon
@@ -290,7 +290,7 @@ Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `$EXECUTORCH_R
 
 ### Step-by-Step Implementation Guide
 
-Please reference [the simple example](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py) and [more compilated examples](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts) for reference
+Please reference [the simple example](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/export_example.py) and [more complicated examples](https://github.com/pytorch/executorch/tree/main/examples/qualcomm/scripts) for reference
 #### Step 1: Prepare Your Model
 ```python
 import torch
@@ -397,4 +397,4 @@ print(f"Model successfully exported to {model_name}")
 ## FAQ
 
 If you encounter any issues while reproducing the tutorial, please file a github
-issue on ExecuTorch repo and tag use `#qcom_aisw` tag
+[issue](https://github.com/pytorch/executorch/issues) on ExecuTorch repo and tag use `#qcom_aisw` tag
