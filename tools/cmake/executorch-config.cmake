@@ -63,6 +63,7 @@ set(optional_lib_list
     coreml_inmemoryfs
     coremldelegate
     mpsdelegate
+    metal_backend
     neuron_backend
     qnn_executorch_backend
     portable_ops_lib

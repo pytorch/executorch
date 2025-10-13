@@ -153,7 +153,7 @@ define_overridable_option(
   EXECUTORCH_BUILD_CUDA "Build the CUDA backend" BOOL OFF
 )
 define_overridable_option(
-  EXECUTORCH_BUILD_METAL "Build the AOTI Metal backend" BOOL OFF
+  EXECUTORCH_BUILD_METAL "Build the Metal backend" BOOL OFF
 )
 define_overridable_option(
   EXECUTORCH_BUILD_VGF "Build the Arm VGF backend" BOOL OFF

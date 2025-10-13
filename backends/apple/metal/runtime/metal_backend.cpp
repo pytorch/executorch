@@ -6,23 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/extension/tensor/tensor.h>
+#include <dlfcn.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-
-#include <dlfcn.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <unistd.h>
 #include <cstdio>
-#include <cstdlib>
-#include <cstring>
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <memory>
+#include <string>
 #include <vector>
 
 // Include AOTI common headers (from aoti_common library)
@@ -36,9 +30,14 @@
 #include <executorch/backends/apple/metal/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/apple/metal/runtime/shims/utils.h>
 
-namespace executorch {
-namespace backends {
-namespace metal {
+namespace executorch::backends::metal {
+
+#define LOAD_SYMBOL(name, handle)                                \
+  do {                                                           \
+    name = reinterpret_cast<name##Func>(dlsym(handle, #name));   \
+    ET_CHECK_OR_RETURN_ERROR(                                    \
+        name != nullptr, AccessFailed, "Failed to load " #name); \
+  } while (0)
 
 using namespace std;
 using namespace aoti;
@@ -59,7 +58,36 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
-class MetalBackend final : public ::executorch::runtime::BackendInterface {
+class ET_EXPERIMENTAL MetalBackend final : public ::executorch::runtime::BackendInterface {
+ private:
+  Error register_shared_library_functions(void* so_handle) const {
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loading symbols");
+
+    LOAD_SYMBOL(AOTInductorModelContainerCreateWithDevice, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerCreateWithDevice");
+
+    LOAD_SYMBOL(AOTInductorModelContainerDelete, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerDelete");
+
+    LOAD_SYMBOL(AOTInductorModelContainerGetNumInputs, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumInputs");
+
+    LOAD_SYMBOL(AOTInductorModelContainerGetNumConstants, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumConstants");
+
+    LOAD_SYMBOL(AOTInductorModelContainerGetInputName, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetInputName");
+
+    LOAD_SYMBOL(AOTInductorModelContainerGetNumOutputs, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumOutputs");
+
+    LOAD_SYMBOL(AOTInductorModelContainerRun, so_handle);
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerRun");
+
+    ET_LOG(Info, "MetalBackend::register_shared_library_functions - All symbols loaded successfully");
+    return Error::Ok;
+  }
+
  public:
   // Once in program
   MetalBackend() {
@@ -95,38 +123,24 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
     const NamedDataMap* named_data_map = context.get_named_data_map();
     ET_LOG(Info, "MetalBackend::init - Got named data map: %p", named_data_map);
 
-    ET_LOG(
-        Info,
-        "MetalBackend::init - Looking for blob key: %s",
-        so_blob_key.c_str());
+    ET_LOG(Info, "MetalBackend::init - Looking for blob key: %s", so_blob_key.c_str());
 
-    Result<FreeableBuffer> aoti_metal_buffer =
-        named_data_map->get_data(so_blob_key.c_str());
-    ET_LOG(Info, "MetalBackend::init - Got buffer result");
+    auto aoti_metal_buffer = named_data_map->get_data(so_blob_key.c_str());
+    ET_CHECK_OR_RETURN_ERROR(
+        aoti_metal_buffer.ok(),
+        Internal,
+        "Failed to get data for key %s: 0x%x",
+        so_blob_key.c_str(),
+        static_cast<uint32_t>(aoti_metal_buffer.error()));
 
-    if (!aoti_metal_buffer.ok()) {
-      ET_LOG(
-          Error,
-          "MetalBackend::init - Failed to get buffer for key %s: 0x%x",
-          so_blob_key.c_str(),
-          aoti_metal_buffer.error());
-      return Error::InvalidArgument;
-    }
-
-    ET_LOG(
-        Info,
-        "MetalBackend::init - Buffer is OK, size: %zu",
-        aoti_metal_buffer->size());
+    ET_LOG(Info, "MetalBackend::init - Buffer is OK, size: %zu", aoti_metal_buffer->size());
 
     if (aoti_metal_buffer->data() == nullptr) {
       ET_LOG(Error, "MetalBackend::init - Buffer data is null");
       return Error::InvalidArgument;
     }
 
-    ET_LOG(
-        Info,
-        "MetalBackend::init - Buffer data pointer: %p",
-        aoti_metal_buffer->data());
+    ET_LOG(Info, "MetalBackend::init - Buffer data pointer: %p", aoti_metal_buffer->data());
 
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
@@ -134,31 +148,22 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
         temp_dir / (so_blob_key + to_string(getpid()) + ".so");
 
     // Create a temporary file
-    ET_LOG(
-        Info, "MetalBackend::init - Creating temp file: %s", so_path.c_str());
-    std::ofstream outfile(so_path.c_str(), std::ios::binary);
-
-    if (!outfile.is_open()) {
-      ET_LOG(Error, "MetalBackend::init - Failed to create temp file");
-      return Error::AccessFailed;
-    }
-    ET_LOG(Info, "MetalBackend::init - Temp file created successfully");
+    ET_LOG(Info, "MetalBackend::init - Creating temp file: %s", so_path.c_str());
+    ofstream outfile(so_path.c_str(), ios::binary);
 
     // Write the ELF buffer to the temporary file
-    size_t buffer_size = aoti_metal_buffer->size();
     ET_LOG(
         Info,
-        "MetalBackend::init - About to write %zu bytes to file",
-        buffer_size);
+        "Writing %zu bytes to %s",
+        aoti_metal_buffer->size(),
+        so_path.c_str());
 
-    // Write the buffer directly, not using sizeof(void*) multiplication
-    outfile.write((char*)aoti_metal_buffer->data(), buffer_size);
+    outfile.write(
+        static_cast<const char*>(aoti_metal_buffer->data()),
+        aoti_metal_buffer->size());
 
-    if (outfile.bad()) {
-      ET_LOG(Error, "MetalBackend::init - File write failed");
-      return Error::AccessFailed;
-    }
-    ET_LOG(Info, "MetalBackend::init - Buffer written successfully");
+    ET_CHECK_OR_RETURN_ERROR(
+        outfile, AccessFailed, "Failed to write to file %s", so_path.c_str());
 
     // Finish writing the file to disk
     outfile.close();
@@ -166,93 +171,31 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
 
     // Load the ELF using dlopen
     void* so_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
-    if (so_handle == nullptr) {
-      std::cout << dlerror() << std::endl;
-      return Error::AccessFailed;
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        so_handle != nullptr,
+        AccessFailed,
+        "Failed to load shared library: %s",
+        dlerror());
 
     processed->Free();
 
-    AOTInductorModelContainerCreateWithDevice =
-        reinterpret_cast<AOTInductorModelContainerCreateWithDeviceFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerCreateWithDevice"));
-    if (AOTInductorModelContainerCreateWithDevice == nullptr) {
-      perror("dlsym1");
-      return Error::AccessFailed;
-    }
-    AOTInductorModelContainerDelete =
-        reinterpret_cast<AOTInductorModelContainerDeleteFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerDelete"));
-    if (AOTInductorModelContainerDelete == nullptr) {
-      perror("dlsym2");
-      return Error::AccessFailed;
-    }
-    AOTInductorModelContainerGetNumInputs =
-        reinterpret_cast<AOTInductorModelContainerGetNumInputsFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerGetNumInputs"));
-    if (AOTInductorModelContainerGetNumInputs == nullptr) {
-      perror("dlsym3");
-      return Error::AccessFailed;
-    }
-
-    AOTInductorModelContainerGetNumConstants =
-        reinterpret_cast<AOTInductorModelContainerGetNumConstantsFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerGetNumConstants"));
-    if (AOTInductorModelContainerGetNumConstants == nullptr) {
-      perror("dlsym AOTInductorModelContainerGetNumConstants");
-      return Error::AccessFailed;
-    }
-
-    AOTInductorModelContainerGetInputName =
-        reinterpret_cast<AOTInductorModelContainerGetInputNameFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerGetInputName"));
-    if (AOTInductorModelContainerGetInputName == nullptr) {
-      perror("dlsym AOTInductorModelContainerGetInputName");
-      return Error::AccessFailed;
-    }
-
-    AOTInductorModelContainerGetNumOutputs =
-        reinterpret_cast<AOTInductorModelContainerGetNumOutputsFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerGetNumOutputs"));
-    if (AOTInductorModelContainerGetNumOutputs == nullptr) {
-      perror("dlsym4");
-      return Error::AccessFailed;
-    }
-    AOTInductorModelContainerRun =
-        reinterpret_cast<AOTInductorModelContainerRunFunc>(
-            dlsym(so_handle, "AOTInductorModelContainerRun"));
-    if (AOTInductorModelContainerRun == nullptr) {
-      perror("dlsym5");
-      return Error::AccessFailed;
-    }
+    // Register all shared library functions
+    ET_CHECK_OK_OR_RETURN_ERROR(register_shared_library_functions(so_handle));
 
     AOTInductorModelContainerHandle container_handle = nullptr;
-    ET_LOG(
-        Info,
-        "MetalBackend::init - About to create AOTI container with device='mps'");
+    ET_LOG(Info, "MetalBackend::init - About to create AOTI container with device='mps'");
 
-    AOTIRuntimeError err = AOTInductorModelContainerCreateWithDevice(
-        &container_handle, 1, "mps", nullptr);
-    ET_LOG(
-        Info,
-        "MetalBackend::init - AOTInductorModelContainerCreateWithDevice returned err=%d",
-        err);
+    ET_CHECK_OK_OR_RETURN_ERROR(AOTInductorModelContainerCreateWithDevice(
+        &container_handle, 1, "mps", nullptr));
 
-    if (err != Error::Ok) {
-      ET_LOG(
-          Error,
-          "Failed to initialize AOTInductorModelContainer with error %d",
-          err);
-      return err;
-    }
-    ET_LOG(
-        Info,
-        "Successfully initialized container_handle = %p",
-        container_handle);
+    ET_LOG(Info, "container_handle = %p", container_handle);
 
     AOTIDelegateHandle* handle = new AOTIDelegateHandle();
     handle->so_handle = so_handle;
+    handle->so_path = so_path.string();
     handle->container_handle = container_handle;
+
+    ET_LOG(Info, "MetalBackend::init - Initialization completed successfully");
     return (DelegateHandle*)handle; // Return the handle post-processing
   }
 
@@ -265,6 +208,14 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
+    // Need to re-register all the symbols from the so_handle hosted by this
+    // MetalBackend instance. The reason is that these symbols are
+    // static/singleton across the whole process. When we share multiple methods
+    // (meaning multiple so_handle) in the same process, we need to re-register
+    // the symbols from the so_handle that is being used in this execution.
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        register_shared_library_functions(handle->so_handle));
+
     ET_LOG(Debug, "MetalBackend Handle generated");
 
     size_t n_inputs;
@@ -276,15 +227,13 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
 
     ET_LOG(Debug, "MetalBackend n_outputs %zd generated", n_outputs);
 
-    if (n_inputs + n_outputs != args.size()) {
-      ET_LOG(
-          Error,
-          "number of user input %zd and output %zd generated from AOT Inductor does not match ET runner's %zd. Exit.",
-          n_inputs,
-          n_outputs,
-          args.size());
-      return Error::InvalidArgument;
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        n_inputs + n_outputs == args.size(),
+        InvalidArgument,
+        "number of user input %zd and output %zd generated from AOT Inductor does not match ET runner's %zd. Exit.",
+        n_inputs,
+        n_outputs,
+        args.size())
 
     ET_LOG(
         Debug,
@@ -313,11 +262,7 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
       auto cpu_tensor = &(args[i]->toTensor());
       auto sizes = cpu_tensor->sizes();
       auto scalar_type = cpu_tensor->scalar_type();
-      ET_LOG(
-          Debug,
-          "MetalBackend input %d scalar_type=%d",
-          i,
-          static_cast<int32_t>(scalar_type));
+      ET_LOG(Debug, "MetalBackend input %d scalar_type=%d", i, static_cast<int32_t>(scalar_type));
 
       // Create GPU tensor with same shape
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
@@ -338,13 +283,8 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
       }
 
       // Log the created GPU tensor scalar type
-      auto gpu_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(
-          gpu_input_handle);
-      ET_LOG(
-          Debug,
-          "MetalBackend created GPU tensor %d scalar_type=%d",
-          i,
-          static_cast<int32_t>(gpu_tensor->scalar_type()));
+      auto gpu_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(gpu_input_handle);
+      ET_LOG(Debug, "MetalBackend created GPU tensor %d scalar_type=%d", i, static_cast<int32_t>(gpu_tensor->scalar_type()));
 
       gpu_inputs[i] = gpu_input_handle;
 
@@ -352,14 +292,8 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
       void* cpu_data = cpu_tensor->mutable_data_ptr();
       if (cpu_data && cpu_tensor->numel() > 0) {
         float* cpu_float_data = (float*)cpu_data;
-        ET_LOG(
-            Debug,
-            "CPU input %d data before copy: [%.3f, %.3f, %.3f, ...] (numel=%zd)",
-            i,
-            cpu_float_data[0],
-            cpu_float_data[1],
-            cpu_float_data[2],
-            cpu_tensor->numel());
+        ET_LOG(Debug, "CPU input %d data before copy: [%.3f, %.3f, %.3f, ...] (numel=%zd)",
+               i, cpu_float_data[0], cpu_float_data[1], cpu_float_data[2], cpu_tensor->numel());
       }
 
       // Copy data from CPU to GPU
@@ -370,14 +304,8 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
       }
 
       // Log the GPU tensor scalar type after copy
-      auto gpu_tensor_after =
-          reinterpret_cast<executorch::runtime::etensor::Tensor*>(
-              gpu_inputs[i]);
-      ET_LOG(
-          Debug,
-          "MetalBackend GPU tensor %d scalar_type after copy=%d",
-          i,
-          static_cast<int32_t>(gpu_tensor_after->scalar_type()));
+      auto gpu_tensor_after = reinterpret_cast<executorch::runtime::etensor::Tensor*>(gpu_inputs[i]);
+      ET_LOG(Debug, "MetalBackend GPU tensor %d scalar_type after copy=%d", i, static_cast<int32_t>(gpu_tensor_after->scalar_type()));
 
       ET_LOG(Debug, "Successfully copied input %d from CPU to GPU", i);
     }
@@ -391,11 +319,7 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
       auto sizes = cpu_output_tensor->sizes();
       auto scalar_type = cpu_output_tensor->scalar_type();
-      ET_LOG(
-          Debug,
-          "MetalBackend output %d scalar_type=%d",
-          i,
-          static_cast<int32_t>(scalar_type));
+      ET_LOG(Debug, "MetalBackend output %d scalar_type=%d", i, static_cast<int32_t>(scalar_type));
 
       // Create GPU tensor with same shape for kernel output
       std::vector<int64_t> sizes_vec(sizes.begin(), sizes.end());
@@ -425,21 +349,13 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
     ET_LOG(Debug, "Passing to AOTInductorModelContainerRun:");
     for (int i = 0; i < n_inputs; i++) {
       void* gpu_input_data = gpu_inputs[i]->mutable_data_ptr();
-      ET_LOG(
-          Debug,
-          "  gpu_inputs[%d] = %p, data_ptr = %p",
-          i,
-          gpu_inputs[i],
-          gpu_input_data);
+      ET_LOG(Debug, "  gpu_inputs[%d] = %p, data_ptr = %p",
+             i, gpu_inputs[i], gpu_input_data);
     }
     for (int i = 0; i < n_outputs; i++) {
       void* gpu_output_data = gpu_outputs[i]->mutable_data_ptr();
-      ET_LOG(
-          Debug,
-          "  gpu_outputs[%d] = %p, data_ptr = %p",
-          i,
-          gpu_outputs[i],
-          gpu_output_data);
+      ET_LOG(Debug, "  gpu_outputs[%d] = %p, data_ptr = %p",
+             i, gpu_outputs[i], gpu_output_data);
     }
 
     // Run AOTI container with GPU tensors
@@ -464,15 +380,10 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
     try {
       synchronize_metal_stream();
     } catch (const std::exception& e) {
-      ET_LOG(
-          Error,
-          "Failed to synchronize Metal stream after kernel execution: %s",
-          e.what());
+      ET_LOG(Error, "Failed to synchronize Metal stream after kernel execution: %s", e.what());
       return Error::Internal;
     } catch (...) {
-      ET_LOG(
-          Error,
-          "Failed to synchronize Metal stream after kernel execution: unknown exception");
+      ET_LOG(Error, "Failed to synchronize Metal stream after kernel execution: unknown exception");
       return Error::Internal;
     }
 
@@ -481,11 +392,15 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
     // Copy GPU output results back to CPU output tensors
     for (int i = 0; i < n_outputs; i++) {
       auto cpu_output_tensor = &(args[i + n_inputs]->toTensor());
-      Error copy_err = aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0);
-      if (copy_err != Error::Ok) {
-        ET_LOG(Error, "Failed to copy GPU output %d back to CPU", i);
-        return Error::Internal;
-      }
+      // For DYNAMIC_BOUND tensors we try to resize
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          resize_tensor(*cpu_output_tensor, gpu_outputs[i]->sizes()),
+          "Error resizing tensor at output index %d",
+          i);
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          aoti_torch_copy_(cpu_output_tensor, gpu_outputs[i], 0),
+          "Failed to copy GPU output %d back to CPU",
+          i);
       ET_LOG(Debug, "Copied GPU output %d back to CPU", i);
     }
 
@@ -507,40 +422,49 @@ class MetalBackend final : public ::executorch::runtime::BackendInterface {
   }
 
   void destroy(DelegateHandle* handle_) const override {
+    if (handle_ == nullptr) {
+      return;
+    }
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
-    // Delete the container BEFORE closing the shared library
-    if (handle->container_handle != nullptr) {
-      AOTIRuntimeError delete_result =
-          AOTInductorModelContainerDelete(handle->container_handle);
-      if (delete_result != Error::Ok) {
-        ET_LOG(
-            Error,
-            "AOTInductorModelContainerDelete failed with error code %d",
-            delete_result);
-      }
-    }
+    // NOTE: AOTInductorModelContainerDelete does not work correctly with
+    // multiple .so files. Deleting one container frees shared resources,
+    // which causes segmentation faults when attempting to delete other
+    // containers. As a workaround, we skip explicit container deletion
+    // and defer cleanup to the OS.
+    // TODO(gasoonjia): Find a proper solution for safe container deletion.
+    // AOTInductorModelContainerDelete(handle->container_handle);
 
     // Now close the shared library
     if (handle->so_handle != nullptr) {
       dlclose(handle->so_handle);
     }
 
-    free(handle);
+    // Remove the temporary shared library file
+    if (!handle->so_path.empty()) {
+      std::error_code remove_error;
+      std::filesystem::remove(handle->so_path, remove_error);
+      ET_CHECK_OR_LOG_ERROR(
+          !remove_error,
+          "Failed to remove temporary shared library %s: %s",
+          handle->so_path.c_str(),
+          remove_error.message().c_str());
+    }
+
+    delete handle;
     cleanup_memory();
     executorch::backends::aoti::cleanup_tensor_metadata();
     ET_LOG(Debug, "MetalBackend handle %p destroy", handle_);
   }
 };
 
-} // namespace metal
+} // namespace executorch::backends::metal
 
+namespace executorch::backends {
 namespace {
 auto cls = metal::MetalBackend();
 executorch::runtime::Backend backend{"MetalBackend", &cls};
 static executorch::runtime::Error success_with_compiler =
     register_backend(backend);
 } // namespace
-
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends
