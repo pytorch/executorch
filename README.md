@@ -52,7 +52,7 @@ ExecuTorch uses **ahead-of-time (AOT) compilation** to prepare PyTorch models fo
 2. **⚙️ Compile** — Quantize, optimize, and partition to hardware backends → `.pte`
 3. **🚀 Execute** — Load `.pte` on-device via lightweight C++ runtime
 
-Models use a standardized [Core ATen operator set](https://docs.pytorch.org/executorch/main/compiler-ir-advanced.html#intermediate-representation). [Partitioners](https://docs.pytorch.org/executorch/main/compiler-delegate-and-partitioner.html) delegate subgraphs to specialized hardware (NPU/GPU) with CPU fallback.
+Models use a standardized [Core ATen operator set](https://docs.pytorch.org/executorch/main/concepts.html#core-aten-operators). [Partitioners](https://docs.pytorch.org/executorch/main/compiler-delegate-and-partitioner.html) delegate subgraphs to specialized hardware (NPU/GPU) with CPU fallback.
 
 Learn more: [How ExecuTorch Works](https://docs.pytorch.org/executorch/main/intro-how-it-works.html) • [Architecture Guide](https://docs.pytorch.org/executorch/main/getting-started-architecture.html)
 
@@ -200,9 +200,9 @@ ExecuTorch powers on-device AI at scale across Meta's family of apps, VR/AR devi
 
 **Multimodal:** [Llava](examples/models/llava/README.md) (vision-language), [Voxtral](examples/models/voxtral/README.md) (audio-language)
 
-**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3), [Whisper](https://github.com/meta-pytorch/executorch-examples/tree/main/whisper/android/WhisperApp)
+**Vision/Speech:** [MobileNetV2](https://github.com/meta-pytorch/executorch-examples/tree/main/mv2), [DeepLabV3](https://github.com/meta-pytorch/executorch-examples/tree/main/dl3)
 
-**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) out-of-tree demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models
+**Resources:** [`examples/`](examples/) directory • [executorch-examples](https://github.com/meta-pytorch/executorch-examples) mobile demos • [Optimum-ExecuTorch](https://github.com/huggingface/optimum-executorch) for HuggingFace models
 
 ## Key Features
 
@@ -222,7 +222,7 @@ See [Advanced Topics](https://docs.pytorch.org/executorch/main/advanced-topics-s
 - [**Documentation Home**](https://docs.pytorch.org/executorch/main/index.html) — Complete guides and tutorials
 - [**API Reference**](https://docs.pytorch.org/executorch/main/api-section.html) — Python, C++, Java/Kotlin APIs
 - [**Backend Integration**](https://docs.pytorch.org/executorch/main/backend-delegates-integration.html) — Build custom hardware backends
-- [**Troubleshooting**](https://docs.pytorch.org/executorch/main/support-section.html) — Common issues and solutions
+- [**Troubleshooting**](https://docs.pytorch.org/executorch/main/using-executorch-troubleshooting.html) — Common issues and solutions
 
 ## Community & Contributing
 
