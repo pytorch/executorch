@@ -56,7 +56,7 @@ class DecomposeBatchNormNoStatsPass(ArmPass):
             if (
                 node.op != "call_function"
                 or node.target not in bn_ops
-                or self.allowed_to_transform(node.meta)
+                or not self.allowed_to_transform(node.meta)
             ):
                 continue
 
