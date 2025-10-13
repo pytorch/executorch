@@ -62,7 +62,7 @@ def quantize_per_tensor(
     ]
     if dtype not in supported_quant_types:
         raise ValueError(
-            f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_quant_types}"
+            f"Unsupported dtype to quantize to {dtype}. Supported dtypes must be one of {supported_quant_types}"
         )
 
     return torch.ops.quantized_decomposed.quantize_per_tensor(
@@ -264,7 +264,7 @@ def quantized_linear_common(
     supported_dtypes = [torch.int8, torch.uint8, torch.int32]
     if dtype not in supported_dtypes:
         raise ValueError(
-            f"Unsupported dtype to quantize to. Supported dtypes must be one of {supported_dtypes}"
+            f"Unsupported dtype to quantize to {dtype}. Supported dtypes must be one of {supported_dtypes}"
         )
 
     out = torch.nn.functional.linear(
@@ -427,25 +427,27 @@ def quantized_matmul(
         - out_multiplier (int): The multiplier used to scale the output
         - out_shift (int): The shift used to scale the output
         - out_zero_point (int): The quantized mapping of zero for the output
-        - transposed (bool): Whether to transpose the weight tensor
+        - transposed (bool): Whether Y is transposed.
     """
     if bias is not None and not torch.all(bias == 0):
         raise ValueError("bias must be None or all zeros since unused in out variant")
 
-    # Looks weird, but quantized linear assumes weights are pre-transposed,
-    # hence we transpose only if `transposed` is False.
-    if not transposed:
-        Y = Y.T
+    if transposed:
+        Y = Y.transpose(-1, -2)
 
-    return quantized_linear_common(
-        X,
-        Y,
-        bias or torch.zeros(1, dtype=torch.int32),
-        X_zero_point,
-        Y_zero_point,
-        out_multiplier,
-        out_shift,
+    out_scale = 1.0 / (-out_multiplier * (1 / (1 << 31)) * (2**out_shift))
+
+    out = torch.matmul(
+        (X - X_zero_point).float(),
+        (Y - Y_zero_point).float(),
+    )
+    return quantize_per_tensor(
+        out,
+        out_scale,
         out_zero_point,
+        torch.iinfo(X.dtype).min,
+        torch.iinfo(X.dtype).max,
+        X.dtype,
     )
 
 

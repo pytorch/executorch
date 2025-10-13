@@ -215,9 +215,10 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
-        foundation_weights_file: configure the foundation weights of a model
-            to be placed in a separate file, external to the PTE. Pass the
-            intended file name here.
+        foundation_weights_file: place the foundation weights of the model into
+            a separate file, external to the PTE. Pass the file name here.
+        lora_weights_file: place the lora weights of the model into a
+            separate file, external to the PTE. Pass the file name here.
     """
 
     max_seq_length: int = 128
@@ -227,6 +228,7 @@ class ExportConfig:
     so_library: Optional[str] = None
     export_only: bool = False
     foundation_weights_file: Optional[str] = None
+    lora_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -572,6 +574,8 @@ class LlmConfig:
             llm_config.export.export_only = args.export_only
         if hasattr(args, "foundation_weights_file"):
             llm_config.export.foundation_weights_file = args.foundation_weights_file
+        if hasattr(args, "lora_weights_file"):
+            llm_config.export.lora_weights_file = args.lora_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):
