@@ -74,7 +74,7 @@ doxygen_xml_dir = os.path.join(
     "xml",  # {repo_root}/docs/cpp/build/xml
 )
 
-html_favicon = "_static/img/ExecuTorch-Logo-cropped.svg"
+html_favicon = "_static/img/executorch-chip-logo.svg"
 
 # Get ET_VERSION_DOCS during the build.
 et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
