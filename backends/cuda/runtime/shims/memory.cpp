@@ -10,7 +10,7 @@
 #include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
-#include <executorch/backends/cuda/runtime/shims/utils.h>
+#include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
 #include <cstdlib> // For posix_memalign
@@ -19,9 +19,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace executorch {
-namespace backends {
-namespace cuda {
+namespace executorch::backends::cuda {
 
 using executorch::aten::SizesType;
 using executorch::aten::StridesType;
@@ -227,7 +225,7 @@ AOTITorchError aoti_torch_empty_strided(
 
   if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
     ET_CUDA_CHECK_OR_RETURN_ERROR(
-        cudaMallocManaged(&ptr, static_cast<size_t>(nbytes)));
+        cudaMallocAsync(&ptr, static_cast<size_t>(nbytes), cudaStreamDefault));
   } else if (device_type == static_cast<int32_t>(SupportedDevices::CPU)) {
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
     int result = posix_memalign(&ptr, 16, nbytes);
@@ -271,14 +269,21 @@ void clear_all_tensors() {
   // Use aoti_torch_delete_tensor_object to properly delete each tensor
   // Note: We need to collect tensor pointers first since deletion modifies the
   // set
-  auto old_tensors =
-      std::move(tensors); // tensors is now empty and no need to copy
-  for (const auto& tensor_shared : old_tensors) {
-    aoti_torch_delete_tensor_object(tensor_shared.get());
+  std::vector<Tensor*> tensor_ptrs;
+  tensor_ptrs.reserve(tensors.size());
+  for (const auto& tensor_shared : tensors) {
+    tensor_ptrs.push_back(tensor_shared.get());
+  }
+
+  // Now delete each tensor - this will modify the global tensors set
+  for (Tensor* tensor_ptr : tensor_ptrs) {
+    aoti_torch_delete_tensor_object(tensor_ptr);
   }
 
   // tensors set should now be empty, but ensure it's cleared
   tensors.clear();
+
+  ET_LOG(Info, "Cleared all tensors");
 }
 
 AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
@@ -323,11 +328,14 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
           ET_CUDA_CHECK_OR_RETURN_ERROR(
               cudaPointerGetAttributes(&attributes, data_ptr));
 
-          if (attributes.type == cudaMemoryTypeManaged) {
-            // This is CUDA managed memory - free with proper synchronization
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
+          if (attributes.type == cudaMemoryTypeDevice) {
+            ET_CUDA_CHECK_OR_RETURN_ERROR(
+                cudaFreeAsync(data_ptr, cudaStreamDefault));
           } else {
+            ET_CHECK_OR_RETURN_ERROR(
+                attributes.type != cudaMemoryTypeManaged,
+                Internal,
+                "Expected host memory but got managed!")
             // This is CPU memory - free immediately
             free(data_ptr);
             data_ptr = nullptr;
@@ -652,6 +660,4 @@ AOTITorchError aoti_torch__reinterpret_tensor(
 
 } // extern "C"
 
-} // namespace cuda
-} // namespace backends
-} // namespace executorch
+} // namespace executorch::backends::cuda

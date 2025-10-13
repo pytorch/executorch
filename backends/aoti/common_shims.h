@@ -58,6 +58,8 @@ AOTITorchError aoti_torch_get_dim(Tensor* tensor, int64_t* ret_dim);
 int32_t aoti_torch_device_type_cpu();
 int32_t aoti_torch_layout_strided();
 int32_t aoti_torch_dtype_float32();
+int32_t aoti_torch_dtype_bfloat16();
+int32_t aoti_torch_dtype_int64();
 
 // Autograd mode functions
 int32_t aoti_torch_grad_mode_is_enabled();

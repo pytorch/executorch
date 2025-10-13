@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.arm.tosa.dialect.ops import (  # noqa F401
+    matmul,
     rescale,
     resize,
     table,

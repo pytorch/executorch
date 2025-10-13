@@ -171,6 +171,7 @@ cmake \
   -DCMAKE_BUILD_TYPE=Debug \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_NAMED_DATA_MAP=ON \
   -DEXECUTORCH_BUILD_EXTENSION_FLAT_TENSOR=ON \
   -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -192,7 +193,7 @@ The block diagram below demonstrates, at the high level, how the various build a
 
 ## Deploying and running on device
 
-Since we are using the Vulkan emulation layer, we can run the the executor runner with the VGF delegate on the host machine:
+Since we are using the Vulkan emulation layer, we can run the executor runner with the VGF delegate on the host machine:
 
 ```bash
 ./cmake-out/executor_runner -model_path simple_example.pte

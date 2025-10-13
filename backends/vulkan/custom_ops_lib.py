@@ -109,6 +109,763 @@ lib.define(
 )
 lib.impl(name, conv_with_clamp_out_impl, "CompositeExplicitAutograd")
 
+##########################
+## conv_with_binary_add ##
+##########################
+
+
+def conv_with_binary_add_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+):
+    return torch.add(
+        torch.convolution(
+            input,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            transposed,
+            output_padding,
+            groups,
+        ),
+        other,
+    )
+
+
+name = "conv_with_binary_add"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other) -> Tensor"
+)
+lib.impl(name, conv_with_binary_add_impl, "CompositeExplicitAutograd")
+conv_with_binary_add_op = getattr(getattr(torch.ops, namespace), name)
+
+#############################
+## conv_with_binary_add.out ##
+#############################
+
+
+def conv_with_binary_add_out_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+    out=None,
+):
+    out = conv_with_binary_add_impl(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        other,
+    )
+    return out
+
+
+name = "conv_with_binary_add.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv_with_binary_add_out_impl, "CompositeExplicitAutograd")
+
+##########################
+## conv_with_binary_sub ##
+##########################
+
+
+def conv_with_binary_sub_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+):
+    return torch.sub(
+        torch.convolution(
+            input,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            transposed,
+            output_padding,
+            groups,
+        ),
+        other,
+    )
+
+
+name = "conv_with_binary_sub"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other) -> Tensor"
+)
+lib.impl(name, conv_with_binary_sub_impl, "CompositeExplicitAutograd")
+conv_with_binary_sub_op = getattr(getattr(torch.ops, namespace), name)
+
+##############################
+## conv_with_binary_sub.out ##
+##############################
+
+
+def conv_with_binary_sub_out_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+    out=None,
+):
+    out = conv_with_binary_sub_impl(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        other,
+    )
+    return out
+
+
+name = "conv_with_binary_sub.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv_with_binary_sub_out_impl, "CompositeExplicitAutograd")
+
+##########################
+## conv_with_binary_mul ##
+##########################
+
+
+def conv_with_binary_mul_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+):
+    return torch.mul(
+        torch.convolution(
+            input,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            transposed,
+            output_padding,
+            groups,
+        ),
+        other,
+    )
+
+
+name = "conv_with_binary_mul"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other) -> Tensor"
+)
+lib.impl(name, conv_with_binary_mul_impl, "CompositeExplicitAutograd")
+conv_with_binary_mul_op = getattr(getattr(torch.ops, namespace), name)
+
+##############################
+## conv_with_binary_mul.out ##
+##############################
+
+
+def conv_with_binary_mul_out_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+    out=None,
+):
+    out = conv_with_binary_mul_impl(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        other,
+    )
+    return out
+
+
+name = "conv_with_binary_mul.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv_with_binary_mul_out_impl, "CompositeExplicitAutograd")
+
+##########################
+## conv_with_binary_div ##
+##########################
+
+
+def conv_with_binary_div_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+):
+    return torch.div(
+        torch.convolution(
+            input,
+            weight,
+            bias,
+            stride,
+            padding,
+            dilation,
+            transposed,
+            output_padding,
+            groups,
+        ),
+        other,
+    )
+
+
+name = "conv_with_binary_div"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other) -> Tensor"
+)
+lib.impl(name, conv_with_binary_div_impl, "CompositeExplicitAutograd")
+conv_with_binary_div_op = getattr(getattr(torch.ops, namespace), name)
+
+##############################
+## conv_with_binary_div.out ##
+##############################
+
+
+def conv_with_binary_div_out_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    other=None,
+    out=None,
+):
+    out = conv_with_binary_div_impl(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        other,
+    )
+    return out
+
+
+name = "conv_with_binary_div.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Tensor other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv_with_binary_div_out_impl, "CompositeExplicitAutograd")
+
+###########################
+## clamp_with_binary_add ##
+###########################
+
+
+def clamp_with_binary_add_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+):
+    return torch.add(
+        torch.clamp(
+            input,
+            output_min,
+            output_max,
+        ),
+        other,
+    )
+
+
+name = "clamp_with_binary_add"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other) -> Tensor"
+)
+lib.impl(name, clamp_with_binary_add_impl, "CompositeExplicitAutograd")
+clamp_with_binary_add_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## clamp_with_binary_add.out ##
+###############################
+
+
+def clamp_with_binary_add_out_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+    out=None,
+):
+    out = clamp_with_binary_add_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "clamp_with_binary_add.out"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, clamp_with_binary_add_out_impl, "CompositeExplicitAutograd")
+
+###########################
+## clamp_with_binary_sub ##
+###########################
+
+
+def clamp_with_binary_sub_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+):
+    return torch.sub(
+        torch.clamp(
+            input,
+            output_min,
+            output_max,
+        ),
+        other,
+    )
+
+
+name = "clamp_with_binary_sub"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other) -> Tensor"
+)
+lib.impl(name, clamp_with_binary_sub_impl, "CompositeExplicitAutograd")
+clamp_with_binary_sub_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## clamp_with_binary_sub.out ##
+###############################
+
+
+def clamp_with_binary_sub_out_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+    out=None,
+):
+    out = clamp_with_binary_sub_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "clamp_with_binary_sub.out"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, clamp_with_binary_sub_out_impl, "CompositeExplicitAutograd")
+
+###########################
+## clamp_with_binary_mul ##
+###########################
+
+
+def clamp_with_binary_mul_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+):
+    return torch.mul(
+        torch.clamp(
+            input,
+            output_min,
+            output_max,
+        ),
+        other,
+    )
+
+
+name = "clamp_with_binary_mul"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other) -> Tensor"
+)
+lib.impl(name, clamp_with_binary_mul_impl, "CompositeExplicitAutograd")
+clamp_with_binary_mul_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## clamp_with_binary_mul.out ##
+###############################
+
+
+def clamp_with_binary_mul_out_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+    out=None,
+):
+    out = clamp_with_binary_mul_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "clamp_with_binary_mul.out"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, clamp_with_binary_mul_out_impl, "CompositeExplicitAutograd")
+
+###########################
+## clamp_with_binary_div ##
+###########################
+
+
+def clamp_with_binary_div_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+):
+    return torch.div(
+        torch.clamp(
+            input,
+            output_min,
+            output_max,
+        ),
+        other,
+    )
+
+
+name = "clamp_with_binary_div"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other) -> Tensor"
+)
+lib.impl(name, clamp_with_binary_div_impl, "CompositeExplicitAutograd")
+clamp_with_binary_div_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## clamp_with_binary_div.out ##
+###############################
+
+
+def clamp_with_binary_div_out_impl(
+    input,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    other=None,
+    out=None,
+):
+    out = clamp_with_binary_div_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "clamp_with_binary_div.out"
+lib.define(
+    f"{name}(Tensor input, Scalar? output_min, Scalar? output_max, Tensor? other, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, clamp_with_binary_div_out_impl, "CompositeExplicitAutograd")
+
+###########################
+## binary_add_with_clamp ##
+###########################
+
+
+def binary_add_with_clamp_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+):
+    return torch.clamp(
+        torch.add(
+            input,
+            other,
+        ),
+        output_min,
+        output_max,
+    )
+
+
+name = "binary_add_with_clamp"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max) -> Tensor"
+)
+lib.impl(name, binary_add_with_clamp_impl, "CompositeExplicitAutograd")
+binary_add_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## binary_add_with_clamp.out ##
+###############################
+
+
+def binary_add_with_clamp_out_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    out=None,
+):
+    out = binary_add_with_clamp_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "binary_add_with_clamp.out"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, binary_add_with_clamp_impl, "CompositeExplicitAutograd")
+
+###########################
+## binary_sub_with_clamp ##
+###########################
+
+
+def binary_sub_with_clamp_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+):
+    return torch.clamp(
+        torch.sub(
+            input,
+            other,
+        ),
+        output_min,
+        output_max,
+    )
+
+
+name = "binary_sub_with_clamp"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max) -> Tensor"
+)
+lib.impl(name, binary_sub_with_clamp_impl, "CompositeExplicitAutograd")
+binary_sub_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## binary_sub_with_clamp.out ##
+###############################
+
+
+def binary_sub_with_clamp_out_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    out=None,
+):
+    out = binary_sub_with_clamp_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "binary_sub_with_clamp.out"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, binary_sub_with_clamp_impl, "CompositeExplicitAutograd")
+
+###########################
+## binary_mul_with_clamp ##
+###########################
+
+
+def binary_mul_with_clamp_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+):
+    return torch.clamp(
+        torch.mul(
+            input,
+            other,
+        ),
+        output_min,
+        output_max,
+    )
+
+
+name = "binary_mul_with_clamp"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max) -> Tensor"
+)
+lib.impl(name, binary_mul_with_clamp_impl, "CompositeExplicitAutograd")
+binary_mul_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## binary_mul_with_clamp.out ##
+###############################
+
+
+def binary_mul_with_clamp_out_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    out=None,
+):
+    out = binary_mul_with_clamp_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "binary_mul_with_clamp.out"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, binary_mul_with_clamp_impl, "CompositeExplicitAutograd")
+
+###########################
+## binary_div_with_clamp ##
+###########################
+
+
+def binary_div_with_clamp_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+):
+    return torch.clamp(
+        torch.div(
+            input,
+            other,
+        ),
+        output_min,
+        output_max,
+    )
+
+
+name = "binary_div_with_clamp"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max) -> Tensor"
+)
+lib.impl(name, binary_div_with_clamp_impl, "CompositeExplicitAutograd")
+binary_div_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
+
+###############################
+## binary_div_with_clamp.out ##
+###############################
+
+
+def binary_div_with_clamp_out_impl(
+    input,
+    other=None,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    out=None,
+):
+    out = binary_div_with_clamp_impl(
+        input,
+        output_min,
+        output_max,
+        other,
+    )
+    return out
+
+
+name = "binary_div_with_clamp.out"
+lib.define(
+    f"{name}(Tensor input, Tensor? other, Scalar? output_min, Scalar? output_max, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, binary_div_with_clamp_impl, "CompositeExplicitAutograd")
+
+
 #################
 ## grid_priors ##
 #################
