@@ -1038,6 +1038,74 @@ TEST_F(TensorPtrTest, TensorUint8dataTooLargeExpectDeath) {
   ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 2}, std::move(data)); }, "");
 }
 
+TEST_F(TensorPtrTest, MakeViewFromTensorPtrKeepsSourceAlive) {
+  bool freed = false;
+  auto* data = new float[6]{1, 2, 3, 4, 5, 6};
+  auto tensor = make_tensor_ptr(
+      {2, 3},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+      [&freed](void* p) {
+        freed = true;
+        delete[] static_cast<float*>(p);
+      });
+  auto view = make_tensor_ptr(tensor);
+  tensor.reset();
+  EXPECT_FALSE(freed);
+  EXPECT_EQ(view->const_data_ptr<float>()[0], 1.0f);
+  view->mutable_data_ptr<float>()[0] = 42.0f;
+  EXPECT_EQ(view->const_data_ptr<float>()[0], 42.0f);
+  view.reset();
+  EXPECT_TRUE(freed);
+}
+
+TEST_F(TensorPtrTest, MakeViewFromTensorDoesNotKeepAliveByDefault) {
+  bool freed = false;
+  auto* data = new float[2]{7.0f, 8.0f};
+  auto tensor = make_tensor_ptr(
+      {2, 1},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+      [&freed](void* p) {
+        freed = true;
+        delete[] static_cast<float*>(p);
+      });
+  auto view = make_tensor_ptr(*tensor);
+  auto raw = view->const_data_ptr<float>();
+  EXPECT_EQ(raw, data);
+  tensor.reset();
+  EXPECT_TRUE(freed);
+  view.reset();
+}
+
+TEST_F(TensorPtrTest, MakeViewFromTensorWithDeleterKeepsAlive) {
+  bool freed = false;
+  auto* data = new float[3]{1.0f, 2.0f, 3.0f};
+  auto tensor = make_tensor_ptr(
+      {3},
+      data,
+      {},
+      {},
+      executorch::aten::ScalarType::Float,
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
+      [&freed](void* p) {
+        freed = true;
+        delete[] static_cast<float*>(p);
+      });
+  auto view = make_tensor_ptr(*tensor, {}, {}, {}, [tensor](void*) {});
+  tensor.reset();
+  EXPECT_FALSE(freed);
+  EXPECT_EQ(view->const_data_ptr<float>()[2], 3.0f);
+  view.reset();
+  EXPECT_TRUE(freed);
+}
+
 TEST_F(TensorPtrTest, VectorFloatTooSmallExpectDeath) {
   std::vector<float> data(9, 1.f);
   ET_EXPECT_DEATH({ auto _ = make_tensor_ptr({2, 5}, std::move(data)); }, "");
