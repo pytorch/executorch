@@ -61,7 +61,7 @@ For more information about OpenVINO build, refer to the [OpenVINO Build Instruct
 
 Follow the steps below to setup your build environment:
 
-1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](getting-started-setup.md#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
+1. **Setup ExecuTorch Environment**: Refer to the [Environment Setup](using-executorch-building-from-source.md#environment-setup) guide for detailed instructions on setting up the ExecuTorch environment.
 
 2. **Setup OpenVINO Backend Environment**
 - Install the dependent libs. Ensure that you are inside `executorch/backends/openvino/` directory

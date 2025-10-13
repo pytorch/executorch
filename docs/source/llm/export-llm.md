@@ -78,7 +78,7 @@ python -m extension.llm.export.export_llm \
 - `use_shared_embedding` can help for models with tied input/output embedding layers, given that you quantize using TorchAO low bit ops (`quantization.qmode: torchao:8da(\\d+)w` or `quantization.qmode: torchao:fpa(\d+)w`), see more [here](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L307).
 - `use_attention_sink` to extend generation by removing from the beginning of the KV cache when the max context length is reached.
 - `quantize_kv_cache` quantizes the KV cache in int8.
-- `local_global_attention` impements [Local-Global Attention](https://arxiv.org/abs/2411.09604), making specific attention layers use a much smaller localized sliding window KV cache.
+- `local_global_attention` implements [Local-Global Attention](https://arxiv.org/abs/2411.09604), making specific attention layers use a much smaller localized sliding window KV cache.
 
 ## Quantization
 Quantization options are defined by [`QuantizationConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L283). ExecuTorch does quantization in two ways:
@@ -92,7 +92,7 @@ The quantization modes are defined [here](https://github.com/pytorch/executorch/
 
 Common ones to use are:
 - `8da4w`: short for int8 dynamic activation + int4 weight quantization.
-- `int8`: int8 weight-only quanziation.
+- `int8`: int8 weight-only quantization.
 
 Group size is specified with:
 - `group_size`: 8, 32, 64, etc.
