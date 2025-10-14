@@ -120,7 +120,9 @@ def test_numerical_diff_print(test_data: input_t1):
     # not present.
     try:
         # Tolerate 0 difference => we want to trigger a numerical diff
-        tester.run_method_and_compare_outputs(stage=StageType.INITIAL_MODEL, atol=0, rtol=0, qtol=0)
+        tester.run_method_and_compare_outputs(
+            stage=StageType.INITIAL_MODEL, atol=0, rtol=0, qtol=0
+        )
     except AssertionError:
         pass  # Implicit pass test
     else:
