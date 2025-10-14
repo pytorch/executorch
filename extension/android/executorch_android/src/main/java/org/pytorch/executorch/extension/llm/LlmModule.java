@@ -227,7 +227,8 @@ public class LlmModule {
     return 0;
   }
 
-  private native int appendNormalizedImagesInput(float[] image, int width, int height, int channels);
+  private native int appendNormalizedImagesInput(
+      float[] image, int width, int height, int channels);
 
   /**
    * Prefill an LLaVA Module with the given text input.
