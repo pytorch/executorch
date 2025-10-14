@@ -1,3 +1,15 @@
+==========================
+{BACKEND_NAME} Partitioner API
+==========================
+
+Document the partitioner API for the backend, including configuration options and compile specs.
+
+- ``option1``: Description of the option and values.
+- ``option2``: Description of the second option.
+- ``option3``: Description of the third option.
+
+{ADDITIONAL_PARTITIONER_DETAILS}
+
 ================
 Operator Support
 ================

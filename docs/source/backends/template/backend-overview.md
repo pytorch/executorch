@@ -27,15 +27,17 @@ This section is intended to tell the user all of the steps they'll need to take 
 
 ## Reference
 
-**→{doc}`backend-troubleshooting` — Debug common issues.**
-
 **→{doc}`backend-partitioner` — Partitioner options.**
 
 **→{doc}`backend-quantization` — Supported quantization schemes.**
 
-**→{doc}`backend-op-support` — Supported operators.**
+**→{doc}`backend-troubleshooting` — Debug common issues.**
 
 **→{doc}`backend-arch-internals` — Backend internals.**
+
+**→{doc}`tutorials/backend-tutorials` — Tutorials.**
+
+**→{doc}`guides/backend-guides` — Tutorials.**
 
 ```{toctree}
 :maxdepth: 2
@@ -47,3 +49,5 @@ backend-partitioner
 backend-quantization
 backend-op-support
 backend-arch-internals
+tutorials/backend-tutorials
+guides/backend-guides
