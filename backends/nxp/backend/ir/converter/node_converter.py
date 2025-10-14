@@ -185,6 +185,14 @@ class NodeConverter(ABC):
         """
         return self.context.tflite_builder
 
+    @property
+    def neutron_target_spec(self) -> NeutronTargetSpec:
+        """
+        Get an instance of NeutronTargetSpec from the conversion context.
+        :return: NeutronTargetSpec instance.
+        """
+        return self.builder.neutron_target_spec
+
     def _create_tflite_op_with_io_tensors(self, node: Node) -> tflite_model.Operator:
         """
         Create TFLite op wrapper with input/output tensors added into 'tmp_inputs' and 'tmp_outputs'.
