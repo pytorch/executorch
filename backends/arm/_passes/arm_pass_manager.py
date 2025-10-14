@@ -36,6 +36,7 @@ from executorch.backends.arm._passes import (
     DecomposeAcoshPass,
     DecomposeAdaptiveAvgPool2dPass,
     DecomposeAddmmPass,
+    DecomposeAddSubAlphaPass,
     DecomposeAsinAndAcosPass,
     DecomposeAsinhPass,
     DecomposeAtanhPass,
@@ -81,6 +82,7 @@ from executorch.backends.arm._passes import (
     FuseEqualPlaceholdersPass,
     FuseQuantizedActivationPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
+    InsertRescaleInt32Pass,
     InsertRescalePass,
     InsertTableOpsPass,
     MatchArgDtypePass,
@@ -91,6 +93,7 @@ from executorch.backends.arm._passes import (
     ReplaceScalarWithTensorArgPassTOSABI,
     ReplaceScalarWithTensorArgPassTOSAMI,
     RetraceFoldedDtypesPass,
+    RewriteMatmulPass,
     RewriteUpsamplePass,
     ScalarsToAttributePass,
     SizeAdjustInputPass,
@@ -210,10 +213,12 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
 
+        self.add_pass(RewriteMatmulPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
         self.add_pass(InsertRescalePass())
+        self.add_pass(InsertRescaleInt32Pass())
 
         self.validate_constraints_mandatory()
         return self._transform(exported_program.graph_module)
@@ -258,6 +263,7 @@ class ArmPassManager(PassManager):
         )
         self.add_pass(DecomposeNotEqualPass())
         self.add_pass(DecomposeDivPass())
+        self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(DecomposeSoftmaxPass())
         self.add_pass(DecomposeGeluPass())
         self.add_pass(ConvertFullLikeToFullPass())
@@ -295,6 +301,7 @@ class ArmPassManager(PassManager):
         self.add_pass(RewriteUpsamplePass(exported_program))
         self.add_pass(AddBiasPass(exported_program))
         self.add_pass(InsertTableOpsPass(exported_program))
+        self.add_pass(RewriteMatmulPass(exported_program))
         self.add_pass(FuseEqualPlaceholdersPass(exported_program))
         self.add_pass(ToTosaMemoryFormatPass(exported_program))
         self.add_pass(RemoveNoopPass())
@@ -329,6 +336,7 @@ class ArmPassManager(PassManager):
         self.add_pass(DecomposeSignPass())
         self.add_pass(DecomposeAddmmPass())
         self.add_pass(DecomposeDivTensorModePass())
+        self.add_pass(DecomposeAddSubAlphaPass())
         self.add_pass(ReplaceScalarWithTensorArgPassTOSABI())
         self.add_pass(ScalarsToAttributePass())
         self.add_pass(DecomposeGroupNormPass())

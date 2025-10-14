@@ -59,7 +59,7 @@ Key features:
 
 After choosing your platform:
 - **{doc}`backends-section`** - Deep dive into backend selection and optimization
-- **{doc}`llms-section`** - Working with Large Language Models on edge devices
+- **{doc}`llm/working-with-llms`** - Working with Large Language Models on edge devices
 
 ```{toctree}
 :hidden:

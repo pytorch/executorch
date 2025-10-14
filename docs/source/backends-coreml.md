@@ -61,7 +61,7 @@ The Core ML partitioner API allows for configuration of the model delegation to 
  - `skip_ops_for_coreml_delegation`: Allows you to skip ops for delegation by Core ML.  By default, all ops that Core ML supports will be delegated.  See [here](https://github.com/pytorch/executorch/blob/14ff52ff89a89c074fc6c14d3f01683677783dcd/backends/apple/coreml/test/test_coreml_partitioner.py#L42) for an example of skipping an op for delegation.
 - `compile_specs`: A list of `CompileSpec`s for the Core ML backend.  These control low-level details of Core ML delegation, such as the compute unit (CPU, GPU, ANE), the iOS deployment target, and the compute precision (FP16, FP32).  These are discussed more below.
 - `take_over_mutable_buffer`: A boolean that indicates whether PyTorch mutable buffers in stateful models should be converted to [Core ML `MLState`](https://developer.apple.com/documentation/coreml/mlstate).  If set to `False`, mutable buffers in the PyTorch graph are converted to graph inputs and outputs to the Core ML lowered module under the hood.  Generally, setting `take_over_mutable_buffer` to true will result in better performance, but using `MLState` requires iOS >= 18.0, macOS >= 15.0, and Xcode >= 16.0.
-- `take_over_constant_data`: A boolean that indicates whether PyTorch constant data like model weights should be consumed by the Core ML delegate.  If set to False, constant data is passed to the Core ML delegate as inputs.  By deafault, take_over_constant_data=True.
+- `take_over_constant_data`: A boolean that indicates whether PyTorch constant data like model weights should be consumed by the Core ML delegate.  If set to False, constant data is passed to the Core ML delegate as inputs.  By default, take_over_constant_data=True.
 - `lower_full_graph`: A boolean that indicates whether the entire graph must be lowered to Core ML.  If set to True and Core ML does not support an op, an error is raised during lowering.  If set to False and Core ML does not support an op, the op is executed on the CPU by ExecuTorch.  Although setting `lower_full_graph`=False can allow a model to lower where it would otherwise fail, it can introduce performance overhead in the model when there are unsupported ops.  You will see warnings about unsupported ops during lowering if there are any.  By default, `lower_full_graph`=False.
 
 
@@ -187,7 +187,7 @@ To quantize a PyTorch model for the Core ML backend, use the `CoreMLQuantizer`.
 Quantization with the Core ML backend requires exporting the model for iOS 17 or later.
 To perform 8-bit quantization with the PT2E flow, follow these steps:
 
-1) Create a [`coremltools.optimize.torch.quantization.LinearQuantizerConfig`](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use to to create an instance of a `CoreMLQuantizer`.
+1) Create a [`coremltools.optimize.torch.quantization.LinearQuantizerConfig`](https://apple.github.io/coremltools/source/coremltools.optimize.torch.quantization.html#coremltools.optimize.torch.quantization.LinearQuantizerConfig) and use it to create an instance of a `CoreMLQuantizer`.
 2) Use `torch.export.export` to export a graph module that will be prepared for quantization.
 3) Call `prepare_pt2e` to prepare the model for quantization.
 4) Run the prepared model with representative samples to calibrate the quantizated tensor activation ranges.
@@ -386,4 +386,4 @@ If you're using Python 3.13, try reducing your python version to Python 3.12.  c
 ### At runtime
 1. [ETCoreMLModelCompiler.mm:55] [Core ML]  Failed to compile model, error = Error Domain=com.apple.mlassetio Code=1 "Failed to parse the model specification. Error: Unable to parse ML Program: at unknown location: Unknown opset 'CoreML7'." UserInfo={NSLocalizedDescription=Failed to par$
 
-This means the model requires the the Core ML opset 'CoreML7', which requires running the model on iOS >= 17 or macOS >= 14.
+This means the model requires the Core ML opset 'CoreML7', which requires running the model on iOS >= 17 or macOS >= 14.

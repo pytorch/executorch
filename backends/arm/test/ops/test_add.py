@@ -7,7 +7,6 @@
 
 from typing import cast, Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer import arm_quantizer
 from executorch.backends.arm.quantizer.arm_quantizer import (
@@ -78,7 +77,7 @@ class Add2(torch.nn.Module):
 
 class Add3(torch.nn.Module):
     def forward(self, x: torch.Tensor, y: torch.Tensor):
-        return x + y
+        return torch.add(x, y, alpha=1.5)
 
     test_data: list[input_t2] = {
         "3d_randn_diff_rank": lambda: (torch.randn(1, 4, 5), torch.randn(4, 1)),
@@ -260,9 +259,6 @@ def get_symmetric_a16w8_add_quantizer(per_channel_quantization=False):
 
 
 @common.parametrize("test_data", Add.test_data)
-@pytest.mark.xfail(
-    reason="missing int16 add ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13730"
-)
 def test_add_tensor_16a8w_tosa_INT(test_data: input_t1):
     """Test add operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False

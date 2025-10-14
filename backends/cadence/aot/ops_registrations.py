@@ -320,7 +320,7 @@ lib.define(
     "float out_scale, int out_zero_point) -> (Tensor Z)"
 )
 lib.define(
-    "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
+    "quantized_embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "Tensor indices, bool pruned_weights=False) -> (Tensor X)"
 )
 lib.define(
@@ -514,7 +514,7 @@ lib.define(
     "int weight_zero_point, int out_multiplier, int out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
-    "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
+    "quantized_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "Tensor indices, bool pruned_weights=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
@@ -563,6 +563,29 @@ lib.define(
 lib.define(
     "_softmax_f32_f32.out(Tensor self, int dim, bool? half_to_float, *, Tensor(a!) out) -> Tensor(a!)"
 )
+
+lib.define(
+    "quantized_w8a32_linear(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+lib.define(
+    "quantized_w8a32_linear.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_w8a32_conv(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+lib.define(
+    "quantized_w8a32_conv.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) output) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_w8a32_gru(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_gru.out(Tensor inputs, Tensor hidden, Tensor weights_inputs, float w_i_scale, Tensor weights_hidden, float w_h_scale, Tensor bias_inputs, float b_i_scale, Tensor bias_hidden, float b_h_scale, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
 
 # Custom ops with aten namespace. Need to specify the lib var as FRAGMENT type as aten library is already defined
 aten_lib = Library("aten", "FRAGMENT")
@@ -2302,6 +2325,28 @@ def transposed_im2row_meta(
     return input.new_empty(output_size, dtype=input.dtype)
 
 
+@register_fake("cadence::quantized_embedding_byte")
+def quantized_embedding_byte_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: torch.Tensor | None,
+    indices: torch.Tensor,
+    pruned_weights: bool = False,
+) -> torch.Tensor:
+    assert not pruned_weights
+    assert len(weight.shape) == 2
+    assert 1 <= len(weight_scales.shape) <= 2
+    if len(weight_scales.shape) == 2:
+        num_groups = weight_scales.shape[-1]
+        assert weight.shape[1] % num_groups == 0
+
+    if weight_zero_points is not None:
+        assert weight_zero_points.shape == weight_scales.shape
+
+    assert 1 <= len(indices.shape) <= 2
+    return torch.empty(*indices.shape, weight.shape[1], dtype=torch.float32)
+
+
 @register_fake("cadence::where_Scalar")
 def where_Scalar_meta(
     condition: torch.Tensor,
@@ -2562,3 +2607,67 @@ def quantized_softmax_per_tensor_meta(
     out_zero_point: int,
 ) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_linear")
+def quantized_w8a32_linear_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [leading_dims, in_dim]
+    # weight comes in shape [in_dim, out_dim]
+    # output comes in empty with shape [leading_dims, out_dim]
+    src_shape = list(src.shape)
+    weight_shape = weight.shape
+    assert len(weight_shape) == 2
+    assert src_shape[-1] == weight_shape[-1]
+    src_shape[-1] = weight_shape[0]
+    return src.new_empty(src_shape, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_conv")
+def quantized_w8a32_conv_meta(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    # src comes in shape [batch, in_channel, in_length]
+    # weight comes in shape [out_ch, in_ch, kernel_dim]
+    # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
+    assert len(src.shape) == 3
+
+    kernel_size, out_channels, in_channels = weight.shape
+    assert in_channels == src.shape[-1]
+
+    # Compute the output tensor size
+    output_size = get_conv1d_output_size(
+        src.permute(0, 2, 1).shape,
+        out_channels,
+        stride=1,
+        padding=0,
+        dilation=1,
+        kernel_size=kernel_size,
+        channel_last=False,
+    )
+    return src.new_empty(output_size, dtype=src.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_gru")
+def quantized_w8a32_gru_meta(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    weights_inputs: torch.Tensor,
+    w_i_scale: float,
+    weights_hidden: torch.Tensor,
+    w_h_scale: float,
+    bias_inputs: torch.Tensor,
+    b_i_scale: float,
+    bias_hidden: torch.Tensor,
+    b_h_scale: float,
+) -> torch.Tensor:
+    return inputs.new_empty((2, hidden.shape[-1]), dtype=inputs.dtype)

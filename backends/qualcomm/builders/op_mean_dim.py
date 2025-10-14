@@ -55,7 +55,7 @@ class MeanDim(NodeVisitor):
             mean_dims = [dim_arg]
         else:
             mean_dims = list(dim_arg)
-        print("mean_dims: ", mean_dims, "rank: ", rank)
+
         mean_dims = [
             mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
         ]

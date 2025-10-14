@@ -909,12 +909,12 @@ jobs:
       contents: read
     secrets: inherit
     with:
+      secrets-env: SAMSUNG_AI_LITECORE_KEY
       runner: linux.2xlarge
       docker-image: ci-image:executorch-ubuntu-22.04-clang12-android
       submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
-      secrets-env: SAMSUNG_AI_LITECORE_KEY
       script: |
         set -ex
 
@@ -933,6 +933,12 @@ jobs:
         models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
         for model in $models; do
           python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
+        done
+
+        # Test quant models
+        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
+        for m_script in $model_scripts; do
+          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
         done
 
         # Test ops

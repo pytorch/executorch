@@ -171,21 +171,23 @@ class Arange(torch.nn.Module):
 
 
 class Argmax(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim: Optional[int] = None, keepdim: bool = False):
         super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
 
     def forward(self, x):
-        x = torch.argmax(x, dim=0, keepdim=True)
-        return x
+        return torch.argmax(x, dim=self.dim, keepdim=self.keepdim)
 
 
 class Argmin(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim: Optional[int] = None, keepdim: bool = False):
         super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
 
     def forward(self, x):
-        x = torch.argmin(x, dim=0, keepdim=True)
-        return x
+        return torch.argmin(x, dim=self.dim, keepdim=self.keepdim)
 
 
 class ArgminViewSqueezeConv2D(torch.nn.Module):
@@ -598,28 +600,6 @@ class Conv2dSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
-class Conv3dSequential(torch.nn.Module):
-    def __init__(self, bias=True):
-        super().__init__()
-        self.first = torch.nn.Conv3d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=(3, 3, 3),
-            padding=1,
-            bias=bias,
-        )
-        self.second = torch.nn.Conv3d(
-            in_channels=3,
-            out_channels=2,
-            kernel_size=(3, 3, 3),
-            padding=1,
-            bias=bias,
-        )
-
-    def forward(self, x):
-        return self.second(self.first(x))
-
-
 class Conv2dSingle(torch.nn.Module):
     def __init__(
         self,
@@ -724,6 +704,28 @@ class Conv2dTopK(torch.nn.Module):
         x = self.conv(x)
         topk_values, topk_indices = torch.topk(x, 5, dim=1)
         return topk_values
+
+
+class Conv3dSequential(torch.nn.Module):
+    def __init__(self, bias=True):
+        super().__init__()
+        self.first = torch.nn.Conv3d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            bias=bias,
+        )
+        self.second = torch.nn.Conv3d(
+            in_channels=3,
+            out_channels=2,
+            kernel_size=(3, 3, 3),
+            padding=1,
+            bias=bias,
+        )
+
+    def forward(self, x):
+        return self.second(self.first(x))
 
 
 class ConvTranspose1dSingle(torch.nn.Module):
@@ -1139,18 +1141,60 @@ class IndexCopy(torch.nn.Module):
 
 
 class IndexPut(torch.nn.Module):
-    def __init__(self, skip_mutable_buffer=False):
+    def __init__(self, skip_mutable_buffer=False, mode=0):
         super().__init__()
         self.skip_mutable_buffer = skip_mutable_buffer
         self.register_buffer(
             "k_cache",
-            torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            torch.zeros((2, 1024, 12, 64), dtype=torch.float32),
             persistent=True,
         )
+        self.mode = mode
 
     def forward(self, input_pos, k_val):
-        k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
+        match self.mode:
+            case 0:
+                k_out = torch.ops.aten.index_put_(self.k_cache, [input_pos], k_val)
+            case 1:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [None, input_pos], k_val
+                )
+            case 2:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [None, None, input_pos], k_val
+                )
+            case 3:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [input_pos[0], input_pos[1]], k_val
+                )
+            case 4:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [None, input_pos[0], input_pos[1]], k_val
+                )
+            case 5:
+                k_out = torch.ops.aten.index_put_(
+                    self.k_cache, [input_pos[0], None, input_pos[1]], k_val
+                )
+
         return k_out + 0
+
+
+class IndexPutSuite(torch.nn.Module):
+    def __init__(self, accumulate=False, in_place=False):
+        super().__init__()
+        self.accumulate = accumulate
+        self.in_place = in_place
+
+    def forward(self, x, indices, values):
+        if self.in_place:
+            # Clone the input to avoid modifying it in-place
+            result = x.clone()
+            # Apply index_put_ and return the modified tensor
+            result.index_put_(indices, values, self.accumulate)
+            return result
+        else:
+            # Use the non-in-place variant which returns a new tensor
+            return torch.index_put(x, indices, values, self.accumulate)
 
 
 class IndexSelect(torch.nn.Module):
@@ -1507,6 +1551,15 @@ class Pad(torch.nn.Module):
         )
 
 
+class Permute(torch.nn.Module):
+    def __init__(self, dims: List[int]):
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x):
+        return x.permute(self.dims)
+
+
 class PixelShuffle(torch.nn.Module):
     def __init__(self, scale):
         super().__init__()
@@ -1540,11 +1593,12 @@ class PixelUnshuffleMathEquivalent(torch.nn.Module):
 
 
 class PowTensorScalar(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, exponent=2):
         super().__init__()
+        self.exponent = exponent
 
     def forward(self, x):
-        return torch.pow(x, 2)
+        return torch.pow(x, self.exponent)
 
 
 class PReLUDefault(torch.nn.Module):
@@ -1999,6 +2053,19 @@ class Tanh(torch.nn.Module):
 
     def forward(self, x):
         return torch.tanh(x)
+
+
+class Threshold(torch.nn.Module):
+    def __init__(self, threshold=0.0, value=0.0, inplace=False):
+        super().__init__()
+        self.threshold = threshold
+        self.value = value
+        self.inplace = inplace
+
+    def forward(self, x):
+        return torch.nn.functional.threshold(
+            x, threshold=self.threshold, value=self.value, inplace=self.inplace
+        )
 
 
 class TopKandIndex(torch.nn.Module):

@@ -24,7 +24,7 @@ import shutil
 import sys
 from typing import Any
 
-import pytorch_sphinx_theme2  # type: ignore[import-untyped]
+import pytorch_sphinx_theme2  # type: ignore[import-not-found]
 
 # To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
@@ -74,7 +74,7 @@ doxygen_xml_dir = os.path.join(
     "xml",  # {repo_root}/docs/cpp/build/xml
 )
 
-html_favicon = "_static/img/ExecuTorch-Logo-cropped.svg"
+html_favicon = "_static/img/executorch-chip-logo.svg"
 
 # Get ET_VERSION_DOCS during the build.
 et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
