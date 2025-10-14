@@ -42,8 +42,12 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "text_decoder_runner" + aten_suffix,
-            exported_headers = ["text_decoder_runner.h"],
-            srcs = ["text_decoder_runner.cpp"],
+            exported_headers = [
+                "text_decoder_runner.h",
+            ],
+            srcs = [
+                "text_decoder_runner.cpp",
+            ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -59,8 +63,12 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "text_prefiller" + aten_suffix,
-            exported_headers = ["text_prefiller.h"],
-            srcs = ["text_prefiller.cpp"],
+            exported_headers = [
+                "text_prefiller.h",
+            ],
+            srcs = [
+                "text_prefiller.cpp",
+            ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -74,7 +82,9 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "text_token_generator" + aten_suffix,
-            exported_headers = ["text_token_generator.h"],
+            exported_headers = [
+                "text_token_generator.h",
+            ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -88,7 +98,10 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "image_prefiller" + aten_suffix,
-            exported_headers = ["image_prefiller.h", "image.h"],
+            exported_headers = [
+                "image.h",
+                "image_prefiller.h",
+            ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -104,20 +117,18 @@ def define_common_targets():
             name = "multimodal_runner_lib" + aten_suffix,
             exported_headers = [
                 "audio.h",
-                "image.h",
-                "wav_loader.h",
                 "multimodal_input.h",
                 "multimodal_runner.h",
                 "multimodal_prefiller.h",
                 "multimodal_decoder_runner.h",
+                "wav_loader.h",
             ],
             srcs = [
                 "multimodal_prefiller.cpp",
             ],
             exported_deps = [
-                ":text_decoder_runner" + aten_suffix,
-                ":text_prefiller" + aten_suffix,
                 ":image_prefiller" + aten_suffix,
+                ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,
             ],
         )
