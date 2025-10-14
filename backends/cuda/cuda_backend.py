@@ -24,8 +24,13 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
+from torch._inductor.decomposition import conv1d_to_conv2d
 from torch.export.passes import move_to_device_pass
 from torch.nn.attention import SDPBackend
+
+cuda_decomposition_table = {
+    torch.ops.aten.conv1d.default: conv1d_to_conv2d,
+}
 
 # exist fallback operators in et namespace;
 supported_fallback_kernels: Dict[str, Any] = {}
@@ -118,6 +123,10 @@ class CudaBackend(BackendDetails):
 
         # replace slice_copy with slice
         ReplaceSliceCopyWithSlicePass()(cuda_edge_program.graph_module)
+
+        cuda_edge_program = cuda_edge_program.run_decompositions(
+            cuda_decomposition_table
+        )
 
         edge_program_module = cuda_edge_program.module()
 
