@@ -251,3 +251,22 @@ class TestCudaExport(unittest.TestCase):
         self.assertIsNotNone(
             edge_program_manager, "Mathematical operations export failed"
         )
+
+    def test_conv1d(self):
+        """Test CUDA export for 1D convolution."""
+
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(3, 16, kernel_size=3, padding=1)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.conv(x)
+
+        module = Conv1dModule()
+        module.eval()
+        inputs = (torch.randn(1, 3, 10),)
+
+        # Test export
+        edge_program_manager = self._export_to_cuda_with_lower(module, inputs)
+        self.assertIsNotNone(edge_program_manager, "Conv1d operation export failed")

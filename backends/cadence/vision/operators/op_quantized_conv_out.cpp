@@ -603,6 +603,80 @@ void quantized_conv2d_nhwc_per_tensor_out(
       out);
 }
 
+void quantized_conv2d_nchw_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out) {
+  quantized_conv_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      false, // channel_last = false for NCHW
+      out);
+}
+
+void quantized_conv2d_nhwc_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out) {
+  quantized_conv_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      true, // channel_last = true for NHWC
+      out);
+}
+
 } // namespace native
 } // namespace vision
 } // namespace impl

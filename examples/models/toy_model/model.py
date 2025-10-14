@@ -88,3 +88,20 @@ class SoftmaxModule(torch.nn.Module, EagerModelBase):
 
     def get_example_inputs(self):
         return (torch.ones(2, 2),)
+
+
+class Conv1dModule(torch.nn.Module, EagerModelBase):
+    def __init__(self):
+        super().__init__()
+        self.conv1d = torch.nn.Conv1d(
+            in_channels=3, out_channels=16, kernel_size=3, padding=1
+        )
+
+    def forward(self, x):
+        return self.conv1d(x)
+
+    def get_eager_model(self) -> torch.nn.Module:
+        return self
+
+    def get_example_inputs(self):
+        return (torch.randn(1, 3, 10),)
