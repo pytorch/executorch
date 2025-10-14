@@ -15,33 +15,37 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch import fx
 
 
-_SLICE_COPY_TARGETS: Tuple[torch._ops.OpOverload | EdgeOpOverload] = (
+_VIEW_COPY_TARGETS: Tuple[torch._ops.OpOverload | EdgeOpOverload] = (
     torch.ops.aten.slice_copy.Tensor,
     ops.edge.aten.slice_copy.Tensor,
+    torch.ops.aten.select_copy.int,
+    ops.edge.aten.select_copy.int,
 )
 
-_SLICE_TARGETS: Dict[
+_VIEW_TARGETS: Dict[
     torch._ops.OpOverload | EdgeOpOverload, torch._ops.OpOverload | EdgeOpOverload
 ] = {
     torch.ops.aten.slice_copy.Tensor: torch.ops.aten.slice.Tensor,
     ops.edge.aten.slice_copy.Tensor: ops.edge.aten.slice.Tensor,
+    torch.ops.aten.select_copy.int: torch.ops.aten.select.int,
+    ops.edge.aten.select_copy.int: ops.edge.aten.select.int,
 }
 
 
-class ReplaceSliceCopyWithSlicePass(ExportPass):
-    """Replace non-mutated ``slice_copy`` results with ``slice`` views."""
+class ReplaceViewCopyWithViewPass(ExportPass):
+    """Replace non-mutated ``view_copy`` type of ops with ``view`` ops."""
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:
         graph_changed = False
 
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in _SLICE_COPY_TARGETS:
+            if node.op != "call_function" or node.target not in _VIEW_COPY_TARGETS:
                 continue
 
             if self._has_blocking_user(node, node.users.keys()):
                 continue
 
-            node.target = _SLICE_TARGETS[node.target]
+            node.target = _VIEW_TARGETS[node.target]
             graph_changed = True
 
         if graph_changed:
