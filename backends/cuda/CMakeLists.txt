@@ -38,7 +38,7 @@ find_package_torch()
 set(_aoti_cuda_sources
     runtime/cuda_backend.cpp runtime/shims/memory.cpp
     runtime/shims/tensor_attribute.cpp runtime/guard.cpp
-    runtime/shims/cuda_guard.cpp
+    runtime/shims/cuda_guard.cpp runtime/shims/int4mm.cu
 )
 add_library(aoti_cuda STATIC ${_aoti_cuda_sources})
 target_include_directories(
