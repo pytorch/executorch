@@ -22,9 +22,11 @@ def define_arm_tests():
         "ops/test_mul.py",
         "ops/test_slice.py",
         "ops/test_sigmoid.py",
+        "ops/test_sub.py",
         "ops/test_tanh.py",
         "ops/test_view.py",
         "ops/test_cos.py",
+        "ops/test_to_copy.py",
     ]
 
     # Quantization

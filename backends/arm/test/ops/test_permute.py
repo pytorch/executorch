@@ -85,7 +85,6 @@ def test_permute_u55_INT(test_data):
         (test_data,),
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -99,7 +98,6 @@ def test_permute_u85_INT(test_data: torch.Tensor):
         (test_data,),
         aten_op,
         exir_ops="executorch_exir_dialects_edge__ops_aten_permute_copy_default",
-        run_on_fvp=True,
     )
     pipeline.run()
 

@@ -53,7 +53,6 @@ def test_mm_u55_INT(test_data: Tuple):
         MM(),
         test_data(),
         MM.aten_op,
-        run_on_fvp=True,
     ).run()
 
 
@@ -65,7 +64,6 @@ def test_mm_u85_INT(test_data: Tuple):
         test_data(),
         MM.aten_op,
         MM.exir_op,
-        run_on_fvp=True,
     ).run()
 
 

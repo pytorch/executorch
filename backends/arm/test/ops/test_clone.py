@@ -102,7 +102,6 @@ def test_clone_u55_INT(input_data):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
 
     pipeline.run()
@@ -118,7 +117,6 @@ def test_clone_u85_INT(input_data):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
 
     pipeline.run()

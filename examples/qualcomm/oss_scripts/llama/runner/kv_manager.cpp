@@ -365,7 +365,8 @@ void KVManager<T>::rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst) {
     }
     // copy from first dimension
     for (int i = 0; i < metadata_.head_dim; i++) {
-      std::memmove(k_cache_in_write_ptr, k_cache_in_read_ptr, dst_cache_num);
+      std::memmove(
+          k_cache_in_write_ptr, k_cache_in_read_ptr, dst_cache_num * sizeof(T));
       k_cache_in_read_ptr += src_cache_num;
       k_cache_in_write_ptr += dst_cache_num;
     }
@@ -378,7 +379,8 @@ void KVManager<T>::rearrange_key(KVCache<T>& k_cache, int32_t ar_len_dst) {
     }
     // copy from last dimension
     for (int i = 0; i < metadata_.head_dim; i++) {
-      std::memmove(k_cache_in_write_ptr, k_cache_in_read_ptr, src_cache_num);
+      std::memmove(
+          k_cache_in_write_ptr, k_cache_in_read_ptr, src_cache_num * sizeof(T));
       k_cache_in_read_ptr -= src_cache_num;
       k_cache_in_write_ptr -= dst_cache_num;
     }

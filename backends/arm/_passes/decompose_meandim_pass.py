@@ -10,6 +10,9 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
+from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 from executorch.exir.backend.utils import WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -64,7 +67,11 @@ class DecomposeMeanDimPass(ArmPass):
         x = view_copy.default(x, new_shape=(h)) # Squeeze dims since keepdims = False
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        ComputeConstantOpsAOT,
+        DecomposeSumPass,
+        SizeAdjustInputPass,
+    }
 
     def __init__(self, graph_module, tosa_spec):
         super().__init__()
@@ -87,6 +94,8 @@ class DecomposeMeanDimPass(ArmPass):
         input_shape = list(x.data.shape)
         output_shape = list(meta["val"].shape)
         dims_to_reduce = get_node_arg(args, 1)
+        if dims_to_reduce is None:
+            dims_to_reduce = range(len(input_shape))
         dims_to_reduce = [dim % len(input_shape) for dim in dims_to_reduce]
         dims_to_reduce = [dim for dim in dims_to_reduce if input_shape[dim] != 1]
 

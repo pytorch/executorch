@@ -5,7 +5,10 @@
 
 # pyre-unsafe
 
+from typing import Set, Type
+
 import torch
+from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -47,6 +50,8 @@ class DecomposeDivTensorModePass(ExportPass):
     rounding_mode='floor' -> floor(div(a, b))
     rounding_mode='trunc' -> where(div(a,b) < 0, ceil(div(a,b)), floor(div(a,b)))
     """
+
+    _passes_required_after: Set[Type[ExportPass]] = {DecomposeDivPass}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in (edge_div_mode_ops + aten_div_mode_ops):

@@ -50,7 +50,10 @@ def test_erf_tosa_INT(test_data: input_t1):
 @common.XfailIfNoCorstone300
 def test_erf_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
-        Erf(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Erf(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 
@@ -59,7 +62,10 @@ def test_erf_u55_INT(test_data: input_t1):
 @common.XfailIfNoCorstone320
 def test_erf_u85_INT(test_data: input_t1):
     pipeline = EthosU85PipelineINT[input_t1](
-        Erf(), test_data(), aten_op, exir_op, run_on_fvp=True
+        Erf(),
+        test_data(),
+        aten_op,
+        exir_op,
     )
     pipeline.run()
 

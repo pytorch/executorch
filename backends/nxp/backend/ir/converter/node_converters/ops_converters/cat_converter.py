@@ -13,11 +13,11 @@ from executorch.backends.nxp.backend.ir.converter.node_converter import (
     _is_dequant_node,
     _is_quant_node,
     NodeConverter,
-    Target,
 )
 from executorch.backends.nxp.backend.ir.tflite_generator.builtin_options.concatenation_options import (
     Concatenation,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 from torch.fx import Node
 from torch.nn import Parameter
 
@@ -72,51 +72,52 @@ class CatConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
         node: Node,
-        target: Target,
+        neutron_target_spec: NeutronTargetSpec,
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
         if custom_delegation_options.force_delegate_cat:
             return True
 
-        match target:
-            case Target.RT700:
-                dim = CatConverter._get_normalized_dim(node)
+        dim = CatConverter._get_normalized_dim(node)
 
-                # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1491
-                if dim == 0:
-                    return False
+        # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1491
+        if dim == 0:
+            return False
 
-                # Neutron requires the channels to be a multiple of `8`. The channels could either be the second or the
-                #  last dimension, depending on the formats of the node. The format, however, cannot be determined
-                #  during conversion, as it depends on what other nodes are delegated.
-                input_channels = [
-                    # The second dimension is the channels in PyTorch. If the inputs/output are not channels first, it
-                    #  will still be the channels in the IR.
-                    _get_shape(input_)[1]
-                    for input_ in node.all_input_nodes
-                ] + [
-                    # If the inputs/outputs are channels first, the last dimension will be the channels.
-                    _get_shape(input_)[-1]
-                    for input_ in node.all_input_nodes
-                ]
-                if any((input_channel % 8) != 0 for input_channel in input_channels):
-                    # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
-                    return False
+        # Neutron requires the channels to be a multiple of numMacs. The channels could either be the second or the
+        #  last dimension, depending on the formats of the node. The format, however, cannot be determined
+        #  during conversion, as it depends on what other nodes are delegated.
+        input_channels = [
+            # The second dimension is the channels in PyTorch. If the inputs/output are not channels first, it
+            #  will still be the channels in the IR.
+            _get_shape(input_)[1]
+            for input_ in node.all_input_nodes
+        ] + [
+            # If the inputs/outputs are channels first, the last dimension will be the channels.
+            _get_shape(input_)[-1]
+            for input_ in node.all_input_nodes
+        ]
+        if any(
+            (input_channel % neutron_target_spec.get_num_macs()) != 0
+            for input_channel in input_channels
+        ):
+            # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1492
+            return False
 
-                output_channels = [_get_shape(node)[1], _get_shape(node)[-1]]
-                # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1493
-                if any((out_c % 8) != 0 for out_c in output_channels):
-                    return False
+        output_channels = [_get_shape(node)[1], _get_shape(node)[-1]]
+        # neutron-library/src/utils/NeutronLibraryInterrogation.cpp#1493
+        if any(
+            (out_c % neutron_target_spec.get_num_macs()) != 0
+            for out_c in output_channels
+        ):
+            return False
 
-                if len(node.all_input_nodes) < 2:  # Not supported on Neutron
-                    # TODO Try to skip the operator if this case is realistic.
-                    return False
+        if len(node.all_input_nodes) < 2:  # Not supported on Neutron
+            # TODO Try to skip the operator if this case is realistic.
+            return False
 
-                return True
-
-            case _:
-                return False
+        return True
 
     @staticmethod
     def _is_supported_in_IR(

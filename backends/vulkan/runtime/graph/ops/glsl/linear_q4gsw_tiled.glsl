@@ -76,9 +76,6 @@ void main() {
   const int N4 = div_up_4(output_sizes.x); // number of texels in each row
   const int N8 = div_up_8(output_sizes.x); // number of texels in each row
 
-  bool should_print = (n8 == 0) && (m4 == 0);
-  should_print = false;
-
   // VEC4_T out_texels[4][2];
   FPOutTile out_tile;
   initialize(out_tile);

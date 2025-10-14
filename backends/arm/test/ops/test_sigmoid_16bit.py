@@ -125,6 +125,7 @@ def test_sigmoid_tosa_INT_add_sigmoid(test_data):
     "test_data",
     test_data_suite,
 )
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT(test_data):
     pipeline = OpNotSupportedPipeline(
         Sigmoid(),
@@ -141,6 +142,7 @@ def test_sigmoid_u55_INT(test_data):
     "test_data",
     test_data_suite,
 )
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT_add_sigmoid(test_data):
     pipeline = OpNotSupportedPipeline(
         SigmoidAddSigmoid(),
@@ -163,7 +165,6 @@ def test_sigmoid_u85_INT(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()
@@ -184,7 +185,6 @@ def test_sigmoid_u85_INT_add_sigmoid(test_data):
         (test_data(),),
         Sigmoid.aten_op,
         Sigmoid.exir_op,
-        run_on_fvp=True,
     )
     pipeline.change_args("quantize", get_16bit_sigmoid_quantizer())
     pipeline.run()

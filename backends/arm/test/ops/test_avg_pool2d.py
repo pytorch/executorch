@@ -151,7 +151,6 @@ def test_avg_pool2d_u55_INT(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -166,7 +165,6 @@ def test_avg_pool2d_u85_INT(test_module):
         input_tensor,
         aten_op,
         exir_op,
-        run_on_fvp=True,
     )
     pipeline.run()
 

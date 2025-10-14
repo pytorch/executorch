@@ -92,7 +92,6 @@ def test_conformer_u55_INT():
         aten_ops=TestConformer.aten_ops,
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs",
@@ -114,7 +113,6 @@ def test_conformer_u85_INT():
         aten_ops=TestConformer.aten_ops,
         exir_ops=[],
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
     pipeline.change_args(
         "run_method_and_compare_outputs",

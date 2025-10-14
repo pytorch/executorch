@@ -259,7 +259,7 @@ class StaticAttentionIOManager:
         }
 
         rope = Rope(config)
-        freqs = rope.get_freqs(None, config.max_seq_len)
+        freqs = rope.get_freqs(None, config.max_context_len)
         self.freqs_cos = freqs[0].to(dtype)
         self.freqs_sin = freqs[1].to(dtype)
 
@@ -297,6 +297,7 @@ class StaticAttentionIOManager:
                     dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
+                if cache_lens[layer_id] > 0
             }
             self.v_caches = {
                 StaticKVCache.calculate_cache_key(layer_id, 0): torch.zeros(
@@ -307,6 +308,7 @@ class StaticAttentionIOManager:
                     dtype=dtype,
                 )
                 for layer_id in range(config.n_layers)
+                if cache_lens[layer_id] > 0
             }
 
         self.config = config

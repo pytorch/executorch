@@ -17,12 +17,6 @@ In this tutorial you will learn how to export a simple PyTorch model for the Exe
 
 ::::
 
-```{warning}
-This delegate is under active development, to get best results please use a recent version.
-The TOSA and Ethos-U backend support is reasonably mature and used in production by some users.
-You may encounter some rough edges and features which may be documented or planned but not implemented, please refer to the in-tree documentation for the latest status of features.
-```
-
 ```{tip}
 If you are already familiar with this delegate, you may want to jump directly to the examples:
 * [Examples in the ExecuTorch repository](https://github.com/pytorch/executorch/tree/main/examples/arm)

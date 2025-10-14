@@ -6,7 +6,7 @@ PyTorch models to a TOSA representation. This representation is used to
 deploy to the following targets:
 
 - **Arm&reg; Ethos&trade;-U55/65/85** - Compiled using the Ethos-U Vela compiler.
-- **VGF (Vulkan&reg; Graph Format)** – SPIR-V™ representation for Vulkan-capable devices.
+- **VGF Format, for ML extensions for Vulkan®** – a format containing SPIR-V™ ML operators for Vulkan-capable devices.
 
 The backend provides an ahead-of-time (AOT) flow, that produces a PTE file for your
 chosen target. The AOT flow supports the following development operating systems:

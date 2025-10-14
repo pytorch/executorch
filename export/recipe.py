@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -151,6 +152,7 @@ class ExportRecipe:
         executorch_backend_config: Optional backend configuration for ExecuTorch
         pipeline_stages: Optional list of stages to execute, defaults to a standard pipeline.
         mode: Export mode (debug or release)
+        strict: Set the strict flag in the torch export call.
     """
 
     name: Optional[str] = None
@@ -163,6 +165,7 @@ class ExportRecipe:
     executorch_backend_config: Optional[ExecutorchBackendConfig] = None
     pipeline_stages: Optional[List[StageType]] = None
     mode: Mode = Mode.RELEASE
+    strict: bool = True
 
     @classmethod
     def get_recipe(cls, recipe: "RecipeType", **kwargs) -> "ExportRecipe":

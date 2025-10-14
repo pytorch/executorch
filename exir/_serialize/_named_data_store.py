@@ -10,7 +10,7 @@ import hashlib
 from dataclasses import dataclass
 
 # from dataclasses import dataclass
-from typing import Dict, Optional, Sequence
+from typing import Dict, List, Optional
 
 from executorch.exir._serialize.data_serializer import DataEntry
 from executorch.exir.tensor_layout import TensorLayout
@@ -30,7 +30,7 @@ class NamedDataStoreOutput:
             from {filename: {key: DataEntry}}.
     """
 
-    buffers: Sequence[bytes]
+    buffers: List[bytes]
     pte_data: Dict[str, DataEntry]
     external_data: Dict[str, Dict[str, DataEntry]]
 
@@ -51,7 +51,7 @@ class NamedDataStore:
     """
 
     # List of unique blobs.
-    buffers: Sequence[bytes]
+    buffers: List[bytes]
     # Named data stored inside the PTE file. Map of {key: DataEntry}.
     pte_data: Dict[str, DataEntry]
     # Named data stored outside of the PTE file.

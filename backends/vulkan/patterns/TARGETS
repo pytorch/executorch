@@ -11,6 +11,7 @@ runtime.python_library(
         "rope.py",
         "quantized_linear.py",
         "quantized_convolution.py",
+        "quantized_binary.py",
     ],
     visibility = [
         "//executorch/backends/...",

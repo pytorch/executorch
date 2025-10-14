@@ -182,11 +182,11 @@ class Conv2dVisitor(NodeVisitor):
             acc_type = ts.DType.FP32
 
         tosa_graph.addConst(
-            [1], output.dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
+            [1], inputs[0].dtype, [input_zp], name=f"{conv2d_output_name}_input_zp"
         )
         tosa_graph.addConst(
             [1],
-            output.dtype,
+            inputs[1].dtype,
             weight_zp,
             name=f"{conv2d_output_name}_weight_zp",
         )
@@ -269,7 +269,7 @@ class Conv2dVisitor(NodeVisitor):
 
         # For quantized convolution, rescale the output value back to the same
         # integer value domain of the next op. Otherwise return float32 output.
-        if inputs[0].dtype == ts.DType.INT8 or inputs[0].dtype == ts.DType.INT16:
+        if output.dtype == ts.DType.INT8 or output.dtype == ts.DType.INT16:
             # Get scale_factor from input, weight, and output.
             input_scale = input_qparams[0].get_scale_per_tensor()  # type: ignore[possibly-undefined]  # pyre-ignore [61]
             per_channel_quant = input_qparams[1].per_channel  # pyre-ignore [61]

@@ -10,6 +10,9 @@ from typing import cast, Set, Type
 
 import torch
 
+from executorch.backends.arm._passes.unsqueeze_before_repeat_pass import (
+    UnsqueezeBeforeRepeatPass,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -50,7 +53,7 @@ class ConvertExpandCopyToRepeatPass(ExportPass):
     Replace expand copy with repeat since it is a repeat that can only repeat singleton dimensions.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {UnsqueezeBeforeRepeatPass}
 
     expand_copy = exir_ops.edge.aten.expand_copy.default
     repeat = exir_ops.edge.aten.repeat.default

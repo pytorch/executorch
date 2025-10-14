@@ -14,28 +14,85 @@ import logging
 import backends.vulkan.test.utils as test_utils
 
 import torch
+import torchvision
 
-from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.devtools import BundledProgram
 from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.exir import (
-    EdgeCompileConfig,
-    ExecutorchBackendConfig,
-    to_edge_transform_and_lower,
-)
+from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.export_util.utils import save_pte_program
 from executorch.extension.pytree import tree_flatten
-from torch.export import export
+from torch.export import Dim, export
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+
+def is_vision_model(model_name):
+    if model_name in [
+        # These models are also registered in examples/models
+        "dl3",
+        "edsr",
+        "mv2",
+        "mv3",
+        "vit",
+        "ic3",
+        "ic4",
+        "resnet18",
+        "resnet50",
+        # These models are not registered in examples/models but are available via
+        # torchvision
+        "convnext_small",
+        "densenet161",
+        "shufflenet_v2_x1_0",
+    ]:
+        return True
+
+    return False
+
+
+def get_vision_model_sample_input():
+    return (torch.randn(1, 3, 224, 224),)
+
+
+def get_vision_model_dynamic_shapes():
+    return (
+        {
+            2: Dim("height", min=1, max=16) * 16,
+            3: Dim("width", min=1, max=16) * 16,
+        },
+    )
+
+
+def init_model(model_name):
+    if model_name == "convnext_small":
+        return torchvision.models.convnext_small()
+    if model_name == "densenet161":
+        return torchvision.models.densenet161()
+    if model_name == "shufflenet_v2_x1_0":
+        return torchvision.models.shufflenet_v2_x1_0()
+
+    return None
+
+
+def get_sample_inputs(model_name):
+    if is_vision_model(model_name):
+        return get_vision_model_sample_input()
+
+    return None
+
+
+def get_dynamic_shapes(model_name):
+    if is_vision_model(model_name):
+        return get_vision_model_dynamic_shapes()
+
+    return None
 
 
 def main() -> None:
@@ -66,21 +123,6 @@ def main() -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="whether to export with strict mode. Default is True",
-    )
-
-    parser.add_argument(
-        "-a",
-        "--segment_alignment",
-        required=False,
-        help="specify segment alignment in hex. Default is 0x1000. Use 0x4000 for iOS",
-    )
-
-    parser.add_argument(
-        "-e",
-        "--external_constants",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Save constants in external .ptd file. Default is False",
     )
 
     parser.add_argument(
@@ -119,30 +161,34 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.model_name not in MODEL_NAME_TO_MODEL:
-        raise RuntimeError(
-            f"Model {args.model_name} is not a valid name. "
-            f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
+    if args.model_name in MODEL_NAME_TO_MODEL:
+        model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL[args.model_name]
         )
+    else:
+        model = init_model(args.model_name)
+        example_inputs = get_sample_inputs(args.model_name)
+        dynamic_shapes = get_dynamic_shapes(args.model_name) if args.dynamic else None
 
-    model, example_inputs, _, dynamic_shapes = EagerModelFactory.create_model(
-        *MODEL_NAME_TO_MODEL[args.model_name]
-    )
+        if model is None:
+            raise RuntimeError(
+                f"Model {args.model_name} is not a valid name. "
+                f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
+            )
 
     # Prepare model
     model.eval()
 
     # Setup compile options
     compile_options = {}
-    if args.dynamic or dynamic_shapes is not None:
+    if args.dynamic:
         compile_options["require_dynamic_shapes"] = True
+        # Try to manually get the dynamic shapes for the model if not set
+        if dynamic_shapes is None:
+            dynamic_shapes = get_dynamic_shapes(args.model_name)
+
     if args.force_fp16:
         compile_options["force_fp16"] = True
-
-    # Configure Edge compilation
-    edge_compile_config = EdgeCompileConfig(
-        _skip_dim_order=False,  # Proper handling for Vulkan memory format
-    )
 
     logging.info(f"Exporting model {args.model_name} with Vulkan delegate")
 
@@ -157,10 +203,6 @@ def main() -> None:
     # Transform and lower with Vulkan partitioner
     edge_program = to_edge_transform_and_lower(
         program,
-        compile_config=edge_compile_config,
-        transform_passes=[
-            I64toI32(edge_compile_config._skip_dim_order),
-        ],
         partitioner=[VulkanPartitioner(compile_options)],
         generate_etrecord=args.etrecord,
     )
@@ -169,13 +211,8 @@ def main() -> None:
         f"Exported and lowered graph:\n{edge_program.exported_program().graph}"
     )
 
-    # Configure backend options
-    backend_config = ExecutorchBackendConfig(external_constants=args.external_constants)
-    if args.segment_alignment is not None:
-        backend_config.segment_alignment = int(args.segment_alignment, 16)
-
     # Create executorch program
-    exec_prog = edge_program.to_executorch(config=backend_config)
+    exec_prog = edge_program.to_executorch()
 
     # Save ETRecord if requested
     if args.etrecord:

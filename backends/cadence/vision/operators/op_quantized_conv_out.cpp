@@ -141,8 +141,7 @@ __attribute__((noinline)) void conv2d_nchw_core_generic(
             if (quantized) {
               float val = bias_scale * acc;
               out_plane[_oh * ow + _ow] =
-                  ::impl::vision::native::kernels::quantize<OT>(
-                      val, inv_out_scale, out_zero_point);
+                  kernels::quantize<OT>(val, inv_out_scale, out_zero_point);
             } else {
               out_plane[_oh * ow + _ow] = acc;
             }
@@ -267,8 +266,8 @@ __attribute__((noinline)) void conv2d_nhwc_core_generic(
             }
             if (quantized) {
               float val = bias_scale * acc;
-              out_line[_oc] = ::impl::vision::native::kernels::quantize<OT>(
-                  val, inv_out_scale, out_zero_point);
+              out_line[_oc] =
+                  kernels::quantize<OT>(val, inv_out_scale, out_zero_point);
             } else {
               out_line[_oc] = acc;
             }
@@ -528,6 +527,154 @@ void quantized_conv_per_tensor_out(
         output_zero_point,
         out);
   }
+}
+
+void quantized_conv2d_nchw_per_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    Tensor& out) {
+  quantized_conv_per_tensor_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      false, // channel_last = false for NCHW
+      out);
+}
+
+void quantized_conv2d_nhwc_per_tensor_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    int64_t weight_zero_point,
+    double bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    int64_t out_multiplier,
+    int64_t out_shift,
+    Tensor& out) {
+  quantized_conv_per_tensor_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      true, // channel_last = true for NHWC
+      out);
+}
+
+void quantized_conv2d_nchw_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out) {
+  quantized_conv_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      false, // channel_last = false for NCHW
+      out);
+}
+
+void quantized_conv2d_nhwc_out(
+    KernelRuntimeContext& ctx,
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    int64_t in_zero_point,
+    const Tensor& weight_zero_point,
+    const Tensor& bias_scale,
+    double output_scale,
+    int64_t output_zero_point,
+    const Tensor& out_multiplier,
+    const Tensor& out_shift,
+    Tensor& out) {
+  quantized_conv_out(
+      ctx,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      groups,
+      in_zero_point,
+      weight_zero_point,
+      bias_scale,
+      output_scale,
+      output_zero_point,
+      out_multiplier,
+      out_shift,
+      true, // channel_last = true for NHWC
+      out);
 }
 
 } // namespace native

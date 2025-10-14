@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import unittest
+from typing import Tuple
 
 import torch
 from executorch.backends.arm._passes import (
@@ -17,11 +17,17 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.models.stable_diffusion.stable_diffusion_module_test_configs import (
     CLIP_text_encoder_config,
 )
-from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.arm.test.tester.test_pipeline import (
+    TosaPipelineFP,
+    TosaPipelineINT,
+    VgfPipeline,
+)
 from transformers import CLIPTextModelWithProjection
 
+input_t = Tuple[torch.Tensor]
 
-class TestCLIPTextModelWithProjection(unittest.TestCase):
+
+class TestCLIPTextModelWithProjection:
     """
     Test class of CLIPTextModelWithProjection.
     CLIPTextModelWithProjection is one of the text_encoder used by Stable Diffusion 3.5 Medium
@@ -69,47 +75,93 @@ class TestCLIPTextModelWithProjection(unittest.TestCase):
 
         return text_encoder_model, text_encoder_model_inputs
 
-    def test_CLIPTextModelWithProjection_tosa_FP(self):
-        text_encoder_model, text_encoder_model_inputs = self.prepare_model_and_inputs()
-        with torch.no_grad():
-            (
-                ArmTester(
-                    text_encoder_model,
-                    example_inputs=text_encoder_model_inputs,
-                    compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+FP"),
-                    transform_passes=[
-                        ConvertInt64ConstOpsToInt32Pass(),
-                        ConvertInt64OutputOpsToInt32Pass(),
-                        InsertInt32CastsAfterInt64PlaceholdersPass(),
-                    ],
-                )
-                .export()
-                .to_edge_transform_and_lower()
-                .dump_operator_distribution()
-                .check_count(self.ops_after_partitioner_FP)
-                .to_executorch()
-                .run_method_and_compare_outputs(
-                    inputs=text_encoder_model_inputs,
-                )
-            )
 
-    def test_CLIPTextModelWithProjection_tosa_INT(self):
-        text_encoder_model, text_encoder_model_inputs = self.prepare_model_and_inputs()
-        with torch.no_grad():
-            (
-                ArmTester(
-                    text_encoder_model,
-                    example_inputs=text_encoder_model_inputs,
-                    compile_spec=common.get_tosa_compile_spec(tosa_spec="TOSA-1.0+INT"),
-                )
-                .quantize()
-                .export()
-                .to_edge_transform_and_lower()
-                .dump_operator_distribution()
-                .check_count(self.ops_after_partitioner_INT)
-                .to_executorch()
-                .run_method_and_compare_outputs(
-                    inputs=text_encoder_model_inputs,
-                    atol=0.8,
-                )
-            )
+def test_CLIPTextModelWithProjection_tosa_FP():
+    text_encoder_model, text_encoder_model_inputs = (
+        TestCLIPTextModelWithProjection().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = TosaPipelineFP[input_t](
+            text_encoder_model,
+            text_encoder_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            use_to_edge_transform_and_lower=True,
+            transform_passes=[
+                ConvertInt64ConstOpsToInt32Pass(),
+                ConvertInt64OutputOpsToInt32Pass(),
+                InsertInt32CastsAfterInt64PlaceholdersPass(),
+            ],
+        )
+        pipeline.change_args(
+            "check_count.exir", TestCLIPTextModelWithProjection.ops_after_partitioner_FP
+        )
+        pipeline.run()
+
+
+def test_CLIPTextModelWithProjection_tosa_INT():
+    text_encoder_model, text_encoder_model_inputs = (
+        TestCLIPTextModelWithProjection().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = TosaPipelineINT[input_t](
+            text_encoder_model,
+            text_encoder_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            use_to_edge_transform_and_lower=True,
+            atol=0.8,
+        )
+        pipeline.change_args(
+            "check_count.exir",
+            TestCLIPTextModelWithProjection.ops_after_partitioner_INT,
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_CLIPTextModelWithProjection_vgf_FP():
+    text_encoder_model, text_encoder_model_inputs = (
+        TestCLIPTextModelWithProjection().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t](
+            text_encoder_model,
+            text_encoder_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            tosa_version="TOSA-1.0+FP",
+            use_to_edge_transform_and_lower=True,
+            atol=4,  # TODO: Investiage numerical issue: MAX Diff ~50%
+            transform_passes=[
+                ConvertInt64ConstOpsToInt32Pass(),
+                ConvertInt64OutputOpsToInt32Pass(),
+                InsertInt32CastsAfterInt64PlaceholdersPass(),
+            ],
+        )
+        pipeline.change_args(
+            "check_count.exir", TestCLIPTextModelWithProjection.ops_after_partitioner_FP
+        )
+        pipeline.run()
+
+
+@common.SkipIfNoModelConverter
+def test_CLIPTextModelWithProjection_vgf_INT():
+    text_encoder_model, text_encoder_model_inputs = (
+        TestCLIPTextModelWithProjection().prepare_model_and_inputs()
+    )
+    with torch.no_grad():
+        pipeline = VgfPipeline[input_t](
+            text_encoder_model,
+            text_encoder_model_inputs,
+            aten_op=[],
+            exir_op=[],
+            tosa_version="TOSA-1.0+INT",
+            use_to_edge_transform_and_lower=True,
+            atol=0.8,
+        )
+        pipeline.change_args(
+            "check_count.exir",
+            TestCLIPTextModelWithProjection.ops_after_partitioner_INT,
+        )
+        pipeline.run()

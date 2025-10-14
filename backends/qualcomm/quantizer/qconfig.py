@@ -52,7 +52,9 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
             act_scale, weight_scale
         )
         derived_scale = (broadcast_act_scale * broadcast_weight_scale).to(torch.float32)
-        derived_zero = torch.zeros(derived_scale.size()).to(torch.int32)
+        derived_zero = torch.zeros(derived_scale.size(), device=weight_zp.device).to(
+            torch.int32
+        )
         if isinstance(weight_obs_or_fq, PerBlockParamObserver):
             # keep maximum scale of each channel for bias
             derived_scale = (
@@ -200,7 +202,7 @@ def get_16a8w_qnn_qat_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-20}
-    act_fake_quant_ctr = FakeQuantize.with_args(
+    act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
@@ -398,7 +400,7 @@ def get_ptq_per_block_quant_config(
 def get_8a8w_qnn_qat_config(
     act_symmetric: bool = False, act_observer=MovingAverageMinMaxObserver
 ) -> QuantizationConfig:
-    act_fake_quant_ctr = FakeQuantize.with_args(
+    act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.uint8,
         qscheme=(
             torch.per_tensor_symmetric if act_symmetric else torch.per_tensor_affine
@@ -458,7 +460,7 @@ def get_8a8w_qnn_qat_config(
 def get_16a4w_qnn_qat_config(
     act_observer=MovingAverageMinMaxObserver,
 ) -> QuantizationConfig:
-    act_fake_quant_ctr = FakeQuantize.with_args(
+    act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
@@ -541,7 +543,7 @@ def get_qat_per_channel_quant_config(
         # If zero_point is 128, htp can do optimizations.
         # If we keep quant_min and quant_max none, observer will default use 128 as zero_point.
         # If we provide uint8 quant_min/max, it will use 127 as zero_point, which is undesired.
-        act_fake_quant_ctr = FakeQuantize.with_args(
+        act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
             qscheme=torch.per_tensor_symmetric,
             observer=act_observer,
@@ -553,7 +555,7 @@ def get_qat_per_channel_quant_config(
             observer_or_fake_quant_ctr=act_fake_quant_ctr,
         )
     else:
-        act_fake_quant_ctr = FakeQuantize.with_args(
+        act_fake_quant_ctr = FusedMovingAvgObsFakeQuantize.with_args(
             dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
             quant_min=torch.iinfo(act_dtype).min,
             quant_max=torch.iinfo(act_dtype).max,
