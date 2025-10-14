@@ -52,7 +52,7 @@ def get_commit_hash_for_nightly(date_str):
         Commit hash string
     """
     api_url = "https://api.github.com/repos/pytorch/pytorch/commits"
-    params = f"?sha=nightly&per_page=100"
+    params = f"?sha=nightly&per_page=50"
     url = api_url + params
 
     req = urllib.request.Request(url)
@@ -73,7 +73,7 @@ def get_commit_hash_for_nightly(date_str):
         commit_msg = commit.get("commit", {}).get("message", "")
         # Check if the first line of commit message matches
         first_line = commit_msg.split("\n")[0].strip()
-        if first_line == target_title or first_line.startswith(f"{date_str} nightly"):
+        if first_line.startswith(f"{date_str} nightly"):
             return extract_hash_from_title(first_line)
 
     raise ValueError(
