@@ -2,6 +2,7 @@
 #include "xa_nnlib_common_fpu.h"
 #include "xa_nn_common.h"
 #include "xa_nnlib_err_chk.h"
+//#include "xa_nn_basic_state.h"
 #include "xa_nnlib_kernels_api.h"
 
 
