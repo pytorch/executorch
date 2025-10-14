@@ -140,7 +140,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature,
-      facebook::jni::alias_ref<jobject> data_files) {
+      facebook::jni::alias_ref<facebook::jni::JList<jstring>::javaobject>
+          data_files) {
     return makeCxxInstance(
         model_type_category,
         model_path,
