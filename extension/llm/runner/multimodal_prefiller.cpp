@@ -77,9 +77,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     // The model might expect a 4D tensor (NCHW), but toTensor() returns a 3D
     // tensor (CHW). Add a batch dimension of 1 if needed.
     auto expected_dims = input_meta.sizes();
-    auto image_tensor = ET_UNWRAP(
-        image.toTensor(/*with_batch*/ expected_dims.size() == 4),
-        "Failed to convert image to tensor");
+    auto image_tensor = image.tensor(/*with_batch*/ expected_dims.size() == 4);
     ET_LOG(
         Info,
         "Image tensor dim: %zu, dtype: %s",
@@ -108,8 +106,7 @@ Result<uint64_t> MultimodalPrefiller::prefill(
     auto expected_dtype = input_meta.scalar_type();
 
     // Create tensor with original dtype
-    auto audio_tensor =
-        ET_UNWRAP(audio.toTensor(), "Failed to convert audio to tensor");
+    auto audio_tensor = audio.tensor();
 
     // Convert to expected dtype if needed
     if (audio_tensor->scalar_type() != expected_dtype) {
