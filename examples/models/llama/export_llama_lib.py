@@ -36,12 +36,14 @@ from executorch.extension.llm.export.config.llm_config import LlmConfig
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
+    get_openvino_partitioner,
     get_qnn_partitioner,
     get_vulkan_partitioner,
     get_xnnpack_partitioner,
 )
 from executorch.extension.llm.export.quantizer_lib import (
     get_coreml_quantizer,
+    get_ov_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
@@ -203,6 +205,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         choices=[
             "xnnpack_dynamic",
             "xnnpack_dynamic_qc4",
+            "openvino_4wo",
+            "openvino_8wo",
             "qnn_8a8w",
             "qnn_16a16w",
             "qnn_16a4w",
@@ -470,6 +474,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
+    )
+    parser.add_argument("--openvino", action="store_true")
+    parser.add_argument(
+        "--openvino_device",
+        type=str,
+        default="CPU",
+        choices=["CPU", "GPU", "NPU"],
+        help="Specify the device for Openvino (CPU, GPU or NPU).",
     )
 
     parser.add_argument(
@@ -781,6 +793,14 @@ def get_quantizer_and_quant_params(llm_config):
             llm_config.quantization.pt2e_quantize.value, llm_config.quantization.qmode
         )
         quantizers.append(qnn_quantizer)
+    if llm_config.backend.openvino.enabled and llm_config.quantization.pt2e_quantize:
+        assert not quantizers, "Should not enable both xnnpack and openvino"
+        group_size = llm_config.quantization.group_size
+        group_size = group_size if group_size else 128
+        ov_quantizer = get_ov_quantizer(
+            llm_config.quantization.pt2e_quantize.value, group_size
+        )
+        quantizers.append(ov_quantizer)
     if llm_config.backend.coreml.enabled and llm_config.quantization.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
         coreml_quantizer = get_coreml_quantizer(
@@ -883,6 +903,34 @@ def _to_edge_and_lower_llama_xnnpack(
         print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
     # we need builder.export_program
+
+    return builder.to_executorch(passes=additional_passes)
+
+
+def _to_edge_and_lower_llama_openvino(
+    builder_exported,
+    modelname,
+    quantizers,
+    additional_passes,
+    openvino_device: str = "CPU",
+    verbose: bool = False,
+) -> LLMEdgeManager:  # noqa: C901
+    partitioners = []
+
+    # Add OpenVINO partitioner
+    partitioners.append(get_openvino_partitioner(openvino_device))
+    modelname = f"openvino_{modelname}"
+
+    logging.info("Lowering model using following partitioner(s): ")
+    for partitioner in partitioners:
+        logging.info(f"--> {partitioner.__class__.__name__}")
+
+    builder = builder_exported.pt2e_quantize(quantizers).to_edge_transform_and_lower(
+        partitioners
+    )
+
+    if verbose:
+        print_delegation_info(builder.edge_manager.exported_program().graph_module)
 
     return builder.to_executorch(passes=additional_passes)
 
@@ -1129,6 +1177,15 @@ def _export_llama(llm_config: LlmConfig) -> LLMEdgeManager:  # noqa: C901
             quant_dtype,
             xnnpack_extended_ops=llm_config.backend.xnnpack.extended_ops,
             generate_etrecord=llm_config.debug.generate_etrecord,
+            verbose=llm_config.debug.verbose,
+        )
+    elif llm_config.backend.openvino.enabled:
+        builder = _to_edge_and_lower_llama_openvino(
+            builder_exported,
+            modelname,
+            quantizers,
+            additional_passes,
+            openvino_device=llm_config.backend.openvino.device,
             verbose=llm_config.debug.verbose,
         )
     else:

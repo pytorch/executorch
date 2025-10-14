@@ -281,6 +281,8 @@ class Pt2eQuantize(str, Enum):
 
     xnnpack_dynamic = "xnnpack_dynamic"
     xnnpack_dynamic_qc4 = "xnnpack_dynamic_qc4"
+    openvino_4wo = "openvino_4wo"
+    openvino_8wo = "openvino_8wo"
     qnn_8a8w = "qnn_8a8w"
     qnn_16a16w = "qnn_16a16w"
     qnn_16a4w = "qnn_16a4w"
@@ -455,6 +457,18 @@ class MPSConfig:
 
 
 @dataclass
+class OpenvinoConfig:
+    """
+    Configures the QNN backend.
+    """
+
+    enabled: bool = False
+    device: str = "CPU"
+    nncf_compression: bool = False
+    nncf_compression_group_size: int = 32
+
+
+@dataclass
 class TorchAOKernelsConfig:
     """
     Configures the torchao-kernels backend.
@@ -476,6 +490,7 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    openvino: OpenvinoConfig = field(default_factory=OpenvinoConfig)
     torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
@@ -646,6 +661,16 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # Openvino
+        if hasattr(args, "openvino"):
+            llm_config.backend.openvino.enabled = args.openvino
+        if hasattr(args, "openvino_device"):
+            llm_config.backend.openvino.device = args.openvino_device
+        if hasattr(args, "nncf_compression"):
+            llm_config.backend.openvino.nncf_compression = args.nncf_compression
+        if hasattr(args, "group_size") and args.group_size:
+            llm_config.backend.openvino.nncf_compression_group_size = args.group_size
 
         # TorchAoKernels
         if any(
