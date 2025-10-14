@@ -366,8 +366,10 @@ static inline int C10_WARP_SIZE_INTERNAL() {
 extern "C" {
 C10_IMPORT
 #if defined(__SYCL_DEVICE_ONLY__)
-extern SYCL_EXTERNAL void
-_wassert(const wchar_t* wexpr, const wchar_t* wfile, unsigned line);
+extern SYCL_EXTERNAL void _wassert(
+    const wchar_t* wexpr,
+    const wchar_t* wfile,
+    unsigned line);
 #else
 #if defined(__CUDA_ARCH__)
 __host__ __device__
@@ -434,8 +436,11 @@ extern SYCL_EXTERNAL void __assert_fail(
     const char* func);
 #elif (defined(__EMSCRIPTEN__))
 // As defined in assert.h in the Emscripten stdlib
-_Noreturn void
-__assert_fail(const char* expr, const char* file, int line, const char* func);
+_Noreturn void __assert_fail(
+    const char* expr,
+    const char* file,
+    int line,
+    const char* func);
 #else // __SYCL_DEVICE_ONLY__
 #if (defined(__CUDA_ARCH__) && !(defined(__clang__) && defined(__CUDA__)))
 // CUDA supports __assert_fail function which are common for both device
