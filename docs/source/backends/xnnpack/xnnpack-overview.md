@@ -82,11 +82,9 @@ No additional steps are necessary to use the backend beyond linking the target. 
 
 **→{doc}`xnnpack-troubleshooting` — Debug common issues.**
 
-**→{doc}`xnnpack-partitioner` — Partitioner options.**
+**→{doc}`xnnpack-partitioner` — Partitioner options and supported operators.**
 
 **→{doc}`xnnpack-quantization` — Supported quantization schemes.**
-
-**→{doc}`xnnpack-op-support` — Supported operators.**
 
 **→{doc}`xnnpack-arch-internals` — XNNPACK backend internals.**
 
@@ -95,8 +93,7 @@ No additional steps are necessary to use the backend beyond linking the target. 
 :hidden:
 :caption: XNNPACK Backend
 
-xnnpack-troubleshooting
 xnnpack-partitioner
 xnnpack-quantization
-xnnpack-op-support
+xnnpack-troubleshooting
 xnnpack-arch-internals
