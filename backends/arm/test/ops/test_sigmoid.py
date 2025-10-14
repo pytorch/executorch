@@ -141,25 +141,25 @@ def test_sigmoid_tosa_INT_3():
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone300
 def test_sigmoid_u55_INT(test_data: Tuple):
     pipeline = EthosU55PipelineINT[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 
 
 @common.parametrize("test_data", test_data_suite)
+@common.XfailIfNoCorstone320
 def test_sigmoid_u85_INT(test_data: Tuple):
     pipeline = EthosU85PipelineINT[input_t1](
         Sigmoid(),
         (test_data(),),
         aten_op,
         exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -324,7 +324,6 @@ def test_sigmoid_16a8w_u55_INT16(test_data: torch.Tensor):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(
@@ -352,7 +351,6 @@ def test_sigmoid_16a8w_u85_INT16(test_data: torch.Tensor):
         exir_op,
         per_channel_quantization=per_channel_quantization,
         use_to_edge_transform_and_lower=True,
-        run_on_fvp=True,
     )
 
     pipeline.change_args(

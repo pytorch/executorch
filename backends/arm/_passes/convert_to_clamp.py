@@ -5,6 +5,10 @@
 
 from typing import Set, Tuple, Type
 
+from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
+    QuantizeOperatorArguments,
+)
+
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -24,7 +28,7 @@ def get_clamp_params(op, args) -> Tuple[float | None, float | None]:
 
 
 class ConvertToClampPass(ExportPass):
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {QuantizeOperatorArguments}
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in edge_operators:

@@ -49,6 +49,7 @@ def quantize(  # noqa C901
     blocksize: int = 128,
     tokenizer_path: Optional[Path] = None,
     verbose: bool = False,
+    quantize_with_hqq: bool = True,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -119,7 +120,6 @@ def quantize(  # noqa C901
         from torchao.quantization.granularity import PerAxis, PerGroup
         from torchao.quantization.quant_api import (
             Int8DynamicActivationIntxWeightConfig,
-            MappingType,
             quantize_,
         )
         from torchao.utils import unwrap_tensor_subclass
@@ -134,9 +134,12 @@ def quantize(  # noqa C901
                     weight_granularity=(
                         PerAxis(0) if group_size == 0 else PerGroup(group_size)
                     ),
-                    weight_mapping_type=MappingType.SYMMETRIC,
                     # pyre-ignore[6]
                     intx_packing_format="opaque_torchao_auto",
+                    # pyre-ignore[6]
+                    intx_choose_qparams_algorithm=(
+                        "hqq_scale_only" if quantize_with_hqq else "affine"
+                    ),
                 ),
             )
             model = unwrap_tensor_subclass(model)
@@ -170,6 +173,10 @@ def quantize(  # noqa C901
                 # pyre-ignore[16]
                 weight_dtype=torch.int4,
                 weight_granularity=PerGroup(group_size),
+                # pyre-ignore[6]
+                intx_choose_qparams_algorithm=(
+                    "hqq_scale_only" if quantize_with_hqq else "affine"
+                ),
             ),
             filter_fn=filter_fn,
         )
@@ -191,6 +198,10 @@ def quantize(  # noqa C901
             # pyre-ignore[16]
             weight_dtype=torch.int4,
             granularity=PerGroup(q_group_size),
+            # pyre-ignore[6]
+            intx_choose_qparams_algorithm=(
+                "hqq_scale_only" if quantize_with_hqq else "affine"
+            ),
         )
         quantize_(model, q_config)
         model = unwrap_tensor_subclass(model)
@@ -580,6 +591,7 @@ class EmbeddingQuantHandler(QuantHandler):
         group_size: Optional[int] = None,
         packed=False,
         precision: Optional[torch.dtype] = None,
+        quantize_with_hqq: bool = True,
     ):
         if isinstance(packed, str):
             packed = packed == "True"
@@ -592,22 +604,16 @@ class EmbeddingQuantHandler(QuantHandler):
         self.precision = precision
         if (bitwidth not in [2, 4]) and packed:
             raise RuntimeError("pack only works with bitsize 2, 4")
+        self.quantize_with_hqq = quantize_with_hqq
 
     @torch.no_grad()
     def create_quantized_state_dict(self, packed=False) -> Dict:
+        from torchao.quantization.granularity import PerAxis, PerGroup
+        from torchao.quantization.quant_api import IntxWeightOnlyConfig, quantize_
+
         cur_state_dict = self.mod.state_dict()
 
-        if self.bitwidth == 2:
-            range_min = -2
-            range_max = 1
-        elif self.bitwidth == 4:
-            range_min = -8
-            range_max = 7
-        elif self.bitwidth == 8:
-            range_min = -128
-            range_max = 127
-        else:
-            raise ValueError(f"Unsupported bitwidth {self.bitwidth}")
+        assert self.bitwidth in [2, 4, 8], f"Unsupported bitwidth {self.bitwidth}"
 
         for fqn, mod in self.mod.named_modules():
             if isinstance(mod, nn.Embedding):
@@ -619,18 +625,25 @@ class EmbeddingQuantHandler(QuantHandler):
                 print(
                     f"quantize {fqn, mod} with group_size {self.group_size}, bitwidth {self.bitwidth}"
                 )
-                weight, scales, _ = dynamically_quantize_per_channel(
-                    (
-                        mod.weight.to(dtype=self.precision)
-                        if self.precision
-                        else mod.weight
+                tmp_model = nn.Embedding(mod.weight.shape[0], mod.weight.shape[1])
+                if self.precision:
+                    tmp_model = tmp_model.to(dtype=self.precision)
+                tmp_model.weight = nn.Parameter(mod.weight)
+                config = IntxWeightOnlyConfig(
+                    weight_dtype=getattr(torch, f"int{self.bitwidth}"),
+                    granularity=(
+                        PerAxis(0)
+                        if (self.group_size is None or self.group_size == 0)
+                        else PerGroup(self.group_size)
                     ),
-                    range_min,
-                    range_max,
-                    torch.int8,
-                    self.group_size,
-                    scales_dtype=mod.weight.dtype,
+                    # pyre-ignore[6]
+                    intx_choose_qparams_algorithm=(
+                        "hqq_scale_only" if self.quantize_with_hqq else "affine"
+                    ),
                 )
+                quantize_(tmp_model, config, lambda m, fqn: isinstance(m, nn.Embedding))
+                weight = tmp_model.weight.qdata  # pyre-ignore[16]
+                scales = tmp_model.weight.scale  # pyre-ignore[16]
 
                 if packed:
                     if self.bitwidth == 2:
@@ -764,6 +777,7 @@ def get_quant_embedding_transform(
     embedding_quantize: str,
     use_shared_embedding: bool = False,
     dtype_override: Optional[DType] = None,
+    quantize_with_hqq: bool = True,
 ):
     if embedding_quantize.startswith("torchao:"):
         from torchao.prototype.quantization.embedding.api import (
@@ -824,6 +838,7 @@ def get_quant_embedding_transform(
         group_size=group_size,
         packed=(bitwidth in [2, 4]),
         precision=torch_dtype,
+        quantize_with_hqq=quantize_with_hqq,
     ).quantized_model()
 
 
@@ -837,6 +852,7 @@ def get_quant_weight_transform(
     calibration_tasks: Optional[list] = None,
     calibration_limit: Optional[int] = None,
     calibration_seq_length: Optional[int] = None,
+    quantize_with_hqq: bool = True,
 ):
     return partial(
         quantize,
@@ -849,6 +865,7 @@ def get_quant_weight_transform(
         calibration_limit=calibration_limit,
         calibration_seq_length=calibration_seq_length,
         tokenizer_path=(Path(path) if (path := tokenizer_path) is not None else None),
+        quantize_with_hqq=quantize_with_hqq,
     )
 
 
@@ -876,7 +893,6 @@ def _load_torchao_aten_lib(libname):
 def set_8da4w_computation_dtype(
     module: nn.Module, computation_dtype: torch.dtype
 ) -> nn.Module:
-
     from torchao.quantization.linear_quant_modules import Int8DynActInt4WeightLinear
 
     def _set_8da4w_computation_dtype(module: nn.Module, dtype: torch.dtype) -> None:

@@ -237,7 +237,7 @@ if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} model.use_sdpa_with_kv_cache=true"
 fi
 if [[ "${QE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,1024\""
+  EXPORT_ARGS="${EXPORT_ARGS} quantization.embedding_quantize=\"8,768\""
 fi
 if [[ "${MPS}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} backend.mps.enabled=true model.enable_dynamic_shape=false debug.verbose=true"

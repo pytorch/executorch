@@ -90,7 +90,9 @@ def export_model_to_vulkan(
     qmode=QuantizationMode.NONE,
 ):
     compile_options = {}
-    exported_graph = get_exported_graph(model, sample_inputs, qmode=qmode)
+    exported_graph = get_exported_graph(
+        model, sample_inputs, dynamic_shapes=dynamic_shapes, qmode=qmode
+    )
     program = export(
         exported_graph,
         sample_inputs,

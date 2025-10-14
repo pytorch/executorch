@@ -17,7 +17,7 @@ This stage mainly focuses on the creation of a `BundledProgram` and dumping it o
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
 
-ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate and emit sample ExecuTorch program](getting-started.md#exporting) or [Exporting to ExecuTorch tutorial](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial).
+ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate and emit sample ExecuTorch program](getting-started.md#exporting) or [Exporting to ExecuTorch tutorial](tutorials/export-to-executorch-tutorial) <!-- @lint-ignore -->.
 
 ### Step 2: Construct `List[MethodTestSuite]` to hold test info
 
@@ -194,18 +194,18 @@ regenerate_bundled_program = deserialize_from_flatbuffer_to_bundled_program(seri
 ```
 
 ## Runtime Stage
-This stage mainly focuses on executing the model with the bundled inputs and and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
+This stage mainly focuses on executing the model with the bundled inputs and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
 
 
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer
 We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing `BundledProgram` and Program flatbuffer, we create an API for this
-`executorch::bundled_program::get_program_data`. Check out an [example usage](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp#L128-L137) of this API.
+`executorch::bundled_program::get_program_data`. Check out an [example usage](https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp#L128-L137) of this API.
 
 ### Load Bundled Input to Method
-To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `executorch::bundled_program::load_bundled_input`.  Check out an [example usage](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp#L253-L259) of this API.
+To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `executorch::bundled_program::load_bundled_input`.  Check out an [example usage](https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp#L253-L259) of this API.
 
 ### Verify the Method's Output.
-We call `executorch::bundled_program::verify_method_outputs` to verify the method's output with bundled expected outputs. Check out an [example usage](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp#L300-L311) of this API.
+We call `executorch::bundled_program::verify_method_outputs` to verify the method's output with bundled expected outputs. Check out an [example usage](https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp#L301-L307) of this API.
 
 ### Runtime Example
 
@@ -213,13 +213,29 @@ Please checkout our [example runner](https://github.com/pytorch/executorch/blob/
 
 ```bash
 cd executorch
-   ./examples/devtools/build_example_runner.sh
-   ./cmake-out/examples/devtools/example_runner --bundled_program_path {your-bpte-file} --output_verification
+./examples/devtools/build_example_runner.sh
+./cmake-out/examples/devtools/example_runner --bundled_program_path {your-bpte-file} --output_verification
 ```
 
 It is expected to see no output from running the above mentioned snippet.
+For a detailed example of how the runner should be like, please refer to our [example runner](https://github.com/pytorch/executorch/blob/release/1.0/examples/devtools/example_runner/example_runner.cpp).
 
-For a detailed example of how the runner should be like, please refer to our [example runner](https://github.com/pytorch/executorch/blob/release/0.6/examples/devtools/example_runner/example_runner.cpp).
+
+### Try the Complete Workflow
+
+To test the entire end-to-end workflow including building the example runner, exporting a model, and verifying the bundled program execution, you can use the test script:
+
+```bash
+cd executorch
+./examples/devtools/test_example_runner.sh
+```
+
+This script will:
+1. Build the example runner using `build_example_runner.sh`
+2. Export a MobileNetV2 model as a bundled program
+3. Run the example runner with the bundled program to verify correctness
+
+This is a great way to ensure your environment is set up correctly and to see the complete BundledProgram workflow in action.
 
 ## Common Errors
 

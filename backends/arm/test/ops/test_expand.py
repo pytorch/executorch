@@ -79,7 +79,6 @@ def test_expand_u55_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 
@@ -92,7 +91,6 @@ def test_expand_u85_INT(test_data: Tuple):
         test_data(),
         aten_op,
         exir_ops=[],
-        run_on_fvp=True,
     )
     pipeline.run()
 

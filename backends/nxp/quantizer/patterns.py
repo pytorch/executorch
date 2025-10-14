@@ -224,6 +224,32 @@ class AddTensorPattern(QuantizationPattern):
         )
 
 
+class SubTensorPattern(QuantizationPattern):
+    """
+    Quantization pattern for Sub Tensor quantization. Accepts 1 or 2 input nodes.
+
+    Basic quantization for all inputs and output.
+    """
+
+    def partition_types(self) -> list[torch.nn.Module]:
+        return [torch.ops.aten.sub.Tensor]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+        inputs = [(node, NodeArgsIdx(0))]
+        if len(fused_partition[0].input_nodes) == 2:
+            inputs = [(node, NodeArgsIdx(0)), (node, NodeArgsIdx(1))]
+
+        return PartitionAnchors(
+            inputs=inputs,
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+
 class AvgPoolPattern(SharedSpecPattern):
     """
     Quantizer for AvgPool2D operator.
@@ -276,55 +302,20 @@ class CatPattern(QuantizationPattern):
         )
 
 
-class Conv1dPattern(QuantizationPattern):
+class ConvPattern(QuantizationPattern):
+    @abstractmethod
     def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.conv1d.default]
+        pass
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
-        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
-        conv1d_node = fused_partition[0].nodes[-1]
-
-        bias_qspec = DerivedQuantizationSpec(
-            derived_from=[
-                (conv1d_node.args[0], conv1d_node),
-                (conv1d_node.args[1], conv1d_node),
-            ],
-            derive_qparams_fn=get_bias_qparams,
-            dtype=torch.int32,
-            quant_min=-(2**31),
-            quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
-        )
-
-        # Keep bias empty if not supplied
-        bias = []
-        if len(conv1d_node.args) > 2 and conv1d_node.args[2] is not None:
-            bias = [(conv1d_node, NodeArgsIdx(2), bias_qspec)]
-
-        return PartitionAnchors(
-            inputs=[(conv1d_node, NodeArgsIdx(0))],
-            weights=[(conv1d_node, NodeArgsIdx(1))],
-            # pyre-fixme[6]: Incompatible parameter type
-            biases=bias,
-            output=[(conv1d_node,)],
-        )
-
-
-class Conv2dPattern(QuantizationPattern):
-    def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.conv2d.default]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors:
-        conv2d_node = fused_partition[0].nodes[-1]
+        conv_node = fused_partition[0].nodes[-1]
 
         bias_quantization_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (conv2d_node.args[0], conv2d_node),
-                (conv2d_node.args[1], conv2d_node),
+                (conv_node.args[0], conv_node),
+                (conv_node.args[1], conv_node),
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -346,15 +337,25 @@ class Conv2dPattern(QuantizationPattern):
 
         # Keep bias empty if not supplied
         bias = []
-        if len(conv2d_node.args) > 2 and conv2d_node.args[2] is not None:
-            bias = [(conv2d_node, NodeArgsIdx(2), bias_quantization_qspec)]
+        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
+            bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
 
         return PartitionAnchors(
-            inputs=[(conv2d_node, NodeArgsIdx(0))],
-            weights=[(conv2d_node, NodeArgsIdx(1), weight_quantization_spec)],
+            inputs=[(conv_node, NodeArgsIdx(0))],
+            weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
             biases=bias,
-            output=[(conv2d_node,)],
+            output=[(conv_node,)],
         )
+
+
+class Conv1dPattern(ConvPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv1d.default]
+
+
+class Conv2dPattern(ConvPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.conv2d.default]
 
 
 class DropoutPattern(SharedSpecPattern):
@@ -432,7 +433,6 @@ class LinearPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors:
-        # pyre-fixme[29]: `Union[BoundMethod[typing.Callable(torch._C.TensorBase.__ge...
         linear_node = fused_partition[0].nodes[-1]
 
         bias_qspec = DerivedQuantizationSpec(
@@ -455,7 +455,6 @@ class LinearPattern(QuantizationPattern):
         return PartitionAnchors(
             inputs=[(linear_node, NodeArgsIdx(0))],
             weights=[(linear_node, NodeArgsIdx(1))],
-            # pyre-fixme[6]: Incompatible parameter type
             biases=bias,
             output=[(linear_node,)],
         )
@@ -477,6 +476,23 @@ class MeanDimPattern(SharedSpecPattern):
 
     def partition_types(self):
         return [torch.ops.aten.mean.dim]
+
+
+class MmPattern(QuantizationPattern):
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.mm.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        mm_node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(mm_node, NodeArgsIdx(0))],
+            weights=[(mm_node, NodeArgsIdx(1))],
+            biases=[],
+            output=[(mm_node,)],
+        )
 
 
 class PadPattern(SharedSpecPattern):
@@ -552,6 +568,24 @@ class SoftMaxPattern(QuantizationPattern):
         )
 
 
+class SigmoidPattern(QuantizationPattern):
+    """
+    Quantizer for Sigmoid operator.
+
+    The quantization of Sigmoid output is fixed to scale 1/256, zero point -128, dtype int8.
+    """
+
+    def partition_types(self) -> list[OpOverload]:
+        return [torch.ops.aten.sigmoid.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        return get_anchors_for_fixed_quant_specs(
+            fused_partition, scale=1.0 / 256.0, zero_point=-128
+        )
+
+
 class TanhPattern(QuantizationPattern):
     """
     Quantizer for Tanh operator.
@@ -585,22 +619,4 @@ class TanhInPlacePattern(QuantizationPattern):
     ) -> PartitionAnchors:
         return get_anchors_for_fixed_quant_specs(
             fused_partition, scale=1.0 / 128.0, zero_point=0
-        )
-
-
-class SigmoidPattern(QuantizationPattern):
-    """
-    Quantizer for Sigmoid operator.
-
-    The quantization of Sigmoid output is fixed to scale 1/256, zero point -128, dtype int8.
-    """
-
-    def partition_types(self) -> list[OpOverload]:
-        return [torch.ops.aten.sigmoid.default]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors:
-        return get_anchors_for_fixed_quant_specs(
-            fused_partition, scale=1.0 / 256.0, zero_point=-128
         )

@@ -6,6 +6,13 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.convert_full_like_to_full_pass import (
+    ConvertFullLikeToFullPass,
+)
+
+from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
+from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
 from executorch.exir.pass_base import ExportPass
 
 torch_cosine_similarity = (torch.ops.aten.cosine_similarity.default,)
@@ -24,7 +31,12 @@ class DecomposeCosineSimilarityPass(ExportPass):
       out    = div(dot, denom)
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeDivPass,
+        DecomposeSumPass,
+        ConvertFullLikeToFullPass,
+        InsertTableOpsPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op not in torch_cosine_similarity:

@@ -215,9 +215,10 @@ class ExportConfig:
         so_library: Shared library to specify custom quantized operators.
         export_only: Whether to stop right after torch.export() and
             just save the exported .pt2 graph file.
-        foundation_weights_file: configure the foundation weights of a model
-            to be placed in a separate file, external to the PTE. Pass the
-            intended file name here.
+        foundation_weights_file: place the foundation weights of the model into
+            a separate file, external to the PTE. Pass the file name here.
+        lora_weights_file: place the lora weights of the model into a
+            separate file, external to the PTE. Pass the file name here.
     """
 
     max_seq_length: int = 128
@@ -227,6 +228,7 @@ class ExportConfig:
     so_library: Optional[str] = None
     export_only: bool = False
     foundation_weights_file: Optional[str] = None
+    lora_weights_file: Optional[str] = None
 
     def __post_init__(self):
         if self.max_context_length < self.max_seq_length:
@@ -453,6 +455,16 @@ class MPSConfig:
 
 
 @dataclass
+class TorchAOKernelsConfig:
+    """
+    Configures the torchao-kernels backend.
+    """
+
+    use_torchao_kernels_linear: bool = False
+    use_torchao_kernels_tied_embedding: bool = False
+
+
+@dataclass
 class BackendConfig:
     """
     Configures which backends should be used and how the backends
@@ -464,6 +476,7 @@ class BackendConfig:
     vulkan: VulkanConfig = field(default_factory=VulkanConfig)
     qnn: QNNConfig = field(default_factory=QNNConfig)
     mps: MPSConfig = field(default_factory=MPSConfig)
+    torchao: TorchAOKernelsConfig = field(default_factory=TorchAOKernelsConfig)
 
 
 ################################################################################
@@ -561,6 +574,8 @@ class LlmConfig:
             llm_config.export.export_only = args.export_only
         if hasattr(args, "foundation_weights_file"):
             llm_config.export.foundation_weights_file = args.foundation_weights_file
+        if hasattr(args, "lora_weights_file"):
+            llm_config.export.lora_weights_file = args.lora_weights_file
 
         # QuantizationConfig
         if hasattr(args, "quantization_mode"):
@@ -631,6 +646,28 @@ class LlmConfig:
         # MPS
         if hasattr(args, "mps"):
             llm_config.backend.mps.enabled = args.mps
+
+        # TorchAoKernels
+        if any(
+            hasattr(args, a)
+            for a in [
+                "use_torchao_kernels",
+                "use_torchao_kernels_linear",
+                "use_torchao_kernels_tied_embedding",
+            ]
+        ):
+            if hasattr(args, "use_torchao_kernels") and args.use_torchao_kernels:
+                # Enable all conversions if torchao_kernels is specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = True
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = True
+            else:
+                # Otherwise, only enable the conversions that are specified
+                llm_config.backend.torchao.use_torchao_kernels_linear = getattr(
+                    args, "use_torchao_kernels_linear", False
+                )
+                llm_config.backend.torchao.use_torchao_kernels_tied_embedding = getattr(
+                    args, "use_torchao_kernels_tied_embedding", False
+                )
 
         # DebugConfig
         if hasattr(args, "profile_memory"):

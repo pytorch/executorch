@@ -142,9 +142,14 @@ class LLMEdgeManager:
                     {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
                 )
             else:
-                # Two input arguments: tokens and input_pos but input_pos is static shape
+                # Two input arguments: tokens and input_pos but input_pos is static shape.
+
+                # A runtime assertion is added by torch.ops.llama.update_cache requires that
+                # L['tokens'].size()[1] + input_pos[0].item() < self.max_seq_len
+                # This consttaint L['tokens'].size()[1] to be elf.max_seq_len-1
+                # run with TORCH_LOGS=+dynamic for details
                 self.dynamic_shapes = (
-                    {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
+                    {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
                     {"input_pos": {0: 1}},
                 )
 

@@ -14,6 +14,7 @@ EVAL_MODE = {
 DECODER_MODEL_VERSION = {
     "stories260k": "llama2",
     "stories110m": "llama2",
+    "gemma-2b": "gemma",
     "gemma3-1b": "gemma3",
     "phi_4_mini": "phi_4_mini",
     "llama3_2-1b_instruct": "llama3",

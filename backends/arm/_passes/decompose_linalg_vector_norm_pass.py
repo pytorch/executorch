@@ -6,6 +6,8 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.decompose_sqrt_pass import DecomposeSqrtPass
+from executorch.backends.arm._passes.decompose_sum_pass import DecomposeSumPass
 from executorch.exir.pass_base import ExportPass
 
 
@@ -30,7 +32,10 @@ class DecomposeLinearVectorNormPass(ExportPass):
           dtype prior, but we dont know this from FX graph.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {
+        DecomposeSqrtPass,
+        DecomposeSumPass,
+    }
 
     torch_linalg_vector_norm = (torch.ops.aten.linalg_vector_norm.default,)
 

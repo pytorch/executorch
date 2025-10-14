@@ -31,7 +31,7 @@ class ConvertInt64ConstOpsToInt32Pass(ExportPass):
       5. `torch.tensor`
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = set()
+    _passes_required_after: Set[Type[ExportPass]] = {ComputeConstantOpsAOT}
 
     torch_ops = [
         torch.ops.aten.full.default,

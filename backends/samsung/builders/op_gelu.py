@@ -27,8 +27,14 @@ class GeluVisitor(NodeVisitor):
         enn_graph: EnnGraph,
         vals_to_ids: Dict[torch.Tensor, int],
     ) -> None:
-        input_id = self.define_tensor(node.args[0], enn_graph, vals_to_ids)
+        # input1
+        input = node.args[0]
+        input_id = self.define_tensor(input, enn_graph, vals_to_ids)
 
+        # output
         output_id = self.define_tensor(node, enn_graph, vals_to_ids)
 
-        enn_graph.define_op(node.name, "GELU", [input_id], [output_id])
+        params = {}
+        self._update_params_qdtype(node, params)
+
+        enn_graph.define_op(node.name, "GELU", [input_id], [output_id], params)

@@ -132,17 +132,24 @@ def test_split_with_sizes_tosa_INT(test_data: input_t1):
     pipeline.run()
 
 
+x_fails = {
+    "split_3d_2_sizes_dim": "MLETORCH-1403: Split operator is running out of memory when reading input file",
+    "split_4d_2_sizes_dim_neg": "MLETORCH-1403: Split operator is running out of memory when reading input file",
+}
+
+
 @common.parametrize(
     "test_data",
     (Split.test_data | Split.test_data_list),
+    x_fails,
 )
+@common.XfailIfNoCorstone300
 def test_split_with_sizes_u55_INT(test_data: input_t1):
     pipeline = EthosU55PipelineINT[input_t1](
         Split(),
         test_data(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 
@@ -150,7 +157,9 @@ def test_split_with_sizes_u55_INT(test_data: input_t1):
 @common.parametrize(
     "test_data",
     (Split.test_data | Split.test_data_list),
+    x_fails,
 )
+@common.XfailIfNoCorstone320
 def test_split_with_sizes_u85_INT(test_data: input_t1):
 
     pipeline = EthosU85PipelineINT[input_t1](
@@ -158,7 +167,6 @@ def test_split_with_sizes_u85_INT(test_data: input_t1):
         test_data(),
         aten_ops=[],
         exir_ops=exir_op,
-        run_on_fvp=False,
     )
     pipeline.run()
 

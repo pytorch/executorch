@@ -7,8 +7,6 @@ import logging
 import multiprocessing
 import pkgutil
 
-from executorch.backends.nxp.backend.ir.converter.node_converter import Target
-
 
 def convert_unsafe(neutron_converter, tflite_model, cctx, queue):
     """
@@ -27,16 +25,7 @@ class NeutronConverterManager:
     contains NeutronGraph nodes.
     """
 
-    _supported_target_names = [Target.RT700.value]
-
-    def convert(
-        self, tflite_model: bytes, target: str, neutron_converter_flavor: str
-    ) -> bytes:
-        # Neutron converter crashes if we provide invalid target -> verify.
-        if target not in self._supported_target_names:
-            raise RuntimeError(
-                f"Target '{target}' is not supported by NeutronConverterManager."
-            )
+    def __init__(self, neutron_converter_flavor: str = "SDK_25_09"):
 
         neutron_converter_modules = [
             module.name
@@ -57,13 +46,34 @@ class NeutronConverterManager:
                     f"not found. Install 'neutron_converter_[flavor]' Python package."
                 )
 
-        neutron_converter = importlib.import_module(
+        self.neutron_converter = importlib.import_module(
             f"{requested_module_name}.neutron_converter"
         )
+        self.neutron_library_utils = importlib.import_module(
+            f"{requested_module_name}.neutron_library_utils"
+        )
 
-        cctx = neutron_converter.CompilationContext()
-        cctx.targetOpts = neutron_converter.getNeutronTarget(target)
-        # New switch since Neutron Converter SDK_25.06
+    def get_converter(self):
+        return self.neutron_converter
+
+    def get_library_utils(self):
+        return self.neutron_library_utils
+
+    def verify_target(self, target: str):
+        if not self.neutron_library_utils.isNeutronTarget(target):
+            valid_targets = [
+                target.name for target in self.neutron_library_utils.getNeutronTargets()
+            ]
+            raise ValueError(
+                f"Target `{target}` is not a valid target. Must be one of `{valid_targets}`."
+            )
+
+    def convert(self, tflite_model: bytes, target: str) -> bytes:
+        # Neutron converter crashes if we provide invalid target -> verify.
+        self.verify_target(target)
+
+        cctx = self.neutron_converter.CompilationContext()
+        cctx.targetOpts = self.neutron_converter.getNeutronTarget(target)
         cctx.compilationOpts.minNumOpsPerGraph = 1
 
         logger = multiprocessing.log_to_stderr()
@@ -71,7 +81,8 @@ class NeutronConverterManager:
         queue = multiprocessing.Manager().Queue()
 
         process = multiprocessing.Process(
-            target=convert_unsafe, args=(neutron_converter, tflite_model, cctx, queue)
+            target=convert_unsafe,
+            args=(self.neutron_converter, tflite_model, cctx, queue),
         )
         process.start()
         process.join()  # waits until the subprocess is complete

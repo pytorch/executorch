@@ -28,7 +28,6 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-#define DEBUG_MODE
 #include "conv2d_common.glslh"
 
 ${layout_declare_tensor(B, "w", "t_fp_output", DTYPE, OUTPUT_STORAGE, is_scalar_array=False)}

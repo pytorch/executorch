@@ -21,6 +21,7 @@ runtime.python_library(
         "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/devtools:lib",
         "//executorch/exir:lib",
+        ":etdump",
     ],
 )
 

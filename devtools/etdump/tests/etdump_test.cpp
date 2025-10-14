@@ -345,7 +345,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
       EValue* values_p[2] = {&evalue_1, &evalue_2};
 
       BoxedEvalueList<executorch::aten::Tensor> a_box(values_p, storage, 2);
-      EValue evalue(a_box);
+      EValue evalue(&a_box);
       evalue.tag = Tag::ListTensor;
 
       etdump_gen[i]->create_event_block("test_block");

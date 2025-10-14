@@ -44,3 +44,23 @@ def define_common_targets():
             "//executorch/extension/llm/runner:multimodal_runner_lib",
         ],
     )
+
+    runtime.cxx_test(
+        name = "test_util",
+        srcs = ["test_util.cpp"],
+        deps = [
+            "//executorch/extension/llm/runner:stats",
+            "//executorch/extension/tensor:tensor",
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_wav_loader",
+        srcs = ["test_wav_loader.cpp"],
+        deps = [
+            "//executorch/extension/testing_util:temp_file",
+            "//executorch/extension/llm/runner:multimodal_runner_lib",
+            "//executorch/runtime/platform:platform",
+        ],
+    )

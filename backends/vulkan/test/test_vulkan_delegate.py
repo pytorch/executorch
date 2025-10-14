@@ -2482,6 +2482,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
@@ -2572,6 +2573,7 @@ class TestVulkanBackend(unittest.TestCase):
             rtol=1e-1,
         )
 
+    @unittest.skip("Cannot run on swiftshader due to no integer dot product support")
     def test_vulkan_backend_xnnpack_pt2e_quantized_conv_sequence_all_reduced(self):
         """
         Test a sequence of convolution layers quantized with PT2E quantization.
