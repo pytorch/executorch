@@ -7,7 +7,7 @@
  */
 
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/tensor/tensor_ptr_maker.h>
+#include <executorch/runtime/platform/runtime.h>
 
 #include <gtest/gtest.h>
 
@@ -19,7 +19,14 @@ using ::executorch::aten::ScalarType;
 using ::executorch::extension::make_tensor_ptr;
 using ::executorch::extension::llm::convert_to_bfloat16;
 
-TEST(ConvertToBFloat16Test, ConvertsFloatTensorData) {
+class ConvertToBFloat16Test : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    executorch::runtime::runtime_init();
+  }
+};
+
+TEST_F(ConvertToBFloat16Test, ConvertsFloatTensorData) {
   auto source_tensor = make_tensor_ptr<float>(
       {2, 2}, std::vector<float>{0.0f, 1.5f, -2.0f, 3.25f});
 
@@ -47,7 +54,7 @@ TEST(ConvertToBFloat16Test, ConvertsFloatTensorData) {
   }
 }
 
-TEST(ConvertToBFloat16Test, RejectsNonFloatTensor) {
+TEST_F(ConvertToBFloat16Test, RejectsNonFloatTensor) {
   auto non_float_tensor =
       make_tensor_ptr<int64_t>({3}, std::vector<int64_t>{1, 2, 3});
 
