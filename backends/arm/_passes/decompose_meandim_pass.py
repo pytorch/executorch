@@ -46,7 +46,7 @@ def get_view(op):
     if op == exir_ops.edge.aten.mean.dim:
         return exir_ops.edge.aten.view_copy.default
     if op == torch.ops.aten.mean.dim:
-        return torch.ops.aten.view_copy.default
+        return torch.ops.aten.reshape.default
     raise RuntimeError(f"Can't get meandim decomposition for op {op}")
 
 

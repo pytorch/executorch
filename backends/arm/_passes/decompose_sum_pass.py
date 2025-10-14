@@ -19,7 +19,7 @@ def _get_sum_decomp(op):
                 exir_ops.edge.aten.sum.dim_IntList,
             )
         case torch.ops.aten.sum.dim_IntList:
-            return (torch.ops.aten.view_copy.default, torch.ops.aten.sum.dim_IntList)
+            return (torch.ops.aten.reshape.default, torch.ops.aten.sum.dim_IntList)
         case _:
             raise RuntimeError("Unvalid op in DecomposeSumPass")
 
