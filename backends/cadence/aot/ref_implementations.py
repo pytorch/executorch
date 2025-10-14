@@ -261,7 +261,7 @@ def quantized_linear_common(
     src = src.view(-1, K)
 
     dtype = src.dtype
-    supported_dtypes = [torch.int8, torch.uint8, torch.int32]
+    supported_dtypes = [torch.int8, torch.uint8, torch.int16, torch.int32]
     if dtype not in supported_dtypes:
         raise ValueError(
             f"Unsupported dtype to quantize to {dtype}. Supported dtypes must be one of {supported_dtypes}"
