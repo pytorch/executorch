@@ -289,6 +289,32 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
+  // Returns status_code
+  jint append_normalized_images_input(
+      facebook::jni::alias_ref<jfloatArray> image,
+      jint width,
+      jint height,
+      jint channels) {
+    std::vector<llm::Image> images;
+    if (image == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
+    auto image_size = image->size();
+    if (image_size != 0) {
+      std::vector<jfloat> image_data_jfloat(image_size);
+      std::vector<float> image_data(image_size);
+      image->getRegion(0, image_size, image_data_jfloat.data());
+      for (int i = 0; i < image_size; i++) {
+        image_data[i] = image_data_jfloat[i];
+      }
+      llm::Image image_runner{std::move(image_data), width, height, channels};
+      prefill_inputs_.emplace_back(
+          llm::MultimodalInput{std::move(image_runner)});
+    }
+
+    return 0;
+  }
+
   void stop() {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_->stop();
@@ -323,6 +349,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod("load", ExecuTorchLlmJni::load),
         makeNativeMethod(
             "appendImagesInput", ExecuTorchLlmJni::append_images_input),
+        makeNativeMethod(
+            "appendNormalizedImagesInput",
+            ExecuTorchLlmJni::append_normalized_images_input),
         makeNativeMethod(
             "appendTextInput", ExecuTorchLlmJni::append_text_input),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
