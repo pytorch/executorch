@@ -208,6 +208,29 @@ public class LlmModule {
   private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
+   * Prefill an LLaVA Module with the given images input.
+   *
+   * @param image Input normalized image as a float array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Deprecated
+  public long prefillImages(float[] image, int width, int height, int channels) {
+    int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendNormalizedImagesInput(
+      float[] image, int width, int height, int channels);
+
+  /**
    * Prefill an LLaVA Module with the given text input.
    *
    * @param prompt The text prompt to LLaVA.
