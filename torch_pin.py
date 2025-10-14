@@ -11,7 +11,7 @@
 # NOTE: If you're changing, make the corresponding supported CUDA versions in
 # SUPPORTED_CUDA_VERSIONS above if needed.
 TORCH_VERSION = "2.10.0"
-NIGHTLY_VERSION = "dev20251003"
+NIGHTLY_VERSION = "dev20251008"
 SUPPORTED_CUDA_VERSIONS = (
     (12, 6),
     (12, 8),
