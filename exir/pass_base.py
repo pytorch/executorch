@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -36,6 +37,7 @@ from torch._dispatch.python import enable_python_dispatcher
 from torch._subclasses import FakeTensorMode, UnsupportedFakeTensorException
 from torch._subclasses.fake_tensor import FakeTensor
 from torch._subclasses.functional_tensor import FunctionalTensor, FunctionalTensorMode
+from torch.export import ExportedProgram
 from torch.fx import traceback as fx_traceback
 from torch.fx.experimental.proxy_tensor import PythonKeyTracer
 from torch.fx.graph import CodeGen
@@ -732,6 +734,24 @@ class ExportPass(_ExportPassBase):
         preserve_original_ph_meta_val(graph_module, res.graph_module)
 
         return res
+
+
+class RequireExportedProgram:
+    """Mixin to require a pass to take an exported program, which is accessed by the exported_program property.
+    Note that the mixin needs to be added to the left of the pass class in the inheritance list to get a correct MRO.
+    """
+
+    def __init__(self, exported_program: ExportedProgram | None = None) -> None:
+        self._exported_program = exported_program
+        super().__init__()
+
+    @property
+    def exported_program(self) -> ExportedProgram:
+        if self._exported_program is None:
+            raise ValueError(
+                "Tried to access exported_program, but it was not provided when constructing the pass."
+            )
+        return self._exported_program
 
 
 @runtime_checkable
