@@ -4,11 +4,11 @@ format and delegate the model computation to eIQ Neutron NPU using the eIQ Neutr
 
 ## Layout
 * `experimental/` - contains CifarNet model example.
-* `models` - various example models.
+* `models` - demo models instantiation used in examples.
 * `aot_neutron_compile.py` - script with end-to-end ExecuTorch AoT Neutron Backend workflow.
 * `README.md` - this file.
-* `run_aot_example.sh` - utility script for aot_neutron_compile.py.
-* `setup.sh` - setup script for Neutron Converter installation.
+* `run_aot_example.sh` - utility script to launch _aot_neutron_compile.py_. Primarily for CI purpose. 
+* `setup.sh` - setup script to install Neutron Backend dependencies.
 
 ## Setup
 Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/main/getting-started-setup).
