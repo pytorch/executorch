@@ -41,6 +41,10 @@ class OpenVINOLCMPipeline:
         self.runtime = Runtime.get()
         self._initialized = False
 
+        # Cumulative timing metrics
+        self.models_load_time = 0.0
+        self.exec_time = 0.0
+
     def load_tokenizer(self, vocab_path: str):
         """Load CLIP tokenizer"""
         try:
@@ -89,8 +93,6 @@ class OpenVINOLCMPipeline:
             return None
 
         try:
-            start_time = time.time()
-
             inputs = self.tokenizer(
                 prompt,
                 padding="max_length",
@@ -99,10 +101,17 @@ class OpenVINOLCMPipeline:
                 return_tensors="pt",
             )
 
+            load_start = time.time()
             text_encoder_method = self.models["text_encoder"].load_method("forward")
-            embeddings = text_encoder_method.execute([inputs.input_ids])[0]
+            load_time = time.time() - load_start
+            self.models_load_time += load_time
 
-            logger.info(f"Text encoded ({time.time() - start_time:.3f}s)")
+            exec_start = time.time()
+            embeddings = text_encoder_method.execute([inputs.input_ids])[0]
+            exec_time = time.time() - exec_start
+            self.exec_time += exec_time
+
+            logger.info(f"Text encoder - Load: {load_time:.3f}s, Execute: {exec_time:.3f}s")
             return embeddings
         except Exception as e:
             logger.error(f"Failed to encode prompt: {e}")
@@ -136,7 +145,11 @@ class OpenVINOLCMPipeline:
             self.scheduler.set_timesteps(num_steps)
 
             # Get UNet method
+            load_start = time.time()
             unet_method = self.models["unet"].load_method("forward")
+            load_time = time.time() - load_start
+            self.models_load_time += load_time
+            logger.info(f"UNet - Load: {load_time:.3f}s")
 
             # Denoising loop
             logger.info(f"Running LCM denoising with {num_steps} steps...")
@@ -164,10 +177,12 @@ class OpenVINOLCMPipeline:
                     f"  Step {step+1}/{num_steps} completed ({time.time() - step_start:.3f}s)"
                 )
 
-            denoise_elapsed = time.time() - denoise_start
+            exec_time = time.time() - denoise_start
+            self.exec_time += exec_time
             logger.info(
-                f"Denoising completed ({denoise_elapsed:.3f}s, avg {denoise_elapsed/num_steps:.3f}s/step)"
+                f"UNet - Execute: {exec_time:.3f}s, avg {exec_time/num_steps:.3f}s/step"
             )
+
             return latents
         except Exception as e:
             logger.error(f"Failed during denoising: {e}")
@@ -180,17 +195,30 @@ class OpenVINOLCMPipeline:
             return None
 
         try:
-            start_time = time.time()
-
+            load_start = time.time()
             vae_method = self.models["vae_decoder"].load_method("forward")
+            load_time = time.time() - load_start
+            self.models_load_time += load_time
+
+            exec_start = time.time()
             decoded_image = vae_method.execute([latents])[0]
+            exec_time = time.time() - exec_start
+            self.exec_time += exec_time
 
             # Convert from (1, 3, 512, 512) CHW to (512, 512, 3) HWC
+            conversion_start = time.time()
             decoded_image = decoded_image.squeeze(0).permute(1, 2, 0)
             decoded_image = (decoded_image * 255).clamp(0, 255).to(torch.uint8)
-
             image = Image.fromarray(decoded_image.numpy())
-            logger.info(f"Image decoded ({time.time() - start_time:.3f}s)")
+            postprocess_time = time.time() - conversion_start
+            self.exec_time += postprocess_time
+
+            logger.info(
+                f"VAE decoder - Load: {load_time:.3f}s, "
+                f"Execute: {exec_time:.3f}s, "
+                f"Post-process: {postprocess_time:.3f}s"
+            )
+
             return image
         except Exception as e:
             logger.error(f"Failed to decode image: {e}")
@@ -213,6 +241,10 @@ class OpenVINOLCMPipeline:
         logger.info(f"Steps: {num_steps} | Guidance: {guidance_scale} | Seed: {seed}")
         logger.info("=" * 60)
 
+        # Reset cumulative timers
+        self.models_load_time = 0.0
+        self.exec_time = 0.0
+
         total_start = time.time()
 
         text_embeddings = self.encode_prompt(prompt)
@@ -227,10 +259,13 @@ class OpenVINOLCMPipeline:
         if image is None:
             return None
 
+        total_time = time.time() - total_start
+
         logger.info("=" * 60)
-        logger.info(
-            f"✓ Generation completed! Total time: {time.time() - total_start:.3f}s"
-        )
+        logger.info(f"✓ Generation completed!")
+        logger.info(f"  Total time: {total_time:.3f}s")
+        logger.info(f"  Total load time: {self.models_load_time:.3f}s")
+        logger.info(f"  Total Inference time: {self.exec_time:.3f}s")
         logger.info("=" * 60)
         return image
 
