@@ -190,11 +190,11 @@ test_run_vkml() { # End to End model tests using run.sh
 
     echo "${TEST_SUITE_NAME}: Test VKML"
     out_folder="arm_test/test_run"
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=add --output=${out_folder}/runner --bundleio
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=mul --output=${out_folder}/runner --bundleio
 
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner
-    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qadd --output=${out_folder}/runner --bundleio
+    examples/arm/run.sh --et_build_root=${out_folder} --target=vgf --model_name=qops --output=${out_folder}/runner --bundleio
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
@@ -254,8 +254,8 @@ test_models_vkml() { # End to End model tests using model_test.py
 
     # VKML
     echo "${TEST_SUITE_NAME}: Test target VKML"
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=mv2
-    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --no_quantize --model=mv2
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet18 --extra_flags="-DET_BUNDLE_IO_ATOL=0.2 -DET_BUNDLE_IO_RTOL=0.2"
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=vgf --model=resnet50 --extra_flags="-DET_BUNDLE_IO_ATOL=0.2 -DET_BUNDLE_IO_RTOL=0.2"
 
     echo "${TEST_SUITE_NAME}: PASS"
 }
