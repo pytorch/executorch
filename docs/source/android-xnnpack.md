@@ -1,1 +1,1 @@
-```{include} backends-xnnpack.md
+```{include} /backends/xnnpack/backends-xnnpack.md
