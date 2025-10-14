@@ -27,7 +27,15 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
-set(_common_compile_options -Wno-deprecated-declarations -fPIC -Wall -Werror)
+set(_common_compile_options
+    $<$<CXX_COMPILER_ID:MSVC>:/W4
+    /WX
+    /wd4996>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall
+    -Werror
+    -Wno-deprecated-declarations
+    -fPIC>
+)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 set(link_libraries)

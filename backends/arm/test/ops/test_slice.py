@@ -44,7 +44,6 @@ test_data_suite = {
 
 
 class Slice(torch.nn.Module):
-
     def forward(self, x: torch.Tensor, s: list[tuple[int, int]]):
         slices = [slice(*i) for i in s]
         return x[slices]

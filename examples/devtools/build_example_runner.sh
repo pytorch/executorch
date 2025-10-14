@@ -61,7 +61,15 @@ main() {
 
   local example_dir=examples/devtools
   local build_dir="cmake-out/${example_dir}"
-  local cmake_prefix_path="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
+
+  # Check for both lib and lib64 directories
+  local executorch_dir="${PWD}/cmake-out/lib/cmake/ExecuTorch"
+  if [[ ! -d "${executorch_dir}" ]]; then
+    executorch_dir="${PWD}/cmake-out/lib64/cmake/ExecuTorch"
+  fi
+
+  local cmake_prefix_path="${executorch_dir};${PWD}/cmake-out/third-party/gflags"
+
   rm -rf ${build_dir}
   cmake -DCMAKE_PREFIX_PATH="${cmake_prefix_path}" \
       -DCMAKE_BUILD_TYPE=Release \

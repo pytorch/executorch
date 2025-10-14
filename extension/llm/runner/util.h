@@ -141,6 +141,31 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
   }
 }
 
+/**
+ * Helper function to convert a float tensor to bfloat16.
+ * Creates a new tensor with bfloat16 dtype and copies/converts the data.
+ */
+inline ::executorch::runtime::Result<::executorch::extension::TensorPtr>
+convert_to_bfloat16(const ::executorch::extension::TensorPtr& src_tensor) {
+  ET_CHECK_OR_RETURN_ERROR(
+      src_tensor->scalar_type() == ::executorch::aten::ScalarType::Float,
+      InvalidArgument,
+      "BFloat16 conversion only supported from Float source data");
+
+  const auto num_elements = static_cast<size_t>(src_tensor->numel());
+  const float* float_data = src_tensor->const_data_ptr<float>();
+
+  auto bf16_tensor = ::executorch::extension::empty_like(
+      src_tensor, ::executorch::aten::ScalarType::BFloat16);
+  auto* bf16_data =
+      bf16_tensor->mutable_data_ptr<::executorch::aten::BFloat16>();
+  for (size_t i = 0; i < num_elements; ++i) {
+    bf16_data[i] = ::executorch::aten::BFloat16(float_data[i]);
+  }
+
+  return bf16_tensor;
+}
+
 } // namespace llm
 } // namespace extension
 } // namespace executorch

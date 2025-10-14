@@ -24,7 +24,7 @@ Quantization - the process of using reduced precision to reduce inference time a
 
 ExecuTorch backends provide hardware acceleration for a specific hardware target. In order to achieve maximum performance on target hardware, ExecuTorch optimizes the model for a specific backend during the export and lowering process. This means that the resulting .pte file is specialized for the specific hardware. In order to deploy to multiple backends, such as Core ML on iOS and Arm CPU on Android, it is common to generate a dedicated .pte file for each.
 
-The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requires and level of model support. See the documentation for each hardware backend for more details.
+The choice of hardware backend is informed by the hardware that the model is intended to be deployed on. Each backend has specific hardware requirements and level of model support. See the documentation for each hardware backend for more details.
 
 As part of the .pte file creation process, ExecuTorch identifies portions of the model (partitions) that are supported for the given backend. These sections are processed by the backend ahead of time to support efficient execution. Portions of the model that are not supported on the delegate, if any, are executed using the portable fallback implementation on CPU. This allows for partial model acceleration when not all model operators are supported on the backend, but may have negative performance implications. In addition, multiple partitioners can be specified in order of priority. This allows for operators not supported on GPU to run on CPU via XNNPACK, for example.
 
@@ -206,7 +206,7 @@ outputs = module.forward([input_tensor])
 
 There is also an E2E demo in [executorch-examples](https://github.com/meta-pytorch/executorch-examples/tree/main/program-data-separation).
 
-For more information, see [Runtime API Reference](executorch-runtime-api-reference.md).
+For more information, see [Runtime API Reference](executorch-runtime-api-reference.rst).
 
 ## Advanced Topics
 
@@ -280,7 +280,7 @@ decode_ep = torch.export.export(DecodeWrapper(model), ...)
 
 ## Next Steps
 
-The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://pytorch.org/docs/main/export.html) and [Export API Reference](export-to-executorch-api-reference.md) for more information.
+The PyTorch and ExecuTorch export and lowering APIs provide a high level of customizability to meet the needs of diverse hardware and models. See [torch.export](https://pytorch.org/docs/main/export.html) and [Export API Reference](export-to-executorch-api-reference.rst) for more information.
 
 For advanced use cases, see the following:
 - [Quantization Overview](quantization-overview.md) for information on quantizing models to reduce inference time and memory footprint.
