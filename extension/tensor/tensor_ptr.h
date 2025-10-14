@@ -123,13 +123,14 @@ inline TensorPtr make_tensor_ptr(
       }
     } ctx;
 
-    ET_SWITCH_REALHBBF16_TYPES(type, ctx, "make_tensor_ptr", CTYPE, [&] {
-      std::transform(
-          data.begin(),
-          data.end(),
-          reinterpret_cast<CTYPE*>(casted_data.data()),
-          [](const T& val) { return static_cast<CTYPE>(val); });
-    });
+    ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+        type, ctx, "make_tensor_ptr", CTYPE, [&] {
+          std::transform(
+              data.begin(),
+              data.end(),
+              reinterpret_cast<CTYPE*>(casted_data.data()),
+              [](const T& val) { return static_cast<CTYPE>(val); });
+        });
     const auto raw_data_ptr = casted_data.data();
     auto data_ptr =
         std::make_shared<std::vector<uint8_t>>(std::move(casted_data));
@@ -338,13 +339,16 @@ inline TensorPtr make_tensor_ptr(
  * @param sizes Optional sizes override.
  * @param dim_order Optional dimension order override.
  * @param strides Optional strides override.
+ * @param deleter A custom deleter function for managing the lifetime of the
+ * original Tensor.
  * @return A TensorPtr aliasing the same storage with requested metadata.
  */
 inline TensorPtr make_tensor_ptr(
     const executorch::aten::Tensor& tensor,
     std::vector<executorch::aten::SizesType> sizes = {},
     std::vector<executorch::aten::DimOrderType> dim_order = {},
-    std::vector<executorch::aten::StridesType> strides = {}) {
+    std::vector<executorch::aten::StridesType> strides = {},
+    std::function<void(void*)> deleter = nullptr) {
   if (sizes.empty()) {
     sizes.assign(tensor.sizes().begin(), tensor.sizes().end());
   }
@@ -372,16 +376,18 @@ inline TensorPtr make_tensor_ptr(
       tensor.mutable_data_ptr(),
       std::move(dim_order),
       std::move(strides),
-      tensor.scalar_type()
+      tensor.scalar_type(),
 #ifndef USE_ATEN_LIB
-          ,
-      tensor.shape_dynamism()
+      tensor.shape_dynamism(),
+#else // USE_ATEN_LIB
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
 #endif // USE_ATEN_LIB
-  );
+      std::move(deleter));
 }
 
 /**
  * Convenience overload identical to make_tensor_ptr(*tensor_ptr, ...).
+ * Keeps the original TensorPtr alive until the returned TensorPtr is destroyed.
  *
  * @param tensor_ptr The source tensor pointer to alias.
  * @param sizes Optional sizes override.
@@ -395,7 +401,11 @@ inline TensorPtr make_tensor_ptr(
     std::vector<executorch::aten::DimOrderType> dim_order = {},
     std::vector<executorch::aten::StridesType> strides = {}) {
   return make_tensor_ptr(
-      *tensor_ptr, std::move(sizes), std::move(dim_order), std::move(strides));
+      *tensor_ptr,
+      std::move(sizes),
+      std::move(dim_order),
+      std::move(strides),
+      [tensor_ptr](void*) {});
 }
 
 /**
