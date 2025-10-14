@@ -172,6 +172,18 @@ int32_t aoti_torch_dtype_bfloat16() {
   return 15; // PyTorch's bfloat16 dtype code
 }
 
+int32_t aoti_torch_dtype_int8() {
+  return 1; // PyTorch's int32 dtype code
+}
+
+int32_t aoti_torch_dtype_int16() {
+  return 2; // PyTorch's int32 dtype code
+}
+
+int32_t aoti_torch_dtype_int32() {
+  return 3; // PyTorch's int32 dtype code
+}
+
 int32_t aoti_torch_dtype_int64() {
   return 4; // PyTorch's int64 dtype code
 }
