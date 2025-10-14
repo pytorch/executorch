@@ -325,8 +325,9 @@ inline TensorPtr make_tensor_ptr(
 }
 
 /**
- * Creates a TensorPtr to manage a new Tensor with the same properties
- * as the given Tensor, sharing the same data without owning it.
+ * Creates a TensorPtr to manage a new Tensor that aliases the given Tensor's
+ * storage, with optional metadata overrides. Shape dynamism is inherited from
+ * the source tensor.
  *
  * If an override is provided (non-empty), it is passed as-is. If an override is
  * empty, the corresponding metadata is reused from the source tensor when it
@@ -371,8 +372,7 @@ inline TensorPtr make_tensor_ptr(
     strides.assign(tensor.strides().begin(), tensor.strides().end());
   }
   return make_tensor_ptr(
-      std::vector<executorch::aten::SizesType>(
-          tensor.sizes().begin(), tensor.sizes().end()),
+      std::move(sizes),
       tensor.mutable_data_ptr(),
       std::move(dim_order),
       std::move(strides),
