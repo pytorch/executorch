@@ -342,3 +342,16 @@ class CadenceWithSoftmaxQuantizer(CadenceQuantizer):
             quantizers = get_cadence_default_quantizers()
         quantizers.append(CadenceAtenQuantizer(SoftmaxPattern(), qconfig_A16))
         super().__init__(quantizers)
+
+
+class CadenceWith16BitLinearActivationsQuantizer(CadenceQuantizer):
+    """
+    Quantizer including A16 fully_connected
+    """
+
+    def __init__(self, quantizers: Optional[list[Quantizer]] = None) -> None:
+        if quantizers is None:
+            quantizers = []
+        # Add 16-bit quantizers for LinearPattern
+        quantizers.append(CadenceAtenQuantizer(LinearPattern(), qconfig_A16))
+        super().__init__(quantizers)

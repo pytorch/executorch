@@ -183,6 +183,8 @@ class TestRefImplementations(unittest.TestCase):
                     (False, torch.int8),
                     (True, torch.int8),
                     (True, torch.uint8),
+                    (True, torch.int16),
+                    (False, torch.int16),
                 )
             ],
             # Test case 2: 1x3 input, 2x3 weight (2 output features)
@@ -207,6 +209,8 @@ class TestRefImplementations(unittest.TestCase):
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
                     (True, torch.int8),
+                    (False, torch.int16),
+                    (True, torch.int16),
                 )
             ],
             *[
@@ -256,6 +260,8 @@ class TestRefImplementations(unittest.TestCase):
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
                     (True, torch.int8),
+                    (False, torch.int16),
+                    (True, torch.int16),
                 )
             ],
             # Test case 4: Non-zero zero points
@@ -280,6 +286,8 @@ class TestRefImplementations(unittest.TestCase):
                 for (per_tensor, dtype) in (
                     (False, torch.int8),
                     (True, torch.int8),
+                    (False, torch.int16),
+                    (True, torch.int16),
                     # (True, torch.uint8),
                 )
             ],
@@ -302,7 +310,10 @@ class TestRefImplementations(unittest.TestCase):
                     False,
                     False,
                 )
-                for dtype in (torch.int8,)
+                for dtype in (
+                    torch.int8,
+                    torch.int16,
+                )
             ],
             # Test case 6: Non-zero out_shift (shift=1)
             *[
@@ -325,7 +336,12 @@ class TestRefImplementations(unittest.TestCase):
                     False,
                     False,
                 )
-                for (per_tensor, dtype) in ((False, torch.int8), (True, torch.int8))
+                for (per_tensor, dtype) in (
+                    (False, torch.int8),
+                    (True, torch.int8),
+                    (False, torch.int16),
+                    (True, torch.int16),
+                )
             ],
             *[
                 (
@@ -348,7 +364,7 @@ class TestRefImplementations(unittest.TestCase):
                     transposed_matmul,
                 )
                 for (matmul, transposed_matmul) in ((True, False), (True, True))
-                for (per_tensor, dtype) in ((True, torch.int8),)
+                for (per_tensor, dtype) in ((True, torch.int8), (True, torch.int16))
             ],
             *[
                 (
