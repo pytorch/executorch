@@ -85,6 +85,7 @@ set(optional_lib_list
     quantized_kernels
     quantized_ops_lib
     quantized_ops_aot_lib
+    openvino_backend
     torchao_ops_executorch
     torchao_kernels_aarch64
 )
