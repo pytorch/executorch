@@ -10,16 +10,7 @@ from typing import Any
 import torch
 from executorch.backends.arm.test.common import get_u55_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import Serialize
-from executorch.backends.cortex_m.passes.quantized_linear_fusion_pass import (
-    QuantizedLinearFusionPass,
-)
-from executorch.backends.cortex_m.passes.quantized_op_fusion_pass import (
-    QuantizedOpFusionPass,
-)
-
-from executorch.backends.cortex_m.passes.replace_quant_nodes_pass import (
-    ReplaceQuantNodesPass,
-)
+from executorch.backends.cortex_m.passes.cortex_m_pass_manager import CortexMPassManager
 from executorch.backends.test.harness import Tester as TesterBase
 from executorch.backends.test.harness.stages import (
     Export,
@@ -29,7 +20,6 @@ from executorch.backends.test.harness.stages import (
     ToEdgeTransformAndLower,
     ToExecutorch,
 )
-from executorch.backends.xnnpack._passes import XNNPACKPassManager
 
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -47,12 +37,8 @@ class CortexMQuantize(Quantize):
 class CortexMRunPasses(RunPasses):
     def __init__(self):
         super().__init__(
-            XNNPACKPassManager,
-            pass_list=[
-                ReplaceQuantNodesPass,
-                QuantizedLinearFusionPass,
-                QuantizedOpFusionPass,
-            ],
+            CortexMPassManager,
+            CortexMPassManager.pass_list,
         )
 
 
