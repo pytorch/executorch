@@ -1,0 +1,27 @@
+name: check-pytorch-pin
+
+on:
+  pull_request:
+    paths:
+      - torch_pin.py
+      - .ci/docker/ci_commit_pins/pytorch.txt
+      - .ci/scripts/check_pytorch_pin.sh
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  check-pytorch-pin:
+    permissions:
+      id-token: write
+      contents: read
+    name: check-pytorch-pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Check PyTorch Pin Consistency
+        run: |
+          .ci/scripts/check_pytorch_pin.sh
