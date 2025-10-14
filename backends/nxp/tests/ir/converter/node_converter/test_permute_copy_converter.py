@@ -16,8 +16,6 @@ from executorch.backends.nxp.tests.executorch_pipeline import to_quantized_edge_
 from executorch.backends.nxp.tests.executors import (
     convert_run_compare,
     graph_contains_any_of_ops,
-    ToChannelFirstPreprocess,
-    ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import Conv2dModule
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -40,9 +38,9 @@ class Conv2dTransposeModule(torch.nn.Module):
 
 
 class Conv2dPermuteModule(torch.nn.Module):
-    def __init__(self, in_channels: int, new_dims: tuple[int, ...]):
+    def __init__(self, in_channels: int, perm: tuple[int, ...]):
         super().__init__()
-        self.new_dims = new_dims
+        self.perm = perm
         self.conv = Conv2dModule(
             in_channels=in_channels,
             out_channels=in_channels,
@@ -53,18 +51,57 @@ class Conv2dPermuteModule(torch.nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-        return torch.permute(x, self.new_dims)
+        return torch.permute(x, self.perm)
+
+
+class PermuteConv2dModule(torch.nn.Module):
+    def __init__(self, in_channels: int, perm: tuple[int, ...]):
+        super().__init__()
+        self.perm = perm
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            stride=1,
+            kernel_size=3,
+            padding=1,
+        )
+
+    def forward(self, x):
+        x = torch.permute(x, self.perm)
+        return self.conv(x)
+
+
+class PermuteConv2dPermuteModule(torch.nn.Module):
+    def __init__(
+        self, in_channels: int, perm1: tuple[int, ...], perm2: tuple[int, ...]
+    ):
+        super().__init__()
+        self.perm1 = perm1
+        self.perm2 = perm2
+        self.conv = Conv2dModule(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            stride=1,
+            kernel_size=3,
+            padding=1,
+        )
+
+    def forward(self, x):
+        x = torch.permute(x, self.perm1)
+        x = self.conv(x)
+        x = torch.permute(x, self.perm2)
+        return x
 
 
 class LinearPermuteModule(torch.nn.Module):
-    def __init__(self, in_features: int, new_dims: tuple[int, ...]):
+    def __init__(self, in_features: int, perm: tuple[int, ...]):
         super().__init__()
-        self.new_dims = new_dims
+        self.perm = perm
         self.fc = torch.nn.Linear(in_features, in_features)
 
     def forward(self, x):
         x = self.fc(x)
-        return torch.permute(x, self.new_dims)
+        return torch.permute(x, self.perm)
 
 
 class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
@@ -79,17 +116,17 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
             ["To channel last permutation", (1, 16, 8, 8), (0, 2, 3, 1)],
         ]
     )
-    def test_permute_copy_conversion__from_permute_4D__quantized(
-        self, _: str, input_shape, new_dims
+    def test_permute_copy_conversion__from_permute_4D__quantized__channels_first_input(
+        self, _: str, input_shape, perm
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
         ) as converter_spy:
-            model = Conv2dPermuteModule(input_shape[1], new_dims)
+            model = Conv2dPermuteModule(input_shape[1], perm)
 
             # Run conversion
             edge_program = to_quantized_edge_program(
-                model, input_shape, use_neutron_for_format_conversion=False
+                model, input_shape
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
@@ -115,8 +152,96 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
                 input_data,
                 tfl_model=tflite_flatbuffers_model,
                 atol=1.0,
-                tflite_input_preprocess=ToChannelLastPreprocess(),
-                tflite_output_preprocess=ToChannelFirstPreprocess(),
+            )
+
+    @parameterized.expand(
+        [
+            ["To channel first permutation", (1, 8, 8, 8), (0, 3, 1, 2)],
+            ["To channel last permutation", (1, 8, 8, 8), (0, 2, 3, 1)],
+        ]
+    )
+    def test_permute_copy_conversion__from_permute_4D__quantized__channels_first_output(
+        self, _: str, input_shape, perm
+    ):
+        with kgb.spy_on(
+            EdgeProgramToIRConverter.convert_program, call_original=True
+        ) as converter_spy:
+            model = PermuteConv2dModule(input_shape[1], perm)
+
+            # Run conversion
+            edge_program = to_quantized_edge_program(
+                model, input_shape
+            ).exported_program()
+
+            # Make sure the `Permute_copy` was delegated.
+            assert not graph_contains_any_of_ops(
+                graph=edge_program.graph, ops=[exir_ops.edge.aten.permute_copy.default]
+            )
+            assert any(
+                "lowered_module" in node.name for node in edge_program.graph.nodes
+            )
+
+            # Capture generated model
+            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+
+            # Capture converted program
+            exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
+
+            input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
+                np.int8
+            )
+
+            convert_run_compare(
+                exported_program,
+                input_data,
+                tfl_model=tflite_flatbuffers_model,
+                atol=1.0,
+            )
+
+    @parameterized.expand(
+        [
+            ["nchw->nhwc ... nchw->nhwc", (1, 8, 8, 8), (0, 2, 3, 1), (0, 2, 3, 1)],
+            ["nchw->nhwc ... nhwc->nchw", (1, 8, 8, 8), (0, 2, 3, 1), (0, 3, 1, 2)],
+            ["nhwc->nchw ... nhwc->nchw", (1, 8, 8, 8), (0, 3, 1, 2), (0, 3, 1, 2)],
+            ["nhwc->nchw ... nchw->nhwc", (1, 8, 8, 8), (0, 3, 1, 2), (0, 2, 3, 1)],
+        ]
+    )
+    def test_permute_copy_conversion__from_permute_4D__quantized__channels_first_io(
+        self, _: str, input_shape, perm1, perm2
+    ):
+        with kgb.spy_on(
+            EdgeProgramToIRConverter.convert_program, call_original=True
+        ) as converter_spy:
+            model = PermuteConv2dPermuteModule(input_shape[1], perm1, perm2)
+
+            # Run conversion
+            edge_program = to_quantized_edge_program(
+                model, input_shape
+            ).exported_program()
+
+            # Make sure the `Permute_copy` was delegated.
+            assert not graph_contains_any_of_ops(
+                graph=edge_program.graph, ops=[exir_ops.edge.aten.permute_copy.default]
+            )
+            assert any(
+                "lowered_module" in node.name for node in edge_program.graph.nodes
+            )
+
+            # Capture generated model
+            tflite_flatbuffers_model, io_formats = converter_spy.calls[-1].return_value
+
+            # Capture converted program
+            exported_program: ExportedProgram = converter_spy.calls[-1].args[0]
+
+            input_data = (np.random.random(input_shape).astype(np.float32) * 50).astype(
+                np.int8
+            )
+
+            convert_run_compare(
+                exported_program,
+                input_data,
+                tfl_model=tflite_flatbuffers_model,
+                atol=1.0,
             )
 
     @parameterized.expand(
@@ -127,14 +252,14 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
         ]
     )
     def test_permute_copy_conversion__from_permute_3D__quantized(
-        self, _: str, input_shape, new_dims
+        self, _: str, input_shape, perm
     ):
         with kgb.spy_on(
             EdgeProgramToIRConverter.convert_program, call_original=True
         ) as converter_spy:
             # Run conversion
             edge_program = to_quantized_edge_program(
-                LinearPermuteModule(input_shape[2], new_dims), input_shape
+                LinearPermuteModule(input_shape[2], perm), input_shape
             ).exported_program()
 
             # Make sure the `Permute_copy` was delegated.
@@ -171,9 +296,9 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
         ]
     )
     def test_permute_copy_non_delegated_conversion__from_permute_4D__quantized(
-        self, _: str, input_shape, new_dims
+        self, _: str, input_shape, perm
     ):
-        model = Conv2dPermuteModule(input_shape[1], new_dims)
+        model = Conv2dPermuteModule(input_shape[1], perm)
         edge_program = to_quantized_edge_program(model, input_shape).exported_program()
 
         nodes = list(edge_program.graph.nodes)
