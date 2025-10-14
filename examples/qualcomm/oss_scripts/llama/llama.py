@@ -891,7 +891,7 @@ def inference(
             args=args,
             pte_path=pte_path,
             tokenizer=tokenizer,
-            runtime_tokenizer_path=runtime_tokenizer_path
+            runtime_tokenizer_path=runtime_tokenizer_path,
         )
 
         # Evaluate the model
