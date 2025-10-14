@@ -19,7 +19,6 @@ using ::executorch::aten::ScalarType;
 using ::executorch::aten::Tensor;
 using ::executorch::runtime::KernelRuntimeContext;
 
-namespace cadence {
 namespace impl {
 namespace HiFi {
 namespace native {
@@ -172,7 +171,7 @@ void im2row_out(
     optimized = true;
 
   if (!optimized) {
-    WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
+    WORD8* ptr1 = (WORD8*)::impl::HiFi::kernels::allocate_temp_memory(
         ctx, ((batch_size * in_c * in_h * in_w) + 8) * sizeof(WORD8));
 
     WORD8* pin = (WORD8*)ALIGN_PTR(ptr1, 8);
@@ -325,7 +324,7 @@ void im2row_per_tensor_out(
     optimized = true;
 
   if (!optimized) {
-    WORD8* ptr1 = (WORD8*)kernels::allocate_temp_memory(
+    WORD8* ptr1 = (WORD8*)::impl::HiFi::kernels::allocate_temp_memory(
         ctx, ((batch_size * in_c * in_h * in_w) + 8) * sizeof(WORD8));
 
     WORD8* pin = (WORD8*)ALIGN_PTR(ptr1, 8);
@@ -428,4 +427,3 @@ void im2row_per_tensor_out(
 } // namespace native
 } // namespace HiFi
 } // namespace impl
-} // namespace cadence
