@@ -25,7 +25,7 @@ Start here for C++ development with ExecuTorch runtime APIs and essential tutori
 ## Tutorials
 
 - {doc}`tutorial-arm-ethos-u` — Export a simple PyTorch model for the ExecuTorch Ethos-U backend
-
+- {doc}`raspberry_pi_llama_tutorial` — Deploy a LLaMA model on a Raspberry Pi
 
 ```{toctree}
 :hidden:
@@ -37,3 +37,4 @@ using-executorch-cpp
 using-executorch-building-from-source
 embedded-backends
 tutorial-arm-ethos-u
+raspberry_pi_llama_tutorial
