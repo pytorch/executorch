@@ -6,17 +6,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import functools
-import os
 import platform
 import re
 import subprocess
 import sys
-
-
-def _is_cuda_enabled():
-    """Check if CUDA delegate is enabled via CMAKE_ARGS environment variable."""
-    cmake_args = os.environ.get("CMAKE_ARGS", "")
-    return "-DEXECUTORCH_BUILD_CUDA=ON" in cmake_args
 
 
 def _cuda_version_to_pytorch_suffix(major, minor):
@@ -33,6 +26,7 @@ def _cuda_version_to_pytorch_suffix(major, minor):
     return f"cu{major}{minor}"
 
 
+@functools.lru_cache(maxsize=1)
 def _get_cuda_version(supported_cuda_versions):
     """
     Get the CUDA version installed on the system using nvcc command.
@@ -62,25 +56,23 @@ def _get_cuda_version(supported_cuda_versions):
                 )
                 raise RuntimeError(
                     f"Detected CUDA version {major}.{minor} is not supported. "
-                    f"Only the following CUDA versions are supported: {available_versions}. "
-                    f"Please install a supported CUDA version or try on CPU-only delegates."
+                    f"Supported versions: {available_versions}."
                 )
 
             return (major, minor)
         else:
             raise RuntimeError(
-                "CUDA delegate is enabled but could not parse CUDA version from nvcc output. "
-                "Please ensure CUDA is properly installed or try on CPU-only delegates."
+                "Failed to parse CUDA version from nvcc output. "
+                "Ensure CUDA is properly installed."
             )
     except FileNotFoundError:
         raise RuntimeError(
-            "CUDA delegate is enabled but nvcc (CUDA compiler) is not found in PATH. "
-            "Please install CUDA toolkit or try on CPU-only delegates."
+            "nvcc (CUDA compiler) is not found in PATH. Install the CUDA toolkit."
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            f"CUDA delegate is enabled but nvcc command failed with error: {e}. "
-            "Please ensure CUDA is properly installed or try on CPU-only delegates."
+            f"nvcc command failed with error: {e}. "
+            "Ensure CUDA is properly installed."
         )
 
 
@@ -105,7 +97,7 @@ def _get_pytorch_cuda_url(cuda_version, torch_nightly_url_base):
 @functools.lru_cache(maxsize=1)
 def determine_torch_url(torch_nightly_url_base, supported_cuda_versions):
     """
-    Determine the appropriate PyTorch installation URL based on CUDA availability and CMAKE_ARGS.
+    Determine the appropriate PyTorch installation URL based on CUDA availability.
     Uses @functools.lru_cache to avoid redundant CUDA detection and print statements.
 
     Args:
@@ -115,15 +107,19 @@ def determine_torch_url(torch_nightly_url_base, supported_cuda_versions):
     Returns:
         URL string for PyTorch packages
     """
-    # Check if CUDA delegate is enabled
-    if not _is_cuda_enabled():
-        print("CUDA delegate not enabled, using CPU-only PyTorch")
+    if platform.system().lower() == "windows":
+        print(
+            "Windows detected, using CPU-only PyTorch until CUDA support is available"
+        )
         return f"{torch_nightly_url_base}/cpu"
 
-    print("CUDA delegate enabled, detecting CUDA version...")
+    print("Attempting to detect CUDA via nvcc...")
 
-    # Get CUDA version
-    cuda_version = _get_cuda_version(supported_cuda_versions)
+    try:
+        cuda_version = _get_cuda_version(supported_cuda_versions)
+    except Exception as err:
+        print(f"CUDA detection failed ({err}), using CPU-only PyTorch")
+        return f"{torch_nightly_url_base}/cpu"
 
     major, minor = cuda_version
     print(f"Detected CUDA version: {major}.{minor}")
