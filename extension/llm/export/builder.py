@@ -142,7 +142,8 @@ class LLMEdgeManager:
                     {1: torch.export.Dim("token_dim", max=self.max_seq_len - 1)},
                 )
             else:
-                # Two input arguments: tokens and input_pos but input_pos is static shape
+                # Two input arguments: tokens and input_pos but input_pos is static shape.
+
                 self.dynamic_shapes = (
                     {1: torch.export.Dim("token_dim", max=self.max_seq_len)},
                     {"input_pos": {0: 1}},
