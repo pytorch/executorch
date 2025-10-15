@@ -691,7 +691,7 @@ def annotate_sign(node: Node, quantization_config: QuantizationConfig) -> None:
 
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
-    annotate_single_in_single_out(node, quantization_config)
+    annotate_single_in_share_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.slice_scatter.default])
@@ -1281,27 +1281,15 @@ def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]) or not _is_float_tensor(node):
         return
 
-    assert isinstance(input_nodes, Sequence)
-
-    first_input_node = input_nodes[0]
     input_qspec_map = {}
-    assert isinstance(first_input_node, Node)
-    assert isinstance(node, Node)
-    if _is_float_tensor(first_input_node):
-        input_qspec_map[first_input_node] = quantization_config.input_activation
-        share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
-            (first_input_node, node)
-        )
-
-    for input_node in input_nodes[1:]:
-        if input_node not in input_qspec_map:
-            assert isinstance(input_node, Node)
-            if _is_float_tensor(input_node):
-                input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+    for input_node in input_nodes:
+        assert isinstance(input_node, Node)
+        if _is_float_tensor(input_node):
+            input_qspec_map[input_node] = quantization_config.input_activation
 
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
-        output_qspec=share_qparams_with_input_act0_qspec,
+        output_qspec=quantization_config.output_activation,
         _annotated=True,
     )
 
@@ -1346,6 +1334,9 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
     assert isinstance(input_act, Node)
     input_qspec_map[input_act] = quantization_config.input_activation
 
+    share_qparams_with_input_node_qspec = SharedQuantizationSpec((input_act, node))
+    input_qspec_map[input_act] = quantization_config.input_activation
+
     node.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
         _annotated=True,
@@ -1353,7 +1344,7 @@ def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
 
     for user in node.users:
         user.meta[Q_ANNOTATION_KEY] = QuantizationAnnotation(
-            output_qspec=quantization_config.output_activation,
+            output_qspec=share_qparams_with_input_node_qspec,
             _annotated=True,
         )
 
