@@ -9,7 +9,7 @@
 # because this should only be used in the AOTInductor backend, as it
 # has less restrictions on whether the tensor memory is densely packed,
 
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable
 
 import torch
 from executorch.exir.dialects._ops import ops
