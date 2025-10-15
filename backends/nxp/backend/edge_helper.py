@@ -87,3 +87,14 @@ def try_get_tensor_constant_from_node(
             return None
         attr_itr = getattr(attr_itr, atom)
     return attr_itr
+
+
+Scale = list[float] | float
+ZeroPoint = list[int] | int
+
+
+def get_quantization_parameters_for(node: Node) -> tuple[Scale, ZeroPoint] | None:
+    if "quantize" not in node.target.__name__ or len(node.args) < 3:
+        return None
+
+    return node.args[1], node.args[2]  # Scale and zero_point

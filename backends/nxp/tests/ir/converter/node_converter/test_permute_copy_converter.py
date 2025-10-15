@@ -104,7 +104,7 @@ class LinearPermuteModule(torch.nn.Module):
         return torch.permute(x, self.perm)
 
 
-class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
+class TestPermuteCopyConversion(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.manual_seed(23)
@@ -302,9 +302,9 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
         edge_program = to_quantized_edge_program(model, input_shape).exported_program()
 
         nodes = list(edge_program.graph.nodes)
-        assert len(nodes) == 10
+        assert len(nodes) == 8
         assert (
-            nodes[6].target == exir_ops.edge.aten.permute_copy.default
+            nodes[5].target == exir_ops.edge.aten.permute_copy.default
         )  # PermuteCopy not delegated.
 
     @parameterized.expand(
@@ -320,7 +320,7 @@ class TestPermuteCopyConversion(kgb.SpyAgency, unittest.TestCase):
         edge_program = to_quantized_edge_program(model, input_shape).exported_program()
 
         nodes = list(edge_program.graph.nodes)
-        assert len(nodes) == 10
+        assert len(nodes) == 8
         assert (
-            nodes[6].target == exir_ops.edge.aten.permute_copy.default
+            nodes[5].target == exir_ops.edge.aten.permute_copy.default
         )  # PermuteCopy not delegated.

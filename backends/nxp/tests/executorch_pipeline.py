@@ -15,6 +15,9 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -58,7 +61,6 @@ def get_random_calibration_inputs(
 def to_model_input_spec(
     input_spec: tuple[ModelInputSpec, ...] | tuple[int, ...] | list[tuple[int, ...]]
 ) -> tuple[ModelInputSpec, ...]:
-
     if isinstance(input_spec, tuple) and all(
         isinstance(spec, ModelInputSpec) for spec in input_spec
     ):
@@ -125,6 +127,10 @@ def to_quantized_edge_program(
     )
     partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
     edge_program_manager = edge_program_manager.to_backend(partitioner)
+
+    edge_program_manager = NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])(
+        edge_program_manager
+    )
 
     return edge_program_manager
 
