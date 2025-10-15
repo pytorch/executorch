@@ -166,7 +166,7 @@ class CudaBackend(BackendDetails):
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
                 raise RuntimeError(
-                    f"Missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
+                    f"Method {CudaBackend.method_name_from_compile_specs(compile_specs)} missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
                     "Please add them to the AOTI backend."
                 )
 
