@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cstring>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -42,6 +43,24 @@ class SharedPtrDataLoader final : public executorch::runtime::DataLoader {
         size_);
     return executorch::runtime::FreeableBuffer(
         static_cast<uint8_t*>(data_.get()) + offset, size, /*free_fn=*/nullptr);
+  }
+  
+  ET_NODISCARD
+  executorch::runtime::Error load_into(
+      size_t offset,
+      size_t size,
+      const DataLoader::SegmentInfo& segment_info,
+      void* buffer) const override {
+    ET_CHECK_OR_RETURN_ERROR(
+        offset + size <= size_,
+        InvalidArgument,
+        "offset %zu + size %zu exceeds buffer size %zu",
+        offset,
+        size,
+        size_);
+
+  std::memcpy(buffer, static_cast<uint8_t*>(data_.get()) + offset, size);
+  return executorch::runtime::Error::Ok;
   }
 
   ET_NODISCARD executorch::runtime::Result<size_t> size() const override {
