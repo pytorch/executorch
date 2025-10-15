@@ -14,7 +14,16 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
+cmake_minimum_required(VERSION 3.29)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT APPLE)
+  message(FATAL_ERROR "Metal backend requires macOS")
+endif()
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)

@@ -520,6 +520,12 @@ class ET_EXPERIMENTAL MetalBackend final
           "Failed to remove temporary shared library %s: %s",
           handle->so_path.c_str(),
           remove_error.message().c_str());
+      if (!remove_error) {
+        ET_LOG(
+            Info,
+            "Removed temporary shared library file: %s",
+            handle->so_path.c_str());
+      }
     }
 
     delete handle;
