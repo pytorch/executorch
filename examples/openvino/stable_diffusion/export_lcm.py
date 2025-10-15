@@ -9,96 +9,49 @@
 import argparse
 import logging
 import os
-from typing import Any, Optional
+import sys
 
 import torch
 from torch.export import export
 
-try:
-    from diffusers import DiffusionPipeline  # type: ignore[import-not-found]
-except ImportError:
-    raise ImportError(
-        "Please install diffusers and transformers: pip install diffusers transformers"
-    )
+# Add examples/models to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
 
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
+from models.stable_diffusion.model import LCMModelLoader
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class LCMExporter:
-    """Export Latent Consistency Model (LCM) components to OpenVINO-optimized PTE files"""
+class LCMOpenVINOExporter:
+    """Export Latent Consistency Model (LCM) components to OpenVINO PTE files"""
 
     def __init__(
         self,
         model_id: str = "SimianLuo/LCM_Dreamshaper_v7",
         dtype: torch.dtype = torch.float16,
     ):
-        self.model_id = model_id
-        self.dtype = dtype
-        self.pipeline: Optional[DiffusionPipeline] = None
-        self.text_encoder: Any = None
-        self.unet: Any = None
-        self.vae: Any = None
-        self.tokenizer: Any = None
+        self.model_loader = LCMModelLoader(model_id=model_id, dtype=dtype)
 
     def load_models(self) -> bool:
         """Load the LCM pipeline and extract components"""
-        try:
-            logger.info(f"Loading LCM pipeline: {self.model_id} (dtype: {self.dtype})")
-            self.pipeline = DiffusionPipeline.from_pretrained(
-                self.model_id, torch_dtype=self.dtype, use_safetensors=True
-            )
-
-            # Extract individual components
-            self.text_encoder = self.pipeline.text_encoder
-            self.unet = self.pipeline.unet
-            self.vae = self.pipeline.vae
-            self.tokenizer = self.pipeline.tokenizer
-
-            # Set models to evaluation mode
-            self.text_encoder.eval()
-            self.unet.eval()
-            self.vae.eval()
-
-            logger.info("Successfully loaded all LCM model components")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to load models: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
+        return self.model_loader.load_models()
 
     def export_text_encoder(self, output_path: str, device: str = "CPU") -> bool:
         """Export CLIP text encoder to PTE file"""
         try:
-            logger.info("Exporting text encoder...")
+            logger.info("Exporting text encoder with OpenVINO backend...")
 
-            # Create wrapper to extract last_hidden_state from CLIP output
-            class TextEncoderWrapper(torch.nn.Module):
-                def __init__(self, text_encoder):
-                    super().__init__()
-                    self.text_encoder = text_encoder
-
-                def forward(self, input_ids):
-                    # Call text encoder and extract last_hidden_state
-                    output = self.text_encoder(input_ids, return_dict=True)
-                    return output.last_hidden_state
-
-            text_encoder_wrapper = TextEncoderWrapper(self.text_encoder)
-            text_encoder_wrapper.eval()
-
-            # Create dummy input for text encoder
-            dummy_input_ids = torch.ones(1, 77, dtype=torch.long)
+            # Get wrapped model and dummy inputs
+            text_encoder_wrapper = self.model_loader.get_text_encoder_wrapper()
+            dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(text_encoder_wrapper, (dummy_input_ids,))
+            exported_program = export(text_encoder_wrapper, dummy_inputs["text_encoder"])
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]
@@ -131,51 +84,14 @@ class LCMExporter:
     def export_unet(self, output_path: str, device: str = "CPU") -> bool:
         """Export UNet model to PTE file"""
         try:
-            logger.info("Exporting UNet model...")
+            logger.info("Exporting UNet model with OpenVINO backend...")
 
-            # Create a wrapper to extract the sample tensor from UNet2DConditionOutput
-            class UNetWrapper(torch.nn.Module):
-                def __init__(self, unet):
-                    super().__init__()
-                    self.unet = unet
-
-                def forward(self, latents, timestep, encoder_hidden_states):
-                    # Call UNet and extract sample from the output
-                    output = self.unet(
-                        latents, timestep, encoder_hidden_states, return_dict=True
-                    )
-                    return output.sample
-
-            unet_wrapper = UNetWrapper(self.unet)
-            unet_wrapper.eval()
-
-            # Create dummy inputs for UNet
-            batch_size = 1
-            latent_channels = 4
-            latent_height = 64
-            latent_width = 64
-
-            # Get the correct text embedding dimension from the UNet config
-            text_embed_dim = self.unet.config.cross_attention_dim
-            text_seq_len = 77
-
-            dummy_latents = torch.randn(
-                batch_size,
-                latent_channels,
-                latent_height,
-                latent_width,
-                dtype=self.dtype,
-            )
-            dummy_timestep = torch.tensor([981])  # Random timestep
-            dummy_encoder_hidden_states = torch.randn(
-                batch_size, text_seq_len, text_embed_dim, dtype=self.dtype
-            )
+            # Get wrapped model and dummy inputs
+            unet_wrapper = self.model_loader.get_unet_wrapper()
+            dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(
-                unet_wrapper,
-                (dummy_latents, dummy_timestep, dummy_encoder_hidden_states),
-            )
+            exported_program = export(unet_wrapper, dummy_inputs["unet"])
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]
@@ -208,31 +124,14 @@ class LCMExporter:
     def export_vae_decoder(self, output_path: str, device: str = "CPU") -> bool:
         """Export VAE decoder to PTE file"""
         try:
-            logger.info("Exporting VAE decoder...")
+            logger.info("Exporting VAE decoder with OpenVINO backend...")
 
-            # Create wrapper for VAE decoder only
-            class VAEDecoder(torch.nn.Module):
-                def __init__(self, vae):
-                    super().__init__()
-                    self.vae = vae
-
-                def forward(self, latents):
-                    # Scale latents
-                    latents = latents / self.vae.config.scaling_factor
-                    # Decode
-                    image = self.vae.decode(latents).sample
-                    # Scale to [0, 1]
-                    image = (image / 2 + 0.5).clamp(0, 1)
-                    return image
-
-            vae_decoder = VAEDecoder(self.vae)
-            vae_decoder.eval()
-
-            # Create dummy input for VAE decoder
-            dummy_latents = torch.randn(1, 4, 64, 64, dtype=self.dtype)
+            # Get wrapped model and dummy inputs
+            vae_decoder = self.model_loader.get_vae_decoder()
+            dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(vae_decoder, (dummy_latents,))
+            exported_program = export(vae_decoder, dummy_inputs["vae_decoder"])
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]
@@ -354,7 +253,7 @@ def main() -> int:
     dtype = dtype_map[args.dtype]
 
     # Create exporter and load models
-    exporter = LCMExporter(args.model_id, dtype=dtype)
+    exporter = LCMOpenVINOExporter(args.model_id, dtype=dtype)
 
     if not exporter.load_models():
         logger.error("Failed to load models")
