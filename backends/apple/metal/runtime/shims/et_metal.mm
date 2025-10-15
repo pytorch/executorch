@@ -743,6 +743,26 @@ void ETMetalStream::fill(id<MTLBuffer> buffer, uint8_t value, size_t length, siz
 
 void ETMetalStream::copy(id<MTLBuffer> srcBuffer, id<MTLBuffer> dstBuffer, size_t length,
                         size_t srcOffset, size_t dstOffset, SyncType syncType) {
+
+    if (length == 0) {
+        return;
+
+    // Check that offsets are within buffer bounds before copying
+    if (!srcBuffer || !dstBuffer) {
+        ET_LOG(Error, "ETMetalStream::copy: Source or destination buffer is nil");
+        return;
+    }
+    NSUInteger srcBufferLength = [srcBuffer length];
+    NSUInteger dstBufferLength = [dstBuffer length];
+    if (srcOffset + length > srcBufferLength) {
+        ET_LOG(Error, "ETMetalStream::copy: Source offset (%zu) + length (%zu) exceeds source buffer size (%zu)", srcOffset, length, srcBufferLength);
+        return;
+    }
+    if (dstOffset + length > dstBufferLength) {
+        ET_LOG(Error, "ETMetalStream::copy: Destination offset (%zu) + length (%zu) exceeds destination buffer size (%zu)", dstOffset, length, dstBufferLength);
+        return;
+    }
+
     dispatch_sync(serialQueue_, ^{
         @autoreleasepool {
             endKernelCoalescing();
@@ -792,8 +812,6 @@ void ETMetalStream::executeMPSGraph(MPSGraph* mpsGraph, NSDictionary* feeds, NSD
                            targetOperations:nil
                           resultsDictionary:results
                         executionDescriptor:nil];
-
-            //synchronize(syncType);
         }
     });
 }
