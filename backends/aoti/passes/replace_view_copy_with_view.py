@@ -18,13 +18,6 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch import fx
 
 
-_VIEW_COPY_TARGETS: Tuple[torch._ops.OpOverload | EdgeOpOverload] = (
-    torch.ops.aten.slice_copy.Tensor,
-    ops.edge.aten.slice_copy.Tensor,
-    torch.ops.aten.select_copy.int,
-    ops.edge.aten.select_copy.int,
-)
-
 _VIEW_TARGETS: Dict[
     torch._ops.OpOverload | EdgeOpOverload, torch._ops.OpOverload | EdgeOpOverload
 ] = {
@@ -42,7 +35,7 @@ class ReplaceViewCopyWithViewPass(ExportPass):
         graph_changed = False
 
         for node in graph_module.graph.nodes:
-            if node.op != "call_function" or node.target not in _VIEW_COPY_TARGETS:
+            if node.op != "call_function" or node.target not in _VIEW_TARGETS:
                 continue
 
             if self._has_blocking_user(node, node.users.keys()):
