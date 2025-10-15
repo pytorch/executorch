@@ -125,7 +125,6 @@ def test_mv2_vgf_INT(per_channel_quantization):
         per_channel_quantization=per_channel_quantization,
         atol=0.25,
         qtol=1,
-        run_on_vulkan_runtime=False,
     )
     pipeline.run()
 
@@ -139,6 +138,5 @@ def test_mv2_vgf_FP():
         exir_op=[],
         tosa_version="TOSA-1.0+FP",
         use_to_edge_transform_and_lower=True,
-        run_on_vulkan_runtime=False,
     )
     pipeline.run()

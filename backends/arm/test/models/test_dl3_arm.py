@@ -97,8 +97,11 @@ def test_dl3_vgf_INT():
         exir_op=[],
         tosa_version="TOSA-1.0+INT",
         use_to_edge_transform_and_lower=True,
-        run_on_vulkan_runtime=False,  # TODO: run on vulkan runtime
+        run_on_vulkan_runtime=True,  # TODO: run on vulkan runtime
     )
+    pipeline.change_args(
+        "run_method_and_compare_outputs", rtol=0.1, atol=0.1
+    )  # TODO: MLETORCH-1036 decrease tolerance
     pipeline.run()
 
 
