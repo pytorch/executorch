@@ -97,31 +97,33 @@ AOTITorchError aoti_torch_mps_get_kernel_function(
         return Error::InvalidArgument;
     }
 
-    try {
-        auto* library = reinterpret_cast<ETMetalShaderLibrary*>(library_handle);
-        auto function_shared_ptr = library->getKernelFunction(std::string(kernel_name));
-        if (!function_shared_ptr) {
-            ET_LOG(Error, "aoti_torch_mps_get_kernel_function: Failed to get kernel function '%s'", kernel_name);
+    @autoreleasepool {
+        try {
+            auto* library = reinterpret_cast<ETMetalShaderLibrary*>(library_handle);
+            auto function_shared_ptr = library->getKernelFunction(std::string(kernel_name));
+            if (!function_shared_ptr) {
+                ET_LOG(Error, "aoti_torch_mps_get_kernel_function: Failed to get kernel function '%s'", kernel_name);
+                return Error::Internal;
+            }
+
+            auto* raw_function = function_shared_ptr.get();
+
+            // Store the shared_ptr to keep the object alive
+            storeFunctionHandle(raw_function, function_shared_ptr);
+
+            // Return raw pointer to match existing API
+            *function_handle = reinterpret_cast<AOTIMetalKernelFunctionHandle>(raw_function);
+
+            ET_LOG(Debug, "aoti_torch_mps_get_kernel_function: Got kernel function '%s' -> %p", kernel_name, raw_function);
+            return Error::Ok;
+
+        } catch (const std::exception& e) {
+            ET_LOG(Error, "aoti_torch_mps_get_kernel_function exception: %s", e.what());
+            return Error::Internal;
+        } catch (...) {
+            ET_LOG(Error, "aoti_torch_mps_get_kernel_function: unknown exception");
             return Error::Internal;
         }
-
-        auto* raw_function = function_shared_ptr.get();
-
-        // Store the shared_ptr to keep the object alive
-        storeFunctionHandle(raw_function, function_shared_ptr);
-
-        // Return raw pointer to match existing API
-        *function_handle = reinterpret_cast<AOTIMetalKernelFunctionHandle>(raw_function);
-
-        ET_LOG(Debug, "aoti_torch_mps_get_kernel_function: Got kernel function '%s' -> %p", kernel_name, raw_function);
-        return Error::Ok;
-
-    } catch (const std::exception& e) {
-        ET_LOG(Error, "aoti_torch_mps_get_kernel_function exception: %s", e.what());
-        return Error::Internal;
-    } catch (...) {
-        ET_LOG(Error, "aoti_torch_mps_get_kernel_function: unknown exception");
-        return Error::Internal;
     }
 }
 
@@ -133,19 +135,21 @@ AOTITorchError aoti_torch_mps_start_encoding(
         return Error::InvalidArgument;
     }
 
-    try {
-        auto* function = reinterpret_cast<ETMetalKernelFunction*>(func);
-        function->startEncoding();
+    @autoreleasepool {
+        try {
+            auto* function = reinterpret_cast<ETMetalKernelFunction*>(func);
+            function->startEncoding();
 
-        ET_LOG(Debug, "aoti_torch_mps_start_encoding: Started encoding for function %p", function);
-        return Error::Ok;
+            ET_LOG(Debug, "aoti_torch_mps_start_encoding: Started encoding for function %p", function);
+            return Error::Ok;
 
-    } catch (const std::exception& e) {
-        ET_LOG(Error, "aoti_torch_mps_start_encoding exception: %s", e.what());
-        return Error::Internal;
-    } catch (...) {
-        ET_LOG(Error, "aoti_torch_mps_start_encoding: unknown exception");
-        return Error::Internal;
+        } catch (const std::exception& e) {
+            ET_LOG(Error, "aoti_torch_mps_start_encoding exception: %s", e.what());
+            return Error::Internal;
+        } catch (...) {
+            ET_LOG(Error, "aoti_torch_mps_start_encoding: unknown exception");
+            return Error::Internal;
+        }
     }
 }
 
@@ -268,6 +272,11 @@ AOTITorchError aoti_torch_mps_dispatch_array(
         return Error::InvalidArgument;
     }
 
+    if (!length) {
+        ET_LOG(Error, "aoti_torch_mps_dispatch_array_with_group_size: null length pointer");
+        return Error::InvalidArgument;
+    }
+
     try {
         auto* function = reinterpret_cast<ETMetalKernelFunction*>(func);
         function->dispatchArray(length, length_size);
@@ -293,6 +302,11 @@ AOTITorchError aoti_torch_mps_dispatch_array_with_group_size(
 
     if (!func) {
         ET_LOG(Error, "aoti_torch_mps_dispatch_array_with_group_size: null function handle");
+        return Error::InvalidArgument;
+    }
+
+    if (!length) {
+        ET_LOG(Error, "aoti_torch_mps_dispatch_array_with_group_size: null length pointer");
         return Error::InvalidArgument;
     }
 
