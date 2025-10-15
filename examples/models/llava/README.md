@@ -48,7 +48,7 @@ Prerequisite: run `install_executorch.sh` to install ExecuTorch and run
 `examples/models/llava/install_requirements.sh` to install dependencies.
 
 ```bash
-python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
+python -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts --max-context-len=768
 ```
 
 Currently the whole export process takes about 6 minutes. We also provide a
