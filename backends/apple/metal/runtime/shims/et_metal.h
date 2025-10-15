@@ -80,16 +80,18 @@ enum class SyncType {
 
 /**
  * @class ETMetalShaderLibrary
- * @brief Manages Metal shader library compilation and kernel function retrieval.
+ * @brief Manages Metal shader library compilation and kernel function
+ * retrieval.
  *
- * This class provides a high-level interface for compiling Metal shading language
- * source code into a Metal library and creating compute pipeline states for
- * kernel functions. It handles the creation and caching of Metal compute pipeline
- * states and functions, which should be reused across multiple kernel dispatches.
+ * This class provides a high-level interface for compiling Metal shading
+ * language source code into a Metal library and creating compute pipeline
+ * states for kernel functions. It handles the creation and caching of Metal
+ * compute pipeline states and functions, which should be reused across multiple
+ * kernel dispatches.
  *
- * The class automatically compiles the provided shader source code upon construction
- * and maintains an internal cache of compute pipeline states for different kernel
- * functions to avoid redundant compilation.
+ * The class automatically compiles the provided shader source code upon
+ * construction and maintains an internal cache of compute pipeline states for
+ * different kernel functions to avoid redundant compilation.
  *
  * Example usage:
  * @code
@@ -137,18 +139,18 @@ class ETMetalShaderLibrary {
  * @class ETMetalKernelFunction
  * @brief Represents a Metal compute kernel function ready for execution.
  *
- * This class encapsulates a Metal compute pipeline state and function, providing
- * a high-level interface for setting kernel arguments and dispatching compute
- * work to the GPU. It handles the encoding of compute commands and manages the
- * interaction with Metal's compute command encoder.
+ * This class encapsulates a Metal compute pipeline state and function,
+ * providing a high-level interface for setting kernel arguments and dispatching
+ * compute work to the GPU. It handles the encoding of compute commands and
+ * manages the interaction with Metal's compute command encoder.
  *
  * The class supports different dispatch patterns:
  * - Single-dimension dispatch for linear workloads
  * - Multi-dimensional dispatch for grid-based workloads
  * - Custom thread group sizes for performance optimization
  *
- * Kernel arguments can be set using tensors (which will be mapped to Metal buffers)
- * or scalar values. The class handles the encoding of these arguments
+ * Kernel arguments can be set using tensors (which will be mapped to Metal
+ * buffers) or scalar values. The class handles the encoding of these arguments
  * into the compute command encoder.
  *
  * Example usage:
@@ -203,23 +205,25 @@ class ETMetalKernelFunction {
 
 /**
  * @class ETMetalStream
- * @brief Manages Metal compute command streams and provides GPU synchronization.
+ * @brief Manages Metal compute command streams and provides GPU
+ * synchronization.
  *
- * This class serves as the central management hub for Metal GPU operations, providing
- * a stream-based abstraction similar to CUDA streams. It handles command buffer lifecycle,
- * compute command encoder management, and various synchronization patterns required for
- * efficient GPU computation.
+ * This class serves as the central management hub for Metal GPU operations,
+ * providing a stream-based abstraction similar to CUDA streams. It handles
+ * command buffer lifecycle, compute command encoder management, and various
+ * synchronization patterns required for efficient GPU computation.
  *
  * Key features:
  * - Lazy command buffer and encoder creation for optimal resource usage
  * - Thread-safe operations using serial dispatch queues
- * - Multiple synchronization modes (COMMIT, COMMIT_AND_WAIT, COMMIT_AND_CONTINUE)
+ * - Multiple synchronization modes (COMMIT, COMMIT_AND_WAIT,
+ * COMMIT_AND_CONTINUE, etc.)
  * - Kernel coalescing to batch multiple operations efficiently
- * - MPSGraph integration for high-level neural network operations
+ * - MPSGraph integration for executing fall back operations (mm, conv, sdpa)
  * - Memory operations (copy, fill) with GPU acceleration via blit encoders
  *
- * The stream follows PyTorch's MPS stream design patterns, providing similar semantics
- * for command buffer management and synchronization.
+ * The stream follows PyTorch's MPS stream design patterns, providing similar
+ * semantics for command buffer management and synchronization.
  *
  * Example usage:
  * @code
