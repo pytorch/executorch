@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from copy import copy
 from typing import cast, Dict, Optional, Set, Tuple, Type
 
@@ -94,6 +95,7 @@ class InsertRescaleInt32Pass(ArmPass):
         exir_ops.edge.aten.lt.Tensor,
         exir_ops.edge.aten.maximum.default,
         exir_ops.edge.aten.minimum.default,
+        exir_ops.edge.aten.mul.Tensor,
     ]
 
     def _int32_qargs(self, s):
@@ -134,6 +136,15 @@ class InsertRescaleInt32Pass(ArmPass):
             qparams = {
                 i: self._int32_qargs(min_scale) for i in range(len(input_qparams))
             }
+        elif target in [
+            exir_ops.edge.aten.mul.Tensor,
+        ]:
+            # The input scales do not need to be adjusted for these ops; they
+            # can remain the same.
+            qparams = {
+                i: self._int32_qargs(input_qparams[i].get_scale_per_tensor())
+                for i in range(len(input_qparams))
+            }
         else:
             raise ValueError(f"Not a valid target: {target}")
 
@@ -162,6 +173,20 @@ class InsertRescaleInt32Pass(ArmPass):
         ]:
             # Output is bool for these ops and thus no qparams are present
             return None
+        elif target in [exir_ops.edge.aten.mul.Tensor]:
+            # Mul will cause the scales to also multiply; refer to the formula
+            # where we compute the output scale S_2:
+            #
+            # (Q_2 - ZP_2) * S_2 == ((Q_0 - ZP_0) * S_0) * ((Q_1 - ZP_1) * S_1)
+            #
+            # yields:
+            #
+            # (Q_2 - ZP_2) == (Q_0 - ZP_0) * (Q_1 - ZP_1)
+            # S_2 = S_0 * S_1
+            output_scale = math.prod(
+                (qp.get_scale_per_tensor() for qp in inputs_qparams.values())
+            )
+            return self._int32_qargs(output_scale)
         else:
             raise ValueError(f"Not a valid target: {target}")
 
@@ -188,7 +213,7 @@ class InsertRescaleInt32Pass(ArmPass):
         modified = False
         for i in qargs:
             qp = qargs[i]
-            if qp.dtype != torch.int8:
+            if qp.dtype not in (torch.int8, torch.int16):
                 continue
 
             arg_node = args_copy[i]
@@ -227,7 +252,7 @@ class InsertRescaleInt32Pass(ArmPass):
         assert rescale_qargs is not None
 
         qarg = qargs[0]
-        if qarg.dtype != torch.int8:
+        if qarg.dtype not in (torch.int8, torch.int16):
             return False
 
         users_copy = list(node.users)
@@ -238,7 +263,7 @@ class InsertRescaleInt32Pass(ArmPass):
                 exir_ops.backend.tosa.RESCALE.default,
                 (
                     node,
-                    torch.int8,
+                    qarg.dtype,
                     rescale_qargs.get_scale_per_tensor()
                     / qarg.get_scale_per_tensor(),  # Old scale / new scale
                     rescale_qargs.get_zp_per_tensor(),  # Old zero point
