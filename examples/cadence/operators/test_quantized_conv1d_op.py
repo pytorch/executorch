@@ -35,7 +35,7 @@ if __name__ == "__main__":
         depthwise,
         bias,
         channel_last,
-    ) = [(1, 8, 33), 8, 16, 3, 2, 4, 3, False, True, False]
+    ) = [(1, 2, 4), 2, 8, 1, 1, 0, 1, False, False, False]
 
     class QuantizedConv(torch.nn.Module):
         def __init__(self):
@@ -60,3 +60,10 @@ if __name__ == "__main__":
     example_inputs = (torch.randn(cast(Sequence[int], shape)),)
 
     export_and_run_model(model, example_inputs)
+
+    model = QuantizedConv()
+    model.eval()
+
+    example_inputs = (torch.randn(cast(Sequence[int], shape)),)
+
+    export_and_run_model(model, example_inputs, opt_level=3)
