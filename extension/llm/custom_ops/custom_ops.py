@@ -207,8 +207,8 @@ def _validate_update_cache_params(
             1
         ), f"Start position {start_pos} must be less than sequence length {cache.size(1)}"
 
-        torch._check((start_pos + seq_len) < cache.size(1))
-        assert (start_pos + seq_len) < cache.size(
+        torch._check((start_pos + seq_len) <= cache.size(1))
+        assert (start_pos + seq_len) <= cache.size(
             1
         ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {cache.size(1)}"
 
