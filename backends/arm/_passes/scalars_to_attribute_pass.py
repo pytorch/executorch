@@ -9,6 +9,7 @@
 from typing import cast, Set, Type, Union
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_first_fake_tensor
 from executorch.backends.arm._passes.match_arg_ranks_pass import MatchArgRanksPass
 
@@ -17,7 +18,7 @@ from torch.fx import GraphModule, Node
 from torchao.quantization.pt2e.utils import get_new_attr_name_with_prefix
 
 
-class ScalarsToAttributePass(ExportPass):
+class ScalarsToAttributePass(ArmPass):
     """
     For ops in 'targeted_ops', convert inputs that are scalar values
     to attribute Nodes that output the same value.

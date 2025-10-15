@@ -8,6 +8,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.convert_to_clamp import ConvertToClampPass
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
@@ -20,7 +21,7 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch.fx import Node
 
 
-class FuseQuantizedActivationPass(ExportPass):
+class FuseQuantizedActivationPass(ArmPass):
     _passes_required_after: Set[Type[ExportPass]] = {
         ConvertToClampPass,
         FoldAndAnnotateQParamsPass,

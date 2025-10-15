@@ -179,11 +179,8 @@ def test_to_tosa_memory_format_tosa_INT(module):
         module.get_inputs(),
         ops_after_pass=module.ops_after_pass,
         ops_not_after_pass=module.ops_not_after_pass,
-        pass_list=[RemoveGetItemPass],
-        passes_with_exported_program=[
-            AnnotateOutputDimOrderPass,
-            ToTosaMemoryFormatPass,
-        ],
+        pass_list=[RemoveGetItemPass, AnnotateOutputDimOrderPass],
+        passes_with_exported_program=[ToTosaMemoryFormatPass],
     )
     pipeline.pop_stage(
         "run_method_and_compare_outputs"

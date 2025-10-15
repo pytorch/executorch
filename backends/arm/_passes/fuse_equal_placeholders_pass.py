@@ -9,6 +9,7 @@ from typing import Set, Type
 
 import torch
 
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     get_constant_placeholder_kind,
     get_param_tensor,
@@ -23,7 +24,7 @@ from executorch.exir import ExportedProgram
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class FuseEqualPlaceholdersPass(ExportPass):
+class FuseEqualPlaceholdersPass(ArmPass):
     """
     This pass optimizes memory usage by finding constant placeholders
     pointing to identical tensors and fusing them to one single placeholder
@@ -33,8 +34,8 @@ class FuseEqualPlaceholdersPass(ExportPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram):
-        self.exported_program = exported_program
         super().__init__()
+        self.exported_program = exported_program
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         modified = False

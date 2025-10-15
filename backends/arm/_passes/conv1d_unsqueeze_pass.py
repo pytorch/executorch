@@ -8,6 +8,8 @@
 
 from typing import Set, Type
 
+from executorch.backends.arm._passes import ArmPass
+
 from executorch.backends.arm._passes.add_bias_pass import AddBiasPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 
@@ -15,7 +17,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class Conv1dUnsqueezePass(ExportPass):
+class Conv1dUnsqueezePass(ArmPass):
     """
     This pass is used to change conv1d ops into conv2d since TOSA only
     supports 2d and 3d convolution. This is done by modifying the graph to do the
@@ -38,7 +40,11 @@ class Conv1dUnsqueezePass(ExportPass):
         x = args[0]
         x_unsqueezed_shape = list(x.data.shape) + [1]
         x = super().call_operator(
-            exir_ops.edge.aten.view_copy.default, (x, x_unsqueezed_shape), {}, meta
+            exir_ops.edge.aten.view_copy.default,
+            (x, x_unsqueezed_shape),
+            {},
+            meta,
+            updated=True,
         )
 
         w_meta = meta.copy()
@@ -48,7 +54,11 @@ class Conv1dUnsqueezePass(ExportPass):
         w = args[1]
         w_unsqueezed_shape = list(w.data.shape) + [1]
         w = super().call_operator(
-            exir_ops.edge.aten.view_copy.default, (w, w_unsqueezed_shape), {}, w_meta
+            exir_ops.edge.aten.view_copy.default,
+            (w, w_unsqueezed_shape),
+            {},
+            w_meta,
+            updated=True,
         )
 
         new_args = (
@@ -63,12 +73,16 @@ class Conv1dUnsqueezePass(ExportPass):
             args[8],
         )
         x = super().call_operator(
-            exir_ops.edge.aten.convolution.default, new_args, kwargs, meta
+            exir_ops.edge.aten.convolution.default, new_args, kwargs, meta, updated=True
         )
 
         x_squeezed_shape = list(x.data.shape)[:-1]
         x = super().call_operator(
-            exir_ops.edge.aten.view_copy.default, (x, x_squeezed_shape), {}, meta
+            exir_ops.edge.aten.view_copy.default,
+            (x, x_squeezed_shape),
+            {},
+            meta,
+            updated=True,
         )
 
         return x

@@ -8,6 +8,7 @@
 from typing import cast, Set, Type, TypeAlias
 
 import torch.fx
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -137,7 +138,7 @@ def is_valid_operator(node: torch.fx.Node) -> bool:
     return False
 
 
-class SizeAdjustInputPass(ExportPass):
+class SizeAdjustInputPass(ArmPass):
     """
     Adjusts the input size to Conv2D and Pooling operators. PyTorch allows
     the input and kernel shape to not "match", in which case the remaining

@@ -7,13 +7,14 @@ from copy import copy
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.arm._passes.quant_args import QuantArgs
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class DecomposeGroupedConv(ExportPass):
+class DecomposeGroupedConv(ArmPass):
     """
     Splits a grouped convolution which is not supported by TOSA into multiple
     convolutions using slice->conv->cat.
@@ -125,7 +126,9 @@ class DecomposeGroupedConv(ExportPass):
             slice_args = (input_node, 1, start_index, stop_index)
 
             input_slices.append(
-                super().call_operator(slice_op, slice_args, kwargs, no_q_dq_meta)
+                super().call_operator(
+                    slice_op, slice_args, kwargs, no_q_dq_meta, updated=True
+                )
             )
 
         filter_slices = []
@@ -135,7 +138,9 @@ class DecomposeGroupedConv(ExportPass):
             slice_args = (weight_node, 0, start_index, stop_index)
 
             filter_slices.append(
-                super().call_operator(slice_op, slice_args, kwargs, no_q_dq_meta)
+                super().call_operator(
+                    slice_op, slice_args, kwargs, no_q_dq_meta, updated=True
+                )
             )
 
         bias_slices = []
@@ -148,7 +153,9 @@ class DecomposeGroupedConv(ExportPass):
                 slice_args = (bias_node, 0, start_index, stop_index)
 
                 bias_slices.append(
-                    super().call_operator(slice_op, slice_args, kwargs, no_q_dq_meta)
+                    super().call_operator(
+                        slice_op, slice_args, kwargs, no_q_dq_meta, updated=True
+                    )
                 )
 
         output_slices = []
@@ -166,9 +173,11 @@ class DecomposeGroupedConv(ExportPass):
                 raise RuntimeError("Invalid op for grouped conv decomposition")
 
             output_slices.append(
-                super().call_operator(conv_op, conv_args, kwargs, meta_copy)
+                super().call_operator(
+                    conv_op, conv_args, kwargs, meta_copy, updated=True
+                )
             )
 
         cat_args = (output_slices, 1)
         # propagate original metadata (including quantization params) to the concatenated output
-        return super().call_operator(cat_op, cat_args, kwargs, meta)
+        return super().call_operator(cat_op, cat_args, kwargs, meta, updated=True)
