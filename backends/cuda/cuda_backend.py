@@ -6,10 +6,11 @@
 
 import contextlib
 import os
+import struct
 import typing
 from enum import Enum
 
-from typing import Any, Dict, final, List, Optional, Set
+from typing import Any, Dict, final, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.backends.cuda.replace_slice_copy_with_slice import (
@@ -25,6 +26,8 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._inductor.codegen.cpp_wrapper_cpu import CppWrapperCpu
 from torch.export.passes import move_to_device_pass
+
+from torch.export.pt2_archive._package_weights import TensorProperties
 from torch.nn.attention import SDPBackend
 
 # exist fallback operators in et namespace;
@@ -36,6 +39,34 @@ missing_fallback_kernels: Set[str] = set()
 
 class COMPILE_SPEC_KEYS(Enum):
     METHOD_NAME = "method_name"
+
+
+def _extract_so_path_and_weight_dict(
+    file_paths_and_weights: List[
+        Union[str, Dict[str, Tuple[torch.nn.Parameter, TensorProperties]]]
+    ]
+):
+    so_path = None
+    weight_dict = {}
+    for item in file_paths_and_weights:
+        if isinstance(item, str) and item.endswith("wrapper.so"):
+            so_path = item
+        elif isinstance(item, dict):
+            weight_dict.update(item)
+    assert (
+        so_path is not None
+    ), f"so_path is None, all the strings are: {[x for x in file_paths_and_weights if isinstance(x, str)]}"
+    assert len(weight_dict) > 0, f"No weight dict found in {file_paths_and_weights}"
+    return so_path, weight_dict
+
+
+def _weight_fqn_list_to_bytes(weight_fqns: List[str]) -> bytes:
+    processed_bytes = bytearray()
+    processed_bytes.extend(struct.pack("<I", len(weight_fqns)))
+    for fqn in weight_fqns:
+        encoded_fqn = fqn.encode("utf-8")
+        processed_bytes.extend(struct.pack("<I", len(encoded_fqn)))
+        processed_bytes.extend(encoded_fqn)
 
 
 # context manager for non-fallback guarantee
@@ -136,7 +167,10 @@ class CudaBackend(BackendDetails):
             # Do not link against the full PyTorch/libtorch library
             "aot_inductor.link_libtorch": False,
             # Package model constants and other generated files directly in the shared object (.so) file
-            "aot_inductor.package_constants_in_so": True,
+            # Package model constants and other generated files directly in the shared object (.so) file
+            "aot_inductor.package": True,
+            "aot_inductor.package_constants_in_so": False,
+            "aot_inductor.package_constants_on_disk": True,
             # Enable maximum automatic tuning for optimal performance
             "max_autotune": True,
             # Use TRITON for GEMM (General Matrix Multiply) operations tuning only to avoid using operators in libtorch
@@ -151,13 +185,17 @@ class CudaBackend(BackendDetails):
             ]
         ), torch.no_grad():
             # torch._logging.set_logs(post_grad_graphs=True)
-            so_path = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
+            file_paths_and_weights = torch._inductor.aot_compile(edge_program_module, tuple(user_input_placeholders), options=options)  # type: ignore[arg-type]
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
                 raise RuntimeError(
                     f"Missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
                     "Please add them to the AOTI backend."
                 )
+        assert isinstance(
+            file_paths_and_weights, list
+        ), f"Expected a list of file paths and weights, got type: {type(file_paths_and_weights)}"
+        so_path, weight_dict = _extract_so_path_and_weight_dict(file_paths_and_weights)
 
         # pyre-ignorep[6]: Incompatible parameter type
         with open(so_path, "rb") as f:
@@ -169,12 +207,24 @@ class CudaBackend(BackendDetails):
             method_name + "_so_blob", so_data, 1, "aoti_cuda_blob"
         )
 
+        # Add weights to named data store
+        for name, weight_tuple in weight_dict.items():
+            named_data_store.add_named_data(
+                name,
+                weight_tuple[0].cpu().numpy().tobytes(),
+                1,
+                None,  # Do not store it in .ptd
+            )
+
+        weight_fqns = sorted(weight_dict.keys())
+        processed_bytes = _weight_fqn_list_to_bytes(weight_fqns)
+
         # Clean up the generated so file; it has been packaged into the NamdeDataStore
         # pyre-ignorep[6]: Incompatible parameter type
         os.remove(so_path)
 
         return PreprocessResult(
-            processed_bytes=b"",
+            processed_bytes=bytes(processed_bytes),
             debug_handle_map={},
             data_store_output=named_data_store.get_named_data_store_output(),
         )
