@@ -97,3 +97,4 @@ xnnpack-partitioner
 xnnpack-quantization
 xnnpack-troubleshooting
 xnnpack-arch-internals
+```
