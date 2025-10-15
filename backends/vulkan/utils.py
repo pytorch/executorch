@@ -693,10 +693,6 @@ def make_filtered_tensor_repset(
     if len(tensor_val.shape) > 4:
         return TensorRepSet(tensor_repset.valid_buffer_layouts, set())
 
-    # Bool tensors are currently not supported
-    if tensor_val.dtype == torch.bool:
-        return NO_STORAGE
-
     return TensorRepSet(tensor_repset.valid_buffer_layouts, valid_texture_layouts)
 
 
