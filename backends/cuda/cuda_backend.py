@@ -12,8 +12,8 @@ from enum import Enum
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
-from executorch.backends.cuda.replace_slice_copy_with_slice import (
-    ReplaceSliceCopyWithSlicePass,
+from executorch.backends.aoti.passes.replace_view_copy_with_view import (
+    ReplaceViewCopyWithViewPass,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
@@ -123,8 +123,8 @@ class CudaBackend(BackendDetails):
         # Move the edge_program from CPU to CUDA for aoti compile
         cuda_edge_program = move_to_device_pass(edge_program, "cuda")
 
-        # replace slice_copy with slice
-        ReplaceSliceCopyWithSlicePass()(cuda_edge_program.graph_module)
+        # replace slice_copy.Tensor with slice.Tensor, select_copy.int with select.int
+        ReplaceViewCopyWithViewPass()(cuda_edge_program.graph_module)
 
         cuda_edge_program = cuda_edge_program.run_decompositions(
             cuda_decomposition_table
