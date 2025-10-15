@@ -77,6 +77,35 @@ enum class SyncType {
 // =======================
 // ETMetalShaderLibrary - ExecuTorch Metal shader library management
 // =======================
+
+/**
+ * @class ETMetalShaderLibrary
+ * @brief Manages Metal shader library compilation and kernel function retrieval.
+ *
+ * This class provides a high-level interface for compiling Metal shading language
+ * source code into a Metal library and creating compute pipeline states for
+ * kernel functions. It handles the creation and caching of Metal compute pipeline
+ * states and functions, which should be reused across multiple kernel dispatches.
+ *
+ * The class automatically compiles the provided shader source code upon construction
+ * and maintains an internal cache of compute pipeline states for different kernel
+ * functions to avoid redundant compilation.
+ *
+ * Example usage:
+ * @code
+ * std::string shaderSource = R"(
+ *   #include <metal_stdlib>
+ *   using namespace metal;
+ *   kernel void my_kernel(device float* data [[buffer(0)]],
+ *                        uint tid [[thread_position_in_grid]]) {
+ *     data[tid] = data[tid] * 2.0;
+ *   }
+ * )";
+ *
+ * ETMetalShaderLibrary library(shaderSource);
+ * auto kernelFunction = library.getKernelFunction("my_kernel");
+ * @endcode
+ */
 class ETMetalShaderLibrary {
  public:
   ETMetalShaderLibrary(const std::string& source);
@@ -103,6 +132,45 @@ class ETMetalShaderLibrary {
 // =======================
 // ETMetalKernelFunction - ExecuTorch Metal kernel function execution
 // =======================
+
+/**
+ * @class ETMetalKernelFunction
+ * @brief Represents a Metal compute kernel function ready for execution.
+ *
+ * This class encapsulates a Metal compute pipeline state and function, providing
+ * a high-level interface for setting kernel arguments and dispatching compute
+ * work to the GPU. It handles the encoding of compute commands and manages the
+ * interaction with Metal's compute command encoder.
+ *
+ * The class supports different dispatch patterns:
+ * - Single-dimension dispatch for linear workloads
+ * - Multi-dimensional dispatch for grid-based workloads
+ * - Custom thread group sizes for performance optimization
+ *
+ * Kernel arguments can be set using tensors (which will be mapped to Metal buffers)
+ * or scalar values. The class handles the encoding of these arguments
+ * into the compute command encoder.
+ *
+ * Example usage:
+ * @code
+ * // Get kernel function from library
+ * auto kernelFunction = library.getKernelFunction("vector_add");
+ *
+ * // Start encoding commands
+ * kernelFunction->startEncoding();
+ *
+ * // Set tensor arguments
+ * kernelFunction->setArg(0, inputTensorA);
+ * kernelFunction->setArg(1, inputTensorB);
+ * kernelFunction->setArg(2, outputTensor);
+ *
+ * // Set scalar argument
+ * kernelFunction->setArg(3, static_cast<int64_t>(numElements));
+ *
+ * // Dispatch for linear workload
+ * kernelFunction->dispatchSingle(numElements);
+ * @endcode
+ */
 class ETMetalKernelFunction {
  public:
   ETMetalKernelFunction(MTLComputePipelineState_t cps, MTLFunction_t func);
@@ -132,6 +200,45 @@ class ETMetalKernelFunction {
 // =======================
 // ETMetalStream - Metal command buffer and synchronization management
 // =======================
+
+/**
+ * @class ETMetalStream
+ * @brief Manages Metal compute command streams and provides GPU synchronization.
+ *
+ * This class serves as the central management hub for Metal GPU operations, providing
+ * a stream-based abstraction similar to CUDA streams. It handles command buffer lifecycle,
+ * compute command encoder management, and various synchronization patterns required for
+ * efficient GPU computation.
+ *
+ * Key features:
+ * - Lazy command buffer and encoder creation for optimal resource usage
+ * - Thread-safe operations using serial dispatch queues
+ * - Multiple synchronization modes (COMMIT, COMMIT_AND_WAIT, COMMIT_AND_CONTINUE)
+ * - Kernel coalescing to batch multiple operations efficiently
+ * - MPSGraph integration for high-level neural network operations
+ * - Memory operations (copy, fill) with GPU acceleration via blit encoders
+ *
+ * The stream follows PyTorch's MPS stream design patterns, providing similar semantics
+ * for command buffer management and synchronization.
+ *
+ * Example usage:
+ * @code
+ * // Get current stream (typically the default stream)
+ * ETMetalStream* stream = getCurrentMetalStream();
+ *
+ * // Execute kernel operations (handled automatically)
+ * auto kernelFunction = library.getKernelFunction("my_kernel");
+ * kernelFunction->startEncoding();
+ * kernelFunction->setArg(0, inputTensor);
+ * kernelFunction->dispatchSingle(numElements);
+ *
+ * // Synchronize to ensure completion
+ * stream->synchronize(SyncType::COMMIT_AND_WAIT);
+ *
+ * // Copy between GPU buffers using blit encoder
+ * stream->copy(srcBuffer, dstBuffer, numBytes, 0, 0, SyncType::COMMIT);
+ * @endcode
+ */
 class ETMetalStream {
  public:
   ETMetalStream();
