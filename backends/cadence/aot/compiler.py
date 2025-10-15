@@ -38,7 +38,7 @@ from executorch.exir import (
     ExecutorchProgramManager,
 )
 from executorch.exir.passes import ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import to_edge
 
 from torch.export.exported_program import ExportedProgram
@@ -460,7 +460,7 @@ def _lower_ep_to_cadence_gen_etrecord(
             emit_stacktrace=False,
             to_out_var_pass=ToOutVarPass(),
             extract_delegate_segments=False,
-            sym_shape_eval_pass=HintBasedSymShapeEvalPass(),
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         ),
     )
 
