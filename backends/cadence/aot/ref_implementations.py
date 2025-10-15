@@ -18,6 +18,24 @@ from torch.library import impl, Library
 m = Library("cadence", "IMPL", "CompositeExplicitAutograd")
 torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 
+# Registry to track all ops with reference implementations
+_REGISTERED_REF_IMPLEMENTATIONS: set[str] = set()
+
+
+# Custom impl wrapper that tracks registrations
+def impl_tracked(
+    lib: Library, op_name: str
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+    """Wrapper around impl that tracks registered ops."""
+    _REGISTERED_REF_IMPLEMENTATIONS.add(op_name)
+    return impl(lib, op_name)
+
+
+def get_registered_ref_implementations() -> set[str]:
+    """Get all ops that have reference implementations."""
+    return _REGISTERED_REF_IMPLEMENTATIONS.copy()
+
+
 qdtype_map: dict[ScalarType, torch.dtype] = {
     ScalarType.QINT8: torch.qint8,
     ScalarType.QUINT8: torch.quint8,
@@ -25,7 +43,7 @@ qdtype_map: dict[ScalarType, torch.dtype] = {
 }
 
 
-@impl(m, "quantize_per_tensor")
+@impl_tracked(m, "quantize_per_tensor")
 def quantize_per_tensor(
     input_tensor: torch.Tensor,
     scale: float,
@@ -75,7 +93,7 @@ def quantize_per_tensor(
     )
 
 
-@impl(m, "dequantize_per_tensor")
+@impl_tracked(m, "dequantize_per_tensor")
 def dequantize_per_tensor(
     input_tensor: torch.Tensor,
     scale: float,
@@ -123,7 +141,7 @@ def dequantize_per_tensor(
     )
 
 
-@impl(m, "quantized_add.per_tensor")
+@impl_tracked(m, "quantized_add.per_tensor")
 def quantized_add_per_tensor(
     X: torch.Tensor,
     X_scale: float,
@@ -187,7 +205,7 @@ def quantized_add_per_tensor(
     )
 
 
-@impl(m, "quantized_add_asym8sxasym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_add_asym8sxasym8s_asym8s.per_tensor")
 def quantized_add_asym8sxasym8s_asym8s_per_tensor(
     X: torch.Tensor,
     X_scale: float,
@@ -208,7 +226,7 @@ def quantized_add_asym8sxasym8s_asym8s_per_tensor(
     )
 
 
-@impl(m, "quantized_add_asym8uxasym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_add_asym8uxasym8u_asym8u.per_tensor")
 def quantized_add_asym8uxasym8u_asym8u_per_tensor(
     X: torch.Tensor,
     X_scale: float,
@@ -352,47 +370,47 @@ def quantized_linear_variant(
     return decorator
 
 
-@impl(m, "quantized_linear")
+@impl_tracked(m, "quantized_linear")
 @quantized_linear_variant(False, False)
 def quantized_linear() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_linear.per_tensor")
+@impl_tracked(m, "quantized_linear.per_tensor")
 @quantized_linear_variant(True, False)
 def quantized_linear_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_linear_asym8sxasym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_linear_asym8sxasym8s_asym8s.per_tensor")
 @quantized_linear_variant(True, False, torch.int8, torch.int8)
 def quantized_linear_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_linear_asym8uxasym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_linear_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, False, torch.uint8, torch.uint8)
 def quantized_linear_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_fully_connected")
+@impl_tracked(m, "quantized_fully_connected")
 @quantized_linear_variant(False, True)
 def quantized_fully_connected() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_fully_connected.per_tensor")
+@impl_tracked(m, "quantized_fully_connected.per_tensor")
 @quantized_linear_variant(True, True)
 def quantized_fully_connected_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_fully_connected_asym8sxasym8s_asym8s.per_tensor")
 @quantized_linear_variant(True, True, torch.int8, torch.int8)
 def quantized_fully_connected_asym8sxasym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_fully_connected_asym8uxasym8u_asym8u.per_tensor")
 @quantized_linear_variant(True, True, torch.uint8, torch.uint8)
 def quantized_fully_connected_asym8uxasym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "fully_connected")
+@impl_tracked(m, "fully_connected")
 def fully_connected(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -403,7 +421,7 @@ def fully_connected(
     return F.linear(input_tensor, weight, bias)
 
 
-@impl(m, "quantized_matmul")
+@impl_tracked(m, "quantized_matmul")
 def quantized_matmul(
     X: torch.Tensor,
     X_zero_point: int,
@@ -451,7 +469,7 @@ def quantized_matmul(
     )
 
 
-@impl(m, "quantized_matmul_asym8sxasym8s_asym8s")
+@impl_tracked(m, "quantized_matmul_asym8sxasym8s_asym8s")
 def quantized_matmul_asym8sxasym8s_asym8s(
     X: torch.Tensor,
     X_zero_point: int,
@@ -481,7 +499,7 @@ def quantized_matmul_asym8sxasym8s_asym8s(
     )
 
 
-@impl(m, "quantized_matmul_asym8uxasym8u_asym8u")
+@impl_tracked(m, "quantized_matmul_asym8uxasym8u_asym8u")
 def quantized_matmul_asym8uxasym8u_asym8u(
     X: torch.Tensor,
     X_zero_point: int,
@@ -511,7 +529,7 @@ def quantized_matmul_asym8uxasym8u_asym8u(
     )
 
 
-@impl(m, "quantized_layer_norm.per_tensor")
+@impl_tracked(m, "quantized_layer_norm.per_tensor")
 def quantized_layer_norm_per_tensor(
     input_tensor: torch.Tensor,
     X_scale: float,
@@ -629,7 +647,7 @@ def quantized_conv_per_tensor(
     )
 
 
-@impl(m, "quantized_conv2d_nchw.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw.per_tensor")
 def quantized_conv2d_nchw_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -685,7 +703,7 @@ def quantized_conv2d_nchw_per_tensor(
     )
 
 
-@impl(m, "quantized_conv2d_nhwc.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
 def quantized_conv2d_nhwc_per_tensor(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -847,95 +865,95 @@ def quantized_conv_variant(
     return decorator
 
 
-@impl(m, "quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
 def quantized_conv2d_nchw_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
 def quantized_conv2d_nchw_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
 def quantized_conv2d_nhwc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv2d_nhwc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
 def quantized_conv2d_nchw_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
 def quantized_conv2d_nchw_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
 def quantized_conv2d_nhwc_dilated_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv2d_nhwc_dilated_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8)
 def quantized_conv2d_nchw_depthwise_asym8sxsym8s_asym8s_per_tensor() -> (
     torch.Tensor
 ): ...
 
 
-@impl(m, "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8)
 def quantized_conv2d_nchw_depthwise_asym8uxsym8u_asym8u_per_tensor() -> (
     torch.Tensor
 ): ...
 
 
-@impl(m, "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8)
 def quantized_conv2d_nhwc_depthwise_asym8sxsym8s_asym8s_per_tensor() -> (
     torch.Tensor
 ): ...
 
 
-@impl(m, "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8)
 def quantized_conv2d_nhwc_depthwise_asym8uxsym8u_asym8u_per_tensor() -> (
     torch.Tensor
 ): ...
 
 
-@impl(m, "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv1d_ncl_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nchw", torch.int8, torch.int8, is_1d=True)
 def quantized_conv1d_ncl_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv1d_ncl_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nchw", torch.uint8, torch.uint8, is_1d=True)
 def quantized_conv1d_ncl_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_conv1d_nlc_asym8sxsym8s_asym8s.per_tensor")
 @quantized_conv_variant("nhwc", torch.int8, torch.int8, is_1d=True)
 def quantized_conv1d_nlc_asym8sxsym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_conv1d_nlc_asym8uxsym8u_asym8u.per_tensor")
 @quantized_conv_variant("nhwc", torch.uint8, torch.uint8, is_1d=True)
 def quantized_conv1d_nlc_asym8uxsym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "convolution")
+@impl_tracked(m, "convolution")
 def convolution(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -981,7 +999,7 @@ def convolution(
     return conv_out
 
 
-@impl(m, "transposed_convolution")
+@impl_tracked(m, "transposed_convolution")
 def transposed_convolution(
     input_tensor: torch.Tensor,
     weight: torch.Tensor,
@@ -1039,7 +1057,7 @@ def transposed_convolution(
     return conv_out
 
 
-@impl(m, "avg_pool2d")
+@impl_tracked(m, "avg_pool2d")
 def avg_pool2d(
     input_tensor: torch.Tensor,
     kernel_size: tuple[int, int],
@@ -1155,22 +1173,22 @@ def quantized_relu_variant(
     return decorator
 
 
-@impl(m, "quantized_relu.per_tensor")
+@impl_tracked(m, "quantized_relu.per_tensor")
 @quantized_relu_variant()
 def quantized_relu_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_relu_asym8s_asym8s.per_tensor")
+@impl_tracked(m, "quantized_relu_asym8s_asym8s.per_tensor")
 @quantized_relu_variant(torch.int8)
 def quantized_relu_asym8s_asym8s_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "quantized_relu_asym8u_asym8u.per_tensor")
+@impl_tracked(m, "quantized_relu_asym8u_asym8u.per_tensor")
 @quantized_relu_variant(torch.uint8)
 def quantized_relu_asym8u_asym8u_per_tensor() -> torch.Tensor: ...
 
 
-@impl(m, "requantize.per_tensor")
+@impl_tracked(m, "requantize.per_tensor")
 def requantize_per_tensor(
     input: torch.Tensor,
     in_scale: float,
@@ -1208,7 +1226,7 @@ def requantize_per_tensor(
     )
 
 
-@impl(m, "rms_norm")
+@impl_tracked(m, "rms_norm")
 def rms_norm(
     X: torch.Tensor,
     normalized_shape: tuple[int],
@@ -1218,7 +1236,7 @@ def rms_norm(
     return W * nn.RMSNorm(list(normalized_shape), eps=eps, dtype=X.dtype)(X)
 
 
-@impl(m, "where_Scalar")
+@impl_tracked(m, "where_Scalar")
 def where_Scalar(
     condition: torch.Tensor,
     if_true: float,
@@ -1230,7 +1248,7 @@ def where_Scalar(
     return torch.where(condition, if_true, if_false)
 
 
-@impl(m, "rope")
+@impl_tracked(m, "rope")
 def rope(
     input_tensor: torch.Tensor,
     sin_tensor: torch.Tensor,
@@ -1278,7 +1296,7 @@ def rope(
     return rotated.view(original_shape)
 
 
-@impl(m, "im2row")
+@impl_tracked(m, "im2row")
 def im2row(
     input_tensor: torch.Tensor,
     kernel_size: tuple[int, int],
@@ -1370,7 +1388,7 @@ def im2row(
     return patches
 
 
-@impl(m, "im2row.per_tensor")
+@impl_tracked(m, "im2row.per_tensor")
 def im2row_per_tensor(
     input_tensor: torch.Tensor,
     kernel_size: tuple[int, int],
@@ -1391,7 +1409,7 @@ def im2row_per_tensor(
     )
 
 
-@impl(m, "transposed_im2row")
+@impl_tracked(m, "transposed_im2row")
 def transposed_im2row(
     input_tensor: torch.Tensor,
     kernel_size: tuple[int, int],
@@ -1547,7 +1565,7 @@ def transposed_im2row(
     return patches
 
 
-@impl(m, "quantized_embedding_byte")
+@impl_tracked(m, "quantized_embedding_byte")
 def quantized_embedding_byte(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
