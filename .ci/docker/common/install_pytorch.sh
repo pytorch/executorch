@@ -16,7 +16,7 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
-  pip_install torch==2.9.0 torchvision=0.24.0 torchaudio=2.9.0 torchao==0.14.0
+  pip_install torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0 torchao==0.14.0
 }
 
 install_pytorch_and_domains
