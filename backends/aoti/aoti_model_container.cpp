@@ -24,6 +24,8 @@ AOTInductorModelContainerGetNumInputsFunc
 AOTInductorModelContainerGetNumOutputsFunc
     AOTInductorModelContainerGetNumOutputs = nullptr;
 AOTInductorModelContainerRunFunc AOTInductorModelContainerRun = nullptr;
+AOTInductorModelContainerUpdateUserManagedConstantBufferFunc
+    AOTInductorModelContainerUpdateUserManagedConstantBuffer = nullptr;
 
 // Additional global function pointers for AOT Inductor model container
 // operations needed by Metal backend

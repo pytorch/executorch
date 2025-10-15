@@ -12,12 +12,19 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/tensor_layout.h>
 #include <unistd.h>
 #include <cstdio>
+#include <memory>
 
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <string>
+#include <system_error>
+#include <unordered_map>
 #include <vector>
 
 // Include our shim layer headers
@@ -54,6 +61,62 @@ using executorch::runtime::Result;
 using executorch::runtime::Span;
 using executorch::runtime::etensor::Tensor;
 
+namespace {
+
+Error parse_weight_fqns_from_processed(
+    const FreeableBuffer* processed,
+    std::vector<std::string>& weight_fqns) {
+  if (processed == nullptr || processed->data() == nullptr ||
+      processed->size() == 0) {
+    return Error::Ok;
+  }
+
+  const auto* cursor = static_cast<const uint8_t*>(processed->data());
+  size_t remaining = processed->size();
+
+  auto read_uint32 = [&](uint32_t& value) -> bool {
+    if (remaining < sizeof(uint32_t)) {
+      return false;
+    }
+    std::memcpy(&value, cursor, sizeof(uint32_t));
+    cursor += sizeof(uint32_t);
+    remaining -= sizeof(uint32_t);
+    return true;
+  };
+
+  uint32_t num_entries = 0;
+  ET_CHECK_OR_RETURN_ERROR(
+      read_uint32(num_entries),
+      InvalidArgument,
+      "Failed to read FQN count from processed bytes");
+
+  weight_fqns.reserve(num_entries);
+  for (uint32_t i = 0; i < num_entries; ++i) {
+    uint32_t length = 0;
+    ET_CHECK_OR_RETURN_ERROR(
+        read_uint32(length),
+        InvalidArgument,
+        "Failed to read FQN length from processed bytes")
+
+    ET_CHECK_OR_RETURN_ERROR(
+        remaining >= length,
+        InvalidArgument,
+        "Processed bytes exhausted while reading FQN %u (remaining=%zu, length=%u)",
+        i,
+        remaining,
+        length);
+
+    const char* str_begin = reinterpret_cast<const char*>(cursor);
+    weight_fqns.emplace_back(str_begin, length);
+    cursor += length;
+    remaining -= length;
+  }
+
+  return Error::Ok;
+}
+
+} // namespace
+
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
@@ -63,6 +126,8 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_SYMBOL(AOTInductorModelContainerGetNumInputs, so_handle);
     LOAD_SYMBOL(AOTInductorModelContainerGetNumOutputs, so_handle);
     LOAD_SYMBOL(AOTInductorModelContainerRun, so_handle);
+    LOAD_SYMBOL(
+        AOTInductorModelContainerUpdateUserManagedConstantBuffer, so_handle);
 
     return Error::Ok;
   }
@@ -88,6 +153,15 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    std::vector<std::string> weight_fqns;
+    Error parse_err = parse_weight_fqns_from_processed(processed, weight_fqns);
+    if (parse_err != Error::Ok) {
+      if (processed != nullptr) {
+        processed->Free();
+      }
+      return parse_err;
+    }
+
     std::string so_blob_key =
         method_name.empty() ? "so_blob" : method_name + "_so_blob";
 
@@ -99,7 +173,6 @@ class ET_EXPERIMENTAL CudaBackend final
         "Failed to get data for key %s: 0x%x",
         so_blob_key.c_str(),
         static_cast<uint32_t>(aoti_cuda_buffer.error()));
-
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
     filesystem::path so_path =
@@ -149,11 +222,78 @@ class ET_EXPERIMENTAL CudaBackend final
     handle->so_handle = so_handle;
     handle->so_path = so_path.string();
     handle->container_handle = container_handle;
+    handle->weight_fqns = weight_fqns; // Store weight FQNs in the handle
 
-    // Create a CUDA stream for asynchronous execution
-    cudaStream_t cuda_stream;
-    ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
-    handle->cuda_stream = static_cast<void*>(cuda_stream);
+    // Create a constant map and populate it with weights from NamedDataMap
+    // Store the Tensor objects in the handle so they persist for the lifetime
+    // of the container
+    std::unordered_map<std::string, Tensor*> constant_map;
+
+    for (const auto& fqn : weight_fqns) {
+      // Get tensor layout (metadata) for this weight
+      auto tensor_layout_result =
+          named_data_map->get_tensor_layout(fqn.c_str());
+      ET_CHECK_OR_RETURN_ERROR(
+          tensor_layout_result.ok(),
+          Internal,
+          "Failed to get tensor layout for key %s: 0x%x",
+          fqn.c_str(),
+          static_cast<uint32_t>(tensor_layout_result.error()));
+
+      auto weight_result = named_data_map->get_data(fqn.c_str());
+      ET_CHECK_OR_RETURN_ERROR(
+          weight_result.ok(),
+          Internal,
+          "Failed to get data for key %s: 0x%x",
+          fqn.c_str(),
+          static_cast<uint32_t>(weight_result.error()));
+
+      // Store the FreeableBuffer to keep the weight data alive
+      // This is critical: the FreeableBuffer owns or references the actual
+      // weight data
+      FreeableBuffer weight_buffer = weight_result.get();
+      void* weight_data = weight_buffer.data();
+
+      // Get tensor layout information
+      const TensorLayout& layout = tensor_layout_result.get();
+
+      // Create a Tensor from the weight data using the layout information
+      // The Tensor is created as a view over the data owned by the
+      // FreeableBuffer
+      auto weight_tensor = std::make_unique<Tensor>(
+          layout.scalar_type(),
+          layout.sizes().size(),
+          const_cast<Tensor::SizesType*>(layout.sizes().data()),
+          weight_data,
+          const_cast<Tensor::DimOrderType*>(layout.dim_order().data()),
+          const_cast<Tensor::StridesType*>(layout.strides().data()));
+
+      constant_map[fqn] = weight_tensor.get();
+      handle->weight_tensors.push_back(std::move(weight_tensor));
+      handle->weight_buffers.push_back(
+          std::move(weight_buffer)); // Store buffer to keep data alive
+    }
+
+    // Update the container with user-managed constant buffer
+    if (!constant_map.empty()) {
+      AOTIRuntimeError update_err =
+          AOTInductorModelContainerUpdateUserManagedConstantBuffer(
+              container_handle,
+              reinterpret_cast<AOTInductorConstantMapHandle>(&constant_map),
+              /*use_inactive=*/false,
+              /*validate_full_update=*/true);
+
+      ET_CHECK_OR_RETURN_ERROR(
+          update_err == Error::Ok,
+          Internal,
+          "Failed to update constant buffer with error code %d",
+          update_err);
+
+      ET_LOG(
+          Info,
+          "Successfully populated %zu weights into container",
+          constant_map.size());
+    }
 
     return (DelegateHandle*)handle; // Return the handle post-processing
   }

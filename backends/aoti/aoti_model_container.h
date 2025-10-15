@@ -11,6 +11,9 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 
+#include <string>
+#include <vector>
+
 namespace executorch {
 namespace backends {
 namespace aoti {
@@ -29,6 +32,11 @@ struct AOTInductorModelContainerOpaque;
 using AOTInductorModelContainerHandle = AOTInductorModelContainerOpaque*;
 using AOTInductorStreamHandle = void*;
 using AOTIProxyExecutorHandle = void*;
+
+// Constant map handle (opaque pointer to std::unordered_map<std::string,
+// AtenTensorHandle>*)
+struct AOTInductorConstantMap;
+using AOTInductorConstantMapHandle = AOTInductorConstantMap*;
 
 // Function pointer types for AOT Inductor model container operations
 using AOTInductorModelContainerCreateWithDeviceFunc = AOTIRuntimeError (*)(
@@ -60,6 +68,13 @@ using AOTInductorModelContainerRunFunc = AOTIRuntimeError (*)(
     AOTInductorStreamHandle stream_handle,
     AOTIProxyExecutorHandle proxy_executor_handle);
 
+using AOTInductorModelContainerUpdateUserManagedConstantBufferFunc =
+    AOTIRuntimeError (*)(
+        AOTInductorModelContainerHandle container_handle,
+        AOTInductorConstantMapHandle constant_map_handle,
+        bool use_inactive,
+        bool validate_full_update);
+
 // Global function pointers (will be loaded dynamically)
 extern AOTInductorModelContainerCreateWithDeviceFunc
     AOTInductorModelContainerCreateWithDevice;
@@ -69,6 +84,8 @@ extern AOTInductorModelContainerGetNumInputsFunc
 extern AOTInductorModelContainerGetNumOutputsFunc
     AOTInductorModelContainerGetNumOutputs;
 extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
+extern AOTInductorModelContainerUpdateUserManagedConstantBufferFunc
+    AOTInductorModelContainerUpdateUserManagedConstantBuffer;
 
 // Retrieves the name of an input tensor by index from the AOTI model container.
 // Needed by Metal backend
@@ -99,6 +116,11 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerHandle container_handle;
   void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
                      // dependency
+  std::vector<std::string> weight_fqns; // Fully qualified names of weights
+  std::vector<std::unique_ptr<etensor::Tensor>>
+      weight_tensors; // Storage for weight tensors
+  std::vector<executorch::runtime::FreeableBuffer>
+      weight_buffers; // Storage for weight data - owns the actual data
 };
 
 } // namespace aoti
