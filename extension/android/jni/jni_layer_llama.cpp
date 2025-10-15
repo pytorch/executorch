@@ -316,6 +316,53 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
     return 0;
   }
 
+  // Returns status_code
+  jint append_audio_input(
+      facebook::jni::alias_ref<jbyteArray> data,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (data == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
+    auto data_size = data->size();
+    if (data_size != 0) {
+      std::vector<jbyte> data_jbyte(data_size);
+      std::vector<uint8_t> data_u8(data_size);
+      data->getRegion(0, data_size, data_jbyte.data());
+      for (int i = 0; i < data_size; i++) {
+        data_u8[i] = data_jbyte[i];
+      }
+      llm::Audio audio{std::move(data_u8), batch_size, n_bins, n_frames};
+      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    }
+    return 0;
+  }
+
+  // Returns status_code
+  jint append_raw_audio_input(
+      facebook::jni::alias_ref<jbyteArray> data,
+      jint batch_size,
+      jint n_channels,
+      jint n_samples) {
+    if (data == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
+    auto data_size = data->size();
+    if (data_size != 0) {
+      std::vector<jbyte> data_jbyte(data_size);
+      std::vector<uint8_t> data_u8(data_size);
+      data->getRegion(0, data_size, data_jbyte.data());
+      for (int i = 0; i < data_size; i++) {
+        data_u8[i] = data_jbyte[i];
+      }
+      llm::RawAudio audio{
+          std::move(data_u8), batch_size, n_channels, n_samples};
+      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    }
+    return 0;
+  }
+
   void stop() {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_->stop();
@@ -353,6 +400,10 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod(
             "appendNormalizedImagesInput",
             ExecuTorchLlmJni::append_normalized_images_input),
+        makeNativeMethod(
+            "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
+        makeNativeMethod(
+            "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
         makeNativeMethod(
             "appendTextInput", ExecuTorchLlmJni::append_text_input),
         makeNativeMethod("resetContext", ExecuTorchLlmJni::reset_context),
