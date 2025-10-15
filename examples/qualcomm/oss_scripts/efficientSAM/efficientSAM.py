@@ -13,11 +13,6 @@ from typing import Callable, List
 
 import numpy as np
 import torch
-from executorch.backends.qualcomm._passes import ExpandBroadcastTensorShape
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.examples.qualcomm.oss_scripts.efficientSAM.source_transformation import (
     replace_maskdecoder_with_custom_op,
     replace_pos_emb_with_custom_op,
@@ -236,8 +231,6 @@ def main(args):
     pte_filename = "efficientSAM_qnn"
 
     # lower to QNN
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         model,
         inputs[0],
@@ -246,7 +239,6 @@ def main(args):
         dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        passes_job=passes_job,
         shared_buffer=args.shared_buffer,
     )
 

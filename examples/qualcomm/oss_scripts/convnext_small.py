@@ -15,14 +15,7 @@ import numpy as np
 import torch
 import torchvision
 
-from executorch.backends.qualcomm._passes.expand_broadcast_tensor_shape import (
-    ExpandBroadcastTensorShape,
-)
-from executorch.backends.qualcomm._passes.qnn_pass_manager import (
-    get_capture_program_passes,
-)
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.backends.qualcomm.utils.constants import QCOM_PASS_ACTIVATE_KEY
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     get_imagenet_dataset,
@@ -54,8 +47,6 @@ def main(args):
 
     pte_filename = "convnext_small_qnn_q8"
     instance = torchvision.models.convnext_small(weights="IMAGENET1K_V1").eval()
-    passes_job = get_capture_program_passes()
-    passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
     build_executorch_binary(
         instance,
         inputs[0],
@@ -66,7 +57,6 @@ def main(args):
             quant_dtype=QuantDtype.use_8a8w,
             per_channel_linear=True,
         ),
-        passes_job=passes_job,
         shared_buffer=args.shared_buffer,
     )
 

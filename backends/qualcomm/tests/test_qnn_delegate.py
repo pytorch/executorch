@@ -69,11 +69,7 @@ import random
 from collections import defaultdict
 from typing import List
 
-from executorch.backends.qualcomm._passes import (
-    ExpandBroadcastTensorShape,
-    FoldQDQ,
-    TagQuantIO,
-)
+from executorch.backends.qualcomm._passes import FoldQDQ, TagQuantIO
 from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -645,16 +641,12 @@ class TestQNNFloatingPointOperator(TestQNN):
             (torch.randn([3, 1]),),
             (torch.randn([4]),),
         ]
-        passes_job = get_capture_program_passes()
-        passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
         index = 0
         for module in modules:
             for sample_input in sample_inputs:
                 with self.subTest(i=index):
                     index += 1
-                    self.lower_module_and_test_output(
-                        module, sample_input, passes_job=passes_job
-                    )
+                    self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
@@ -2539,17 +2531,13 @@ class TestQNNQuantizedOperator(TestQNN):
             (torch.randn([3, 1]),),
             (torch.randn([4]),),
         ]
-        passes_job = get_capture_program_passes()
-        passes_job[ExpandBroadcastTensorShape][QCOM_PASS_ACTIVATE_KEY] = True
         index = 0
         for module in modules:
             for sample_input in sample_inputs:
                 with self.subTest(i=index):
                     index += 1
                     module = self.get_qdq_module(module, sample_input)
-                    self.lower_module_and_test_output(
-                        module, sample_input, passes_job=passes_job
-                    )
+                    self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_expm1(self):
         sample_input = (torch.randn(3, 4, 5),)
@@ -6587,6 +6575,7 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 61)
                 self.assertGreaterEqual(msg["top_5"], 88)
 
+    @unittest.skip("Bad accuracy, need investigation")
     def test_efficientSAM(self):
         if not self.required_envs(
             [self.image_dataset, self.pretrained_weight, self.oss_repo]

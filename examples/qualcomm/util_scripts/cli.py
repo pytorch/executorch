@@ -414,9 +414,7 @@ def main():
         "--pass_job",
         nargs="+",
         type=str,
-        help=(
-            'Add extra passes for model lowering. e.g. "ExpandBroadcastTensorShape".'
-        ),
+        help=('Add extra passes for model lowering. e.g. "TagQuantIO".'),
     )
     sub_compile.add_argument(
         "--shared_buffer",
