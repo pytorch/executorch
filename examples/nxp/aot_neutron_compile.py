@@ -18,6 +18,9 @@ import torch
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -273,13 +276,15 @@ if __name__ == "__main__":  # noqa C901
 
     edge_program_manager = to_edge_transform_and_lower(
         export(module, example_inputs, strict=True),
+        transform_passes=NeutronEdgePassManager(),
         partitioner=partitioners,
         compile_config=EdgeCompileConfig(),
     )
 
-    edge_program_manager = NeutronEdgePassManager(
-        remove_io_quant_ops=args.remove_quant_io_ops
-    )(edge_program_manager)
+    if args.remove_quant_io_ops:
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
 
     logging.debug(f"Lowered graph:\n{edge_program_manager.exported_program().graph}")
 

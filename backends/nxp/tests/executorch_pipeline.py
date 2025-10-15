@@ -15,6 +15,9 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_io_quant_ops_pass import (
+    RemoveIOQuantOpsPass,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -23,9 +26,10 @@ from executorch.exir import (
     EdgeProgramManager,
     ExecutorchBackendConfig,
     ExecutorchProgramManager,
+    to_edge_transform_and_lower,
 )
-from executorch.extension.export_util.utils import export_to_edge
 from torch import nn
+from torch.export import export
 from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -105,24 +109,24 @@ def to_quantized_edge_program(
         calibration_inputs,
     )
 
-    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
-    edge_program_manager = export_to_edge(
-        exir_program_aten__module_quant,
-        example_input,
-        edge_compile_config=edge_compile_config,
-    )
-
-    edge_program_manager = NeutronEdgePassManager(
-        remove_io_quant_ops=remove_quant_io_ops
-    )(edge_program_manager)
-
     compile_spec = generate_neutron_compile_spec(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
     )
-    partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
-    edge_program_manager = edge_program_manager.to_backend(partitioner)
+    partitioners = [NeutronPartitioner(compile_spec, custom_delegation_options)]
+
+    edge_program_manager = to_edge_transform_and_lower(
+        export(exir_program_aten__module_quant, example_input, strict=True),
+        transform_passes=NeutronEdgePassManager(),
+        partitioner=partitioners,
+        compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+
+    if remove_quant_io_ops:
+        edge_program_manager = edge_program_manager.transform(
+            [RemoveIOQuantOpsPass(edge_program_manager=edge_program_manager)]
+        )
 
     return edge_program_manager
 
