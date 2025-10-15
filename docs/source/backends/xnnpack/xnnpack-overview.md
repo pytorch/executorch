@@ -80,13 +80,13 @@ No additional steps are necessary to use the backend beyond linking the target. 
 
 ## Reference
 
-**→{doc}`xnnpack-troubleshooting` — Debug common issues.**
+**→{doc}`/backends/xnnpack/xnnpack-troubleshooting` — Debug common issues.**
 
-**→{doc}`xnnpack-partitioner` — Partitioner options and supported operators.**
+**→{doc}`/backends/xnnpack/xnnpack-partitioner` — Partitioner options and supported operators.**
 
-**→{doc}`xnnpack-quantization` — Supported quantization schemes.**
+**→{doc}`/backends/xnnpack/xnnpack-quantization` — Supported quantization schemes.**
 
-**→{doc}`xnnpack-arch-internals` — XNNPACK backend internals.**
+**→{doc}`/backends/xnnpack/xnnpack-arch-internals` — XNNPACK backend internals.**
 
 ```{toctree}
 :maxdepth: 2
@@ -97,3 +97,4 @@ xnnpack-partitioner
 xnnpack-quantization
 xnnpack-troubleshooting
 xnnpack-arch-internals
+```
