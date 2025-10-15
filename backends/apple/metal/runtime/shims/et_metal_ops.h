@@ -19,19 +19,6 @@ extern "C" {
 #endif
 
 /**
- * ExecutorTorch implementation of aoti_torch_mps_addmm_out.
- * Performs matrix multiplication with bias: out = beta * self + alpha * (mat1 @
- * mat2)
- */
-AOTITorchError aoti_torch_mps_addmm_out(
-    AOTITensorHandle out,
-    AOTITensorHandle self,
-    AOTITensorHandle mat1,
-    AOTITensorHandle mat2,
-    double beta,
-    double alpha);
-
-/**
  * ExecutorTorch implementation of aoti_torch_mps_mm_out.
  * Performs simple matrix multiplication: out = self @ mat2
  */

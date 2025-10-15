@@ -229,59 +229,6 @@ AOTITorchError aoti_torch_mps_mm_out(
   }
 }
 
-AOTITorchError aoti_torch_mps_addmm_out(
-    AOTITensorHandle out,
-    AOTITensorHandle self,
-    AOTITensorHandle mat1,
-    AOTITensorHandle mat2,
-    double beta,
-    double alpha) {
-  ET_LOG(Debug, "aoti_torch_mps_addmm_out: Starting with out=%p, self=%p, mat1=%p, mat2=%p, beta=%f, alpha=%f",
-         out, self, mat1, mat2, beta, alpha);
-
-  if (!out || !self || !mat1 || !mat2) {
-    ET_LOG(Error, "aoti_torch_mps_addmm_out: null tensor handles");
-    return Error::InvalidArgument;
-  }
-
-  @autoreleasepool {
-    try {
-      // Convert AOTITensorHandle to ExecutorTorch tensors
-      auto out_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(out);
-      auto self_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(self);
-      auto mat1_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(mat1);
-      auto mat2_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(mat2);
-
-      ET_LOG(Debug, "aoti_torch_mps_addmm_out: Converted tensor handles to ET tensors");
-
-      // For now, just zero out the output tensor to get the right shape
-      // TODO: Implement actual matrix multiplication: out = beta * self + alpha * (mat1 @ mat2)
-
-      // Get output data pointer and size
-      float* out_data = static_cast<float*>(out_tensor->mutable_data_ptr());
-      size_t out_numel = out_tensor->numel();
-
-      if (!out_data) {
-        ET_LOG(Error, "aoti_torch_mps_addmm_out: null output data pointer");
-        return Error::InvalidArgument;
-      }
-
-      // Zero out the output tensor
-      std::memset(out_data, 0, out_numel * sizeof(float));
-
-      ET_LOG(Debug, "aoti_torch_mps_addmm_out: Zeroed output tensor with %zu elements", out_numel);
-      return Error::Ok;
-
-    } catch (const std::exception& e) {
-      ET_LOG(Error, "aoti_torch_mps_addmm_out exception: %s", e.what());
-      return Error::Internal;
-    } catch (...) {
-      ET_LOG(Error, "aoti_torch_mps_addmm_out: unknown exception");
-      return Error::Internal;
-    }
-  }
-}
-
 AOTITorchError aoti_torch_mps_convolution(
     AOTITensorHandle input,
     AOTITensorHandle weight,
@@ -743,7 +690,7 @@ AOTITorchError aoti_torch_mps_convolution(
           output_strides.data(),
           0,  // storage_offset
           dtype,  // dtype
-          2,  // device_type (MPS)
+          13,  // device_type (MPS)
           0,  // device_index
           &output_tensor_handle,
           0,  // layout (strided)
@@ -858,6 +805,12 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         }
 
         ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: mps_dtype=%d, element_size=%zu", mps_dtype, element_size);
+
+        // Check that headSize is not zero to avoid division by zero
+        if (headSize == 0) {
+          ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: headSize is zero");
+          throw std::runtime_error("headSize must be non-zero for scaled dot product attention");
+        }
 
         // Calculate scale factor
         double scale_factor = scale ? *scale : (1.0 / sqrt(static_cast<double>(headSize)));
@@ -1193,7 +1146,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
             out_strides.data(),
             0,  // storage_offset
             dtype,
-            2,  // device_type (MPS)
+            13,  // device_type (MPS)
             0,  // device_index
             &out_tensor_handle,
             0,  // layout (strided)
@@ -1208,7 +1161,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
             attn_strides.data(),
             0,  // storage_offset
             dtype,
-            2,  // device_type (MPS)
+            13,  // device_type (MPS)
             0,  // device_index
             &attn_tensor_handle,
             0,  // layout (strided)
