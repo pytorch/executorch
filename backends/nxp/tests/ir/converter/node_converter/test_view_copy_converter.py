@@ -12,6 +12,8 @@ import torch
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
+
+from executorch.backends.nxp.backend.ir.conversion_config import ConversionConfig
 from executorch.backends.nxp.backend.ir.converter.builder.model_builder import (
     ModelBuilder,
 )
@@ -146,6 +148,9 @@ def test__channels_first_to_4d(mocker):
         input_data,
         tflite_input_preprocess=ToNHWCPreprocess(),
         atol=2.0e-7,
+        conversion_config=ConversionConfig(
+            {"use_neutron_for_format_conversion": False}
+        ),
     )
 
     tflite_model = converter_spy.spy_return
@@ -243,6 +248,7 @@ def test_view_w_conv_linear_quant_conversion(mocker, input_shape, channels_view_
             channels=input_shape[1], channels_view_out=channels_view_out
         ),
         input_shape,
+        use_neutron_for_format_conversion=False,
     )
 
     # Capture generated model
