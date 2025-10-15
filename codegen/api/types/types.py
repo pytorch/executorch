@@ -59,7 +59,7 @@ class OptionalCType(CType):
 
     def cpp_type(self, *, strip_ref: bool = False) -> str:
         # Do not pass `strip_ref` recursively.
-        return f"torch::executor::optional<{self.elem.cpp_type()}>"
+        return f"std::optional<{self.elem.cpp_type()}>"
 
     def remove_const_ref(self) -> CType:
         return OptionalCType(self.elem.remove_const_ref())
