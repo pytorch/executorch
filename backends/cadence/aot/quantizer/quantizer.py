@@ -7,7 +7,8 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, final
+
 
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
@@ -233,6 +234,17 @@ def get_cadence_default_quantizers() -> List[Quantizer]:
     ]
 
 
+def get_cadence_default_ops() -> List[torch._ops.OpOverload]:
+    return [
+        torch.ops.aten.conv1d.default,
+        torch.ops.aten.conv2d.default,
+        torch.ops.aten.layer_norm.default,
+        torch.ops.aten.linear.default,
+        torch.ops.aten.matmul.default,
+        torch.ops.aten.rms_norm.default,
+    ]
+
+
 # Note: need dataclass to be used in CI configs through OmegaConf and Hydra
 @dataclass
 class CadenceQuantizer(ComposableQuantizer):
@@ -243,6 +255,38 @@ class CadenceQuantizer(ComposableQuantizer):
 
     def __init__(self, quantizers: List[Quantizer]) -> None:
         super().__init__(quantizers)
+
+    # Class-level additive configuration: subclasses may contribute ops via this attribute
+    ADDITIONAL_OPS_TO_PRESERVE: Tuple[torch._ops.OpOverload, ...] = ()
+
+    @classmethod
+    def _collect_additional_ops(cls) -> List[torch._ops.OpOverload]:
+        """
+        Union all ADDITIONAL_OPS_TO_PRESERVE across the class hierarchy (MRO).
+        Ensures additive inheritance.
+        """
+        ops: set[torch._ops.OpOverload] = set()
+        for klass in cls.__mro__:
+            attr = getattr(klass, "ADDITIONAL_OPS_TO_PRESERVE", ())
+            # Support tuple/list definitions
+            ops.update(attr)
+        return list(ops)
+
+    @final
+    def get_ops_to_preserve_from_decomposition(self) -> List[torch._ops.OpOverload]:
+        """
+        Get complete list of ops to preserve from decomposition.
+
+        Combines base Cadence ops with quantizer-specific additional ops aggregated
+        across the inheritance chain.
+
+        Returns:
+            Deduplicated list of all ops to preserve
+        """
+        base_ops = get_cadence_default_ops()
+
+        additional_ops = type(self)._collect_additional_ops()
+        return list(set(base_ops) | set(additional_ops))
 
 
 class CadenceDefaultQuantizer(CadenceQuantizer):
@@ -330,6 +374,12 @@ class CadenceW8A32MixedQuantizer(CadenceQuantizer):
             CadenceAtenQuantizer(MixedW8A32GruPattern(), qconfig_A32W8sym)
         )
         super().__init__(quantizers)
+
+    # Additional ops contributed by this quantizer
+    ADDITIONAL_OPS_TO_PRESERVE: Tuple[torch._ops.OpOverload, ...] = (
+        torch.ops.aten.gru.input,
+        torch.ops.aten.gru.data,
+    )
 
 
 class CadenceWithSoftmaxQuantizer(CadenceQuantizer):
