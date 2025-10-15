@@ -12,8 +12,8 @@ from enum import Enum
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
-from executorch.backends.apple.metal.replace_slice_copy_with_slice import (
-    ReplaceSliceCopyWithSlicePass,
+from executorch.backends.aoti.passes.replace_view_copy_with_view import (
+    ReplaceViewCopyWithViewPass,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
@@ -93,7 +93,7 @@ class MetalBackend(BackendDetails):
         mps_edge_program = move_to_device_pass(edge_program, "mps")
 
         # replace slice_copy with slice
-        ReplaceSliceCopyWithSlicePass()(mps_edge_program.graph_module)
+        ReplaceViewCopyWithViewPass()(mps_edge_program.graph_module)
 
         edge_program_module = mps_edge_program.module()
 

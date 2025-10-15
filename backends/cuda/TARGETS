@@ -6,13 +6,13 @@ runtime.python_library(
     name = "cuda_backend",
     srcs = [
         "cuda_backend.py",
-        "replace_slice_copy_with_slice.py",
     ],
     visibility = [
         "//executorch/...",
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/aoti/passes:passes",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
         "//executorch/exir/backend:compile_spec_schema",
