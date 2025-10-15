@@ -15,8 +15,6 @@ networks, as well as the ability to adapt and scale to new model architectures, 
 to AI workloads. ML application development with the eIQ Neutron NPU is fully supported by the 
 [eIQ machine learning software development environment](https://www.nxp.com/design/design-center/software/eiq-ml-development-environment/eiq-toolkit-for-end-to-end-model-development-and-deployment:EIQ-TOOLKIT).
 The eIQ AI SW Stack provides a streamlined development experience for developers and end-users of NXP products.
-eIQ extensions connect broader AI ecosystems to the edge, such as the NVIDIA TAO extension, which enables developers 
-to bring AI models trained and fine-tuned with TAO to NXP-powered edge devices.
 
 
 ## Supported NXP platforms
