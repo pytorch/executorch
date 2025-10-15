@@ -409,14 +409,17 @@ class AttentionMHA(Attention):
         )
         self.wo = (
             LoRALinear(
-                in_dim=args.n_kv_heads * args.head_dim,
+                in_dim=args.n_heads * args.head_dim,
                 out_dim=args.dim,
                 rank=args.r,
                 alpha=args.lora_alpha,
                 dropout=0.0,
                 use_bias=args.attention_qkv_bias,
             )
-            if args.target_modules is not None and "output_proj" in args.target_modules
+            if args.target_modules is not None
+            and (
+                "output_proj" in args.target_modules or "o_proj" in args.target_modules
+            )
             else nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
         )
 

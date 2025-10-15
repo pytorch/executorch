@@ -18,7 +18,7 @@ from executorch.examples.models.llama.attention import (
     AttentionSkip,
     ForwardOptions,
 )
-from executorch.examples.models.llama.feed_forward import FeedForward
+from executorch.examples.models.llama.feed_forward import FeedForward, LoRAFeedForward
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.norm import RMSNorm
 from executorch.examples.models.llama.rope import Rope
@@ -93,6 +93,12 @@ class TransformerBlock(nn.Module):
         ), "`hidden_dim` must be set in ModelArgs to construct a TransformerBlock."
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
+        elif args.target_modules is not None and (
+            "down_proj" in args.target_modules
+            or "up_proj" in args.target_modules
+            or "gate_proj" in args.target_modules
+        ):
+            self.feed_forward = LoRAFeedForward(args.dim, args.hidden_dim, args)
         else:
             self.feed_forward = FeedForward(dim=args.dim, hidden_dim=args.hidden_dim)
 
