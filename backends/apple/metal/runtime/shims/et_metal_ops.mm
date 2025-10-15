@@ -24,11 +24,44 @@ namespace executorch {
 namespace backends {
 namespace metal {
 
+using executorch::runtime::etensor::Tensor;
+
 // Forward declaration of dispatch_sync_with_rethrow from et_metal.mm
 void dispatch_sync_with_rethrow(dispatch_queue_t queue, void (^block)());
 
 // Declare the global mapping from et_metal.mm
 extern std::unordered_map<void*, id<MTLBuffer>> ptr_to_mtl_buffer;
+
+namespace {
+
+// Helper function to get Metal buffer from the global mapping
+static id<MTLBuffer> get_mtl_buffer(Tensor* tensor, const char* op_name, const char* tensor_name) {
+  void* data_ptr = tensor->mutable_data_ptr();
+  auto it = ptr_to_mtl_buffer.find(data_ptr);
+  if (it == ptr_to_mtl_buffer.end()) {
+    ET_LOG(Error, "%s: %s tensor not found in Metal buffer mapping", op_name, tensor_name);
+    throw std::runtime_error(std::string(tensor_name) + " tensor not found in Metal buffer mapping");
+  }
+  return it->second;
+}
+
+// Helper function to allocate a Metal buffer and register it in the global mapping.
+static id<MTLBuffer> allocate_mtl_buffer(void** data_ptr, size_t size_bytes) {
+  AOTITorchError malloc_err = aoti_torch_mps_malloc(data_ptr, size_bytes);
+  if (malloc_err != Error::Ok) {
+    ET_LOG(Error, "allocate_and_register_mtl_buffer: Failed to allocate Metal buffer via aoti_torch_mps_malloc");
+    throw std::runtime_error("Failed to allocate output Metal buffer");
+  }
+
+  auto it = ptr_to_mtl_buffer.find(*data_ptr);
+  if (it == ptr_to_mtl_buffer.end()) {
+    ET_LOG(Error, "allocate_and_register_mtl_buffer: aoti_torch_mps_malloc did not register buffer in map");
+    throw std::runtime_error("Failed to look up allocated Metal buffer");
+  }
+  return it->second;
+}
+
+} // namespace
 
 extern "C" {
 
@@ -47,9 +80,9 @@ AOTITorchError aoti_torch_mps_mm_out(
   @autoreleasepool {
     try {
       // Convert AOTITensorHandle to ExecutorTorch tensors
-      auto out_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(out);
-      auto self_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(self);
-      auto mat2_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(mat2);
+      auto out_tensor = reinterpret_cast<Tensor*>(out);
+      auto self_tensor = reinterpret_cast<Tensor*>(self);
+      auto mat2_tensor = reinterpret_cast<Tensor*>(mat2);
 
       ET_LOG(Debug, "aoti_torch_mps_mm_out: Converted tensor handles to ET tensors");
 
@@ -81,6 +114,25 @@ AOTITorchError aoti_torch_mps_mm_out(
              out_tensor->dim() > 0 ? (int)out_tensor->sizes()[0] : 0,
              out_tensor->dim() > 1 ? (int)out_tensor->sizes()[1] : 0);
 
+      // Check if mat2 is transposed (non-contiguous due to transpose)
+      // A transposed matrix will have stride(-2) == 1 (column-major instead of row-major)
+      // For a 2D tensor with shape [K, N]:
+      //   - Contiguous (row-major): strides = [N, 1]
+      //   - Transposed (column-major): strides = [1, K]
+      bool mat2_is_transposed = false;
+      int64_t mat2_stride_0 = mat2_tensor->strides()[0];  // stride for dimension 0
+      int64_t mat2_stride_1 = mat2_tensor->strides()[1];  // stride for dimension 1
+
+      // Detect transposed layout: stride(-2) == 1 indicates column-major layout
+      if (mat2_stride_0 == 1 && mat2_stride_1 != 1) {
+        mat2_is_transposed = true;
+        ET_LOG(Debug, "aoti_torch_mps_mm_out: mat2 is transposed (strides=[%lld, %lld])",
+               mat2_stride_0, mat2_stride_1);
+      } else {
+        ET_LOG(Debug, "aoti_torch_mps_mm_out: mat2 is contiguous (strides=[%lld, %lld])",
+               mat2_stride_0, mat2_stride_1);
+      }
+
       // Use the same dispatch pattern as other MPS operations for consistent synchronization
       ETMetalStream* stream = getCurrentMetalStream();
       if (!stream) {
@@ -95,32 +147,10 @@ AOTITorchError aoti_torch_mps_mm_out(
         throw std::runtime_error("Failed to get Metal device");
       }
 
-      // Get Metal buffers from tensors using the global mapping
-      void* self_data_ptr = self_tensor->mutable_data_ptr();
-      void* mat2_data_ptr = mat2_tensor->mutable_data_ptr();
-      void* out_data_ptr = out_tensor->mutable_data_ptr();
-
-      // Look up Metal buffers from the global mapping
-      auto self_it = ptr_to_mtl_buffer.find(self_data_ptr);
-      auto mat2_it = ptr_to_mtl_buffer.find(mat2_data_ptr);
-      auto out_it = ptr_to_mtl_buffer.find(out_data_ptr);
-
-      if (self_it == ptr_to_mtl_buffer.end()) {
-        ET_LOG(Error, "aoti_torch_mps_mm_out: self tensor not found in Metal buffer mapping");
-        throw std::runtime_error("self tensor not found in Metal buffer mapping");
-      }
-      if (mat2_it == ptr_to_mtl_buffer.end()) {
-        ET_LOG(Error, "aoti_torch_mps_mm_out: mat2 tensor not found in Metal buffer mapping");
-        throw std::runtime_error("mat2 tensor not found in Metal buffer mapping");
-      }
-      if (out_it == ptr_to_mtl_buffer.end()) {
-        ET_LOG(Error, "aoti_torch_mps_mm_out: out tensor not found in Metal buffer mapping");
-        throw std::runtime_error("out tensor not found in Metal buffer mapping");
-      }
-
-      id<MTLBuffer> self_buffer = self_it->second;
-      id<MTLBuffer> mat2_buffer = mat2_it->second;
-      id<MTLBuffer> out_buffer = out_it->second;
+      // Get Metal buffers for input and output tensors
+      id<MTLBuffer> self_buffer = get_mtl_buffer(self_tensor, "aoti_torch_mps_mm_out", "self");
+      id<MTLBuffer> mat2_buffer = get_mtl_buffer(mat2_tensor, "aoti_torch_mps_mm_out", "mat2");
+      id<MTLBuffer> out_buffer = get_mtl_buffer(out_tensor, "aoti_torch_mps_mm_out", "out");
 
       ET_LOG(Debug, "aoti_torch_mps_mm_out: Using existing Metal buffers - self=%p, mat2=%p, out=%p",
              self_buffer, mat2_buffer, out_buffer);
@@ -156,25 +186,56 @@ AOTITorchError aoti_torch_mps_mm_out(
 
       // Define tensor shapes for placeholders
       NSArray<NSNumber*>* selfShape = @[@(M), @(K)];
-      NSArray<NSNumber*>* mat2Shape = @[@(K), @(N)];
       NSArray<NSNumber*>* outShape = @[@(M), @(N)];
 
+      // For mat2, we need to handle both contiguous and transposed cases
+      // If mat2 is transposed, its physical layout in memory is [N, K] (column-major)
+      // but logically we need [K, N] for the matrix multiplication
+      NSArray<NSNumber*>* mat2PhysicalShape;
+      if (mat2_is_transposed) {
+        // Physical shape reflects the actual memory layout (transposed)
+        mat2PhysicalShape = @[@(N), @(K)];
+        ET_LOG(Debug, "aoti_torch_mps_mm_out: mat2 physical shape (transposed): [%d,%d]", (int)N, (int)K);
+      } else {
+        // Physical shape is the logical shape (contiguous)
+        mat2PhysicalShape = @[@(K), @(N)];
+        ET_LOG(Debug, "aoti_torch_mps_mm_out: mat2 physical shape (contiguous): [%d,%d]", (int)K, (int)N);
+      }
+
       ET_LOG(Debug, "aoti_torch_mps_mm_out: Creating placeholders with shapes self:[%d,%d] mat2:[%d,%d]",
-             (int)M, (int)K, (int)K, (int)N);
+             (int)M, (int)K,
+             mat2_is_transposed ? (int)N : (int)K,
+             mat2_is_transposed ? (int)K : (int)N);
 
       // Create placeholders for input tensors
       MPSGraphTensor* selfPlaceholder = [mpsGraph placeholderWithShape:selfShape
                                                               dataType:mps_dtype
                                                                   name:@"self"];
-      MPSGraphTensor* mat2Placeholder = [mpsGraph placeholderWithShape:mat2Shape
+      MPSGraphTensor* mat2Placeholder = [mpsGraph placeholderWithShape:mat2PhysicalShape
                                                               dataType:mps_dtype
-                                                                  name:@"mat2"];
+                                                                  name:@"mat2_physical"];
 
       ET_LOG(Debug, "aoti_torch_mps_mm_out: Created input placeholders");
 
-      // Perform matrix multiplication using MPSGraph
+      // If mat2 is transposed, apply transpose operation in the graph to get the logical shape
+      MPSGraphTensor* mat2Logical;
+      if (mat2_is_transposed) {
+        // Transpose from physical [N, K] to logical [K, N]
+        // MPSGraph transposeTensor swaps the last two dimensions for 2D tensors
+        mat2Logical = [mpsGraph transposeTensor:mat2Placeholder
+                                      dimension:-2
+                                  withDimension:-1
+                                           name:@"mat2_transposed"];
+        ET_LOG(Debug, "aoti_torch_mps_mm_out: Applied transpose operation to mat2 in graph");
+      } else {
+        // No transpose needed, use placeholder directly
+        mat2Logical = mat2Placeholder;
+        ET_LOG(Debug, "aoti_torch_mps_mm_out: Using mat2 placeholder directly (no transpose needed)");
+      }
+
+      // Perform matrix multiplication using MPSGraph with the logical mat2 tensor
       MPSGraphTensor* mmOutput = [mpsGraph matrixMultiplicationWithPrimaryTensor:selfPlaceholder
-                                                                 secondaryTensor:mat2Placeholder
+                                                                 secondaryTensor:mat2Logical
                                                                             name:@"matrix_multiplication"];
 
       ET_LOG(Debug, "aoti_torch_mps_mm_out: Successfully created matrix multiplication tensor");
@@ -183,17 +244,18 @@ AOTITorchError aoti_torch_mps_mm_out(
       NSMutableDictionary* feeds = [NSMutableDictionary dictionary];
 
       // Create MPSGraphTensorData objects for input tensors
+      // Use physical shapes to match how data is actually laid out in memory
       MPSGraphTensorData* selfData = [[MPSGraphTensorData alloc] initWithMTLBuffer:self_buffer
                                                                               shape:selfShape
                                                                            dataType:mps_dtype];
       MPSGraphTensorData* mat2Data = [[MPSGraphTensorData alloc] initWithMTLBuffer:mat2_buffer
-                                                                              shape:mat2Shape
+                                                                              shape:mat2PhysicalShape
                                                                            dataType:mps_dtype];
 
       feeds[selfPlaceholder] = selfData;
       feeds[mat2Placeholder] = mat2Data;
 
-      ET_LOG(Debug, "aoti_torch_mps_mm_out: Created feeds dictionary");
+      ET_LOG(Debug, "aoti_torch_mps_mm_out: Created feeds dictionary with physical shapes");
 
       // Create results dictionary
       MPSGraphTensorData* outputData = [[MPSGraphTensorData alloc] initWithMTLBuffer:out_buffer
@@ -217,6 +279,7 @@ AOTITorchError aoti_torch_mps_mm_out(
 
       ET_LOG(Debug, "aoti_torch_mps_mm_out: MPSGraph execution completed successfully");
 
+      ET_LOG(Debug, "aoti_torch_mps_mm_out: Executed successfully");
       return Error::Ok;
 
     } catch (const std::exception& e) {
@@ -255,13 +318,13 @@ AOTITorchError aoti_torch_mps_convolution(
   @autoreleasepool {
     try {
       // Convert AOTITensorHandle to ExecutorTorch tensors
-      auto input_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(input);
-      auto weight_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(weight);
+      auto input_tensor = reinterpret_cast<Tensor*>(input);
+      auto weight_tensor = reinterpret_cast<Tensor*>(weight);
 
       // bias can be null for convolutions without bias
-      executorch::runtime::etensor::Tensor* bias_tensor = nullptr;
+      Tensor* bias_tensor = nullptr;
       if (bias && *bias) {
-        bias_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(*bias);
+        bias_tensor = reinterpret_cast<Tensor*>(*bias);
         ET_LOG(Debug, "aoti_torch_mps_convolution: Has bias tensor");
       } else {
         ET_LOG(Debug, "aoti_torch_mps_convolution: No bias tensor");
@@ -408,29 +471,6 @@ AOTITorchError aoti_torch_mps_convolution(
         throw std::runtime_error("Failed to get Metal device");
       }
 
-      // Get Metal buffers from tensors using the global mapping
-      void* input_data_ptr = input_tensor->mutable_data_ptr();
-      void* weight_data_ptr = weight_tensor->mutable_data_ptr();
-
-      // Look up Metal buffers from the global mapping
-      auto input_it = ptr_to_mtl_buffer.find(input_data_ptr);
-      auto weight_it = ptr_to_mtl_buffer.find(weight_data_ptr);
-
-      if (input_it == ptr_to_mtl_buffer.end()) {
-        ET_LOG(Error, "aoti_torch_mps_convolution: input tensor not found in Metal buffer mapping");
-        throw std::runtime_error("input tensor not found in Metal buffer mapping");
-      }
-      if (weight_it == ptr_to_mtl_buffer.end()) {
-        ET_LOG(Error, "aoti_torch_mps_convolution: weight tensor not found in Metal buffer mapping");
-        throw std::runtime_error("weight tensor not found in Metal buffer mapping");
-      }
-
-      id<MTLBuffer> input_buffer = input_it->second;
-      id<MTLBuffer> weight_buffer = weight_it->second;
-
-      ET_LOG(Debug, "aoti_torch_mps_convolution: Using existing Metal buffers - input=%p, weight=%p",
-              input_buffer, weight_buffer);
-
       // End any existing kernel coalescing to ensure a clean state for MPS
       stream->endKernelCoalescing();
 
@@ -541,32 +581,29 @@ AOTITorchError aoti_torch_mps_convolution(
       if (bias_tensor) {
         ET_LOG(Debug, "aoti_torch_mps_convolution: Adding bias to convolution output");
 
-        // Get bias tensor data
-        void* bias_data_ptr = bias_tensor->mutable_data_ptr();
-        auto bias_it = ptr_to_mtl_buffer.find(bias_data_ptr);
+        // Create bias placeholder
+        NSArray<NSNumber*>* biasShape = @[@(C_out)];
+        biasPlaceholder = [mpsGraph placeholderWithShape:biasShape
+                                                  dataType:mps_dtype
+                                                      name:@"bias"];
 
-        if (bias_it != ptr_to_mtl_buffer.end()) {
-          id<MTLBuffer> bias_buffer = bias_it->second;
+        // Add bias to convolution output
+        finalOutput = [mpsGraph additionWithPrimaryTensor:convOutput
+                                          secondaryTensor:biasPlaceholder
+                                                      name:@"add_bias"];
 
-          // Create bias placeholder
-          NSArray<NSNumber*>* biasShape = @[@(C_out)];
-          biasPlaceholder = [mpsGraph placeholderWithShape:biasShape
-                                                    dataType:mps_dtype
-                                                        name:@"bias"];
-
-          // Add bias to convolution output
-          finalOutput = [mpsGraph additionWithPrimaryTensor:convOutput
-                                            secondaryTensor:biasPlaceholder
-                                                        name:@"add_bias"];
-
-          ET_LOG(Debug, "aoti_torch_mps_convolution: Added bias placeholder to graph");
-        } else {
-          ET_LOG(Debug, "aoti_torch_mps_convolution: Bias tensor not found in Metal buffer mapping, skipping bias");
-        }
+        ET_LOG(Debug, "aoti_torch_mps_convolution: Added bias placeholder to graph");
       }
 
       // Create feeds dictionary for graph execution
       NSMutableDictionary* feeds = [NSMutableDictionary dictionary];
+
+      // Get Metal buffers from tensors
+      id<MTLBuffer> input_buffer = get_mtl_buffer(input_tensor, "aoti_torch_mps_convolution", "input");
+      id<MTLBuffer> weight_buffer = get_mtl_buffer(weight_tensor, "aoti_torch_mps_convolution", "weight");
+
+      ET_LOG(Debug, "aoti_torch_mps_convolution: Using existing Metal buffers - input=%p, weight=%p",
+              input_buffer, weight_buffer);
 
       // Create MPSGraphTensorData objects for input tensors
       MPSGraphTensorData* inputData = [[MPSGraphTensorData alloc] initWithMTLBuffer:input_buffer
@@ -581,38 +618,23 @@ AOTITorchError aoti_torch_mps_convolution(
 
       // Add bias data to feeds if provided
       if (bias_tensor && biasPlaceholder) {
-        void* bias_data_ptr = bias_tensor->mutable_data_ptr();
-        auto bias_it = ptr_to_mtl_buffer.find(bias_data_ptr);
+        id<MTLBuffer> bias_buffer = get_mtl_buffer(bias_tensor, "aoti_torch_mps_convolution", "bias");
 
-        if (bias_it != ptr_to_mtl_buffer.end()) {
-          id<MTLBuffer> bias_buffer = bias_it->second;
-          NSArray<NSNumber*>* biasShape = @[@(C_out)];
-          MPSGraphTensorData* biasData = [[MPSGraphTensorData alloc] initWithMTLBuffer:bias_buffer
-                                                                                    shape:biasShape
-                                                                                dataType:mps_dtype];
+        NSArray<NSNumber*>* biasShape = @[@(C_out)];
+        MPSGraphTensorData* biasData = [[MPSGraphTensorData alloc] initWithMTLBuffer:bias_buffer
+                                                                                  shape:biasShape
+                                                                              dataType:mps_dtype];
 
-          feeds[biasPlaceholder] = biasData;
-          ET_LOG(Debug, "aoti_torch_mps_convolution: Added bias tensor to feeds");
-        }
+        feeds[biasPlaceholder] = biasData;
+        ET_LOG(Debug, "aoti_torch_mps_convolution: Added bias tensor to feeds");
       }
 
       ET_LOG(Debug, "aoti_torch_mps_convolution: Created feeds dictionary");
 
-      // Create or reuse output Metal buffer via AOTI API; keeps GPU residency
+      // Create Metal buffer for output tensor
       size_t output_size_bytes = N * C_out * H_out * W_out * element_size;
       void* output_contents_ptr = nullptr;
-      AOTITorchError malloc_err = aoti_torch_mps_malloc(&output_contents_ptr, output_size_bytes);
-      if (malloc_err != Error::Ok || !output_contents_ptr) {
-        ET_LOG(Error, "aoti_torch_mps_convolution: Failed to allocate Metal buffer via aoti_torch_mps_malloc");
-        throw std::runtime_error("Failed to allocate output Metal buffer");
-      }
-
-      auto out_it = ptr_to_mtl_buffer.find(output_contents_ptr);
-      if (out_it == ptr_to_mtl_buffer.end()) {
-        ET_LOG(Error, "aoti_torch_mps_convolution: aoti_torch_mps_malloc did not register buffer in map");
-        throw std::runtime_error("Failed to look up allocated Metal buffer");
-      }
-      id<MTLBuffer> output_buffer = out_it->second;
+      id<MTLBuffer> output_buffer = allocate_mtl_buffer(&output_contents_ptr, output_size_bytes);
 
       // Create results dictionary (MPSGraph output is 4D)
       NSArray<NSNumber*>* outputShape = @[@(N), @(C_out), @(H_out), @(W_out)];
@@ -633,11 +655,10 @@ AOTITorchError aoti_torch_mps_convolution(
         ET_LOG(Error, "aoti_torch_mps_convolution: NSException caught during executeMPSGraph: %s - %s",
               [[exception name] UTF8String], [[exception reason] UTF8String]);
         throw std::runtime_error("MPSGraph execution failed with NSException");
+      } @catch (...) {
+        ET_LOG(Error, "aoti_torch_mps_convolution: MPSGraph execution failed");
+        throw std::runtime_error("MPSGraph execution failed");
       }
-      // } @catch (const std::exception& e) {
-      //   ET_LOG(Error, "aoti_torch_mps_convolution exception: %s", e.what());
-      //   throw std::runtime_error("MPSGraph execution failed");
-      // }
 
       ET_LOG(Debug, "aoti_torch_mps_convolution: MPSGraph execution completed successfully");
 
@@ -705,7 +726,7 @@ AOTITorchError aoti_torch_mps_convolution(
       }
 
       // Verify the tensor was created with the correct size
-      auto* et_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(output_tensor_handle);
+      auto* et_tensor = reinterpret_cast<Tensor*>(output_tensor_handle);
       size_t actual_numel = et_tensor->numel();
       size_t expected_numel = static_cast<size_t>(N * C_out * H_out * W_out);
 
@@ -721,6 +742,7 @@ AOTITorchError aoti_torch_mps_convolution(
 
       ET_LOG(Debug, "aoti_torch_mps_convolution: Created output tensor with %zu elements using MPSGraph", actual_numel);
 
+      ET_LOG(Debug, "aoti_torch_mps_convolution: Executed successfully");
       return Error::Ok;
 
     } catch (const std::exception& e) {
@@ -762,9 +784,9 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
   try {
     @autoreleasepool {
       // Convert AOTITensorHandle to ExecutorTorch tensors
-      auto* query_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(query);
-      auto* key_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(key);
-      auto* value_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(value);
+      auto* query_tensor = reinterpret_cast<Tensor*>(query);
+      auto* key_tensor = reinterpret_cast<Tensor*>(key);
+      auto* value_tensor = reinterpret_cast<Tensor*>(value);
 
       ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Converted tensor handles to ET tensors");
 
@@ -787,6 +809,109 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
 
         ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: batchSize=%lld, num_heads=%lld, qSize=%lld, headSize=%lld, kvSeqLength=%lld",
                batchSize, num_heads, qSize, headSize, kvSeqLength);
+
+        // Detect non-contiguous layouts for query, key, and value tensors
+        // For a 4D tensor [batch, num_heads, seq_len, head_dim], common non-contiguous patterns:
+        // - Transposed last 2 dims (dims 2,3): strides[2] == 1 && strides[3] == seq_len (seq_len and head_dim swapped)
+        // - Transposed internal dims (dims 1,2): strides[1] == head_dim && strides[2] == num_heads*head_dim (num_heads and seq_len swapped)
+        // - Other permutations may exist depending on upstream operations
+
+        bool query_is_transposed_last2 = false;   // transpose of dims -2 and -1
+        bool query_is_transposed_internal = false; // transpose of dims 1 and 2
+        bool key_is_transposed_last2 = false;
+        bool key_is_transposed_internal = false;
+        bool value_is_transposed_last2 = false;
+        bool value_is_transposed_internal = false;
+
+        // Expected contiguous strides for query [batch, num_heads, qSize, headSize]
+        int64_t expected_q_stride_3 = 1;
+        int64_t expected_q_stride_2 = headSize;
+        int64_t expected_q_stride_1 = qSize * headSize;
+        int64_t expected_q_stride_0 = num_heads * qSize * headSize;
+
+        // Check query tensor layout
+        auto q_strides = query_tensor->strides();
+        if (q_strides[3] != expected_q_stride_3 || q_strides[2] != expected_q_stride_2 ||
+            q_strides[1] != expected_q_stride_1) {
+          // Check if it's a transpose of the last two dimensions (dims 2 and 3)
+          if (q_strides[2] == 1 && q_strides[3] == qSize && q_strides[1] == qSize * headSize) {
+            query_is_transposed_last2 = true;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query tensor has transposed last 2 dims (dims 2,3) (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)q_strides[0], (int64_t)q_strides[1], (int64_t)q_strides[2], (int64_t)q_strides[3]);
+          }
+          // Check if it's a transpose of the internal dimensions (dims 1 and 2)
+          else if (q_strides[1] == headSize && q_strides[2] == num_heads * headSize && q_strides[3] == 1) {
+            query_is_transposed_internal = true;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query tensor has transposed internal dims (dims 1,2) (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)q_strides[0], (int64_t)q_strides[1], (int64_t)q_strides[2], (int64_t)q_strides[3]);
+          } else {
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query tensor is non-contiguous with unusual layout (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)q_strides[0], (int64_t)q_strides[1], (int64_t)q_strides[2], (int64_t)q_strides[3]);
+          }
+        } else {
+          ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query tensor is contiguous (strides=[%lld,%lld,%lld,%lld])",
+                 (int64_t)q_strides[0], (int64_t)q_strides[1], (int64_t)q_strides[2], (int64_t)q_strides[3]);
+        }
+
+        // Expected contiguous strides for key [batch, num_heads, kvSeqLength, headSize]
+        int64_t expected_k_stride_3 = 1;
+        int64_t expected_k_stride_2 = headSize;
+        int64_t expected_k_stride_1 = kvSeqLength * headSize;
+        int64_t expected_k_stride_0 = num_heads * kvSeqLength * headSize;
+
+        // Check key tensor layout
+        auto k_strides = key_tensor->strides();
+        if (k_strides[3] != expected_k_stride_3 || k_strides[2] != expected_k_stride_2 ||
+            k_strides[1] != expected_k_stride_1) {
+          // Check if it's a transpose of the last two dimensions (dims 2 and 3)
+          if (k_strides[2] == 1 && k_strides[3] == kvSeqLength && k_strides[1] == kvSeqLength * headSize) {
+            key_is_transposed_last2 = true;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key tensor has transposed last 2 dims (dims 2,3) (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)k_strides[0], (int64_t)k_strides[1], (int64_t)k_strides[2], (int64_t)k_strides[3]);
+          }
+          // Check if it's a transpose of the internal dimensions (dims 1 and 2)
+          else if (k_strides[1] == headSize && k_strides[2] == num_heads * headSize && k_strides[3] == 1) {
+            key_is_transposed_internal = true;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key tensor has transposed internal dims (dims 1,2) (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)k_strides[0], (int64_t)k_strides[1], (int64_t)k_strides[2], (int64_t)k_strides[3]);
+          } else {
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key tensor is non-contiguous with unusual layout (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)k_strides[0], (int64_t)k_strides[1], (int64_t)k_strides[2], (int64_t)k_strides[3]);
+          }
+        } else {
+          ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key tensor is contiguous (strides=[%lld,%lld,%lld,%lld])",
+                 (int64_t)k_strides[0], (int64_t)k_strides[1], (int64_t)k_strides[2], (int64_t)k_strides[3]);
+        }
+
+        // Expected contiguous strides for value [batch, num_heads, kvSeqLength, headSize]
+        int64_t expected_v_stride_3 = 1;
+        int64_t expected_v_stride_2 = headSize;
+        int64_t expected_v_stride_1 = kvSeqLength * headSize;
+        int64_t expected_v_stride_0 = num_heads * kvSeqLength * headSize;
+
+        // Check value tensor layout
+        auto v_strides = value_tensor->strides();
+        if (v_strides[3] != expected_v_stride_3 || v_strides[2] != expected_v_stride_2 ||
+            v_strides[1] != expected_v_stride_1) {
+          // Check if it's a transpose of the last two dimensions (dims 2 and 3)
+          if (v_strides[2] == 1 && v_strides[3] == kvSeqLength && v_strides[1] == kvSeqLength * headSize) {
+            value_is_transposed_last2 = true;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value tensor has transposed last 2 dims (dims 2,3) (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)v_strides[0], (int64_t)v_strides[1], (int64_t)v_strides[2], (int64_t)v_strides[3]);
+          }
+          // Check if it's a transpose of the internal dimensions (dims 1 and 2)
+          else if (v_strides[1] == headSize && v_strides[2] == num_heads * headSize && v_strides[3] == 1) {
+            value_is_transposed_internal = true;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value tensor has transposed internal dims (dims 1,2) (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)v_strides[0], (int64_t)v_strides[1], (int64_t)v_strides[2], (int64_t)v_strides[3]);
+          } else {
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value tensor is non-contiguous with unusual layout (strides=[%lld,%lld,%lld,%lld])",
+                   (int64_t)v_strides[0], (int64_t)v_strides[1], (int64_t)v_strides[2], (int64_t)v_strides[3]);
+          }
+        } else {
+          ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value tensor is contiguous (strides=[%lld,%lld,%lld,%lld])",
+                 (int64_t)v_strides[0], (int64_t)v_strides[1], (int64_t)v_strides[2], (int64_t)v_strides[3]);
+        }
 
         // Determine data type and element size
         int32_t dtype = static_cast<int32_t>(query_tensor->scalar_type());
@@ -823,63 +948,10 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
           throw std::runtime_error("Failed to get Metal device");
         }
 
-        // Get Metal buffers for input tensors
-        void* query_data_ptr = query_tensor->mutable_data_ptr();
-        void* key_data_ptr = key_tensor->mutable_data_ptr();
-        void* value_data_ptr = value_tensor->mutable_data_ptr();
-
-        id<MTLBuffer> query_buffer = nullptr;
-        id<MTLBuffer> key_buffer = nullptr;
-        id<MTLBuffer> value_buffer = nullptr;
-
-        // Look up Metal buffers from the global mapping
-        auto query_it = ptr_to_mtl_buffer.find(query_data_ptr);
-        auto key_it = ptr_to_mtl_buffer.find(key_data_ptr);
-        auto value_it = ptr_to_mtl_buffer.find(value_data_ptr);
-
-        if (query_it != ptr_to_mtl_buffer.end()) {
-          query_buffer = query_it->second;
-        }
-        if (key_it != ptr_to_mtl_buffer.end()) {
-          key_buffer = key_it->second;
-        }
-        if (value_it != ptr_to_mtl_buffer.end()) {
-          value_buffer = value_it->second;
-        }
-
-        // Create temporary Metal buffers if not found in mapping
-        if (!query_buffer) {
-          size_t query_size = query_tensor->numel() * element_size;
-          query_buffer = [device newBufferWithBytes:query_data_ptr
-                                             length:query_size
-                                            options:MTLResourceStorageModeShared];
-          if (!query_buffer) {
-            ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to create Metal buffer for query tensor");
-            throw std::runtime_error("Failed to create Metal buffer for query tensor");
-          }
-        }
-
-        if (!key_buffer) {
-          size_t key_size = key_tensor->numel() * element_size;
-          key_buffer = [device newBufferWithBytes:key_data_ptr
-                                           length:key_size
-                                          options:MTLResourceStorageModeShared];
-          if (!key_buffer) {
-            ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to create Metal buffer for key tensor");
-            throw std::runtime_error("Failed to create Metal buffer for key tensor");
-          }
-        }
-
-        if (!value_buffer) {
-          size_t value_size = value_tensor->numel() * element_size;
-          value_buffer = [device newBufferWithBytes:value_data_ptr
-                                             length:value_size
-                                            options:MTLResourceStorageModeShared];
-          if (!value_buffer) {
-            ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to create Metal buffer for value tensor");
-            throw std::runtime_error("Failed to create Metal buffer for value tensor");
-          }
-        }
+        // Get Metal buffers for query, key and value tensors
+        id<MTLBuffer> query_buffer = get_mtl_buffer(query_tensor, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps", "query");
+        id<MTLBuffer> key_buffer = get_mtl_buffer(key_tensor, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps", "key");
+        id<MTLBuffer> value_buffer = get_mtl_buffer(value_tensor, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps", "value");
 
         // Calculate output tensor dimensions
         std::vector<int64_t> output_sizes = {batchSize, num_heads, qSize, headSize};
@@ -905,34 +977,10 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         size_t attn_size_bytes = batchSize * num_heads * qSize * kvSeqLength * element_size;
 
         void* out_contents_ptr = nullptr;
-        AOTITorchError out_malloc_err = aoti_torch_mps_malloc(&out_contents_ptr, out_size_bytes);
-        if (out_malloc_err != Error::Ok || !out_contents_ptr) {
-          ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to allocate out buffer via aoti_torch_mps_malloc");
-          throw std::runtime_error("Failed to allocate output buffer");
-        }
-        auto out_map_it = ptr_to_mtl_buffer.find(out_contents_ptr);
-        if (out_map_it == ptr_to_mtl_buffer.end()) {
-          ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: out buffer not found in mapping after malloc");
-          aoti_torch_mps_free(out_contents_ptr);
-          throw std::runtime_error("Mapping for out buffer missing");
-        }
-        id<MTLBuffer> out_buffer = out_map_it->second;
+        id<MTLBuffer> out_buffer = allocate_mtl_buffer(&out_contents_ptr, out_size_bytes);
 
         void* attn_contents_ptr = nullptr;
-        AOTITorchError attn_malloc_err = aoti_torch_mps_malloc(&attn_contents_ptr, attn_size_bytes);
-        if (attn_malloc_err != Error::Ok || !attn_contents_ptr) {
-          ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to allocate attn buffer via aoti_torch_mps_malloc");
-          aoti_torch_mps_free(out_contents_ptr);
-          throw std::runtime_error("Failed to allocate attn buffer");
-        }
-        auto attn_map_it = ptr_to_mtl_buffer.find(attn_contents_ptr);
-        if (attn_map_it == ptr_to_mtl_buffer.end()) {
-          ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: attn buffer not found in mapping after malloc");
-          aoti_torch_mps_free(out_contents_ptr);
-          aoti_torch_mps_free(attn_contents_ptr);
-          throw std::runtime_error("Mapping for attn buffer missing");
-        }
-        id<MTLBuffer> attn_weights_buffer = attn_map_it->second;
+        id<MTLBuffer> attn_weights_buffer = allocate_mtl_buffer(&attn_contents_ptr, attn_size_bytes);
 
         // End any existing kernel coalescing to ensure a clean state for MPS
         stream->endKernelCoalescing();
@@ -953,31 +1001,145 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
           MPSGraph* mpsGraph = [MPSGraph new];
           ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created MPSGraph instance");
 
-          // Define tensor shapes for placeholders
-          NSArray<NSNumber*>* queryShape = @[@(batchSize), @(num_heads), @(qSize), @(headSize)];
-          NSArray<NSNumber*>* keyShape = @[@(batchSize), @(num_heads), @(kvSeqLength), @(headSize)];
-          NSArray<NSNumber*>* valueShape = @[@(batchSize), @(num_heads), @(kvSeqLength), @(headSize)];
+          // Define physical tensor shapes for placeholders (matching actual memory layout)
+          // Two transpose patterns supported:
+          // 1. Last 2 dims transposed (dims 2,3): [batch, num_heads, head_dim, seq_len]
+          // 2. Internal dims transposed (dims 1,2): [batch, seq_len, num_heads, head_dim]
+          NSArray<NSNumber*>* queryPhysicalShape;
+          NSArray<NSNumber*>* keyPhysicalShape;
+          NSArray<NSNumber*>* valuePhysicalShape;
 
-          ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Creating placeholders with shapes Q:[%d,%d,%d,%d] K:[%d,%d,%d,%d] V:[%d,%d,%d,%d]",
-                 (int)batchSize, (int)num_heads, (int)qSize, (int)headSize,
-                 (int)batchSize, (int)num_heads, (int)kvSeqLength, (int)headSize,
-                 (int)batchSize, (int)num_heads, (int)kvSeqLength, (int)headSize);
+          if (query_is_transposed_last2) {
+            // Physical layout: [batch, num_heads, headSize, qSize] (dims 2,3 swapped)
+            queryPhysicalShape = @[@(batchSize), @(num_heads), @(headSize), @(qSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query physical shape (transposed dims 2,3): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)num_heads, (int)headSize, (int)qSize);
+          } else if (query_is_transposed_internal) {
+            // Physical layout: [batch, qSize, num_heads, headSize] (dims 1,2 swapped)
+            queryPhysicalShape = @[@(batchSize), @(qSize), @(num_heads), @(headSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query physical shape (transposed dims 1,2): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)qSize, (int)num_heads, (int)headSize);
+          } else {
+            // Physical layout matches logical layout: [batch, num_heads, qSize, headSize]
+            queryPhysicalShape = @[@(batchSize), @(num_heads), @(qSize), @(headSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Query physical shape (contiguous): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)num_heads, (int)qSize, (int)headSize);
+          }
 
-          // Create placeholders for input tensors
-          MPSGraphTensor* queryPlaceholder = [mpsGraph placeholderWithShape:queryShape
+          if (key_is_transposed_last2) {
+            // Physical layout: [batch, num_heads, headSize, kvSeqLength] (dims 2,3 swapped)
+            keyPhysicalShape = @[@(batchSize), @(num_heads), @(headSize), @(kvSeqLength)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key physical shape (transposed dims 2,3): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)num_heads, (int)headSize, (int)kvSeqLength);
+          } else if (key_is_transposed_internal) {
+            // Physical layout: [batch, kvSeqLength, num_heads, headSize] (dims 1,2 swapped)
+            keyPhysicalShape = @[@(batchSize), @(kvSeqLength), @(num_heads), @(headSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key physical shape (transposed dims 1,2): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)kvSeqLength, (int)num_heads, (int)headSize);
+          } else {
+            // Physical layout matches logical layout: [batch, num_heads, kvSeqLength, headSize]
+            keyPhysicalShape = @[@(batchSize), @(num_heads), @(kvSeqLength), @(headSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Key physical shape (contiguous): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)num_heads, (int)kvSeqLength, (int)headSize);
+          }
+
+          if (value_is_transposed_last2) {
+            // Physical layout: [batch, num_heads, headSize, kvSeqLength] (dims 2,3 swapped)
+            valuePhysicalShape = @[@(batchSize), @(num_heads), @(headSize), @(kvSeqLength)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value physical shape (transposed dims 2,3): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)num_heads, (int)headSize, (int)kvSeqLength);
+          } else if (value_is_transposed_internal) {
+            // Physical layout: [batch, kvSeqLength, num_heads, headSize] (dims 1,2 swapped)
+            valuePhysicalShape = @[@(batchSize), @(kvSeqLength), @(num_heads), @(headSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value physical shape (transposed dims 1,2): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)kvSeqLength, (int)num_heads, (int)headSize);
+          } else {
+            // Physical layout matches logical layout: [batch, num_heads, kvSeqLength, headSize]
+            valuePhysicalShape = @[@(batchSize), @(num_heads), @(kvSeqLength), @(headSize)];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Value physical shape (contiguous): [%d,%d,%d,%d]",
+                   (int)batchSize, (int)num_heads, (int)kvSeqLength, (int)headSize);
+          }
+
+          // Create placeholders for input tensors with physical shapes
+          MPSGraphTensor* queryPlaceholder = [mpsGraph placeholderWithShape:queryPhysicalShape
                                                                    dataType:mps_dtype
-                                                                       name:@"query"];
+                                                                       name:@"query_physical"];
           ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created query placeholder");
 
-          MPSGraphTensor* keyPlaceholder = [mpsGraph placeholderWithShape:keyShape
+          MPSGraphTensor* keyPlaceholder = [mpsGraph placeholderWithShape:keyPhysicalShape
                                                                  dataType:mps_dtype
-                                                                     name:@"key"];
+                                                                     name:@"key_physical"];
           ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created key placeholder");
 
-          MPSGraphTensor* valuePlaceholder = [mpsGraph placeholderWithShape:valueShape
+          MPSGraphTensor* valuePlaceholder = [mpsGraph placeholderWithShape:valuePhysicalShape
                                                                    dataType:mps_dtype
-                                                                       name:@"value"];
+                                                                       name:@"value_physical"];
           ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created value placeholder");
+
+          // Apply transpose operations in the graph to convert physical to logical layout
+          // Logical shapes needed for SDPA: Q[batch, num_heads, qSize, headSize],
+          //                                 K[batch, num_heads, kvSeqLength, headSize],
+          //                                 V[batch, num_heads, kvSeqLength, headSize]
+          MPSGraphTensor* queryLogical;
+          MPSGraphTensor* keyLogical;
+          MPSGraphTensor* valueLogical;
+
+          if (query_is_transposed_last2) {
+            // Transpose dims 2,3: [batch, num_heads, headSize, qSize] → [batch, num_heads, qSize, headSize]
+            queryLogical = [mpsGraph transposeTensor:queryPlaceholder
+                                           dimension:-2
+                                       withDimension:-1
+                                                name:@"query_transposed_last2"];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Applied transpose (dims 2,3) to query tensor in graph");
+          } else if (query_is_transposed_internal) {
+            // Transpose dims 1,2: [batch, qSize, num_heads, headSize] → [batch, num_heads, qSize, headSize]
+            queryLogical = [mpsGraph transposeTensor:queryPlaceholder
+                                           dimension:1
+                                       withDimension:2
+                                                name:@"query_transposed_internal"];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Applied transpose (dims 1,2) to query tensor in graph");
+          } else {
+            queryLogical = queryPlaceholder;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Using query placeholder directly (no transpose needed)");
+          }
+
+          if (key_is_transposed_last2) {
+            // Transpose dims 2,3: [batch, num_heads, headSize, kvSeqLength] → [batch, num_heads, kvSeqLength, headSize]
+            keyLogical = [mpsGraph transposeTensor:keyPlaceholder
+                                         dimension:-2
+                                     withDimension:-1
+                                              name:@"key_transposed_last2"];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Applied transpose (dims 2,3) to key tensor in graph");
+          } else if (key_is_transposed_internal) {
+            // Transpose dims 1,2: [batch, kvSeqLength, num_heads, headSize] → [batch, num_heads, kvSeqLength, headSize]
+            keyLogical = [mpsGraph transposeTensor:keyPlaceholder
+                                         dimension:1
+                                     withDimension:2
+                                              name:@"key_transposed_internal"];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Applied transpose (dims 1,2) to key tensor in graph");
+          } else {
+            keyLogical = keyPlaceholder;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Using key placeholder directly (no transpose needed)");
+          }
+
+          if (value_is_transposed_last2) {
+            // Transpose dims 2,3: [batch, num_heads, headSize, kvSeqLength] → [batch, num_heads, kvSeqLength, headSize]
+            valueLogical = [mpsGraph transposeTensor:valuePlaceholder
+                                           dimension:-2
+                                       withDimension:-1
+                                                name:@"value_transposed_last2"];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Applied transpose (dims 2,3) to value tensor in graph");
+          } else if (value_is_transposed_internal) {
+            // Transpose dims 1,2: [batch, kvSeqLength, num_heads, headSize] → [batch, num_heads, kvSeqLength, headSize]
+            valueLogical = [mpsGraph transposeTensor:valuePlaceholder
+                                           dimension:1
+                                       withDimension:2
+                                                name:@"value_transposed_internal"];
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Applied transpose (dims 1,2) to value tensor in graph");
+          } else {
+            valueLogical = valuePlaceholder;
+            ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Using value placeholder directly (no transpose needed)");
+          }
 
           MPSGraphTensor* maskTensor = nil;
 
@@ -1022,7 +1184,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
           // Handle explicit attention mask if provided
           MPSGraphTensor* explicitMaskPlaceholder = nil;
           if (attn_mask && *attn_mask) {
-            auto* mask_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(*attn_mask);
+            auto* mask_tensor = reinterpret_cast<Tensor*>(*attn_mask);
 
             ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Adding explicit attention mask");
 
@@ -1047,12 +1209,13 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
             ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created explicit mask placeholder");
           }
 
-          // Perform scaled dot product attention using MPSGraph
+          // Perform scaled dot product attention using MPSGraph with logical (possibly transposed) tensors
+          // The logical tensors have the correct shapes for attention computation regardless of input memory layout
           ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Calling scaledDotProductAttentionWithQueryTensor with scale=%f", scale_factor);
 
-          MPSGraphTensor* outputTensor = [mpsGraph scaledDotProductAttentionWithQueryTensor:queryPlaceholder
-                                                                                 keyTensor:keyPlaceholder
-                                                                               valueTensor:valuePlaceholder
+          MPSGraphTensor* outputTensor = [mpsGraph scaledDotProductAttentionWithQueryTensor:queryLogical
+                                                                                 keyTensor:keyLogical
+                                                                               valueTensor:valueLogical
                                                                                 maskTensor:maskTensor
                                                                                      scale:scale_factor
                                                                                       name:@"scaled_dot_product_attention"];
@@ -1062,17 +1225,18 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
           NSMutableDictionary* feeds = [NSMutableDictionary dictionary];
           ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created feeds dictionary");
 
-          // Create MPSGraphTensorData objects for input tensors
+          // Create MPSGraphTensorData objects for input tensors using physical shapes
+          // Physical shapes match the actual memory layout of the tensors
           MPSGraphTensorData* queryData = [[MPSGraphTensorData alloc] initWithMTLBuffer:query_buffer
-                                                                                  shape:queryShape
+                                                                                  shape:queryPhysicalShape
                                                                                dataType:mps_dtype];
           MPSGraphTensorData* keyData = [[MPSGraphTensorData alloc] initWithMTLBuffer:key_buffer
-                                                                                shape:keyShape
+                                                                                shape:keyPhysicalShape
                                                                              dataType:mps_dtype];
           MPSGraphTensorData* valueData = [[MPSGraphTensorData alloc] initWithMTLBuffer:value_buffer
-                                                                                  shape:valueShape
+                                                                                  shape:valuePhysicalShape
                                                                                dataType:mps_dtype];
-          ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created MPSGraphTensorData objects for inputs");
+          ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Created MPSGraphTensorData objects with physical shapes");
 
           feeds[queryPlaceholder] = queryData;
           feeds[keyPlaceholder] = keyData;
@@ -1081,24 +1245,9 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
 
           // Add explicit mask data to feeds if provided
           if (explicitMaskPlaceholder && attn_mask && *attn_mask) {
-            auto* mask_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(*attn_mask);
-            void* mask_data_ptr = mask_tensor->mutable_data_ptr();
-
-            // Get or create Metal buffer for mask
-            id<MTLBuffer> mask_buffer = nullptr;
-            auto mask_it = ptr_to_mtl_buffer.find(mask_data_ptr);
-            if (mask_it != ptr_to_mtl_buffer.end()) {
-              mask_buffer = mask_it->second;
-            } else {
-              size_t mask_size = mask_tensor->numel() * element_size;
-              mask_buffer = [device newBufferWithBytes:mask_data_ptr
-                                                length:mask_size
-                                               options:MTLResourceStorageModeShared];
-              if (!mask_buffer) {
-                ET_LOG(Error, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Failed to create Metal buffer for attention mask");
-                throw std::runtime_error("Failed to create Metal buffer for attention mask");
-              }
-            }
+            auto* mask_tensor = reinterpret_cast<Tensor*>(*attn_mask);
+            // Get Metal buffer for mask
+            id<MTLBuffer> mask_buffer = get_mtl_buffer(mask_tensor, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps", "mask");
 
             NSMutableArray<NSNumber*>* maskShapeArray = [NSMutableArray array];
             for (int i = 0; i < mask_tensor->dim(); i++) {
@@ -1178,8 +1327,8 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
         }
 
         // Mark that we own the memory for these tensors
-        auto* out_et_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(out_tensor_handle);
-        auto* attn_et_tensor = reinterpret_cast<executorch::runtime::etensor::Tensor*>(attn_tensor_handle);
+        auto* out_et_tensor = reinterpret_cast<Tensor*>(out_tensor_handle);
+        auto* attn_et_tensor = reinterpret_cast<Tensor*>(attn_tensor_handle);
         is_tensor_own_memory[out_et_tensor] = true;
         is_tensor_own_memory[attn_et_tensor] = true;
 
@@ -1190,6 +1339,7 @@ AOTITorchError aoti_torch_mps__scaled_dot_product_attention_math_for_mps(
       ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: MPSGraph implementation completed successfully");
     }
 
+    ET_LOG(Debug, "aoti_torch_mps__scaled_dot_product_attention_math_for_mps: Executed successfully");
     return Error::Ok;
 
   } catch (const std::exception& e) {

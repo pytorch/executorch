@@ -63,46 +63,46 @@ class ET_EXPERIMENTAL MetalBackend final
  private:
   Error register_shared_library_functions(void* so_handle) const {
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loading symbols");
 
     LOAD_SYMBOL(AOTInductorModelContainerCreateWithDevice, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerCreateWithDevice");
 
     LOAD_SYMBOL(AOTInductorModelContainerDelete, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerDelete");
 
     LOAD_SYMBOL(AOTInductorModelContainerGetNumInputs, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumInputs");
 
     LOAD_SYMBOL(AOTInductorModelContainerGetNumConstants, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumConstants");
 
     LOAD_SYMBOL(AOTInductorModelContainerGetInputName, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetInputName");
 
     LOAD_SYMBOL(AOTInductorModelContainerGetNumOutputs, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumOutputs");
 
     LOAD_SYMBOL(AOTInductorModelContainerRun, so_handle);
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerRun");
 
     ET_LOG(
-        Info,
+        Debug,
         "MetalBackend::register_shared_library_functions - All symbols loaded successfully");
     return Error::Ok;
   }
@@ -110,7 +110,7 @@ class ET_EXPERIMENTAL MetalBackend final
  public:
   // Once in program
   MetalBackend() {
-    ET_LOG(Info, "MetalBackend ctor");
+    ET_LOG(Debug, "MetalBackend ctor");
   }
 
   bool is_available() const override {
