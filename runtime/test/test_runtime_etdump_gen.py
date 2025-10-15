@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import io
 import os
 import tempfile
 import unittest
@@ -95,3 +96,68 @@ class RuntimeETDumpGenTest(unittest.TestCase):
             self.assertGreater(
                 len(run_data.events), 0, "Run data should contain at least one events"
             )
+
+    def test_etdump_params_with_bytes_and_buffer(self):
+        """Regression test: Ensure enable_etdump and debug_buffer_size work with bytes/buffer.
+
+        Previously, when loading from bytes/bytearray/file-like objects, these parameters
+        were hardcoded to False/0 instead of using the provided values.
+        """
+        ep, inputs = create_program(ModuleAdd())
+        runtime = Runtime.get()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            etdump_path = os.path.join(temp_dir, "etdump_output.etdp")
+            debug_path = os.path.join(temp_dir, "debug_output.bin")
+
+            def test_etdump_with_data(data, data_type):
+                """Helper to test ETDump with different data types."""
+                # Load program with etdump enabled
+                program = runtime.load_program(
+                    data,
+                    verification=Verification.Minimal,
+                    enable_etdump=True,
+                    debug_buffer_size=int(1e7),
+                )
+
+                # Execute the method
+                method = program.load_method("forward")
+                outputs = method.execute(inputs)
+
+                # Verify computation
+                self.assertTrue(
+                    torch.allclose(outputs[0], inputs[0] + inputs[1]),
+                    f"Computation failed for {data_type}",
+                )
+
+                # Write etdump result
+                program.write_etdump_result_to_file(etdump_path, debug_path)
+
+                # Verify files were created
+                self.assertTrue(
+                    os.path.exists(etdump_path),
+                    f"ETDump file not created for {data_type}",
+                )
+                self.assertTrue(
+                    os.path.exists(debug_path),
+                    f"Debug file not created for {data_type}",
+                )
+
+                # Verify etdump file is not empty
+                etdump_size = os.path.getsize(etdump_path)
+                self.assertGreater(
+                    etdump_size, 0, f"ETDump file is empty for {data_type}"
+                )
+
+                # Clean up for next test
+                os.remove(etdump_path)
+                os.remove(debug_path)
+
+            # Test with bytes
+            test_etdump_with_data(ep.buffer, "bytes")
+
+            # Test with bytearray
+            test_etdump_with_data(bytearray(ep.buffer), "bytearray")
+
+            # Test with BytesIO (file-like object)
+            test_etdump_with_data(io.BytesIO(ep.buffer), "BytesIO")
