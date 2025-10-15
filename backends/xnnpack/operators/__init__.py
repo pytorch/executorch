@@ -41,6 +41,7 @@ from . import (  # noqa
     op_relu,
     op_rsqrt,
     op_sigmoid,
+    op_sin,
     op_skip_ops,
     op_slice_copy,
     op_softmax,
