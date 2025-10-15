@@ -568,6 +568,16 @@ class TensorRepSet:
             self.valid_texture_layouts & other.valid_texture_layouts,
         )
 
+    def make_union(self, other: "TensorRepSet") -> "TensorRepSet":
+        """
+        Merge this TensorRepSet with another TensorRepSet, returning a new TensorRepSet
+        with the union of the two.
+        """
+        return TensorRepSet(
+            self.valid_buffer_layouts | other.valid_buffer_layouts,
+            self.valid_texture_layouts | other.valid_texture_layouts,
+        )
+
     def is_compatible(self, storage: TensorRepr) -> bool:
         """
         Check if this TensorRepr is compatible with the given TensorRepSet.
