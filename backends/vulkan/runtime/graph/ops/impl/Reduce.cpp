@@ -52,6 +52,20 @@ void resize_reduce2d_node(
   graph->virtual_resize(out, new_sizes);
 }
 
+void resize_reduce_per_row_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)resize_args;
+  const ValueRef out = args.at(0).refs.at(0);
+  const ValueRef in = args.at(1).refs.at(0);
+
+  std::vector<int64_t> new_sizes = graph->sizes_of(in);
+  // Per-row reduction always reduces along the last dimension (width)
+  new_sizes.back() = 1;
+  graph->virtual_resize(out, new_sizes);
+}
+
 utils::uvec3 reduce_global_wg_size(
     ComputeGraph* graph,
     const vkapi::ShaderInfo& shader,
@@ -237,6 +251,70 @@ void add_reduce2d_node(
       resize_reduce2d_node));
 }
 
+utils::uvec3 reduce_per_row_global_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)shader;
+  (void)resize_args;
+
+  const ValueRef in = args.at(1).refs.at(0);
+  return {1u, utils::safe_downcast<uint32_t>(graph->numel_of(in)), 1u};
+}
+
+utils::uvec3 reduce_per_row_local_wg_size(
+    ComputeGraph* graph,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& resize_args) {
+  (void)global_workgroup_size;
+  (void)args;
+  (void)resize_args;
+
+  uint32_t outputs_per_wg = 1u;
+  uint32_t workers_per_output = 64u;
+
+  return {workers_per_output, outputs_per_wg, 1u};
+}
+
+void add_reduce_per_row_node(
+    ComputeGraph& graph,
+    const ValueRef input,
+    const ValueRef output,
+    const std::string& op_name) {
+  std::string kernel_name = op_name + "_per_row";
+  kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(input));
+  add_dtype_suffix(kernel_name, graph.dtype_of(input));
+
+  vkapi::ParamsBindList param_ubos = {
+      graph.meta_ubo(output),
+      graph.meta_ubo(input),
+  };
+
+  graph.execute_nodes().emplace_back(new DynamicDispatchNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      // Global workgroup size function
+      reduce_per_row_global_wg_size,
+      // Local workgroup size function
+      reduce_per_row_local_wg_size,
+      // Inputs and Outputs
+      {{output, vkapi::kWrite}, {input, vkapi::kRead}},
+      // Shader param buffers
+      param_ubos,
+      // Push Constants
+      {},
+      // Specialization Constants
+      {},
+      // Resize Args
+      {},
+      // Resizing Logic
+      resize_reduce_per_row_node));
+}
+
 #define DEFINE_REDUCE_FN(op_name, out_arg_idx)                           \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
     const std::vector<int64_t> dims_list =                               \
@@ -244,6 +322,12 @@ void add_reduce2d_node(
     if (dims_list.size() == 1) {                                         \
       const int64_t dim_val = dims_list.at(0);                           \
       const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
+                                                                         \
+      if (dim_val == -1 && graph.is_buffer_storage(args[0])) {           \
+        return add_reduce_per_row_node(                                  \
+            graph, args[0], args[out_arg_idx], #op_name);                \
+      }                                                                  \
+                                                                         \
       return add_reduce_node(                                            \
           graph, args[0], dim_ref, args[out_arg_idx], #op_name);         \
     }                                                                    \

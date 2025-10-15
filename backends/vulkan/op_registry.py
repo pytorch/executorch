@@ -449,6 +449,7 @@ def register_reduce_op():
             return False
 
         keepdim = try_find_keepdim_arg(node)
+        # keepdim = False is not supported yet
         if isinstance(keepdim, bool) and not keepdim:
             return False
 
@@ -461,6 +462,15 @@ def register_reduce_op():
         input_tensor = node.args[0]
         ndim = input_tensor.meta["val"].ndim
         dim_list = node.args[1]
+
+        # For 1D reductions, a special case is implemented for reducing the width dim
+        if isinstance(dim_list, list) and len(dim_list) == 1:
+            if dim_list[0] == -1:
+                inputs_storage = utils.ANY_TEXTURE.make_union(utils.CONTIGUOUS_BUFFER)
+                outputs_storage = inputs_storage
+                return inputs_storage, outputs_storage
+
+        # For 2D reductions, the packed dimension cannot be one of the reduced dims
         if isinstance(dim_list, list) and len(dim_list) == 2:
             reduce_dim1_whcn = utils.nchw_dim_to_whcn_dim(dim_list[0], ndim)
             reduce_dim2_whcn = utils.nchw_dim_to_whcn_dim(dim_list[1], ndim)
