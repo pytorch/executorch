@@ -75,7 +75,12 @@ jobs:
               exit \$LASTEXITCODE
           }
 
-          .ci/scripts/unittest-windows.ps1 -buildMode "${{ inputs.build-mode }}"
+          # Skip python tests on unittest-release job, which tests the native tests in release mode.
+          \$runPythonTests = ("${{ inputs.build-mode }}" -eq "Debug")
+          # Skip native tests in the editable job, as the native tests are unaffected by editable mode.
+          \$runNativeTests = ("${{ inputs.editable }}" -eq "false")
+
+          .ci/scripts/unittest-windows.ps1 -buildMode "${{ inputs.build-mode }}" -runPythonTests \$runPythonTests -runNativeTests \$runNativeTests
           if (\$LASTEXITCODE -ne 0) {
               Write-Host "Unit tests failed. Exit code: \$LASTEXITCODE."
               exit \$LASTEXITCODE
