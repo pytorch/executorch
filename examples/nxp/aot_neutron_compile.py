@@ -9,7 +9,6 @@ import argparse
 import io
 import logging
 from collections import defaultdict
-from typing import Iterator
 
 import executorch.extension.pybindings.portable_lib
 import executorch.kernels.quantized  # noqa F401
@@ -20,7 +19,7 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
 )
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
-from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.backends.nxp.quantizer.utils import post_training_quantize
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir import (
@@ -30,7 +29,6 @@ from executorch.exir import (
 )
 from executorch.extension.export_util import save_pte_program
 from torch.export import export
-from torchao.quantization.pt2e.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from .experimental.cifar_net.cifar_net import CifarNet, test_cifarnet_model
 from .models.mobilenet_v2 import MobilenetV2
@@ -100,41 +98,6 @@ models = {
     "cifar10": CifarNet,
     "mobilenetv2": MobilenetV2,
 }
-
-
-def post_training_quantize(
-    model, calibration_inputs: tuple[torch.Tensor] | Iterator[tuple[torch.Tensor]]
-):
-    """Quantize the provided model.
-
-    :param model: Aten model to quantize.
-    :param calibration_inputs: Either a tuple of calibration input tensors where each element corresponds to a model
-                                input. Or an iterator over such tuples.
-    """
-    # Based on executorch.examples.arm.aot_amr_compiler.quantize
-    logging.info("Quantizing model")
-    logging.debug(f"---> Original model: {model}")
-    quantizer = NeutronQuantizer()
-
-    m = prepare_pt2e(model, quantizer)
-    # Calibration:
-    logging.debug("Calibrating model")
-
-    def _get_batch_size(data):
-        return data[0].shape[0]
-
-    if not isinstance(
-        calibration_inputs, tuple
-    ):  # Assumption that calibration_inputs is finite.
-        for i, data in enumerate(calibration_inputs):
-            if i % (1000 // _get_batch_size(data)) == 0:
-                logging.debug(f"{i * _get_batch_size(data)} calibration inputs done")
-            m(*data)
-    else:
-        m(*calibration_inputs)
-    m = convert_pt2e(m)
-    logging.debug(f"---> Quantized model: {m}")
-    return m
 
 
 if __name__ == "__main__":  # noqa C901
