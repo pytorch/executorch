@@ -3,12 +3,12 @@
 # - If a PR is labeled stale, after 30 days inactivity close the PR.
 # - `high priority` and `no-stale` PRs are exempt.
 
-name: Close stale pull requests
+name: Close stale issues and pull requests
 
 on:
   schedule:
-    # Run daily at 00:30 UTC.
-    - cron: '30 0 * * *'
+    # Run weekly at 00:30 UTC every Sunday.
+    - cron: '30 0 * * 0'
   workflow_dispatch:
 
 jobs:
@@ -17,13 +17,13 @@ jobs:
     runs-on: linux.large
     permissions:
       contents: read
+      issues: write
       pull-requests: write
 
     steps:
       - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
-            // Do some dumb retries on requests.
             const retries = 7;
             const baseBackoff = 100;
             const sleep = timeout => new Promise(resolve => setTimeout(resolve, timeout));
@@ -43,107 +43,112 @@ jobs:
             });
 
             const MAX_API_REQUESTS = 100;
-
-            // If a PRs not labeled stale, label them stale after no update for 60 days.
             const STALE_LABEL_THRESHOLD_MS = 1000 * 60 * 60 * 24 * 60;
-            // For PRs already labeled stale, close after not update for 30 days.
             const STALE_CLOSE_THRESHOLD_MS = 1000 * 60 * 60 * 24 * 30;
 
             const STALE_MESSAGE =
-              "Looks like this PR hasn't been updated in a while so we're going to go ahead and mark this as `Stale`. <br>" +
+              "Looks like this item hasn't been updated in a while so we're going to go ahead and mark this as `Stale`. <br>" +
               "Feel free to remove the `Stale` label if you feel this was a mistake. <br>" +
               "If you are unable to remove the `Stale` label please contact a maintainer in order to do so. <br>" +
-              "If you want the bot to never mark this PR stale again, add the `no-stale` label.<br>" +
-              "`Stale` pull requests will automatically be closed after 30 days of inactivity.<br>";
+              "If you want the bot to never mark this item stale again, add the `no-stale` label.<br>" +
+              "`Stale` items will automatically be closed after 30 days of inactivity.<br>";
 
             let numAPIRequests = 0;
             let numProcessed = 0;
 
-            async function processPull(pull) {
-              core.info(`[${pull.number}] URL: ${pull.html_url}`);
+            async function processItem(item, isPR) {
+              core.info(`[${item.number}] URL: ${item.html_url}`);
               numProcessed += 1;
-              const labels = pull.labels.map((label) => label.name);
+              const labels = item.labels.map((label) => label.name);
 
-              // Skip if certain labels are present.
               if (labels.includes("no-stale") || labels.includes("high priority")) {
-                core.info(`[${pull.number}] Skipping because PR has an exempting label.`);
+                core.info(`[${item.number}] Skipping because item has an exempting label.`);
                 return false;
               }
 
-              // Check if the PR is stale, according to our configured thresholds.
               let staleThresholdMillis;
               if (labels.includes("Stale")) {
-                core.info(`[${pull.number}] PR is labeled stale, checking whether we should close it.`);
+                core.info(`[${item.number}] Item is labeled stale, checking whether we should close it.`);
                 staleThresholdMillis = STALE_CLOSE_THRESHOLD_MS;
               } else {
-                core.info(`[${pull.number}] Checking whether to label PR as stale.`);
+                core.info(`[${item.number}] Checking whether to label item as stale.`);
                 staleThresholdMillis = STALE_LABEL_THRESHOLD_MS;
               }
 
               const millisSinceLastUpdated =
-                new Date().getTime() - new Date(pull.updated_at).getTime();
+                new Date().getTime() - new Date(item.updated_at).getTime();
 
               if (millisSinceLastUpdated < staleThresholdMillis) {
-                core.info(`[${pull.number}] Skipping because PR was updated recently`);
+                core.info(`[${item.number}] Skipping because item was updated recently`);
                 return false;
               }
 
-              // At this point, we know we should do something.
-              // For PRs already labeled stale, close them.
               if (labels.includes("Stale")) {
-                core.info(`[${pull.number}] Closing PR.`);
+                core.info(`[${item.number}] Closing item.`);
                 numAPIRequests += 1;
-                  await github.rest.issues.update({
+                await github.rest.issues.update({
                   owner: "pytorch",
                   repo: "executorch",
-                  issue_number: pull.number,
+                  issue_number: item.number,
                   state: "closed",
-                  });
+                });
               } else {
-                // For PRs not labeled stale, label them stale.
-                core.info(`[${pull.number}] Labeling PR as stale.`);
-
+                core.info(`[${item.number}] Labeling item as stale.`);
                 numAPIRequests += 1;
-                  await github.rest.issues.createComment({
+                await github.rest.issues.createComment({
                   owner: "pytorch",
                   repo: "executorch",
-                  issue_number: pull.number,
+                  issue_number: item.number,
                   body: STALE_MESSAGE,
                 });
 
                 numAPIRequests += 1;
-                  await github.rest.issues.addLabels({
+                await github.rest.issues.addLabels({
                   owner: "pytorch",
                   repo: "executorch",
-                  issue_number: pull.number,
+                  issue_number: item.number,
                   labels: ["Stale"],
                 });
               }
             }
 
-            for await (const response of github.paginate.iterator(
-              github.rest.pulls.list,
-              {
-                owner: "pytorch",
-                repo: "executorch",
-                state: "open",
-                sort: "created",
-                direction: "asc",
-                per_page: 100,
-              }
-            )) {
-              numAPIRequests += 1;
-              const pulls = response.data;
-              // Awaiting in a loop is intentional here. We want to serialize execution so
-              // that log groups are printed correctl
-              for (const pull of pulls) {
-                if (numAPIRequests > MAX_API_REQUESTS) {
-                  core.warning("Max API requests exceeded, exiting.");
-                  process.exit(0);
+            async function processType(listFn, isPR) {
+              for await (const response of github.paginate.iterator(
+                listFn,
+                {
+                  owner: "pytorch",
+                  repo: "executorch",
+                  state: "open",
+                  sort: "created",
+                  direction: "asc",
+                  per_page: 100,
                 }
-                await core.group(`Processing PR #${pull.number}`, async () => {
-                  await processPull(pull);
-                });
+              )) {
+                numAPIRequests += 1;
+                const items = response.data;
+                for (const item of items) {
+                  if (numAPIRequests > MAX_API_REQUESTS) {
+                    core.warning("Max API requests exceeded, exiting.");
+                    process.exit(0);
+                  }
+                  await core.group(`Processing ${isPR ? "PR" : "Issue"} #${item.number}`, async () => {
+                    await processItem(item, isPR);
+                  });
+                }
               }
             }
-            core.info(`Processed ${numProcessed} PRs total.`);
+
+            // Process PRs
+            await processType(github.rest.pulls.list, true);
+
+            // Process Issues (exclude PRs)
+            await processType(
+              async (params) => {
+                const resp = await github.rest.issues.listForRepo(params);
+                resp.data = resp.data.filter((issue) => !issue.pull_request);
+                return resp;
+              },
+              false
+            );
+
+            core.info(`Processed ${numProcessed} items total.`);
