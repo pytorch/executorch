@@ -26,9 +26,6 @@ def define_common_targets():
     # AOTI model container functionality
     runtime.cxx_library(
         name = "model_container",
-        srcs = [
-            "aoti_model_container.cpp",
-        ],
         headers = [
             "aoti_model_container.h",
         ],
