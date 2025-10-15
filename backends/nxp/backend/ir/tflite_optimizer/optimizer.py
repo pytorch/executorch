@@ -24,6 +24,7 @@ from executorch.backends.nxp.backend.ir.tflite_optimizer.optimizations.prune_tra
     FuseTransposeOperators,
     RemoveIdentityTransposeOperators,
 )
+from executorch.backends.nxp.backend.neutron_target_spec import NeutronTargetSpec
 
 
 class Optimization(Enum):
@@ -60,24 +61,25 @@ class Optimizer:
         self,
         builder: "model_builder.ModelBuilder",  # noqa F821
         conversion_config: ConversionConfig,
+        neutron_target_spec: NeutronTargetSpec,
     ):
         self._builder = builder
 
         self.optimization_map = {
             Optimization.FUSE_ACTIVATION_FUNCTIONS: FuseActivationFunctions(
-                builder, conversion_config
+                builder, conversion_config, neutron_target_spec
             ),
             Optimization.FUSE_TRANSPOSE_OPERATORS: FuseTransposeOperators(
-                builder, conversion_config
+                builder, conversion_config, neutron_target_spec
             ),
             Optimization.REMOVE_IDENTITY_TRANSPOSE_OPERATORS: RemoveIdentityTransposeOperators(
-                builder, conversion_config
+                builder, conversion_config, neutron_target_spec
             ),
             Optimization.PERMUTE_FULLY_CONNECTED_WEIGHTS_AFTER_RESHAPE: PermuteFullyConnectedWeightsAfterReshape(
-                builder, conversion_config
+                builder, conversion_config, neutron_target_spec
             ),
             Optimization.MOVE_ACTIVATION_BEFORE_CONCAT: MoveActivationBeforeConcatenation(
-                builder, conversion_config
+                builder, conversion_config, neutron_target_spec
             ),
         }
 

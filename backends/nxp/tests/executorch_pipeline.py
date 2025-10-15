@@ -15,6 +15,9 @@ from executorch.backends.nxp.backend.custom_delegation_options import (
 from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
     NeutronEdgePassManager,
 )
+from executorch.backends.nxp.edge_passes.remove_additional_quantize_dequantize_nodes_pass import (
+    RemoveAdditionalQDQClustersPass,
+)
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
@@ -58,7 +61,6 @@ def get_random_calibration_inputs(
 def to_model_input_spec(
     input_spec: tuple[ModelInputSpec, ...] | tuple[int, ...] | list[tuple[int, ...]]
 ) -> tuple[ModelInputSpec, ...]:
-
     if isinstance(input_spec, tuple) and all(
         isinstance(spec, ModelInputSpec) for spec in input_spec
     ):
@@ -89,6 +91,7 @@ def to_quantized_edge_program(
     remove_quant_io_ops=False,
     custom_delegation_options=CustomDelegationOptions(),  # noqa B008
     get_quantizer_fn=lambda: NeutronQuantizer(),
+    use_neutron_for_format_conversion=True,
 ) -> EdgeProgramManager:
     calibration_inputs = get_calibration_inputs_fn(to_model_input_spec(input_spec))
 
@@ -120,9 +123,14 @@ def to_quantized_edge_program(
         target,
         operators_not_to_delegate=operators_not_to_delegate,
         neutron_converter_flavor=neutron_converter_flavor,
+        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
     )
     partitioner = NeutronPartitioner(compile_spec, custom_delegation_options)
     edge_program_manager = edge_program_manager.to_backend(partitioner)
+
+    edge_program_manager = NeutronEdgePassManager([RemoveAdditionalQDQClustersPass()])(
+        edge_program_manager
+    )
 
     return edge_program_manager
 
@@ -130,8 +138,13 @@ def to_quantized_edge_program(
 def to_quantized_executorch_program(
     model: torch.nn.Module,
     input_spec: tuple[ModelInputSpec, ...] | tuple[int, ...] | list[tuple[int, ...]],
+    use_neutron_for_format_conversion: bool = True,
 ) -> ExecutorchProgramManager:
-    edge_program_manager = to_quantized_edge_program(model, input_spec)
+    edge_program_manager = to_quantized_edge_program(
+        model,
+        input_spec,
+        use_neutron_for_format_conversion=use_neutron_for_format_conversion,
+    )
 
     return edge_program_manager.to_executorch(
         config=ExecutorchBackendConfig(extract_delegate_segments=False)

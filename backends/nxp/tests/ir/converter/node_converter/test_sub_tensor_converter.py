@@ -118,7 +118,9 @@ def test_sub_tensor_w_conv_quant_conversion(mocker, x_input_shape):
     y_input_shape = (n, 8, h, w)
 
     # Run conversion
-    _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
+    _ = to_quantized_edge_program(
+        model, [x_input_shape, y_input_shape], use_neutron_for_format_conversion=False
+    )
 
     # Capture generated model
     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
