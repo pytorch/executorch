@@ -4,7 +4,6 @@ import json
 import re
 import sys
 import urllib.request
-from datetime import datetime
 
 
 def parse_nightly_version(nightly_version):
@@ -53,7 +52,7 @@ def get_commit_hash_for_nightly(date_str):
         Commit hash string
     """
     api_url = "https://api.github.com/repos/pytorch/pytorch/commits"
-    params = f"?sha=nightly&per_page=100"
+    params = f"?sha=nightly&per_page=50"
     url = api_url + params
 
     req = urllib.request.Request(url)
@@ -74,12 +73,19 @@ def get_commit_hash_for_nightly(date_str):
         commit_msg = commit.get("commit", {}).get("message", "")
         # Check if the first line of commit message matches
         first_line = commit_msg.split("\n")[0].strip()
-        if first_line == target_title or first_line.startswith(f"{date_str} nightly"):
-            return commit["sha"]
+        if first_line.startswith(f"{date_str} nightly"):
+            return extract_hash_from_title(first_line)
 
     raise ValueError(
         f"Could not find commit with title matching '{target_title}' in nightly branch"
     )
+
+
+def extract_hash_from_title(title):
+    match = re.search(r"\(([0-9a-fA-F]{7,40})\)", title)
+    if not match:
+        raise ValueError(f"Could not extract commit hash from title '{title}'")
+    return match.group(1)
 
 
 def update_pytorch_pin(commit_hash):
