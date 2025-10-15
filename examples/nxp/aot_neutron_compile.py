@@ -21,6 +21,9 @@ from executorch.backends.nxp.edge_passes.neutron_edge_pass_manager import (
 from executorch.backends.nxp.neutron_partitioner import NeutronPartitioner
 from executorch.backends.nxp.nxp_backend import generate_neutron_compile_spec
 from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
+from executorch.devtools.visualization.visualization_utils import (
+    visualize_with_clusters,
+)
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.exir import (
@@ -210,6 +213,12 @@ if __name__ == "__main__":  # noqa C901
         nargs="*",
         help="List of operators not to delegate. E.g., --operators_not_to_delegate aten::convolution aten::mm",
     )
+    parser.add_argument(
+        "--visualize",
+        choices=["show", "store"],
+        help="Visualize the lowered program. `show` launches a browser tab with the visualization. `store` stores the "
+        "visualization in a json file for later inspection. See `docs/source/visualize-with-clusters.md` for details.",
+    )
 
     args = parser.parse_args()
 
@@ -237,7 +246,7 @@ if __name__ == "__main__":  # noqa C901
         module = post_training_quantize(module, calibration_inputs)
 
     if args.so_library is not None:
-        logging.debug(f"Loading libraries: {args.so_library} and {args.portable_lib}")
+        logging.debug(f"Loading libraries: {args.so_library}")
         torch.ops.load_library(args.so_library)
 
     if args.test:
@@ -284,7 +293,7 @@ if __name__ == "__main__":  # noqa C901
             raise RuntimeError(
                 e.args[0]
                 + ".\nThis likely due to an external so library not being loaded. Supply a path to it with the "
-                "--portable_lib flag."
+                "--so_library flag."
             ).with_traceback(e.__traceback__) from None
         else:
             raise e
@@ -301,3 +310,13 @@ if __name__ == "__main__":  # noqa C901
         "_nxp_delegate" if args.delegate is True else ""
     )
     save_pte_program(exec_prog, model_name)
+
+    # 7. Optionally visualize the model.
+    if args.visualize == "show":
+        visualize_with_clusters(exec_prog.exported_program())
+    elif args.visualize == "store":
+        file_name = f"{args.model_name}-visualization.json"
+        logging.info(
+            f"Saved the graph visualization in `{file_name}`. It can be opened using the ModelExplorer."
+        )
+        visualize_with_clusters(exec_prog.exported_program(), file_name)
