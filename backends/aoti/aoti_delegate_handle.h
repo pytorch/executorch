@@ -60,35 +60,16 @@ using AOTInductorModelContainerRunFunc = AOTIRuntimeError (*)(
     AOTInductorStreamHandle stream_handle,
     AOTIProxyExecutorHandle proxy_executor_handle);
 
-// Global function pointers (will be loaded dynamically)
-extern AOTInductorModelContainerCreateWithDeviceFunc
-    AOTInductorModelContainerCreateWithDevice;
-extern AOTInductorModelContainerDeleteFunc AOTInductorModelContainerDelete;
-extern AOTInductorModelContainerGetNumInputsFunc
-    AOTInductorModelContainerGetNumInputs;
-extern AOTInductorModelContainerGetNumOutputsFunc
-    AOTInductorModelContainerGetNumOutputs;
-extern AOTInductorModelContainerRunFunc AOTInductorModelContainerRun;
-
 // Retrieves the name of an input tensor by index from the AOTI model container.
-// Needed by Metal backend
 using AOTInductorModelContainerGetInputNameFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     size_t input_idx,
     const char** input_name);
 
 // Retrieves the number of constants from the AOTI model container.
-// Needed by Metal backend
 using AOTInductorModelContainerGetNumConstantsFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     size_t* num_constants);
-
-// Global function pointers (will be loaded dynamically).
-// Needed by Metal backend
-extern AOTInductorModelContainerGetInputNameFunc
-    AOTInductorModelContainerGetInputName;
-extern AOTInductorModelContainerGetNumConstantsFunc
-    AOTInductorModelContainerGetNumConstants;
 
 } // extern "C"
 
@@ -99,6 +80,13 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerHandle container_handle;
   void* cuda_stream; // cudaStream_t stored as void* to avoid CUDA header
                      // dependency
+
+  // Function pointers specific to this handle's shared library
+  AOTInductorModelContainerCreateWithDeviceFunc create_with_device;
+  AOTInductorModelContainerDeleteFunc delete_container;
+  AOTInductorModelContainerGetNumInputsFunc get_num_inputs;
+  AOTInductorModelContainerGetNumOutputsFunc get_num_outputs;
+  AOTInductorModelContainerRunFunc run;
 };
 
 } // namespace aoti
