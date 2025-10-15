@@ -27,6 +27,8 @@ using executorch::backends::aoti::aoti_torch_get_device_index;
 using executorch::backends::aoti::aoti_torch_get_dtype;
 using executorch::backends::aoti::aoti_torch_get_sizes;
 using executorch::backends::aoti::aoti_torch_get_strides;
+using executorch::backends::aoti::convert_sizes_to_vector;
+using executorch::backends::aoti::convert_strides_to_vector;
 using executorch::backends::aoti::dtype_to_element_size;
 using executorch::backends::aoti::dtype_to_scalar_type;
 using executorch::backends::aoti::validate_storage_offset;

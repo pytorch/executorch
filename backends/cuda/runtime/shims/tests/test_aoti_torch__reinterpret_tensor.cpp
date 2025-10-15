@@ -8,6 +8,7 @@
 
 #include <cuda_runtime.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/aoti/utils.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/cuda/runtime/utils.h>
