@@ -84,6 +84,12 @@ class ET_EXPERIMENTAL CudaBackend final
 
     LOAD_SYMBOL(handle, run, AOTInductorModelContainerRun, so_handle);
 
+    LOAD_SYMBOL(
+        handle,
+        update_constants_from_blob,
+        AOTInductorModelUpdateConstantsFromBlob,
+        so_handle);
+
     return Error::Ok;
   }
 
@@ -145,13 +151,14 @@ class ET_EXPERIMENTAL CudaBackend final
     // Finish writing the file to disk
     outfile.close();
 
+    // Free the buffer immediately after writing to disk
+    aoti_cuda_buffer->Free();
     // Load the lib
     Result<void*> lib_handle_res = load_library(so_path);
     if (!lib_handle_res.ok()) {
       return lib_handle_res.error();
     }
     void* lib_handle = lib_handle_res.get();
-
     processed->Free();
 
     // Create handle and load function pointers into it
@@ -172,6 +179,19 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->container_handle = container_handle;
 
+    // Look into named data map for constant data
+    std::string weights_blob_key =
+        method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
+    auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
+    if (buffer_res.ok()) {
+      ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
+      const void* weights_blob = buffer_res->data();
+      // Feed the weights blob into the container. Under the hood it's copying
+      // weights, so we should free the buffer immediately.
+      ET_CHECK_OK_OR_RETURN_ERROR(handle->update_constants_from_blob(
+          handle->container_handle, static_cast<const uint8_t*>(weights_blob)));
+      buffer_res->Free();
+    }
     // Create a CUDA stream for asynchronous execution
     cudaStream_t cuda_stream;
     ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamCreate(&cuda_stream));
