@@ -746,6 +746,7 @@ void ETMetalStream::copy(id<MTLBuffer> srcBuffer, id<MTLBuffer> dstBuffer, size_
 
     if (length == 0) {
         return;
+    }
 
     // Check that offsets are within buffer bounds before copying
     if (!srcBuffer || !dstBuffer) {
