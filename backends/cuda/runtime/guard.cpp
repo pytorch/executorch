@@ -8,6 +8,7 @@
 
 #include <executorch/backends/cuda/runtime/guard.h>
 #include <executorch/runtime/platform/log.h>
+#include <unordered_map>
 
 namespace executorch::backends::cuda {
 
