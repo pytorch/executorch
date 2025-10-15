@@ -129,7 +129,7 @@ def is_doc_only_commit(commit: Commit) -> bool:
     all_files = frozenset(lines[1:])
     doc_files = frozenset(filter(is_doc_file, all_files))
     non_doc_files = all_files - doc_files
-    is_doc_only = all_files == doc_files
+    is_doc_only = (all_files == doc_files) and len(all_files) > 0
 
     if verbosity > 0 and not is_doc_only:
         debug_log(
