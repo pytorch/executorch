@@ -31,12 +31,12 @@ def reseed_model_per_test_run():
     torch.manual_seed(23)
     np.random.seed(23)
 
-# TODO: add scalar test
 
 @pytest.mark.parametrize(
     "x_input_shape",
     [
-        pytest.param((6, 6), id="2D."),
+        pytest.param((16,), id="1D."),
+        pytest.param((6, 8), id="2D."),
         pytest.param((1, 4, 8), id="3D."),
         pytest.param((1, 4, 8, 8), id="4D."),
     ],
@@ -72,10 +72,34 @@ def test_mul_tensor_quant_conversion(mocker, x_input_shape):
 
 
 @pytest.mark.parametrize(
+    "x_input_shape",
+    [
+        pytest.param((11,), id="1D."),
+        pytest.param((4, 4), id="2D."),
+        pytest.param((1, 4, 7), id="3D."),
+        pytest.param((1, 4, 4, 20), id="4D."),
+    ],
+)
+def test_mul_tensor_shape_unsupported_quant_conversion(x_input_shape):
+    model = MulTensorOneInputModule()
+
+    # Run conversion
+    edge_program = to_quantized_edge_program(
+        model, x_input_shape
+    ).exported_program()
+    nodes = list(edge_program.graph.nodes)
+
+    # Input tensor shape is not supported, node is not converted
+    assert (
+        nodes[5].target == exir_ops.edge.aten.mul.Tensor
+    )  # Mul Tensor is not delegated.
+
+
+@pytest.mark.parametrize(
     "input_shape",
     [
-        pytest.param((4,), id="1D."),
-        pytest.param((6, 6), id="2D."),
+        pytest.param((16,), id="1D."),
+        pytest.param((6, 8), id="2D."),
         pytest.param((1, 4, 8), id="3D."),
         pytest.param((1, 4, 8, 8), id="4D."),
     ],
@@ -104,75 +128,75 @@ def test_mul_tensor_one_input_quant_conversion(mocker, input_shape):
     )
 
 
-# @pytest.mark.parametrize(
-#     "x_input_shape",
-#     [
-#         pytest.param((1, 4, 8, 8), id="4D."),
-#         pytest.param((1, 4, 5, 5), id="4D, product of dims is not a multiple of 8."),
-#     ],
-# )
-# def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
-#     model = MulTensorConvModule()
+@pytest.mark.parametrize(
+    "x_input_shape",
+    [
+        pytest.param((1, 4, 8, 8), id="4D."),
+        pytest.param((1, 4, 16, 16), id="4D, product of dims is not a multiple of 8."),
+    ],
+)
+def test_mul_tensor_w_conv_quant_conversion(mocker, x_input_shape):
+    model = MulTensorConvModule()
 
-#     converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
+    converter_spy = mocker.spy(EdgeProgramToIRConverter, "convert_program")
 
-#     n, c, h, w = x_input_shape
-#     y_input_shape = (n, 8, w, h)
+    n, c, h, w = x_input_shape
+    y_input_shape = (n, 8, h, w)
 
-#     # Run conversion
-#     _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
+    # Run conversion
+    _ = to_quantized_edge_program(model, [x_input_shape, y_input_shape])
 
-#     # Capture generated model
-#     tflite_flatbuffers_model, io_formats = converter_spy.spy_return
+    # Capture generated model
+    tflite_flatbuffers_model, io_formats = converter_spy.spy_return
 
-#     # Capture converted program
-#     exported_program: ExportedProgram = converter_spy.call_args.args[1]
+    # Capture converted program
+    exported_program: ExportedProgram = converter_spy.call_args.args[1]
 
-#     input_data_1 = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(
-#         np.int8
-#     )
-#     input_data_2 = (np.random.random(y_input_shape).astype(np.float32) * 50).astype(
-#         np.int8
-#     )
-#     input_data = {0: input_data_1, 1: input_data_2}
+    input_data_1 = (np.random.random(x_input_shape).astype(np.float32) * 50).astype(
+        np.int8
+    )
+    input_data_2 = (np.random.random(y_input_shape).astype(np.float32) * 50).astype(
+        np.int8
+    )
+    input_data = {0: input_data_1, 1: input_data_2}
 
-#     nodes = list(exported_program.graph.nodes)
-#     assert nodes[11].target == exir_ops.edge.aten.mul.Tensor
+    nodes = list(exported_program.graph.nodes)
+    assert nodes[4].target == exir_ops.edge.aten.mul.Tensor
 
-#     convert_run_compare(
-#         exported_program,
-#         input_data=input_data,
-#         tflite_input_preprocess=ToChannelLastPreprocess(),
-#         tfl_model=tflite_flatbuffers_model,
-#         tflite_output_preprocess=ToChannelFirstPreprocess(),
-#     )
+    convert_run_compare(
+        exported_program,
+        input_data=input_data,
+        tflite_input_preprocess=ToChannelLastPreprocess(),
+        tfl_model=tflite_flatbuffers_model,
+        tflite_output_preprocess=ToChannelFirstPreprocess(),
+    )
 
 
-# @pytest.mark.parametrize(
-#     "x_input_shape, y_input_shape",
-#     [
-#         pytest.param((1, 4, 7), (4, 7), id="3D -> 2D."),
-#         pytest.param((1, 4, 8), (1, 4, 4, 8), id="3D -> 4D."),
-#         pytest.param((1, 1, 4, 4, 8), (1, 4, 4, 8), id="5D -> 4D."),
-#         pytest.param((4,), (4, 4), id="1D -> 2D."),
-#         pytest.param((4,), (4, 4, 4), id="1D -> 3D."),
-#         pytest.param((6, 6), (1, 8, 6, 6), id="2D -> 4D."),
-#         pytest.param((6, 6), (6,), id="2D -> 1D."),
-#     ],
-# )
-# def test_mul_tensor_broadcasting_unsupported_quant_conversion(
-#     x_input_shape, y_input_shape
-# ):
-#     model = MulTensorModule()
+@pytest.mark.parametrize(
+    "x_input_shape, y_input_shape",
+    [
+        pytest.param((1, 4, 7), (4, 7), id="3D -> 2D."),
+        pytest.param((1, 4, 8), (1, 4, 4, 8), id="3D -> 4D."),
+        pytest.param((1, 1, 4, 4, 8), (1, 4, 4, 8), id="5D -> 4D."),
+        pytest.param((4,), (4, 4), id="1D -> 2D."),
+        pytest.param((4,), (4, 4, 4), id="1D -> 3D."),
+        pytest.param((6, 6), (1, 8, 6, 6), id="2D -> 4D."),
+        pytest.param((6, 6), (6,), id="2D -> 1D."),
+    ],
+)
+def test_mul_tensor_broadcasting_unsupported_quant_conversion(
+    x_input_shape, y_input_shape
+):
+    model = MulTensorModule()
 
-#     # Run conversion
-#     edge_program = to_quantized_edge_program(
-#         model, [x_input_shape, y_input_shape]
-#     ).exported_program()
-#     nodes = list(edge_program.graph.nodes)
+    # Run conversion
+    edge_program = to_quantized_edge_program(
+        model, [x_input_shape, y_input_shape]
+    ).exported_program()
+    nodes = list(edge_program.graph.nodes)
 
-#     # Broadcast is not supported, node is not converted
-#     assert (
-#         nodes[6].target == exir_ops.edge.aten.mul.Tensor
-#     )  # Mul Tensor is not delegated.
+    # Broadcast is not supported, node is not converted
+    assert (
+        nodes[10].target == exir_ops.edge.aten.mul.Tensor
+    )  # Mul Tensor is not delegated.
 

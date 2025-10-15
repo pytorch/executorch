@@ -18,6 +18,9 @@ from torch.fx import Node
 from torch.nn import Parameter
 
 
+def _get_shape(node: Node) -> list[int]:
+    return node.meta["val"].shape
+
 class MulTensorConverter(NodeConverter):
     @staticmethod
     def _is_supported_on_target(
@@ -26,11 +29,20 @@ class MulTensorConverter(NodeConverter):
         parameters_mapping: dict[str, Parameter],
         custom_delegation_options: CustomDelegationOptions,
     ) -> bool:
-        if node_uses_shape_broadcasting(node):
-            # Shape broadcasting may require the addition of `Transpose` ops during conversion.
-            return False
+        match target:
+            case Target.RT700:
+                if node_uses_shape_broadcasting(node):
+                    # Shape broadcasting may require the addition of `Transpose` ops during conversion.
+                    return False
+                
+                node_shape = _get_shape(node)
+                # Check that at least one dimension is divisible by number of MACS.
+                # Otherwise Neutron cannot convert it
+                dim_divisible = any([s % 8 == 0 for s in node_shape])
+                return dim_divisible
 
-        return True
+            case _:
+                return False
 
 
     @staticmethod
@@ -46,8 +58,7 @@ class MulTensorConverter(NodeConverter):
 
     # mul.Tensor Node format: (Tensor self, Tensor other, *)
     def convert(self, node: Node):
-        """Convert 'mul_tensor' operator to NeutronIR 'mul'."""
-        # TODO: check comment above, if NeutronIR is correct
+        """Convert 'mul_tensor' operator to NeutronIR 'Mul'."""
         self.assert_convertible(node)
 
         t_op = self._create_tflite_op_with_io_tensors(node)

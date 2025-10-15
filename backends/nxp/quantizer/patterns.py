@@ -13,7 +13,7 @@ import torch
 from executorch.backends.nxp.quantizer.utils import get_bias_qparams
 from torch import fx
 from torch._ops import OpOverload
-from torchao.quantization.pt2e import PerChannelMinMaxObserver
+from torchao.quantization.pt2e import PerChannelMinMaxObserver, HistogramObserver
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
     FixedQParamsQuantizationSpec,
@@ -481,7 +481,7 @@ class MeanDimPattern(SharedSpecPattern):
 
 class MulTensorPattern(QuantizationPattern):
     """
-    Quantization pattern for Mul Tensor quantization. Accepts 1 or 2 input nodes.
+    Quantization pattern for Mul Tensor quantization. Accepts 2 input nodes.
 
     Basic quantization for all inputs and output.
     """
@@ -492,16 +492,20 @@ class MulTensorPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
     ) -> PartitionAnchors | None:
+        qspec = QuantizationSpec(
+            dtype=torch.int8,
+            qscheme=torch.per_tensor_symmetric,
+            observer_or_fake_quant_ctr=HistogramObserver.with_args(eps=2**-12)
+        )
+
         node = fused_partition[0].nodes[-1]
-        inputs = [(node, NodeArgsIdx(0))]
-        if len(fused_partition[0].input_nodes) == 2:
-            inputs = [(node, NodeArgsIdx(0)), (node, NodeArgsIdx(1))]
+        inputs = [(node, NodeArgsIdx(0), qspec), (node, NodeArgsIdx(1), qspec)]
 
         return PartitionAnchors(
             inputs=inputs,
             weights=[],
             biases=[],
-            output=[(node,)],
+            output=[(node, qspec)],
         )
 
 

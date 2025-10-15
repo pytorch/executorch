@@ -408,11 +408,10 @@ class MulTensorModule(torch.nn.Module):
 class MulTensorConvModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = Conv2dModule(padding=1, stride=1, out_channels=4)
+        self.conv = Conv2dModule(padding=1, stride=1, in_channels=4, out_channels=8, bias=False)
 
     def forward(self, x, y):
         x = self.conv(x)
-        y = self.conv(y)
         return x * y
 
 
