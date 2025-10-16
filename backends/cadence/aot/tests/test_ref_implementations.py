@@ -2739,3 +2739,131 @@ class TestRefImplementations(unittest.TestCase):
         self.assertTrue(U.dtype == dtype, "U dtype mismatch")
         self.assertTrue(S.dtype == dtype, "S dtype mismatch")
         self.assertTrue(Vh.dtype == dtype, "Vh dtype mismatch")
+
+    def test_default_variants(self) -> None:
+        """Test that default (non-per-tensor) variants run without runtime errors."""
+        from executorch.exir.scalar_type import ScalarType
+
+        # Test quantized_add (default variant)
+        X = torch.tensor([[1, 2], [3, 4]], dtype=torch.int8)
+        X_scale = torch.tensor([0.1])
+        X_zero_point = torch.tensor([0])
+        Y = torch.tensor([[5, 6], [7, 8]], dtype=torch.int8)
+        Y_scale = torch.tensor([0.1])
+        Y_zero_point = torch.tensor([0])
+        out_scale = 0.1
+        out_zero_point = 0
+        _ = torch.ops.cadence.quantized_add(
+            X,
+            X_scale,
+            X_zero_point,
+            Y,
+            Y_scale,
+            Y_zero_point,
+            out_scale,
+            out_zero_point,
+        )
+
+        # Test requantize (default variant)
+        input_tensor = torch.tensor([[1, 2], [3, 4]], dtype=torch.int8)
+        in_scale = torch.tensor([0.1])
+        in_zero_point = torch.tensor([0])
+        out_scale_tensor = torch.tensor([0.2])
+        out_zero_point_tensor = torch.tensor([0])
+        _ = torch.ops.cadence.requantize(
+            input_tensor,
+            in_scale,
+            in_zero_point,
+            out_scale_tensor,
+            out_zero_point_tensor,
+            ScalarType.CHAR,
+        )
+
+        # Test quantized_conv2d_nchw (default variant)
+        input_conv = torch.tensor([[[[1, 2], [3, 4]]]], dtype=torch.int8)
+        weight_conv = torch.tensor([[[[1, 0], [0, 1]]]], dtype=torch.int8)
+        bias_conv = torch.tensor([0], dtype=torch.int32)
+        stride = [1, 1]
+        padding = [0, 0]
+        dilation = [1, 1]
+        groups = 1
+        input_zero_point = 0
+        weight_zero_point = torch.tensor([0])
+        bias_scale = torch.tensor([1.0])
+        conv_out_scale = 0.1
+        conv_out_zero_point = 0
+        out_multiplier = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift = torch.tensor([0], dtype=torch.int32)
+        _ = torch.ops.cadence.quantized_conv2d_nchw(
+            input_conv,
+            weight_conv,
+            bias_conv,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            weight_zero_point,
+            bias_scale,
+            conv_out_scale,
+            conv_out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        # Test quantized_relu (default variant)
+        X_relu = torch.tensor([[-1, 0, 1, 3]], dtype=torch.int8)
+        X_zero_point_relu = torch.tensor([0])
+        relu_out_zero_point = 0
+        out_multiplier_relu = torch.tensor([1073741824], dtype=torch.int32)
+        out_shift_relu = torch.tensor([0], dtype=torch.int32)
+        _ = torch.ops.cadence.quantized_relu(
+            X_relu,
+            X_zero_point_relu,
+            relu_out_zero_point,
+            out_multiplier_relu,
+            out_shift_relu,
+        )
+
+        # Test quantized_conv2d_nhwc (default variant)
+        input_nhwc = torch.tensor([[[[1], [2]], [[3], [4]]]], dtype=torch.int8)
+        weight_nhwc = torch.tensor([[[[1], [0]], [[0], [1]]]], dtype=torch.int8)
+        bias_nhwc = torch.tensor([0], dtype=torch.int32)
+        _ = torch.ops.cadence.quantized_conv2d_nhwc(
+            input_nhwc,
+            weight_nhwc,
+            bias_nhwc,
+            stride,
+            padding,
+            dilation,
+            groups,
+            input_zero_point,
+            weight_zero_point,
+            bias_scale,
+            conv_out_scale,
+            conv_out_zero_point,
+            out_multiplier,
+            out_shift,
+        )
+
+        # Test quantized_layer_norm (default variant)
+        X_ln = torch.tensor([[-1, 1]], dtype=torch.int8)
+        X_scale_ln = torch.tensor([0.1])
+        X_zero_point_ln = torch.tensor([0])
+        normalized_shape = [2]
+        weight_ln = torch.tensor([1.0, 1.0])
+        bias_ln = torch.tensor([0.0, 0.0])
+        eps = 1e-5
+        output_scale = 0.1
+        output_zero_point = 0
+        _ = torch.ops.cadence.quantized_layer_norm(
+            X_ln,
+            X_scale_ln,
+            X_zero_point_ln,
+            normalized_shape,
+            weight_ln,
+            bias_ln,
+            eps,
+            output_scale,
+            output_zero_point,
+        )
