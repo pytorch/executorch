@@ -31,7 +31,7 @@ executorch::runtime::Result<void*> load_library(const std::string& path) {
         "Failed to load %s with error: %lu",
         path.c_str(),
         GetLastError());
-    return Error::AccessFailed;
+    return executorch::runtime::Error::AccessFailed;
   }
 
 #else
