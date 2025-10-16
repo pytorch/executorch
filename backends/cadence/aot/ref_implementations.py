@@ -1636,3 +1636,23 @@ def quantized_embedding_byte(
     )
 
     return weight[indices]
+
+
+@impl_tracked(m, "idma_copy")
+def idma_copy(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "idma_store")
+def idma_store(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "idma_load")
+def idma_load(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
+
+
+@impl_tracked(m, "idma_wait")
+def idma_wait(src: torch.Tensor, task_num: int = 0, channel: int = 0) -> torch.Tensor:
+    return src.clone()
