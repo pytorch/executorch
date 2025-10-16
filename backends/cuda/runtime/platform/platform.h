@@ -13,7 +13,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#else
+#else // Posix
 #include <dlfcn.h>
 #include <unistd.h>
 #endif
@@ -92,8 +92,6 @@ int32_t get_process_id(void* lib_handle) {
 #else
   return getpid();
 #endif
-}
-
 }
 
 } // cuda
