@@ -12,8 +12,8 @@ from enum import Enum
 from typing import Any, Dict, final, List, Optional, Set
 
 import torch
-from executorch.backends.cuda.replace_slice_copy_with_slice import (
-    ReplaceSliceCopyWithSlicePass,
+from executorch.backends.aoti.passes.replace_view_copy_with_view import (
+    ReplaceViewCopyWithViewPass,
 )
 from executorch.exir._serialize._named_data_store import NamedDataStore
 from executorch.exir._warnings import experimental
@@ -33,7 +33,9 @@ cuda_decomposition_table = {
 }
 
 # exist fallback operators in et namespace;
-supported_fallback_kernels: Dict[str, Any] = {}
+supported_fallback_kernels: Dict[str, Any] = {
+    "at::_ops::_weight_int4pack_mm::call": None,
+}
 
 # required fallback kernels but not supported
 missing_fallback_kernels: Set[str] = set()
@@ -121,8 +123,8 @@ class CudaBackend(BackendDetails):
         # Move the edge_program from CPU to CUDA for aoti compile
         cuda_edge_program = move_to_device_pass(edge_program, "cuda")
 
-        # replace slice_copy with slice
-        ReplaceSliceCopyWithSlicePass()(cuda_edge_program.graph_module)
+        # replace slice_copy.Tensor with slice.Tensor, select_copy.int with select.int
+        ReplaceViewCopyWithViewPass()(cuda_edge_program.graph_module)
 
         cuda_edge_program = cuda_edge_program.run_decompositions(
             cuda_decomposition_table
@@ -164,7 +166,7 @@ class CudaBackend(BackendDetails):
             if len(missing_fallback_kernels) > 0:
                 formatted_kernels = "\n  - ".join(sorted(missing_fallback_kernels))
                 raise RuntimeError(
-                    f"Missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
+                    f"Method {CudaBackend.method_name_from_compile_specs(compile_specs)} missing fallback kernels ({len(missing_fallback_kernels)} total):\n  - {formatted_kernels}\n"
                     "Please add them to the AOTI backend."
                 )
 
