@@ -67,7 +67,6 @@ def _validate_ref_impl_exists() -> None:
         "cadence::dequantize_per_tensor_asym16u",
         "cadence::linalg_vector_norm",
         "cadence::quantized_conv2d_nchw",  # We should only support per_tensor variant, should remove
-        "cadence::quantized_w8a32_conv",
         "cadence::quantize_per_tensor_asym32s",
         "cadence::quantized_relu",  # We should only support per_tensor variant, should remove
         "cadence::linalg_svd",
@@ -2753,7 +2752,10 @@ def quantized_w8a32_conv_meta(
     # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
     assert len(src.shape) == 3
 
-    kernel_size, out_channels, in_channels = weight.shape
+    out_channels, in_channels, kernel_size = weight.shape
+    assert kernel_size == 3
+    assert (out_channels % 4) == 0
+    assert (in_channels % 4) == 0
     assert in_channels == src.shape[-1]
 
     # Compute the output tensor size
