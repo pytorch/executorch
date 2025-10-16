@@ -7,6 +7,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <filesystem>
