@@ -24,7 +24,6 @@ from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceDefaultQuantizer,
     CadenceQuantizer,
-    CadenceW8A32MixedQuantizer,
 )
 from executorch.backends.cadence.aot.utils import (
     get_default_memory_config,
@@ -51,36 +50,17 @@ from .utils import print_ops_info
 default_quantizer = CadenceDefaultQuantizer()
 
 
-# Note: this is not meant as a primary API since it can create inconsistencies
-# if the quantizer here is different from the quantizer used to convert. It is
-# however useful for unit tests to separate the converted model from the fused
-# model, to be able to get reference numerics.
-# If this does not apply, please use quantize_pt2 instead.
 def trace(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
     dump_graphs: bool = False,
-    quantizer: Optional[CadenceQuantizer] = None,
+    ops_to_keep: Optional[list[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
     """
     Trace the model with export and return an ExportedProgram.
     """
-
-    ops_to_keep = [
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv2d.default,
-        torch.ops.aten.layer_norm.default,
-        torch.ops.aten.linear.default,
-        torch.ops.aten.matmul.default,
-        torch.ops.aten.rms_norm.default,
-    ]
-
-    if isinstance(quantizer, CadenceW8A32MixedQuantizer):
-        ops_to_keep += [
-            torch.ops.aten.gru.input,
-            torch.ops.aten.gru.data,
-        ]
-
+    if ops_to_keep is None:
+        ops_to_keep = []
     program = trace_fn(
         model, inputs, is_qat=False, strict=True, ops_to_keep=ops_to_keep
     )
@@ -107,7 +87,10 @@ def prepare_pt2(
     Returns a GraphModule with the prepared model.
     """
 
-    traced_program = trace(model, inputs, dump_graphs=dump_graphs, quantizer=quantizer)
+    ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
+    traced_program = trace(
+        model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep
+    )
     prepared_program = prepare_traced_pt2(
         traced_program, quantizer, dump_graphs=dump_graphs
     )
@@ -192,7 +175,8 @@ def get_fake_quant_model(
     # Make the model inference mode by calling model.eval()
     model.eval()
 
-    program = trace(model, inputs, dump_graphs=dump_graphs, quantizer=quantizer)
+    ops_to_keep = quantizer.get_ops_to_preserve_from_decomposition()
+    program = trace(model, inputs, dump_graphs=dump_graphs, ops_to_keep=ops_to_keep)
 
     if dump_graphs:
         logging.info("Graph after trace:")
