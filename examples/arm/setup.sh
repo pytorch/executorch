@@ -162,12 +162,14 @@ function check_options() {
 }
 
 function setup_root_dir() {
-    mkdir -p ${root_dir}
-    root_dir=$(realpath ${root_dir})
+    mkdir -p "${root_dir}"
+    root_dir=$(realpath "${root_dir}")
+    log_step "main" "Prepared root dir at ${root_dir}"
     setup_path_script="${root_dir}/setup_path"
 }
 
 function setup_ethos_u_tools() {
+    log_step "ethos-u-tools" "Installing Ethos-U Python tooling"
     CMAKE_POLICY_VERSION_MINIMUM=3.5 BUILD_PYBIND=1 pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-ethos-u.txt
 }
 
@@ -175,6 +177,7 @@ function create_setup_path(){
     cd "${root_dir}"
 
     clear_setup_path
+    log_step "path" "Generating setup path scripts at ${setup_path_script}"
 
     if [[ "${enable_fvps}" -eq 1 ]]; then
         setup_path_fvp
@@ -200,8 +203,7 @@ function create_setup_path(){
         setup_path_emulation_layer
     fi
 
-    echo "[main] Update path by running 'source ${setup_path_script}.sh'"
-    echo "[main] Or for fish shell use 'source ${setup_path_script}.fish'"
+    log_step "path" "Update PATH by sourcing ${setup_path_script}.{sh|fish}"
 }
 
 
@@ -221,7 +223,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
     source $et_dir/backends/arm/scripts/toolchain_utils.sh
     source $et_dir/backends/arm/scripts/vulkan_utils.sh
 
-    echo "[main]: Checking platform and os"
+    log_step "main" "Checking platform and OS"
     check_platform_support
     check_os_support
 
@@ -230,18 +232,17 @@ if [[ $is_script_sourced -eq 0 ]]; then
     # Setup the root dir
     setup_root_dir
     cd "${root_dir}"
-    echo "[main] Using root dir ${root_dir} and options:"
-    echo "enable-fvps=${enable_fvps}"
-    echo "target-toolchain=${target_toolchain}"
-    echo "enable-baremetal-toolchain=${enable_baremetal_toolchain}"
-    echo "enable-model-converter=${enable_model_converter}"
-    echo "enable-vgf-lib=${enable_vgf_lib}"
-    echo "enable-emulation-layer=${enable_emulation_layer}"
-    echo "enable-vulkan-sdk=${enable_vulkan_sdk}"
-    echo "enable-vela=${enable_vela}"
+
+    if [[ "${mlsdk_manifest_dir}" != /* ]]; then
+        mlsdk_manifest_dir="${root_dir}/${mlsdk_manifest_dir}"
+    fi
+
+    log_step "options" "root=${root_dir}, target-toolchain=${target_toolchain:-<default>}, mlsdk-dir=${mlsdk_manifest_dir}"
+    log_step "options" "ethos-u: fvps=${enable_fvps}, toolchain=${enable_baremetal_toolchain}, vela=${enable_vela} | mlsdk: model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer}, vulkan-sdk=${enable_vulkan_sdk}"
 
     # Setup toolchain
     if [[ "${enable_baremetal_toolchain}" -eq 1 ]]; then
+        log_step "toolchain" "Configuring baremetal toolchain (${target_toolchain:-gnu})"
         # Select appropriate toolchain
         select_toolchain
         setup_toolchain
@@ -249,6 +250,7 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup FVP
     if [[ "${enable_fvps}" -eq 1 ]]; then
+        log_step "fvp" "Setting up Arm Fixed Virtual Platforms"
         check_fvp_eula
         setup_fvp
         install_fvp
@@ -256,32 +258,36 @@ if [[ $is_script_sourced -eq 0 ]]; then
 
     # Setup Vulkan SDK
     if [[ "${enable_vulkan_sdk}" -eq 1 ]]; then
+        log_step "vulkan" "Setting up Vulkan SDK"
         setup_vulkan_sdk
     fi
 
     if [[ "${enable_model_converter}" -eq 1 || \
           "${enable_vgf_lib}" -eq 1 || \
           "${enable_emulation_layer}" -eq 1 ]]; then
+        log_step "mlsdk" "Configuring MLSDK components (model-converter=${enable_model_converter}, vgf-lib=${enable_vgf_lib}, emu-layer=${enable_emulation_layer})"
         source $et_dir/backends/arm/scripts/mlsdk_utils.sh
-        setup_mlsdk ${root_dir} \
-                    ${mlsdk_manifest_dir} \
-                    ${enable_model_converter} \
-                    ${enable_vgf_lib} \
-                    ${enable_emulation_layer}
+        setup_mlsdk "${root_dir}" \
+                    "${mlsdk_manifest_dir}" \
+                    "${enable_model_converter}" \
+                    "${enable_vgf_lib}" \
+                    "${enable_emulation_layer}"
     fi
 
     # Create the setup_path.sh used to create the PATH variable for shell
     create_setup_path
 
     # Setup the tosa_reference_model and dependencies
+    log_step "deps" "Installing TOSA reference model dependencies"
     CMAKE_POLICY_VERSION_MINIMUM=3.5 \
         BUILD_PYBIND=1 \
         pip install --no-dependencies -r $et_dir/backends/arm/requirements-arm-tosa.txt
 
     if [[ "${enable_vela}" -eq 1 ]]; then
+        log_step "deps" "Installing Ethos-U Vela compiler"
         setup_ethos_u_tools
     fi
 
-    echo "[main] success!"
+    log_step "main" "Setup complete"
     exit 0
 fi

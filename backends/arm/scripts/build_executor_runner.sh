@@ -12,6 +12,7 @@ et_root_dir=$(realpath ${et_root_dir})
 toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
+source "${script_dir}/utils.sh"
 
 pte_file=""
 target="ethos-u55-128"
@@ -185,7 +186,9 @@ cmake \
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 
-cmake --build ${output_folder} -j$(nproc) -- arm_executor_runner
+parallel_jobs="$(get_parallel_jobs)"
+
+cmake --build ${output_folder} -j"${parallel_jobs}" -- arm_executor_runner
 
 echo "[${BASH_SOURCE[0]}] Generated ${toolchain} elf file:"
 find ${output_folder} -name "arm_executor_runner"
