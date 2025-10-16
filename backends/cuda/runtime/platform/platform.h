@@ -36,7 +36,7 @@ executorch::runtime::Result<void*> load_library(
   }
 
 #else
-  void* lib_handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+  void* lib_handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
   if (lib_handle == nullptr) {
     ET_LOG(Error, "Failed to load %s with error: %s", path.c_str(), dlerror());
     return executorch::runtime::Error::AccessFailed;
@@ -54,7 +54,7 @@ executorch::runtime::Error close_library(void* lib_handle) {
 #else
   if (dlclose(lib_handle) != 0) {
     ET_LOG(Error, "dlclose failed: %s\n", dlerror());
-    return Error::Internal;
+    return executorch::runtime::Error::Internal;
   }
 #endif
   return executorch::runtime::Error::Ok;
