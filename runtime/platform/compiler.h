@@ -13,18 +13,19 @@
 
 #pragma once
 
-// -----------------------------------------------------------------------------
-// Compiler version checks
-// -----------------------------------------------------------------------------
+/*
+ * Compiler support checks. Follows the logic used by pytorch/c10/util/C++17.h
+ * but may support older versions.
+ */
 
-// GCC version check
+// https://gcc.gnu.org/projects/cxx-status.html#cxx17
 #if !defined(__clang__) && !defined(_MSC_VER) && defined(__GNUC__) && \
     __GNUC__ < 7
 #error \
     "You're trying to build ExecuTorch with a too old version of GCC. We need GCC 7 or later."
 #endif
 
-// Clang version check
+// https://clang.llvm.org/cxx_status.html#cxx17
 #if defined(__clang__) && __clang_major__ < 5
 #error \
     "You're trying to build ExecuTorch with a too old version of Clang. We need Clang 5 or later."
@@ -42,29 +43,33 @@
     "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
 #endif
 
-// -----------------------------------------------------------------------------
-// Attribute macros
-// -----------------------------------------------------------------------------
+/*
+ * Define annotations aliasing C++ declaration attributes.
+ * See all C++ declaration attributes here:
+ *   https://en.cppreference.com/w/cpp/language/attributes
+ *
+ * Note that ExecuTorch supports a lower C++ standard version than all standard
+ * attributes. Therefore, some annotations are defined using their Clang/GNU
+ * counterparts.
+ *
+ * GNU attribute definitions:
+ *   https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html
+ */
 
-// [[noreturn]]
 #define ET_NORETURN [[noreturn]]
 
-// [[deprecated]]
 #define ET_DEPRECATED [[deprecated]]
 #define ET_EXPERIMENTAL \
   [[deprecated("This API is experimental and may change without notice.")]]
 
-// [[fallthrough]]
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 7)
 #define ET_FALLTHROUGH [[fallthrough]]
 #else
 #define ET_FALLTHROUGH
 #endif
 
-// [[nodiscard]]
 #define ET_NODISCARD [[nodiscard]]
 
-// [[maybe_unused]]
 #define ET_UNUSED [[maybe_unused]]
 
 // Inline/NoInline
@@ -78,14 +83,27 @@
 #define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
 #endif
 
-// Unreachable
-#if defined(_MSC_VER)
-#define ET_UNREACHABLE() __assume(0)
-#else
-#define ET_UNREACHABLE() __builtin_unreachable()
-#endif
+#if defined(__GNUC__)
 
-// Likely/Unlikely
+#define ET_UNREACHABLE() __builtin_unreachable()
+
+#elif defined(_MSC_VER)
+
+#define ET_UNREACHABLE() __assume(0)
+
+#else // defined(__GNUC__)
+
+#define ET_UNREACHABLE() \
+  while (1)              \
+    ;
+
+#endif // defined(__GNUC__)
+
+// UNLIKELY Macro
+// example
+// if ET_UNLIKELY(a > 10 && b < 5) {
+//   do something
+// }
 #if (__cplusplus) >= 202002L
 #define ET_LIKELY(expr) (expr) [[likely]]
 #define ET_UNLIKELY(expr) (expr) [[unlikely]]
@@ -94,16 +112,22 @@
 #define ET_UNLIKELY(expr) (expr)
 #endif
 
-// Weak linkage
-#if defined(_MSC_VER)
+/// Define a C symbol with weak linkage.
+#ifdef _MSC_VER
+// There currently doesn't seem to be a great way to do this in Windows and
+// given that weak linkage is not really critical on Windows, we'll just leave
+// it as a stub.
 // No weak linkage in MSVC
 #define ET_WEAK
 #else
 #define ET_WEAK __attribute__((weak))
 #endif
 
-// Printf-like format checking
-#if defined(_MSC_VER)
+/**
+ * Annotation marking a function as printf-like, providing compiler support
+ * for format string argument checking.
+ */
+#ifdef _MSC_VER
 #include <sal.h>
 #define ET_PRINTFLIKE(_string_index, _va_index) _Printf_format_string_
 #else
@@ -116,31 +140,31 @@
 // -----------------------------------------------------------------------------
 
 #ifndef __has_builtin
-#define __has_builtin(x) 0
+#define __has_builtin(x) (0)
 #endif
 
 #if __has_builtin(__builtin_strrchr)
+/// Name of the source file without a directory string.
 #define ET_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
 #else
 #define ET_SHORT_FILENAME __FILE__
 #endif
 
 #if __has_builtin(__builtin_LINE)
+/// Current line as an integer.
 #define ET_LINE __builtin_LINE()
 #else
 #define ET_LINE __LINE__
-#endif
+#endif // __has_builtin(__builtin_LINE)
 
 #if __has_builtin(__builtin_FUNCTION)
+/// Name of the current function as a const char[].
 #define ET_FUNCTION __builtin_FUNCTION()
 #else
 #define ET_FUNCTION __FUNCTION__
-#endif
+#endif // __has_builtin(__builtin_FUNCTION)
 
-// -----------------------------------------------------------------------------
-// Format specifiers for size_t/ssize_t
-// -----------------------------------------------------------------------------
-
+// As of G3 RJ-2024.3 toolchain, zu format specifier is not supported for Xtensa
 #if defined(__XTENSA__)
 #define ET_PRIsize_t "lu"
 #define ET_PRIssize_t "ld"
@@ -149,9 +173,8 @@
 #define ET_PRIssize_t "zd"
 #endif
 
-// -----------------------------------------------------------------------------
-// GNU statement expressions
-// -----------------------------------------------------------------------------
+// Whether the compiler supports GNU statement expressions.
+// https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
 
 #ifndef ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 #if (defined(__GNUC__) && __GNUC__ >= 3) || defined(__clang__)
@@ -161,20 +184,12 @@
 #endif
 #endif
 
-// -----------------------------------------------------------------------------
-// ssize_t definition
-// -----------------------------------------------------------------------------
-
 #ifndef _MSC_VER
 #include <sys/types.h>
 #else
 #include <stddef.h>
 using ssize_t = ptrdiff_t;
 #endif
-
-// -----------------------------------------------------------------------------
-// Exception support
-// -----------------------------------------------------------------------------
 
 #ifdef __EXCEPTIONS
 #define ET_HAS_EXCEPTIONS 1
@@ -184,9 +199,8 @@ using ssize_t = ptrdiff_t;
 #define ET_HAS_EXCEPTIONS 0
 #endif
 
-// -----------------------------------------------------------------------------
-// Deprecated legacy macros (to be removed)
-// -----------------------------------------------------------------------------
+// DEPRECATED: Use the non-underscore-prefixed versions instead.
+// TODO(T199005537): Remove these once all users have stopped using them.
 
 #define __ET_DEPRECATED ET_DEPRECATED
 #define __ET_FALLTHROUGH ET_FALLTHROUGH
