@@ -14,13 +14,10 @@ import sys
 import torch
 from torch.export import export
 
-# Add examples/models to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
-
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
 from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
-from models.stable_diffusion.model import LCMModelLoader
+from executorch.examples.models.stable_diffusion.model import LCMModelLoader
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
