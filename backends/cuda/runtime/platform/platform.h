@@ -10,6 +10,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <string>
+#include <filesystem>
 
 #ifdef _WIN32
 #include <malloc.h>
