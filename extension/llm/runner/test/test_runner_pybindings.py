@@ -122,7 +122,7 @@ class TestImage(unittest.TestCase):
         image = Image([1, 2, 3, 4], 2, 2, 1)
 
         # Properties are read-only
-        self.assertEqual(image.uint8_data, [1, 2, 3, 4])
+        self.assertEqual(memoryview(image).tobytes(), bytes([1, 2, 3, 4]))
         self.assertEqual(image.width, 2)
         self.assertEqual(image.height, 2)
         self.assertEqual(image.channels, 1)
