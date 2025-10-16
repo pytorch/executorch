@@ -81,7 +81,7 @@ executorch::runtime::Result<void*> get_function(
         "Failed loading symbol %s with error %s\n",
         fn_name.c_str(),
         dlerror());
-    return Error::Internal;
+    return executorch::runtime::Error::Internal;
   }
 #endif
 
