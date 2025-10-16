@@ -348,17 +348,98 @@ class TestQNNFloatingPointOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv_transpose2d(self):
-        modules = [
-            ConvTranspose2dSingle(),  # noqa: F405
-            ConvTranspose2dSingle(bias=False),  # noqa: F405
-            ConvTranspose2dSingle(dilation=2),  # noqa: F405
-            ConvTranspose2dSingle(dilation=(2, 3)),  # noqa: F405
-            ConvTranspose2dSingle(dilation=(2, 1)),  # noqa: F405
+        test_comb = [
+            {
+                QCOM_MODULE: [ConvTranspose2dSingle()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 1, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [ConvTranspose2dSingle(bias=False)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 1, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=2,
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=(2, 3),
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=(2, 1),
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=(2, 1),
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=6,
+                        out_channels=6,
+                        kernel_size=3,
+                        padding=0,
+                        groups=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(4, 6, 16, 16),),
+                ],
+            },
         ]
-        sample_input = (torch.randn([1, 1, 33, 33]),)
-        for i, module in enumerate(modules):
-            with self.subTest(i=i):
-                self.lower_module_and_test_output(module, sample_input)
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv_transpose3d(self):
         modules = [
@@ -607,7 +688,6 @@ class TestQNNFloatingPointOperator(TestQNN):
                         index += 1
                         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_elu(self):
         module = Elu()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -2240,16 +2320,128 @@ class TestQNNQuantizedOperator(TestQNN):
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv_transpose2d(self):
-        modules = [
-            ConvTranspose2dSingle(),  # noqa: F405
-            ConvTranspose2dSingle(bias=False),  # noqa: F405
-            ConvTranspose2dSingle(dilation=(2, 3)),  # noqa: F405
-            ConvTranspose2dSingle(dilation=(2, 1)),  # noqa: F405
+        test_comb = [
+            {
+                QCOM_MODULE: [ConvTranspose2dSingle()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 1, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [ConvTranspose2dSingle(bias=False)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 1, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=2,
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=(2, 3),
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=(2, 1),
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=2,
+                        out_channels=3,
+                        dilation=(2, 1),
+                        kernel_size=3,
+                        stride=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(1, 2, 16, 16),),
+                ],
+            },
+            {
+                QCOM_MODULE: [
+                    ConvTranspose2dSingle(  # noqa: F405
+                        in_channels=6,
+                        out_channels=6,
+                        kernel_size=3,
+                        padding=0,
+                        groups=2,
+                    )
+                ],
+                QCOM_SAMPLE_INPUTS: [
+                    (torch.randn(4, 6, 16, 16),),
+                ],
+            },
         ]
-        sample_input = (torch.randn([1, 1, 3, 3]),)
+
+        index = 0
+        for comb in test_comb:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
+                    with self.subTest(i=index):
+                        index += 1
+                        gm = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(gm, sample_input)
+
+    @unittest.skip("As of QNN 2.37, transpose conv block quant is not supported")
+    def test_qnn_backend_conv_transpose2d_block(self):
+        i_ch, o_ch, kernel, padding = 128, 32, (1, 1), 0
+        modules = [
+            ConvTranspose2dSingle(  # noqa: F405
+                bias=False,
+                in_channels=i_ch,
+                out_channels=o_ch,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+            ConvTranspose2dSingle(  # noqa: F405
+                in_channels=i_ch,
+                out_channels=o_ch,
+                kernel_size=kernel,
+                padding=padding,
+            ),
+        ]
+
+        sample_input = (torch.randn(1, 128, 16, 16),)
         for i, module in enumerate(modules):
             with self.subTest(i=i):
-                module = self.get_qdq_module(module, sample_input)
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    quant_dtype=QuantDtype.use_16a4w_block,
+                    block_size_map={"conv_transpose2d": (16, 1, 1, 1)},
+                )
                 self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv_transpose3d(self):
