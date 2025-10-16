@@ -10,7 +10,8 @@
 # Install tokenizers for hf .json tokenizer.
 # Install snakeviz for cProfile flamegraph
 # Install lm-eval for Model Evaluation with lm-evalution-harness.
-pip install hydra-core huggingface_hub tiktoken torchtune sentencepiece tokenizers snakeviz lm_eval==0.4.5 blobfile
+# Install safetensors to load safetensors checkpoints (currently adapter only).
+pip install hydra-core huggingface_hub tiktoken torchtune sentencepiece tokenizers snakeviz lm_eval==0.4.5 blobfile safetensors
 
 # Call the install helper for further setup
 python examples/models/llama/install_requirement_helper.py

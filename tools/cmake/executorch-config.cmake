@@ -68,6 +68,7 @@ set(optional_lib_list
     portable_ops_lib
     custom_ops
     extension_evalue_util
+    extension_llm_runner
     extension_module
     extension_module_static
     extension_runner_util
