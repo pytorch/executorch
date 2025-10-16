@@ -26,6 +26,8 @@ CUSTOM_EDGE_OPS = [
     "_native_batch_norm_legit_no_training.default",
     "_native_batch_norm_legit.no_stats",
     "alias_copy.default",
+    "pixel_shuffle.default",
+    "pixel_unshuffle.default",
 ]
 ALL_EDGE_OPS = SAMPLE_INPUT.keys() | CUSTOM_EDGE_OPS
 
