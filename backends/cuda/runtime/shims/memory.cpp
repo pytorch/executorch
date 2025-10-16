@@ -230,7 +230,7 @@ AOTITorchError aoti_torch_empty_strided(
         cudaMallocAsync(&ptr, static_cast<size_t>(nbytes), cudaStreamDefault));
   } else if (device_type == static_cast<int32_t>(SupportedDevices::CPU)) {
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
-    &ptr = aligned_alloc(16, nbytes);
+    ptr = aligned_alloc(16, nbytes);
     ET_CHECK_OR_RETURN_ERROR(
         ptr != nullptr,
         MemoryAllocationFailed,

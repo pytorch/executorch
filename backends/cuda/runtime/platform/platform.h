@@ -28,7 +28,7 @@ namespace cuda {
 executorch::runtime::Result<void*> load_library(
     const std::filesystem::path& path) {
 #ifdef _WIN32
-  std::string utf8 = p.u8string();
+  std::string utf8 = path.u8string();
   auto lib_handle = LoadLibrary(utf8.c_str());
   if (lib_handle == NULL) {
     ET_LOG(Error, "Failed to load %s with error: %lu", utf8, GetLastError());
