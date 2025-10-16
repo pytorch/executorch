@@ -147,25 +147,6 @@ def install_requirements(use_pytorch_nightly):
 
 
 def install_optional_example_requirements(use_pytorch_nightly):
-    print("Installing torch domain libraries")
-    DOMAIN_LIBRARIES = [
-        ("torchvision==0.24.0" if use_pytorch_nightly else "torchvision"),
-        "torchaudio==2.9.0" if use_pytorch_nightly else "torchaudio",
-    ]
-    # Then install domain libraries
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            *DOMAIN_LIBRARIES,
-            "--extra-index-url",
-            TORCH_URL,
-        ],
-        check=True,
-    )
-
     print("Installing packages in requirements-examples.txt")
     subprocess.run(
         [
