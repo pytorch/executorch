@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Pre-commit hook to automatically update PyTorch commit pin and sync c10 directories
+# Pre-commit hook to automatically update PyTorch commit pin and sync c10 directories when torch_pin.py changes
 
 # Check if torch_pin.py is being committed
 if git diff --cached --name-only | grep -q "^torch_pin.py$"; then

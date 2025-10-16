@@ -192,7 +192,7 @@ def sync_directory(et_dir, pt_path, commit_hash):
                 print(f"✅ Grafted {et_file}")
                 files_grafted += 1
         except urllib.request.HTTPError as e:
-            if e.code != 404: # It's ok to have more files in ET than pytorch/pytorch.
+            if e.code != 404:  # It's ok to have more files in ET than pytorch/pytorch.
                 print(f"Error fetching {rel_path} from PyTorch: {e}")
         except Exception as e:
             print(f"Error syncing {rel_path}: {e}")
