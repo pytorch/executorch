@@ -82,10 +82,21 @@ build_aar() {
     find cmake-out-android-so -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
   fi
   pushd extension/android/
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
+  if [ -z "${ANDROID_HOME}" ]; then
+    export ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}"
+  fi
+
+  # (Optional) sanity check
+  if [ ! -d "$ANDROID_HOME" ]; then
+    echo "Error: ANDROID_HOME path '$ANDROID_HOME' does not exist." >&2
+    popd >/dev/null
+    return 1
+  fi
+
   # Use java unit test as sanity check
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
-  popd
+  ./gradlew :executorch_android:testDebugUnitTest
+  popd >/dev/null
+
   if [ ! -z $BUILD_AAR_DIR ]; then
     cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
   fi
