@@ -8,6 +8,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.decompose_div_pass import DecomposeDivPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -42,7 +43,7 @@ def _get_opset(op):
     raise RuntimeError(f"div.Tensor_mode not supported for op {op}")
 
 
-class DecomposeDivTensorModePass(ExportPass):
+class DecomposeDivTensorModePass(ArmPass):
     """
     Rewrites aten.div.Tensor_mode into
 
@@ -64,13 +65,13 @@ class DecomposeDivTensorModePass(ExportPass):
         if rounding_mode is None and len(args) > 2:
             rounding_mode = args[2]
 
-        q = super().call_operator(opset["div"], (a, b), {}, meta)
+        q = super().call_operator(opset["div"], (a, b), {}, meta, updated=True)
 
         if rounding_mode is None:
             return q
 
         if rounding_mode == "floor":
-            return super().call_operator(opset["floor"], (q,), {}, meta)
+            return super().call_operator(opset["floor"], (q,), {}, meta, updated=True)
 
         if rounding_mode == "trunc":
             zero = super().call_operator(
@@ -78,11 +79,14 @@ class DecomposeDivTensorModePass(ExportPass):
                 args=((1,) * len(meta["val"].size()), 0.0),
                 kwargs={"dtype": torch.float32},
                 meta=meta,
+                updated=True,
             )
-            lt0 = self.call_operator(opset["lt"], (q, zero), {}, meta)
-            ceilq = self.call_operator(opset["ceil"], (q,), {}, meta)
-            floorq = self.call_operator(opset["floor"], (q,), {}, meta)
-            return self.call_operator(opset["where"], (lt0, ceilq, floorq), {}, meta)
+            lt0 = super().call_operator(opset["lt"], (q, zero), {}, meta, updated=True)
+            ceilq = super().call_operator(opset["ceil"], (q,), {}, meta, updated=True)
+            floorq = super().call_operator(opset["floor"], (q,), {}, meta, updated=True)
+            return super().call_operator(
+                opset["where"], (lt0, ceilq, floorq), {}, meta, updated=True
+            )
 
         raise RuntimeError(
             f"Unsupported rounding_mode for div.Tensor_mode: {rounding_mode!r}"

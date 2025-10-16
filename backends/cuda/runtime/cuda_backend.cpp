@@ -21,18 +21,18 @@
 #include <vector>
 
 // Include our shim layer headers
-#include <executorch/backends/aoti/aoti_model_container.h>
+#include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 
 namespace executorch::backends::cuda {
 
-#define LOAD_SYMBOL(name, handle)                                \
-  do {                                                           \
-    name = reinterpret_cast<name##Func>(dlsym(handle, #name));   \
-    ET_CHECK_OR_RETURN_ERROR(                                    \
-        name != nullptr, AccessFailed, "Failed to load " #name); \
+#define LOAD_SYMBOL(handle, member, name, so_handle)                        \
+  do {                                                                      \
+    handle->member = reinterpret_cast<name##Func>(dlsym(so_handle, #name)); \
+    ET_CHECK_OR_RETURN_ERROR(                                               \
+        handle->member != nullptr, AccessFailed, "Failed to load " #name);  \
   } while (0)
 
 using namespace std;
@@ -57,12 +57,31 @@ using executorch::runtime::etensor::Tensor;
 class ET_EXPERIMENTAL CudaBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
-  Error register_shared_library_functions(void* so_handle) const {
-    LOAD_SYMBOL(AOTInductorModelContainerCreateWithDevice, so_handle);
-    LOAD_SYMBOL(AOTInductorModelContainerDelete, so_handle);
-    LOAD_SYMBOL(AOTInductorModelContainerGetNumInputs, so_handle);
-    LOAD_SYMBOL(AOTInductorModelContainerGetNumOutputs, so_handle);
-    LOAD_SYMBOL(AOTInductorModelContainerRun, so_handle);
+  Error load_function_pointers_into_handle(
+      void* so_handle,
+      AOTIDelegateHandle* handle) const {
+    LOAD_SYMBOL(
+        handle,
+        create_with_device,
+        AOTInductorModelContainerCreateWithDevice,
+        so_handle);
+
+    LOAD_SYMBOL(
+        handle, delete_container, AOTInductorModelContainerDelete, so_handle);
+
+    LOAD_SYMBOL(
+        handle,
+        get_num_inputs,
+        AOTInductorModelContainerGetNumInputs,
+        so_handle);
+
+    LOAD_SYMBOL(
+        handle,
+        get_num_outputs,
+        AOTInductorModelContainerGetNumOutputs,
+        so_handle);
+
+    LOAD_SYMBOL(handle, run, AOTInductorModelContainerRun, so_handle);
 
     return Error::Ok;
   }
@@ -135,19 +154,22 @@ class ET_EXPERIMENTAL CudaBackend final
 
     processed->Free();
 
-    // Register all shared library functions
-    ET_CHECK_OK_OR_RETURN_ERROR(register_shared_library_functions(so_handle));
-
-    AOTInductorModelContainerHandle container_handle = nullptr;
-
-    ET_CHECK_OK_OR_RETURN_ERROR(AOTInductorModelContainerCreateWithDevice(
-        &container_handle, 1, "cuda", nullptr));
-
-    ET_LOG(Info, "container_handle = %p", container_handle);
-
+    // Create handle and load function pointers into it
     AOTIDelegateHandle* handle = new AOTIDelegateHandle();
     handle->so_handle = so_handle;
     handle->so_path = so_path.string();
+
+    // Load function pointers specific to this handle's shared library
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        load_function_pointers_into_handle(so_handle, handle));
+
+    AOTInductorModelContainerHandle container_handle = nullptr;
+
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->create_with_device(&container_handle, 1, "cuda", nullptr));
+
+    ET_LOG(Info, "container_handle = %p", container_handle);
+
     handle->container_handle = container_handle;
 
     // Create a CUDA stream for asynchronous execution
@@ -165,20 +187,11 @@ class ET_EXPERIMENTAL CudaBackend final
       Span<EValue*> args) const override {
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
-    // Need to re-register all the symbols from the so_handle hosted by this
-    // CudaBackend instance. The reason is that these symbols are
-    // static/singleton across the whole process. When we share multiple methods
-    // (meaning multiple so_handle) in the same process, we need to re-register
-    // the symbols from the so_handle that is being used in this execution.
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        register_shared_library_functions(handle->so_handle));
-
     size_t n_inputs;
-    AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);
+    handle->get_num_inputs(handle->container_handle, &n_inputs);
 
     size_t n_outputs;
-    AOTInductorModelContainerGetNumOutputs(
-        handle->container_handle, &n_outputs);
+    handle->get_num_outputs(handle->container_handle, &n_outputs);
 
     ET_CHECK_OR_RETURN_ERROR(
         n_inputs + n_outputs == args.size(),
@@ -261,7 +274,7 @@ class ET_EXPERIMENTAL CudaBackend final
       gpu_outputs[i] = gpu_output_handle;
     }
     // Run AOTI container with GPU tensors
-    AOTIRuntimeError error = AOTInductorModelContainerRun(
+    AOTIRuntimeError error = handle->run(
         handle->container_handle,
         gpu_inputs.data(), // Use GPU input tensors
         n_inputs,

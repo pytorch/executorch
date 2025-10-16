@@ -8,7 +8,11 @@ if git diff --cached --name-only | grep -q "^torch_pin.py$"; then
     echo "📝 Updating PyTorch commit pin..."
 
     # Run the update script
-    if python .github/scripts/update_pytorch_pin.py; then
+    hook_output=$(python .github/scripts/update_pytorch_pin.py 2>&1)
+    hook_status=$?
+    echo "$hook_output"
+
+    if [ $hook_status -eq 0 ]; then
         # Check if pytorch.txt was modified
         if ! git diff --quiet .ci/docker/ci_commit_pins/pytorch.txt; then
             echo "✅ PyTorch commit pin updated successfully"
@@ -19,9 +23,14 @@ if git diff --cached --name-only | grep -q "^torch_pin.py$"; then
             echo "ℹ️  PyTorch commit pin unchanged"
         fi
     else
-        echo "❌ Failed to update PyTorch commit pin"
-        echo "Please run: python .github/scripts/update_pytorch_pin.py"
-        exit 1
+        if echo "$hook_output" | grep -qi "rate limit exceeded"; then
+            echo "⚠️  PyTorch commit pin not updated due to GitHub API rate limiting."
+            echo "   Please manually update .ci/docker/ci_commit_pins/pytorch.txt if needed."
+        else
+            echo "❌ Failed to update PyTorch commit pin"
+            echo "Please run: python .github/scripts/update_pytorch_pin.py"
+            exit 1
+        fi
     fi
 fi
 
