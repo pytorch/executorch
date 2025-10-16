@@ -9,11 +9,11 @@
 # build_firmware_pico.sh
 # Simple script to cross-compile ExecuTorch and build Pico2 firmware with optional model input
 
-set -e
+set -euo pipefail
 
 # Paths
-ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"  # examples/rpi/ -> root dir
-PICO2_DIR="${ROOT_DIR}/examples/rpi/pico2"
+ROOT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"  # examples/raspberry_pi/ -> root dir
+PICO2_DIR="${ROOT_DIR}/examples/raspberry_pi/pico2"
 BUILD_DIR="${PICO2_DIR}/build"
 EXECUTORCH_BUILD_DIR="${ROOT_DIR}/cmake-out"
 
