@@ -50,19 +50,41 @@ runtime::Result<std::unique_ptr<runtime::DataLoader>> make_data_loader(
   std::unique_ptr<runtime::DataLoader> data_loader;
   switch (mode) {
     case Module::LoadMode::File:
-      data_loader = ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path.c_str()));
+      auto res = FileDataLoader::from(file_path.c_str());
+      if (!res.ok()) {
+        return res.error();
+      }
+      data_loader = std::make_unique<std::remove_reference_t<decltype(*res)>>(
+          std::move(*res));
       break;
     case Module::LoadMode::Mmap:
-      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
-          file_path.c_str(), MmapDataLoader::MlockConfig::NoMlock));
+      auto res_mmap = MmapDataLoader::from(
+          file_path.c_str(), MmapDataLoader::MlockConfig::NoMlock);
+      if (!res_mmap.ok()) {
+        return res_mmap.error();
+      }
+      data_loader =
+          std::make_unique<std::remove_reference_t<decltype(*res_mmap)>>(
+              std::move(*res_mmap));
       break;
     case Module::LoadMode::MmapUseMlock:
-      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path.c_str()));
+      auto res_mlock = MmapDataLoader::from(file_path.c_str());
+      if (!res_mlock.ok()) {
+        return res_mlock.error();
+      }
+      data_loader =
+          std::make_unique<std::remove_reference_t<decltype(*res_mlock)>>(
+              std::move(*res_mlock));
       break;
     case Module::LoadMode::MmapUseMlockIgnoreErrors:
-      data_loader = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
-          file_path.c_str(),
-          MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
+      auto res_mlock_ignore = MmapDataLoader::from(
+          file_path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
+      if (!res_mlock_ignore.ok()) {
+        return res_mlock_ignore.error();
+      }
+      data_loader = std::make_unique<
+          std::remove_reference_t<decltype(*res_mlock_ignore)>>(
+          std::move(*res_mlock_ignore));
       break;
   }
   return data_loader;
@@ -165,8 +187,15 @@ runtime::Error Module::load(const Program::Verification verification) {
 
     if (data_map_loaders_.size() > 0) {
       for (auto i = 0; i < data_map_loaders_.size(); ++i) {
-        named_data_maps_.push_back(ET_UNWRAP_UNIQUE(
-            FlatTensorDataMap::load(data_map_loaders_[i].get())));
+        auto res_flat_tensor =
+            FlatTensorDataMap::load(data_map_loaders_[i].get());
+        if (!res_flat_tensor.ok()) {
+          return res_flat_tensor.error();
+        }
+        named_data_maps_.push_back(
+            std::make_unique<
+                std::remove_reference_t<decltype(*res_flat_tensor)>>(
+                std::move(*res_flat_tensor)));
       }
 
       // Extract raw pointers from unique_ptrs to pass to MergedDataMap::load()
@@ -175,13 +204,23 @@ runtime::Error Module::load(const Program::Verification verification) {
       for (const auto& data_map : named_data_maps_) {
         raw_data_maps.push_back(data_map.get());
       }
-      merged_data_map_ = ET_UNWRAP_UNIQUE(
-          MergedDataMap::load(runtime::Span<const NamedDataMap*>(
-              raw_data_maps.data(), raw_data_maps.size())));
+      auto res_merged = MergedDataMap::load(runtime::Span<const NamedDataMap*>(
+          raw_data_maps.data(), raw_data_maps.size()));
+      if (!res_merged.ok()) {
+        return res_merged.error();
+      }
+      merged_data_map_ =
+          std::make_unique<std::remove_reference_t<decltype(*res_merged)>>(
+              std::move(*res_merged));
     }
 
+    auto res_program = Program::load(data_loader_.get(), verification);
+    if (!res_program.ok()) {
+      return res_program.error();
+    }
     auto program =
-        ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
+        std::make_unique<std::remove_reference_t<decltype(*res_program)>>(
+            std::move(*res_program));
     program_ = std::shared_ptr<Program>(
         program.release(), [](Program* pointer) { delete pointer; });
   }
@@ -237,11 +276,17 @@ runtime::Error Module::load_method(
     }
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
         memory_allocator_.get(), planned_memory, temp_allocator_.get());
-    method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
+    auto res_method = program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
         event_tracer ? event_tracer : this->event_tracer(),
-        merged_data_map_.get()));
+        merged_data_map_.get());
+    if (!res_method.ok()) {
+      return res_method.error();
+    }
+    method_holder.method =
+        std::make_unique<std::remove_reference_t<decltype(*res_method)>>(
+            std::move(*res_method));
     methods_.emplace(method_name, std::move(method_holder));
   }
   return runtime::Error::Ok;
