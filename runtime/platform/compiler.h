@@ -60,7 +60,7 @@
 #if defined(_MSC_VER)
 #define ET_NOINLINE __declspec(noinline)
 #define ET_INLINE __forceinline
-#define ET_INLINE_ATTRIBUTE __forceinline
+#define ET_INLINE_ATTRIBUTE
 #else
 #define ET_NOINLINE __attribute__((noinline))
 #define ET_INLINE __attribute__((always_inline)) inline
