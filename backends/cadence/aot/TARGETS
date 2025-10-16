@@ -631,3 +631,15 @@ python_unittest(
         "//caffe2:torch",
     ]
 )
+
+python_unittest(
+    name = "test_quantizer_ops",
+    srcs = [
+        "tests/test_quantizer_ops.py",
+    ],
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
+    ],
+)
