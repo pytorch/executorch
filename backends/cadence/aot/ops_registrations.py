@@ -60,7 +60,6 @@ def _validate_ref_impl_exists() -> None:
         "cadence::quantized_softmax.per_tensor",
         "cadence::quantized_conv2d_nchw",  # We should only support per_tensor variant, should remove
         "cadence::quantized_relu",  # We should only support per_tensor variant, should remove
-        "cadence::linalg_svd",
         "cadence::quantized_conv2d_nhwc",  # We should only support per_tensor variant, should remove
         "cadence::quantized_softmax",
         "cadence::quantized_w8a32_gru",

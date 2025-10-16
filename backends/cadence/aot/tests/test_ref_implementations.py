@@ -2632,3 +2632,34 @@ class TestRefImplementations(unittest.TestCase):
                 expected_out,
             )
         )
+
+    @expand(
+        [
+            *[
+                (
+                    dtype,
+                    (4, 4),
+                    full_matrices,
+                )
+                for dtype in [torch.float32, torch.float64]
+                for full_matrices in [True, False]
+            ]
+        ]
+    )
+    def test_linalg_svd_outputs_are_contiguous(
+        self,
+        dtype: torch.dtype,
+        shape: tuple[int, int],
+        full_matrices: bool,
+    ) -> None:
+        m, n = shape
+        a = torch.eye(m, n, dtype=dtype)
+
+        U, S, Vh = torch.ops.cadence.linalg_svd(a, full_matrices)
+
+        self.assertTrue(U.is_contiguous(), "U not contiguous")
+        self.assertTrue(S.is_contiguous(), "S not contiguous")
+        self.assertTrue(Vh.is_contiguous(), "Vh not contiguous")
+        self.assertTrue(U.dtype == dtype, "U dtype mismatch")
+        self.assertTrue(S.dtype == dtype, "S dtype mismatch")
+        self.assertTrue(Vh.dtype == dtype, "Vh dtype mismatch")
