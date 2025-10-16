@@ -7,7 +7,6 @@
 
 from typing import Tuple
 
-import pytest
 import torch
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
