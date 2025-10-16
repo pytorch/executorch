@@ -55,9 +55,15 @@
  */
 
 #define ET_NORETURN [[noreturn]]
+
+// Inline/NoInline
+#if defined(_MSC_VER)
+#define ET_NOINLINE __declspec(noinline)
+#define ET_INLINE __forceinline
+#else
 #define ET_NOINLINE __attribute__((noinline))
 #define ET_INLINE __attribute__((always_inline)) inline
-#define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
+#endif
 
 #if defined(__GNUC__)
 
