@@ -64,11 +64,14 @@ set(MODEL_STAMP "${CMAKE_CURRENT_BINARY_DIR}/model_pte.stamp")
 
 add_custom_command(
   OUTPUT ${MODEL_STAMP}
-  COMMAND python3 ${EXECUTORCH_ROOT}/executorch/examples/rpi/pte_to_array.py
-          --model ${INPUT_MODEL} --file ${MODEL_PTE_C}
+  COMMAND
+    python3
+    ${EXECUTORCH_ROOT}/executorch/examples/raspberry_pi/pico2/pte_to_array.py
+    --model ${INPUT_MODEL} --file ${MODEL_PTE_C}
   COMMAND ${CMAKE_COMMAND} -E touch ${MODEL_STAMP}
-  DEPENDS ${INPUT_MODEL}
-          ${EXECUTORCH_ROOT}/executorch/examples/rpi/pte_to_array.py
+  DEPENDS
+    ${INPUT_MODEL}
+    ${EXECUTORCH_ROOT}/executorch/examples/raspberry_pi/pico2/pte_to_array.py
   COMMENT "Injecting PTE data from '${INPUT_MODEL}' into model_pte.c"
   VERBATIM
 )
