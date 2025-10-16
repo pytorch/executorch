@@ -8,6 +8,7 @@
  */
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <string>
 
 #ifdef _WIN32
@@ -21,7 +22,7 @@ namespace executorch {
 namespace backends {
 namespace cuda {
 
-Result<void*> load_library(const std::string& path) {
+executorch::runtime::Result<void*> load_library(const std::string& path) {
 #ifdef _WIN32
   auto lib_handle = LoadLibrary(path.c_str());
   if (lib_handle == NULL) {
@@ -43,7 +44,7 @@ Result<void*> load_library(const std::string& path) {
   return (void*)lib_handle;
 }
 
-Error close_library(void* lib_handle) {
+executorch::runtime::Error close_library(void* lib_handle) {
 #ifdef _WIN32
   if (!FreeLibrary((HMODULE)lib_handle)) {
     printf("FreeLibrary failed with error %lu\n", GetLastError());
@@ -58,7 +59,7 @@ Error close_library(void* lib_handle) {
   return Error::Ok;
 }
 
-Result<void*> get_function(void* lib_handle, const std::string& fn_name) {
+executorch::runtime::Result<void*> get_function(void* lib_handle, const std::string& fn_name) {
 #ifdef _WIN32
   auto fn = GetProcAddress((HMODULE)lib_handle, fn_name.c_str());
   if (!fn) {
