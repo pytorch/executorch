@@ -764,6 +764,39 @@ class StaticAttention(Attention):
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
 
+    @classmethod
+    def from_attention_mha(
+        cls,
+        other: AttentionMHA,
+        split_mha: bool = True,
+        rms_norm_class=torch.nn.RMSNorm,
+        **kwargs: Any,
+    ) -> "StaticAttention":
+        config = ModelArgs(
+            dim=other.dim,
+            n_layers=1,  # Not used in attention layer
+            n_heads=other.n_heads,
+            n_kv_heads=other.n_kv_heads,
+            head_dim=other.head_dim,
+            max_batch_size=other.max_batch_size,
+            max_context_len=other.max_context_len,
+            attention_qkv_bias=other.attention_qkv_bias,
+            use_qk_norm=other.use_qk_norm,
+            qk_norm_before_rope=other.qk_norm_before_rope,
+            norm_eps=other.q_norm_fn.eps if other.use_qk_norm else 1e-5,
+        )
+
+        instance = cls(
+            config=config,
+            layer_id=other.layer_id,
+            rope=other.rope,
+            split_mha=split_mha,
+            **kwargs,
+        )
+        instance.load_weights_from_attention_mha(other, rms_norm_class=rms_norm_class)
+
+        return instance
+
     def forward(
         self,
         x: torch.Tensor,
@@ -1059,3 +1092,37 @@ class StaticAttention(Attention):
 class StaticAttentionMHA(StaticAttention):
     def __init__(self, config: ModelArgs, layer_id: int, rope: Rope, **kwargs: Any):
         super().__init__(config, layer_id, rope, split_mha=False, **kwargs)
+
+
+def transform_attention_mha_to_static_attention(
+    model: nn.Module,
+    split_mha: bool = True,
+    inplace: bool = True,
+    use_conv2d: bool = False,
+    use_hf_rope: bool = False,
+    **kwargs: Any,
+) -> nn.Module:
+    if not inplace:
+        import copy
+
+        model = copy.deepcopy(model)
+
+    def helper(m):
+        for name, child in list(m.named_children()):
+            if isinstance(child, AttentionMHA):
+                static_attn = StaticAttention.from_attention_mha(
+                    child, split_mha=split_mha, **kwargs
+                )
+                # Note: HF RoPE needs to be applied before linear to conv2d
+                if use_hf_rope:
+                    static_attn.adopt_hf_rope()
+                if use_conv2d:
+                    static_attn.linear_to_conv2d()
+
+                setattr(m, name, static_attn)
+            else:
+                helper(child)
+
+        return m
+
+    return helper(model)
