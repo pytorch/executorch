@@ -110,7 +110,9 @@ class TestPerChannelConversion(unittest.TestCase):
 
     def test_per_channel_convolution(self):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             model = Conv2dModule(
                 in_channels=8, out_channels=32, kernel_size=5, padding=3
