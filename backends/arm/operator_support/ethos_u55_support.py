@@ -114,7 +114,7 @@ class EthosU55DtypeSupport(OperatorSupportBase):
                 return False
 
         if node.target in self.target_ops_i8:
-            if dtype not in (torch.int8,):
+            if dtype not in (torch.int8, torch.int16):
                 self.reporter.report_reject(
                     node, f"Unsupported dtype {dtype} (Supports i8)."
                 )

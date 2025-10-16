@@ -9,8 +9,12 @@
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    get_symmetric_a16w8_quantization_config,
+    TOSAQuantizer,
+)
+from executorch.backends.arm.test import common, conftest
 
-from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.test_pipeline import (
     EthosU55PipelineINT,
     EthosU85PipelineINT,
@@ -18,7 +22,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     TosaPipelineINT,
     VgfPipeline,
 )
-
+from executorch.backends.arm.tosa import TosaSpecification
+from executorch.backends.xnnpack.test.tester import Quantize
 
 aten_op = "torch.ops.aten.rsqrt.default"
 input_t1 = Tuple[torch.Tensor]  # Input x
@@ -102,5 +107,101 @@ def test_rsqrt_vgf_INT(test_tensor: torch.Tensor):
         test_tensor(),
         aten_op,
         tosa_version="TOSA-1.0+INT",
+    )
+    pipeline.run()
+
+
+def get_symmetric_a16w8_rsqrt_quantizer(
+    u55_config=False, per_channel_quantization=False
+):
+    tosa_version = conftest.get_option("tosa_version")
+    tosa_profiles = {
+        "1.0": TosaSpecification.create_from_string("TOSA-1.0+INT+int16"),
+    }
+
+    quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+    quantizer.set_global(
+        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+    )
+    quantizer.set_module_type(
+        torch.nn.Linear,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+    return Quantize(
+        quantizer,
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization
+        ),
+    )
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+def test_rsqrt_16a8w_tosa_INT(test_tensor: torch.Tensor):
+    """Test rsqrt operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
+    # Create pipeline with custom 16A8W quantization config
+    pipeline = TosaPipelineINT[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_op=[],
+        per_channel_quantization=False,
+        use_to_edge_transform_and_lower=True,
+        tosa_extensions=["int16"],
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_rsqrt_quantizer(
+            per_channel_quantization=False
+        ),
+    )
+    # Run the pipeline
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.XfailIfNoCorstone300
+def test_rsqrt_16a8w_u55_INT16(test_tensor: torch.Tensor):
+    """Test rsqrt operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU55PipelineINT[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_ops=[],
+        per_channel_quantization=True,
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_rsqrt_quantizer(
+            per_channel_quantization=True
+        ),
+    )
+    pipeline.run()
+
+
+@common.parametrize("test_tensor", Rsqrt.test_parameters)
+@common.XfailIfNoCorstone320
+def test_rsqrt_16a8w_u85_INT16(test_tensor: torch.Tensor):
+    """Test rsqrt operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
+    pipeline = EthosU85PipelineINT[input_t1](
+        Rsqrt(),
+        test_tensor(),
+        aten_op,
+        exir_ops=[],
+        use_to_edge_transform_and_lower=True,
+        run_on_fvp=True,
+    )
+
+    pipeline.change_args(
+        "quantize",
+        get_symmetric_a16w8_rsqrt_quantizer(
+            per_channel_quantization=False
+        ),
     )
     pipeline.run()
