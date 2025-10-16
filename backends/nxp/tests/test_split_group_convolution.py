@@ -21,6 +21,7 @@ from executorch.backends.nxp.quantizer.neutron_quantizer import NeutronQuantizer
 from executorch.backends.nxp.tests.executorch_pipeline import (
     _quantize_model,
     get_random_calibration_inputs,
+    neutron_target_spec,
     to_model_input_spec,
 )
 from executorch.backends.nxp.tests.executors import graph_contains_any_of_ops
@@ -40,7 +41,7 @@ def _quantize_and_lower_module(
     module: GraphModule, input_shape: tuple[int, ...], target="imxrt700"
 ) -> EdgeProgramManager:
     calibration_inputs = get_random_calibration_inputs(to_model_input_spec(input_shape))
-    quantizer = NeutronQuantizer()
+    quantizer = NeutronQuantizer(neutron_target_spec)
 
     exir_program_aten__module_quant = _quantize_model(
         module, quantizer, calibration_inputs
@@ -54,7 +55,7 @@ def _quantize_and_lower_module(
     )
 
     compile_spec = generate_neutron_compile_spec(target, "SDK_25_09")
-    partitioner = NeutronPartitioner(compile_spec)
+    partitioner = NeutronPartitioner(compile_spec, neutron_target_spec)
     return edge_program_manager.to_backend(partitioner)
 
 

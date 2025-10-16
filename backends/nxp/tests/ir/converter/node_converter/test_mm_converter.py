@@ -30,7 +30,9 @@ class TestMmConversion(unittest.TestCase):
 
     def test_mm_conversion(self):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             input_shape = (1, 32)
             model = MmModule(input_shape[1])
@@ -60,7 +62,9 @@ class TestMmConversion(unittest.TestCase):
 
     def test_linear_conversion__without_bias(self):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             input_shape = (10, 32)
             model = LinearModule(bias=False)

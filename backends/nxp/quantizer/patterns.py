@@ -121,6 +121,24 @@ class SharedSpecPattern(QuantizationPattern):
         )
 
 
+class SingleInputBasicPattern(QuantizationPattern):
+    @abstractmethod
+    def partition_types(self) -> list[OpOverload]:
+        pass
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors | None:
+        node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(node, NodeArgsIdx(0))],
+            weights=[],
+            biases=[],
+            output=[(node,)],
+        )
+
+
 def get_anchors_for_fixed_quant_specs(
     fused_partition: list[fx.GraphModule],
     scale: float,
@@ -169,6 +187,12 @@ class AdaptiveAvgPoolPattern(SharedSpecPattern):
 
 
 class AddmmPattern(QuantizationPattern):
+    def __init__(self, neutron_quantizer):
+        self.neutron_quantizer = neutron_quantizer
+        self.neutron_target_info = (
+            self.neutron_quantizer.neutron_target_spec.neutron_target_info
+        )
+
     def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.addmm.default]
 
@@ -190,11 +214,25 @@ class AddmmPattern(QuantizationPattern):
             qscheme=torch.per_tensor_affine,
         )
 
+        # If the following node is a fusable activation, quantize together with activation
+        output = [(addmm_node,)]
+        if len(
+            addmm_node.users
+        ) == 1 and self.neutron_target_info.is_supported_fused_activation__aten(
+            activation := next(iter(addmm_node.users))
+        ):
+            activation_quantizer = self.neutron_quantizer.op_to_quantizer[
+                activation.target
+            ]
+            activation_quantizer.annotate(gm)
+            output = []
+            activation.meta["quantization_annotation"].input_qspec_map = {}
+
         return PartitionAnchors(
             inputs=[(addmm_node, NodeArgsIdx(1))],
             weights=[(addmm_node, NodeArgsIdx(2))],
             biases=[(addmm_node, NodeArgsIdx(0), bias_qspec)],
-            output=[(addmm_node,)],
+            output=output,
         )
 
 
@@ -354,8 +392,68 @@ class Conv1dPattern(ConvPattern):
 
 
 class Conv2dPattern(ConvPattern):
+    def __init__(self, neutron_quantizer):
+        self.neutron_quantizer = neutron_quantizer
+        self.neutron_target_info = (
+            self.neutron_quantizer.neutron_target_spec.neutron_target_info
+        )
+
     def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.conv2d.default]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
+    ) -> PartitionAnchors:
+        conv_node = fused_partition[0].nodes[-1]
+
+        bias_quantization_qspec = DerivedQuantizationSpec(
+            derived_from=[
+                (conv_node.args[0], conv_node),
+                (conv_node.args[1], conv_node),
+            ],
+            derive_qparams_fn=get_bias_qparams,
+            dtype=torch.int32,
+            quant_min=-(2**31) + 1,
+            quant_max=2**31 - 1,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+        )
+
+        weight_observer_or_fake_quant_ctr = PerChannelMinMaxObserver
+        weight_quantization_spec = QuantizationSpec(
+            dtype=torch.int8,
+            observer_or_fake_quant_ctr=weight_observer_or_fake_quant_ctr,
+            quant_min=-127,
+            quant_max=127,
+            qscheme=torch.per_channel_symmetric,
+            ch_axis=0,
+        )
+
+        # Keep bias empty if not supplied
+        bias = []
+        if len(conv_node.args) > 2 and conv_node.args[2] is not None:
+            bias = [(conv_node, NodeArgsIdx(2), bias_quantization_qspec)]
+
+        # If the following node is a fusable activation, quantize together with activation
+        output = [(conv_node,)]
+        if len(
+            conv_node.users
+        ) == 1 and self.neutron_target_info.is_supported_fused_activation__aten(
+            activation := next(iter(conv_node.users))
+        ):
+            activation_quantizer = self.neutron_quantizer.op_to_quantizer[
+                activation.target
+            ]
+            activation_quantizer.annotate(gm)
+            output = []
+            activation.meta["quantization_annotation"].input_qspec_map = {}
+
+        return PartitionAnchors(
+            inputs=[(conv_node, NodeArgsIdx(0))],
+            weights=[(conv_node, NodeArgsIdx(1), weight_quantization_spec)],
+            biases=bias,
+            output=output,
+        )
 
 
 class DropoutPattern(SharedSpecPattern):
@@ -376,35 +474,21 @@ class FlattenPattern(SharedSpecPattern):
         return [torch.ops.aten.flatten.using_ints]
 
 
-class HardTanhPattern(QuantizationPattern):
+class HardTanhPattern(SingleInputBasicPattern):
     """
-    Quantizer for HardTanh operator. Shared quantization spec is selected, as activation functions usually follows
-    computation layer.
+    Quantizer for HardTanh operator.
     """
 
     def partition_types(self):
         return [torch.ops.aten.hardtanh.default]
 
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: list[fx.GraphModule]
-    ) -> PartitionAnchors | None:
-        node = fused_partition[0].nodes[-1]
-
-        return PartitionAnchors(
-            inputs=[(node, NodeArgsIdx(0))],
-            weights=[],
-            biases=[],
-            output=[(node,)],
-        )
-
     def replacement_op(self):
         raise AssertionError()
 
 
-class HardTanhInPlacePattern(QuantizationPattern):
+class HardTanhInPlacePattern(SingleInputBasicPattern):
     """
-    Quantizer for HardTanh operator with param inplace=True. Shared quantization spec is selected, as activation
-    functions usually follows computation layer.
+    Quantizer for HardTanh operator with param inplace=True.
     """
 
     def partition_types(self):
@@ -427,6 +511,12 @@ class HardTanhInPlacePattern(QuantizationPattern):
 
 
 class LinearPattern(QuantizationPattern):
+    def __init__(self, neutron_quantizer):
+        self.neutron_quantizer = neutron_quantizer
+        self.neutron_target_info = (
+            self.neutron_quantizer.neutron_target_spec.neutron_target_info
+        )
+
     def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.linear.default]
 
@@ -452,11 +542,27 @@ class LinearPattern(QuantizationPattern):
         if len(linear_node.args) > 2:
             bias = [(linear_node, NodeArgsIdx(2), bias_qspec)]
 
+        # If the following node is a fusable activation, quantize together with activation
+        output = [(linear_node,)]
+        if (
+            len(linear_node.users) == 1
+            and len(linear_node.meta["val"].shape) <= 2
+            and self.neutron_target_info.is_supported_fused_activation__aten(
+                activation := next(iter(linear_node.users))
+            )
+        ):
+            activation_quantizer = self.neutron_quantizer.op_to_quantizer[
+                activation.target
+            ]
+            activation_quantizer.annotate(gm)
+            output = []
+            activation.meta["quantization_annotation"].input_qspec_map = {}
+
         return PartitionAnchors(
             inputs=[(linear_node, NodeArgsIdx(0))],
             weights=[(linear_node, NodeArgsIdx(1))],
             biases=bias,
-            output=[(linear_node,)],
+            output=output,
         )
 
 
@@ -479,6 +585,12 @@ class MeanDimPattern(SharedSpecPattern):
 
 
 class MmPattern(QuantizationPattern):
+    def __init__(self, neutron_quantizer):
+        self.neutron_quantizer = neutron_quantizer
+        self.neutron_target_info = (
+            self.neutron_quantizer.neutron_target_spec.neutron_target_info
+        )
+
     def partition_types(self) -> list[OpOverload]:
         return [torch.ops.aten.mm.default]
 
@@ -487,11 +599,25 @@ class MmPattern(QuantizationPattern):
     ) -> PartitionAnchors:
         mm_node = fused_partition[0].nodes[-1]
 
+        # If the following node is a fusable activation, quantize together with activation
+        output = [(mm_node,)]
+        if len(
+            mm_node.users
+        ) == 1 and self.neutron_target_info.is_supported_fused_activation__aten(
+            activation := next(iter(mm_node.users))
+        ):
+            activation_quantizer = self.neutron_quantizer.op_to_quantizer[
+                activation.target
+            ]
+            activation_quantizer.annotate(gm)
+            output = []
+            activation.meta["quantization_annotation"].input_qspec_map = {}
+
         return PartitionAnchors(
             inputs=[(mm_node, NodeArgsIdx(0))],
             weights=[(mm_node, NodeArgsIdx(1))],
             biases=[],
-            output=[(mm_node,)],
+            output=output,
         )
 
 
@@ -513,19 +639,18 @@ class PermutePattern(SharedSpecPattern):
         return [torch.ops.aten.permute.default]
 
 
-class ReluPattern(SharedSpecPattern):
+class ReluPattern(SingleInputBasicPattern):
     """
-    Quantizer for Relu operator. Shared quantization spec is selected, as ReLU usually follows computation layer.
+    Quantizer for Relu operator.
     """
 
     def partition_types(self):
         return [torch.ops.aten.relu.default]
 
 
-class ReluInPlacePattern(SharedSpecPattern):
+class ReluInPlacePattern(SingleInputBasicPattern):
     """
-    Quantizer for Relu operator with param inplace=True. Shared quantization spec is selected, as ReLU usually
-    follows computation layer.
+    Quantizer for Relu operator with param inplace=True.
     """
 
     def partition_types(self):

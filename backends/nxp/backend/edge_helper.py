@@ -4,8 +4,30 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+
+from executorch.exir.dialects._ops import ops as exir_ops
+
 from torch.fx import GraphModule, Node
 from torch.nn import Parameter
+
+
+QUANTIZE_OPERATORS = [
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+]
+
+DEQUANTIZE_OPERATORS = [
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+]
+
+
+def _is_dequantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in DEQUANTIZE_OPERATORS
+
+
+def _is_quantize(node_: Node) -> bool:
+    return node_.op == "call_function" and node_.target in QUANTIZE_OPERATORS
 
 
 def input_tensor(node: Node, input_index: int) -> torch.Tensor:
@@ -61,12 +83,6 @@ def node_is_effectively_static_tensor(
     """
     if node_is_static_tensor(node, parameters_mapping):
         return True
-
-    def _is_dequantize(node_: Node) -> bool:
-        return node_.target.__name__ in {
-            "quantized_decomposed.dequantize_per_tensor.default",
-            "quantized_decomposed.dequantize_per_channel.default",
-        }
 
     return _is_dequantize(node) and node_is_static_tensor(
         node.args[0], parameters_mapping

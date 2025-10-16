@@ -108,7 +108,9 @@ class TestCloneConverter(unittest.TestCase):
         ).eval()
 
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             quantized_program = to_quantized_edge_program(
                 model, input_shape
@@ -159,7 +161,9 @@ class TestCloneConverter(unittest.TestCase):
         model = KWSFinalBlock(input_shape).eval()
 
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             quantized_program = to_quantized_edge_program(
                 model, input_shape

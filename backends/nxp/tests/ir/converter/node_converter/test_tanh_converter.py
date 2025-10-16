@@ -48,7 +48,9 @@ class TestTanhConverter(unittest.TestCase):
         self, _: str, inplace: bool, input_shape: tuple[int] = (1, 3, 112, 112)
     ):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             if inplace:
                 model = Conv2dWithActivation(
