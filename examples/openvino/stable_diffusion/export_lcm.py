@@ -9,15 +9,16 @@
 import argparse
 import logging
 import os
-import sys
 
 import torch
-from torch.export import export
 
 from executorch.backends.openvino.partitioner import OpenvinoPartitioner
+from executorch.examples.models.stable_diffusion.model import (  # type: ignore[import-untyped]
+    LCMModelLoader,
+)
 from executorch.exir import ExecutorchBackendConfig, to_edge_transform_and_lower
 from executorch.exir.backend.backend_details import CompileSpec
-from executorch.examples.models.stable_diffusion.model import LCMModelLoader
+from torch.export import export
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +49,9 @@ class LCMOpenVINOExporter:
             dummy_inputs = self.model_loader.get_dummy_inputs()
 
             # Export to ATEN graph
-            exported_program = export(text_encoder_wrapper, dummy_inputs["text_encoder"])
+            exported_program = export(
+                text_encoder_wrapper, dummy_inputs["text_encoder"]
+            )
 
             # Configure OpenVINO compilation
             compile_spec = [CompileSpec("device", device.encode())]

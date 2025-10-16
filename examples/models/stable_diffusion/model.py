@@ -173,7 +173,11 @@ class LCMModelLoader:
 
         unet_inputs = (
             torch.randn(
-                batch_size, latent_channels, latent_height, latent_width, dtype=self.dtype
+                batch_size,
+                latent_channels,
+                latent_height,
+                latent_width,
+                dtype=self.dtype,
             ),
             torch.tensor([981]),  # Random timestep
             torch.randn(batch_size, text_seq_len, text_embed_dim, dtype=self.dtype),

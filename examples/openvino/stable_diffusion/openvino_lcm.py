@@ -111,7 +111,9 @@ class OpenVINOLCMPipeline:
             exec_time = time.time() - exec_start
             self.exec_time += exec_time
 
-            logger.info(f"Text encoder - Load: {load_time:.3f}s, Execute: {exec_time:.3f}s")
+            logger.info(
+                f"Text encoder - Load: {load_time:.3f}s, Execute: {exec_time:.3f}s"
+            )
             return embeddings
         except Exception as e:
             logger.error(f"Failed to encode prompt: {e}")
@@ -262,7 +264,7 @@ class OpenVINOLCMPipeline:
         total_time = time.time() - total_start
 
         logger.info("=" * 60)
-        logger.info(f"✓ Generation completed!")
+        logger.info("✓ Generation completed!")
         logger.info(f"  Total time: {total_time:.3f}s")
         logger.info(f"  Total load time: {self.models_load_time:.3f}s")
         logger.info(f"  Total Inference time: {self.exec_time:.3f}s")
