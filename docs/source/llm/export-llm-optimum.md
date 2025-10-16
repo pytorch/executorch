@@ -1,10 +1,10 @@
-# Exporting LLMs with Optimum ExecuTorch
+# Exporting LLMs with HuggingFace's Optimum ExecuTorch
 
 [Optimum ExecuTorch](https://github.com/huggingface/optimum-executorch) provides a streamlined way to export Hugging Face transformer models to ExecuTorch format. It offers seamless integration with the Hugging Face ecosystem, making it easy to export models directly from the Hugging Face Hub.
 
 ## Overview
 
-Optimum ExecuTorch supports a much wider variety of model architectures compared to ExecuTorch's native `export_llm` API. While `export_llm` focuses on a limited set of highly optimized models (Llama, Qwen, Phi, and SmolLM) with advanced features like SpinQuant and attention sink, Optimum ExecuTorch can export diverse architectures including Gemma, Mistral, GPT-2, BERT, T5, Whisper, and many others.
+Optimum ExecuTorch supports a much wider variety of model architectures compared to ExecuTorch's native `export_llm` API. While `export_llm` focuses on a limited set of highly optimized models (Llama, Qwen, Phi, and SmolLM) with advanced features like SpinQuant and attention sink, Optimum ExecuTorch can export diverse architectures including Gemma, Mistral, GPT-2, BERT, T5, Whisper, Voxtral, and many others.
 
 ### Use Optimum ExecuTorch when:
 - You need to export models beyond the limited set supported by `export_llm`
@@ -130,7 +130,30 @@ For detailed examples of exporting each model type, see the [Optimum ExecuTorch 
 
 ## Running Exported Models
 
-After exporting your model to a `.pte` file, you can run it on device:
+### Verifying Output with Python
+
+After exporting, you can verify the model output in Python before deploying to device using classes from `modeling.py`, such as the `ExecuTorchModelForCausalLM` class for LLMs:
+
+```python
+from optimum.executorch import ExecuTorchModelForCausalLM
+from transformers import AutoTokenizer
+
+# Load the exported model
+model = ExecuTorchModelForCausalLM.from_pretrained("./smollm2_exported")
+tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
+
+# Generate text
+generated_text = model.text_generation(
+    tokenizer=tokenizer,
+    prompt="Once upon a time",
+    max_seq_len=128,
+)
+print(generated_text)
+```
+
+### Running on Device
+
+After verifying your model works correctly, deploy it to device:
 
 - [Running with C++](run-with-c-plus-plus.md) - Run exported models using ExecuTorch's C++ runtime
 - [Running on Android](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/android) - Deploy to Android devices
