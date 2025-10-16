@@ -61,7 +61,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Runtime API Reference" href="executorch-runtime-api-reference.html" />
-    <link rel="prev" title="MPS Backend" href="desktop-mps.html" />
+    <link rel="prev" title="ExecuTorch on Raspberry Pi" href="raspberry_pi_llama_tutorial.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -1040,7 +1040,6 @@ document.write(`
 <li class="toctree-l1 has-children"><a class="reference internal" href="ios-section.html">iOS</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l2"><a class="reference internal" href="using-executorch-ios.html">Using ExecuTorch on iOS</a></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="ios-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="ios-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="ios-mps.html">MPS Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="ios-xnnpack.html">XNNPACK Backend</a></li>
 </ul>
@@ -1054,10 +1053,10 @@ document.write(`
 <li class="toctree-l2 has-children"><a class="reference internal" href="desktop-backends.html">Backends</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
 <li class="toctree-l3"><a class="reference internal" href="desktop-xnnpack.html">XNNPACK Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="desktop-openvino.html">Building and Running ExecuTorch with OpenVINO Backend</a></li>
-<li class="toctree-l3"><a class="reference internal" href="desktop-coreml.html">Core ML Backend</a></li>
 <li class="toctree-l3"><a class="reference internal" href="desktop-mps.html">MPS Backend</a></li>
 </ul>
 </details></li>
+<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -1074,6 +1073,7 @@ document.write(`
 </ul>
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
+<li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
@@ -1209,6 +1209,7 @@ document.write(`
 <h2>Tutorials<a class="headerlink" href="#tutorials" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="tutorial-arm-ethos-u.html"><span class="doc">Arm Ethos-U NPU Backend Tutorial</span></a> — Export a simple PyTorch model for the ExecuTorch Ethos-U backend</p></li>
+<li><p><a class="reference internal" href="raspberry_pi_llama_tutorial.html"><span class="doc">ExecuTorch on Raspberry Pi</span></a> — Deploy a LLaMA model on a Raspberry Pi</p></li>
 </ul>
 <div class="toctree-wrapper compound">
 </div>
@@ -1258,12 +1259,12 @@ document.write(`
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="desktop-mps.html"
+       href="raspberry_pi_llama_tutorial.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">MPS Backend</p>
+        <p class="prev-next-title">ExecuTorch on Raspberry Pi</p>
       </div>
     </a>
     <a class="right-next"
@@ -1297,12 +1298,12 @@ document.write(`
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="desktop-mps.html"
+       href="raspberry_pi_llama_tutorial.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">MPS Backend</p>
+        <p class="prev-next-title">ExecuTorch on Raspberry Pi</p>
       </div>
     </a>
     <a class="right-next"
@@ -1561,7 +1562,7 @@ document.write(`
        "headline": "Embedded Systems",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
        "url": "/embedded-section.html",
-       "articleBody": "Embedded Systems# Deploy ExecuTorch on constrained embedded systems and microcontrollers. API Reference \u0026 Development# Start here for C++ development with ExecuTorch runtime APIs and essential tutorials. Runtime API Reference \u2014 Start here: Complete runtime API reference for embedded development Detailed C++ Runtime APIs Tutorial \u2014 Step-by-step C++ API tutorial with practical examples Running an ExecuTorch Model Using the Module Extension in C++ \u2014 Custom module extensions for specialized functionality Managing Tensor Memory in C++ \u2014 Tensor operations and memory management extensions Build \u0026 Integration Guide# Using ExecuTorch with C++ \u2014 Complete setup guide for C++ runtime integration Building from Source \u2014 Building from Source Choose Backend for acceleration# Backends \u2014 Available embedded backends and acceleration options Tutorials# Arm Ethos-U NPU Backend Tutorial \u2014 Export a simple PyTorch model for the ExecuTorch Ethos-U backend",
+       "articleBody": "Embedded Systems# Deploy ExecuTorch on constrained embedded systems and microcontrollers. API Reference \u0026 Development# Start here for C++ development with ExecuTorch runtime APIs and essential tutorials. Runtime API Reference \u2014 Start here: Complete runtime API reference for embedded development Detailed C++ Runtime APIs Tutorial \u2014 Step-by-step C++ API tutorial with practical examples Running an ExecuTorch Model Using the Module Extension in C++ \u2014 Custom module extensions for specialized functionality Managing Tensor Memory in C++ \u2014 Tensor operations and memory management extensions Build \u0026 Integration Guide# Using ExecuTorch with C++ \u2014 Complete setup guide for C++ runtime integration Building from Source \u2014 Building from Source Choose Backend for acceleration# Backends \u2014 Available embedded backends and acceleration options Tutorials# Arm Ethos-U NPU Backend Tutorial \u2014 Export a simple PyTorch model for the ExecuTorch Ethos-U backend ExecuTorch on Raspberry Pi \u2014 Deploy a LLaMA model on a Raspberry Pi",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
