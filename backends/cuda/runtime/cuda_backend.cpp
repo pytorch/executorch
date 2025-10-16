@@ -29,10 +29,8 @@
 namespace executorch::backends::cuda {
 
 #define LOAD_SYMBOL(handle, member, name, so_handle)                 \
-  \ 
   do {                                                               \
     auto symbol_res = get_function(so_handle, #name);                \
-    \  
     if (!symbol_res.ok()) {                                          \
       return symbol_res.error();                                     \
     }                                                                \
