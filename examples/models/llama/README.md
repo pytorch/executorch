@@ -245,7 +245,6 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
 2. Build llama runner.
 ```
 cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
-	-DBUILD_TESTING=OFF \
 	-DCMAKE_BUILD_TYPE=Release \
 	-Bcmake-out/examples/models/llama \
 	examples/models/llama
