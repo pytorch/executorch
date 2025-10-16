@@ -126,7 +126,7 @@ class ET_EXPERIMENTAL CudaBackend final
         temp_dir / (so_blob_key + to_string(get_process_id()) + ".so");
 
     // Create a temporary file
-    ofstream outfile(so_path.c_str(), ios::binary);
+    ofstream outfile(so_path, ios::binary);
 
     // Write the ELF buffer to the temporary file
     ET_LOG(
@@ -146,7 +146,7 @@ class ET_EXPERIMENTAL CudaBackend final
     outfile.close();
 
     // Load the lib
-    Result<void*> lib_handle_res = load_library(so_path.c_str());
+    Result<void*> lib_handle_res = load_library(so_path);
     if (!lib_handle_res.ok()) {
       return lib_handle_res.error();
     }

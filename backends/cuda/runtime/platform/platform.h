@@ -24,18 +24,20 @@ namespace executorch {
 namespace backends {
 namespace cuda {
 
-executorch::runtime::Result<void*> load_library(const char* path) {
+executorch::runtime::Result<void*> load_library(
+    const std::filesystem::path& path) {
 #ifdef _WIN32
-  auto lib_handle = LoadLibrary(path);
+  std::string utf8 = p.u8string();
+  auto lib_handle = LoadLibrary(utf8.c_str());
   if (lib_handle == NULL) {
-    ET_LOG(Error, "Failed to load %s with error: %lu", path, GetLastError());
+    ET_LOG(Error, "Failed to load %s with error: %lu", utf8, GetLastError());
     return executorch::runtime::Error::AccessFailed;
   }
 
 #else
   void* lib_handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
   if (lib_handle == nullptr) {
-    ET_LOG(Error, "Failed to load %s with error: %s", path, dlerror());
+    ET_LOG(Error, "Failed to load %s with error: %s", path.c_str(), dlerror());
     return executorch::runtime::Error::AccessFailed;
   }
 #endif
