@@ -217,7 +217,6 @@ def main(args):
         tokenizer,
         data_size,
         max_hidden_seq_length=max_hidden_seq_length,
-        shuffle=False,
     )
 
     if not args.pre_gen_pte:
