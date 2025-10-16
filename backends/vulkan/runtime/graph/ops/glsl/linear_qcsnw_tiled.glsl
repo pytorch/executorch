@@ -66,7 +66,7 @@ void main() {
     return;
   }
 
-  VEC4_T mat1[TILE_ROWS];
+  T mat1[TILE_ROWS][4];
   VEC4_T qmat2[4][TILE_TXCOLS];
   VEC4_T sums[TILE_ROWS][TILE_TXCOLS];
 
@@ -78,7 +78,7 @@ void main() {
       scales[${c}] = VEC4_T(
         texelFetch(t_scales, u16vec2(out_txcol + ${c}, 0), 0));
 
-  [[unroll]] for (int r = 0; r < TILE_ROWS; ++r) {
+  for (int r = 0; r < TILE_ROWS; ++r) {
     $for c in range(TILE_TXCOLS):
       sums[r][${c}] = VEC4_T(0.0);
   }
@@ -91,7 +91,7 @@ void main() {
       uint weight_row_txstride = div4(weight_sizes.x);
 
     // Preload weight tensor
-    [[unroll]] for (int r = 0; r < 4; r++) {
+    for (int r = 0; r < 4; r++) {
       $if QUANT_NBITS == 4:
         $for c in range(0, TILE_TXCOLS, 2):
           $if WEIGHT_STORAGE == "buffer":
@@ -117,21 +117,28 @@ void main() {
       uint in_row_txstride = div4(in_sizes.x);
 
     // Preload input tensor
-    [[unroll]] for (int i = 0; i < TILE_ROWS; i++) {
+    for (int i = 0; i < TILE_ROWS; i++) {
       $if IN_STORAGE == "buffer":
-        mat1[i] = t_in[(out_row + i) * in_row_txstride + txpos];
+        VEC4_T tmp = t_in[(out_row + i) * in_row_txstride + txpos];
+        mat1[i][0] = tmp.x;
+        mat1[i][1] = tmp.y;
+        mat1[i][2] = tmp.z;
+        mat1[i][3] = tmp.w;
       $else:
-        mat1[i] = VEC4_T(
-          texelFetch(t_in, u16vec3(txpos, out_row + i, 0), 0));
+        VEC4_T tmp = VEC4_T(texelFetch(t_in, u16vec3(txpos, out_row + i, 0), 0));
+        mat1[i][0] = tmp.x;
+        mat1[i][1] = tmp.y;
+        mat1[i][2] = tmp.z;
+        mat1[i][3] = tmp.w;
     }
 
     // Accumulate output
-    [[unroll]] for (int r = 0; r < TILE_ROWS; ++r) {
+    for (int r = 0; r < TILE_ROWS; ++r) {
       $for c in range(TILE_TXCOLS):
-        sums[r][${c}] += mat1[r].x * qmat2[0][${c}] +
-                         mat1[r].y * qmat2[1][${c}] +
-                         mat1[r].z * qmat2[2][${c}] +
-                         mat1[r].w * qmat2[3][${c}];
+        sums[r][${c}] += mat1[r][0] * qmat2[0][${c}] +
+                         mat1[r][1] * qmat2[1][${c}] +
+                         mat1[r][2] * qmat2[2][${c}] +
+                         mat1[r][3] * qmat2[3][${c}];
     }
   }
 
@@ -140,7 +147,7 @@ void main() {
     uint out_bufi;
     uint out_row_txstride = div4(out_sizes.x);
 
-  [[unroll]] for (int r = 0; r < TILE_ROWS; ++r) {
+  for (int r = 0; r < TILE_ROWS; ++r) {
     $for c in range(TILE_TXCOLS):
       $if OUT_STORAGE == "buffer":
         if (out_row + r < out_sizes.y) {
