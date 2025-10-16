@@ -99,7 +99,6 @@ announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -890,10 +889,14 @@ if(EXECUTORCH_BUILD_PYBIND)
   # This goes from executorch/extension/pybindings up to site-packages, then to
   # torch/lib
   if(APPLE)
-    set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
-                              INSTALL_RPATH "@loader_path/../../../torch/lib"
-    )
+    get_target_property(existing_rpath portable_lib INSTALL_RPATH)
+    string(FIND "${existing_rpath}" "@loader_path" pos)
+    if(pos EQUAL -1)
+      set_target_properties(
+        portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
+                                INSTALL_RPATH "@loader_path/../../../torch/lib"
+      )
+    endif()
   else()
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"

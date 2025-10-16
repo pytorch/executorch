@@ -109,13 +109,13 @@ class ET_EXPERIMENTAL CudaBackend final
         method_name.empty() ? "so_blob" : method_name + "_so_blob";
 
     const NamedDataMap* named_data_map = context.get_named_data_map();
-    auto aoti_cuda_buffer = named_data_map->get_data(so_blob_key.c_str());
+    auto aoti_dso_buffer = named_data_map->get_data(so_blob_key.c_str());
     ET_CHECK_OR_RETURN_ERROR(
-        aoti_cuda_buffer.ok(),
+        aoti_dso_buffer.ok(),
         Internal,
         "Failed to get data for key %s: 0x%x",
         so_blob_key.c_str(),
-        static_cast<uint32_t>(aoti_cuda_buffer.error()));
+        static_cast<uint32_t>(aoti_dso_buffer.error()));
 
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
@@ -129,12 +129,12 @@ class ET_EXPERIMENTAL CudaBackend final
     ET_LOG(
         Info,
         "Writing %zu bytes to %s",
-        aoti_cuda_buffer->size(),
+        aoti_dso_buffer->size(),
         so_path.c_str());
 
     outfile.write(
-        static_cast<const char*>(aoti_cuda_buffer->data()),
-        aoti_cuda_buffer->size());
+        static_cast<const char*>(aoti_dso_buffer->data()),
+        aoti_dso_buffer->size());
 
     ET_CHECK_OR_RETURN_ERROR(
         outfile, AccessFailed, "Failed to write to file %s", so_path.c_str());
@@ -143,13 +143,14 @@ class ET_EXPERIMENTAL CudaBackend final
     outfile.close();
 
     // Free the buffer immediately after writing to disk
-    aoti_cuda_buffer->Free();
+    aoti_dso_buffer->Free();
     // Load the lib
     Result<void*> lib_handle_res = load_library(so_path);
     if (!lib_handle_res.ok()) {
       return lib_handle_res.error();
     }
     void* lib_handle = lib_handle_res.get();
+
     processed->Free();
 
     // Create handle and load function pointers into it
