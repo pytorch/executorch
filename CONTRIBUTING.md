@@ -329,6 +329,24 @@ the CI (continuous integration) jobs. If `main` is broken, consider rebasing
 your PR onto the `viable/strict` branch, which points to the most recent
 all-green commit.
 
+### BUCK tests
+In addition to CMake, we run `buck` tests in our CI pipeline to ensure continued integration with certain customers. We recognize that `buck` is not a widely used build system and may not be installed on your local machine. If you encounter a failure in the `buck` CI and wish to reproduce it locally, follow these steps:
+
+```
+# Install buck
+pip install zstd certifi
+BUCK2_PATH=$(python tools/cmake/resolve_buck.py --cache_dir=/tmp/)
+mv "${BUCK2_PATH}" ~/buck2
+chmod +x ~/buck2
+
+# Build example
+~/buck2 build //runtime/platform/... # replace with other targets
+
+# Test example
+~/buck2 test //runtime/platform/...  # replace with other targets
+```
+
+Please refer to the [official buck documentation](https://buck.build/command/build.html).
 &nbsp;
 
 ## Updating Documentation
