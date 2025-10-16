@@ -21,7 +21,7 @@ class Int64Model(torch.nn.Module):
         "rand": (torch.rand(4),),
     }
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + 3
 
 
