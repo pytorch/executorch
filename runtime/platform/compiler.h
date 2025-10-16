@@ -18,13 +18,16 @@
 // -----------------------------------------------------------------------------
 
 // GCC version check
-#if !defined(__clang__) && !defined(_MSC_VER) && defined(__GNUC__) && __GNUC__ < 7
-#error "You're trying to build ExecuTorch with a too old version of GCC. We need GCC 7 or later."
+#if !defined(__clang__) && !defined(_MSC_VER) && defined(__GNUC__) && \
+    __GNUC__ < 7
+#error \
+    "You're trying to build ExecuTorch with a too old version of GCC. We need GCC 7 or later."
 #endif
 
 // Clang version check
 #if defined(__clang__) && __clang_major__ < 5
-#error "You're trying to build ExecuTorch with a too old version of Clang. We need Clang 5 or later."
+#error \
+    "You're trying to build ExecuTorch with a too old version of Clang. We need Clang 5 or later."
 #endif
 
 // C++17 check
@@ -35,7 +38,8 @@
 
 // Windows min/max macro clash
 #if defined(_MSC_VER) && (defined(min) || defined(max))
-#error "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
+#error \
+    "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
 #endif
 
 // -----------------------------------------------------------------------------
@@ -47,7 +51,8 @@
 
 // [[deprecated]]
 #define ET_DEPRECATED [[deprecated]]
-#define ET_EXPERIMENTAL [[deprecated("This API is experimental and may change without notice.")]]
+#define ET_EXPERIMENTAL \
+  [[deprecated("This API is experimental and may change without notice.")]]
 
 // [[fallthrough]]
 #if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 7)
@@ -67,23 +72,17 @@
 #define ET_NOINLINE __declspec(noinline)
 #define ET_INLINE __forceinline
 #define ET_INLINE_ATTRIBUTE __forceinline
-#elif defined(__GNUC__) || defined(__clang__)
+#else
 #define ET_NOINLINE __attribute__((noinline))
 #define ET_INLINE __attribute__((always_inline)) inline
 #define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
-#else
-#define ET_NOINLINE
-#define ET_INLINE inline
-#define ET_INLINE_ATTRIBUTE
 #endif
 
 // Unreachable
-#if defined(__GNUC__) || defined(__clang__)
-#define ET_UNREACHABLE() __builtin_unreachable()
-#elif defined(_MSC_VER)
+#if defined(_MSC_VER)
 #define ET_UNREACHABLE() __assume(0)
 #else
-#define ET_UNREACHABLE() do {} while (1)
+#define ET_UNREACHABLE() __builtin_unreachable()
 #endif
 
 // Likely/Unlikely
@@ -99,21 +98,17 @@
 #if defined(_MSC_VER)
 // No weak linkage in MSVC
 #define ET_WEAK
-#elif defined(__GNUC__) || defined(__clang__)
-#define ET_WEAK __attribute__((weak))
 #else
-#define ET_WEAK
+#define ET_WEAK __attribute__((weak))
 #endif
 
 // Printf-like format checking
 #if defined(_MSC_VER)
 #include <sal.h>
 #define ET_PRINTFLIKE(_string_index, _va_index) _Printf_format_string_
-#elif defined(__GNUC__) || defined(__clang__)
+#else
 #define ET_PRINTFLIKE(_string_index, _va_index) \
   __attribute__((format(printf, _string_index, _va_index)))
-#else
-#define ET_PRINTFLIKE(_string_index, _va_index)
 #endif
 
 // -----------------------------------------------------------------------------
