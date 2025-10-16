@@ -146,7 +146,7 @@ class ET_EXPERIMENTAL CudaBackend final
     outfile.close();
 
     // Load the lib
-    Result<void*> lib_handle_res = load_library(so_path);
+    Result<void*> lib_handle_res = load_library(so_path.c_str());
     if (!lib_handle_res.ok()) {
       return lib_handle_res.error();
     }

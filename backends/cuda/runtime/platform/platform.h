@@ -12,10 +12,12 @@
 #include <string>
 
 #ifdef _WIN32
+#include <malloc.h>
 #include <windows.h>
 #else // Posix
 #include <dlfcn.h>
 #include <unistd.h>
+#include <cstdlib>
 #endif
 
 namespace executorch {
@@ -26,11 +28,7 @@ executorch::runtime::Result<void*> load_library(const char* path) {
 #ifdef _WIN32
   auto lib_handle = LoadLibrary(path);
   if (lib_handle == NULL) {
-    ET_LOG(
-        Error,
-        "Failed to load %s with error: %lu",
-        path,
-        GetLastError());
+    ET_LOG(Error, "Failed to load %s with error: %lu", path, GetLastError());
     return executorch::runtime::Error::AccessFailed;
   }
 
@@ -93,6 +91,22 @@ int32_t get_process_id() {
   return GetCurrentProcessId();
 #else
   return getpid();
+#endif
+}
+
+void* aligned_alloc(size_t alignment, size_t size) {
+#ifdef _WIN32
+  return _aligned_malloc(size, alignment);
+#else
+  return std::aligned_alloc(alignment, size);
+#endif
+}
+
+void aligned_free(void* ptr) {
+#ifdef _WIN32
+  _aligned_free(ptr);
+#else
+  std::free(ptr);
 #endif
 }
 
