@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <unistd.h>
 #include <cstdio>
 
 #include <filesystem>
@@ -35,8 +34,7 @@ namespace executorch::backends::cuda {
       return symbol_res.error();                                     \
     }                                                                \
     handle->member = reinterpret_cast<name##Func>(symbol_res.get()); \
-  }                                                                  \
-  while (0)
+  } while (0)
 
 using namespace std;
 using namespace aoti;
@@ -125,7 +123,7 @@ class ET_EXPERIMENTAL CudaBackend final
     // Generate dynamic temporary file path
     filesystem::path temp_dir = filesystem::temp_directory_path();
     filesystem::path so_path =
-        temp_dir / (so_blob_key + to_string(getpid()) + ".so");
+        temp_dir / (so_blob_key + to_string(get_process_id()) + ".so");
 
     // Create a temporary file
     ofstream outfile(so_path.c_str(), ios::binary);
