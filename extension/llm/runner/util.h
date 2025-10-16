@@ -116,8 +116,16 @@ inline runtime::Result<TensorPtr> populate_start_pos_or_cache_position(
     const char* method_name = "forward") {
   // Get expected shape of cache position tensor, which should be the second
   // argument
-  auto method_meta = ET_UNWRAP(module->method_meta(method_name));
-  auto second_input_info = ET_UNWRAP(method_meta.input_tensor_meta(1));
+  auto method_meta_result = module->method_meta(method_name);
+  if (!method_meta_result.ok()) {
+    return method_meta_result.error();
+  }
+  auto method_meta = std::move(*method_meta_result);
+  auto second_input_info_result = method_meta.input_tensor_meta(1);
+  if (!second_input_info_result.ok()) {
+    return second_input_info_result.error();
+  }
+  auto second_input_info = std::move(*second_input_info_result);
   auto second_input_sizes = second_input_info.sizes();
   auto numel = second_input_sizes[0];
 
