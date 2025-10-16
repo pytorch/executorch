@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#import <ExecuTorch/ExecuTorch.h>
+
 #import "ExecuTorchLLMConfig.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -30,6 +32,16 @@ __attribute__((objc_subclassing_restricted))
 @interface ExecuTorchLLMImage : NSObject<NSCopying>
 
 /**
+ Initializes an image container from a tensor.
+
+ @param tensor   A tensor with shape {C, H, W} and dtype Byte or Float.
+ @return An initialized ExecuTorchLLMImage instance.
+*/
+- (instancetype)initWithTensor:(ExecuTorchTensor *)tensor
+    NS_DESIGNATED_INITIALIZER
+    NS_SWIFT_NAME(init(_:));
+
+/**
  Initializes an image container with the provided data and dimensions.
 
  @param data       Raw image bytes.
@@ -41,16 +53,21 @@ __attribute__((objc_subclassing_restricted))
 - (instancetype)initWithData:(NSData *)data
                        width:(NSInteger)width
                       height:(NSInteger)height
-                    channels:(NSInteger)channels
-    NS_DESIGNATED_INITIALIZER;
+                    channels:(NSInteger)channels;
 
+/**
+ Initializes an image container with the provided float data and dimensions.
+
+ @param data       Float image buffer.
+ @param width      Image width in pixels.
+ @param height     Image height in pixels.
+ @param channels   Number of channels.
+ @return An initialized ExecuTorchLLMImage instance.
+*/
 - (instancetype)initWithFloatData:(NSData *)data
                             width:(NSInteger)width
                            height:(NSInteger)height
-                         channels:(NSInteger)channels
-    NS_DESIGNATED_INITIALIZER;
-
-@property(nonatomic, readonly) NSData *data;
+                         channels:(NSInteger)channels;
 
 @property(nonatomic, readonly) NSInteger width;
 
@@ -59,6 +76,8 @@ __attribute__((objc_subclassing_restricted))
 @property(nonatomic, readonly) NSInteger channels;
 
 @property(nonatomic, readonly) BOOL isFloat;
+
+@property(nonatomic, readonly) ExecuTorchTensor *tensor;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;
@@ -74,6 +93,16 @@ __attribute__((objc_subclassing_restricted))
 @interface ExecuTorchLLMAudio : NSObject<NSCopying>
 
 /**
+ Initializes an audio features container from a tensor.
+
+ @param tensor   A tensor with shape {batchSize, bins, frames} and dtype Byte or Float.
+ @return An initialized ExecuTorchLLMAudio instance.
+*/
+- (instancetype)initWithTensor:(ExecuTorchTensor *)tensor
+    NS_DESIGNATED_INITIALIZER
+    NS_SWIFT_NAME(init(_:));
+
+/**
  Initializes an audio features container with the provided data and shape.
 
  @param data        Feature buffer.
@@ -85,16 +114,21 @@ __attribute__((objc_subclassing_restricted))
 - (instancetype)initWithData:(NSData *)data
                    batchSize:(NSInteger)batchSize
                         bins:(NSInteger)bins
-                      frames:(NSInteger)frames
-    NS_DESIGNATED_INITIALIZER;
+                      frames:(NSInteger)frames;
 
+/**
+ Initializes an audio features container with the provided float data and shape.
+
+ @param data        Float feature buffer.
+ @param batchSize   Batch dimension size.
+ @param bins        Number of frequency bins.
+ @param frames      Number of time frames.
+ @return An initialized ExecuTorchLLMAudio instance.
+*/
 - (instancetype)initWithFloatData:(NSData *)data
                         batchSize:(NSInteger)batchSize
                              bins:(NSInteger)bins
-                           frames:(NSInteger)frames
-    NS_DESIGNATED_INITIALIZER;
-
-@property(nonatomic, readonly) NSData *data;
+                           frames:(NSInteger)frames;
 
 @property(nonatomic, readonly) NSInteger batchSize;
 
@@ -103,6 +137,8 @@ __attribute__((objc_subclassing_restricted))
 @property(nonatomic, readonly) NSInteger frames;
 
 @property(nonatomic, readonly) BOOL isFloat;
+
+@property(nonatomic, readonly) ExecuTorchTensor *tensor;
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

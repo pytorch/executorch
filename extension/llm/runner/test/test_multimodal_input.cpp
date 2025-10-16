@@ -71,7 +71,7 @@ TEST_F(MultimodalInputTest, ImageConstructorFromImage) {
   EXPECT_EQ(input.get_image().width(), 224);
   EXPECT_EQ(input.get_image().height(), 224);
   EXPECT_EQ(input.get_image().channels(), 3);
-  EXPECT_EQ(input.get_image().get_uint8_data().size(), 224 * 224 * 3);
+  EXPECT_EQ(input.get_image().tensor()->numel(), 224 * 224 * 3);
 }
 
 TEST_F(MultimodalInputTest, ImageConstructorFromRvalueImage) {
@@ -79,7 +79,7 @@ TEST_F(MultimodalInputTest, ImageConstructorFromRvalueImage) {
   int width = img.width();
   int height = img.height();
   int channels = img.channels();
-  size_t data_size = img.get_uint8_data().size();
+  size_t data_size = img.tensor()->numel();
 
   MultimodalInput input(std::move(img));
 
@@ -89,7 +89,7 @@ TEST_F(MultimodalInputTest, ImageConstructorFromRvalueImage) {
   EXPECT_EQ(input.get_image().width(), width);
   EXPECT_EQ(input.get_image().height(), height);
   EXPECT_EQ(input.get_image().channels(), channels);
-  EXPECT_EQ(input.get_image().get_uint8_data().size(), data_size);
+  EXPECT_EQ(input.get_image().tensor()->numel(), data_size);
 }
 
 // Test copy constructor and assignment
@@ -356,7 +356,7 @@ TEST_F(MultimodalInputTest, DifferentImageSizes) {
   EXPECT_EQ(input.get_image().width(), 32);
   EXPECT_EQ(input.get_image().height(), 32);
   EXPECT_EQ(input.get_image().channels(), 1);
-  EXPECT_EQ(input.get_image().get_uint8_data().size(), 32 * 32);
+  EXPECT_EQ(input.get_image().tensor()->numel(), 32 * 32);
 }
 
 // Test with empty text

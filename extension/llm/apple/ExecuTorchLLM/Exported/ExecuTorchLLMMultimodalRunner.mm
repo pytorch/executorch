@@ -21,35 +21,60 @@ using namespace executorch::runtime;
 
 @end
 
-@implementation ExecuTorchLLMImage
+@implementation ExecuTorchLLMImage {
+  ExecuTorchTensor *_tensor;
+}
+
+- (instancetype)initWithTensor:(ExecuTorchTensor *)tensor {
+  ET_CHECK(tensor);
+  if (self = [super init]) {
+    ET_CHECK_MSG(tensor.shape.count == 3, "Image tensor must be rank-3 {C,H,W}");
+    ExecuTorchDataType dataType = tensor.dataType;
+    ET_CHECK_MSG(dataType == ExecuTorchDataTypeByte || dataType == ExecuTorchDataTypeFloat,
+                 "Image tensor must be Byte or Float");
+    _tensor = tensor;
+  }
+  return self;
+}
 
 - (instancetype)initWithData:(NSData *)data
                        width:(NSInteger)width
                       height:(NSInteger)height
                     channels:(NSInteger)channels {
-  if (self = [super init]) {
-    _data = [data copy];
-    _width = width;
-    _height = height;
-    _channels = channels;
-    _isFloat = NO;
-  }
-  return self;
+  return [self initWithTensor:[[ExecuTorchTensor alloc]
+                                 initWithData:data
+                                        shape:@[@(channels), @(height), @(width)]
+                                      dataType:ExecuTorchDataTypeByte]];
 }
 
 - (instancetype)initWithFloatData:(NSData *)data
                             width:(NSInteger)width
                            height:(NSInteger)height
                          channels:(NSInteger)channels {
-  self = [super init];
-  if (self) {
-    _data = [data copy];
-    _width = width;
-    _height = height;
-    _channels = channels;
-    _isFloat = YES;
-  }
-  return self;
+  return [self initWithTensor:[[ExecuTorchTensor alloc]
+                                 initWithData:data
+                                        shape:@[@(channels), @(height), @(width)]
+                                      dataType:ExecuTorchDataTypeFloat]];
+}
+
+- (NSInteger)width {
+  return _tensor.shape[2].integerValue;
+}
+
+- (NSInteger)height {
+  return _tensor.shape[1].integerValue;
+}
+
+- (NSInteger)channels {
+  return _tensor.shape[0].integerValue;
+}
+
+- (BOOL)isFloat {
+  return _tensor.dataType == ExecuTorchDataTypeFloat;
+}
+
+- (ExecuTorchTensor *)tensor {
+  return _tensor;
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -58,35 +83,60 @@ using namespace executorch::runtime;
 
 @end
 
-@implementation ExecuTorchLLMAudio
+@implementation ExecuTorchLLMAudio {
+  ExecuTorchTensor *_tensor;
+}
+
+- (instancetype)initWithTensor:(ExecuTorchTensor *)tensor {
+  ET_CHECK(tensor);
+  if (self = [super init]) {
+    ET_CHECK_MSG(tensor.shape.count == 3, "Audio tensor must be rank-3 {B,bins,frames}");
+    ExecuTorchDataType dataType = tensor.dataType;
+    ET_CHECK_MSG(dataType == ExecuTorchDataTypeByte || dataType == ExecuTorchDataTypeFloat,
+                 "Audio tensor must be Byte or Float");
+    _tensor = tensor;
+  }
+  return self;
+}
 
 - (instancetype)initWithData:(NSData *)data
                    batchSize:(NSInteger)batchSize
                         bins:(NSInteger)bins
                       frames:(NSInteger)frames {
-  if (self = [super init]) {
-    _data = [data copy];
-    _batchSize = batchSize;
-    _bins = bins;
-    _frames = frames;
-    _isFloat = NO;
-  }
-  return self;
+  return [self initWithTensor:
+      [[ExecuTorchTensor alloc] initWithData:data
+                                       shape:@[@(batchSize), @(bins), @(frames)]
+                                    dataType:ExecuTorchDataTypeByte]];
 }
 
 - (instancetype)initWithFloatData:(NSData *)data
                         batchSize:(NSInteger)batchSize
                              bins:(NSInteger)bins
                            frames:(NSInteger)frames {
-  self = [super init];
-  if (self) {
-    _data = [data copy];
-    _batchSize = batchSize;
-    _bins = bins;
-    _frames = frames;
-    _isFloat = YES;
-  }
-  return self;
+  return [self initWithTensor:
+      [[ExecuTorchTensor alloc] initWithData:data
+                                       shape:@[@(batchSize), @(bins), @(frames)]
+                                    dataType:ExecuTorchDataTypeFloat]];
+}
+
+- (NSInteger)batchSize {
+  return _tensor.shape[0].integerValue;
+}
+
+- (NSInteger)bins {
+  return _tensor.shape[1].integerValue;
+}
+
+- (NSInteger)frames {
+  return _tensor.shape[2].integerValue;
+}
+
+- (BOOL)isFloat {
+  return _tensor.dataType == ExecuTorchDataTypeFloat;
+}
+
+- (ExecuTorchTensor *)tensor {
+  return _tensor;
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -208,54 +258,16 @@ using namespace executorch::runtime;
       case ExecuTorchLLMMultimodalInputTypeText:
         nativeInputs.emplace_back(llm::MultimodalInput(input.text.UTF8String));
         break;
-      case ExecuTorchLLMMultimodalInputTypeImage: {
-        ExecuTorchLLMImage *image = input.image;
-        if (image.isFloat) {
-          const float *buffer = (const float *)image.data.bytes;
-          size_t elementCount = (size_t)image.data.length / sizeof(float);
-          std::vector<float> data(buffer, buffer + elementCount);
-          nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
-            std::move(data),
-            (int32_t)image.width,
-            (int32_t)image.height,
-            (int32_t)image.channels
-          )));
-        } else {
-          const uint8_t *buffer = (const uint8_t *)image.data.bytes;
-          std::vector<uint8_t> data(buffer, buffer + image.data.length);
-          nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
-            std::move(data),
-            (int32_t)image.width,
-            (int32_t)image.height,
-            (int32_t)image.channels
-          )));
-        }
+      case ExecuTorchLLMMultimodalInputTypeImage:
+        nativeInputs.emplace_back(llm::MultimodalInput(llm::Image(
+          make_tensor_ptr(*reinterpret_cast<TensorPtr *>(input.image.tensor.nativeInstance))
+        )));
         break;
-      }
-      case ExecuTorchLLMMultimodalInputTypeAudio: {
-        ExecuTorchLLMAudio *audio = input.audio;
-        if (audio.isFloat) {
-          const float *buffer = (const float *)audio.data.bytes;
-          size_t elementCount = (size_t)audio.data.length / sizeof(float);
-          std::vector<float> data(buffer, buffer + elementCount);
-          nativeInputs.emplace_back(llm::MultimodalInput(llm::Audio(
-            std::move(data),
-            (int32_t)audio.batchSize,
-            (int32_t)audio.bins,
-            (int32_t)audio.frames
-          )));
-        } else {
-          const uint8_t *buffer = (const uint8_t *)audio.data.bytes;
-          std::vector<uint8_t> data(buffer, buffer + audio.data.length);
-          nativeInputs.emplace_back(llm::MultimodalInput(llm::Audio(
-            std::move(data),
-            (int32_t)audio.batchSize,
-            (int32_t)audio.bins,
-            (int32_t)audio.frames
-          )));
-        }
+      case ExecuTorchLLMMultimodalInputTypeAudio:
+        nativeInputs.emplace_back(llm::MultimodalInput(llm::Audio(
+          make_tensor_ptr(*reinterpret_cast<TensorPtr *>(input.audio.tensor.nativeInstance))
+        )));
         break;
-      }
       default: {
         if (error) {
           *error = [NSError errorWithDomain:ExecuTorchLLMErrorDomain
