@@ -150,33 +150,62 @@ class ModuleQConfig:
             if self.act_observer
             else quant_config_func()
         )
-        self.per_channel_quant_config = (
-            per_channel_quant_config_func(act_observer=self.act_observer)
-            if self.act_observer
-            else per_channel_quant_config_func()
-        )
-        self.use_per_channel_weight_quant_ops = set()
+
+        # Assume per_channel_quant/per_block_quant only happen on axis_0 or axis_1, increase the range if there's a need
+        potential_axis = 2
+
+        self.per_channel_quant_config_list = []
+        for i in range(potential_axis):
+            self.per_channel_quant_config_list.append(
+                (
+                    per_channel_quant_config_func(
+                        act_observer=self.act_observer, ch_axis=i
+                    )
+                    if self.act_observer
+                    else per_channel_quant_config_func(ch_axis=i)
+                )
+            )
+
+        # Key is the node target, and value is the axis to perform per channel quantization
+        self.op_axis_dict = {
+            torch.ops.aten.conv1d.default: 0,
+            torch.ops.aten.conv2d.default: 0,
+            torch.ops.aten.conv3d.default: 0,
+            torch.ops.aten.conv_transpose2d.input: 1,
+            torch.ops.aten.conv_transpose3d.input: 1,
+            torch.ops.aten.linear.default: 0,
+        }
+
+        self.use_per_channel_weight_quant_ops = {}
         if self.is_conv_per_channel:
+            conv_ops = [
+                torch.ops.aten.conv1d.default,
+                torch.ops.aten.conv2d.default,
+                torch.ops.aten.conv3d.default,
+                torch.ops.aten.conv_transpose2d.input,
+                torch.ops.aten.conv_transpose3d.input,
+            ]
             self.use_per_channel_weight_quant_ops.update(
-                {
-                    torch.ops.aten.conv1d.default,
-                    torch.ops.aten.conv2d.default,
-                    torch.ops.aten.conv3d.default,
-                    torch.ops.aten.conv_transpose2d.input,
-                }
+                {k: self.op_axis_dict[k] for k in conv_ops if k in self.op_axis_dict}
             )
         if self.is_linear_per_channel:
+            linear_ops = [torch.ops.aten.linear.default]
             self.use_per_channel_weight_quant_ops.update(
-                {
-                    torch.ops.aten.linear.default,
-                }
+                {k: self.op_axis_dict[k] for k in linear_ops if k in self.op_axis_dict}
             )
+
         if per_block_quant_config_func:
-            self.per_block_quant_config = (
-                per_block_quant_config_func(act_observer=self.act_observer)
-                if self.act_observer
-                else per_block_quant_config_func()
-            )
+            self.per_block_quant_config_list = []
+            for i in range(potential_axis):
+                self.per_block_quant_config_list.append(
+                    (
+                        per_block_quant_config_func(
+                            act_observer=self.act_observer, ch_axis=i
+                        )
+                        if self.act_observer
+                        else per_block_quant_config_func(ch_axis=i)
+                    )
+                )
 
 
 class QnnQuantizer(Quantizer):
@@ -269,16 +298,22 @@ class QnnQuantizer(Quantizer):
         op = node.target
         if isinstance(op, str):
             return
-
+        config = self._get_submodule_qconfig(node)
         if block_size := self.block_size_map.get(node.name):
-            config = self.default_quant_config.per_block_quant_config
+            ch_axis = config.op_axis_dict.get(node.target, 0)
+            assert (
+                len(config.per_block_quant_config_list) > ch_axis
+            ), f"Unsupported per block quantization axis: {ch_axis}, please increase the range of per_block_quant_config_list"
+            config = config.per_block_quant_config_list[ch_axis]
             config.block_size = block_size
             return config
 
-        config = self._get_submodule_qconfig(node)
-
         if op in config.use_per_channel_weight_quant_ops:
-            return config.per_channel_quant_config
+            ch_axis = config.use_per_channel_weight_quant_ops[op]
+            assert (
+                len(config.per_channel_quant_config_list) > ch_axis
+            ), f"Unsupported per channel quantization axis: {ch_axis}, please increase the range of per_channel_quant_config_list"
+            return config.per_channel_quant_config_list[ch_axis]
 
         if op in self.quant_ops:
             return config.quant_config

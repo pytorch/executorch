@@ -153,6 +153,13 @@ class NodeVisitor:
         scales, scale_offset, quantized_scales = quant_attrs[QCOM_SCALE], [], []
         # channel in observers defaults to zero
         num_channels = node.meta["val"].shape[0]
+        user_0 = self.get_first_user(node)
+
+        ch_axis = 0
+        # args[6] to check if it is transpose conv
+        if user_0.target == exir_ops.edge.aten.convolution.default and user_0.args[6]:
+            num_channels = node.meta["val"].shape[1]
+            ch_axis = 1
         # TODO: expand this when QNN starts to support more configurations
         bitwidth_of_scale = 4
         quant_scales_dtype = torch.uint8
@@ -162,9 +169,10 @@ class NodeVisitor:
         )
 
         for ch in range(num_channels):
-            max_scale = scales[ch].reshape(1, -1).amax(dim=-1) / num_steps
+            candidates = scales[ch] if ch_axis == 0 else scales[:, ch, ...]
+            max_scale = candidates.reshape(1, -1).amax(dim=-1) / num_steps
             q_scales = torch.clamp(
-                input=torch.round(input=scales[ch] / max_scale),
+                input=torch.round(input=candidates / max_scale),
                 min=1,
                 max=2**bitwidth_of_scale,
             ).to(quant_scales_dtype)
@@ -174,11 +182,11 @@ class NodeVisitor:
 
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
-        if "convolution" in user_0.target.__name__:
+        if user_0.target == exir_ops.edge.aten.convolution.default:
             # OIHW (pytorch) -> HWIO (QNN)
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
             quant_config[QCOM_AXIS_ORDER] = (2, 3, 1, 0)
-        elif "linear" in user_0.target.__name__:
+        elif user_0.target == exir_ops.edge.aten.linear.default:
             # OI (pytorch) -> OI (QNN)
             quant_config[QCOM_AXIS] = 0
             quant_config[QCOM_AXIS_ORDER] = (0, 1)
@@ -217,7 +225,7 @@ class NodeVisitor:
         # skip dequantize op, e.g. frozen_param -> dq -> conv2d
         user_0 = self.get_first_user(node)
         # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
-        if "convolution" in user_0.target.__name__:
+        if user_0.target == exir_ops.edge.aten.convolution.default:
             quant_config[QCOM_AXIS] = node.meta["val"].dim() - 1
         else:
             quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]

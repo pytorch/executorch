@@ -746,15 +746,26 @@ class ConvTranspose1dSingle(torch.nn.Module):
 
 
 class ConvTranspose2dSingle(torch.nn.Module):
-    def __init__(self, bias=True, dilation=1):
+    def __init__(
+        self,
+        bias=True,
+        in_channels=1,
+        out_channels=3,
+        kernel_size=1,
+        stride=1,
+        padding=1,
+        dilation=1,
+        groups=1,
+    ):
         super().__init__()
         self.conv_transpose = torch.nn.ConvTranspose2d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=3,
-            stride=2,
-            padding=1,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
             dilation=dilation,
+            groups=groups,
             bias=bias,
         )
 
