@@ -22,22 +22,22 @@ namespace executorch {
 namespace backends {
 namespace cuda {
 
-executorch::runtime::Result<void*> load_library(const std::string& path) {
+executorch::runtime::Result<void*> load_library(const char* path) {
 #ifdef _WIN32
-  auto lib_handle = LoadLibrary(path.c_str());
+  auto lib_handle = LoadLibrary(path);
   if (lib_handle == NULL) {
     ET_LOG(
         Error,
         "Failed to load %s with error: %lu",
-        path.c_str(),
+        path,
         GetLastError());
     return executorch::runtime::Error::AccessFailed;
   }
 
 #else
-  void* lib_handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+  void* lib_handle = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
   if (lib_handle == nullptr) {
-    ET_LOG(Error, "Failed to load %s with error: %s", path.c_str(), dlerror());
+    ET_LOG(Error, "Failed to load %s with error: %s", path, dlerror());
     return executorch::runtime::Error::AccessFailed;
   }
 #endif
@@ -59,7 +59,9 @@ executorch::runtime::Error close_library(void* lib_handle) {
   return executorch::runtime::Error::Ok;
 }
 
-executorch::runtime::Result<void*> get_function(void* lib_handle, const std::string& fn_name) {
+executorch::runtime::Result<void*> get_function(
+    void* lib_handle,
+    const std::string& fn_name) {
 #ifdef _WIN32
   auto fn = GetProcAddress((HMODULE)lib_handle, fn_name.c_str());
   if (!fn) {
@@ -86,7 +88,7 @@ executorch::runtime::Result<void*> get_function(void* lib_handle, const std::str
                     // probably explicitly pack the bytes.
 }
 
-int32_t get_process_id(void* lib_handle) {
+int32_t get_process_id() {
 #ifdef _WIN32
   return GetCurrentProcessId();
 #else
@@ -94,6 +96,6 @@ int32_t get_process_id(void* lib_handle) {
 #endif
 }
 
-} // cuda
-} // backends
-} // executorch
+} // namespace cuda
+} // namespace backends
+} // namespace executorch
