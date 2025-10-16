@@ -31,13 +31,11 @@
     "You're trying to build ExecuTorch with a too old version of Clang. We need Clang 5 or later."
 #endif
 
-// C++17 check
 #if (defined(_MSC_VER) && (!defined(_MSVC_LANG) || _MSVC_LANG < 201703L)) || \
     (!defined(_MSC_VER) && __cplusplus < 201703L)
 #error "You need C++17 to compile ExecuTorch"
 #endif
 
-// Windows min/max macro clash
 #if defined(_MSC_VER) && (defined(min) || defined(max))
 #error \
     "Macro clash with min and max -- define NOMINMAX when compiling your program on Windows"
@@ -57,20 +55,6 @@
  */
 
 #define ET_NORETURN [[noreturn]]
-
-#define ET_DEPRECATED [[deprecated]]
-#define ET_EXPERIMENTAL \
-  [[deprecated("This API is experimental and may change without notice.")]]
-
-#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 7)
-#define ET_FALLTHROUGH [[fallthrough]]
-#else
-#define ET_FALLTHROUGH
-#endif
-
-#define ET_NODISCARD [[nodiscard]]
-
-#define ET_UNUSED [[maybe_unused]]
 
 // Inline/NoInline
 #if defined(_MSC_VER)
@@ -99,25 +83,35 @@
 
 #endif // defined(__GNUC__)
 
+#define ET_DEPRECATED [[deprecated]]
+#define ET_EXPERIMENTAL \
+  [[deprecated("This API is experimental and may change without notice.")]]
+#define ET_FALLTHROUGH [[fallthrough]]
+#define ET_NODISCARD [[nodiscard]]
+#define ET_UNUSED [[maybe_unused]]
+
 // UNLIKELY Macro
 // example
 // if ET_UNLIKELY(a > 10 && b < 5) {
 //   do something
 // }
 #if (__cplusplus) >= 202002L
+
 #define ET_LIKELY(expr) (expr) [[likely]]
 #define ET_UNLIKELY(expr) (expr) [[unlikely]]
+
 #else
+
 #define ET_LIKELY(expr) (expr)
 #define ET_UNLIKELY(expr) (expr)
-#endif
+
+#endif // (__cplusplus) >= 202002L
 
 /// Define a C symbol with weak linkage.
 #ifdef _MSC_VER
 // There currently doesn't seem to be a great way to do this in Windows and
 // given that weak linkage is not really critical on Windows, we'll just leave
 // it as a stub.
-// No weak linkage in MSVC
 #define ET_WEAK
 #else
 #define ET_WEAK __attribute__((weak))
@@ -134,10 +128,6 @@
 #define ET_PRINTFLIKE(_string_index, _va_index) \
   __attribute__((format(printf, _string_index, _va_index)))
 #endif
-
-// -----------------------------------------------------------------------------
-// Builtin/Source location helpers
-// -----------------------------------------------------------------------------
 
 #ifndef __has_builtin
 #define __has_builtin(x) (0)
@@ -175,15 +165,15 @@
 
 // Whether the compiler supports GNU statement expressions.
 // https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
-
 #ifndef ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 #if (defined(__GNUC__) && __GNUC__ >= 3) || defined(__clang__)
 #define ET_HAVE_GNU_STATEMENT_EXPRESSIONS 1
 #else
 #define ET_HAVE_GNU_STATEMENT_EXPRESSIONS 0
 #endif
-#endif
+#endif // ifndef
 
+// Define size_t and ssize_t.
 #ifndef _MSC_VER
 #include <sys/types.h>
 #else
@@ -201,7 +191,6 @@ using ssize_t = ptrdiff_t;
 
 // DEPRECATED: Use the non-underscore-prefixed versions instead.
 // TODO(T199005537): Remove these once all users have stopped using them.
-
 #define __ET_DEPRECATED ET_DEPRECATED
 #define __ET_FALLTHROUGH ET_FALLTHROUGH
 #define __ET_FUNCTION ET_FUNCTION
