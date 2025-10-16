@@ -348,7 +348,11 @@ class Module {
   ET_NODISCARD inline runtime::Result<runtime::EValue> get(
       const std::string& method_name,
       const std::vector<runtime::EValue>& input_values) {
-    auto result = ET_UNWRAP(execute(method_name, input_values));
+    auto execute_result = execute(method_name, input_values);
+    if (!execute_result.ok()) {
+      return execute_result.error();
+    }
+    auto result = std::move(*execute_result);
     if (result.empty()) {
       return runtime::Error::InvalidArgument;
     }

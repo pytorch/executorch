@@ -110,8 +110,15 @@ class ET_EXPERIMENTAL TextTokenGenerator {
       }
 
       // print the token as string, decode it with the Tokenizer object
-      token_callback(
-          ET_UNWRAP_TOKENIZER(tokenizer_->decode(prev_token, cur_token)));
+      auto decode_result = tokenizer_->decode(prev_token, cur_token);
+      if (!decode_result.ok()) {
+        ET_LOG(
+            Error,
+            "Tokenizers error code %d",
+            static_cast<uint32_t>(decode_result.error()));
+        return ::executorch::runtime::Error::InvalidArgument;
+      }
+      token_callback(std::move(*decode_result));
 
       if (should_stop_) {
         break;
