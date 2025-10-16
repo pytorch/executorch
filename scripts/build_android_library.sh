@@ -82,9 +82,9 @@ build_aar() {
     find cmake-out-android-so -type f -name "*.so" -exec "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip {} \;
   fi
   pushd extension/android/
-  ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK:-/opt/android/sdk}}"
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
   # Use java unit test as sanity check
-  ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK:-/opt/android/sdk}}" ./gradlew :executorch_android:testDebugUnitTest
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew :executorch_android:testDebugUnitTest
   popd
   if [ ! -z $BUILD_AAR_DIR ]; then
     cp extension/android/executorch_android/build/outputs/aar/executorch_android-debug.aar "${BUILD_AAR_DIR}/executorch.aar"
