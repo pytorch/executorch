@@ -183,9 +183,9 @@ class CudaBackend(BackendDetails):
             elif path.endswith(".wrapper_weights.blob"):
                 blob_path = path
 
-        if so_path is None:
+        if so_path is None or blob_path is None:
             raise RuntimeError(
-                f"Could not find .wrapper.so file in compiled paths, got {paths}"
+                f"Could not find required files in compiled paths, got {paths}"
             )
 
         # pyre-ignorep[6]: Incompatible parameter type
@@ -198,15 +198,14 @@ class CudaBackend(BackendDetails):
         # Keep the so file in the NamedDataStore, so that it can be packaged into the .pte file.
         named_data_store.add_named_data(method_name + "_so_blob", so_data, 1, None)
 
-        # Add weights blob to named data store if it exists
-        if blob_path is not None:
-            with open(blob_path, "rb") as f:
-                blob_data = f.read()
-            named_data_store.add_named_data(
-                method_name + "_weights_blob", blob_data, 1, "aoti_cuda_blob"
-            )
-            # Clean up the weights blob file
-            os.remove(blob_path)
+        # Add weights blob to named data store
+        with open(blob_path, "rb") as f:
+            blob_data = f.read()
+        named_data_store.add_named_data(
+            method_name + "_weights_blob", blob_data, 1, "aoti_cuda_blob"
+        )
+        # Clean up the weights blob file
+        os.remove(blob_path)
 
         # Clean up the generated so file; it has been packaged into the NamedDataStore
         # pyre-ignorep[6]: Incompatible parameter type

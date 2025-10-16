@@ -27,15 +27,6 @@
 
 namespace executorch::backends::cuda {
 
-#define LOAD_SYMBOL(handle, member, name, so_handle)                 \
-  do {                                                               \
-    auto symbol_res = get_function(so_handle, #name);                \
-    if (!symbol_res.ok()) {                                          \
-      return symbol_res.error();                                     \
-    }                                                                \
-    handle->member = reinterpret_cast<name##Func>(symbol_res.get()); \
-  } while (0)
-
 using namespace std;
 using namespace aoti;
 
@@ -61,35 +52,35 @@ class ET_EXPERIMENTAL CudaBackend final
   Error load_function_pointers_into_handle(
       void* so_handle,
       AOTIDelegateHandle* handle) const {
-    LOAD_SYMBOL(
-        handle,
-        create_with_device,
-        AOTInductorModelContainerCreateWithDevice,
-        so_handle);
 
-    LOAD_SYMBOL(
-        handle, delete_container, AOTInductorModelContainerDelete, so_handle);
+#define LOAD_SYMBOL(member, name)                                    \
+  do {                                                               \
+    auto symbol_res = get_function(so_handle, #name);                \
+    if (!symbol_res.ok()) {                                          \
+      return symbol_res.error();                                     \
+    }                                                                \
+    handle->member = reinterpret_cast<name##Func>(symbol_res.get()); \
+  } while (0)
 
-    LOAD_SYMBOL(
-        handle,
-        get_num_inputs,
-        AOTInductorModelContainerGetNumInputs,
-        so_handle);
+    LOAD_SYMBOL(create_with_device, AOTInductorModelContainerCreateWithDevice);
 
-    LOAD_SYMBOL(
-        handle,
-        get_num_outputs,
-        AOTInductorModelContainerGetNumOutputs,
-        so_handle);
+    LOAD_SYMBOL(delete_container, AOTInductorModelContainerDelete);
 
-    LOAD_SYMBOL(handle, run, AOTInductorModelContainerRun, so_handle);
+    LOAD_SYMBOL(get_num_inputs, AOTInductorModelContainerGetNumInputs);
 
-    LOAD_SYMBOL(
-        handle,
-        update_constants_from_blob,
-        AOTInductorModelUpdateConstantsFromBlob,
-        so_handle);
+    LOAD_SYMBOL(get_num_outputs, AOTInductorModelContainerGetNumOutputs);
 
+    LOAD_SYMBOL(run, AOTInductorModelContainerRun);
+#undef LOAD_SYMBOL
+
+    handle->update_constants_from_blob =
+        reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
+            dlsym(so_handle, "AOTInductorModelUpdateConstantsFromBlob"));
+    if (handle->update_constants_from_blob == nullptr) {
+      ET_LOG(
+          Info,
+          "Failed to load AOTInductorModelUpdateConstantsFromBlob. This .so is probably compiled on an old version of torch (<2.9.0)");
+    }
     return Error::Ok;
   }
 
@@ -183,7 +174,7 @@ class ET_EXPERIMENTAL CudaBackend final
     std::string weights_blob_key =
         method_name.empty() ? "weights_blob" : method_name + "_weights_blob";
     auto buffer_res = named_data_map->get_data(weights_blob_key.c_str());
-    if (buffer_res.ok()) {
+    if (buffer_res.ok() && handle->update_constants_from_blob != nullptr) {
       ET_LOG(Info, "Found %s in named data map", weights_blob_key.c_str());
       const void* weights_blob = buffer_res->data();
       // Feed the weights blob into the container. Under the hood it's copying
