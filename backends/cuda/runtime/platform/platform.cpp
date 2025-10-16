@@ -32,7 +32,11 @@ executorch::runtime::Result<void*> load_library(
   std::string utf8 = path.u8string();
   auto lib_handle = LoadLibrary(utf8.c_str());
   if (lib_handle == NULL) {
-    ET_LOG(Error, "Failed to load %s with error: %lu", utf8.c_str(), GetLastError());
+    ET_LOG(
+        Error,
+        "Failed to load %s with error: %lu",
+        utf8.c_str(),
+        GetLastError());
     return executorch::runtime::Error::AccessFailed;
   }
 
@@ -40,7 +44,8 @@ executorch::runtime::Result<void*> load_library(
   std::string path_str = path.string();
   void* lib_handle = dlopen(path_str.c_str(), RTLD_LAZY | RTLD_LOCAL);
   if (lib_handle == nullptr) {
-    ET_LOG(Error, "Failed to load %s with error: %s", path_str.c_str(), dlerror());
+    ET_LOG(
+        Error, "Failed to load %s with error: %s", path_str.c_str(), dlerror());
     return executorch::runtime::Error::AccessFailed;
   }
 #endif
