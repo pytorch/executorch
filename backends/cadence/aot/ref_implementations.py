@@ -703,6 +703,48 @@ def quantized_conv2d_nchw_per_tensor(
     )
 
 
+@impl_tracked(m, "quantized_w8a32_conv")
+def quantized_w8a32_conv(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+
+    if len(weight.shape) != 3:
+        raise ValueError("Weight tensor must be 3D")
+
+    out_channels, in_channels, kernel_size = weight.shape
+    if kernel_size != 3:
+        raise ValueError("Kernel size must be 3")
+    if (out_channels % 4) != 0:
+        raise ValueError("Out channels must be a multiple of 4")
+    if (in_channels % 4) != 0:
+        raise ValueError("In channels must be a multiple of 4")
+
+    # src comes in shape [batch, in_channel, in_length]
+    # weight comes in shape [out_ch, in_ch, kernel_dim]
+    # output comes in empty with shape [batch, out_ch, in_length - kernel_dim + 1]
+    # Dequantize weight using scale
+    dequant_weight = weight.float() * w_scale
+
+    # Dequantize bias using scale
+    dequant_bias = bias.float() * b_scale
+
+    # Perform 1D convolution
+    # src: [batch, in_channel, in_length]
+    # weight: [out_ch, in_ch, kernel_dim]
+    # bias: [out_ch]
+    output = torch.nn.functional.conv1d(
+        src.float(),
+        dequant_weight,
+        dequant_bias,
+    )
+
+    return output
+
+
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")
 def quantized_conv2d_nhwc_per_tensor(
     input_tensor: torch.Tensor,
