@@ -7,7 +7,6 @@
  */
 
 #include <cuda_runtime.h>
-#include <dlfcn.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -23,17 +22,23 @@
 // Include our shim layer headers
 #include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/common_shims.h>
+#include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 
 namespace executorch::backends::cuda {
 
-#define LOAD_SYMBOL(handle, member, name, so_handle)                        \
-  do {                                                                      \
-    handle->member = reinterpret_cast<name##Func>(dlsym(so_handle, #name)); \
-    ET_CHECK_OR_RETURN_ERROR(                                               \
-        handle->member != nullptr, AccessFailed, "Failed to load " #name);  \
-  } while (0)
+#define LOAD_SYMBOL(handle, member, name, so_handle)                 \
+  \ 
+  do {                                                               \
+    auto symbol_res = get_function(so_handle, #name);                \
+    \  
+    if (!symbol_res.ok()) {                                          \
+      return symbol_res.error();                                     \
+    }                                                                \
+    handle->member = reinterpret_cast<name##Func>(symbol_res.get()); \
+  }                                                                  \
+  while (0)
 
 using namespace std;
 using namespace aoti;
@@ -144,24 +149,23 @@ class ET_EXPERIMENTAL CudaBackend final
     // Finish writing the file to disk
     outfile.close();
 
-    // Load the ELF using dlopen
-    void* so_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
-    ET_CHECK_OR_RETURN_ERROR(
-        so_handle != nullptr,
-        AccessFailed,
-        "Failed to load shared library: %s",
-        dlerror());
+    // Load the lib
+    Result<void*> lib_handle_res = load_library(so_path);
+    if (!lib_handle_res.ok()) {
+      return lib_handle_res.error();
+    }
+    void* lib_handle = lib_handle_res.get();
 
     processed->Free();
 
     // Create handle and load function pointers into it
     AOTIDelegateHandle* handle = new AOTIDelegateHandle();
-    handle->so_handle = so_handle;
+    handle->so_handle = lib_handle;
     handle->so_path = so_path.string();
 
     // Load function pointers specific to this handle's shared library
     ET_CHECK_OK_OR_RETURN_ERROR(
-        load_function_pointers_into_handle(so_handle, handle));
+        load_function_pointers_into_handle(lib_handle, handle));
 
     AOTInductorModelContainerHandle container_handle = nullptr;
 
@@ -332,8 +336,9 @@ class ET_EXPERIMENTAL CudaBackend final
     // AOTInductorModelContainerDelete(handle->container_handle);
 
     // Now close the shared library
+    auto err = Error::Ok;
     if (handle->so_handle != nullptr) {
-      dlclose(handle->so_handle);
+      err = close_library(handle->so_handle);
     }
 
     // Remove the temporary shared library file
