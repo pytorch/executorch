@@ -1218,7 +1218,7 @@ ET_NODISCARD inline Error resize_tensor(
   }
 
   return internal::resize_tensor_impl(
-      t.unsafeGetTensorImpl(), {new_sizes_casted.data(), new_sizes_ndim} while (0);
+      t.unsafeGetTensorImpl(), {new_sizes_casted.data(), new_sizes_ndim});
 }
 
 /// DEPRECATED: Use `resize_tensor()` instead, which can fail non-fatally.
