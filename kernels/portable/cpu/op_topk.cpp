@@ -8,6 +8,7 @@
 
 #include <c10/util/irange.h>
 #include <cmath>
+#include <functional>
 #include <tuple>
 
 #include <executorch/kernels/portable/cpu/util/math_util.h>
