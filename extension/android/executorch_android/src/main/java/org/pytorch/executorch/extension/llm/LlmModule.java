@@ -253,6 +253,28 @@ public class LlmModule {
   private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
 
   /**
+   * Prefill a multimodal Module with the given audio input.
+   *
+   * @param audio Input preprocessed audio as a float array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillAudio(float[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInputFloat(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInputFloat(float[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
    * Prefill a multimodal Module with the given raw audio input.
    *
    * @param audio Input raw audio as a byte array
