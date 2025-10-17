@@ -6,14 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <c10/util/irange.h>
-#include <cmath>
-#include <functional>
-#include <tuple>
-
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+
+#include <c10/util/irange.h>
+#include <cmath>
+#include <tuple>
 
 namespace torch {
 namespace executor {
@@ -119,21 +118,31 @@ void perform_topk(
       }
 
       // Perform topk on the queue
-      const std::function<bool(const elem_t&, const elem_t&)> elem_greater =
-          [](const elem_t& x, const elem_t& y) -> bool {
-        return float_less_than(y.first, x.first);
-      };
-      const std::function<bool(const elem_t&, const elem_t&)> elem_less =
-          [](const elem_t& x, const elem_t& y) -> bool {
-        return float_less_than(x.first, y.first);
-      };
-      const auto cmp = largest ? elem_greater : elem_less;
-      if (use_partial_sort) {
-        std::partial_sort(queue, queue + k, queue + dim_size, cmp);
+      if (largest) {
+        const auto elem_greater =
+            [](const elem_t& x, const elem_t& y) -> bool {
+          return float_less_than(y.first, x.first);
+        };
+        if (use_partial_sort) {
+          std::partial_sort(queue, queue + k, queue + dim_size, elem_greater);
+        } else {
+          std::nth_element(queue, queue + k - 1, queue + dim_size, elem_greater);
+          if (sorted) {
+            std::sort(queue, queue + k - 1, elem_greater);
+          }
+        }
       } else {
-        std::nth_element(queue, queue + k - 1, queue + dim_size, cmp);
-        if (sorted) {
-          std::sort(queue, queue + k - 1, cmp);
+        const auto elem_less =
+            [](const elem_t& x, const elem_t& y) -> bool {
+          return float_less_than(x.first, y.first);
+        };
+        if (use_partial_sort) {
+          std::partial_sort(queue, queue + k, queue + dim_size, elem_less);
+        } else {
+          std::nth_element(queue, queue + k - 1, queue + dim_size, elem_less);
+          if (sorted) {
+            std::sort(queue, queue + k - 1, elem_less);
+          }
         }
       }
 
