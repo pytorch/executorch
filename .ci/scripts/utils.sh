@@ -50,16 +50,7 @@ dedupe_macos_loader_path_rpaths() {
   fi
 
   local torch_lib_dir
-  torch_lib_dir=$(python - <<'PY'
-import os
-try:
-    import torch
-except Exception:
-    raise SystemExit(0)
-
-print(os.path.join(os.path.dirname(torch.__file__), "lib"))
-PY
-)
+  torch_lib_dir=$(python -c "import importlib.util; print(importlib.util.find_spec('torch').submodule_search_locations[0])")/lib
 
   if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
     return
