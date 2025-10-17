@@ -1947,3 +1947,28 @@ def get_where_inputs():
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
     return test_suite
+
+
+@register_test_suite("aten.pow.Tensor_Scalar")
+def get_pow_tensor_scalar_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1,), 2.0),
+            ((M2, M1), 2.0),
+            ((S1, M1, M2), 0.5),
+            ((S1, S2, S2, M2), 2.5),
+            ((S, S1, S2), -1.0),
+            ((M1, M2), 4.0),
+            ((S1, S2), 1.5),
+        ]
+    )
+    test_suite.storage_types = [
+        "utils::kBuffer",
+        "utils::kTexture3D",
+    ]
+    test_suite.layouts = [
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
+    ]
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
