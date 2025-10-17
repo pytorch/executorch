@@ -57,7 +57,7 @@ runtime.cxx_library(
         "//executorch/runtime/core:core",
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/runtime/platform:platform",
-        "//executorch/backends/cuda/runtime/platform:cuda_platform",
+        "//executorch/backends/cuda/runtime:cuda_platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
         "-_NVCC_HOST_COMPILER_FLAG_",
