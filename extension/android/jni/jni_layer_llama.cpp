@@ -222,7 +222,15 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
           .temperature = temperature_,
+          .max_new_tokens = 256,
       };
+      for (const auto& input : inputs) {
+        ET_LOG(
+            Error,
+            "Prefill input: %s",
+            input.to_string().c_str());
+        }
+
       multi_modal_runner_->generate(
           std::move(inputs),
           config,
@@ -342,6 +350,9 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
       for (int i = 0; i < data_size; i++) {
         data_f[i] = data_jfloat[i];
       }
+      ET_LOG(Error, "First 5 elements of data_f: %f, %f, %f, %f, %f",
+             data_f[10000], data_f[10001], data_f[10002], data_f[10003], data_f[
+      10004]);
       llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
       prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
     }
@@ -412,8 +423,7 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
         makeNativeMethod(
             "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
         makeNativeMethod(
-            "appendAudioInputFloat",
-            ExecuTorchLlmJni::append_audio_input_float),
+            "appendAudioInputFloat", ExecuTorchLlmJni::append_audio_input_float),
         makeNativeMethod(
             "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
         makeNativeMethod(

@@ -29,6 +29,11 @@ struct ET_EXPERIMENTAL RawAudio {
   int32_t batch_size;
   int32_t n_channels; // For mono, use n_channels = 1.
   int32_t n_samples;
+
+  std::string to_string() const {
+    return "RawAudio: " + std::to_string(batch_size) + "x" +
+        std::to_string(n_channels) + "x" + std::to_string(n_samples);
+  }
 };
 
 /**
@@ -144,6 +149,21 @@ class ET_EXPERIMENTAL Audio final {
         Error,
         "Shouldn't reach here, audio data is not initialized with uint8_t or float vector.");
     return ::executorch::runtime::Error::NotSupported;
+  }
+
+  std::string to_string() const {
+    std::string result = "Audio: ";
+    if (is_uint8()) {
+      result += "uint8_t";
+    } else if (is_float()) {
+      result += "float";
+    } else {
+      result += "unknown";
+    }
+    result += " data, batch_size: " + std::to_string(get_batch_size()) +
+        ", n_bins: " + std::to_string(get_n_bins()) +
+        ", n_frames: " + std::to_string(get_n_frames());
+    return result;
   }
 
  private:
