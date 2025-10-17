@@ -56,13 +56,19 @@ void resize_reduce_per_row_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& resize_args) {
-  (void)resize_args;
   const ValueRef out = args.at(0).refs.at(0);
   const ValueRef in = args.at(1).refs.at(0);
 
+  const bool keepdim = graph->extract_scalar<bool>(resize_args.at(0));
+
   std::vector<int64_t> new_sizes = graph->sizes_of(in);
-  // Per-row reduction always reduces along the last dimension (width)
-  new_sizes.back() = 1;
+  if (keepdim) {
+    // Per-row reduction always reduces along the last dimension (width)
+    new_sizes.back() = 1;
+  } else {
+    // Remove the last dimension
+    new_sizes.pop_back();
+  }
   graph->virtual_resize(out, new_sizes);
 }
 
@@ -282,6 +288,7 @@ utils::uvec3 reduce_per_row_local_wg_size(
 void add_reduce_per_row_node(
     ComputeGraph& graph,
     const ValueRef input,
+    const ValueRef keepdim_ref,
     const ValueRef output,
     const std::string& op_name) {
   std::string kernel_name = op_name + "_per_row";
@@ -310,7 +317,7 @@ void add_reduce_per_row_node(
       // Specialization Constants
       {},
       // Resize Args
-      {},
+      {keepdim_ref},
       // Resizing Logic
       resize_reduce_per_row_node));
 }
@@ -320,14 +327,14 @@ void add_reduce_per_row_node(
     const std::vector<int64_t> dims_list =                               \
         graph.extract_int_or_symint_list(args[1]);                       \
     if (dims_list.size() == 1) {                                         \
-      const int64_t dim_val = dims_list.at(0);                           \
-      const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
-                                                                         \
-      if (dim_val == -1 && graph.is_buffer_storage(args[0])) {           \
+      int64_t dim_val = dims_list.at(0);                                 \
+      int64_t ndim = graph.dim_of(args[0]);                              \
+      if ((dim_val == -1 || dim_val == ndim - 1) &&                      \
+          graph.is_buffer_storage(args[0])) {                            \
         return add_reduce_per_row_node(                                  \
-            graph, args[0], args[out_arg_idx], #op_name);                \
+            graph, args[0], args[2], args[out_arg_idx], #op_name);       \
       }                                                                  \
-                                                                         \
+      const ValueRef dim_ref = graph.get_or_add_value_for_int(dim_val);  \
       return add_reduce_node(                                            \
           graph, args[0], dim_ref, args[out_arg_idx], #op_name);         \
     }                                                                    \

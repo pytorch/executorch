@@ -1559,6 +1559,7 @@ def get_reduce_inputs(is_softmax: bool = False):
 
 def get_reduce_per_row_inputs():
     inputs = [
+        ((5, 10), 1, False),
         ((5, 16), -1, True),
         ((5, 16), -1, False),
         ((7, 21), -1, True),
@@ -2013,44 +2014,4 @@ def get_pow_tensor_scalar_inputs():
         "utils::kChannelsPacked",
     ]
     test_suite.dtypes = ["at::kFloat"]
-    return test_suite
-
-
-# Example test suite for reduce_per_row operations
-# This would be used to test the custom reduce_per_row shader implementation
-def get_reduce_per_row_inputs():
-    """
-    Test cases for per-row reduction operations.
-    These tests assume 2D input tensors with width divisible by 4.
-    """
-    test_suite = VkTestSuite(
-        [
-            # Basic 2D tensor reductions - height x width
-            ((8, 32), "sum"),  # 8 rows, 32 columns (divisible by 4)
-            ((16, 64), "mean"),  # 16 rows, 64 columns
-            ((4, 128), "amax"),  # 4 rows, 128 columns
-            ((12, 256), "amin"),  # 12 rows, 256 columns
-            # Test various sizes that are multiples of 4
-            ((S1, 12), "sum"),  # S1=7 rows, 12 columns
-            ((S2, 16), "mean"),  # S2=11 rows, 16 columns
-            ((M1, 20), "amax"),  # M1=37 rows, 20 columns
-            ((M2, 24), "amin"),  # M2=41 rows, 24 columns
-            # Larger tensor cases
-            ((L, 64), "sum"),  # L=89 rows, 64 columns
-            ((XL, 128), "mean"),  # XL=113 rows, 128 columns
-        ]
-    )
-    test_suite.storage_types = [
-        "utils::kBuffer",
-        "utils::kTexture3D",
-    ]
-    test_suite.layouts = [
-        "utils::kWidthPacked",
-    ]
-    test_suite.dtypes = [
-        "at::kFloat",
-        "at::kHalf",
-    ]
-    test_suite.data_gen = "make_seq_tensor"
-    test_suite.test_name_suffix = "per_row"
     return test_suite

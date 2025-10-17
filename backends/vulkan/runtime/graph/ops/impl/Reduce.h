@@ -17,6 +17,7 @@ namespace vkcompute {
 void add_reduce_per_row_node(
     ComputeGraph& graph,
     const ValueRef input,
+    const ValueRef keepdim_ref,
     const ValueRef output,
     const std::string& op_name);
 

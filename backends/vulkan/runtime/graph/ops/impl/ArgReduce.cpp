@@ -37,7 +37,7 @@ void arg_reduce_impl(
   VK_CHECK_COND(normalized_dim == ndim - 1);
 
   // Use the reduce_per_row_node function
-  add_reduce_per_row_node(graph, in, out, op_name);
+  add_reduce_per_row_node(graph, in, keepdim, out, op_name);
 }
 
 void argmin(ComputeGraph& graph, const std::vector<ValueRef>& args) {

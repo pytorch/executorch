@@ -259,6 +259,46 @@ def tensor_node_is_bool(node: torch.fx.Node) -> bool:
     return False
 
 
+def ndim_of(node: Any) -> Optional[int]:
+    """
+    Returns the number of dimensions of the tensor produced by the given node
+    """
+    if not is_single_tensor_node(node):
+        return None
+
+    return node.meta["val"].ndim
+
+
+def is_unsqueezed_vector(node: torch.fx.Node) -> bool:
+    """
+    Returns True if the node's tensor has all dimensions equal to 1 except for the last dimension.
+    """
+    if not is_single_tensor_node(node):
+        return False
+
+    tensor = node.meta["val"]
+    assert isinstance(tensor, FakeTensor)
+
+    if len(tensor.shape) < 1:
+        return False
+    # All dims except last are 1, last can be any size
+    return all(dim == 1 for dim in tensor.shape[:-1])
+
+
+def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the operator used to compute the given node contains a bool tensor
+    """
+    if is_tensor_node(node) and tensor_node_is_bool(node):
+        return True
+
+    for arg_node in node.args:
+        if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
+            return True
+
+    return False
+
+
 def get_primary_arg_idx(self, node: torch.fx.Node) -> Optional[int]:
     primary_arg_idx: Optional[int] = None
     for i, arg_node in enumerate(node.args):
@@ -1234,6 +1274,26 @@ def is_in_8bit_range(tensor: torch.Tensor) -> bool:
 ##
 ## Misc
 ##
+
+
+def normalize_dims(dims: Union[int, List[int]], ndim: int) -> Union[int, List[int]]:
+    """
+    Normalize dimension indices to be non-negative and within [0, ndim).
+    Accepts a single int or a list of ints.
+    """
+    if isinstance(dims, int):
+        if dims < 0:
+            dims += ndim
+
+        return dims
+
+    normalized = []
+    for d in dims:
+        if d < 0:
+            d += ndim
+        normalized.append(d)
+
+    return normalized
 
 
 def nchw_dim_to_whcn_dim(nchw_dim: int, ndim: int) -> int:
