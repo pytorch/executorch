@@ -119,21 +119,20 @@ void perform_topk(
 
       // Perform topk on the queue
       if (largest) {
-        const auto elem_greater =
-            [](const elem_t& x, const elem_t& y) -> bool {
+        const auto elem_greater = [](const elem_t& x, const elem_t& y) -> bool {
           return float_less_than(y.first, x.first);
         };
         if (use_partial_sort) {
           std::partial_sort(queue, queue + k, queue + dim_size, elem_greater);
         } else {
-          std::nth_element(queue, queue + k - 1, queue + dim_size, elem_greater);
+          std::nth_element(
+              queue, queue + k - 1, queue + dim_size, elem_greater);
           if (sorted) {
             std::sort(queue, queue + k - 1, elem_greater);
           }
         }
       } else {
-        const auto elem_less =
-            [](const elem_t& x, const elem_t& y) -> bool {
+        const auto elem_less = [](const elem_t& x, const elem_t& y) -> bool {
           return float_less_than(x.first, y.first);
         };
         if (use_partial_sort) {
