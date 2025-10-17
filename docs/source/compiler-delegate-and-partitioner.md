@@ -37,7 +37,7 @@ The diagram looks like following
 There are mainly two Ahead-of-Time entry point for backend to implement: `partition` and `preprocess`.
 
 `partitioner` is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. `to_backend` API will apply the partition algorithm and lower each subgraph, which consists of connected tagged nodes, to the targeted backend. Every subgraph
-will be sent to the `preprocess` part provided by the backend to compiled as a binary blob.
+will be sent to the `preprocess` part provided by the backend to be compiled as a binary blob.
 
 During partition, the `exported_program` is not allowed to mutate the program, and it's supposed to apply tag to each node. The
 `PartitionResult` includes both tagged exported program and the partition tags dictionary for `to_backend` to look up the tag and
@@ -194,8 +194,8 @@ qnnpack is one backend and xnnpack is another backend. We haven't open-sourced
 these two backends delegates yet, and this example won't run out of box. It can
 be used as a reference to see how it can be done.
 
-This option is easy to try becuase usually all backends will implement their own
-parititioner. However this option may get different results if we change the
+This option is easy to try because usually all backends will implement their own
+partitioner. However this option may get different results if we change the
 order of to_backend call. If we want to have a better control on the nodes, like
 which backend they should go, option 2 is better.
 

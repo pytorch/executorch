@@ -892,6 +892,7 @@ jobs:
         # Install test requirements
         pip install -r backends/nxp/requirements-tests-pypi.txt
         pip install -r backends/nxp/requirements-tests-eiq.txt
+        PYTHON_EXECUTABLE=python bash examples/nxp/setup.sh
 
         # Run pytest
         PYTHON_EXECUTABLE=python bash backends/nxp/run_unittests.sh
@@ -933,6 +934,12 @@ jobs:
         models="mv2 ic3 resnet18 resnet50 mv3 ic4 dl3 edsr vit w2l"
         for model in $models; do
           python -m executorch.examples.samsung.aot_compiler --model_name=$model -c E9955
+        done
+
+        # Test quant models
+        model_scripts="deeplab_v3 edsr inception_v3 inception_v4 mobilenet_v2 mobilenet_v3 resnet18 resnet50 vit wav2letter"
+        for m_script in $model_scripts; do
+          python -m executorch.examples.samsung.scripts.${m_script} -c e9955 -p A8W8
         done
 
         # Test ops

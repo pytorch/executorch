@@ -8,6 +8,7 @@
 from typing import Set, Type
 
 import torch.fx
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -16,7 +17,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ConvertSplitToSlicePass(ExportPass):
+class ConvertSplitToSlicePass(ArmPass):
     """
     Replace a split operation with many slice operations.
     """
@@ -46,13 +47,24 @@ class ConvertSplitToSlicePass(ExportPass):
             dim = (dim + rank) % rank
 
             # Validate that split lengths cover the entire dimension
-            length_sum = sum(split_lengths)
+
             dim_size = shape[dim]
-            if length_sum != dim_size:
-                raise ValueError(
-                    f"Split sizes {split_lengths} sum to {length_sum}, "
-                    f"but dimension {dim} has size {dim_size}"
-                )
+            if isinstance(split_lengths, int):
+                if split_lengths <= 0:
+                    raise ValueError(
+                        f"Split size must be positive, got {split_lengths}"
+                    )
+                full_chunks, remainder = divmod(dim_size, split_lengths)
+                split_lengths = [split_lengths] * full_chunks
+                if remainder:
+                    split_lengths.append(remainder)
+            else:
+                length_sum = sum(split_lengths)
+                if length_sum != dim_size:
+                    raise ValueError(
+                        f"Split sizes {split_lengths} sum to {length_sum}, "
+                        f"but dimension {dim} has size {dim_size}"
+                    )
 
             # Convert split argument 'split_lengths' to slice arguments start and end.
             starts = [0] * len(split_lengths)

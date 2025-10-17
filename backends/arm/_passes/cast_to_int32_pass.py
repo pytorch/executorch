@@ -7,11 +7,12 @@ from typing import Set, Type
 
 import torch
 
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 
-class CastToInt32Pass(ExportPass):
+class CastToInt32Pass(ArmPass):
     """Casts the input to int32 if it is not already and casts back the output to the original input dtype."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()

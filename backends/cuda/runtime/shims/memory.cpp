@@ -8,12 +8,12 @@
 
 #include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
-#include <cstdlib> // For posix_memalign
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,6 +27,8 @@ using executorch::backends::aoti::aoti_torch_get_device_index;
 using executorch::backends::aoti::aoti_torch_get_dtype;
 using executorch::backends::aoti::aoti_torch_get_sizes;
 using executorch::backends::aoti::aoti_torch_get_strides;
+using executorch::backends::aoti::convert_sizes_to_vector;
+using executorch::backends::aoti::convert_strides_to_vector;
 using executorch::backends::aoti::dtype_to_element_size;
 using executorch::backends::aoti::dtype_to_scalar_type;
 using executorch::backends::aoti::validate_storage_offset;
@@ -225,18 +227,14 @@ AOTITorchError aoti_torch_empty_strided(
 
   if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
     ET_CUDA_CHECK_OR_RETURN_ERROR(
-        cudaMallocManaged(&ptr, static_cast<size_t>(nbytes)));
+        cudaMallocAsync(&ptr, static_cast<size_t>(nbytes), cudaStreamDefault));
   } else if (device_type == static_cast<int32_t>(SupportedDevices::CPU)) {
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
-    int result = posix_memalign(&ptr, 16, nbytes);
-    ET_CHECK_OR_RETURN_ERROR(
-        result == 0,
-        MemoryAllocationFailed,
-        "Failed to allocate aligned CPU memory");
+    ptr = aligned_alloc(16, nbytes);
     ET_CHECK_OR_RETURN_ERROR(
         ptr != nullptr,
         MemoryAllocationFailed,
-        "Failed to call posix_memalign");
+        "Failed to allocate aligned CPU memory");
   } else {
     ET_CHECK_OR_RETURN_ERROR(
         false,
@@ -328,13 +326,16 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
           ET_CUDA_CHECK_OR_RETURN_ERROR(
               cudaPointerGetAttributes(&attributes, data_ptr));
 
-          if (attributes.type == cudaMemoryTypeManaged) {
-            // This is CUDA managed memory - free with proper synchronization
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaDeviceSynchronize());
-            ET_CUDA_CHECK_OR_RETURN_ERROR(cudaFree(data_ptr));
+          if (attributes.type == cudaMemoryTypeDevice) {
+            ET_CUDA_CHECK_OR_RETURN_ERROR(
+                cudaFreeAsync(data_ptr, cudaStreamDefault));
           } else {
+            ET_CHECK_OR_RETURN_ERROR(
+                attributes.type != cudaMemoryTypeManaged,
+                Internal,
+                "Expected host memory but got managed!")
             // This is CPU memory - free immediately
-            free(data_ptr);
+            aligned_free(data_ptr);
             data_ptr = nullptr;
           }
 

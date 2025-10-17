@@ -143,19 +143,28 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        FILES_NEEDS_FORMAT=$(/opt/google-java-format -n \
-          extension/android/executorch_android/src/main/java/org/pytorch/executorch/*.java \
-          extension/android/executorch_android/src/main/java/org/pytorch/executorch/extension/llm/*.java \
-          extension/android/executorch_android/src/main/java/org/pytorch/executorch/annotations/*.java \
-          extension/android/executorch_android/src/androidTest/java/org/pytorch/executorch/*.java \
-          extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java \
-          extension/benchmark/android/benchmark/app/src/androidTest/java/org/pytorch/minibench/*.java)
+        FILES_NEEDS_FORMAT=$(find extension/android/executorch_android/src/main/java/org/pytorch/executorch \
+                            extension/android/executorch_android/src/main/java/org/pytorch/executorch/extension/llm \
+                            extension/android/executorch_android/src/main/java/org/pytorch/executorch/annotations \
+                            extension/android/executorch_android/src/androidTest/java/org/pytorch/executorch \
+                            extension/benchmark/android/benchmark/app/src/main/java/org/pytorch/minibench \
+                            extension/benchmark/android/benchmark/app/src/androidTest/java/org/pytorch/minibench \
+                            -type f -name "*.java" 2>/dev/null | \
+                            xargs -r /opt/google-java-format -n)
+
         if [ -n "$FILES_NEEDS_FORMAT" ]; then
-          echo "Warning: The following files need formatting. Please use google-java-format."
-          echo "Use a binary from https://github.com/google/google-java-format/releases/"
-          echo "For example:"
-          echo "wget https://github.com/google/google-java-format/releases/download/v1.23.0/google-java-format_linux-x86-64"
-          echo "chmod +x google-java-format_linux-x86-64"
-          echo "./google-java-format_linux-x86-64 -i $FILES_NEEDS_FORMAT"
+          echo "Warning: The following files need formatting:"
+          echo "$FILES_NEEDS_FORMAT"
+          echo ""
+          echo "Please use google-java-format from https://github.com/google/google-java-format/releases/"
+          echo ""
+          echo "To fix, run one of these commands:"
+          echo "  # Using xargs (recommended):"
+          echo "  find <paths> -type f -name '*.java' | xargs google-java-format -i"
+          echo ""
+          echo "  # Or format specific files:"
+          echo "$FILES_NEEDS_FORMAT" | while IFS= read -r file; do
+            echo "  google-java-format -i \"$file\""
+          done
           exit 1
         fi

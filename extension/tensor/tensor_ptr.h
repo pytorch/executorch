@@ -123,13 +123,14 @@ inline TensorPtr make_tensor_ptr(
       }
     } ctx;
 
-    ET_SWITCH_REALHBBF16_TYPES(type, ctx, "make_tensor_ptr", CTYPE, [&] {
-      std::transform(
-          data.begin(),
-          data.end(),
-          reinterpret_cast<CTYPE*>(casted_data.data()),
-          [](const T& val) { return static_cast<CTYPE>(val); });
-    });
+    ET_SWITCH_REALHBBF16_AND_UINT_TYPES(
+        type, ctx, "make_tensor_ptr", CTYPE, [&] {
+          std::transform(
+              data.begin(),
+              data.end(),
+              reinterpret_cast<CTYPE*>(casted_data.data()),
+              [](const T& val) { return static_cast<CTYPE>(val); });
+        });
     const auto raw_data_ptr = casted_data.data();
     auto data_ptr =
         std::make_shared<std::vector<uint8_t>>(std::move(casted_data));
@@ -272,7 +273,8 @@ inline TensorPtr make_tensor_ptr(
  */
 template <typename T>
 inline TensorPtr make_tensor_ptr(T value) {
-  return make_tensor_ptr({}, std::vector<T>{value});
+  return make_tensor_ptr(
+      std::vector<executorch::aten::SizesType>{}, std::vector<T>{value});
 }
 
 /**
@@ -323,50 +325,87 @@ inline TensorPtr make_tensor_ptr(
 }
 
 /**
- * Creates a TensorPtr to manage a new Tensor with the same properties
- * as the given Tensor, sharing the same data without owning it.
+ * Creates a TensorPtr to manage a new Tensor that aliases the given Tensor's
+ * storage, with optional metadata overrides. Shape dynamism is inherited from
+ * the source tensor.
  *
- * @param tensor The Tensor whose properties are used to create a new TensorPtr.
- * @return A new TensorPtr managing a Tensor with the same properties as the
- * original.
+ * If an override is provided (non-empty), it is passed as-is. If an override is
+ * empty, the corresponding metadata is reused from the source tensor when it
+ * fits; otherwise it is left empty for the core factory to derive a valid
+ * configuration. If `dim_order` is empty but `strides` is provided, `dim_order`
+ * is left empty so the core may infer it from the provided strides.
+ *
+ * @param tensor The source tensor to alias.
+ * @param sizes Optional sizes override.
+ * @param dim_order Optional dimension order override.
+ * @param strides Optional strides override.
+ * @param deleter A custom deleter function for managing the lifetime of the
+ * original Tensor.
+ * @return A TensorPtr aliasing the same storage with requested metadata.
  */
-inline TensorPtr make_tensor_ptr(const executorch::aten::Tensor& tensor) {
+inline TensorPtr make_tensor_ptr(
+    const executorch::aten::Tensor& tensor,
+    std::vector<executorch::aten::SizesType> sizes = {},
+    std::vector<executorch::aten::DimOrderType> dim_order = {},
+    std::vector<executorch::aten::StridesType> strides = {},
+    std::function<void(void*)> deleter = nullptr) {
+  if (sizes.empty()) {
+    sizes.assign(tensor.sizes().begin(), tensor.sizes().end());
+  }
+  const auto same_rank = sizes.size() == static_cast<size_t>(tensor.dim());
+  const auto same_shape = same_rank &&
+      std::equal(sizes.begin(), sizes.end(), tensor.sizes().begin());
+  const auto element_count =
+      executorch::aten::compute_numel(sizes.data(), sizes.size());
+  const auto parent_element_count = tensor.numel();
+  ET_CHECK_MSG(
+      element_count <= parent_element_count,
+      "Requested view has %zd elements, but source tensor only has %zd.",
+      static_cast<ssize_t>(element_count),
+      static_cast<ssize_t>(parent_element_count));
+#ifndef USE_ATEN_LIB
+  if (dim_order.empty() && strides.empty() && same_rank) {
+    dim_order.assign(tensor.dim_order().begin(), tensor.dim_order().end());
+  }
+#endif // USE_ATEN_LIB
+  if (strides.empty() && dim_order.empty() && same_shape) {
+    strides.assign(tensor.strides().begin(), tensor.strides().end());
+  }
   return make_tensor_ptr(
-      std::vector<executorch::aten::SizesType>(
-          tensor.sizes().begin(), tensor.sizes().end()),
+      std::move(sizes),
       tensor.mutable_data_ptr(),
+      std::move(dim_order),
+      std::move(strides),
+      tensor.scalar_type(),
 #ifndef USE_ATEN_LIB
-      std::vector<executorch::aten::DimOrderType>(
-          tensor.dim_order().begin(), tensor.dim_order().end()),
+      tensor.shape_dynamism(),
 #else // USE_ATEN_LIB
-      {},
+      executorch::aten::TensorShapeDynamism::DYNAMIC_BOUND,
 #endif // USE_ATEN_LIB
-      std::vector<executorch::aten::StridesType>(
-          tensor.strides().begin(), tensor.strides().end()),
-      tensor.scalar_type()
-#ifndef USE_ATEN_LIB
-          ,
-      tensor.shape_dynamism()
-#endif // USE_ATEN_LIB
-  );
+      std::move(deleter));
 }
 
 /**
- * Creates a TensorPtr to manage a new Tensor with the same properties
- * as the Tensor referenced by the given TensorPtr, sharing the same data
- * without owning it.
+ * Convenience overload identical to make_tensor_ptr(*tensor_ptr, ...).
+ * Keeps the original TensorPtr alive until the returned TensorPtr is destroyed.
  *
- * This is a convenience overload equivalent to make_tensor_ptr(*tensor_ptr).
- * It does not extend the lifetime of the underlying buffer; if the original
- * owner releases the storage, all views aliasing it become dangling.
- *
- * @param tensor_ptr The TensorPtr whose underlying Tensor is used to initialize
- *                   the returned view.
- * @return A new TensorPtr managing a Tensor with the same properties as the
- *         original.
+ * @param tensor_ptr The source tensor pointer to alias.
+ * @param sizes Optional sizes override.
+ * @param dim_order Optional dimension order override.
+ * @param strides Optional strides override.
+ * @return A TensorPtr aliasing the same storage with requested metadata.
  */
-inline TensorPtr make_tensor_ptr(const TensorPtr& tensor_ptr) {
-  return make_tensor_ptr(*tensor_ptr);
+inline TensorPtr make_tensor_ptr(
+    const TensorPtr& tensor_ptr,
+    std::vector<executorch::aten::SizesType> sizes = {},
+    std::vector<executorch::aten::DimOrderType> dim_order = {},
+    std::vector<executorch::aten::StridesType> strides = {}) {
+  return make_tensor_ptr(
+      *tensor_ptr,
+      std::move(sizes),
+      std::move(dim_order),
+      std::move(strides),
+      [tensor_ptr](void*) {});
 }
 
 /**
