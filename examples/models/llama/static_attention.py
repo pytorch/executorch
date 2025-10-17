@@ -1,3 +1,4 @@
+import copy
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict, deque
@@ -239,7 +240,7 @@ class StaticAttentionIOManager:
 
     def __init__(
         self,
-        config: ModelArgs,
+        config_or_model: Union[ModelArgs, nn.Module],
         input_len: int,
         cache_lens: Union[int, List[int]],
         batch_size: int = 1,
@@ -248,8 +249,10 @@ class StaticAttentionIOManager:
         mask_val: float = float("-inf"),
     ):
         if isinstance(cache_lens, int):
-            cache_lens = [cache_lens] * config.n_layers
-        assert len(cache_lens) == config.n_layers
+            cache_lens_dict = defaultdict(lambda x=cache_lens: x)
+            cache_lens = [cache_lens]
+        else:
+            cache_lens_dict = dict(enumerate(cache_lens))
 
         self._masks = {
             cl: StaticAttentionMask(
@@ -258,6 +261,24 @@ class StaticAttentionIOManager:
             for cl in set(cache_lens)
         }
 
+        if isinstance(config_or_model, ModelArgs):
+            self._from_config(config_or_model, cache_lens_dict, batch_size, dtype)
+        else:
+            self._from_model(config_or_model, cache_lens_dict, batch_size, dtype)
+
+        self.input_len = input_len
+        self.style = style
+        self.mask_val = mask_val
+        self.pos = 0
+        self.cache_full = False
+
+    def _from_config(
+        self,
+        config: ModelArgs,
+        cache_lens: Dict[int, int],
+        batch_size: int,
+        dtype: torch.dtype,
+    ):
         rope = Rope(config)
         freqs = rope.get_freqs(None, config.max_context_len)
         self.freqs_cos = freqs[0].to(dtype)
@@ -311,13 +332,63 @@ class StaticAttentionIOManager:
                 if cache_lens[layer_id] > 0
             }
 
-        self.config = config
-        self.input_len = input_len
-        self.cache_lens = cache_lens
-        self.style = style
-        self.mask_val = mask_val
-        self.pos = 0
-        self.cache_full = False
+        self.generate_full_logits = config.generate_full_logits
+
+    def _from_model(
+        self,
+        config: nn.Module,
+        cache_lens: Dict[int, int],
+        batch_size: int,
+        dtype: torch.dtype,
+    ):
+        static_attentions = []
+        for module in config.modules():
+            if isinstance(module, StaticAttention):
+                static_attentions.append(module)
+
+        if not static_attentions:
+            raise ValueError("No StaticAttention modules found in the provided module")
+
+        config = copy.copy(static_attentions[0].rope.config)
+        config.use_hf_rope = static_attentions[0].rope.use_hf_rope
+        rope = Rope(config)
+        freqs = rope.get_freqs(None, config.max_context_len)
+        self.freqs_cos = freqs[0].to(dtype)
+        self.freqs_sin = freqs[1].to(dtype)
+
+        self.k_caches = {}
+        self.v_caches = {}
+        for attn in static_attentions:
+            if attn.split_mha:
+                for head_id in range(attn.n_heads):
+                    cache_key = StaticKVCache.calculate_cache_key(
+                        attn.layer_id, head_id
+                    )
+                    for cache in (self.k_caches, self.v_caches):
+                        assert (
+                            cache_key not in cache
+                        ), "Found StaticAttention modules with duplicated layer_id"
+                        cache[cache_key] = torch.zeros(
+                            batch_size,
+                            cache_lens[attn.layer_id],
+                            attn.head_dim,
+                            dtype=dtype,
+                        )
+            else:
+                cache_key = StaticKVCache.calculate_cache_key(attn.layer_id, 0)
+                for cache in (self.k_caches, self.v_caches):
+                    assert (
+                        cache_key not in cache
+                    ), "Found StaticAttention modules with duplicated layer_id"
+                    cache[cache_key] = torch.zeros(
+                        batch_size,
+                        attn.n_kv_heads,
+                        cache_lens[attn.layer_id],
+                        attn.head_dim,
+                        dtype=dtype,
+                    )
+
+        self.generate_full_logits = True
 
     @property
     def masks(self):
@@ -352,13 +423,13 @@ class StaticAttentionIOManager:
         all_logits = None
         for i in range(0, tokens.size(1), self.input_len):
             logits = self._run_once(model, tokens[:, i : i + self.input_len])[0]
-            if self.config.generate_full_logits:
+            if self.generate_full_logits:
                 if all_logits is None:
                     all_logits = logits
                 else:
                     all_logits = torch.cat([all_logits, logits], dim=1)
 
-        if self.config.generate_full_logits:
+        if self.generate_full_logits:
             return all_logits[:, : tokens.size(1), :]
 
         return logits
@@ -637,9 +708,10 @@ class StaticAttentionIOManager:
 
 
 class _Rope(nn.Module):
-    def __init__(self, use_hf_rope):
+    def __init__(self, config: ModelArgs):
         super().__init__()
-        self.use_hf_rope = use_hf_rope
+        self.config = config
+        self.use_hf_rope = config.use_hf_rope
 
     def forward(
         self, x: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
@@ -755,7 +827,8 @@ class StaticAttention(Attention):
             self.v_caches = nn.ModuleList([StaticVCache(layer_id, 0)])
 
         self.wo = nn.Linear(self.n_heads * self.head_dim, self.dim, bias=False)
-        self.rope = _Rope(rope.params.use_hf_rope)
+        self.rope = _Rope(rope.params)
+        self.layer_id = layer_id
 
         if self.use_qk_norm:
             self.q_norm = torch.nn.RMSNorm(self.head_dim, config.norm_eps)
@@ -763,6 +836,39 @@ class StaticAttention(Attention):
         else:
             self.q_norm = torch.nn.Identity()
             self.k_norm = torch.nn.Identity()
+
+    @classmethod
+    def from_attention_mha(
+        cls,
+        other: AttentionMHA,
+        split_mha: bool = True,
+        rms_norm_class=torch.nn.RMSNorm,
+        **kwargs: Any,
+    ) -> "StaticAttention":
+        config = ModelArgs(
+            dim=other.dim,
+            n_layers=1,  # Not used in attention layer
+            n_heads=other.n_heads,
+            n_kv_heads=other.n_kv_heads,
+            head_dim=other.head_dim,
+            max_batch_size=other.max_batch_size,
+            max_context_len=other.max_context_len,
+            attention_qkv_bias=other.attention_qkv_bias,
+            use_qk_norm=other.use_qk_norm,
+            qk_norm_before_rope=other.qk_norm_before_rope,
+            norm_eps=other.q_norm_fn.eps if other.use_qk_norm else 1e-5,
+        )
+
+        instance = cls(
+            config=config,
+            layer_id=other.layer_id,
+            rope=other.rope,
+            split_mha=split_mha,
+            **kwargs,
+        )
+        instance.load_weights_from_attention_mha(other, rms_norm_class=rms_norm_class)
+
+        return instance
 
     def forward(
         self,
@@ -1059,3 +1165,37 @@ class StaticAttention(Attention):
 class StaticAttentionMHA(StaticAttention):
     def __init__(self, config: ModelArgs, layer_id: int, rope: Rope, **kwargs: Any):
         super().__init__(config, layer_id, rope, split_mha=False, **kwargs)
+
+
+def transform_attention_mha_to_static_attention(
+    model: nn.Module,
+    split_mha: bool = True,
+    inplace: bool = True,
+    use_conv2d: bool = False,
+    use_hf_rope: bool = False,
+    **kwargs: Any,
+) -> nn.Module:
+    if not inplace:
+        import copy
+
+        model = copy.deepcopy(model)
+
+    def helper(m):
+        for name, child in list(m.named_children()):
+            if isinstance(child, AttentionMHA):
+                static_attn = StaticAttention.from_attention_mha(
+                    child, split_mha=split_mha, **kwargs
+                )
+                # Note: HF RoPE needs to be applied before linear to conv2d
+                if use_hf_rope:
+                    static_attn.adopt_hf_rope()
+                if use_conv2d:
+                    static_attn.linear_to_conv2d()
+
+                setattr(m, name, static_attn)
+            else:
+                helper(child)
+
+        return m
+
+    return helper(model)

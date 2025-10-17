@@ -290,3 +290,46 @@ def test_cat__force_delegate():
         graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default]
     )
     assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
+
+
+def test_cat__same_shapes_converter_padding_last_dimension():
+    target = "imxrt700"
+
+    # The Converter is capable of padding the last dimension of `cat` with the same input shapes.
+    input_shape = (3, 1, 3)
+
+    quantized_program = to_quantized_edge_program(
+        CatModule(2),
+        [input_shape, input_shape],
+        target=target,
+        neutron_converter_flavor="SDK_25_09",
+        custom_delegation_options=CustomDelegationOptions(),
+    ).exported_program()
+
+    # Make sure the `Cat` was delegated.
+    assert not graph_contains_any_of_ops(
+        graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default]
+    )
+    assert any("lowered_module" in node.name for node in quantized_program.graph.nodes)
+
+
+def test_cat__same_shapes_converter_padding_middle_dimension():
+    target = "imxrt700"
+
+    # The Converter is not capable of padding the middle dimensions of `cat` with the same input shapes.
+    input_shape = (3, 1, 3)
+
+    quantized_program = to_quantized_edge_program(
+        CatModule(1),
+        [input_shape, input_shape],
+        target=target,
+        custom_delegation_options=CustomDelegationOptions(),
+    ).exported_program()
+
+    # Make sure the `Cat` was NOT delegated.
+    assert graph_contains_any_of_ops(
+        graph=quantized_program.graph, ops=[exir_ops.edge.aten.cat.default]
+    )
+    assert not any(
+        "lowered_module" in node.name for node in quantized_program.graph.nodes
+    )

@@ -17,6 +17,8 @@ toolchain=arm-none-eabi-gcc
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
 
+source "${script_dir}/utils.sh"
+
 et_build_root="${et_root_dir}/arm_test"
 build_type="Release"
 build_devtools=OFF
@@ -81,7 +83,9 @@ cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
 -DEXECUTORCH_BUILD_ARM_ETDUMP=$build_with_etdump \
 --preset arm-baremetal -B${et_build_dir}
 
-cmake --build ${et_build_dir} -j$(nproc) --target install --config ${build_type} --
+parallel_jobs="$(get_parallel_jobs)"
+
+cmake --build ${et_build_dir} -j"${parallel_jobs}" --target install --config ${build_type} --
 
 set +x
 
