@@ -99,28 +99,6 @@ announce_configured_options(CCACHE_PROGRAM)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Setup RPATH. See
-# https://gitlab.kitware.com/cmake/community/-/wikis/doc/cmake/RPATH-handling
-# Use separate rpaths during build and install phases
-set(CMAKE_SKIP_BUILD_RPATH OFF)
-# Don't use the install-rpath during the build phase
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-# Automatically add all linked folders that are NOT in the build directory to
-# the rpath (per library?)
-#
-# TODO: Doesn't work for us right now because we are not installing .so's into
-# the correct locations. For example we have libcustom_ops_aot_lib.so depending
-# on _portable_lib.so, which was eventually put under
-# <site-packages>/executorch/extension/pybindings/ but this rpath is not
-# automatically added because at build time it seems `portable_lib` is being
-# built under the same directory, so no extra rpath is being added. To properly
-# fix this we need to install `portable_lib` into the correct path.
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-# ------------------------------ OPTIONS -------------------------------------
-# WARNING: Please don't add example specific options in this CMakeLists.txt.
-# Instead please use `find_package(executorch REQUIRED)` in the example
-# directory and add a new executable in the example `CMakeLists.txt`.
-
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -909,12 +887,13 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # Set RPATH to find PyTorch libraries relative to the installation location
   # This goes from executorch/extension/pybindings up to site-packages, then to
-  # torch/lib
+  # torch/lib. Don't do this to APPLE, as it will error out on the following
+  # error:
+  #
   if(APPLE)
-    set_target_properties(
-      portable_lib PROPERTIES BUILD_RPATH "@loader_path/../../../torch/lib"
-                              INSTALL_RPATH "@loader_path/../../../torch/lib"
-    )
+    # Skip setting @loader_path for APPLE, since it causes error like ld:
+    # duplicate LC_RPATH '@loader_path' in '<site-packages>/torch/lib/
+    # libtorch_cpu.dylib'
   else()
     set_target_properties(
       portable_lib PROPERTIES BUILD_RPATH "$ORIGIN/../../../torch/lib"

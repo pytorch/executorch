@@ -71,6 +71,11 @@ using AOTInductorModelContainerGetNumConstantsFunc = AOTIRuntimeError (*)(
     AOTInductorModelContainerHandle container_handle,
     size_t* num_constants);
 
+// Update the model container with the constant tensors
+using AOTInductorModelUpdateConstantsFromBlobFunc = AOTIRuntimeError (*)(
+    AOTInductorModelContainerHandle container_handle,
+    const uint8_t* weight_blob_ptr);
+
 } // extern "C"
 
 // AOTI Delegate Handle structure
@@ -87,6 +92,7 @@ struct AOTIDelegateHandle {
   AOTInductorModelContainerGetNumInputsFunc get_num_inputs;
   AOTInductorModelContainerGetNumOutputsFunc get_num_outputs;
   AOTInductorModelContainerRunFunc run;
+  AOTInductorModelUpdateConstantsFromBlobFunc update_constants_from_blob;
 };
 
 } // namespace aoti

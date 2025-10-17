@@ -189,8 +189,7 @@ class TestMimiModel(unittest.TestCase):
                 x = self.mimi_model.upsample(x)
                 (emb,) = self.mimi_model.decoder_transformer(x)
                 emb.transpose(1, 2)
-                with self.mimi_model._context_for_encoder_decoder:
-                    out = self.mimi_model.decoder(emb)
+                out = self.mimi_model.decoder(emb)
                 return out
 
         emb_input = torch.rand(1, 1, 512, device="cpu")

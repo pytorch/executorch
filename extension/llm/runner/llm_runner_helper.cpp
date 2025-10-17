@@ -268,7 +268,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
 std::unique_ptr<MultimodalRunner> create_multimodal_runner(
     const std::string& model_path,
     std::unique_ptr<::tokenizers::Tokenizer> tokenizer,
-    std::optional<const std::string> data_path) {
+    std::optional<const std::string> data_path,
+    Module::LoadMode load_mode) {
   // Sanity check tokenizer
   if (!tokenizer || !tokenizer->is_loaded()) {
     ET_LOG(Error, "Tokenizer is null or not loaded");
@@ -278,10 +279,9 @@ std::unique_ptr<MultimodalRunner> create_multimodal_runner(
   // Create the Module
   std::unique_ptr<Module> module;
   if (data_path.has_value()) {
-    module = std::make_unique<Module>(
-        model_path, data_path.value(), Module::LoadMode::File);
+    module = std::make_unique<Module>(model_path, data_path.value(), load_mode);
   } else {
-    module = std::make_unique<Module>(model_path, Module::LoadMode::File);
+    module = std::make_unique<Module>(model_path, load_mode);
   }
 
   // Get metadata from Module

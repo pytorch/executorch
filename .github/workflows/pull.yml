@@ -351,6 +351,7 @@ jobs:
 
         # reinstall executorch
         bash ./install_executorch.sh --minimal
+        pip list
 
         # run python unittest
         python -m unittest examples.models.moshi.mimi.test_mimi
