@@ -56,7 +56,7 @@ This will generate:
 - `aoti_cuda_blob.ptd` - The CUDA kernel blob required for runtime
 
 Furthermore, we support several quantization formats on CUDA.
-To export Voxtral with int4 weight-only quantization, use
+For example, to export Voxtral with int4 weight and int4mm for linear layers, you can use the following command,
 ```
 optimum-cli export executorch \
   --model "mistralai/Voxtral-Mini-3B-2507" \
@@ -67,7 +67,8 @@ optimum-cli export executorch \
   --max_seq_len 1024 \
   --qlinear 4w \
   --qlinear_encoder 4w \
-  --qembedding 4w \
+  --qlinear_packing_format tile_packed_to_4d \
+  --qlinear_encoder_packing_format tile_packed_to_4d \
   --output_dir="voxtral"
 ```
 
