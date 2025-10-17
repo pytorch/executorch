@@ -15,6 +15,7 @@ from executorch.examples.models.checkpoint import (
     get_checkpoint_dtype,
     get_default_model_resource_dir,
 )
+
 from executorch.examples.models.llama.llama_transformer import construct_transformer
 from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.rope import Rope
@@ -140,14 +141,41 @@ the checkpoint format to avoid generating faulty models.
         adapter_checkpoint = {}
         adapter_config = {}
         if adapter_checkpoint_path:
-            adapter_checkpoint = torch.load(
-                adapter_checkpoint_path, map_location=device, mmap=True
-            )
-            from torchtune.models import convert_weights
+            if adapter_checkpoint_path.endswith(".pt"):
+                adapter_checkpoint = torch.load(
+                    adapter_checkpoint_path, map_location=device, mmap=True
+                )
+                from torchtune.models import convert_weights
 
-            adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+                adapter_checkpoint = convert_weights.tune_to_meta(adapter_checkpoint)
+            elif adapter_checkpoint_path.endswith(".safetensors"):
+                from executorch.examples.models.llama.convert_weights import (
+                    load_and_convert_unsloth_to_meta,
+                )
+
+                adapter_checkpoint = load_and_convert_unsloth_to_meta(
+                    adapter_checkpoint_path
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported adapter checkpoint format: {adapter_checkpoint_path}"
+                )
+
             with open(adapter_config_path, "r") as f:
-                adapter_config = json.loads(f.read())
+                adapter_config_full = json.loads(f.read())
+                if (
+                    "r" not in adapter_config_full
+                    or "lora_alpha" not in adapter_config_full
+                    or "target_modules" not in adapter_config_full
+                ):
+                    raise ValueError(
+                        "Adapter config must contain r, lora_alpha, and target_modules."
+                    )
+                adapter_config = {
+                    "r": adapter_config_full["r"],
+                    "lora_alpha": adapter_config_full["lora_alpha"],
+                    "target_modules": adapter_config_full["target_modules"],
+                }
             checkpoint.update(adapter_checkpoint)
 
         output_prune_map = None

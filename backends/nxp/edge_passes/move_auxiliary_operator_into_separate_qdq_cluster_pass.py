@@ -15,6 +15,11 @@ from torch.fx.passes.infra.pass_base import PassResult
 AddMM = exir_ops.edge.aten.addmm.default
 ViewCopy = exir_ops.edge.aten.view_copy.default
 MM = exir_ops.edge.aten.mm.default
+Conv = exir_ops.edge.aten.convolution.default
+HardTanh = exir_ops.edge.aten.hardtanh.default
+Relu = exir_ops.edge.aten.relu.default
+Sigmoid = exir_ops.edge.aten.sigmoid.default
+Tanh = exir_ops.edge.aten.tanh.default
 
 
 def insert_qdq_pair_after_node(
@@ -175,9 +180,23 @@ class MoveTrailingAuxiliaryOperatorIntoSeparateQDQClusterPass(NeutronEdgePass):
     main_cluster_node_to_auxiliary_nodes = {
         AddMM: [
             ViewCopy,
+            HardTanh,
+            Relu,
+            Sigmoid,
+            Tanh,
         ],
         MM: [
             ViewCopy,
+            HardTanh,
+            Relu,
+            Sigmoid,
+            Tanh,
+        ],
+        Conv: [
+            HardTanh,
+            Relu,
+            Sigmoid,
+            Tanh,
         ],
     }
 
