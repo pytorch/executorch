@@ -1539,8 +1539,9 @@ Error defineGenericUnaryNode(
     MAYBE_UNUSED(graph);                                          \
     auto graph_node = node->xnode_union_as_XNN##name();           \
     std::pair<float, float> min_max = getOutputMinMax(node);      \
-    union xnn_unary_params params = {                             \
-        .clamp = {.min = min_max.first, .max = min_max.second}};  \
+    union xnn_unary_params params;                                \
+    params.clamp.min = min_max.first;                             \
+    params.clamp.max = min_max.second;                            \
     return defineGenericUnaryNode(                                \
         subgraph_ptr,                                             \
         remapped_ids,                                             \
