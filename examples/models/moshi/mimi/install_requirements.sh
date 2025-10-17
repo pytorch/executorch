@@ -9,7 +9,7 @@ set -x
 
 conda install -c conda-forge "ffmpeg<8" -y
 pip install torchcodec==0.7.0.dev20251012 --extra-index-url https://download.pytorch.org/whl/nightly/cpu
-pip install moshi==0.2.4 --no-deps
+pip install moshi==0.2.11 --no-deps
 pip install bitsandbytes soundfile einops
 # Run llama2/install requirements for torchao deps
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
