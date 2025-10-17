@@ -9,7 +9,7 @@
 #ifndef IM2COL_PACKED_INT8_GLSLH
 #define IM2COL_PACKED_INT8_GLSLH
 
-#include "common.glslh"
+#include "indexing.glslh"
 
 struct Conv2dBlockElementIndex {
   int x4;
