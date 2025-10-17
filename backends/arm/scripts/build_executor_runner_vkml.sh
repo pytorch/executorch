@@ -18,7 +18,7 @@ build_with_etdump=false
 extra_build_flags=""
 output_folder="cmake-out-vkml"
 
-build_with_etdump_flag="-DEXECUTORCH_ENABLE_EVENT_TRACER=OFF"
+build_with_etdump_flags="-DEXECUTORCH_ENABLE_EVENT_TRACER=OFF -DEXECUTORCH_BUILD_DEVTOOLS=OFF"
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
@@ -59,10 +59,10 @@ echo "--------------------------------------------------------------------------
 cd ${et_root_dir}/examples/arm/executor_runner
 
 if [ "$build_with_etdump" = true ] ; then
-    build_with_etdump_flag="-DEXECUTORCH_ENABLE_EVENT_TRACER=ON"
+    build_with_etdump_flags="-DEXECUTORCH_ENABLE_EVENT_TRACER=ON -DEXECUTORCH_BUILD_DEVTOOLS=ON"
 fi
 
-echo "Building with extra flags: ${build_with_etdump_flag} ${extra_build_flags}"
+echo "Building with extra flags: ${build_with_etdump_flags} ${extra_build_flags}"
 cmake \
     -S "${et_root_dir}" \
     -B "${output_folder}" \
@@ -81,7 +81,7 @@ cmake \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DPYTHON_EXECUTABLE="$(which python3)"      \
-    ${build_with_etdump_flag}                   \
+    ${build_with_etdump_flags}                  \
     ${extra_build_flags}
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
