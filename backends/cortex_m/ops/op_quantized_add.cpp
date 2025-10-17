@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2025 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -47,13 +48,6 @@ Tensor& quantized_add_out(
       output_shift,
       out);
 
-  // Broadcast if needed
-  auto result = resize_to_broadcast_target_size(input1_int8, input2_int8, out);
-  ET_CHECK_MSG(
-      (result == Error::Ok),
-      "Failed to resize output tensor. Status: [%d]",
-      result);
-
   ET_LOG(
       Info,
       "quantized_add_out: input1_int8.sizes() = %zu",
@@ -69,7 +63,7 @@ Tensor& quantized_add_out(
   int32_t output_mult = extractScalarToInt32(output_multiplier);
   int output_shift_val = extractScalarToInt(output_shift);
 
-  // Left shift to maximize precision (tune as needed)
+  // Left shift to maximize precision
   const int32_t left_shift = 20;
   const int32_t activation_min = std::numeric_limits<int8_t>::min();
   const int32_t activation_max = std::numeric_limits<int8_t>::max();
@@ -88,10 +82,10 @@ Tensor& quantized_add_out(
   arm_cmsis_nn_status status = arm_elementwise_add_s8(
       input1_int8.const_data_ptr<int8_t>(),
       input2_int8.const_data_ptr<int8_t>(),
-      static_cast<int32_t>(zp1),
+      -static_cast<int32_t>(zp1),
       input1_mult,
       input1_shift_val,
-      static_cast<int32_t>(zp2),
+      -static_cast<int32_t>(zp2),
       input2_mult,
       input2_shift_val,
       left_shift,
@@ -99,9 +93,9 @@ Tensor& quantized_add_out(
       static_cast<int32_t>(out_zp),
       output_mult,
       output_shift_val,
-      static_cast<int32_t>(out.numel()),
       activation_min,
-      activation_max);
+      activation_max,
+      static_cast<int32_t>(out.numel()));
 
   if (status != ARM_CMSIS_NN_SUCCESS) {
     ET_LOG(
@@ -117,33 +111,6 @@ Tensor& quantized_add_out(
       "quantized_add_out: Successfully completed with AoT-computed parameters!");
 
   return out;
-}
-
-// Stub Implementation: Non-out variant for compatibility (functional variant)
-// EXIR/ExecuTorch runs an out-variant pass that converts
-// .default operations to .out variants before memory planning.
-// In the pass we are calling quantized_add's default variant
-// but ExecuTorch's kernel dispatch mechanism will end up calling the out
-// variant. This stub is to make sure that compiler doesn't complain.
-Tensor quantized_add(
-    KernelRuntimeContext& context,
-    const Tensor& input1_int8,
-    const Scalar& input1_zero_point,
-    const Scalar& input1_multiplier,
-    const Scalar& input1_shift,
-    const Tensor& input2_int8,
-    const Scalar& input2_zero_point,
-    const Scalar& input2_multiplier,
-    const Scalar& input2_shift,
-    const Scalar& output_zero_point,
-    const Scalar& output_multiplier,
-    const Scalar& output_shift) {
-  ET_LOG(Info, "quantized_add: input1_int8.sizes() = %zu", input1_int8.sizes());
-
-  // Crash on Debug builds if invoked
-  assert(False);
-  // This is to make sure compiler doesn't complain.
-  return const_cast<Tensor&>(input1_int8);
 }
 
 } // namespace native
