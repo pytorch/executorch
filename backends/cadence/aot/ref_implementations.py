@@ -43,8 +43,7 @@ qdtype_map: dict[ScalarType, torch.dtype] = {
 }
 
 
-@impl_tracked(m, "quantize_per_tensor")
-def quantize_per_tensor(
+def quantize_per_tensor_common(
     input_tensor: torch.Tensor,
     scale: float,
     zero_point: int,
@@ -93,8 +92,68 @@ def quantize_per_tensor(
     )
 
 
-@impl_tracked(m, "dequantize_per_tensor")
-def dequantize_per_tensor(
+def quantize_per_tensor_variant(
+    dtype: torch.dtype | None = None,
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+    """Create a quantize_per_tensor variant with type checking."""
+
+    def decorator(_: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
+        def variant(
+            input_tensor: torch.Tensor,
+            scale: float,
+            zero_point: int,
+            quant_min: int,
+            quant_max: int,
+            out_dtype: torch.dtype,
+        ) -> torch.Tensor:
+            if dtype and out_dtype != dtype:
+                raise ValueError(f"dtype must be {dtype}. Got {out_dtype}")
+
+            return quantize_per_tensor_common(
+                input_tensor,
+                scale,
+                zero_point,
+                quant_min,
+                quant_max,
+                out_dtype,
+            )
+
+        return variant
+
+    return decorator
+
+
+@impl_tracked(m, "quantize_per_tensor")
+@quantize_per_tensor_variant()
+def quantize_per_tensor() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym8u")
+@quantize_per_tensor_variant(torch.uint8)
+def quantize_per_tensor_asym8u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym8s")
+@quantize_per_tensor_variant(torch.int8)
+def quantize_per_tensor_asym8s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym16u")
+@quantize_per_tensor_variant(torch.uint16)
+def quantize_per_tensor_asym16u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym16s")
+@quantize_per_tensor_variant(torch.int16)
+def quantize_per_tensor_asym16s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "quantize_per_tensor_asym32s")
+@quantize_per_tensor_variant(torch.int32)
+def quantize_per_tensor_asym32s() -> torch.Tensor: ...
+
+
+def dequantize_per_tensor_common(
     input_tensor: torch.Tensor,
     scale: float,
     zero_point: int,
@@ -133,12 +192,70 @@ def dequantize_per_tensor(
     if input_tensor.dtype != dtype:
         raise ValueError("Input dtype must match dtype")
 
-    # Use the reference implementation from torch quantized_decomposed library
-    # Unlike quantize_per_tensor, dequantize_per_tensor doesn't have a behavior
-    # difference, since there's no rounding algorithm (just arithmetic).
     return torch.ops.quantized_decomposed.dequantize_per_tensor(
         input_tensor, scale, zero_point, quant_min, quant_max, dtype
     )
+
+
+def dequantize_per_tensor_variant(
+    dtype: torch.dtype | None = None,
+) -> Callable[[Callable[..., torch.Tensor]], Callable[..., torch.Tensor]]:
+    """Create a dequantize_per_tensor variant with type checking."""
+
+    def decorator(_: Callable[..., torch.Tensor]) -> Callable[..., torch.Tensor]:
+        def variant(
+            input_tensor: torch.Tensor,
+            scale: float,
+            zero_point: int,
+            quant_min: int,
+            quant_max: int,
+            in_dtype: torch.dtype,
+        ) -> torch.Tensor:
+            if dtype and in_dtype != dtype:
+                raise ValueError(f"dtype must be {dtype}. Got {in_dtype}")
+
+            return dequantize_per_tensor_common(
+                input_tensor,
+                scale,
+                zero_point,
+                quant_min,
+                quant_max,
+                in_dtype,
+            )
+
+        return variant
+
+    return decorator
+
+
+@impl_tracked(m, "dequantize_per_tensor")
+@dequantize_per_tensor_variant()
+def dequantize_per_tensor() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym8u")
+@dequantize_per_tensor_variant(torch.uint8)
+def dequantize_per_tensor_asym8u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym32s")
+@dequantize_per_tensor_variant(torch.int32)
+def dequantize_per_tensor_asym32s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym16u")
+@dequantize_per_tensor_variant(torch.uint16)
+def dequantize_per_tensor_asym16u() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym8s")
+@dequantize_per_tensor_variant(torch.int8)
+def dequantize_per_tensor_asym8s() -> torch.Tensor: ...
+
+
+@impl_tracked(m, "dequantize_per_tensor_asym16s")
+@dequantize_per_tensor_variant(torch.int16)
+def dequantize_per_tensor_asym16s() -> torch.Tensor: ...
 
 
 @impl_tracked(m, "quantized_add.per_tensor")

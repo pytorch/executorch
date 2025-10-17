@@ -58,20 +58,10 @@ def _validate_ref_impl_exists() -> None:
         "cadence::_softmax_f32_f32",
         "cadence::requantize",  # We should only support per_tensor variant, should remove
         "cadence::quantized_softmax.per_tensor",
-        "cadence::quantize_per_tensor_asym8u",
-        "cadence::quantize_per_tensor_asym8s",
-        "cadence::dequantize_per_tensor_asym8u",
-        "cadence::dequantize_per_tensor_asym32s",
-        "cadence::dequantize_per_tensor_asym16u",
         "cadence::quantized_conv2d_nchw",  # We should only support per_tensor variant, should remove
-        "cadence::quantize_per_tensor_asym32s",
         "cadence::quantized_relu",  # We should only support per_tensor variant, should remove
         "cadence::linalg_svd",
         "cadence::quantized_conv2d_nhwc",  # We should only support per_tensor variant, should remove
-        "cadence::quantize_per_tensor_asym16u",
-        "cadence::dequantize_per_tensor_asym8s",
-        "cadence::quantize_per_tensor_asym16s",
-        "cadence::dequantize_per_tensor_asym16s",
         "cadence::quantized_softmax",
         "cadence::quantized_w8a32_gru",
         "cadence::quantized_layer_norm",  # We should only support per_tensor variant, should remove
