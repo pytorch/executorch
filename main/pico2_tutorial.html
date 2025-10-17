@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
-    <title>Embedded Systems &#8212; ExecuTorch main documentation</title>
+    <title>Pico2: A simple MNIST Tutorial &#8212; ExecuTorch main documentation</title>
   
   
   
@@ -49,19 +49,19 @@
     <script src="_static/clipboard.min.js?v=a7894cd8"></script>
     <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'embedded-section';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'pico2_tutorial';</script>
     <script>
         DOCUMENTATION_OPTIONS.theme_version = '0.15.4';
         DOCUMENTATION_OPTIONS.theme_switcher_json_url = 'https://docs.pytorch.org/executorch/executorch-versions.json';
         DOCUMENTATION_OPTIONS.theme_switcher_version_match = 'main';
         DOCUMENTATION_OPTIONS.show_version_warning_banner = true;
         </script>
-    <link rel="canonical" href="https://docs.pytorch.org/executorch/embedded-section.html" />
+    <link rel="canonical" href="https://docs.pytorch.org/executorch/pico2_tutorial.html" />
     <link rel="icon" href="_static/executorch-chip-logo.svg"/>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Runtime API Reference" href="executorch-runtime-api-reference.html" />
-    <link rel="prev" title="ExecuTorch on Raspberry Pi" href="raspberry_pi_llama_tutorial.html" />
+    <link rel="next" title="Profiling and Debugging" href="using-executorch-troubleshooting.html" />
+    <link rel="prev" title="Arm Ethos-U NPU Backend Tutorial" href="tutorial-arm-ethos-u.html" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -1059,7 +1059,7 @@ document.write(`
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
 </ul>
 </details></li>
-<li class="toctree-l1 current active has-children"><a class="current reference internal" href="#">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="embedded-section.html">Embedded Systems</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="executorch-runtime-api-reference.html">Runtime API Reference</a></li>
 <li class="toctree-l2"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Detailed C++ Runtime APIs Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
@@ -1074,7 +1074,7 @@ document.write(`
 </details></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorial-arm-ethos-u.html">Arm Ethos-U NPU Backend Tutorial</a></li>
 <li class="toctree-l2"><a class="reference internal" href="raspberry_pi_llama_tutorial.html">ExecuTorch on Raspberry Pi</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pico2_tutorial.html">Pico2: A simple MNIST Tutorial</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Pico2: A simple MNIST Tutorial</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1"><a class="reference internal" href="using-executorch-troubleshooting.html">Profiling and Debugging</a></li>
@@ -1118,7 +1118,10 @@ document.write(`
     
     <li class="breadcrumb-item"><a href="edge-platforms-section.html" class="nav-link">Edge</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page">Embedded Systems</li>
+    
+    <li class="breadcrumb-item"><a href="embedded-section.html" class="nav-link">Embedded Systems</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page">Pico2: A...</li>
   </ul>
 </nav>
 </div>
@@ -1166,8 +1169,14 @@ document.write(`
       </div>
       
       <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <link itemprop="item" href="embedded-section.html">
         <meta itemprop="name" content="Embedded Systems">
         <meta itemprop="position" content="2">
+      </div>
+      
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <meta itemprop="name" content="Pico2: A simple MNIST Tutorial">
+        <meta itemprop="position" content="3">
       </div>
     </div>
 
@@ -1180,41 +1189,210 @@ document.write(`
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="embedded-systems">
-<span id="embedded-section"></span><h1>Embedded Systems<a class="headerlink" href="#embedded-systems" title="Link to this heading">#</a></h1>
-<p>Deploy ExecuTorch on constrained embedded systems and microcontrollers.</p>
-<section id="api-reference-development">
-<h2>API Reference &amp; Development<a class="headerlink" href="#api-reference-development" title="Link to this heading">#</a></h2>
-<p>Start here for C++ development with ExecuTorch runtime APIs and essential tutorials.</p>
+  <section id="pico2-a-simple-mnist-tutorial">
+<h1>Pico2: A simple MNIST Tutorial<a class="headerlink" href="#pico2-a-simple-mnist-tutorial" title="Link to this heading">#</a></h1>
+<p>Deploy your PyTorch models directly to Raspberry Pi Pico2 microcontroller with ExecuTorch.</p>
+<section id="what-you-ll-build">
+<h2>What You’ll Build<a class="headerlink" href="#what-you-ll-build" title="Link to this heading">#</a></h2>
+<p>A 28×28 MNIST digit classifier running on memory constrained, low power microcontrollers:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc">Runtime API Reference</span></a> — <strong>Start here</strong>: Complete runtime API reference for embedded development</p></li>
-<li><p><a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc">Detailed C++ Runtime APIs Tutorial</span></a> — Step-by-step C++ API tutorial with practical examples</p></li>
-<li><p><a class="reference internal" href="extension-module.html"><span class="doc">Running an ExecuTorch Model Using the Module Extension in C++</span></a> — Custom module extensions for specialized functionality</p></li>
-<li><p><a class="reference internal" href="extension-tensor.html"><span class="doc">Managing Tensor Memory in C++</span></a> — Tensor operations and memory management extensions</p></li>
+<li><p>Input: ASCII art digits (0, 1, 4, 7)</p></li>
+<li><p>Output: Real-time predictions via USB serial</p></li>
+<li><p>Memory: &lt;400KB total footprint</p></li>
 </ul>
 </section>
-<section id="build-integration-guide">
-<h2>Build &amp; Integration Guide<a class="headerlink" href="#build-integration-guide" title="Link to this heading">#</a></h2>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">#</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="using-executorch-cpp.html"><span class="doc">Using ExecuTorch with C++</span></a> — Complete setup guide for C++ runtime integration</p></li>
-<li><p><a class="reference internal" href="using-executorch-building-from-source.html"><span class="doc">Building from Source</span></a> — Building from Source</p></li>
+<li><p><a class="reference external" href="https://docs.pytorch.org/executorch/1.0/using-executorch-building-from-source.html">Environment Setup section</a></p></li>
+<li><p>Refer to  this link on how to accept ‘EULA’ agreement and setup toolchain <a class="reference external" href="https://docs.pytorch.org/executorch/1.0/backends-arm-ethos-u.html#development-requirements">link</a></p></li>
+<li><p>Verify ARM toolchain</p></li>
 </ul>
-</section>
-<section id="choose-backend-for-acceleration">
-<h2>Choose Backend for acceleration<a class="headerlink" href="#choose-backend-for-acceleration" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="embedded-backends.html"><span class="doc">Backends</span></a> — Available embedded backends and acceleration options</p></li>
-</ul>
-</section>
-<section id="tutorials">
-<h2>Tutorials<a class="headerlink" href="#tutorials" title="Link to this heading">#</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="tutorial-arm-ethos-u.html"><span class="doc">Arm Ethos-U NPU Backend Tutorial</span></a> — Export a simple PyTorch model for the ExecuTorch Ethos-U backend</p></li>
-<li><p><a class="reference internal" href="raspberry_pi_llama_tutorial.html"><span class="doc">ExecuTorch on Raspberry Pi</span></a> — Deploy a LLaMA model on a Raspberry Pi</p></li>
-<li><p><a class="reference internal" href="pico2_tutorial.html"><span class="doc">Pico2: A simple MNIST Tutorial</span></a> — Deploy a demo MNIST model on the Raspberry Pi Pico 2</p></li>
-</ul>
-<div class="toctree-wrapper compound">
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>which<span class="w"> </span>arm-none-eabi-gcc<span class="w"> </span><span class="c1"># --&gt; arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/</span>
+</pre></div>
 </div>
+</section>
+<section id="step-1-generate-pte-from-given-example-model">
+<h2>Step 1: Generate pte from given example Model<a class="headerlink" href="#step-1-generate-pte-from-given-example-model" title="Link to this heading">#</a></h2>
+<ul class="simple">
+<li><p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/export_mlp_mnist.py">provided example model</a></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>export_mlp_mnist.py<span class="w"> </span><span class="c1"># Creates balanced_tiny_mlp_mnist.pte</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Note:</strong> This is hand-crafted MNIST Classifier (proof-of-concept), and not production trained. This tiny MLP recognizes digits 0, 1, 4, and 7 using manually designed feature detectors.</p></li>
+</ul>
+</section>
+<section id="step-2-build-firmware-for-pico2">
+<h2>Step 2: Build Firmware for Pico2<a class="headerlink" href="#step-2-build-firmware-for-pico2" title="Link to this heading">#</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate model</span>
+
+python<span class="w"> </span>export_mlp_mnist.py<span class="w"> </span><span class="c1"># Creates balanced_tiny_mlp_mnist.pte</span>
+
+<span class="c1"># Build Pico2 firmware (one command!)</span>
+
+./executorch/examples/rpi/build_firmware_pico.sh<span class="w"> </span>--model<span class="o">=</span>balanced_tiny_mlp_mnist.pte<span class="w">   </span><span class="c1"># This creates executorch_pico.uf2, a firmware image for Pico2</span>
+</pre></div>
+</div>
+<p>Output: <strong>executorch_pico.uf2</strong> firmware file (examples/raspberry_pi/pico2/build/)</p>
+<p><strong>Note:</strong> ‘build_firmware_pico.sh’ script converts given model pte to hex array and generates C code for the same via this helper <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/raspberry_pi/pico2/pte_to_array.py">script</a>. This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2.</p>
+</section>
+<section id="step-3-flash-to-pico2">
+<h2>Step 3: Flash to Pico2<a class="headerlink" href="#step-3-flash-to-pico2" title="Link to this heading">#</a></h2>
+<p>Hold BOOTSEL button on Pico2
+Connect USB → Mounts as ^RPI-RP2^ drive
+Drag &amp; drop ^executorch_pico.uf2^ file
+Release BOOTSEL → Pico2 reboots with your model</p>
+</section>
+<section id="step-4-verify-deployment">
+<h2>Step 4: Verify Deployment<a class="headerlink" href="#step-4-verify-deployment" title="Link to this heading">#</a></h2>
+<p><strong>Success indicators:</strong></p>
+<ul class="simple">
+<li><p>LED blinks 10× at 500ms → Model running ✅</p></li>
+<li><p>LED blinks 10× at 100ms → Error, check serial ❌</p></li>
+</ul>
+<p><strong>View predictions:</strong></p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Connect serial terminal</span>
+screen<span class="w"> </span>/dev/tty.usbmodem1101<span class="w"> </span><span class="m">115200</span>
+<span class="c1"># Expected output:</span>
+
+Something<span class="w"> </span>like:
+
+<span class="o">===</span><span class="w"> </span>Digit<span class="w"> </span><span class="nv">7</span><span class="w"> </span><span class="o">===</span>
+<span class="c1">############################</span>
+<span class="c1">############################</span>
+<span class="w">                        </span><span class="c1">####</span>
+<span class="w">                       </span><span class="c1">####</span>
+<span class="w">                      </span><span class="c1">####</span>
+<span class="w">                     </span><span class="c1">####</span>
+<span class="w">                    </span><span class="c1">####</span>
+<span class="w">                   </span><span class="c1">####</span>
+<span class="w">                  </span><span class="c1">####</span>
+<span class="w">                 </span><span class="c1">####</span>
+<span class="w">                </span><span class="c1">####</span>
+<span class="w">               </span><span class="c1">####</span>
+<span class="w">              </span><span class="c1">####</span>
+<span class="w">             </span><span class="c1">####</span>
+<span class="w">            </span><span class="c1">####</span>
+<span class="w">           </span><span class="c1">####</span>
+<span class="w">          </span><span class="c1">####</span>
+<span class="w">         </span><span class="c1">####</span>
+<span class="w">        </span><span class="c1">####</span>
+<span class="w">       </span><span class="c1">####</span>
+<span class="w">      </span><span class="c1">####</span>
+<span class="w">     </span><span class="c1">####</span>
+<span class="w">    </span><span class="c1">####</span>
+<span class="w">   </span><span class="c1">####</span>
+<span class="w">  </span><span class="c1">####</span>
+<span class="w"> </span><span class="c1">####</span>
+<span class="c1">####</span>
+<span class="c1">###</span>
+
+Input<span class="w"> </span>stats:<span class="w"> </span><span class="m">159</span><span class="w"> </span>white<span class="w"> </span>pixels<span class="w"> </span>out<span class="w"> </span>of<span class="w"> </span><span class="m">784</span><span class="w"> </span>total
+Running<span class="w"> </span>neural<span class="w"> </span>network<span class="w"> </span>inference...
+✅<span class="w"> </span>Neural<span class="w"> </span>network<span class="w"> </span>results:
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">0</span>:<span class="w"> </span><span class="m">370</span>.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">1</span>:<span class="w"> </span><span class="m">0</span>.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">2</span>:<span class="w"> </span>-3.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">3</span>:<span class="w"> </span>-3.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">4</span>:<span class="w"> </span><span class="m">860</span>.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">5</span>:<span class="w"> </span>-3.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">6</span>:<span class="w"> </span>-3.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">7</span>:<span class="w"> </span><span class="m">1640</span>.000<span class="w"> </span>←<span class="w"> </span>PREDICTED
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">8</span>:<span class="w"> </span>-3.000
+<span class="w">  </span>Digit<span class="w"> </span><span class="m">9</span>:<span class="w"> </span>-3.000
+
+�<span class="w"> </span>PREDICTED:<span class="w"> </span><span class="m">7</span><span class="w"> </span><span class="o">(</span>Expected:<span class="w"> </span><span class="m">7</span><span class="o">)</span><span class="w"> </span>✅<span class="w"> </span>CORRECT!
+</pre></div>
+</div>
+</section>
+<section id="memory-optimization-tips">
+<h2>Memory Optimization Tips<a class="headerlink" href="#memory-optimization-tips" title="Link to this heading">#</a></h2>
+<section id="pico2-constraints">
+<h3>Pico2 Constraints<a class="headerlink" href="#pico2-constraints" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>520KB SRAM (runtime memory)</p></li>
+<li><p>4MB Flash (model storage)</p></li>
+<li><p>Keep models small:</p></li>
+</ul>
+</section>
+<section id="common-issues">
+<h3>Common Issues<a class="headerlink" href="#common-issues" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>“Memory allocation failed” → Reduce model size and use quantization</p></li>
+<li><p>“Operator missing” → Use selective build: ^–operators=add,mul,relu^</p></li>
+<li><p>“Import error” → Check ^arm-none-eabi-gcc^ toolchain setup.</p></li>
+</ul>
+<p>In order to resolve some of the issues above, refer to the following guides:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://docs.pytorch.org/executorch/1.0/quantization-optimization.html">ExecuTorch Quantization Optimization Guide</a></p></li>
+<li><p><a class="reference external" href="https://docs.pytorch.org/executorch/1.0/using-executorch-export.html">Model Export &amp; Lowering</a> and</p></li>
+<li><p><a class="reference external" href="https://docs.pytorch.org/executorch/1.0/kernel-library-selective-build.html">Selective Build support</a></p></li>
+</ul>
+</section>
+<section id="firmware-size-analysis">
+<h3>Firmware Size Analysis<a class="headerlink" href="#firmware-size-analysis" title="Link to this heading">#</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;root<span class="w"> </span>of<span class="w"> </span>executorch<span class="w"> </span>repo&gt;
+ls<span class="w"> </span>-al<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Overall section sizes</strong></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>arm-none-eabi-size<span class="w"> </span>-A<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Detailed section breakdown</strong></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>arm-none-eabi-objdump<span class="w"> </span>-h<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Symbol sizes (largest consumers)</strong></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>arm-none-eabi-nm<span class="w"> </span>--print-size<span class="w"> </span>--size-sort<span class="w"> </span>--radix<span class="o">=</span>d<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf<span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20
+</pre></div>
+</div>
+</section>
+<section id="model-memory-footprint">
+<h3>Model Memory Footprint<a class="headerlink" href="#model-memory-footprint" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><strong>Model data specifically</strong></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>arm-none-eabi-nm<span class="w"> </span>--print-size<span class="w"> </span>--size-sort<span class="w"> </span>--radix<span class="o">=</span>d<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>model
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Check what’s in .bss (uninitialized data)</strong></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>arm-none-eabi-objdump<span class="w"> </span>-t<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;.bss&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-10
+</pre></div>
+</div>
+<ul class="simple">
+<li><p><strong>Memory map overview</strong></p></li>
+</ul>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>arm-none-eabi-readelf<span class="w"> </span>-l<span class="w"> </span>examples/raspberry_pi/pico2/build/executorch_pico.elf
+</pre></div>
+</div>
+</section>
+</section>
+<section id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">#</a></h2>
+<section id="scale-up-your-deployment">
+<h3>Scale up your deployment<a class="headerlink" href="#scale-up-your-deployment" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Use real production trained model</p></li>
+<li><p>Optimize further → INT8 quantization, pruning</p></li>
+</ul>
+</section>
+<section id="happy-inference">
+<h3>Happy Inference!<a class="headerlink" href="#happy-inference" title="Link to this heading">#</a></h3>
+<p><strong>Result:</strong> PyTorch model → Pico2 deployment in 4 simple steps 🚀
+Total tutorial time: ~15 minutes</p>
+<p><strong>Conclusion:</strong> Real-time inference on memory constrained, low power microcontrollers, a complete PyTorch → ExecuTorch → Pico2 demo MNIST deployment</p>
+</section>
 </section>
 </section>
 
@@ -1261,20 +1439,20 @@ document.write(`
 
 <div class="prev-next-area">
     <a class="left-prev"
-       href="raspberry_pi_llama_tutorial.html"
+       href="tutorial-arm-ethos-u.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">ExecuTorch on Raspberry Pi</p>
+        <p class="prev-next-title">Arm Ethos-U NPU Backend Tutorial</p>
       </div>
     </a>
     <a class="right-next"
-       href="executorch-runtime-api-reference.html"
+       href="using-executorch-troubleshooting.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Runtime API Reference</p>
+        <p class="prev-next-title">Profiling and Debugging</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1300,20 +1478,20 @@ document.write(`
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="raspberry_pi_llama_tutorial.html"
+       href="tutorial-arm-ethos-u.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">ExecuTorch on Raspberry Pi</p>
+        <p class="prev-next-title">Arm Ethos-U NPU Backend Tutorial</p>
       </div>
     </a>
     <a class="right-next"
-       href="executorch-runtime-api-reference.html"
+       href="using-executorch-troubleshooting.html"
        title="next page">
       <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Runtime API Reference</p>
+        <p class="prev-next-title">Profiling and Debugging</p>
       </div>
       <i class="fa-solid fa-angle-right"></i>
     </a>
@@ -1335,10 +1513,24 @@ document.write(`
   </div>
   <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#api-reference-development">API Reference &amp; Development</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#build-integration-guide">Build &amp; Integration Guide</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#choose-backend-for-acceleration">Choose Backend for acceleration</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tutorials">Tutorials</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#what-you-ll-build">What You’ll Build</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#prerequisites">Prerequisites</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-1-generate-pte-from-given-example-model">Step 1: Generate pte from given example Model</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-2-build-firmware-for-pico2">Step 2: Build Firmware for Pico2</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-3-flash-to-pico2">Step 3: Flash to Pico2</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#step-4-verify-deployment">Step 4: Verify Deployment</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#memory-optimization-tips">Memory Optimization Tips</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pico2-constraints">Pico2 Constraints</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#common-issues">Common Issues</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#firmware-size-analysis">Firmware Size Analysis</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#model-memory-footprint">Model Memory Footprint</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#next-steps">Next Steps</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#scale-up-your-deployment">Scale up your deployment</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#happy-inference">Happy Inference!</a></li>
+</ul>
+</li>
 </ul>
   </nav></div>
     
@@ -1346,7 +1538,7 @@ document.write(`
 
   
   <div class="tocsection editthispage">
-    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/embedded-section.md">
+    <a href="https://github.com/pytorch/executorch/edit/main/docs/source/pico2_tutorial.md">
       <i class="fa-solid fa-pencil"></i>
       
       
@@ -1360,7 +1552,7 @@ document.write(`
     
        <div class="sidebar-secondary-item">
     <div class="tocsection sourcelink">
-      <a href="_sources/embedded-section.md.txt">
+      <a href="_sources/pico2_tutorial.md.txt">
         <i class="fa-solid fa-file-lines"></i> Show Source
       </a>
     </div>
@@ -1560,11 +1752,11 @@ document.write(`
     {
        "@context": "https://schema.org",
        "@type": "Article",
-       "name": "Embedded Systems",
-       "headline": "Embedded Systems",
+       "name": "Pico2: A simple MNIST Tutorial",
+       "headline": "Pico2: A simple MNIST Tutorial",
        "description": "PyTorch Documentation. Explore PyTorch, an open-source machine learning library that accelerates the path from research prototyping to production deployment. Discover tutorials, API references, and guides to help you build and deploy deep learning models efficiently.",
-       "url": "/embedded-section.html",
-       "articleBody": "Embedded Systems# Deploy ExecuTorch on constrained embedded systems and microcontrollers. API Reference \u0026 Development# Start here for C++ development with ExecuTorch runtime APIs and essential tutorials. Runtime API Reference \u2014 Start here: Complete runtime API reference for embedded development Detailed C++ Runtime APIs Tutorial \u2014 Step-by-step C++ API tutorial with practical examples Running an ExecuTorch Model Using the Module Extension in C++ \u2014 Custom module extensions for specialized functionality Managing Tensor Memory in C++ \u2014 Tensor operations and memory management extensions Build \u0026 Integration Guide# Using ExecuTorch with C++ \u2014 Complete setup guide for C++ runtime integration Building from Source \u2014 Building from Source Choose Backend for acceleration# Backends \u2014 Available embedded backends and acceleration options Tutorials# Arm Ethos-U NPU Backend Tutorial \u2014 Export a simple PyTorch model for the ExecuTorch Ethos-U backend ExecuTorch on Raspberry Pi \u2014 Deploy a LLaMA model on a Raspberry Pi Pico2: A simple MNIST Tutorial \u2014 Deploy a demo MNIST model on the Raspberry Pi Pico 2",
+       "url": "/pico2_tutorial.html",
+       "articleBody": "Pico2: A simple MNIST Tutorial# Deploy your PyTorch models directly to Raspberry Pi Pico2 microcontroller with ExecuTorch. What You\u2019ll Build# A 28\u00d728 MNIST digit classifier running on memory constrained, low power microcontrollers: Input: ASCII art digits (0, 1, 4, 7) Output: Real-time predictions via USB serial Memory: \u003c400KB total footprint Prerequisites# Environment Setup section Refer to this link on how to accept \u2018EULA\u2019 agreement and setup toolchain link Verify ARM toolchain which arm-none-eabi-gcc # --\u003e arm/ethos-u-scratch/arm-gnu-toolchain-13.3.rel1-x86_64-arm-none-eabi/bin/ Step 1: Generate pte from given example Model# Use the provided example model python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte Note: This is hand-crafted MNIST Classifier (proof-of-concept), and not production trained. This tiny MLP recognizes digits 0, 1, 4, and 7 using manually designed feature detectors. Step 2: Build Firmware for Pico2# # Generate model python export_mlp_mnist.py # Creates balanced_tiny_mlp_mnist.pte # Build Pico2 firmware (one command!) ./executorch/examples/rpi/build_firmware_pico.sh --model=balanced_tiny_mlp_mnist.pte # This creates executorch_pico.uf2, a firmware image for Pico2 Output: executorch_pico.uf2 firmware file (examples/raspberry_pi/pico2/build/) Note: \u2018build_firmware_pico.sh\u2019 script converts given model pte to hex array and generates C code for the same via this helper script. This C code is then compiled to generate final .uf2 binary which is then flashed to Pico2. Step 3: Flash to Pico2# Hold BOOTSEL button on Pico2 Connect USB \u2192 Mounts as ^RPI-RP2^ drive Drag \u0026 drop ^executorch_pico.uf2^ file Release BOOTSEL \u2192 Pico2 reboots with your model Step 4: Verify Deployment# Success indicators: LED blinks 10\u00d7 at 500ms \u2192 Model running \u2705 LED blinks 10\u00d7 at 100ms \u2192 Error, check serial \u274c View predictions: # Connect serial terminal screen /dev/tty.usbmodem1101 115200 # Expected output: Something like: === Digit 7 === ############################ ############################ #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### #### ### Input stats: 159 white pixels out of 784 total Running neural network inference... \u2705 Neural network results: Digit 0: 370.000 Digit 1: 0.000 Digit 2: -3.000 Digit 3: -3.000 Digit 4: 860.000 Digit 5: -3.000 Digit 6: -3.000 Digit 7: 1640.000 \u2190 PREDICTED Digit 8: -3.000 Digit 9: -3.000 \ufffd PREDICTED: 7 (Expected: 7) \u2705 CORRECT! Memory Optimization Tips# Pico2 Constraints# 520KB SRAM (runtime memory) 4MB Flash (model storage) Keep models small: Common Issues# \u201cMemory allocation failed\u201d \u2192 Reduce model size and use quantization \u201cOperator missing\u201d \u2192 Use selective build: ^\u2013operators=add,mul,relu^ \u201cImport error\u201d \u2192 Check ^arm-none-eabi-gcc^ toolchain setup. In order to resolve some of the issues above, refer to the following guides: ExecuTorch Quantization Optimization Guide Model Export \u0026 Lowering and Selective Build support Firmware Size Analysis# cd \u003croot of executorch repo\u003e ls -al examples/raspberry_pi/pico2/build/executorch_pico.elf Overall section sizes arm-none-eabi-size -A examples/raspberry_pi/pico2/build/executorch_pico.elf Detailed section breakdown arm-none-eabi-objdump -h examples/raspberry_pi/pico2/build/executorch_pico.elf Symbol sizes (largest consumers) arm-none-eabi-nm --print-size --size-sort --radix=d examples/raspberry_pi/pico2/build/executorch_pico.elf | tail -20 Model Memory Footprint# Model data specifically arm-none-eabi-nm --print-size --size-sort --radix=d examples/raspberry_pi/pico2/build/executorch_pico.elf | grep -i model Check what\u2019s in .bss (uninitialized data) arm-none-eabi-objdump -t examples/raspberry_pi/pico2/build/executorch_pico.elf | grep \".bss\" | head -10 Memory map overview arm-none-eabi-readelf -l examples/raspberry_pi/pico2/build/executorch_pico.elf Next Steps# Scale up your deployment# Use real production trained model Optimize further \u2192 INT8 quantization, pruning Happy Inference!# Result: PyTorch model \u2192 Pico2 deployment in 4 simple steps \ud83d\ude80 Total tutorial time: ~15 minutes Conclusion: Real-time inference on memory constrained, low power microcontrollers, a complete PyTorch \u2192 ExecuTorch \u2192 Pico2 demo MNIST deployment",
        "author": {
          "@type": "Organization",
          "name": "PyTorch Contributors",
@@ -1573,7 +1765,7 @@ document.write(`
        "image": "_static/img/pytorch_seo.png",
        "mainEntityOfPage": {
          "@type": "WebPage",
-         "@id": "/embedded-section.html"
+         "@id": "/pico2_tutorial.html"
        },
        "datePublished": "2023-01-01T00:00:00Z",
        "dateModified": "2023-01-01T00:00:00Z"
