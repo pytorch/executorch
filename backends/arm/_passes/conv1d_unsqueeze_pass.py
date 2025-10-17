@@ -10,7 +10,7 @@ from typing import Set, Type
 
 from executorch.backends.arm._passes import ArmPass
 
-from executorch.backends.arm._passes.add_bias_pass import AddBiasPass
+from executorch.backends.arm._passes.rewrite_conv2d_pass import RewriteConv2dPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -28,7 +28,10 @@ class Conv1dUnsqueezePass(ArmPass):
     3) squeeze the output back down to 3d.
     """
 
-    _passes_required_after: Set[Type[ExportPass]] = {AddBiasPass, SizeAdjustInputPass}
+    _passes_required_after: Set[Type[ExportPass]] = {
+        RewriteConv2dPass,
+        SizeAdjustInputPass,
+    }
 
     def call_operator(self, op, args, kwargs, meta):
         if op != exir_ops.edge.aten.convolution.default:
