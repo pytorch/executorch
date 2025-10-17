@@ -23,7 +23,7 @@ endif()
 
 set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
 )
 
 include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
