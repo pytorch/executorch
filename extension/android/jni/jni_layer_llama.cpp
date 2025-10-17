@@ -222,7 +222,6 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .echo = static_cast<bool>(echo),
           .seq_len = seq_len,
           .temperature = temperature_,
-          .max_new_tokens = 256,
       };
       for (const auto& input : inputs) {
         ET_LOG(
