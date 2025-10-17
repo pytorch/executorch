@@ -340,6 +340,19 @@ test_full_vkml() { # All End to End model tests
     echo "${TEST_SUITE_NAME}: PASS"
 }
 
+test_model_smollm2-135M() {
+    echo "${TEST_SUITE_NAME}: Test SmolLM2-135M on Ethos-U85"
+
+    # Build common libs once
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --build_libs
+
+    python3 backends/arm/test/test_model.py --test_output=arm_test/test_model --target=ethos-u85-128 --model=smollm2 --extra_flags="-DEXECUTORCH_SELECT_OPS_LIST=dim_order_ops::_to_dim_order_copy.out"
+
+    echo "${TEST_SUITE_NAME}: PASS"
+
+
+}
+
 test_smaller_stories_llama() {
     echo "${TEST_SUITE_NAME}: Test smaller_stories_llama"
 
