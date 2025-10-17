@@ -154,27 +154,6 @@ std::unordered_set<uint64_t> get_eos_ids(
     tokenizers::Tokenizer* tokenizer,
     Module* module) {
   std::unordered_set<uint64_t> eos_ids = {tokenizer->eos_tok()};
-  // Get EOS IDs if available
-  auto method_names_result = module->method_names();
-  if (method_names_result.error() != Error::Ok) {
-    ET_LOG(Error, "Failed reading method names");
-    return eos_ids;
-  }
-  const auto& method_names = method_names_result.get();
-
-  if (method_names.count(llm::kEosIds)) {
-    eos_ids.clear();
-    auto execute_result = module->execute(llm::kEosIds);
-    if (execute_result.error() != Error::Ok) {
-      ET_LOG(Error, "Failed to execute %s", llm::kEosIds);
-      return eos_ids;
-    }
-    for (const auto& eos_id : execute_result.get()) {
-      auto value = eos_id.toScalar().to<int64_t>();
-      eos_ids.emplace(value);
-      ET_LOG(Info, "eos_id = %" PRId64, value);
-    }
-  }
   return eos_ids;
 }
 
