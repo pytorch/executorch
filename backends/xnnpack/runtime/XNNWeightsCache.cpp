@@ -230,7 +230,8 @@ size_t XNNWeightsCache::look_up_or_insert(
     }
     PackedDataMeta packed_data_metadata;
     packed_data_metadata.offset = next_offset;
-    packed_data_metadata.ref_count = 0; // ref_count is only incremented after finalizing for runtime
+    packed_data_metadata.ref_count =
+        0; // ref_count is only incremented after finalizing for runtime
     packed_data_metadata.in_current_runtime = true;
     context->name_to_packed_data_metadata_[weight_bias_name] =
         packed_data_metadata;
