@@ -58,12 +58,11 @@ class Elu(NodeVisitor):
         )
         elu_op.AddInputTensors(elu_input_tensors)
         elu_op.AddOutputTensors(elu_output_tensors)
-
-        if len(node.args) == 2:
+        if len(node.args) > 1:
             elu_op.AddScalarParam(
                 OpElu.param_alpha,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-                {QCOM_DATA: np.uint32(node.args[1])},
+                {QCOM_DATA: np.float32(node.args[1])},
             )
 
         return elu_op

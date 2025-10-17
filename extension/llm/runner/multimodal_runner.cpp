@@ -67,7 +67,10 @@ Error MultimodalRunner::prefill(const std::vector<MultimodalInput>& inputs) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
   for (auto& input : inputs) {
-    ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
+    auto prefill_result = multimodal_prefiller_->prefill(input, pos_);
+    if (!prefill_result.ok()) {
+      return prefill_result.error();
+    }
   }
   return Error::Ok;
 }
@@ -125,15 +128,27 @@ Error MultimodalRunner::generate(
     if (config.echo && i == inputs.size() - 1 && input.is_text()) {
       wrapped_callback(input.get_text());
     }
-    prefill_next_token = ET_UNWRAP(multimodal_prefiller_->prefill(input, pos_));
+    auto prefill_result = multimodal_prefiller_->prefill(input, pos_);
+    if (!prefill_result.ok()) {
+      return prefill_result.error();
+    }
+    prefill_next_token = prefill_result.get();
   }
 
   stats_->first_token_ms = time_in_ms();
   stats_->prompt_eval_end_ms = time_in_ms();
   stats_->num_prompt_tokens = pos_;
 
-  wrapped_callback(ET_UNWRAP_TOKENIZER(
-      tokenizer_->decode(prefill_next_token, prefill_next_token)));
+  auto decode_result =
+      tokenizer_->decode(prefill_next_token, prefill_next_token);
+  if (!decode_result.ok()) {
+    ET_LOG(
+        Error,
+        "Tokenizers error code %d",
+        static_cast<uint32_t>(decode_result.error()));
+    return Error::InvalidArgument;
+  }
+  wrapped_callback(std::move(*decode_result));
 
   RUNNER_ET_LOG(
       config.warming,
@@ -160,13 +175,17 @@ Error MultimodalRunner::generate(
 
   // Generate tokens using the text token generator
   std::vector<uint64_t> prompt_tokens = {prefill_next_token};
-  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
+  auto generate_result = text_token_generator_->generate(
       /*tokens=*/prompt_tokens,
       /*start_pos=*/pos_,
       /*max_new_tokens=*/max_new_tokens -
           1, // Subtract 1 because prefill already generated 1 token
       /*temperature=*/config.temperature,
-      /*token_callback=*/wrapped_callback));
+      /*token_callback=*/wrapped_callback);
+  if (!generate_result.ok()) {
+    return generate_result.error();
+  }
+  int64_t num_generated_tokens = generate_result.get();
 
   pos_ += num_generated_tokens;
   // Update stats
