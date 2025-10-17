@@ -24,10 +24,13 @@ from executorch.backends.arm.process_node import (
     process_placeholder,
 )
 from executorch.backends.arm.tosa.compile_spec import TosaCompileSpec
+from executorch.backends.arm.tosa.mapping import TOSA_TENSOR_NAME_META
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.graph_module import get_control_flow_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import Graph, GraphModule, Node
+
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -169,12 +172,13 @@ class TOSABackend(BackendDetails):
         return PreprocessResult(processed_bytes=binary)
 
     @staticmethod
-    def _preprocess_module(
+    def _preprocess_module(  # noqa: C901
         graph_module: GraphModule,
         edge_program: ExportedProgram,
         compile_spec: TosaCompileSpec,
         tosa_graph: ts.TosaSerializer,
         debug_hook: DebugHook | None,
+        submodule_name: str | None = None,
     ):
         """Convert 'graph_module' to a tosa_graph"""
         tosa_spec = compile_spec.tosa_spec
@@ -194,7 +198,13 @@ class TOSABackend(BackendDetails):
         node_visitors = get_node_visitors(edge_program, tosa_spec, debug_hook)
         graph_module = _sort_outputs(graph_module, node_to_id_map)
 
-        input_count = 0
+        if submodule_name is not None:
+            tosa_graph.startRegion(submodule_name)
+            tosa_graph.currRegion.addBasicBlock(submodule_name)
+            suffix = f"_{submodule_name}"
+            for loop_node in graph_module.graph.nodes:
+                loop_node.meta[TOSA_TENSOR_NAME_META] = suffix
+
         for node in graph_module.graph.nodes:
             node = cast(Node, node)
             try:
@@ -204,17 +214,26 @@ class TOSABackend(BackendDetails):
                     if len(node.users) == 0:
                         continue
                     process_placeholder(node, tosa_graph, edge_program, tosa_spec)
-                    if node.name in edge_program.graph_signature.user_inputs:
-                        input_count += 1
                 elif node.op == "output":
-                    process_output(node, tosa_graph)
+                    process_output(node, tosa_graph, tosa_spec)
                 else:
                     # This will only happen if an unpartitioned graph is passed without
                     # any checking of compatibility.
                     raise RuntimeError(f"{node.name} is unsupported op {node.op}")
             except Exception:
-                debug_fail(node, graph_module, tosa_graph.serialize(), artifact_path)
+                debug_fail(node, graph_module, tosa_graph, artifact_path)
                 raise
+
+        # Recursively preprocess controlflow submodules.
+        for name, submodule, _ in get_control_flow_submodules(graph_module):
+            TOSABackend._preprocess_module(
+                submodule,
+                edge_program,
+                compile_spec,
+                tosa_graph,
+                debug_hook,
+                submodule_name=name,
+            )
 
     @staticmethod
     def filter_tosa_compile_specs(
