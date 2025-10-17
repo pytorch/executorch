@@ -10,6 +10,7 @@ import operator
 from typing import cast, List, Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import create_node
 from executorch.backends.arm._passes.fold_qdq_with_annotated_qparams_pass import (
     FoldAndAnnotateQParamsPass,
@@ -23,7 +24,7 @@ from torch.fx import GraphModule
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
-class AnnotateDecomposedMatmulPass(ExportPass):
+class AnnotateDecomposedMatmulPass(ArmPass):
     """
     torch.matmul and it's equivalent operator @ can be decomposed in many ways, for instance:
     dq -> matmul -> q can become

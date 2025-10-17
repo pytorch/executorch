@@ -59,6 +59,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         texture_limits: utils.ImageExtents,
         buffer_limit: int,
         require_dynamic_shape: bool = False,
+        skip_bool_tensors: bool = False,
         operator_blocklist: Optional[Set[OpKey]] = None,
         operator_allowlist: Optional[Set[OpKey]] = None,
         fusable_subgraphs: Optional[List[PatternMatch]] = None,
@@ -69,6 +70,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self.texture_limits: utils.ImageExtents = texture_limits
         self.buffer_limit = buffer_limit
         self.require_dynamic_shapes = require_dynamic_shape
+        self.skip_bool_tensors = skip_bool_tensors
         self.operator_blocklist: Set[OpKey] = (
             operator_blocklist if operator_blocklist is not None else set()
         )
@@ -116,6 +118,11 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if not has_impl(target):
                 return False, "no operator implementation"
             features = get_op_features(target)
+
+        # bool tensors are internally represented with int8 buffers, which may not be
+        # supported by some GPUs. Therefore, provide the option to skip these tensors.
+        if self.skip_bool_tensors and utils.op_contains_bool_tensor(node):
+            return False, f"op {utils.node_io_str(node)} contains bool tensor"
 
         # Get the possible tensor representations for each tensor participating in the
         # this operator. Then check that all tensors are representable as either a
@@ -398,6 +405,7 @@ class VulkanPartitioner(Partitioner):
                 texture_limits,
                 buffer_limit,
                 require_dynamic_shape=self.options.get("require_dynamic_shapes", False),
+                skip_bool_tensors=self.options.get("skip_bool_tensors", False),
                 operator_blocklist=self.operator_blocklist,
                 operator_allowlist=self.operator_allowlist,
                 fusable_subgraphs=fusable_subgraphs,
