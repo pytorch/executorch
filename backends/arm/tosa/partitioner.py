@@ -15,6 +15,7 @@ be delegated to the TOSA backend. Use this module to:
 """
 
 import logging
+from itertools import count
 from typing import Callable, List, Optional, Sequence, Tuple
 
 import torch
@@ -35,6 +36,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data, WhyNoPartitionReporter
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.graph_module import get_control_flow_submodules
 from torch.export.exported_program import ExportedProgram
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner, Partition
@@ -185,6 +187,7 @@ class TOSAPartitioner(Partitioner):
         module: GraphModule,
         containing_program: ExportedProgram,
         reporter: WhyNoPartitionReporter,
+        tag_iterator: count | None = None,
     ) -> set[str]:
         """Tag nodes in a module, possibly a submodule, from the containing program.
 
@@ -196,6 +199,17 @@ class TOSAPartitioner(Partitioner):
             A set of strings with the partition tags.
         """
         tags: set[str] = set()
+        if tag_iterator is None:
+            tag_iterator = count(0)
+        for _, submodule, _ in get_control_flow_submodules(module):
+            submodule_tags = self._tag_module(
+                submodule, containing_program, reporter, tag_iterator
+            )
+            if len(tags & submodule_tags) != 0:
+                raise RuntimeError(
+                    "Got overlapping tags in two different modules, this shouldn't happen."
+                )
+            tags = tags | submodule_tags
         operator_support = tosa_support_factory(
             self.tosa_spec, containing_program, reporter, self.additional_checks
         )
@@ -207,7 +221,7 @@ class TOSAPartitioner(Partitioner):
         partition_list = capability_partitioner.propose_partitions()
 
         for partition in partition_list:
-            tag = f"tag{partition.id}"
+            tag = f"tag{next(tag_iterator)}"
             tags.add(tag)
 
             for node in partition.nodes:
