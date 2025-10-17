@@ -72,10 +72,13 @@ class ET_EXPERIMENTAL CudaBackend final
     LOAD_SYMBOL(run, AOTInductorModelContainerRun);
 #undef LOAD_SYMBOL
 
-    handle->update_constants_from_blob =
-        reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
-            get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob").get());
-    if (handle->update_constants_from_blob == nullptr) {
+    auto symbol_res =
+        get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob");
+    if (symbol_res.ok()) {
+      handle->update_constants_from_blob =
+          reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
+              symbol_res.get());
+    } else {
       ET_LOG(
           Info,
           "Failed to load AOTInductorModelUpdateConstantsFromBlob. This .so is probably compiled on an old version of torch (<2.9.0)");
