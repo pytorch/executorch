@@ -9,16 +9,11 @@ import traceback
 from abc import abstractmethod
 from typing import List, Optional, Set, Type
 
-import torch
 from executorch.exir.pass_base import ExportPass, NodeMetadata
 
 
 class ArmPass(ExportPass):
     """Base class for Arm passes"""
-
-    def __init__(self, exported_program: Optional[torch.export.ExportedProgram] = None):
-        super(ArmPass, self).__init__()
-        self.exported_program = exported_program
 
     @property
     @abstractmethod

@@ -106,7 +106,8 @@ class ModelArgs:
     # These arguments come directly from a torchtune adapter_config.json file.
     r: Optional[int] = None  # Rank.
     lora_alpha: Optional[int] = None  # Alpha.
-    # Eg. q_proj, k_proj, v_proj, output_proj
+    # Modules that we can apply lora adapters to.
+    # Eg. q_proj, k_proj, v_proj, output_proj/o_proj, down_proj, gate_proj, up_proj
     target_modules: Optional[list] = None
     peft_type: Optional[str] = None  # PEFT type.
     base_model_name_or_path: Optional[str] = None  # Base model name or path.

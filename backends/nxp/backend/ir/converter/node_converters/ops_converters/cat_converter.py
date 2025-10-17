@@ -85,6 +85,12 @@ class CatConverter(NodeConverter):
         if dim == 0:
             return False
 
+        # If all input shapes are equal, the neutron is able to pad the last dimension of inputs and outputs.
+        input_shapes = [_get_shape(input_) for input_ in node.all_input_nodes]
+        if input_shapes.count(input_shapes[0]) == len(input_shapes):
+            if dim == len(input_shapes[0]) - 1:
+                return True
+
         # Neutron requires the channels to be a multiple of numMacs. The channels could either be the second or the
         #  last dimension, depending on the formats of the node. The format, however, cannot be determined
         #  during conversion, as it depends on what other nodes are delegated.

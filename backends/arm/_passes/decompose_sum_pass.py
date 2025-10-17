@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
@@ -23,7 +24,7 @@ def _get_sum_decomp(op):
             raise RuntimeError("Unvalid op in DecomposeSumPass")
 
 
-class DecomposeSumPass(ExportPass):
+class DecomposeSumPass(ArmPass):
     """
     In Pytorch, the default behaviour of for example Tensor.sum is to squeeze the
     dimension that is summed (keep_dim = False). However, in TOSA, REDUCE_SUM always
@@ -76,13 +77,13 @@ class DecomposeSumPass(ExportPass):
 
         for dim in dims:
             input_node = super().call_operator(
-                sum_op, (input_node, dim, True), kwargs, meta
+                sum_op, (input_node, dim, True), kwargs, meta, updated=True
             )
 
         if not keepdims:
             shape = list(meta["val"].size())
             input_node = super().call_operator(
-                view_op, (input_node, shape), kwargs, meta
+                view_op, (input_node, shape), kwargs, meta, updated=True
             )
 
         return input_node
