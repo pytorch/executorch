@@ -4,6 +4,30 @@ load("//tools/build/buck:nvcc_flags.bzl", "get_nvcc_arch_args")
 oncall("executorch")
 
 runtime.cxx_library(
+    name = "cuda_platform",
+    srcs = [
+        "platform/platform.cpp",
+    ],
+    headers = [
+        "platform/platform.h",
+    ],
+    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+    link_whole = True,
+    supports_python_dlopen = True,
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    deps = [
+        "//executorch/runtime/core:core",
+    ],
+    nvcc_flags = get_nvcc_arch_args() + [
+        "-_NVCC_HOST_COMPILER_FLAG_",
+        "gcc",
+    ],
+    external_deps = [
+        ("cuda", None, "cuda-lazy"),
+    ],
+)
+
+runtime.cxx_library(
     name = "runtime_shims",
     srcs = [
         "guard.cpp",
@@ -33,6 +57,7 @@ runtime.cxx_library(
         "//executorch/runtime/core:core",
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/runtime/platform:platform",
+        "//executorch/backends/cuda/runtime:cuda_platform",
     ],
     nvcc_flags = get_nvcc_arch_args() + [
         "-_NVCC_HOST_COMPILER_FLAG_",
