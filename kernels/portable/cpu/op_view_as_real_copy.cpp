@@ -64,10 +64,9 @@ Tensor& view_as_real_copy_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
 
-  constexpr auto op_name = "view_as_real_copy.out";
 
-  ET_SWITCH_COMPLEXH_TYPES(self.scalar_type(), ctx, op_name, CTYPE_IN, [&] {
-    ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, op_name, CTYPE_OUT, [&] {
+  ET_SWITCH_COMPLEX_TYPES(self.scalar_type(), ctx, "view_as_real_copy.out", CTYPE_IN, [&] {
+    ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "view_as_real_copy.out", CTYPE_OUT, [&] {
       _to_impl<CTYPE_IN, CTYPE_OUT>(self, out);
     });
   });

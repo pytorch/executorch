@@ -118,10 +118,12 @@ void perform_topk(
       }
 
       // Perform topk on the queue
-      const auto elem_greater = [](const elem_t& x, const elem_t& y) -> bool {
+      const std::function<bool(const elem_t&, const elem_t&)> elem_greater =
+          [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(y.first, x.first);
       };
-      const auto elem_less = [](const elem_t& x, const elem_t& y) -> bool {
+      const std::function<bool(const elem_t&, const elem_t&)> elem_less =
+          [](const elem_t& x, const elem_t& y) -> bool {
         return float_less_than(x.first, y.first);
       };
       const auto cmp = largest ? elem_greater : elem_less;
