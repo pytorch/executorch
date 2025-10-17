@@ -1563,8 +1563,8 @@ Error defineGenericUnaryNode(
       const fb_xnnpack::XNNGraph* graph) noexcept {                      \
     MAYBE_UNUSED(graph);                                                 \
     auto graph_node = node->xnode_union_as_XNNLeakyReLU();               \
-    union xnn_unary_params params = {                                    \
-        .leaky_relu = {.negative_slope = graph_node->negative_slope()}}; \
+    union xnn_unary_params params;                                       \
+    params.leaky_relu.negative_slope = graph_node->negative_slope();     \
     return defineGenericUnaryNode(                                       \
         subgraph_ptr,                                                    \
         remapped_ids,                                                    \
@@ -1586,7 +1586,8 @@ Error defineGenericUnaryNode(
       const fb_xnnpack::XNNGraph* graph) noexcept {                          \
     MAYBE_UNUSED(graph);                                                     \
     auto graph_node = node->xnode_union_as_XNNELU();                         \
-    union xnn_unary_params params = {.elu = {.alpha = graph_node->alpha()}}; \
+    union xnn_unary_params params;                                           \
+    params.elu.alpha = graph_node->alpha();                                  \
     return defineGenericUnaryNode(                                           \
         subgraph_ptr,                                                        \
         remapped_ids,                                                        \
@@ -1638,8 +1639,9 @@ Error defineGenericBinaryNode(
     MAYBE_UNUSED(graph);                                            \
     auto graph_node = node->xnode_union_as_XNN##name();             \
     std::pair<float, float> min_max = getOutputMinMax(node);        \
-    struct xnn_binary_params params = {                             \
-        .output_min = min_max.first, .output_max = min_max.second}; \
+    struct xnn_binary_params params;                                \
+    params.output_min = min_max.first;                              \
+    params.output_max = min_max.second;                             \
     return defineGenericBinaryNode(                                 \
         subgraph_ptr,                                               \
         remapped_ids,                                               \
