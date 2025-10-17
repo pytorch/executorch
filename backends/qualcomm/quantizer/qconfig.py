@@ -52,6 +52,22 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
             act_scale, weight_scale
         )
         derived_scale = (broadcast_act_scale * broadcast_weight_scale).to(torch.float32)
+        # TransposeConv per channel axis=1, and the weight_shape[1] = out_channel / groups.
+        # E.g., out_channel = 6, groups = 2, weight_shape[1] = 3, which means there are 3 pairs of scale/offset.
+        # However, bias still has 6 values, meaning it requires repeat_interleave 2 times derived_scale in order to
+        # generate 6 pairs of scale/offset to perform per channel quantization. For bias node, Conv OP builder will later
+        # only pass 3 pairs of scale/offset to QNN.
+        if (
+            node.target
+            in {
+                torch.ops.aten.conv_transpose2d.input,
+                torch.ops.aten.conv_transpose3d.input,
+            }
+            and len(node.args) > 6
+            and node.args[6] != 1
+        ):
+            groups = node.args[6]
+            derived_scale = derived_scale.repeat_interleave(groups)
         derived_zero = torch.zeros(derived_scale.size(), device=weight_zp.device).to(
             torch.int32
         )
@@ -68,7 +84,6 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
     assert isinstance(input_act, Node)
     weight = node.args[1]
     assert isinstance(weight, Node)
-
     return DerivedQuantizationSpec(
         derived_from=[(input_act, node), (weight, node)],
         derive_qparams_fn=_derive_bias_qparams_fn,
@@ -300,6 +315,7 @@ def get_ptq_per_channel_quant_config(
     weight_dtype=torch.int8,
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric: bool = False,
+    ch_axis: int = 0,
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
 
@@ -349,7 +365,7 @@ def get_ptq_per_channel_quant_config(
         ),
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
+        ch_axis=ch_axis,
         observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
     )
 
@@ -370,6 +386,7 @@ def get_ptq_per_block_quant_config(
     weight_dtype=torch.int8,
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric: bool = False,
+    ch_axis: int = 0,
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
     quantization_config = get_ptq_per_channel_quant_config(
@@ -385,7 +402,7 @@ def get_ptq_per_block_quant_config(
         ),
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
+        ch_axis=ch_axis,
         observer_or_fake_quant_ctr=PerBlockParamObserver.with_args(**extra_args),
     )
     return QuantizationConfig(
@@ -522,6 +539,7 @@ def get_qat_per_channel_quant_config(
     weight_dtype=torch.int8,
     act_observer=MovingAverageMinMaxObserver,
     act_symmetric=False,
+    ch_axis: int = 0,
 ) -> QuantizationConfig:
     supported_act_types = {
         torch.uint8,
@@ -577,7 +595,7 @@ def get_qat_per_channel_quant_config(
         ),
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
+        ch_axis=ch_axis,
         observer=MovingAveragePerChannelMinMaxObserver,
     )
     weight_quantization_spec = QuantizationSpec(
@@ -587,7 +605,7 @@ def get_qat_per_channel_quant_config(
         ),
         quant_max=7 if weight_dtype == torch.int4 else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
-        ch_axis=0,
+        ch_axis=ch_axis,
         observer_or_fake_quant_ctr=weight_fake_quant_ctr,
     )
 

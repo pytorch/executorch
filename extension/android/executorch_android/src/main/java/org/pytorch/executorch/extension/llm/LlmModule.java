@@ -186,7 +186,7 @@ public class LlmModule {
   }
 
   /**
-   * Prefill an LLaVA Module with the given images input.
+   * Prefill a multimodal Module with the given images input.
    *
    * @param image Input image as a byte array
    * @param width Input image width
@@ -196,7 +196,7 @@ public class LlmModule {
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
   public long prefillImages(int[] image, int width, int height, int channels) {
     int nativeResult = appendImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
@@ -208,7 +208,7 @@ public class LlmModule {
   private native int appendImagesInput(int[] image, int width, int height, int channels);
 
   /**
-   * Prefill an LLaVA Module with the given images input.
+   * Prefill a multimodal Module with the given images input.
    *
    * @param image Input normalized image as a float array
    * @param width Input image width
@@ -218,7 +218,7 @@ public class LlmModule {
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
   public long prefillImages(float[] image, int width, int height, int channels) {
     int nativeResult = appendNormalizedImagesInput(image, width, height, channels);
     if (nativeResult != 0) {
@@ -231,14 +231,59 @@ public class LlmModule {
       float[] image, int width, int height, int channels);
 
   /**
-   * Prefill an LLaVA Module with the given text input.
+   * Prefill a multimodal Module with the given audio input.
    *
-   * @param prompt The text prompt to LLaVA.
+   * @param audio Input preprocessed audio as a byte array
+   * @param batch_size Input batch size
+   * @param n_bins Input number of bins
+   * @param n_frames Input number of frames
    * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
    *     exposed to user.
    * @throws RuntimeException if the prefill failed
    */
-  @Deprecated
+  @Experimental
+  public long prefillAudio(byte[] audio, int batch_size, int n_bins, int n_frames) {
+    int nativeResult = appendAudioInput(audio, batch_size, n_bins, n_frames);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendAudioInput(byte[] audio, int batch_size, int n_bins, int n_frames);
+
+  /**
+   * Prefill a multimodal Module with the given raw audio input.
+   *
+   * @param audio Input raw audio as a byte array
+   * @param batch_size Input batch size
+   * @param n_channels Input number of channels
+   * @param n_samples Input number of samples
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
+  public long prefillRawAudio(byte[] audio, int batch_size, int n_channels, int n_samples) {
+    int nativeResult = appendRawAudioInput(audio, batch_size, n_channels, n_samples);
+    if (nativeResult != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult);
+    }
+    return 0;
+  }
+
+  private native int appendRawAudioInput(
+      byte[] audio, int batch_size, int n_channels, int n_samples);
+
+  /**
+   * Prefill a multimodal Module with the given text input.
+   *
+   * @param prompt The text prompt to prefill.
+   * @return 0, as the updated starting position in KV cache of the input in the LLM is no longer
+   *     exposed to user.
+   * @throws RuntimeException if the prefill failed
+   */
+  @Experimental
   public long prefillPrompt(String prompt) {
     int nativeResult = appendTextInput(prompt);
     if (nativeResult != 0) {

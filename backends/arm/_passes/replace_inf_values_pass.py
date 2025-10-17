@@ -10,18 +10,16 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes.arm_pass import ArmPass
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class ReplaceInfValues(ExportPass):
+class ReplaceInfValues(ArmPass):
     """
     Due to limitation in Quantizer, we need to change inf/-inf to more quantizable values.
     """
 
     _passes_required_after: Set[Type[ExportPass]] = set()
-
-    def __init__(self):
-        super(ReplaceInfValues, self).__init__()
 
     def call(self, graph_module: torch.fx.GraphModule):
         modified = False
