@@ -8,6 +8,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import (
     create_node,
     get_first_fake_tensor,
@@ -26,7 +27,7 @@ from torch.fx import Node
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
-class FuseBatchnorm2DPass(ExportPass):
+class FuseBatchnorm2DPass(ArmPass):
     """Fuses the pattern convolution -> batchnorm by updating
     the weights and bias of the convolution and removing the batchnorm.
     """
@@ -34,8 +35,8 @@ class FuseBatchnorm2DPass(ExportPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram):
-        self.exported_program = exported_program
         super().__init__()
+        self.exported_program = exported_program
 
     def get_bias_name(self, weight_node: Node, bias_node: Node | None) -> str:
         if bias_node:

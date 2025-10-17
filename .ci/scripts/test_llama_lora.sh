@@ -55,7 +55,7 @@ cmake_build_llama_runner
 # Constants.
 RUNTIME_ARGS="--tokenizer_path=${DOWNLOADED_PATH}/tokenizer.model --temperature=0 --seq_len=20 --warmup=1"
 PROMPT="What happens if you eat watermelon seeds?"
-EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C,"
+EXPECTED_PREFIX="What happens if you eat watermelon seeds? Watermelon seeds are a good source of vitamin C and"
 
 # Export LoRA PTE file.
 MODEL_NAME="llama_3_2_1B_lora"

@@ -15,6 +15,10 @@ import torch
 from executorch.backends.nxp.backend.custom_delegation_options import (
     CustomDelegationOptions,
 )
+from executorch.backends.nxp.backend.edge_helper import (
+    DEQUANTIZE_OPERATORS,
+    QUANTIZE_OPERATORS,
+)
 from executorch.backends.nxp.backend.edge_program_converter import (
     EdgeProgramToIRConverter,
 )
@@ -66,20 +70,14 @@ class QDQClusterRecognizer:
         compute_node: torch.fx.Node
         ops: list[torch.fx.Node]
 
-    QUANTIZE_OPERATORS = [
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    ]
-
-    DEQUANTIZE_OPERATORS = [
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    ]
-
     AUXILIARY_OPS = [
         operator.getitem,
         exir_ops.edge.aten.view_copy.default,
         exir_ops.edge.aten.permute_copy.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten.sigmoid.default,
+        exir_ops.edge.aten.tanh.default,
     ]
 
     def __init__(self):
@@ -87,11 +85,11 @@ class QDQClusterRecognizer:
 
     @staticmethod
     def is_quant_node(node: torch.fx.Node) -> bool:
-        return node.target in QDQClusterRecognizer.QUANTIZE_OPERATORS
+        return node.target in QUANTIZE_OPERATORS
 
     @staticmethod
     def is_dequant_node(node: torch.fx.Node) -> bool:
-        return node.target in QDQClusterRecognizer.DEQUANTIZE_OPERATORS
+        return node.target in DEQUANTIZE_OPERATORS
 
     @staticmethod
     def is_auxiliary_node(node: torch.fx.Node) -> bool:
@@ -308,18 +306,17 @@ class NeutronPartitioner(Partitioner):
     def __init__(
         self,
         compile_spec: list[CompileSpec],
+        neutron_target_spec: NeutronTargetSpec,
         custom_delegation_options: CustomDelegationOptions | None = None,
     ) -> None:
         self.delegation_spec = DelegationSpec(NeutronBackend.__name__, compile_spec)
         self.custom_delegation_options = (
             custom_delegation_options or CustomDelegationOptions()
         )
-        target = self.delegation_spec[1][2].value.decode()
-        converter_flavor = self.delegation_spec[1][3].value.decode()
-        self.neutron_target_spec = NeutronTargetSpec(target, converter_flavor)
+        self.neutron_target_spec = neutron_target_spec
 
+    @staticmethod
     def validate_partitioning_result(
-        self,
         graph: Graph,
         partition_list: list[Partition],
         custom_delegation_options: CustomDelegationOptions,
