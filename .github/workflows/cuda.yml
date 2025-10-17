@@ -247,7 +247,6 @@ jobs:
             --qlinear_encoder 4w \
             --qlinear_packing_format tile_packed_to_4d \
             --qlinear_encoder_packing_format tile_packed_to_4d \
-            --qembedding 4w \
             --output_dir ./
         python -m executorch.extension.audio.mel_spectrogram \
             --feature_size 128 \
@@ -313,7 +312,6 @@ jobs:
             --max_seq_len 1024 \
             --qlinear 4w \
             --qlinear_encoder 4w \
-            --qembedding 4w \
             --output_dir ./
         python -m executorch.extension.audio.mel_spectrogram \
             --feature_size 128 \
