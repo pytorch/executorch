@@ -15,6 +15,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace executorch {
 namespace backends {

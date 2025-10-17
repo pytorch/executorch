@@ -8,12 +8,12 @@
 
 #include <executorch/backends/aoti/common_shims.h>
 #include <executorch/backends/aoti/utils.h>
+#include <executorch/backends/cuda/runtime/platform/platform.h>
 #include <executorch/backends/cuda/runtime/shims/memory.h>
 #include <executorch/backends/cuda/runtime/shims/tensor_attribute.h>
 #include <executorch/backends/cuda/runtime/utils.h>
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
-#include <cstdlib> // For posix_memalign
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -230,15 +230,11 @@ AOTITorchError aoti_torch_empty_strided(
         cudaMallocAsync(&ptr, static_cast<size_t>(nbytes), cudaStreamDefault));
   } else if (device_type == static_cast<int32_t>(SupportedDevices::CPU)) {
     // Ensure 16-byte alignment for CPU memory to match CUDA requirements
-    int result = posix_memalign(&ptr, 16, nbytes);
-    ET_CHECK_OR_RETURN_ERROR(
-        result == 0,
-        MemoryAllocationFailed,
-        "Failed to allocate aligned CPU memory");
+    ptr = aligned_alloc(16, nbytes);
     ET_CHECK_OR_RETURN_ERROR(
         ptr != nullptr,
         MemoryAllocationFailed,
-        "Failed to call posix_memalign");
+        "Failed to allocate aligned CPU memory");
   } else {
     ET_CHECK_OR_RETURN_ERROR(
         false,
@@ -339,7 +335,7 @@ AOTITorchError aoti_torch_delete_tensor_object(Tensor* tensor) {
                 Internal,
                 "Expected host memory but got managed!")
             // This is CPU memory - free immediately
-            free(data_ptr);
+            aligned_free(data_ptr);
             data_ptr = nullptr;
           }
 
