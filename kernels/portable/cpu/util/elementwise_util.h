@@ -105,7 +105,7 @@ inline void dtype_specialized_elementwise_fn_impl(
           out.numel(),
           ::executorch::extension::internal::GRAIN_SIZE,
           [&](const auto begin, const auto end) {
-            std::array<const CTYPE_COMPUTE*, kNumInputs> inputs_data_ptrs = {
+            std::array<const CTYPE_COMPUTE*, sizeof...(inputs)> inputs_data_ptrs = {
                 inputs.first->template const_data_ptr<CTYPE_COMPUTE>()...};
 
             CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
@@ -119,11 +119,11 @@ inline void dtype_specialized_elementwise_fn_impl(
           // small-sized tests will test whether using Vectorized broke our
           // lambda.
 #ifndef NDEBUG
-              std::array<Vec, kNumInputs> loaded_inputs{};
+              std::array<Vec, sizeof...(inputs)> loaded_inputs{};
 #else // NDEBUG
-              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
+              std::array<CTYPE_COMPUTE, sizeof...(inputs)> loaded_inputs{};
 #endif // NDEBUG
-              for (const auto input_idx : c10::irange(kNumInputs)) {
+              for (const auto input_idx : c10::irange(sizeof...(inputs))) {
                 loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
               }
 #ifndef NDEBUG
@@ -136,8 +136,8 @@ inline void dtype_specialized_elementwise_fn_impl(
             // Main vectorized loop.
             for (auto idx = vectorized_begin; idx < vectorized_end;
                  idx += Vec::size()) {
-              std::array<Vec, kNumInputs> loaded_vec_inputs{};
-              for (const auto input_idx : c10::irange(kNumInputs)) {
+              std::array<Vec, sizeof...(inputs)> loaded_vec_inputs{};
+              for (const auto input_idx : c10::irange(sizeof...(inputs))) {
                 loaded_vec_inputs[input_idx] =
                     Vec::loadu(&inputs_data_ptrs[input_idx][idx]);
               }
@@ -148,11 +148,11 @@ inline void dtype_specialized_elementwise_fn_impl(
             // Scalar epilogue.
             for (const auto idx : c10::irange(vectorized_end, end)) {
 #ifndef NDEBUG
-              std::array<Vec, kNumInputs> loaded_inputs{};
+              std::array<Vec, sizeof...(inputs)> loaded_inputs{};
 #else // NDEBUG
-              std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
+              std::array<CTYPE_COMPUTE, sizeof...(inputs)> loaded_inputs{};
 #endif // NDEBUG
-              for (const auto input_idx : c10::irange(kNumInputs)) {
+              for (const auto input_idx : c10::irange(sizeof...(inputs))) {
                 loaded_inputs[input_idx] = inputs_data_ptrs[input_idx][idx];
               }
 #ifndef NDEBUG
@@ -172,20 +172,20 @@ inline void dtype_specialized_elementwise_fn_impl(
       out.numel(),
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
-        std::array<const CTYPE_COMPUTE*, kNumInputs> inputs_data_ptrs = {
+        std::array<const CTYPE_COMPUTE*, sizeof...(inputs)> inputs_data_ptrs = {
             inputs.first->template const_data_ptr<CTYPE_COMPUTE>()...};
 
         CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
         const auto range =
-            BroadcastIndexesRange<kNumInputs, support_noncontiguous_tensors>(
+            BroadcastIndexesRange<sizeof...(inputs), support_noncontiguous_tensors>(
                 out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
-          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
-          for (const auto idx : c10::irange(kNumInputs)) {
+          std::array<CTYPE_COMPUTE, sizeof...(inputs)> loaded_inputs{};
+          for (const auto idx : c10::irange(sizeof...(inputs))) {
             loaded_inputs[idx] = inputs_data_ptrs[idx][indexes[idx + 1]];
           }
           data_out[indexes[0]] = std::apply(compute_fun, loaded_inputs);
@@ -236,7 +236,7 @@ inline void apply_elementwise_fn_generic_impl(
     const char* data_ptr;
     ssize_t element_size;
   };
-  std::array<InputInfo, kNumInputs> inputs_info = {(InputInfo{
+  std::array<InputInfo, sizeof...(inputs)> inputs_info = {(InputInfo{
       internal::get_load_to_compute_fn<CTYPE_COMPUTE, op_name>(
           ctx, *inputs.first, inputs.second),
       reinterpret_cast<const char*>(inputs.first->const_data_ptr()),
@@ -255,14 +255,14 @@ inline void apply_elementwise_fn_generic_impl(
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
         const auto range =
-            BroadcastIndexesRange<kNumInputs, support_noncontiguous_tensors>(
+            BroadcastIndexesRange<sizeof...(inputs), support_noncontiguous_tensors>(
                 out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
           const auto& indexes = *begin_it;
-          std::array<CTYPE_COMPUTE, kNumInputs> loaded_inputs{};
-          for (const auto idx : c10::irange(kNumInputs)) {
+          std::array<CTYPE_COMPUTE, sizeof...(inputs)> loaded_inputs{};
+          for (const auto idx : c10::irange(sizeof...(inputs))) {
             const auto& input_info = inputs_info[idx];
             loaded_inputs[idx] = input_info.load_to_compute(
                 &input_info
