@@ -10,6 +10,7 @@ import logging
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.annotate_decomposed_matmul import (
     AnnotateDecomposedMatmulPass,
 )
@@ -19,7 +20,6 @@ from executorch.backends.arm._passes.arm_pass_utils import (
     is_param_node,
 )
 from executorch.backends.arm.constants import (
-    HWCM_ORDER,
     NCHW_ORDER,
     NHWC_INVERSE_ORDER,
     NHWC_ORDER,
@@ -44,7 +44,7 @@ def _is_input(node: torch.fx.Node, exported_program: ExportedProgram) -> bool:
     return node.op == "placeholder" and not is_param_node(exported_program, node)
 
 
-class ToTosaMemoryFormatPass(ExportPass):
+class ToTosaMemoryFormatPass(ArmPass):
     """
     Annotates each node with a tosa_dim_order. tosa_dim_order can be seen as a channels-last dim-order
     that in most cases will be (0, 2, 3, 1) for nodes with 4D-shapes. The pass also inserts backend.tosa.TRANSPOSE
@@ -55,37 +55,8 @@ class ToTosaMemoryFormatPass(ExportPass):
     _passes_required_after: Set[Type[ExportPass]] = set()
 
     def __init__(self, exported_program: ExportedProgram) -> None:
-        self.exported_program = exported_program
         super().__init__()
-
-    @staticmethod
-    def _is_consumer_node_depthwise_conv2d(node: torch.fx.Node):
-        consumer_node = list(node.users)[0]
-        if consumer_node.target == exir_ops.edge.aten.convolution.default:
-            consumer_node_inputs = consumer_node.all_input_nodes
-            groups = consumer_node.args[-1]
-            in_channels = consumer_node_inputs[0].meta["val"].shape[1]
-            out_channels = consumer_node_inputs[1].meta["val"].shape[0]
-            if (in_channels == groups) and (out_channels % in_channels) == 0:
-                return True
-
-        return False
-
-    def is_weight_node_for_depthwise_conv2d(self, node: torch.fx.Node):
-        """
-        returns True for w in the following sequence;
-        w -> depthwise_conv2d -> ...
-        """
-        if node.op == "placeholder":
-            # node is an input, weight or bias node
-            consumer_node = list(node.users)[0]
-            if self.is_weight_node_for_depthwise_conv2d(consumer_node):
-                return True
-            if self._is_consumer_node_depthwise_conv2d(node):
-                # Check that node is the weight-argument and not input or bias
-                return consumer_node.args[1] == node
-
-        return False
+        self.exported_program = exported_program
 
     @staticmethod
     def memory_format_differs(shape):
@@ -332,10 +303,6 @@ class ToTosaMemoryFormatPass(ExportPass):
                 dim_order = node_data.dim_order()
             elif node_data.dim() == 4:
                 dim_order = NHWC_ORDER
-                if self.is_weight_node_for_depthwise_conv2d(node):
-                    # The weights of TOSA DEPTHWISE_CONV2D have shape (H, W, C, M) which corresponds to
-                    # dim_order = (2, 3, 0, 1) (https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d).
-                    dim_order = HWCM_ORDER
             elif node_data.dim() == 5:
                 dim_order = NNHWC_ORDER
             elif node_data.dim() == 6:
