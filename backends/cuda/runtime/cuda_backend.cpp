@@ -52,7 +52,6 @@ class ET_EXPERIMENTAL CudaBackend final
   Error load_function_pointers_into_handle(
       void* so_handle,
       AOTIDelegateHandle* handle) const {
-
 #define LOAD_SYMBOL(member, name)                                    \
   do {                                                               \
     auto symbol_res = get_function(so_handle, #name);                \
@@ -75,7 +74,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->update_constants_from_blob =
         reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
-            dlsym(so_handle, "AOTInductorModelUpdateConstantsFromBlob"));
+            get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob"));
     if (handle->update_constants_from_blob == nullptr) {
       ET_LOG(
           Info,
