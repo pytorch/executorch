@@ -93,6 +93,11 @@ if(EXECUTORCH_BUILD_CUDA)
   executorch_target_link_options_shared_lib(aoti_cuda)
 endif()
 
+if(EXECUTORCH_BUILD_METAL)
+  list(APPEND link_libraries metal_backend)
+  executorch_target_link_options_shared_lib(metal_backend)
+endif()
+
 # Add tokenizers
 list(APPEND link_libraries tokenizers::tokenizers)
 
