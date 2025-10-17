@@ -210,10 +210,6 @@ AOTITorchError aoti_torch_empty_strided(
 
   // This requires us to reserve CUDA memory and put it into a ETensor
   void* ptr;
-  int64_t numel = 1;
-  for (int64_t i = 0; i < ndim; i++) {
-    numel *= sizes_ptr[i];
-  }
 
   ET_CHECK_OK_OR_RETURN_ERROR(validate_dtype(dtype));
 
@@ -223,7 +219,29 @@ AOTITorchError aoti_torch_empty_strided(
       InvalidArgument,
       "Invalid element size for dtype: %d",
       dtype);
-  int64_t nbytes = numel * element_size;
+
+  // Calculate storage size based on strides, matching PyTorch's behavior
+  // This is critical when sizes and strides don't match the expected contiguous
+  // layout Reference: PyTorch's computeStorageNbytes in EmptyTensor.cpp
+  int64_t storage_size = 1; // storage offset (0) + 1
+  for (int64_t i = 0; i < ndim; i++) {
+    if (sizes_ptr[i] == 0) {
+      storage_size = 0;
+      break;
+    }
+    // For each dimension, add stride[i] * (size[i] - 1)
+    // This gives us the maximum offset in that dimension
+    int64_t stride_i = (strides_ptr != nullptr) ? strides_ptr[i] : 0;
+    if (strides_ptr == nullptr) {
+      // Calculate contiguous stride if not provided
+      stride_i = 1;
+      for (int64_t j = i + 1; j < ndim; j++) {
+        stride_i *= sizes_ptr[j];
+      }
+    }
+    storage_size += stride_i * (sizes_ptr[i] - 1);
+  }
+  int64_t nbytes = storage_size * element_size;
 
   if (device_type == static_cast<int32_t>(SupportedDevices::CUDA)) {
     ET_CUDA_CHECK_OR_RETURN_ERROR(
@@ -259,7 +277,6 @@ AOTITorchError aoti_torch_empty_strided(
 
   // This tensor owns the memory it allocated, set reference count to 1
   memory_to_n_tensor[ptr] = 1;
-
   return Error::Ok;
 }
 
