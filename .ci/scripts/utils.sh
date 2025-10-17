@@ -44,6 +44,51 @@ install_pip_dependencies() {
   popd || return
 }
 
+dedupe_macos_loader_path_rpaths() {
+  if [[ "$(uname)" != "Darwin" ]]; then
+    return
+  fi
+
+  local torch_lib_dir
+  torch_lib_dir=$(python - <<'PY'
+import os
+try:
+    import torch
+except Exception:
+    raise SystemExit(0)
+
+print(os.path.join(os.path.dirname(torch.__file__), "lib"))
+PY
+)
+
+  if [[ -z "${torch_lib_dir}" || ! -d "${torch_lib_dir}" ]]; then
+    return
+  fi
+
+  local torch_libs=(
+    "libtorch_cpu.dylib"
+    "libtorch.dylib"
+    "libc10.dylib"
+  )
+
+  for lib_name in "${torch_libs[@]}"; do
+    local lib_path="${torch_lib_dir}/${lib_name}"
+    if [[ ! -f "${lib_path}" ]]; then
+      continue
+    fi
+
+    local removed=0
+    # Repeatedly remove the @loader_path rpath entries until none remain.
+    while install_name_tool -delete_rpath @loader_path "${lib_path}" 2>/dev/null; do
+      removed=1
+    done
+
+    if [[ "${removed}" == "1" ]]; then
+      install_name_tool -add_rpath @loader_path "${lib_path}" || true
+    fi
+  done
+}
+
 install_domains() {
   echo "Install torchvision and torchaudio"
   pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
@@ -101,6 +146,7 @@ install_pytorch_and_domains() {
     echo "Use cached wheel at ${cached_torch_wheel}"
   fi
 
+  dedupe_macos_loader_path_rpaths
   # Grab the pinned audio and vision commits from PyTorch
   TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
   export TORCHAUDIO_VERSION
