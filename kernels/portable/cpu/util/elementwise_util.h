@@ -104,8 +104,9 @@ inline void dtype_specialized_elementwise_fn_impl(
           out.numel(),
           ::executorch::extension::internal::GRAIN_SIZE,
           [&](const auto begin, const auto end) {
-            std::array<const CTYPE_COMPUTE*, sizeof...(inputs)> inputs_data_ptrs = {
-                inputs.first->template const_data_ptr<CTYPE_COMPUTE>()...};
+            std::array<const CTYPE_COMPUTE*, sizeof...(inputs)>
+                inputs_data_ptrs = {
+                    inputs.first->template const_data_ptr<CTYPE_COMPUTE>()...};
 
             CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
@@ -176,9 +177,9 @@ inline void dtype_specialized_elementwise_fn_impl(
 
         CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
 
-        const auto range =
-            BroadcastIndexesRange<sizeof...(inputs), support_noncontiguous_tensors>(
-                out, (*inputs.first)...);
+        const auto range = BroadcastIndexesRange<
+            sizeof...(inputs),
+            support_noncontiguous_tensors>(out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {
@@ -251,9 +252,9 @@ inline void apply_elementwise_fn_generic_impl(
       out.numel(),
       ::executorch::extension::internal::GRAIN_SIZE,
       [&](const auto begin, const auto end) {
-        const auto range =
-            BroadcastIndexesRange<sizeof...(inputs), support_noncontiguous_tensors>(
-                out, (*inputs.first)...);
+        const auto range = BroadcastIndexesRange<
+            sizeof...(inputs),
+            support_noncontiguous_tensors>(out, (*inputs.first)...);
         auto begin_it = range.begin();
         begin_it += begin;
         for (; (*begin_it)[0] < end; ++begin_it) {

@@ -66,7 +66,7 @@
  * dimension of all the tensors as the upper bound for the for loop.
  */
 #define ET_CHECK_SAME_SHAPE2(a__, b__)                                    \
-  do {                                                                      \
+  do {                                                                    \
     const size_t a_numel__ = (a__).numel();                               \
     const size_t b_numel__ = (b__).numel();                               \
     const size_t a_dim__ = (a__).dim();                                   \
@@ -92,7 +92,7 @@
   } while (0)
 
 #define ET_CHECK_SAME_SHAPE3(a__, b__, c__)                            \
-  do {                                                                   \
+  do {                                                                 \
     const size_t a_numel__ = (a__).numel();                            \
     const size_t b_numel__ = (b__).numel();                            \
     const size_t c_numel__ = (c__).numel();                            \
@@ -128,7 +128,7 @@
 
 /// Asserts that all tensors have the same dtype.
 #define ET_CHECK_SAME_DTYPE2(a__, b__)                                   \
-  do {                                                                     \
+  do {                                                                   \
     const ::executorch::aten::ScalarType a_type__ = (a__).scalar_type(); \
     const ::executorch::aten::ScalarType b_type__ = (b__).scalar_type(); \
     ET_CHECK_MSG(                                                        \
@@ -139,7 +139,7 @@
   } while (0)
 
 #define ET_CHECK_SAME_DTYPE3(a__, b__, c__)                                 \
-  do {                                                                        \
+  do {                                                                      \
     const ::executorch::aten::ScalarType a_type__ = (a__).scalar_type();    \
     const ::executorch::aten::ScalarType b_type__ = (b__).scalar_type();    \
     const ::executorch::aten::ScalarType c_type__ = (c__).scalar_type();    \
@@ -159,7 +159,7 @@
  * macros independently, because it only calls ET_CHECK_MSG once.
  */
 #define ET_CHECK_SAME_SHAPE_AND_DTYPE2(a__, b__)                              \
-  do {                                                                          \
+  do {                                                                        \
     const size_t a_numel__ = (a__).numel();                                   \
     const size_t b_numel__ = (b__).numel();                                   \
     const size_t a_dim__ = (a__).dim();                                       \
@@ -192,7 +192,7 @@
   } while (0)
 
 #define ET_CHECK_SAME_SHAPE_AND_DTYPE3(a__, b__, c__)                    \
-  do {                                                                     \
+  do {                                                                   \
     const size_t a_numel__ = (a__).numel();                              \
     const size_t b_numel__ = (b__).numel();                              \
     const size_t c_numel__ = (c__).numel();                              \
@@ -239,7 +239,7 @@
  * Assert that the input tensor is contiguous tensor.
  */
 #define ET_CHECK_CONTIGUOUS(a__)                                              \
-  do {                                                                          \
+  do {                                                                        \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType>         \
         strides = a__.strides();                                              \
     const ::executorch::aten::ArrayRef<executorch::aten::StridesType> sizes = \
@@ -268,7 +268,7 @@
  * of any input tensors.
  */
 #define ET_CHECK_SAME_STRIDES2(a__, b__)                                       \
-  do {                                                                           \
+  do {                                                                         \
     ET_CHECK_MSG(                                                              \
         a__.dim() == b__.dim(),                                                \
         "Two tensors shall have same number of strides, but not %zu and %zu.", \
@@ -296,7 +296,7 @@
  * of any input tensors.
  */
 #define ET_CHECK_SAME_STRIDES3(a__, b__, c__)                           \
-  do {                                                                    \
+  do {                                                                  \
     ET_CHECK_MSG(                                                       \
         a__.dim() == b__.dim() && b__.dim() == c__.dim(),               \
         "Three tensors shall have same number of strides, "             \
@@ -325,7 +325,7 @@
   } while (0)
 
 #define ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(t__)           \
-  do {                                                             \
+  do {                                                           \
     ET_CHECK_MSG(                                                \
         is_contiguous_dim_order(                                 \
             t__.dim_order().data(), t__.dim_order().size()) ||   \
