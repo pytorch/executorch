@@ -23,7 +23,7 @@ endif()
 
 set(_common_compile_options
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations -fPIC>
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wno-deprecated-declarations>
 )
 
 # Note for apple platform we can rely on Accelerate framework Will come back to
