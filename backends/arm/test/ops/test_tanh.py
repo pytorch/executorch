@@ -121,22 +121,23 @@ def get_symmetric_a16w8_tanh_quantizer(per_channel_quantization=False):
     }
 
     quantizer = TOSAQuantizer(tosa_profiles[tosa_version])
+
+    # Use a smaller episilon value to not greatly inflate [qmin, qmax]
     quantizer.set_global(
-        get_symmetric_a16w8_quantization_config(is_per_channel=per_channel_quantization)
+        get_symmetric_a16w8_quantization_config(
+            is_per_channel=per_channel_quantization, epsilon=2**-16
+        )
     )
 
     return Quantize(
         quantizer,
         get_symmetric_a16w8_quantization_config(
-            is_per_channel=per_channel_quantization
+            is_per_channel=per_channel_quantization, epsilon=2**-16
         ),
     )
 
 
 @common.parametrize("test_data", test_data_suite)
-@pytest.mark.xfail(
-    reason="missing int16 tanh ops support; fails at TOSA reference model with Unsupported operation type or rank. See: https://github.com/pytorch/executorch/issues/13975"
-)
 def test_tanh_16a8w_tosa_INT(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
@@ -163,7 +164,7 @@ def test_tanh_16a8w_tosa_INT(test_data: torch.Tensor):
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone300
 @pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 tanh operations"
+    reason="MLETORCH-707: AssertionError: Output 0 does not match reference output."
 )
 def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization on U55 (16-bit activations, 8-bit weights)"""
@@ -189,9 +190,6 @@ def test_tanh_16a8w_u55_INT16(test_data: torch.Tensor):
 
 @common.parametrize("test_data", test_data_suite)
 @common.XfailIfNoCorstone320
-@pytest.mark.xfail(
-    reason="Vela compilation fails with 'Invalid arguments' for int16 tanh operations"
-)
 def test_tanh_16a8w_u85_INT16(test_data: torch.Tensor):
     """Test tanh operation with 16A8W quantization on U85 (16-bit activations, 8-bit weights)"""
     per_channel_quantization = False
