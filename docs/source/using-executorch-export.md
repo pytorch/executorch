@@ -33,8 +33,8 @@ As part of the .pte file creation process, ExecuTorch identifies portions of the
 Commonly used hardware backends are listed below. For mobile, consider using XNNPACK for Android and XNNPACK or Core ML for iOS. To create a .pte file for a specific backend, pass the appropriate partitioner class to `to_edge_transform_and_lower`. See the appropriate backend documentation and the [Export and Lowering](#export-and-lowering) section below for more information.
 
 - [XNNPACK (CPU)](backends-xnnpack.md)
-- [Core ML (iOS)](backends-coreml.md)
-- [Metal Performance Shaders (iOS GPU)](backends-mps.md)
+- [Core ML (iOS)](backends/coreml/coreml-overview.md)
+- [Metal Performance Shaders (iOS GPU)](backends/mps/mps-overview.md)
 - [Vulkan (Android GPU)](backends-vulkan.md)
 - [Qualcomm NPU](backends-qualcomm.md)
 - [MediaTek NPU](backends-mediatek.md)
