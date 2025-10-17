@@ -11,14 +11,14 @@ et_root_dir=$(cd ${script_dir}/../../.. && pwd)
 et_root_dir=$(realpath ${et_root_dir})
 setup_path_script=${et_root_dir}/examples/arm/ethos-u-scratch/setup_path.sh
 _setup_msg="please refer to ${et_root_dir}/examples/arm/setup.sh to properly install necessary tools."
+source "${script_dir}/utils.sh"
 
 build_type="Release"
 build_with_etdump=false
 extra_build_flags=""
 output_folder="cmake-out-vkml"
 
-build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=OFF "
-
+build_with_etdump_flag="-DEXECUTORCH_ENABLE_EVENT_TRACER=OFF"
 help() {
     echo "Usage: $(basename $0) [options]"
     echo "Options:"
@@ -50,7 +50,7 @@ done
 source ${setup_path_script}
 
 mkdir -p "${output_folder}"
-output_folder=$(realpath ${output_folder})
+output_folder=$(realpath "${output_folder}")
 
 echo "--------------------------------------------------------------------------------"
 echo "Build Arm VKML executor runner: '${output_folder}' with extra build flags: ${extra_build_flags}"
@@ -59,11 +59,13 @@ echo "--------------------------------------------------------------------------
 cd ${et_root_dir}/examples/arm/executor_runner
 
 if [ "$build_with_etdump" = true ] ; then
-    build_with_etdump_flags=" -DEXECUTORCH_ENABLE_EVENT_TRACER=ON "
+    build_with_etdump_flag="-DEXECUTORCH_ENABLE_EVENT_TRACER=ON"
 fi
 
-echo "Building with extra flags: ${build_with_etdump_flags} ${extra_build_flags}"
+echo "Building with extra flags: ${build_with_etdump_flag} ${extra_build_flags}"
 cmake \
+    -S "${et_root_dir}" \
+    -B "${output_folder}" \
     -Wall \
     -Werror \
     -DCMAKE_BUILD_TYPE=${build_type}            \
@@ -78,13 +80,15 @@ cmake \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
-    -DPYTHON_EXECUTABLE=$(which python3)        \
-    ${extra_build_flags}                        \
-    -B ${output_folder} ${et_root_dir}
+    -DPYTHON_EXECUTABLE="$(which python3)"      \
+    ${build_with_etdump_flag}                   \
+    ${extra_build_flags}
 
 echo "[${BASH_SOURCE[0]}] Configured CMAKE"
 
-cmake --build ${output_folder} -j$(nproc)
+parallel_jobs="$(get_parallel_jobs)"
+
+cmake --build "${output_folder}" --parallel "${parallel_jobs}"
 
 echo "[${BASH_SOURCE[0]}] Built VKML runner: "
 find ${output_folder} -name "executor_runner"

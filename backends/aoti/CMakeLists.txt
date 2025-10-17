@@ -26,7 +26,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Utils.cmake)
 find_package_torch()
 
 # Common AOTI functionality - combines all AOTI common components
-set(_aoti_common_sources aoti_model_container.cpp common_shims.cpp)
+set(_aoti_common_sources common_shims.cpp)
 add_library(aoti_common STATIC ${_aoti_common_sources})
 target_include_directories(
   aoti_common

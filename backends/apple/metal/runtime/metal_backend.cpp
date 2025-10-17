@@ -20,7 +20,7 @@
 #include <vector>
 
 // Include AOTI common headers (from aoti_common library)
-#include <executorch/backends/aoti/aoti_model_container.h>
+#include <executorch/backends/aoti/aoti_delegate_handle.h>
 #include <executorch/backends/aoti/common_shims.h>
 
 // Include our Metal-specific shim layer headers
@@ -32,11 +32,11 @@
 
 namespace executorch::backends::metal {
 
-#define LOAD_SYMBOL(name, handle)                                \
-  do {                                                           \
-    name = reinterpret_cast<name##Func>(dlsym(handle, #name));   \
-    ET_CHECK_OR_RETURN_ERROR(                                    \
-        name != nullptr, AccessFailed, "Failed to load " #name); \
+#define LOAD_SYMBOL(handle, member, name, so_handle)                        \
+  do {                                                                      \
+    handle->member = reinterpret_cast<name##Func>(dlsym(so_handle, #name)); \
+    ET_CHECK_OR_RETURN_ERROR(                                               \
+        handle->member != nullptr, AccessFailed, "Failed to load " #name);  \
   } while (0)
 
 using namespace std;
@@ -61,49 +61,54 @@ using executorch::runtime::etensor::Tensor;
 class ET_EXPERIMENTAL MetalBackend final
     : public ::executorch::runtime::BackendInterface {
  private:
-  Error register_shared_library_functions(void* so_handle) const {
+  Error load_function_pointers_into_handle(
+      void* so_handle,
+      AOTIDelegateHandle* handle) const {
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - Loading symbols");
+        "MetalBackend::load_function_pointers_into_handle - Loading symbols");
 
-    LOAD_SYMBOL(AOTInductorModelContainerCreateWithDevice, so_handle);
+    LOAD_SYMBOL(
+        handle,
+        create_with_device,
+        AOTInductorModelContainerCreateWithDevice,
+        so_handle);
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerCreateWithDevice");
+        "MetalBackend::load_function_pointers_into_handle - Loaded AOTInductorModelContainerCreateWithDevice");
 
-    LOAD_SYMBOL(AOTInductorModelContainerDelete, so_handle);
+    LOAD_SYMBOL(
+        handle, delete_container, AOTInductorModelContainerDelete, so_handle);
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerDelete");
+        "MetalBackend::load_function_pointers_into_handle - Loaded AOTInductorModelContainerDelete");
 
-    LOAD_SYMBOL(AOTInductorModelContainerGetNumInputs, so_handle);
+    LOAD_SYMBOL(
+        handle,
+        get_num_inputs,
+        AOTInductorModelContainerGetNumInputs,
+        so_handle);
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumInputs");
+        "MetalBackend::load_function_pointers_into_handle - Loaded AOTInductorModelContainerGetNumInputs");
 
-    LOAD_SYMBOL(AOTInductorModelContainerGetNumConstants, so_handle);
+    LOAD_SYMBOL(
+        handle,
+        get_num_outputs,
+        AOTInductorModelContainerGetNumOutputs,
+        so_handle);
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumConstants");
+        "MetalBackend::load_function_pointers_into_handle - Loaded AOTInductorModelContainerGetNumOutputs");
 
-    LOAD_SYMBOL(AOTInductorModelContainerGetInputName, so_handle);
+    LOAD_SYMBOL(handle, run, AOTInductorModelContainerRun, so_handle);
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetInputName");
-
-    LOAD_SYMBOL(AOTInductorModelContainerGetNumOutputs, so_handle);
-    ET_LOG(
-        Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerGetNumOutputs");
-
-    LOAD_SYMBOL(AOTInductorModelContainerRun, so_handle);
-    ET_LOG(
-        Debug,
-        "MetalBackend::register_shared_library_functions - Loaded AOTInductorModelContainerRun");
+        "MetalBackend::load_function_pointers_into_handle - Loaded AOTInductorModelContainerRun");
 
     ET_LOG(
         Debug,
-        "MetalBackend::register_shared_library_functions - All symbols loaded successfully");
+        "MetalBackend::load_function_pointers_into_handle - All symbols loaded successfully");
     return Error::Ok;
   }
 
@@ -208,22 +213,25 @@ class ET_EXPERIMENTAL MetalBackend final
 
     processed->Free();
 
-    // Register all shared library functions
-    ET_CHECK_OK_OR_RETURN_ERROR(register_shared_library_functions(so_handle));
+    // Create handle and load function pointers into it
+    AOTIDelegateHandle* handle = new AOTIDelegateHandle();
+    handle->so_handle = so_handle;
+    handle->so_path = so_path.string();
+
+    // Load function pointers specific to this handle's shared library
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        load_function_pointers_into_handle(so_handle, handle));
 
     AOTInductorModelContainerHandle container_handle = nullptr;
     ET_LOG(
         Info,
         "MetalBackend::init - About to create AOTI container with device='mps'");
 
-    ET_CHECK_OK_OR_RETURN_ERROR(AOTInductorModelContainerCreateWithDevice(
-        &container_handle, 1, "mps", nullptr));
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        handle->create_with_device(&container_handle, 1, "mps", nullptr));
 
     ET_LOG(Info, "container_handle = %p", container_handle);
 
-    AOTIDelegateHandle* handle = new AOTIDelegateHandle();
-    handle->so_handle = so_handle;
-    handle->so_path = so_path.string();
     handle->container_handle = container_handle;
 
     ET_LOG(Info, "MetalBackend::init - Initialization completed successfully");
@@ -239,22 +247,13 @@ class ET_EXPERIMENTAL MetalBackend final
 
     AOTIDelegateHandle* handle = (AOTIDelegateHandle*)handle_;
 
-    // Need to re-register all the symbols from the so_handle hosted by this
-    // MetalBackend instance. The reason is that these symbols are
-    // static/singleton across the whole process. When we share multiple methods
-    // (meaning multiple so_handle) in the same process, we need to re-register
-    // the symbols from the so_handle that is being used in this execution.
-    ET_CHECK_OK_OR_RETURN_ERROR(
-        register_shared_library_functions(handle->so_handle));
-
     ET_LOG(Debug, "MetalBackend Handle generated");
 
     size_t n_inputs;
-    AOTInductorModelContainerGetNumInputs(handle->container_handle, &n_inputs);
+    handle->get_num_inputs(handle->container_handle, &n_inputs);
 
     size_t n_outputs;
-    AOTInductorModelContainerGetNumOutputs(
-        handle->container_handle, &n_outputs);
+    handle->get_num_outputs(handle->container_handle, &n_outputs);
 
     ET_LOG(Debug, "MetalBackend n_outputs %zd generated", n_outputs);
 
@@ -425,7 +424,7 @@ class ET_EXPERIMENTAL MetalBackend final
     }
 
     // Run AOTI container with GPU tensors
-    AOTIRuntimeError error = AOTInductorModelContainerRun(
+    AOTIRuntimeError error = handle->run(
         handle->container_handle,
         gpu_inputs.data(), // Use GPU input tensors
         n_inputs,
