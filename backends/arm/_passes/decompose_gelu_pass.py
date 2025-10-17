@@ -6,6 +6,7 @@
 from typing import Set, Type
 
 import torch
+from executorch.backends.arm._passes import ArmPass
 from executorch.backends.arm._passes.arm_pass_utils import get_node_arg
 from executorch.backends.arm._passes.fuse_constant_ops_pass import ComputeConstantOpsAOT
 from executorch.backends.arm._passes.insert_table_ops import InsertTableOpsPass
@@ -43,7 +44,7 @@ def _get_gelu_ops(op) -> tuple:
     raise RuntimeError(f"Can't get GeLU decomposition ops for op {op}")
 
 
-class DecomposeGeluPass(ExportPass):
+class DecomposeGeluPass(ArmPass):
     """
     This pass decomposes the GELU operator into primitive ops.
     Aiming to adhere closely to the reference implementations built into
