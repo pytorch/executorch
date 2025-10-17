@@ -104,7 +104,11 @@ MultimodalInput loadPreprocessedAudio(const std::string& audio_path) {
   ET_LOG(Info, "audio_data len = %zu", n_floats);
 
   std::vector<float> audio_data(n_floats);
+  ET_LOG(Info, "audio_data size = %zu", audio_data.size());
   f.read(reinterpret_cast<char*>(audio_data.data()), n_floats * sizeof(float));
+    ET_LOG(Info, "First 5 floats in audio_data is %f, %f, %f, %f, %f",
+         audio_data[10000], audio_data[10001], audio_data[10002], audio_data[10003], audio_data[10004]);
+
   f.close();
 
   auto audio = ::executorch::extension::llm::Audio(
@@ -331,6 +335,12 @@ int32_t main(int32_t argc, char** argv) {
 
   // Generate
   ET_LOG(Info, "Starting generation...");
+  for (const auto& input : inputs) {
+    ET_LOG(
+        Info,
+        "Input : %s",
+        input.to_string().c_str());
+  }
   auto error = runner->generate(inputs, config);
   if (error != ::executorch::runtime::Error::Ok) {
     ET_LOG(Error, "Failed to generate with multimodal runner");

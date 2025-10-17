@@ -110,6 +110,21 @@ class ET_EXPERIMENTAL Image {
     return ::executorch::runtime::Error::NotSupported;
   }
 
+  std::string to_string() const {
+    std::string result = "Image: ";
+    if (is_uint8()) {
+      result += "uint8_t";
+    } else if (is_float()) {
+      result += "float";
+    } else {
+      result += "unknown";
+    }
+    result += "width: " + std::to_string(width_) + ", ";
+    result += "height: " + std::to_string(height_) + ", ";
+    result += "channels: " + std::to_string(channels_);
+    return result;
+  }
+
  private:
   // Assuming NCHW format
   std::variant<std::vector<uint8_t>, std::vector<float>> data_;

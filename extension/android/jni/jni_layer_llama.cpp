@@ -223,6 +223,13 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
           .seq_len = seq_len,
           .temperature = temperature_,
       };
+      for (const auto& input : inputs) {
+        ET_LOG(
+            Error,
+            "Prefill input: %s",
+            input.to_string().c_str());
+        }
+
       multi_modal_runner_->generate(
           std::move(inputs),
           config,
@@ -326,6 +333,32 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
   }
 
   // Returns status_code
+  jint append_audio_input_float(
+      facebook::jni::alias_ref<jfloatArray> data,
+      jint batch_size,
+      jint n_bins,
+      jint n_frames) {
+    if (data == nullptr) {
+      return static_cast<jint>(Error::EndOfMethod);
+    }
+    auto data_size = data->size();
+    if (data_size != 0) {
+      std::vector<jfloat> data_jfloat(data_size);
+      std::vector<float> data_f(data_size);
+      data->getRegion(0, data_size, data_jfloat.data());
+      for (int i = 0; i < data_size; i++) {
+        data_f[i] = data_jfloat[i];
+      }
+      ET_LOG(Error, "First 5 elements of data_f: %f, %f, %f, %f, %f",
+             data_f[10000], data_f[10001], data_f[10002], data_f[10003], data_f[
+      10004]);
+      llm::Audio audio{std::move(data_f), batch_size, n_bins, n_frames};
+      prefill_inputs_.emplace_back(llm::MultimodalInput{std::move(audio)});
+    }
+    return 0;
+  }
+
+  // Returns status_code
   jint append_raw_audio_input(
       facebook::jni::alias_ref<jbyteArray> data,
       jint batch_size,
@@ -388,6 +421,8 @@ class ExecuTorchLlmJni : public facebook::jni::HybridClass<ExecuTorchLlmJni> {
             ExecuTorchLlmJni::append_normalized_images_input),
         makeNativeMethod(
             "appendAudioInput", ExecuTorchLlmJni::append_audio_input),
+        makeNativeMethod(
+            "appendAudioInputFloat", ExecuTorchLlmJni::append_audio_input_float),
         makeNativeMethod(
             "appendRawAudioInput", ExecuTorchLlmJni::append_raw_audio_input),
         makeNativeMethod(

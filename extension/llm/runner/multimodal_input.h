@@ -57,6 +57,20 @@ class ET_EXPERIMENTAL MultimodalInput {
   // Destructor
   ~MultimodalInput() = default;
 
+  std::string to_string() const noexcept {
+    if (is_text()) {
+      return "Text: \"" + get_text() + "\"";
+    } else if (is_image()) {
+      return get_image().to_string();
+    } else if (is_audio()) {
+      return get_audio().to_string();
+    } else if (is_raw_audio()) {
+      return get_raw_audio().to_string();
+    } else {
+      return "Unsupported input type";
+    }
+  }
+
   /**
    * Check if this input contains text data.
    * @return true if this input contains text, false otherwise.
