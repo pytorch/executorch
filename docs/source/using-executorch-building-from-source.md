@@ -385,7 +385,7 @@ xcode-select --install
 ```
 
 Run the above command with `--help` flag to learn more on how to build additional backends
-(like [Core ML](backends-coreml.md), [MPS](backends-mps.md) or XNNPACK), etc.
+(like [Core ML](backends/coreml/coreml-overview.md), [MPS](backends/mps/mps-overview.md) or XNNPACK), etc.
 Note that some backends may require additional dependencies and certain versions of Xcode and iOS.
 See backend-specific documentation for more details.
 

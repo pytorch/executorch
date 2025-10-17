@@ -1,55 +1,27 @@
 # MPS Backend
 
-In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.
+MPS delegate is the ExecuTorch solution to take advantage of Apple's GPU for on-device ML using the [MPS Graph](https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc) framework and tuned kernels provided by [MPS](https://developer.apple.com/documentation/metalperformanceshaders?language=objc).
 
-The MPS backend device maps machine learning computational graphs and primitives on the [MPS Graph](https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc) framework and tuned kernels provided by [MPS](https://developer.apple.com/documentation/metalperformanceshaders?language=objc).
+## Target Requirements
 
-::::{grid} 2
-:::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-prerequisites
-* In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the MPS delegate.
-* You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS.
-:::
-:::{grid-item-card}  Tutorials we recommend you complete before this:
-:class-card: card-prerequisites
-* [Introduction to ExecuTorch](intro-how-it-works.md)
-* [Getting Started](getting-started.md)
-* [Building ExecuTorch with CMake](using-executorch-building-from-source.md)
-* [ExecuTorch iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/mv3/apple/ExecuTorchDemo)
-* [ExecuTorch LLM iOS Demo App](https://github.com/meta-pytorch/executorch-examples/tree/main/llm/apple)
-:::
-::::
+Below are the minimum OS requirements on various hardware for running a MPS-delegated ExecuTorch model:
+- [macOS](https://developer.apple.com/macos) >= 12.4
+- [iOS](https://www.apple.com/ios) >= 15.4
 
+## Development Requirements
+To develop you need:
 
-## Prerequisites (Hardware and Software)
+- [Xcode](https://developer.apple.com/xcode/) >= 14.1
 
-In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you'll need the following hardware and software components:
+Before starting, make sure you install the Xcode Command Line Tools:
 
-### Hardware:
- - A [mac](https://www.apple.com/mac/) for tracing the model
+```bash
+xcode-select --install
+```
 
-### Software:
+## Using the MPS Backend
 
-  - **Ahead of time** tracing:
-    - [macOS](https://www.apple.com/macos/) 12
-
-  - **Runtime**:
-    - [macOS](https://www.apple.com/macos/) >= 12.4
-    - [iOS](https://www.apple.com/ios) >= 15.4
-    - [Xcode](https://developer.apple.com/xcode/) >= 14.1
-
-## Setting up Developer Environment
-
-***Step 1.*** Complete the steps in [Getting Started](getting-started.md) to set up the ExecuTorch development environment.
-
-You will also need a local clone of the ExecuTorch repository. See [Building ExecuTorch from Source](using-executorch-building-from-source.html) for instructions. All commands in this document should be run from the executorch repository.
-
-## Build
-
-### AOT (Ahead-of-time) Components
-
-**Compiling model for MPS delegate**:
-- In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You'll then pass this Program (the `.pte` file) during the runtime to run it using the MPS backend.
+In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You'll then pass this Program (the `.pte` file) during the runtime to run it using the MPS backend.
 
 ```bash
 cd executorch
@@ -121,7 +93,7 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_
 python3 -m devtools.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path etrecord.bin
 ```
 
-## Deploying and Running on Device
+## Runtime integration
 
 ***Step 1***. Create the ExecuTorch core and MPS delegate frameworks to link on iOS
 ```bash
@@ -146,8 +118,3 @@ From the same page, include the needed libraries for the MPS delegate:
 - `Metal.framework`
 
 In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library.
-
-
-## Frequently encountered errors and resolution.
-
-If you encountered any bugs or issues following this tutorial please file a bug/issue on the [ExecuTorch repository](https://github.com/pytorch/executorch/issues), with hashtag **#mps**.

@@ -107,7 +107,7 @@ git clone -b viable/strict https://github.com/pytorch/executorch.git --depth 1 -
 python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip
 ```
 
-4. Install the required dependencies, including those needed for the backends like [Core ML](backends-coreml.md) or [MPS](backends-mps.md), if you plan to build them later:
+4. Install the required dependencies, including those needed for the backends like [Core ML](backends/coreml/coreml-overview.md) or [MPS](backends/mps/mps-overview.md), if you plan to build them later:
 
 ```bash
 ./install_requirements.sh
