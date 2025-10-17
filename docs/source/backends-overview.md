@@ -29,7 +29,7 @@ Backends are the bridge between your exported model and the hardware it runs on.
 | [ARM EthosU](backends-arm-ethos-u)             | Embedded            | NPU           | ARM MCUs                        |
 | [ARM VGF](backends-arm-vgf)                    | Android             | NPU           | ARM platforms                   |
 | [OpenVINO](build-run-openvino)                 | Embedded            | CPU/GPU/NPU   | Intel  SoCs                     |
-| [NXP](backends-nxp)                            | Embedded            | NPU           | NXP SoCs                        |
+| [NXP](backends/nxp/nxp-overview.md)            | Embedded            | NPU           | NXP SoCs                        |
 | [Cadence](backends-cadence)                    | Embedded            | DSP           | DSP-optimized workloads         |
 | [Samsung Exynos](backends-samsung-exynos)      | Android             | NPU           | Samsung SoCs                    |
 
@@ -59,6 +59,6 @@ backends-mediatek
 backends-arm-ethos-u
 backends-arm-vgf
 build-run-openvino
-backends-nxp
+backends/nxp/nxp-overview
 backends-cadence
 backends-samsung-exynos
