@@ -72,9 +72,7 @@ Tensor& repeat_interleave_Tensor_out(
 
   int64_t repeats_sum = 0;
 
-  constexpr auto name = "repeat_interleave.Tensor_out";
-
-  ET_SWITCH_TWO_TYPES(Int, Long, repeats.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_TWO_TYPES(Int, Long, repeats.scalar_type(), ctx, "repeat_interleave.Tensor_out", CTYPE, [&] {
     const CTYPE* repeats_data = repeats.const_data_ptr<CTYPE>();
     for (const auto ix : c10::irange(repeats.numel())) {
       repeats_sum += static_cast<int64_t>(repeats_data[ix]);
@@ -106,7 +104,7 @@ Tensor& repeat_interleave_Tensor_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_SWITCH_TWO_TYPES(Int, Long, repeats.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_TWO_TYPES(Int, Long, repeats.scalar_type(), ctx, "repeat_interleave.Tensor_out", CTYPE, [&] {
     const CTYPE* repeats_data = repeats.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
     size_t out_ix = 0;

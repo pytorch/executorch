@@ -119,9 +119,7 @@ Tensor& scatter_src_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-  constexpr auto name = "scatter.src_out";
-
-  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "scatter.src_out", CTYPE, [&]() {
     scatter_src_helper<CTYPE>(in, dim, index, src, out);
   });
 
@@ -146,9 +144,7 @@ Tensor& scatter_value_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-  constexpr auto name = "scatter.value_out";
-
-  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, name, CTYPE, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(in.scalar_type(), ctx, "scatter.value_out", CTYPE, [&]() {
     auto opt_val = utils::internal::check_overflow_scalar_cast<CTYPE>(value);
     ET_KERNEL_CHECK(ctx, opt_val.has_value(), InvalidArgument, );
     auto val = opt_val.value();

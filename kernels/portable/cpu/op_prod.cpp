@@ -32,10 +32,9 @@ Tensor& prod_out(
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "prod.int_out";
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "prod.int_out", CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "prod.int_out", CTYPE_OUT, [&] {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = static_cast<CTYPE_OUT>(1);
@@ -72,10 +71,9 @@ Tensor& prod_int_out(
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
-  constexpr auto name = "prod.int_out";
 
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "prod.int_out", CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "prod.int_out", CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       const bool success = parallel_for_each_reduce_over_dim_output_index(
           in, dim, out, [&](const auto begin, const auto end) {

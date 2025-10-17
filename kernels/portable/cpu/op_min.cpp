@@ -124,10 +124,8 @@ min_unary_out(KernelRuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, canCast(in_type, out_type), InvalidArgument, out);
 
-  constexpr auto name = "min.unary_out";
-
-  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
-    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "min.unary_out", CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "min.unary_out", CTYPE_OUT, [&] {
       const auto data_in = in.const_data_ptr<CTYPE_IN>();
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = upper_bound<CTYPE_OUT>();
