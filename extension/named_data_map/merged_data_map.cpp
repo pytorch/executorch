@@ -59,12 +59,10 @@ namespace ET_MERGED_DATA_MAP_NAMESPACE {
 ET_NODISCARD Result<const TensorLayout> MergedDataMap::get_tensor_layout(
     string_view key) const {
   const auto it = key_to_map_index_.find(key.data());
-  ET_CHECK_OR_RETURN_ERROR(
-      it != key_to_map_index_.end(),
-      NotFound,
-      "Key %s not found in named data maps",
-      key.data());
-
+  if (it == key_to_map_index_.end()) {
+    ET_LOG(Debug, "Key %s not found in named data maps.", key.data());
+    return Error::NotFound;
+  }
   return named_data_maps_.at(it->second)->get_tensor_layout(key);
 }
 

@@ -30,7 +30,7 @@ from executorch.backends.nxp.tests.executors import (
     ToChannelLastPreprocess,
 )
 from executorch.backends.nxp.tests.models import Conv2dModule
-from executorch.backends.nxp.tests.test_quantizer import _get_target_name
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch import fx
 from torch._ops import OpOverload
@@ -110,7 +110,9 @@ class TestPerChannelConversion(unittest.TestCase):
 
     def test_per_channel_convolution(self):
         with kgb.spy_on(
-            EdgeProgramToIRConverter.convert_program, call_original=True
+            EdgeProgramToIRConverter.convert_program,
+            call_original=True,
+            owner=EdgeProgramToIRConverter,
         ) as converter_spy:
             model = Conv2dModule(
                 in_channels=8, out_channels=32, kernel_size=5, padding=3
@@ -144,10 +146,12 @@ class TestPerChannelConversion(unittest.TestCase):
 
             nodes = list(exported_program.graph.nodes)
 
-            assert _get_target_name(nodes[8]).endswith(
-                "quantized_decomposed.dequantize_per_channel.default"
+            assert (
+                nodes[8].target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
             )
-            assert _get_target_name(nodes[9]).endswith(
-                "quantized_decomposed.dequantize_per_channel.default"
+            assert (
+                nodes[9].target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
             )
-            assert nodes[10].name == "aten_convolution_default"
+            assert nodes[10].target == exir_ops.edge.aten.convolution.default
