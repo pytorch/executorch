@@ -65,6 +65,13 @@
 #define ET_INLINE __attribute__((always_inline)) inline
 #endif
 
+// Restrict
+#if defined(_MSC_VER)
+#define ET_RESTRICT __restrict
+#else
+#define ET_RESTRICT __restrict__
+#endif
+
 #if defined(__GNUC__)
 
 #define ET_UNREACHABLE() __builtin_unreachable()

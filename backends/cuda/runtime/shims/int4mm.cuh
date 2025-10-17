@@ -501,12 +501,12 @@ struct BLayout_TC_int4 {
       // 2 k-tiles packed is a uint32 (hence InnerKTiles == 2 is our smallest
       // value) 4 k-tiles packed is a uint32x2 (64 bits) 8 k-tiles packed is a
       // uint32x4 (128 bits)
-      const void* __restrict__ B,
+      const void* ET_RESTRICT B,
       // size [k / qGroupSize][n][2]
       // Contains the scale and zero point of each of the quantized int4 values
       // within B
       // v_reconstructed = (bf16(B_int4_val) * scale) - zero
-      const void* __restrict__ quantizationInfo,
+      const void* ET_RESTRICT quantizationInfo,
       int32_t n,
       int32_t k,
       int32_t nTiles,
@@ -643,16 +643,16 @@ template <
 __global__
 __launch_bounds__(Warps* kWarpSize) void tinygemm_m16n8k16_chunk_kernel(
     // Data for the A matrix, loaded as per ALayout
-    const void* const __restrict__ A,
+    const void* const ET_RESTRICT A,
 
     // Data for the B matrix, loaded as per BLayout
-    const void* const __restrict__ B,
+    const void* const ET_RESTRICT B,
 
     // Optional quantization data for dequantizing B, loaded as per BLayout
-    const void* const __restrict__ B_quantizationInfo,
+    const void* const ET_RESTRICT B_quantizationInfo,
 
     // Output data for the C matrix, stored as per CLayout
-    void* __restrict__ C,
+    void* ET_RESTRICT C,
 
     // The size of the matrix multiplication
     int32_t m,
