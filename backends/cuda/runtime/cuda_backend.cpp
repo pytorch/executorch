@@ -74,7 +74,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
     handle->update_constants_from_blob =
         reinterpret_cast<AOTInductorModelUpdateConstantsFromBlobFunc>(
-            get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob"));
+            get_function(so_handle, "AOTInductorModelUpdateConstantsFromBlob").get());
     if (handle->update_constants_from_blob == nullptr) {
       ET_LOG(
           Info,
