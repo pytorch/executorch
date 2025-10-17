@@ -422,6 +422,7 @@ def register_softmax_op():
 
 def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     ndim = utils.ndim_of(node.args[0])
+    assert ndim is not None
     dims_reduced = None
     if len(node.args) >= 1:
         dims_reduced = node.args[1]
@@ -438,6 +439,7 @@ def get_dims_reduced(node: torch.fx.Node) -> Union[int, List[int]]:
     if isinstance(dims_reduced, (list, tuple)) and len(dims_reduced) == 1:
         dims_reduced = dims_reduced[0]
 
+    assert isinstance(dims_reduced, (int, list, tuple))
     return utils.normalize_dims(dims_reduced, ndim)
 
 
@@ -456,6 +458,7 @@ def is_reduce_node_supported_by_per_row_impl(node: torch.fx.Node) -> bool:
     special case implementation.
     """
     input_ndim = utils.ndim_of(node.args[0])
+    assert input_ndim is not None
     dims_reduced = get_dims_reduced(node)
 
     return dims_reduced == input_ndim - 1
@@ -505,7 +508,9 @@ def pick_storage_for_reduce(node: torch.fx.Node):
 
     # For 2D reductions, the packed dimension cannot be one of the reduced dims
     if isinstance(dim_list, (list, tuple)) and len(dim_list) == 2:
+        # pyre-ignore[6]
         reduce_dim1_whcn = utils.nchw_dim_to_whcn_dim(dim_list[0], ndim)
+        # pyre-ignore[6]
         reduce_dim2_whcn = utils.nchw_dim_to_whcn_dim(dim_list[1], ndim)
 
         possible_packed_dims = {0, 1, 2}
@@ -569,6 +574,7 @@ def register_2d_pool_op():
 def register_convolution_op():
     def check_conv_node(node: torch.fx.Node) -> bool:
         x = node.args[0]
+        assert isinstance(x, torch.fx.Node)
         x_shape = x.meta["val"].size()
         # 4-D input implies 2D convolution
         if len(x_shape) == 4:

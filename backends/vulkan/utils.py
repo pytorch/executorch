@@ -293,6 +293,7 @@ def op_contains_bool_tensor(node: torch.fx.Node) -> bool:
         return True
 
     for arg_node in node.args:
+        # pyre-ignore[6]
         if is_tensor_node(arg_node) and tensor_node_is_bool(arg_node):
             return True
 
@@ -756,6 +757,7 @@ CONTIGUOUS_ANY = TensorRepSet(
 CONTIGUOUS_BUFFER = TensorRepSet({VkMemoryLayout.TENSOR_WIDTH_PACKED}, set())
 
 WIDTH_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_WIDTH_PACKED})
+HEIGHT_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_HEIGHT_PACKED})
 CHANNELS_PACKED_TEXTURE = TensorRepSet(set(), {VkMemoryLayout.TENSOR_CHANNELS_PACKED})
 
 ANY_TEXTURE = TensorRepSet(set(), all_memory_layouts)
