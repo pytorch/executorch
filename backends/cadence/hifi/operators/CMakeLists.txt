@@ -16,6 +16,7 @@ include(${EXECUTORCH_ROOT}/tools/cmake/Codegen.cmake)
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
+    "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_im2row_out.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_add.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_atan2.cpp"
     "${EXECUTORCH_ROOT}/backends/cadence/hifi/operators/op_bitwise_and.cpp"
