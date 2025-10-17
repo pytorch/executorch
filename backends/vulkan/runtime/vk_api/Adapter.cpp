@@ -113,9 +113,10 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_shader_integer_dot_product
       VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME,
 #endif /* VK_KHR_shader_integer_dot_product */
-#if defined(VK_KHR_pipeline_executable_properties) && defined(VULKAN_DEBUG)
+#if defined(VK_KHR_pipeline_executable_properties) && \
+    defined(ETVK_INSPECT_PIPELINES)
       VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME,
-#endif /* VK_KHR_pipeline_executable_properties */
+#endif /* VK_KHR_pipeline_executable_properties && ETVK_INSPECT_PIPELINES */
   };
 
   std::vector<const char*> enabled_device_extensions;
