@@ -68,14 +68,6 @@ void main() {
 
   VEC4_T sums[TILE_ROWS][TILE_TXCOLS];
 
-  VEC4_T scales[TILE_TXCOLS];
-  $for c in range(TILE_TXCOLS):
-    $if SCALES_STORAGE == "buffer":
-      scales[${c}] = VEC4_T(t_scales[out_txcol + ${c}]);
-    $else:
-      scales[${c}] = VEC4_T(
-        texelFetch(t_scales, u16vec2(out_txcol + ${c}, 0), 0));
-
   for (int r = 0; r < TILE_ROWS; ++r) {
     $for c in range(TILE_TXCOLS):
       sums[r][${c}] = VEC4_T(0.0);
@@ -139,6 +131,14 @@ void main() {
       }
     }
   }
+
+  VEC4_T scales[TILE_TXCOLS];
+  $for c in range(TILE_TXCOLS):
+    $if SCALES_STORAGE == "buffer":
+      scales[${c}] = VEC4_T(t_scales[out_txcol + ${c}]);
+    $else:
+      scales[${c}] = VEC4_T(
+        texelFetch(t_scales, u16vec2(out_txcol + ${c}, 0), 0));
 
   // Store to output tensor
   $if OUT_STORAGE == "buffer":
